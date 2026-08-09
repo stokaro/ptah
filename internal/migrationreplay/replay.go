@@ -35,6 +35,11 @@ type Options struct {
 	// a caller reads the before-state of one version without replaying the
 	// directory once per version. An error from it aborts the replay.
 	ObserveVersion func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error
+	// ObserveReplayed, when set, runs once after every migration has been
+	// replayed and before the dev database realm is cleaned. It is the
+	// after-state counterpart of ObserveVersion. An error from it aborts the
+	// replay.
+	ObserveReplayed func(conn *dbschema.DatabaseConnection) error
 }
 
 // Replay connects to the configured dev database and replays the migration
@@ -68,7 +73,7 @@ func Replay(ctx context.Context, opts Options) error {
 		snapshot,
 		opts.DirFormat,
 		opts.AtlasTemplateData,
-		replayHooks{observeVersion: opts.ObserveVersion},
+		replayHooks{observeVersion: opts.ObserveVersion, consume: opts.ObserveReplayed},
 	)
 }
 

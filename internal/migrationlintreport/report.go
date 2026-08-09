@@ -60,6 +60,13 @@ type Report struct {
 	Error            string         `json:"error,omitempty"`
 	Versions         []int64        `json:"-"`
 	Analysis         lint.Analysis  `json:"-"`
+	// SchemaCurrent and SchemaDesired are the HCL rendering of the dev database
+	// before the first analyzed version and after the last one. They are empty
+	// unless Options.CaptureSchema asked for them, and empty when the run never
+	// reached a dev database. Excluded from the native JSON report, which has
+	// its own documented shape.
+	SchemaCurrent string `json:"-"`
+	SchemaDesired string `json:"-"`
 }
 
 // Options are the migration lint inputs shared by native and Atlas-compatible
@@ -81,6 +88,12 @@ type Options struct {
 	Changed    ChangedOptions
 	// Compatibility selects native or command-surface-specific lint semantics.
 	Compatibility lint.CompatibilityProfile
+	// CaptureSchema asks the replay to also read the dev database before the
+	// first analyzed version and after the last one, and to report the pair as
+	// HCL in [Report.SchemaCurrent] and [Report.SchemaDesired]. Only a caller
+	// that renders those values sets it; the two introspections are not paid by
+	// a run with no reader for them.
+	CaptureSchema bool
 }
 
 // ChangedOptions records which CLI values were explicitly provided. This lets
@@ -192,7 +205,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.Disabled...)
-	analysis, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
+	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
 		Disabled:      disabled,
@@ -228,6 +241,8 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Findings:         findings,
 		Versions:         versions,
 		Analysis:         analysis,
+		SchemaCurrent:    schemas.current,
+		SchemaDesired:    schemas.desired,
 	}
 	if err != nil {
 		report.Error = err.Error()
@@ -402,27 +417,86 @@ func lintDirectory(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	lintOptions lint.Options,
-) (lint.Analysis, error) {
+) (lint.Analysis, replayedSchemas, error) {
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
 	if err != nil {
-		return lint.Analysis{}, err
+		return lint.Analysis{}, replayedSchemas{}, err
 	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
+	capture := newReplaySchemaCapture(opts, analysis)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
 		DevURL:            opts.DevURL,
 		FS:                analysis.SnapshotFS(),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
-		ObserveVersion:    baseline.observer(),
+		ObserveVersion:    replayVersionObserver(baseline, capture),
+		ObserveReplayed:   capture.replayedObserver(),
 	}); err != nil {
-		return analysis, fmt.Errorf("error validating migration SQL on dev database: %w", err)
+		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
+	schemas := capture.result()
 	if len(baseline.columns) == 0 {
-		return analysis, nil
+		return analysis, schemas, nil
 	}
 	lintOptions.Baseline = baseline.columns
-	return lint.AnalyzeFS(fsys, lintOptions)
+	// The second pass re-reads the same files with the baseline facts in hand;
+	// it does not replay, so the schema pair the replay captured is still the
+	// one that belongs to this analysis.
+	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
+	return reanalyzed, schemas, err
+}
+
+// replayedSchemas is the before/after HCL pair a run captured, empty when it
+// captured none.
+type replayedSchemas struct {
+	current string
+	desired string
+}
+
+// newReplaySchemaCapture returns the capture the run asked for, or nil when it
+// asked for none. A nil capture installs no hooks, so a run that does not
+// render `.Schema` replays exactly as it did before this existed.
+func newReplaySchemaCapture(opts Options, analysis lint.Analysis) *schemaCapture {
+	if !opts.CaptureSchema {
+		return nil
+	}
+	return newSchemaCapture(analysis, opts.DevURL)
+}
+
+func (c *schemaCapture) result() replayedSchemas {
+	if c == nil {
+		return replayedSchemas{}
+	}
+	return replayedSchemas{current: c.current, desired: c.desired}
+}
+
+func (c *schemaCapture) replayedObserver() func(*dbschema.DatabaseConnection) error {
+	if c == nil {
+		return nil
+	}
+	return c.observeReplayed
+}
+
+// replayVersionObserver combines the two per-version readers into the single
+// hook the replay takes. Either may be absent, and when both are the replay
+// gets nil and pays no introspection at all.
+func replayVersionObserver(
+	baseline *baselineCollector,
+	capture *schemaCapture,
+) func(context.Context, int64, *dbschema.DatabaseConnection) error {
+	observeBaseline := baseline.observer()
+	if capture == nil {
+		return observeBaseline
+	}
+	return func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error {
+		if observeBaseline != nil {
+			if err := observeBaseline(ctx, version, conn); err != nil {
+				return err
+			}
+		}
+		return capture.observeVersion(ctx, version, conn)
+	}
 }
 
 // baselineCollector reads the dev database once per version the analysis asked
