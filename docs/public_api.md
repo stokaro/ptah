@@ -287,6 +287,20 @@ table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
 
+Row-level security policies are carried the same way. `RLSPoliciesAdded` and
+`RLSPoliciesRemoved` are `[]RLSPolicyRef`, and `RLSPoliciesModified` is
+`[]RLSPolicyDiff`; all three name the owning table alongside the policy name.
+The pair is the identity, not decoration: a PostgreSQL policy name is scoped to
+its table, so two tables in one schema may each carry a policy called
+`tenant_isolation` and neither the comparator nor the planner can tell them
+apart from the name. The table half is matched under the diff's identifier
+semantics rather than as a raw string, which is what makes the desired
+spelling `public.orders` and the introspected spelling `orders` one table
+across the forward and reverse directions. Embedders that build these lists by
+hand must fill both fields; a reference the target schema cannot resolve is
+rejected with `ptaherr.ErrInvalidSchemaDiff` rather than silently omitted from
+the plan.
+
 `migration/schemadiff/types.ViewDiff` also records the view body that is in
 force before the diff is applied, and whether the entry is being planned as a
 rollback. Planners read the body to decide whether the target engine accepts an

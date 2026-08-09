@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -81,20 +82,157 @@ func TestPlanner_RLSPolicyRefs_CreatesThePolicyOnTheNamedTable(t *testing.T) {
 	}
 }
 
-// TestPlanner_RLSPolicyRefs_SkipsAPolicyTheDesiredSchemaDoesNotHold is the
+// TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold is the
 // control for the lookup becoming exact: a reference the desired schema cannot
-// resolve must produce nothing rather than fall back to a same-named policy on
-// some other table, which is what the name-only lookup did on a down
-// migration.
-func TestPlanner_RLSPolicyRefs_SkipsAPolicyTheDesiredSchemaDoesNotHold(t *testing.T) {
-	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		RLSPoliciesAdded: []types.RLSPolicyRef{
-			{PolicyName: "tenant_isolation", TableName: "omega_orders"},
+// resolve must not fall back to a same-named policy on some other table, which
+// is what the name-only lookup did on a down migration.
+//
+// It must also not fall back to SILENCE, which is what this test asserted until
+// stokaro/ptah#1311 was reviewed. The checked planner returned a successful
+// plan with the CREATE POLICY simply absent from it, so a stale or hand-built
+// diff produced valid-looking SQL that left the database without an
+// access-control protection the migration claimed to add -- while the public
+// planning contract promises an invalid schema diff is rejected with
+// ptaherr.ErrInvalidSchemaDiff. The refusal is the assertion now.
+//
+// Every reference category is covered because they fail differently: an
+// addition and a modification both build their CREATE POLICY from a
+// declaration and so need one, while a removal renders `DROP POLICY name ON
+// table` out of the reference itself and needs no declaration at all -- so it
+// must still be planned, and only its shape can be checked.
+func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *testing.T) {
+	tests := []struct {
+		name   string
+		diff   *types.SchemaDiff
+		assert func(c *qt.C, nodes []ast.Node, err error)
+	}{
+		{
+			name: "an addition naming an undeclared table is refused",
+			diff: &types.SchemaDiff{
+				RLSPoliciesAdded: []types.RLSPolicyRef{
+					{PolicyName: "tenant_isolation", TableName: "omega_orders"},
+				},
+			},
+			assert: func(c *qt.C, nodes []ast.Node, err error) {
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+				c.Assert(err, qt.ErrorMatches, `.*added RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`)
+				c.Assert(nodes, qt.IsNil)
+			},
+		},
+		{
+			name: "a modification naming an undeclared policy is refused",
+			diff: &types.SchemaDiff{
+				RLSPoliciesModified: []types.RLSPolicyDiff{{
+					PolicyName: "tenant_isolation",
+					TableName:  "omega_orders",
+					Changes:    map[string]string{"using_expression": "a -> b"},
+				}},
+			},
+			assert: func(c *qt.C, nodes []ast.Node, err error) {
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+				c.Assert(err, qt.ErrorMatches, `.*modified RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`)
+				c.Assert(nodes, qt.IsNil)
+			},
+		},
+		{
+			name: "a reference with no owning table is refused",
+			diff: &types.SchemaDiff{
+				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "tenant_isolation"}},
+			},
+			assert: func(c *qt.C, nodes []ast.Node, err error) {
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+				c.Assert(err, qt.ErrorMatches, `.*added RLS policy reference at position 0 requires a policy name and owning table`)
+				c.Assert(nodes, qt.IsNil)
+			},
+		},
+		{
+			name: "a removal needs no declaration and is still planned",
+			diff: &types.SchemaDiff{
+				RLSPoliciesRemoved: []types.RLSPolicyRef{
+					{PolicyName: "tenant_isolation", TableName: "omega_orders"},
+				},
+			},
+			assert: func(c *qt.C, nodes []ast.Node, err error) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(nodes, qt.HasLen, 2)
+				drop, ok := nodes[0].(*ast.DropPolicyNode)
+				c.Assert(ok, qt.IsTrue)
+				c.Assert(drop.Name, qt.Equals, "tenant_isolation")
+				c.Assert(drop.Table, qt.Equals, "omega_orders")
+			},
+		},
+		{
+			name: "a removal with no owning table is refused",
+			diff: &types.SchemaDiff{
+				RLSPoliciesRemoved: []types.RLSPolicyRef{{PolicyName: "tenant_isolation"}},
+			},
+			assert: func(c *qt.C, nodes []ast.Node, err error) {
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+				c.Assert(err, qt.ErrorMatches, `.*removed RLS policy reference at position 0 requires a policy name and owning table`)
+				c.Assert(nodes, qt.IsNil)
+			},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generatedSharedPolicyName())
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 0)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.New().GenerateMigrationASTChecked(test.diff, generatedSharedPolicyName())
+
+			test.assert(c, nodes, err)
+		})
+	}
+}
+
+// TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling is the pair to the
+// refusal: a reference the target schema DOES hold under the dialect's
+// identifier rules must resolve, not be refused for spelling its table
+// differently.
+//
+// `orders` and `public.orders` are one table on PostgreSQL, which is why the
+// comparator normalizes them -- and why the planner has to as well, in both
+// directions, or a diff the comparator produced would be rejected by the
+// planner that consumes it.
+func TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling(t *testing.T) {
+	tests := []struct {
+		name      string
+		declared  string
+		reference string
+	}{
+		{name: "declared bare, referenced qualified", declared: "orders", reference: "public.orders"},
+		{name: "declared qualified, referenced bare", declared: "public.orders", reference: "orders"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
+				RLSPolicies: []goschema.RLSPolicy{{
+					Name:            "tenant_isolation",
+					Table:           test.declared,
+					PolicyFor:       "ALL",
+					ToRoles:         "PUBLIC",
+					UsingExpression: "tenant_id = 1",
+				}},
+			}
+			diff := &types.SchemaDiff{
+				RLSPoliciesAdded: []types.RLSPolicyRef{
+					{PolicyName: "tenant_isolation", TableName: test.reference},
+				},
+			}
+
+			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+			policy, ok := nodes[0].(*ast.CreatePolicyNode)
+			c.Assert(ok, qt.IsTrue)
+			// The declared spelling is what is rendered: only the matching is
+			// normalized.
+			c.Assert(policy.Table, qt.Equals, test.declared)
+			c.Assert(policy.UsingExpression, qt.Equals, "tenant_id = 1")
+		})
+	}
 }

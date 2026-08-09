@@ -145,13 +145,22 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			},
 		},
 		{
-			// The schema is not the only part of a table that has more than
-			// one spelling. An unquoted PostgreSQL identifier folds to lower
-			// case, so `ORDERS` names the table declared as `orders`: measured
-			// on PostgreSQL 17.10, `CREATE POLICY p ON orders` followed by
-			// `CREATE POLICY p ON ORDERS` is refused with `policy "p" for
-			// table "orders" already exists`.
-			name:   "a case variant of one unqualified table collapses onto the first",
+			// A [Database] built in memory carries no quoting: this is what an
+			// annotation, a YAML document or an HCL block produces, and Ptah
+			// quotes every identifier it renders, so `table="ORDERS"` renders
+			// `ON "ORDERS"` and names the relation `ORDERS`. That is a
+			// different relation from the declared `orders` -- measured on
+			// PostgreSQL 17.10, `CREATE POLICY p ON "ORDERS"` against a
+			// database holding only `orders` exits 1 with `relation "ORDERS"
+			// does not exist`.
+			//
+			// This row asserted the collapse until stokaro/ptah#1311 was
+			// reviewed. Collapsing meant the author wrote `ORDERS` and Ptah
+			// secured `orders`: a relocated access-control declaration, the
+			// same defect the SQL frontend had, on the surface where the
+			// quoting question has only one answer. Two spellings, two
+			// policies, and the render reproduces the database's own answer.
+			name:   "a case variant of one unqualified table is a second relation",
 			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
 			policies: []goschema.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
@@ -159,22 +168,23 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			},
 			want: []goschema.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 			},
 		},
 		{
-			// Collapsing onto the first declaration is only half an answer if
-			// the first declaration is the variant spelling. The survivor has
-			// to name the declared table, because the renderer quotes what it
-			// is given and `CREATE POLICY "p" ON "ORDERS"` is answered by
-			// `relation "ORDERS" does not exist`.
-			name:   "a case variant declared first still names the declared table",
+			// The same pair in the other order, which is the control on the
+			// rule being about the relations rather than about which
+			// declaration came first. Neither spelling is rewritten into the
+			// other, so order changes nothing.
+			name:   "a case variant declared first keeps its own spelling",
 			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
 			policies: []goschema.RLSPolicy{
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
 			want: []goschema.RLSPolicy{
-				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 2"},
+				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
+				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
 		{
@@ -213,16 +223,24 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 		},
 		{
 			// The pair to the row above, differing only in the case of the
-			// declared schema. `CREATE SCHEMA app` is its own folded form, so
-			// PostgreSQL 17.10 accepts `CREATE POLICY row_guard ON APP.LEDGER`
-			// against `app.ledger` with exit 0, and the fold runs.
-			name:   "a folded reference reaches a schema declared in lower case",
+			// declared schema, and the answer is the same for the same reason:
+			// nothing here was ever written unquoted. `table="APP.ORDERS"`
+			// renders `ON "APP"."ORDERS"`, which PostgreSQL 17.10 answers with
+			// `relation "APP.ORDERS" does not exist`, and quietly rewriting it
+			// to `app.orders` would secure a relation the author did not name.
+			//
+			// Case folding belongs where quoting still exists. The SQL frontend
+			// folds `APP.ORDERS` written without quotes into `app.orders`
+			// before it ever reaches this resolver, per component, so a schema
+			// file gets PostgreSQL's answer and a schema built in memory gets
+			// the one its own renderer will produce.
+			name:   "a case variant of a qualified reference keeps its spelling",
 			tables: []goschema.Table{{Name: "orders", Schema: "app", StructName: "Order"}},
 			policies: []goschema.RLSPolicy{
 				{Name: "p", Table: "APP.ORDERS", UsingExpression: "tenant_id = 1"},
 			},
 			want: []goschema.RLSPolicy{
-				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
+				{Name: "p", Table: "APP.ORDERS", UsingExpression: "tenant_id = 1"},
 			},
 		},
 		{

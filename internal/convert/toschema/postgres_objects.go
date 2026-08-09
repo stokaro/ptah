@@ -63,10 +63,19 @@ func toGrant(node *ast.GrantPrivilegeNode) goschema.Grant {
 	return grant
 }
 
+// toRLSPolicy resolves the policy's table through
+// [catalogPostgresTableReference] rather than the plain unquoting every other
+// object uses.
+//
+// A policy is an access-control declaration, and the relation it lands on is
+// the whole question. `CREATE POLICY p ON "ORDERS"` and `CREATE POLICY p ON
+// ORDERS` name different relations, so keeping the raw spelling left the rest
+// of the pipeline to guess -- and the guess secured a relation the author did
+// not name (stokaro/ptah#1311).
 func toRLSPolicy(node *ast.CreatePolicyNode) goschema.RLSPolicy {
 	return goschema.RLSPolicy{
 		Name:                normalizeSQLIdentifier(node.Name),
-		Table:               normalizeSQLTableReference(node.Table),
+		Table:               catalogPostgresTableReference(node.Table),
 		PolicyFor:           node.PolicyFor,
 		ToRoles:             normalizeRoleList(node.ToRoles),
 		UsingExpression:     node.UsingExpression,
@@ -88,9 +97,12 @@ func normalizeRoleList(roles string) string {
 	return strings.Join(parts, ", ")
 }
 
+// toRLSEnabledTable resolves its table the same way [toRLSPolicy] does. The
+// enablement and the policies on it have to name one relation, or the render
+// turns row-level security on for one table and protects another.
 func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) goschema.RLSEnabledTable {
 	return goschema.RLSEnabledTable{
-		Table:   normalizeSQLTableReference(node.Table),
+		Table:   catalogPostgresTableReference(node.Table),
 		Comment: node.Comment,
 	}
 }

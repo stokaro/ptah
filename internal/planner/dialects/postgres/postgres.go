@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/rlsscope"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -1373,6 +1374,22 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err != nil {
 		return nil, err
 	}
+	// Row-level security references are validated with the indexes, before any
+	// node is emitted, for the reason the index resolver is: a reference the
+	// target schema cannot resolve used to be skipped, so the plan came back
+	// successful with an access-control operation missing from it
+	// (stokaro/ptah#1311). Validating the diff as it arrived, ahead of the skip
+	// policy below, means a malformed reference is refused even when the policy
+	// would have removed it -- the diff is either coherent or it is not.
+	policies, err := rlsscope.NewResolverWithSemantics(
+		p.targetDialect(),
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff,
+		generated,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply the diff policy first so skipped destructive changes never reach the
 	// per-object emission below (and so a skipped DROP never trips the coarse
@@ -1453,8 +1470,14 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.addNewRLSPolicies(result, diff, generated)
-		result = p.modifyExistingRLSPolicies(result, diff, generated)
+		result, err = p.addNewRLSPolicies(result, diff, policies)
+		if err != nil {
+			return nil, err
+		}
+		result, err = p.modifyExistingRLSPolicies(result, diff, policies)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
@@ -2192,15 +2215,6 @@ func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *go
 	return objectlookup.Trigger(triggers, tableName, triggerName)
 }
 
-func findRLSPolicy(policies []goschema.RLSPolicy, tableName, policyName string) *goschema.RLSPolicy {
-	for i := range policies {
-		if policies[i].Table == tableName && policies[i].Name == policyName {
-			return &policies[i]
-		}
-	}
-	return nil
-}
-
 // enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
 //
 // Two sources feed it, and both are needed.
@@ -2285,36 +2299,71 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+// addNewRLSPolicies emits one CREATE POLICY per added reference.
+//
+// The reference is resolved through [rlsscope.Resolver], which keys by the
+// owning table under the target's identifier semantics and by the policy's own
+// name. Two things follow, and both are the point of the resolver existing.
+//
+// The name alone does not identify a policy: two tables may each carry a
+// policy called "tenant_isolation", and matching on the name picked whichever
+// was declared first. And the table alone is not a string comparison either:
+// `orders` and `public.orders` are one table, which is exactly the pair the
+// comparator normalizes and a raw-string lookup missed.
+//
+// An unresolved reference is an error rather than a skip. A plan that omits a
+// CREATE POLICY and still reports success leaves the database without the
+// protection the migration was generated to add (stokaro/ptah#1311).
+func (p *Planner) addNewRLSPolicies(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	policies *rlsscope.Resolver,
+) ([]ast.Node, error) {
 	for _, policyRef := range diff.RLSPoliciesAdded {
-		// Find the policy definition. The name alone does not identify it:
-		// two tables may each carry a policy called "tenant_isolation", and
-		// matching on the name picked whichever was declared first.
-		policy := findRLSPolicy(generated.RLSPolicies, policyRef.TableName, policyRef.PolicyName)
-		if policy == nil {
-			continue
+		policy, err := policies.Resolve(policyRef)
+		if err != nil {
+			return nil, err
 		}
-		policyNode := fromschema.FromRLSPolicy(*policy)
+		policyNode := fromschema.FromRLSPolicy(policy)
 		// Set Replace flag to handle conflicts gracefully during migrations
 		policyNode.Replace = true
 		result = append(result, policyNode)
 	}
-	return result
+	return result, nil
 }
 
-func (p *Planner) modifyExistingRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+// modifyExistingRLSPolicies re-renders each modified policy from the schema the
+// plan is targeting, through the same resolver [addNewRLSPolicies] uses.
+//
+// The two sides of a modification do not spell the owning table the same way.
+// The comparator normalizes `orders` and `public.orders` to one table and then
+// reports the DESIRED side's spelling, while a rollback plans against the
+// INTROSPECTED schema, whose policy carries the database's spelling. A
+// raw-string lookup therefore found nothing on the down direction and the
+// generated rollback was `-- No rollback operations needed`: a policy body
+// changed on the way up and nothing put it back (stokaro/ptah#1311).
+func (p *Planner) modifyExistingRLSPolicies(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	policies *rlsscope.Resolver,
+) ([]ast.Node, error) {
 	for _, policyDiff := range diff.RLSPoliciesModified {
-		if policy := findRLSPolicy(generated.RLSPolicies, policyDiff.TableName, policyDiff.PolicyName); policy != nil {
-			policyNode := fromschema.FromRLSPolicy(*policy).SetReplace()
-			policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
-				policyDiff.PolicyName,
-				policyDiff.TableName,
-				summarizeRLSChanges(policyDiff),
-			))
-			result = append(result, policyNode)
+		policy, err := policies.Resolve(types.RLSPolicyRef{
+			PolicyName: policyDiff.PolicyName,
+			TableName:  policyDiff.TableName,
+		})
+		if err != nil {
+			return nil, err
 		}
+		policyNode := fromschema.FromRLSPolicy(policy).SetReplace()
+		policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
+			policyDiff.PolicyName,
+			policyDiff.TableName,
+			summarizeRLSChanges(policyDiff),
+		))
+		result = append(result, policyNode)
 	}
-	return result
+	return result, nil
 }
 
 func summarizeRLSChanges(policyDiff types.RLSPolicyDiff) string {

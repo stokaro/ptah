@@ -225,6 +225,17 @@ table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
 
+Row-level security policies use the same shape. `RLSPoliciesAdded` and
+`RLSPoliciesRemoved` are `[]RLSPolicyRef`, `RLSPoliciesModified` is
+`[]RLSPolicyDiff`, and every entry names the owning table next to the policy
+name. That pair is the policy's identity: a PostgreSQL policy name is scoped to
+its table, so two tables in one schema may each carry `tenant_isolation`. The
+table half is compared under the diff's identifier semantics, not as a raw
+string, so the desired spelling `public.orders` and the introspected spelling
+`orders` resolve to one table in both the forward and the reverse direction.
+A reference the target schema cannot resolve is rejected with
+`ptaherr.ErrInvalidSchemaDiff`; it is never dropped from the plan.
+
 Use `migration/generator.GenerateCheckpointWithDatabase` for a SQL Server
 schema whose live catalog semantics must survive checkpoint planning.
 `GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
