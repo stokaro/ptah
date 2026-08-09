@@ -299,6 +299,40 @@ func TestMigrateCheckpointCommand_AtlasAcceptsVersionAbovePtahMaximum(t *testing
 	c.Assert(err, qt.IsNil)
 }
 
+// TestMigrateCheckpointCommand_DefaultVersionKeepsTenDigitCeiling pins the half
+// of the ceiling the explicit --version guard next door never covered
+// (stokaro/ptah#938). Without --version the resolver returned newest+1 with no
+// bound at all, so a directory whose newest migration is 9999999999 got a
+// checkpoint at 10000000000: an eleven-digit name ParseMigrationFileName
+// refuses. Measured on master, that exited 0, printed "Wrote checkpoint version
+// 10000000000", and a fresh database then replayed the history instead of
+// bootstrapping from the checkpoint -- the one thing a checkpoint exists to
+// prevent.
+//
+// The cheaper wrong implementation is `return latest + 1, nil`, which is what
+// the branch said before.
+func TestMigrateCheckpointCommand_DefaultVersionKeepsTenDigitCeiling(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "9999999999_seed.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "9999999999_seed.down.sql"), []byte("DROP TABLE users;\n"), 0o600,
+	), qt.IsNil)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "9999999999")
+
+	written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
 func TestMigrateCheckpointCommand_PtahKeepsTenDigitCeiling(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

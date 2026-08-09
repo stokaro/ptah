@@ -32,6 +32,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -231,8 +232,13 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 	return writeEmptyMigration(root, outputDir, name, dirFormat)
 }
 
+// atlasVersionClock reads the wall clock an Atlas-layout version is stamped
+// from. It is a variable so a test can freeze the second and then state the
+// exact version a scan must choose; production never assigns it.
+var atlasVersionClock = func() time.Time { return time.Now().UTC() }
+
 func nextAtlasMigrationVersion() int64 {
-	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	version, err := strconv.ParseInt(atlasVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
 		return migrator.GetNextMigrationVersion()
 	}
@@ -245,18 +251,84 @@ func nextAtlasMigrationVersion() int64 {
 // over the names it listed through that handle instead, so it never resolves
 // the directory a second time.
 func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
-	return nextAvailableAtlasVersion(migrationDirFileNames(outputDir), version)
+	next, err := nextAvailableAtlasVersion(migrationDirFileNames(outputDir), version)
+	if err != nil {
+		return 0
+	}
+	return next
 }
 
-func nextAvailableAtlasVersion(names []string, version int64) int64 {
+// nextAvailableAtlasVersion returns a version that outranks every migration in
+// names. It is the CHECKPOINT rule: a checkpoint whose version does not sort
+// above the history it squashes would be replayed on top of that history by a
+// fresh database (stokaro/ptah#954), so here the bump past the newest migration
+// is the point.
+//
+// It is deliberately NOT the rule `migrate new` uses -- see
+// firstFreeAtlasVersion. The bump is also why this one can run out of versions:
+// a directory whose newest migration is at [migrationversion.AtlasMax] has
+// nothing above it, and `migrate import --dir-format flyway` puts a repeatable
+// migration exactly there. Before stokaro/ptah#938 that computed
+// math.MinInt64 and wrote it.
+func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 	if latest := latestAtlasVersionIn(names); latest >= version {
-		version = latest + 1
+		next, err := migrationversion.Next(latest, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = next
 	}
 	taken := nameSet(names)
 	for taken[atlasEmptyMigrationFileName(version, "")] {
+		next, err := migrationversion.Next(version, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = next
+	}
+	return version, nil
+}
+
+// firstFreeAtlasVersion returns the first version at or after version that no
+// migration in names already occupies. It is the rule `migrate new` writes an
+// Atlas-layout migration with, and it does NOT bump past the newest migration.
+//
+// Two measurements settle that. The pinned community binary v1.3.0 stamps the
+// current UTC second and nothing else: into a directory holding
+// `29991231235959_future.sql` it writes today's version, sorting BELOW the
+// migration already there. And `migrate diff` in this binary has done the same
+// since stokaro/ptah#1218 (see atlasmigrate.nextMigrationVersionFS), as does
+// `migrate new` for the five external layouts (atlasmigrate.WriteSkeletonMigration).
+// Bumping here made `migrate new` the one verb in the binary stamping a
+// different shape: on that directory it wrote `29991231235960`, a version that
+// is not a time anyone can parse back, while `migrate diff` a second later
+// wrote the ordinary UTC stamp (stokaro/ptah#938).
+func firstFreeAtlasVersion(names []string, version int64) (int64, error) {
+	taken := atlasVersionsIn(names)
+	for {
+		if err := migrationversion.Check(version, migrator.MigrationDirFormatAtlas); err != nil {
+			return 0, err
+		}
+		if _, ok := taken[version]; !ok {
+			return version, nil
+		}
 		version++
 	}
-	return version
+}
+
+// atlasVersionsIn returns the versions names already occupy. A version is taken
+// by ANY migration at it, whatever its description, which is what the reader
+// orders by and what atlasmigrate.nextMigrationVersionFS already checks.
+func atlasVersionsIn(names []string) map[int64]struct{} {
+	taken := make(map[int64]struct{}, len(names))
+	for _, name := range names {
+		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
+		if err != nil {
+			continue
+		}
+		taken[migrationFile.Version] = struct{}{}
+	}
+	return taken
 }
 
 func latestAtlasVersionIn(names []string) int64 {
@@ -2555,19 +2627,37 @@ func nextAvailableMigrationVersion(
 	if err != nil {
 		return 0, err
 	}
-	return nextAvailablePtahVersion(names, version, migrationName), nil
+	return nextAvailablePtahVersion(names, version, migrationName)
 }
 
-func nextAvailablePtahVersion(names []string, version int64, migrationName string) int64 {
+// nextAvailablePtahVersion keeps the paired layout's monotonic rule: the clock,
+// bumped past the newest migration when the clock does not already outrank it.
+// Nothing outside Ptah reads this layout, so no parity argument moves it off a
+// version that only ever goes forwards.
+//
+// What did move is the arithmetic. The bump is bounded by what a ten-digit
+// NNNNNNNNNN prefix can hold, because past it the writer produced an
+// eleven-digit name -- `10000000000_addposts.up.sql` -- that
+// [migrator.ParseMigrationFileName] refuses, so discovery dropped the file with
+// no diagnostic and `migrations up` reported success without running it
+// (stokaro/ptah#938).
+func nextAvailablePtahVersion(names []string, version int64, migrationName string) (int64, error) {
 	if latest := latestPtahVersionIn(names); latest >= version {
-		version = latest + 1
+		next, err := migrationversion.Next(latest, migrator.MigrationDirFormatPtah)
+		if err != nil {
+			return 0, err
+		}
+		version = next
 	}
 	taken := nameSet(names)
 	for {
+		if err := migrationversion.Check(version, migrator.MigrationDirFormatPtah); err != nil {
+			return 0, err
+		}
 		upName := migrator.GenerateMigrationFileName(version, migrationName, "up")
 		downName := migrator.GenerateMigrationFileName(version, migrationName, "down")
 		if !taken[upName] && !taken[downName] {
-			return version
+			return version, nil
 		}
 		version++
 	}

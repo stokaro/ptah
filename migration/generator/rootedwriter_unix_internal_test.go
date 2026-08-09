@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -71,11 +72,11 @@ func TestNextAvailableMigrationVersionReadsTheHeldDirectory(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(version, qt.Equals, int64(106))
-	c.Assert(
-		nextAvailablePtahVersion(migrationDirFileNames(writer.Path()), 100, "add_email"),
-		qt.Equals,
-		int64(901),
+	pathnameVersion, pathnameErr := nextAvailablePtahVersion(
+		migrationDirFileNames(writer.Path()), 100, "add_email",
 	)
+	c.Assert(pathnameErr, qt.IsNil)
+	c.Assert(pathnameVersion, qt.Equals, int64(901))
 }
 
 // TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication carries the row
@@ -183,11 +184,11 @@ func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T)
 			version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
 			c.Assert(err, qt.IsNil)
 			c.Assert(version, qt.Equals, int64(106))
-			c.Assert(
-				nextAvailablePtahVersion(migrationDirFileNames(writer.Path()), 100, "add_email"),
-				qt.Equals,
-				int64(901),
+			pathnameVersion, pathnameErr := nextAvailablePtahVersion(
+				migrationDirFileNames(writer.Path()), 100, "add_email",
 			)
+			c.Assert(pathnameErr, qt.IsNil)
+			c.Assert(pathnameVersion, qt.Equals, int64(901))
 
 			plan := &MigrationPlan{
 				outputDir:       selected,
@@ -442,27 +443,37 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 		// pathname before the scan runs.
 		boundFile    string
 		impostorFile string
-		// wantVersion is the version the scan must choose, one past the bound
-		// directory's highest. wantPathnameVersion is what the same scan
-		// answers over the pathname, one past the impostor's.
+		// atlasClock is the instant the Atlas-layout stamp is frozen at for the
+		// row. The paired layout stamps a Unix second instead and never reads
+		// it, so every row carries one rather than the body choosing.
+		atlasClock time.Time
+		// wantVersion is the version the scan must choose over the bound
+		// directory. wantPathnameVersion is what the same scan answers over the
+		// pathname; the two differ, which is what makes the row a measurement.
 		wantVersion         int64
 		wantPathnameVersion int64
 		// pathnameScan re-runs this layout's scan over a set of names, so the
 		// row can state what reading the pathname would have produced.
-		pathnameScan func(names []string) int64
+		pathnameScan func(names []string) (int64, error)
 		// wantRetained is the bound directory afterwards: what it already held,
 		// plus what this transaction wrote into it.
 		wantRetained []string
 	}{
 		{
+			// The Atlas layout stamps the clock and only steps past a version
+			// that is already taken (stokaro/ptah#938), so the fixture freezes
+			// the clock and puts the frozen second in the BOUND directory only.
+			// The bound reading has to step past it; the pathname reading, where
+			// that second is free, does not.
 			name:                "atlas layout",
 			dirFormat:           migrator.MigrationDirFormatAtlas,
 			boundFile:           atlasEmptyMigrationFileName(29990101000001, "seed"),
 			impostorFile:        atlasEmptyMigrationFileName(29991231235959, "impostor"),
+			atlasClock:          time.Date(2999, time.January, 1, 0, 0, 1, 0, time.UTC),
 			wantVersion:         29990101000002,
-			wantPathnameVersion: 29991231235960,
-			pathnameScan: func(names []string) int64 {
-				return nextAvailableAtlasVersion(names, nextAtlasMigrationVersion())
+			wantPathnameVersion: 29990101000001,
+			pathnameScan: func(names []string) (int64, error) {
+				return firstFreeAtlasVersion(names, nextAtlasMigrationVersion())
 			},
 			wantRetained: []string{
 				atlasEmptyMigrationFileName(29990101000001, "seed"),
@@ -475,9 +486,10 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 			dirFormat:           migrator.MigrationDirFormatPtah,
 			boundFile:           migrator.GenerateMigrationFileName(3000000005, "seed", "up"),
 			impostorFile:        migrator.GenerateMigrationFileName(3999999999, "impostor", "up"),
+			atlasClock:          time.Date(2999, time.January, 1, 0, 0, 1, 0, time.UTC),
 			wantVersion:         3000000006,
 			wantPathnameVersion: 4000000000,
-			pathnameScan: func(names []string) int64 {
+			pathnameScan: func(names []string) (int64, error) {
 				return nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), "added")
 			},
 			wantRetained: []string{
@@ -494,6 +506,8 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 			root := t.TempDir()
 			selected := filepath.Join(root, "migrations")
 			aside := filepath.Join(root, "renamed-aside")
+			atlasVersionClock = func() time.Time { return test.atlasClock }
+			defer func() { atlasVersionClock = func() time.Time { return time.Now().UTC() } }()
 			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
 			c.Assert(os.WriteFile(
 				filepath.Join(selected, test.boundFile), []byte("SELECT 1;\n"), 0o600,
@@ -526,11 +540,9 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 			c.Assert(files.Files[0].Version, qt.Equals, test.wantVersion)
 			c.Assert(generatorDirNames(c, aside), qt.DeepEquals, test.wantRetained)
 			c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{test.impostorFile})
-			c.Assert(
-				test.pathnameScan(migrationDirFileNames(selected)),
-				qt.Equals,
-				test.wantPathnameVersion,
-			)
+			pathnameVersion, pathnameErr := test.pathnameScan(migrationDirFileNames(selected))
+			c.Assert(pathnameErr, qt.IsNil)
+			c.Assert(pathnameVersion, qt.Equals, test.wantPathnameVersion)
 		})
 	}
 }

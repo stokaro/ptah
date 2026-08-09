@@ -1255,6 +1255,26 @@ because a file named by the version alone is one Ptah's own `migrate apply`
 cannot read back on four of the five layouts. `--edit` is refused, which is what
 Atlas does for a non-Atlas directory as well.
 
+The `<version>` in every row of that table is the UTC `yyyyMMddHHmmss` second the
+command ran in, on every layout, and it is the same value `migrate diff` and
+`migrate checkpoint` stamp. It steps forward only to get past a version the
+directory already holds — never to get past the newest one. A directory whose
+newest migration is dated in the future therefore receives today's version,
+sorting below that migration, which is what Atlas was measured to do and is now
+what every verb in this binary does
+([#938](https://github.com/stokaro/ptah/issues/938)). `migrate new` used to bump
+to newest + 1 instead, so the same directory could hold both shapes, and beside
+a `29991231235959_future.sql` the bump produced `29991231235960` — sixty seconds,
+a version no reader can parse back as a time.
+
+Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
+rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads
+that layout, so no compatibility argument moves it, and a version that only goes
+forwards is the safer of the two. What it will not do is walk past
+`9999999999`, the largest version its fixed-width `NNNNNNNNNN` name can hold. It
+refuses instead, because the eleven-digit name it used to write was one the
+reader silently skipped.
+
 `migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
 planned SQL, and nothing writes a migration body in a foreign tool's convention
 yet. Import the directory with `ptah-compat migrate import` before diffing into

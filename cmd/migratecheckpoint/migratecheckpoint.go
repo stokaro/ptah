@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/dblock"
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -369,7 +370,7 @@ func checkPtahFileConflict(migrationsDir string, dirFormat migrator.MigrationDir
 // maxMigrationVersion is the largest value the 10-digit NNNNNNNNNN file-name
 // prefix can hold. A larger version would produce a file name the migration
 // parser cannot recognize, so the checkpoint would be silently invisible.
-const maxMigrationVersion = 9999999999
+const maxMigrationVersion = migrationversion.PtahMax
 
 // ptahVersionWidth is the digit count of a ptah migration file-name prefix.
 // Atlas auto-detection deliberately refuses a suffixless Atlas name whose
@@ -421,9 +422,9 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 			if version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {
 				return version, nil
 			}
-			return latest + 1, nil
+			return migrationversion.Next(latest, migrator.MigrationDirFormatAtlas)
 		}
-		return latest + 1, nil
+		return migrationversion.Next(latest, migrator.MigrationDirFormatPtah)
 	}
 
 	version, err := strconv.ParseInt(explicit, 10, 64)
