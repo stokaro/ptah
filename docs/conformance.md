@@ -310,6 +310,71 @@ requiredness is a separate decision from what a run's scope is — Ptah's linter
 can analyze SQL text with no dev database, so making the flag required deletes a
 capability and needs the `PTAH_*` treatment of its own.
 
+### A relative `--to file://../schema.sql` is refused, the same file absolutely is not
+
+Measured 2026-08-09 on SQLite, run from a `work/` subdirectory whose parent
+holds `schema.sql`, exit status read on its own line after a redirect:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from file://empty.sql --to file://../schema.sql --dev-url …` | 0, prints the `CREATE TABLE` | 1, `resolve schema file path: "…/schema.sql" is outside allowed root "…/work"` |
+| the same file named by absolute path, `--to file:///…/schema.sql` | 0 | **0**, prints the `CREATE TABLE` |
+
+The second row is the finding, not the first. `pathguard.ResolveCLIPath`
+confines a **relative** CLI path to the working directory and leaves an
+absolute one unbounded, so the refusal filters a spelling rather than an escape:
+the operator who rewrites the argument reads exactly the same bytes at exit 0. A
+rule any caller can satisfy by respelling the argument is not a boundary, and
+recording this cell as deliberate strictness would record something the second
+row refutes.
+
+It is **not** the confinement this project does defend. That one is `file()`
+inside an `atlas.hcl` — a config-derived path, held by a different mechanism
+(`LocalDir.AllowedRoot`), where matching Atlas CE would turn config authorship
+into an arbitrary-file read on the machine running the migration. That
+mechanism is untouched, and the worked example in `AGENTS.md` still describes
+it exactly.
+
+Left open rather than changed here: `ResolveCLIPath` has twenty call sites
+across native verbs as well as the compatibility surface, so relaxing it changes
+what every one of them accepts and needs its own change with its own controls.
+Tracked as [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241)
+item 11.
+
+### `migrate import --dir-format liquibase` refuses a changelog whose name has no leading number
+
+Measured 2026-08-09, one Liquibase formatted-SQL changelog carrying two
+`--changeset` markers, each cell in its own directory:
+
+| source | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `src/changelog.sql` | 0, writes `dst/changelog.sql` and `atlas.sum` | 1, `no importable migration files found in src for format "liquibase"` |
+| `src/1_changelog.sql` | 0 | **0**, and the written directory is byte-identical to Atlas CE's, `atlas.sum` included |
+
+The second row is the root cause. The converter is not missing — it runs, and
+agrees to the byte. `loadDirectiveSectionEntries` selects source files with
+`^[0-9]+_.+\.sql$`, and a Liquibase changelog is conventionally named
+`changelog.sql`.
+
+Removing that filter is not on its own the fix, because the name Atlas CE writes
+carries no version. Measured on Atlas CE's **own** import output:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate apply --dir file://dst` over `changelog.sql` | 0, `migrating version changelog` | 1, `no migration files matched format "atlas"; unrecognized SQL files: changelog.sql` |
+
+Ptah models a migration version as an `int64`, so matching that import writes a
+directory this tool then refuses to apply — trading a refusal at import time for
+one at apply time, after the files have been written.
+
+Ptah's own importer already reads the same changelog and produces one migration
+per `--changeset`, carrying the author and id into the name, which keeps the two
+changeset identities that Atlas CE's single-file collapse loses. Choosing
+between "match the bytes, and teach the migrator non-numeric versions" and
+"import the layout Ptah's way, and diverge on output shape" is a design decision
+rather than a parity fix. Tracked as
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 8.
+
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost six attributes that the pinned

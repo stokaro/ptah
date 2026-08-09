@@ -223,6 +223,9 @@ func runAtlasMigrateLint(
 		FailOn:        migrationlintreport.FailOnError,
 		Latest:        opts.latest,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		// `.Schema.Current` and `.Schema.Desired` exist only in the templated
+		// output, so only a run that renders a template pays for reading them.
+		CaptureSchema: formatOutput,
 		Changed: migrationlintreport.ChangedOptions{
 			Dir:       true,
 			DirFormat: true,
@@ -300,6 +303,10 @@ func runAtlasMigrateLint(
 			Analysis:  &report.Analysis,
 			Integrity: integrity,
 			Error:     report.Error,
+			Schema: atlasreport.MigrateLintSchema{
+				Current: report.SchemaCurrent,
+				Desired: report.SchemaDesired,
+			},
 		}); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -333,6 +340,10 @@ func writeAtlasMigrateLintReplayError(
 		Analysis:  &report.Analysis,
 		Integrity: integrity,
 		Error:     replayErr.Error(),
+		Schema: atlasreport.MigrateLintSchema{
+			Current: report.SchemaCurrent,
+			Desired: report.SchemaDesired,
+		},
 	})
 }
 
