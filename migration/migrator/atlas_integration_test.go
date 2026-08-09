@@ -135,6 +135,10 @@ func TestAtlasTxtarChecks_MySQLCommentSemanticsIntegration(t *testing.T) {
 	)
 }
 
+func TestAtlasTxtarChecks_MySQLVersionGuardBoundaryIntegration(t *testing.T) {
+	runAtlasTxtarChecksVersionGuardBoundaryIntegration(t, mysqlAtlasTestURL(t))
+}
+
 func TestAtlasTxtarChecks_MySQLExecutableCommentEscapeIntegration(t *testing.T) {
 	runAtlasTxtarChecksMySQLExecutableCommentEscapeIntegration(
 		t,
@@ -156,6 +160,10 @@ func TestAtlasTxtarChecks_MariaDBCommentSemanticsIntegration(t *testing.T) {
 		mariaDBAtlasTestURL(t),
 		"/*!50700 SELECT 0 */ SELECT 1",
 	)
+}
+
+func TestAtlasTxtarChecks_MariaDBVersionGuardBoundaryIntegration(t *testing.T) {
+	runAtlasTxtarChecksVersionGuardBoundaryIntegration(t, mariaDBAtlasTestURL(t))
 }
 
 func TestAtlasTxtarChecks_MariaDBShortNumericPrefixRejectsNonSelectIntegration(t *testing.T) {
@@ -1249,6 +1257,16 @@ func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
 
 	cleanupIssue819(t, conn)
 	defer cleanupIssue819(t, conn)
+
+	// The inert guard is derived from the connected server, never written as a
+	// literal. This fixture used to hard-code /*!99999 ...*/ as "a version no
+	// server will reach"; #791 moved the matrix from mysql:9.7 to mysql:26.7,
+	// whose version id is 260700, so the guard opened and the DELETE in the
+	// comment became live SQL that Ptah then correctly refused. A derived guard
+	// cannot rot that way, and measureExecutableCommentGuard proves it is inert
+	// on this exact server before the fixture leans on it.
+	inertGuard := strconv.Itoa(inertExecutableCommentGuard(c, ctx, conn))
+
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -1268,10 +1286,10 @@ SELECT 1;
 -- migration.sql --
 SELECT 1;
 `)},
-			"3_future_version_guard.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+			"3_inert_version_guard.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
 
 -- checks/future.sql --
-/*!99999 DELETE FROM users */ SELECT 1;
+/*!` + inertGuard + ` DELETE FROM users */ SELECT 1;
 
 -- migration.sql --
 SELECT 1;
@@ -1311,6 +1329,156 @@ SELECT 1;
 	current, err := mig.GetCurrentVersion(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(current, qt.Equals, int64(5))
+}
+
+// serverExecutableCommentVersionID encodes a version banner the way MySQL and
+// MariaDB encode their own version when they compare it against an executable
+// comment's numeric guard: major*10000 + minor*100 + patch. MariaDB's 5.5.5-
+// replication prefix is stripped first, and any build suffix ("-log",
+// "-MariaDB-ubu2204") is discarded.
+//
+// It is deliberately written differently from the migrator's own encoder — that
+// one scans digits, this one splits fields — so the two are a cross-check
+// rather than a copy. Neither is trusted on its own either: every caller proves
+// the number is exactly the connected server's version id by probing the server
+// on both sides of it before a fixture depends on it.
+func serverExecutableCommentVersionID(banner string) (int, bool) {
+	numeric := banner
+	if strings.Contains(strings.ToLower(numeric), "mariadb") {
+		numeric = strings.TrimPrefix(numeric, "5.5.5-")
+	}
+	numeric, _, _ = strings.Cut(numeric, "-")
+	parts := strings.Split(numeric, ".")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	scale := [3]int{10000, 100, 1}
+	total := 0
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return 0, false
+		}
+		total += value * scale[i]
+	}
+	return total, true
+}
+
+// measureExecutableCommentGuard asks the connected server what it does with a
+// numeric executable-comment guard, rather than assuming. `SELECT 1 /*!N + 1 */`
+// evaluates to 2 when the server honors guard N and 1 when it ignores it, so the
+// return value reports the guard's effect in the only authority that matters.
+func measureExecutableCommentGuard(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, guard int) int {
+	c.Helper()
+
+	query := "SELECT 1 /*!" + strconv.Itoa(guard) + " + 1 */"
+	var got int
+	c.Assert(conn.QueryRowContext(ctx, query).Scan(&got), qt.IsNil, qt.Commentf("query %q", query))
+	return got
+}
+
+// inertExecutableCommentGuard returns the smallest numeric guard the connected
+// server ignores, and proves it is exactly that before returning.
+//
+// The proof is the pair of probes, and it is what makes the number trustworthy
+// on a server version nobody has run yet. If serverExecutableCommentVersionID
+// under-reports, the guard it calls inert is still honored and the second probe
+// reads 2; if it over-reports, the guard one below is already ignored and the
+// first probe reads 1. Only the true version id passes both, so no fixture can
+// quietly inherit a guard that has stopped being inert — the failure mode #791
+// exposed.
+func inertExecutableCommentGuard(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) int {
+	c.Helper()
+
+	banner := conn.Info().Version
+	serverID, ok := serverExecutableCommentVersionID(banner)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("server version banner %q", banner))
+
+	c.Assert(measureExecutableCommentGuard(c, ctx, conn, serverID), qt.Equals, 2,
+		qt.Commentf("server %q must honor a guard at its own version id %d", banner, serverID))
+	c.Assert(measureExecutableCommentGuard(c, ctx, conn, serverID+1), qt.Equals, 1,
+		qt.Commentf("server %q must ignore a guard one above its version id %d", banner, serverID))
+
+	return serverID + 1
+}
+
+// runAtlasTxtarChecksVersionGuardBoundaryIntegration pins Ptah's
+// executable-comment version arithmetic to the connected server's arithmetic at
+// the exact boundary between the two, on whatever version the matrix runs.
+//
+// The hard-coded /*!99999 ...*/ fixture only ever exercised the inert side of
+// the boundary, and it did so by accident: 99999 happened to sit above every
+// MySQL that existed when it was written. Here both sides are exercised
+// deliberately and the server is measured first, so a release that changes the
+// encoding — or a container bump that walks past a literal, as mysql:9.7 ->
+// mysql:26.7 did — fails on the probe with the real numbers in the message
+// instead of surfacing as a confusing refusal deep inside an unrelated
+// assertion.
+//
+// The witness table carries rows, so the "live guard" migration also proves the
+// refusal happens before the body reaches the server: had Ptah let it through,
+// the server honors that guard by construction and the rows would be gone.
+func runAtlasTxtarChecksVersionGuardBoundaryIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	inertGuard := inertExecutableCommentGuard(c, ctx, conn)
+	liveGuard := inertGuard - 1
+
+	_, err = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_version_guard")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, dropErr := conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_version_guard")
+		c.Check(dropErr, qt.IsNil)
+	}()
+	_, err = conn.ExecContext(ctx, "CREATE TABLE ptah_check_version_guard (id INT)")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, "INSERT INTO ptah_check_version_guard VALUES (1), (2), (3)")
+	c.Assert(err, qt.IsNil)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_inert_guard.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/inert.sql --
+/*!` + strconv.Itoa(inertGuard) + ` DELETE FROM ptah_check_version_guard */ SELECT 1;
+
+-- migration.sql --
+SELECT 1;
+`)},
+			"2_live_guard.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- checks/live.sql --
+/*!` + strconv.Itoa(liveGuard) + ` DELETE FROM ptah_check_version_guard */ SELECT 1;
+
+-- migration.sql --
+SELECT 1;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, `.*checks/live.sql#1.*must be a read-only SELECT statement.*`)
+
+	current, err := mig.GetCurrentVersion(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(current, qt.Equals, int64(1))
+
+	var remaining int
+	err = conn.QueryRowContext(ctx, "SELECT count(*) FROM ptah_check_version_guard").Scan(&remaining)
+	c.Assert(err, qt.IsNil)
+	c.Assert(remaining, qt.Equals, 3)
 }
 
 func runAtlasTxtarChecksMySQLExecutableCommentEscapeIntegration(t *testing.T, dbURL string) {

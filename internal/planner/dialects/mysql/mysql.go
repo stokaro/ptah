@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -280,10 +281,15 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 	}
 }
 
-func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTableColumns(
+	result []ast.Node,
+	tableDiff *types.TableDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
 		var targetField *goschema.Field
-		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName); targetTable != nil {
+		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName, semantics); targetTable != nil {
 			for _, field := range generated.Fields {
 				if field.StructName == targetTable.StructName && field.Name == colName {
 					targetField = &field
@@ -331,11 +337,17 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDi
 	return result
 }
 
-func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDiff, tableDiff *types.TableDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) modifyExistingColumns(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	tableDiff *types.TableDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) ([]ast.Node, error) {
 	for _, colDiff := range tableDiff.ColumnsModified {
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
-			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName) {
+			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
 			colDiff.Changes = maps.Clone(colDiff.Changes)
 			delete(colDiff.Changes, "primary_key")
 			suppressColumnPrimary = true
@@ -349,7 +361,7 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDif
 
 		var targetField *goschema.Field
 		var targetStructName string
-		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName); targetTable != nil {
+		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName, semantics); targetTable != nil {
 			targetStructName = targetTable.StructName
 			for _, field := range generated.Fields {
 				if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
@@ -397,12 +409,27 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDif
 	return result, nil
 }
 
-func findGeneratedTable(tables []goschema.Table, tableName string) *goschema.Table {
-	for i := range tables {
-		table := &tables[i]
-		if table.QualifiedName() == tableName {
-			return table
-		}
+// findGeneratedTable resolves the declared table a TableDiff names.
+//
+// The database name and the Go struct name are two different namespaces, so they
+// are tried in that order and only the first is an identifier: it goes through
+// the target's identifier rules, which resolve an absent schema to the dialect's
+// default (`dbo` on SQL Server) and fold case where the engine does. The struct
+// name is not an identifier and is matched verbatim.
+//
+// The identifier half matters because the diff and the schema handed to the
+// planner do not always spell the schema the same way -- the down direction
+// plans against the pre-change database converted back to a goschema, which
+// spells every name the way the catalog reported it. Table comparison keys
+// through the same semantics, so an `==` here split what the comparator joined
+// and the column DDL for that table was silently dropped from the plan.
+func findGeneratedTable(
+	tables []goschema.Table,
+	tableName string,
+	semantics identifier.Semantics,
+) *goschema.Table {
+	if table := objectlookup.Qualified(tables, tableName, semantics); table != nil {
+		return table
 	}
 	for i := range tables {
 		table := &tables[i]
@@ -442,16 +469,35 @@ func (p *Planner) validateColumnModification(tableName string, colDiff types.Col
 	}
 }
 
-func primaryKeyColumnChangeOwnedByTableConstraint(diff *types.SchemaDiff, tableName, columnName string) bool {
+// primaryKeyColumnChangeOwnedByTableConstraint reports whether a table-level
+// PRIMARY KEY entry in the diff already owns the key this column change would
+// otherwise spell inline.
+//
+// The two table names come from different sources and do not have to agree
+// letter for letter: `ConstraintAdditionInfo.TableName` follows the constraint
+// declaration, while `TableDiff.TableName` follows `genTable.QualifiedName()`.
+// Comparing them with `==` answered "not owned" for a table declared `app.orders`
+// whose constraint names it bare, and the planner then emitted BOTH
+// `ALTER TABLE app.orders MODIFY COLUMN id INT PRIMARY KEY` and
+// `ALTER TABLE orders ADD PRIMARY KEY (id)`. Measured on MySQL 9.7.1, the second
+// fails with `ERROR 1068 (42000): Multiple primary key defined` -- the migration
+// aborts halfway through. So the question is asked by identity, exactly as the
+// column-definition lookup a few lines above already asks it.
+func primaryKeyColumnChangeOwnedByTableConstraint(
+	diff *types.SchemaDiff,
+	tableName, columnName string,
+	semantics identifier.Semantics,
+) bool {
 	for _, info := range diff.ConstraintsAddedWithTables {
 		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
-			info.TableName == tableName &&
+			objectlookup.Same(tableName, info.TableName, semantics) &&
 			slices.Contains(info.Columns, columnName) {
 			return true
 		}
 	}
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		if strings.EqualFold(info.Type, "PRIMARY KEY") && info.TableName == tableName {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
+			objectlookup.Same(tableName, info.TableName, semantics) {
 			return true
 		}
 	}
@@ -484,16 +530,17 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) (
 }
 
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 		result = append(result, astCommentNode)
 
 		// Add new columns
-		result = p.addNewTableColumns(result, &tableDiff, generated)
+		result = p.addNewTableColumns(result, &tableDiff, generated, semantics)
 
 		// Modify existing columns
 		var err error
-		result, err = p.modifyExistingColumns(result, diff, &tableDiff, generated)
+		result, err = p.modifyExistingColumns(result, diff, &tableDiff, generated, semantics)
 		if err != nil {
 			return result, err
 		}
@@ -1173,8 +1220,9 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 }
 
 func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewName := range diff.ViewsAdded {
-		if view := findView(generated.Views, viewName); view != nil {
+		if view := findView(generated.Views, viewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -1182,8 +1230,9 @@ func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generat
 }
 
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
+		if view := findView(generated.Views, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view).SetReplace())
 		}
 	}
@@ -1198,8 +1247,9 @@ func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.N
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
@@ -1207,8 +1257,9 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, gene
 }
 
 func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
@@ -1222,12 +1273,16 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 	return result
 }
 
-func findView(views []goschema.View, name string) *goschema.View {
-	return objectlookup.View(views, name)
+func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+	return objectlookup.View(views, name, semantics)
 }
 
-func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName)
+func findTrigger(
+	triggers []goschema.Trigger,
+	tableName, triggerName string,
+	semantics identifier.Semantics,
+) *goschema.Trigger {
+	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.
