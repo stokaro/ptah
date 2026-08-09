@@ -22,6 +22,12 @@ type Reader struct {
 	schemas []string
 	scoped  bool
 	caps    capability.Capabilities
+
+	// relationSize records whether pg_catalog.pg_relation_size exists on the
+	// connected server, and relationSizeProbed whether that has been asked yet.
+	// The pair is a cache, not configuration: see supportsRelationSize.
+	relationSize       bool
+	relationSizeProbed bool
 }
 
 // NewPostgreSQLReader creates a new PostgreSQL schema reader
@@ -260,6 +266,73 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 	return tables, nil
 }
 
+// rowStatsUnknownStatisticsOnly is the part of the tri-state every
+// PostgreSQL-family server can answer: the statistics carry no usable row
+// count.
+const rowStatsUnknownStatisticsOnly = `NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false)`
+
+// rowStatsUnknownProjection builds the row_stats_unknown projection for the
+// server at hand.
+//
+// Statistics alone are not enough to call a row count unknown. reltuples = -1
+// is the state of ANY never-analyzed relation, which includes every table that
+// has never had a row inserted, so the statistics-only test marks a freshly
+// created empty table as one whose row count nobody knows -- and a caller
+// resolving the unknown toward a concurrent build then emits CREATE INDEX
+// CONCURRENTLY, in its own non-transactional migration, for a table with
+// nothing in it.
+//
+// pg_relation_size separates the two, because it reads the main fork's size
+// from the file system rather than from statistics, so no analyze, counter
+// reset, crash-recovery restart or restore moves it. Measured on PostgreSQL
+// 17.10: a never-analyzed table holding 5000 rows reports 188416 and a
+// never-analyzed empty one reports 0, while both report reltuples = -1 and
+// n_live_tup = 0. It is the table's own main fork on purpose -- pg_table_size
+// adds the TOAST relation and its index, and an empty table with one text
+// column already carries an 8192-byte TOAST index.
+//
+// The function is asked for rather than assumed. CockroachDB does not
+// implement it: on CCL v26.2.5, pg_relation_size('t'::regclass) is
+// "unknown function: pg_relation_size()" (SQLSTATE 42883), and because that is
+// a planning error it takes the whole table read down with it rather than one
+// column -- which is what the integration suite reported. pg_catalog.pg_proc
+// answers the question there (`f`) and on PostgreSQL 17.10 (`t`), so the
+// projection degrades to the statistics-only test on a server without the
+// function instead of failing the read.
+func (r *Reader) rowStatsUnknownProjection() (string, error) {
+	hasRelationSize, err := r.supportsRelationSize()
+	if err != nil {
+		return "", err
+	}
+	if !hasRelationSize {
+		return rowStatsUnknownStatisticsOnly, nil
+	}
+	return `(` + rowStatsUnknownStatisticsOnly + `)
+		           AND COALESCE(pg_relation_size(c.oid), 0) > 0`, nil
+}
+
+// supportsRelationSize reports whether pg_catalog.pg_relation_size exists on
+// the connected server, asking once per reader.
+func (r *Reader) supportsRelationSize() (bool, error) {
+	if r.relationSizeProbed {
+		return r.relationSize, nil
+	}
+	const probe = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_catalog.pg_proc p
+			JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = 'pg_catalog' AND p.proname = 'pg_relation_size'
+		)`
+	var supported bool
+	if err := r.db.QueryRow(probe).Scan(&supported); err != nil {
+		return false, fmt.Errorf("failed to probe pg_relation_size availability: %w", err)
+	}
+	r.relationSize = supported
+	r.relationSizeProbed = true
+	return supported, nil
+}
+
 func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error) {
 	columnsByTable, err := r.readColumnsForSchema(schemaName)
 	if err != nil {
@@ -276,34 +349,24 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	// restored dump. GREATEST floors all of that to 0, which reads as "empty"
 	// and is how a populated table silently earned a blocking index build.
 	//
-	// The second conjunct is what keeps that tri-state from swallowing every
-	// ordinary empty table. reltuples = -1 is the state of ANY never-analyzed
-	// relation, which includes every table that has never had a row inserted,
-	// so "no usable statistics" alone marks a freshly created table as one
-	// whose row count is unknown -- and a caller resolving the unknown toward a
-	// concurrent build then emits CREATE INDEX CONCURRENTLY, in its own
-	// non-transactional migration, for a table with nothing in it.
-	// pg_relation_size reads the main fork's size from the file system rather
-	// than from statistics, so it is not reset by any of the events above:
-	// measured on PostgreSQL 17.10, a never-analyzed table holding 5000 rows
-	// reports 188416 and a never-analyzed empty one reports 0, while both
-	// report reltuples = -1 and n_live_tup = 0. It is the table's own main fork
-	// on purpose -- pg_table_size adds the TOAST relation and its index, and an
-	// empty table with one text column already carries an 8192-byte TOAST
-	// index. A relation with no statistics and no storage is empty; only a
-	// relation with no statistics and storage is genuinely unknown.
+	// The storage conjunct rowStatsUnknownProjection adds when the server has
+	// pg_relation_size is what keeps that tri-state from swallowing every
+	// ordinary empty table -- see that method.
 	//
 	// relkind = 'p' is the declaratively partitioned parent.
 	// information_schema.tables reports it as an ordinary BASE TABLE, so the
 	// catalog is the only place the distinction survives, and PostgreSQL
 	// rejects both CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 	// such a relation.
+	rowStatsUnknown, err := r.rowStatsUnknownProjection()
+	if err != nil {
+		return nil, err
+	}
 	tablesQuery := `
 		SELECT table_schema, table_name, table_type,
 		       COALESCE(obj_description(c.oid), '') as table_comment,
 		       COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows,
-		       (NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false))
-		           AND COALESCE(pg_relation_size(c.oid), 0) > 0 AS row_stats_unknown,
+		       ` + rowStatsUnknown + ` AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t

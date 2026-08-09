@@ -209,6 +209,11 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
+		case strings.Contains(query, "p.proname = 'pg_relation_size'"):
+			return dbtest.QueryResult{
+				Columns: []string{"exists"},
+				Rows:    [][]driver.Value{{true}},
+			}, nil
 		case strings.Contains(query, "FROM information_schema.columns"):
 			return dbtest.QueryResult{
 				Columns: []string{
@@ -255,7 +260,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	tables, err := reader.readTablesForSchema("public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.QueryCount(), qt.Equals, 2)
+	c.Assert(db.QueryCount(), qt.Equals, 3)
 	c.Assert(tables, qt.HasLen, 50)
 	c.Assert(tables[0].Name, qt.Equals, "table_00")
 	c.Assert(tables[0].Columns, qt.HasLen, 2)
