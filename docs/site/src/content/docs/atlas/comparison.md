@@ -774,7 +774,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
-The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate apply --to-version`, or `migrate apply --lock-name`, so Ptah rejects those flags as unknown.
+The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah rejects it as unknown too. It does not register `migrate apply --to-version`, `--lock-name`, or `--skip-lock` either, but those three are documented on the wider Atlas distribution's `migrate apply` and Ptah implements them; see [Migration apply](../docs-coverage/#migration-apply) for the measured behavior.
 
 `ptah-compat schema apply --to` and `ptah-compat schema diff --from/--to` accept local schema files, one database URL, one migration directory replayed on the required `--dev-url` dev database, or one `env://` reference resolved through the evaluated `atlas.hcl` env; source kinds cannot be mixed within a flag, and unsupported schemes such as `atlas://` fail before the target database is contacted.
 
@@ -815,7 +815,7 @@ reference, with desired/dev database aliases rejected before connection.
 `atlas.sum` updates only after every generated file was written. Docker dev
 databases remain a follow-up gap.
 
-`ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; Atlas OSS does not register `migrate apply --dir-format`, and Ptah rejects it there.
+`ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`, `--skip-lock`, `--to-version`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; the pinned community binary does not register `migrate apply --dir-format`, and Ptah rejects it there.
 
 Per-file `atlas:txmode` precedence and validation match the measured Atlas CE
 `v1.3.0` plain-file matrix. Global `file` and `none` accept explicit file or
