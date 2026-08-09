@@ -57,6 +57,29 @@ var typeKeywordType = cty.Capsule("Atlas type keyword", reflect.TypeFor[typeKeyw
 // a comparison of equal values rather than an error.
 var typeKeywordValue = cty.CapsuleVal(typeKeywordType, &typeKeyword{})
 
+// droppedSchemaNamespace is the traversal root a dropped body uses to name a
+// schema the file declares, as in `procedure "p" { schema = schema.main }`.
+//
+// It is bound ONLY inside a dropped body. The modeled path still reads
+// `schema = schema.main` off an attribute's source text, so nothing about how a
+// table, enum or sequence finds its schema changes.
+const droppedSchemaNamespace = "schema"
+
+// schemaRef is the Go type behind the opaque value one declared schema name
+// evaluates to inside a dropped body, for the same reason typeKeyword is
+// opaque: the reference has to resolve, and nothing more.
+type schemaRef struct{}
+
+// schemaRefType keeps that opacity in the cty type system, so `schema.main.x`,
+// `schema.main[0]` and `1 + schema.main` each fail here. Measured on the pinned
+// community binary v1.3.0, `schema = schema.main.nope` inside a dropped
+// `procedure` block exits 1 there too.
+var schemaRefType = cty.Capsule("Atlas schema reference", reflect.TypeFor[schemaRef]())
+
+// schemaRefValue is shared by every declared name, so comparing two of them is
+// a comparison of equal values rather than an error.
+var schemaRefValue = cty.CapsuleVal(schemaRefType, &schemaRef{})
+
 // droppedBodyScope is the ENTIRE variable scope a dropped body is evaluated
 // in. It is a fixed table, not a view of the file, and that is the point.
 //
@@ -116,28 +139,92 @@ var droppedBodyContext = &hcl.EvalContext{
 	Functions: droppedBodyFunctions,
 }
 
-// droppedContext is droppedBodyContext plus whatever the file's own variable
-// and locals blocks actually declared.
+// droppedContext is droppedBodyContext plus what the file itself declared: the
+// `var.` and `local.` namespaces, and the `schema.` root.
 //
 // The scope above is closed because the earlier attempts to model the file
-// reached for wildcards; these two names need no wildcard. They carry the real
-// typed values newEvalContext resolved, so `ref = var.v` on a declared string
-// variable resolves exactly as it does on the community binary, while
-// `ref = var.v.nope` and `ref = 1 + var.v` fail there with that binary's own
-// member-access and operand diagnostics rather than with a blanket
-// "unknown variable". Nothing widens: a name with no block declaring it is
-// still absent, and the failure is still the closed-scope one.
+// reached for wildcards; these three names need no wildcard. `var` and `local`
+// carry the real typed values newEvalContext resolved, so `ref = var.v` on a
+// declared string variable resolves exactly as it does on the community binary,
+// while `ref = var.v.nope` and `ref = 1 + var.v` fail there with that binary's
+// own member-access and operand diagnostics rather than with a blanket
+// "unknown variable". `schema` carries exactly the labels the file's own
+// `schema` blocks wrote -- see droppedSchemaRoot. Nothing widens: a name with
+// no block declaring it is still absent, and the failure is still the
+// closed-scope one.
 func (p *parser) droppedContext() *hcl.EvalContext {
-	if p.ctx == nil {
+	schemaRoot, declared := p.droppedSchemaRoot()
+	if p.ctx == nil && !declared {
 		return droppedBodyContext
 	}
 	scope := maps.Clone(droppedBodyScope)
-	for _, name := range []string{varNamespace, localNamespace} {
-		if value, bound := p.ctx.Variables[name]; bound {
-			scope[name] = value
+	if declared {
+		scope[droppedSchemaNamespace] = schemaRoot
+	}
+	if p.ctx != nil {
+		for _, name := range []string{varNamespace, localNamespace} {
+			if value, bound := p.ctx.Variables[name]; bound {
+				scope[name] = value
+			}
 		}
 	}
 	return &hcl.EvalContext{Variables: scope, Functions: droppedBodyFunctions}
+}
+
+// droppedSchemaRoot builds the `schema` root a dropped body is evaluated
+// against: an object whose attributes are EXACTLY the labels this file's
+// top-level `schema` blocks wrote, each bound to an opaque reference.
+//
+// A dropped body reaching a schema is the ordinary spelling of every Atlas
+// object Ptah does not model -- `procedure "p" { schema = schema.main }` is the
+// documented form -- so refusing it refused the whole file over a construct the
+// community binary loads and ignores (stokaro/ptah#927 item 5).
+//
+// An object of declared names is not a wildcard, and the three outcomes were
+// each measured against the pinned community binary v1.3.0 on that procedure
+// file:
+//
+//	schema "main" {} + schema = schema.main       -> exit 0 there, and here
+//	schema "main" {} + schema = schema.nope       -> exit 1, "This object does
+//	                                                 not have an attribute
+//	                                                 named \"nope\""
+//	no schema block  + schema = schema.other      -> exit 1, "There is no
+//	                                                 variable named \"schema\""
+//
+// The second is why the root is an object rather than [cty.DynamicVal], and the
+// third is why it stays unbound when the file declares nothing: each keeps a
+// refusal the binary makes. The returned bool reports whether the file declared
+// any schema at all.
+func (p *parser) droppedSchemaRoot() (cty.Value, bool) {
+	if len(p.declaredSchemas) == 0 {
+		return cty.NilVal, false
+	}
+	names := make(map[string]cty.Value, len(p.declaredSchemas))
+	for _, name := range p.declaredSchemas {
+		names[name] = schemaRefValue
+	}
+	return cty.ObjectVal(names), true
+}
+
+// declaredSchemaNames collects the labels of the file's top-level `schema`
+// blocks.
+//
+// It reads the WHOLE body before the walk starts, because the community binary
+// evaluates the whole file before deciding what to decode: a `procedure` block
+// written above the `schema` block it names resolves there, so collecting these
+// as the walk reaches them would refuse a file over declaration order alone.
+//
+// A block with anything other than one label is skipped rather than refused
+// here; parseSchema still reports it when the walk arrives.
+func declaredSchemaNames(body *hclsyntax.Body) []string {
+	names := make([]string, 0)
+	for _, block := range body.Blocks {
+		if block.Type != droppedSchemaNamespace || len(block.Labels) != 1 {
+			continue
+		}
+		names = append(names, block.Labels[0])
+	}
+	return names
 }
 
 // tolerateUnknownBlock accepts a block name this parser does not model.

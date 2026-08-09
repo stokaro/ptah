@@ -89,13 +89,14 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	}
 
 	p := parser{
-		src:           data,
-		filename:      filename,
-		sourceDir:     filepath.Dir(filename),
-		db:            &goschema.Database{},
-		tolerant:      opts.IgnoreUnknownNames,
-		recordIgnored: opts.RecordIgnored,
-		refContext:    columnRefContext(body),
+		src:             data,
+		filename:        filename,
+		sourceDir:       filepath.Dir(filename),
+		db:              &goschema.Database{},
+		tolerant:        opts.IgnoreUnknownNames,
+		recordIgnored:   opts.RecordIgnored,
+		refContext:      columnRefContext(body),
+		declaredSchemas: declaredSchemaNames(body),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -217,6 +218,10 @@ type parser struct {
 	// refContext decides a conditional inside a column reference. Built once
 	// from the file's own `variable` blocks -- see columnRefContext.
 	refContext *hcl.EvalContext
+	// declaredSchemas holds the labels of the file's top-level `schema`
+	// blocks, collected before the walk so a dropped body can name one that is
+	// declared further down -- see droppedSchemaRoot.
+	declaredSchemas []string
 	// pendingForeignRefs holds the single-column foreign key targets that can
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
