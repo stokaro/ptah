@@ -86,6 +86,15 @@ ptah-compat schema inspect --url "postgres://…/app?sslmode=disable"
 ptah-compat schema inspect --url "postgres://…/app?sslmode=disable&search_path=public"
 ```
 
+Every object in the document names the schema that owns it, not the one the
+connection happens to be on. That applies to the non-table kinds as much as to
+tables: an `enum` block carries `schema = schema.<name>`, a `function`, `view`,
+`materialized`, `domain`, `composite`, `range` and `sequence` block each carry
+the attribute wherever the object is outside the document's default schema, and
+a column declared against a type in another schema is written against that
+schema's type. Applying such a document therefore rebuilds each object where it
+was, and applying it back to the database it describes plans nothing.
+
 `--schema` / `-s` narrows inspection when the underlying database reader supports
 schema scoping, and outranks the URL's scope: naming a schema that does not
 exist renders an empty document rather than falling back to the connection's
