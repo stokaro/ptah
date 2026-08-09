@@ -43,15 +43,23 @@ type pgIndexCatalog struct {
 	// keyAttnums is the JSON array of pg_index.indkey attribute numbers. A 0
 	// marks an expression key; every real column has a positive attnum.
 	keyAttnums string
-	// keyOpclasses is the JSON array of per-key pg_opclass.opcname values,
-	// empty where opcdefault is true.
+	// keyOpclasses is the JSON array of per-key operator classes, each an
+	// object of pg_opclass.opcname, pg_opclass.opcdefault and the index
+	// attribute's pg_attribute.attoptions.
 	keyOpclasses string
+	// keyOpclassesWithoutParams is what the same projection returns when it
+	// does not read attoptions -- every params field empty. It is the answer a
+	// real server gives a query that dropped that join, and it is what makes a
+	// reader that stopped asking for the parameters visible here.
+	keyOpclassesWithoutParams string
 	// keyOptions is the JSON array of pg_index.indoption bitmasks.
 	keyOptions string
 	// includeColumns is the JSON array of INCLUDE payload column texts.
 	includeColumns string
 	// method is pg_am.amname.
 	method string
+	// storageParams is the JSON array of pg_class.reloptions entries.
+	storageParams string
 	// requiredExtensions is the JSON array of extensions the index resolves to
 	// through the catalog, and requiredExtensionsFrom is the catalog column the
 	// resolution goes through -- indclass for an operator class, relam for an
@@ -65,22 +73,38 @@ type pgIndexCatalog struct {
 	isUnique               bool
 }
 
+// opclassJSON spells one key's operator class the way the reader's
+// json_build_object projection returns it.
+func opclassJSON(name string, isDefault bool, params string) string {
+	return fmt.Sprintf(`{"name": %q, "is_default": %t, "params": %q}`, name, isDefault, params)
+}
+
+// defaultOpclassJSON is a one-key list holding the key type's default class
+// with no parameters -- what every fixture that is not about operator classes
+// reports.
+func defaultOpclassJSON() string {
+	return "[" + opclassJSON("text_ops", true, "") + "]"
+}
+
 // plainCatalog is CREATE INDEX i_plain ON t (name): btree, default opclass,
-// ascending, no payload. It is the control every other fixture varies from.
+// ascending, no payload, no storage parameters. It is the control every other
+// fixture varies from.
 func plainCatalog() pgIndexCatalog {
 	return pgIndexCatalog{
-		schemaName:             "public",
-		tableName:              "t",
-		indexName:              "i_plain",
-		indexDef:               "CREATE INDEX i_plain ON public.t USING btree (name)",
-		keyTexts:               `["name"]`,
-		keyAttnums:             `[2]`,
-		keyOpclasses:           `[""]`,
-		keyOptions:             `[0]`,
-		includeColumns:         `[]`,
-		method:                 "btree",
-		requiredExtensions:     `[]`,
-		requiredExtensionsFrom: "indclass",
+		schemaName:                "public",
+		tableName:                 "t",
+		indexName:                 "i_plain",
+		indexDef:                  "CREATE INDEX i_plain ON public.t USING btree (name)",
+		keyTexts:                  `["name"]`,
+		keyAttnums:                `[2]`,
+		keyOpclasses:              defaultOpclassJSON(),
+		keyOpclassesWithoutParams: defaultOpclassJSON(),
+		keyOptions:                `[0]`,
+		includeColumns:            `[]`,
+		method:                    "btree",
+		storageParams:             `[]`,
+		requiredExtensions:        `[]`,
+		requiredExtensionsFrom:    "indclass",
 	}
 }
 
@@ -124,7 +148,55 @@ func opclassCatalog() pgIndexCatalog {
 	catalog := plainCatalog()
 	catalog.indexName = "i_op"
 	catalog.indexDef = "CREATE INDEX i_op ON public.t USING btree (name text_pattern_ops)"
-	catalog.keyOpclasses = `["text_pattern_ops"]`
+	catalog.keyOpclasses = "[" + opclassJSON("text_pattern_ops", false, "") + "]"
+	catalog.keyOpclassesWithoutParams = catalog.keyOpclasses
+	return catalog
+}
+
+// parameterisedOpclassCatalog is
+// CREATE INDEX i_sig ON t USING gist (tsv tsvector_ops (siglen = 64)).
+//
+// Measured on PostgreSQL 17.10, that stores opcname tsvector_ops with
+// opcdefault TRUE and the index attribute's attoptions {siglen=64}: the class
+// is the type's default under gist, and its parameters are not. It is the
+// fixture that separates "name a class only when it is not the default" from
+// the rule the reader needs, and the one the whole suite was blind to before
+// #1242 -- an index rebuilt without the parameters gets the 124-byte default
+// signature, which psql accepts at exit 0.
+func parameterisedOpclassCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "i_sig"
+	catalog.indexDef = "CREATE INDEX i_sig ON public.t USING gist (tsv tsvector_ops (siglen='64'))"
+	catalog.keyTexts = `["tsv"]`
+	catalog.method = "gist"
+	catalog.keyOpclasses = "[" + opclassJSON("tsvector_ops", true, "siglen=64") + "]"
+	catalog.keyOpclassesWithoutParams = "[" + opclassJSON("tsvector_ops", true, "") + "]"
+	return catalog
+}
+
+// storageParamsCatalog is
+// CREATE INDEX i_brin ON t USING brin (ts) WITH (pages_per_range = 32),
+// whose pg_class.reloptions PostgreSQL 17.10 reports as {pages_per_range=32}.
+func storageParamsCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "i_brin"
+	catalog.indexDef = "CREATE INDEX i_brin ON public.t USING brin (ts) WITH (pages_per_range='32')"
+	catalog.keyTexts = `["ts"]`
+	catalog.method = "brin"
+	catalog.storageParams = `["pages_per_range=32"]`
+	return catalog
+}
+
+// unrepresentableStorageParamsCatalog is the same index with fillfactor as
+// well. fillfactor has no slot on the Atlas-compatible HCL surface -- neither
+// Ptah's writer nor the pinned community binary v1.3.0 emits one -- so
+// recording it would make the index differ from its own inspected document on
+// every run. The reader keeps the parameter the chain can carry and drops the
+// one it cannot, rather than keeping both or neither.
+func unrepresentableStorageParamsCatalog() pgIndexCatalog {
+	catalog := storageParamsCatalog()
+	catalog.indexName = "i_brin_ff"
+	catalog.storageParams = `["pages_per_range=32", "fillfactor=70", "autosummarize=on"]`
 	return catalog
 }
 
@@ -136,7 +208,9 @@ func includeCatalog() pgIndexCatalog {
 	catalog.indexDef = "CREATE INDEX i_inc ON public.t USING btree (a, b) INCLUDE (c)"
 	catalog.keyTexts = `["a", "b"]`
 	catalog.keyAttnums = `[2, 3]`
-	catalog.keyOpclasses = `["", ""]`
+	catalog.keyOpclasses = "[" + opclassJSON("int4_ops", true, "") + ", " +
+		opclassJSON("int4_ops", true, "") + "]"
+	catalog.keyOpclassesWithoutParams = catalog.keyOpclasses
 	catalog.keyOptions = `[0, 0]`
 	catalog.includeColumns = `["c"]`
 	return catalog
@@ -205,6 +279,16 @@ func sortOrderCatalog(option string) func() pgIndexCatalog {
 // assigns, which is what makes a projection that stopped reading the catalog
 // visible here instead of silently answered.
 func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, error) {
+	// An operator class's parameters live in pg_attribute.attoptions, not in
+	// pg_opclass, so a projection that reads indclass and not attoptions gets
+	// the classes back with no parameters on them -- which is what a reader
+	// that dropped that join would see, and what it must not be able to hide.
+	opclasses := catalog.keyOpclassesWithoutParams
+	if projection, ok := selectListItem(query, "index_key_opclasses", "FROM pg_index"); ok &&
+		strings.Contains(projection, "attoptions") {
+		opclasses = catalog.keyOpclasses
+	}
+
 	answers := []struct {
 		alias         string
 		catalogColumn string
@@ -212,10 +296,11 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 	}{
 		{"index_columns", "pg_get_indexdef", catalog.keyTexts},
 		{"index_key_attnums", "indkey", catalog.keyAttnums},
-		{"index_key_opclasses", "indclass", catalog.keyOpclasses},
+		{"index_key_opclasses", "indclass", opclasses},
 		{"index_key_options", "indoption", catalog.keyOptions},
 		{"index_include_columns", "indkey", catalog.includeColumns},
 		{"index_method", "amname", catalog.method},
+		{"index_storage_params", "reloptions", catalog.storageParams},
 		{"index_required_extensions", catalog.requiredExtensionsFrom, catalog.requiredExtensions},
 	}
 
@@ -401,6 +486,43 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 			},
 		},
 		{
+			// The class is the key type's default, so a reader that stops at
+			// opcdefault reports nothing at all -- and the index it rebuilds
+			// has the 124-byte default signature instead of the 64-byte one.
+			name:    "a default operator class with parameters is carried whole",
+			catalog: parameterisedOpclassCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
+					{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
+				})
+			},
+		},
+		{
+			name:    "storage parameters the chain can carry are kept",
+			catalog: storageParamsCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
+					"pages_per_range": "32",
+				})
+			},
+		},
+		{
+			name:    "storage parameters no surface can write are dropped",
+			catalog: unrepresentableStorageParamsCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
+					"pages_per_range": "32",
+				}, qt.Commentf("fillfactor and autosummarize have no slot downstream"))
+			},
+		},
+		{
+			name:    "an index with no WITH clause carries no storage parameters",
+			catalog: plainCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.StorageParams, qt.IsNil)
+			},
+		},
+		{
 			name:    "include payload columns are carried and stay out of the keys",
 			catalog: includeCatalog,
 			assert: func(c *qt.C, index types.DBIndex) {
@@ -482,6 +604,108 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 			index, err := readIndexThroughFakeServer(t, test.catalog())
 			c.Assert(err, qt.IsNil)
 			test.assert(c, index)
+		})
+	}
+}
+
+// TestPostgresOperatorClassSpelling covers all four combinations of the two
+// catalog facts that decide how a key's operator class is spelled, because the
+// rule is an ordering and an ordering is only pinned by the row that separates
+// it from the other one.
+//
+// Testing IsDefault before Params passes three of these four rows. The row it
+// fails is the parameterised default class, which is the case that exists on
+// every GiST index over tsvector with a signature length -- and the failure it
+// produces is not an error but a quietly different index.
+func TestPostgresOperatorClassSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		class postgresKeyOperatorClass
+		want  string
+	}{
+		{
+			name:  "a default class with no parameters needs no spelling",
+			class: postgresKeyOperatorClass{Name: "text_ops", IsDefault: true},
+			want:  "",
+		},
+		{
+			name:  "a chosen class is named",
+			class: postgresKeyOperatorClass{Name: "text_pattern_ops"},
+			want:  "text_pattern_ops",
+		},
+		{
+			name: "a default class with parameters is named for its parameters",
+			class: postgresKeyOperatorClass{
+				Name: "tsvector_ops", IsDefault: true, Params: "siglen=64",
+			},
+			want: "tsvector_ops(siglen=64)",
+		},
+		{
+			name: "a chosen class with parameters carries both",
+			class: postgresKeyOperatorClass{
+				Name: "gist_trgm_ops", Params: "siglen=32",
+			},
+			want: "gist_trgm_ops(siglen=32)",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(postgresOperatorClassSpelling(test.class), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestPostgresIndexStorageParams pins which pg_class.reloptions entries reach
+// the model.
+//
+// The allowlist is the point. A reader that recorded every reloption would look
+// more complete and be worse: `fillfactor` has no slot on any surface the model
+// passes through, so an index carrying it would differ from its own inspected
+// document on every run, and the rebuild that difference plans would drop the
+// parameter it was meant to protect.
+func TestPostgresIndexStorageParams(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name       string
+		reloptions string
+		want       map[string]string
+	}{
+		{
+			name:       "no WITH clause",
+			reloptions: `[]`,
+			want:       nil,
+		},
+		{
+			name:       "a parameter the whole chain can carry",
+			reloptions: `["pages_per_range=32"]`,
+			want:       map[string]string{"pages_per_range": "32"},
+		},
+		{
+			name:       "a parameter no surface downstream can write",
+			reloptions: `["fillfactor=70"]`,
+			want:       nil,
+		},
+		{
+			name:       "a mixture keeps only what survives",
+			reloptions: `["fillfactor=70", "pages_per_range=8", "deduplicate_items=off"]`,
+			want:       map[string]string{"pages_per_range": "8"},
+		},
+		{
+			name:       "an entry with no value is not a parameter",
+			reloptions: `["pages_per_range"]`,
+			want:       nil,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			params, err := postgresIndexStorageParams(test.reloptions)
+			c.Assert(err, qt.IsNil)
+			c.Assert(params, qt.DeepEquals, test.want)
 		})
 	}
 }

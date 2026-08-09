@@ -377,8 +377,8 @@ rather than a parity fix. Tracked as
 
 ## PostgreSQL Introspection: Index and Domain Attributes
 
-Reading a live PostgreSQL database once lost six attributes that the pinned
-Atlas CE v1.3.0 binary preserves. All six are now read. Measured on PostgreSQL
+Reading a live PostgreSQL database once lost eight attributes that the pinned
+Atlas CE v1.3.0 binary preserves. All eight are now read. Measured on PostgreSQL
 17.10 by diffing an empty database against a source database with each binary,
 replaying the emitted SQL into a fresh database with
 `psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
@@ -394,6 +394,85 @@ carrying the same attributes always rendered correctly.
 | `INCLUDE` payload columns | `pg_index.indkey` past `indnkeyatts` | Dropped: psql exited 0 and left an index that cannot serve the index-only scans it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | Expression index, for example `lower(name)` | `pg_index.indkey`, attnum 0 | Emitted as a quoted column identifier, which psql rejected at exit 3 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | Domain used as a column type | `information_schema.columns.domain_name` and `domain_schema` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Operator class **parameters**, for example `tsvector_ops(siglen=64)` | the index attribute's `pg_attribute.attoptions` | Dropped with the class name: psql exited 0 and left a GiST index with the 124-byte default signature | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Index storage parameters, `WITH (pages_per_range = 32)` | `pg_class.reloptions` | Dropped: psql exited 0 and left a BRIN index summarizing 128 pages per range instead of 32 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+
+### A default operator class can still carry parameters
+
+`pg_opclass.opcdefault` is the wrong question on its own. An operator class can
+be the key type's default *and* take parameters, and the two facts live in
+different catalog tables. Measured on PostgreSQL 17.10:
+
+```text
+CREATE INDEX i ON t USING gist (tsv tsvector_ops (siglen = 64));
+
+pg_opclass.opcname       tsvector_ops
+pg_opclass.opcdefault    t
+pg_attribute.attoptions  {siglen=64}     -- on the INDEX relation, not the table
+```
+
+A reader that names a class only when it is not the default therefore reports
+nothing for this key and rebuilds the index with GiST's 124-byte default
+signature. psql accepts that at exit 0. The class name is the only place the
+parameters can hang, so a parameterised class is named even when it is the
+default. Atlas CE v1.3.0 preserves this attribute — measured, it emits
+`CREATE INDEX "i" ON "t" USING gist ("tsv" tsvector_ops(siglen=64))` and
+`ops = sql("tsvector_ops(siglen=64)")` — so this was Ptah behind CE, not a
+shared gap.
+
+### Index storage parameters, and the ones deliberately not recorded
+
+`pg_class.reloptions` holds an index's `WITH (...)` clause. Only
+`pages_per_range` is recorded, and the omission of the rest is a decision rather
+than an oversight.
+
+A recorded parameter has to survive every surface the model passes through,
+because the index comparator treats a difference in the recorded set as a reason
+to rebuild. `pages_per_range` does survive all four:
+
+- the Atlas-compatible HCL reader accepts it,
+- the HCL writer emits it,
+- the SQL parser reads it out of a `WITH` clause,
+- and the PostgreSQL renderer writes one.
+
+Measured on PostgreSQL 17.10, `fillfactor`, `deduplicate_items`, `buffering`,
+`fastupdate`, `gin_pending_list_limit` and `autosummarize` have no slot on that
+HCL surface, and Atlas CE v1.3.0 drops all of them too:
+`CREATE INDEX i ON t (name) WITH (fillfactor = 70)` comes back from both
+binaries as `CREATE INDEX "i" ON "t" ("name")`.
+
+Recording one of them would not make it survive an inspect-and-diff round trip.
+It would make every such index differ from its own inspected document forever,
+and the rebuild that difference planned would drop the parameter it was meant to
+protect.
+
+The HCL attribute is spelled `page_per_range`, singular. CE **accepts both
+spellings at exit 0** and honors only that one. Measured against two documents
+differing in that single token and nothing else:
+
+```text
+page_per_range  = 32  ->  CREATE INDEX "i" ON "t" USING brin ("ts") WITH (pages_per_range = 32)
+pages_per_range = 32  ->  CREATE INDEX "i" ON "t" USING brin ("ts")
+```
+
+So an exit status proves nothing here, and Ptah writes the spelling CE honors.
+Ptah's own parser continues to accept both.
+
+### Two attributes of the same family that are still dropped
+
+Both are read out of the catalog by nobody and lost by both binaries, so neither
+is a parity gap. They are recorded here because a green replay does not report
+them.
+
+| Attribute | Read from | Atlas CE v1.3.0 | Ptah | Why it is still open |
+| --- | --- | --- | --- | --- |
+| Per-key collation, `(name COLLATE "C")` | `pg_index.indcollation` | Dropped | Dropped | The Atlas HCL surface has no per-key collation attribute — CE inspects the fixture as a bare `columns = [column.name]`. Adding one would emit a document CE cannot read, trading a silent index difference for a loud interop break |
+| Index storage parameters other than `pages_per_range` | `pg_class.reloptions` | Dropped | Dropped | Same reason: no HCL slot, so a recorded value would churn forever. See above |
+
+`pg_index` has four per-key vectors — `indkey`, `indclass`, `indoption` and
+`indcollation` — and the reader now asks for three of them. `indcollation` is
+the one left, and it is the only member of this family whose closure needs a new
+attribute on the HCL surface rather than only a new projection.
 
 ### The access-method loss was not silent in general
 
@@ -594,6 +673,8 @@ loading each side into its own database and diffing one against the other.
 | `(lower(a))` | `(upper(a))` | Rebuild |
 | `(value)` | `UNIQUE (value)` | Rebuild |
 | `(a)` | `(b)` | Rebuild |
+| `USING gist (tsv tsvector_ops(siglen=64))` | `... (siglen=32)` | Rebuild |
+| `USING brin (ts) WITH (pages_per_range = 32)` | `... = 8`, added, removed | Rebuild |
 
 PostgreSQL cannot alter any of these in place, so the transition is a rebuild
 rather than an `ALTER INDEX`. Every plan above was executed against the current

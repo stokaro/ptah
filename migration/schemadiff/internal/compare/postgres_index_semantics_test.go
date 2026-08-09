@@ -123,6 +123,67 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			database:  databaseIndex([]types.DBIndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
 		},
 		{
+			// USING gist (tsv tsvector_ops(siglen=64))
+			//   -> USING gist (tsv tsvector_ops(siglen=32))
+			//
+			// The class name is identical on both sides and only its parameter
+			// differs, so this is the row that separates comparing the operator
+			// class from comparing the operator class name.
+			name: "operator class parameter changed",
+			generated: generatedIndex([]goschema.IndexPart{
+				{Name: "tsv", Operator: "tsvector_ops(siglen=32)"},
+			}),
+			database: databaseIndex([]types.DBIndexPart{
+				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
+			}),
+		},
+		{
+			// WITH (pages_per_range = 32) -> WITH (pages_per_range = 8)
+			name: "storage parameter value changed",
+			generated: func() goschema.Index {
+				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
+				index.Type = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "8"}
+				return index
+			}(),
+			database: func() types.DBIndex {
+				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+				index.Method = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "32"}
+				return index
+			}(),
+		},
+		{
+			// USING brin (ts) -> USING brin (ts) WITH (pages_per_range = 32)
+			name: "storage parameter added",
+			generated: func() goschema.Index {
+				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
+				index.Type = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "32"}
+				return index
+			}(),
+			database: func() types.DBIndex {
+				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+				index.Method = "brin"
+				return index
+			}(),
+		},
+		{
+			// WITH (pages_per_range = 32) -> USING brin (ts)
+			name: "storage parameter removed",
+			generated: func() goschema.Index {
+				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
+				index.Type = "brin"
+				return index
+			}(),
+			database: func() types.DBIndex {
+				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+				index.Method = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "32"}
+				return index
+			}(),
+		},
+		{
 			// The index-level operator class an annotation may set once for
 			// every key. The renderer applies it to each key that has none, so
 			// the comparison has to resolve it the same way or a
@@ -362,6 +423,46 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				return index
 			}(),
 			database: mixedDatabaseIndex(),
+		},
+		{
+			// The control the storage-parameter rows above need: a comparison
+			// that reported any difference at all would redden this, and the
+			// index would be dropped and recreated on every single run.
+			name: "identical storage parameters",
+			generated: func() goschema.Index {
+				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
+				index.Type = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "32"}
+				return index
+			}(),
+			database: func() types.DBIndex {
+				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+				index.Method = "brin"
+				index.StorageParams = map[string]string{"pages_per_range": "32"}
+				return index
+			}(),
+		},
+		{
+			// Neither side carries a WITH clause, which is the overwhelmingly
+			// common case and must stay free of it.
+			name: "no storage parameters on either side",
+			generated: func() goschema.Index {
+				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
+				index.StorageParams = map[string]string{}
+				return index
+			}(),
+			database: databaseIndex([]types.DBIndexPart{{Name: "ts"}}),
+		},
+		{
+			// The same class and the same parameter, differing only in case and
+			// space, is the same operator class.
+			name: "parameterised operator class differs only in case",
+			generated: generatedIndex([]goschema.IndexPart{
+				{Name: "tsv", Operator: "TSVector_Ops(siglen=64)"},
+			}),
+			database: databaseIndex([]types.DBIndexPart{
+				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
+			}),
 		},
 		{
 			// An annotation or HCL source spells the access method BTREE; the

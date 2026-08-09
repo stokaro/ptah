@@ -900,7 +900,16 @@ func (r *renderer) renderIndex(index goschema.Index) {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
 	if pages, ok := index.StorageParams["pages_per_range"]; ok {
-		r.rawAttr(2, "pages_per_range", pages)
+		// `page_per_range`, singular, is the spelling the pinned Atlas community
+		// binary v1.3.0 both emits and honors. Measured on PostgreSQL 17.10
+		// against an otherwise identical HCL document: `page_per_range = 32`
+		// planned CREATE INDEX ... USING brin ("ts") WITH (pages_per_range = 32),
+		// while `pages_per_range = 32` was accepted at exit 0 with no diagnostic
+		// and planned CREATE INDEX ... USING brin ("ts") -- the parameter simply
+		// gone. Emitting the plural therefore hands the pinned binary a document
+		// that silently loses the parameter. Ptah's own parser accepts both, so
+		// no document that used to load stops loading. See #1242.
+		r.rawAttr(2, "page_per_range", pages)
 	}
 	if len(index.Parts) > 0 && !simpleIndexParts(index.Parts) {
 		for _, part := range index.Parts {

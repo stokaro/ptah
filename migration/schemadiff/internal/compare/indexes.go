@@ -735,7 +735,38 @@ func postgresIndexDefinitionChanged(
 	return generated.Unique != database.IsUnique ||
 		postgresAccessMethod(generated.Type) != postgresAccessMethod(database.Method) ||
 		postgresIndexKeysChanged(generated, database, semantics) ||
-		postgresIncludeColumnsChanged(generated.IncludeColumns, database.IncludeColumns, semantics)
+		postgresIncludeColumnsChanged(generated.IncludeColumns, database.IncludeColumns, semantics) ||
+		postgresIndexStorageParamsChanged(generated.StorageParams, database.StorageParams)
+}
+
+// postgresIndexStorageParamsChanged compares the WITH (...) storage parameters.
+//
+// Only the parameters the reader records reach here, and it records only the
+// ones every surface in the chain can carry back out again -- see
+// postgresRoundTrippableIndexStorageParams in the PostgreSQL reader. That is
+// what keeps this arm from churning: a parameter one surface drops would arrive
+// on one side and not the other on every run, and the rebuild it planned would
+// drop the parameter it was meant to protect.
+//
+// The values are compared as the two sides spell them, with case and space
+// normalized. PostgreSQL reports pg_class.reloptions as `pages_per_range=32`
+// and every writing surface in the chain spells integers the same way, so there
+// is no unit or default resolution to do here -- an absent parameter means the
+// server's own default, and both sides say so by omitting it.
+func postgresIndexStorageParamsChanged(generated, database map[string]string) bool {
+	if len(generated) != len(database) {
+		return true
+	}
+	for name, value := range generated {
+		databaseValue, ok := database[name]
+		if !ok {
+			return true
+		}
+		if !strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(databaseValue)) {
+			return true
+		}
+	}
+	return false
 }
 
 // postgresDefaultAccessMethod is the method PostgreSQL uses when CREATE INDEX
