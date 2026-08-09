@@ -5873,6 +5873,26 @@ type DBIndex struct {
     // Granularity is the GRANULARITY value the index was declared with.
     // Non-zero only on ClickHouse skipping indexes.
     Granularity int `json:"granularity,omitempty"`
+
+    // PartitionAttached reports that this index is a partition's copy of an
+    // index on its partitioned parent, attached to that parent index rather
+    // than standing on its own.
+    //
+    // PostgreSQL creates one such index per partition whenever an index is
+    // created on a partitioned parent, names it itself
+    // (events_2026_tenant_idx), and refuses to drop it alone:
+    // DROP INDEX "events_2026_tenant_idx" answers `cannot drop index
+    // events_2026_tenant_idx because index idx_events_tenant requires it`
+    // (SQLSTATE 2BP01). It is the index equivalent of a constraint's backing
+    // index -- a real catalog row that no standalone statement addresses --
+    // and a comparison that reads it as an ordinary index plans a DROP the
+    // server refuses.
+    //
+    // The parent index is not marked: it is the object the DDL names, and on
+    // PostgreSQL it is relkind 'I' while a partition's copy is relkind 'i'.
+    // Only readers that can ask the catalog (pg_inherits over index
+    // relations) set this; everything else leaves it false.
+    PartitionAttached bool `json:"partition_attached,omitempty"`
 }
     DBIndex represents a database index.
 

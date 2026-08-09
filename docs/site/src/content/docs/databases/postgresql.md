@@ -364,6 +364,29 @@ PARTITION`. The parent index stays `indisvalid = false` until every partition is
 attached, and Ptah's migration guards recognize that shape rather than treating
 it as failed-build residue.
 
+### The index copies a partitioned parent creates
+
+Creating an index on a partitioned parent makes PostgreSQL create one copy of it
+on every partition, under a name the server chooses (`events_2026_tenant_idx`).
+Those copies are attached to the parent index and cannot be dropped on their own:
+
+```
+DROP INDEX "events_2026_tenant_idx";
+ERROR:  cannot drop index events_2026_tenant_idx because index idx_events_tenant requires it
+```
+
+A desired state written against the parent never names them, so a comparison
+that reads them as ordinary indexes plans exactly that refused statement — and
+only on the *second* generate, because the copies do not exist until the first
+migration has been applied. Ptah reads the attachment from `pg_inherits` and
+plans neither a create nor a drop for an attached copy; the parent index is
+where the plan acts.
+
+The attachment is the test, not the name and not the table. An index created on
+a partition directly is still managed, including one that happens to carry the
+name PostgreSQL would have generated for a copy, and a copy attached under a
+name of your own choosing is still left alone.
+
 ## Concurrent index removal
 
 `DROP INDEX CONCURRENTLY` is the matching non-blocking removal, and it carries

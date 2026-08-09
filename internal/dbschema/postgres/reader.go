@@ -976,7 +976,24 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
-			ix.indisunique
+			ix.indisunique,
+			-- Whether this index is a partition's copy of an index on its
+			-- partitioned parent. PostgreSQL records the attachment in
+			-- pg_inherits over index relations, the same catalog that records
+			-- a partition's attachment to its parent table, and an index row
+			-- there exists only for that reason.
+			--
+			-- The distinction matters because the copy is not separately
+			-- droppable: PostgreSQL 17.10 answers
+			-- DROP INDEX "events_2026_tenant_idx" with the message
+			-- "cannot drop index events_2026_tenant_idx because index
+			-- idx_events_tenant requires it" (SQLSTATE 2BP01). Reading relkind
+			-- instead would answer a different question: the parent is 'I' and
+			-- the copy is 'i', so a relkind test marks the object that IS
+			-- addressable and leaves the one that is not.
+			EXISTS (
+				SELECT 1 FROM pg_inherits inh WHERE inh.inhrelid = i.oid
+			) as partition_attached
 		FROM pg_index ix
 		JOIN pg_class i ON i.oid = ix.indexrelid
 		JOIN pg_class t ON t.oid = ix.indrelid
@@ -999,7 +1016,8 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
 			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
 			&row.includeColumns, &row.method, &row.storageParams, &row.requiredExtensions,
-			&row.comment, &row.predicate, &row.isPrimary, &row.isUnique,
+			&row.comment,
+			&row.predicate, &row.isPrimary, &row.isUnique, &row.partitionAttached,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
@@ -1049,6 +1067,9 @@ type postgresIndexRow struct {
 	predicate string
 	isPrimary bool
 	isUnique  bool
+	// partitionAttached is the pg_inherits attachment of this index relation
+	// to an index on the partitioned parent.
+	partitionAttached bool
 }
 
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
@@ -1060,10 +1081,11 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 		Definition:    row.indexDef,
 		Condition:     row.predicate,
 		Comment:       row.comment,
-		IsUnique:      row.isUnique,
-		IsPrimary:     row.isPrimary,
-		Method:        row.method,
-		NullsDistinct: postgresNullsDistinctFromDefinition(row.indexDef),
+		IsUnique:          row.isUnique,
+		IsPrimary:         row.isPrimary,
+		Method:            row.method,
+		NullsDistinct:     postgresNullsDistinctFromDefinition(row.indexDef),
+		PartitionAttached: row.partitionAttached,
 	}
 
 	columns, err := parsePostgresIndexColumns(row.keyTexts, row.indexDef)
