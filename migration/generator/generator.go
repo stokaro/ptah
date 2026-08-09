@@ -218,6 +218,8 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 		if err := validateEmptyMigrationName(name); err != nil {
 			return nil, err
 		}
+	} else if err := checkAtlasEmptyMigrationNameReadable(name); err != nil {
+		return nil, err
 	}
 
 	root, err := openOutputRoot(opts.AllowedOutputRoot)
@@ -271,15 +273,51 @@ func latestAtlasVersionIn(names []string) int64 {
 	return latest
 }
 
+// atlasEmptyMigrationFileName composes the Atlas-layout file name `migrate new`
+// writes, and it carries the caller's name unchanged.
+//
+// It used to rewrite the name first: spaces became hyphens and every character
+// outside [-_0-9A-Za-z] was dropped, so `migrate new "add users table"` wrote
+// `<version>_add-users-table.sql` and `migrate new "add_users.sql"` wrote
+// `<version>_add_userssql.sql`. The Atlas layout is not ours to rename in: the
+// pinned community binary v1.3.0 composes `<version>_<name>.sql` from the name
+// verbatim, so the same two commands write `<version>_add users table.sql` and
+// `<version>_add_users.sql.sql` there (measured 2026-08-08). The file name is
+// covered by atlas.sum, so a rewritten name is also a different checksum for the
+// same command (stokaro/ptah#1235 findings 8.6 and 8.7).
+//
+// Two rules still apply and are deliberate, not leftovers:
+//
+//   - [GenerateEmptyMigration] trims leading and trailing whitespace off the
+//     name for every layout. That binary keeps it -- `migrate new "  padded  "`
+//     writes `<version>_  padded  .sql` -- but a file name with trailing spaces
+//     does not survive every filesystem this tool writes into, and no finding in
+//     that register asks for one.
+//   - A path separator is refused rather than stripped, on the compatibility
+//     surface by checkAtlasMigrationName and here by the rooted writer, which
+//     cannot open a path outside the directory it holds.
+//
+// [atlasCheckpointNameStem] keeps the old rewriting for `migrate checkpoint`.
+// That verb has no measured counterpart on the pinned binary, and its writer
+// resolves the file by pathname rather than through a rooted handle.
 func atlasEmptyMigrationFileName(version int64, name string) string {
-	name = atlasEmptyMigrationName(name)
 	if name == "" {
 		return fmt.Sprintf("%d.sql", version)
 	}
 	return fmt.Sprintf("%d_%s.sql", version, name)
 }
 
-func atlasEmptyMigrationName(name string) string {
+// atlasCheckpointNameStem maps a checkpoint description onto a conservative file
+// name stem: spaces to hyphens, everything outside [-_0-9A-Za-z] dropped.
+//
+// This is what every Atlas-layout name used to go through. `migrate new` no
+// longer does, because that binary was measured writing the name verbatim there.
+// `migrate checkpoint` keeps it: the register that prompted the change records
+// no cell for the verb, so there is nothing measured to move towards, and
+// [WriteAtlasCheckpointFile] joins the stem onto a pathname instead of opening
+// it through a rooted directory handle, so a stem carrying a separator would
+// name a file outside the directory the caller asked for.
+func atlasCheckpointNameStem(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ReplaceAll(name, " ", "-")
 	var b strings.Builder
@@ -296,6 +334,45 @@ func isAtlasMigrationNameChar(r rune) bool {
 		('0' <= r && r <= '9') ||
 		('A' <= r && r <= 'Z') ||
 		('a' <= r && r <= 'z')
+}
+
+// checkAtlasEmptyMigrationNameReadable refuses a migration name whose composed
+// file name this tool would read back as something other than the new up
+// migration it just wrote.
+//
+// Writing the name verbatim means it can now reach the Atlas file-name grammar,
+// and one suffix collides with it: [migrator.ParseAtlasMigrationFileName]
+// classifies `<version>_x.down.sql` as the down half of a pair, because Atlas
+// importers emit that spelling for golang-migrate directories. So `migrate new
+// "x.down"` would write a file `migrate status` then refuses with `Atlas
+// migration version <version> has down migration but no up migration`, exit 1 --
+// one verb producing a directory another verb cannot read.
+//
+// The check is a round trip rather than a list of banned suffixes, so a later
+// change to that grammar cannot reopen the hole silently.
+//
+// This refusal is stricter than the pinned community binary v1.3.0, which
+// writes `<version>_x.down.sql` at exit 0 and reads it back as a pending
+// migration at exit 0. Ptah refusing to WRITE it does not fix Ptah's reader:
+// that binary can still hand us such a directory, and `migrate status` still
+// exits 1 on it. That reader gap is a separate divergence and is reported, not
+// closed, by the change that introduced this guard.
+func checkAtlasEmptyMigrationNameReadable(name string) error {
+	// The version is a stand-in: the grammar this probes keys on the name's
+	// suffix, not on the digits in front of it, and the message quotes the shape
+	// rather than a version no caller asked for.
+	const probeVersion = 1
+	fileName := atlasEmptyMigrationFileName(probeVersion, name)
+	parsed, err := migrator.ParseAtlasMigrationFileName(fileName)
+	if err == nil && parsed.Version == probeVersion && parsed.Direction == "up" {
+		return nil
+	}
+	shape := "<version>" + strings.TrimPrefix(fileName, strconv.FormatInt(probeVersion, 10))
+	return fmt.Errorf(
+		"migration name %q composes the file name %s, which this tool does not read back as a new migration",
+		name,
+		shape,
+	)
 }
 
 func validateEmptyMigrationName(name string) error {

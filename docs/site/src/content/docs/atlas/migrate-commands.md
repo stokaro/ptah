@@ -861,7 +861,7 @@ An **empty** migration directory is the one shape where a missing `atlas.sum`
 is not drift: there is nothing for it to cover, so `ptah-compat migrate validate`
 exits `0` with no output, matching the pinned Atlas community binary v1.3.0 and
 matching what `ptah-compat migrate apply` already does on the same directory
-(`No migration files to execute.`). The moment the directory holds a migration
+(`No migration files to execute`). The moment the directory holds a migration
 file the refusal returns, byte-identically. `ptah-compat migrate lint --latest`
 follows the same rule: an empty directory selects nothing and exits `0`, which
 is what a repository linting its migrations in CI does before the first

@@ -134,7 +134,7 @@ func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	// execute", no new revision row, status stays OK.
 	stdout, _, err = compatApply(fullDir, dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-	c.Assert(stdout, qt.Contains, "No migration files to execute.")
+	c.Assert(stdout, qt.Contains, "No migration files to execute")
 	c.Assert(compatRevisionRows(c, dbPath), qt.DeepEquals, seeded)
 
 	statusOut, _, err := runCompat("migrate", "status", "--url", "sqlite://"+dbPath, "--dir", "file://"+fullDir)
@@ -308,7 +308,7 @@ func TestCompatMigrateApply_DirWithoutSQLFilesApplies(t *testing.T) {
 			stdout, stderr, err := compatApply(dir, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "No migration files to execute.")
+			c.Assert(stdout, qt.Contains, "No migration files to execute")
 		})
 	}
 }
@@ -380,7 +380,7 @@ func TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute(t *testin
 			stdout, stderr, err := compatApply(dir, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "No migration files to execute.")
+			c.Assert(stdout, qt.Contains, "No migration files to execute")
 			c.Assert(stderr, qt.Equals,
 				"warning: sub/20260801100335_init.sql is not covered by atlas.sum and will not run; "+
 					"Atlas migrations are top-level files named *.sql\n")

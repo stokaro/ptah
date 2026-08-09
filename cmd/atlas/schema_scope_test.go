@@ -382,5 +382,5 @@ func TestSchemaApplySchemaScopeEmptyMatchReportsSynced(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made")
 }

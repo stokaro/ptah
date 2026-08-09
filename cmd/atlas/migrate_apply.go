@@ -525,7 +525,13 @@ func finishAtlasMigrateApplyFreshNoop(
 	if opts.format != "" {
 		return true, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute.")
+	// No trailing period: the pinned community binary v1.3.0 writes
+	// `No migration files to execute\n` on stdout for the same run, 30 bytes,
+	// verified byte for byte with xxd on 2026-08-08 against a directory both
+	// binaries had already applied. Ptah wrote 31 (stokaro/ptah#1235 finding
+	// 9.3). The report model in internal/atlasreport already spells it without
+	// the period, so this line was also the odd one out inside Ptah.
+	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute")
 	return true, nil
 }
 

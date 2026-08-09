@@ -134,7 +134,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 				writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
 				hashCoveredSetDir(c, dir)
 			},
-			wantStdout: "No migration files to execute.",
+			wantStdout: "No migration files to execute",
 			wantStderr: coveredSetNestedWarn,
 			wantTables: []string{},
 		},
@@ -154,7 +154,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 				writeCoveredSetFile(c, dir, "1_a.SQL", coveredSetTopLevelSQL)
 				hashCoveredSetDir(c, dir)
 			},
-			wantStdout: "No migration files to execute.",
+			wantStdout: "No migration files to execute",
 			wantStderr: "warning: 1_a.SQL is not covered by atlas.sum and will not run; " +
 				"Atlas migrations are top-level files named *.sql\n",
 			wantTables: []string{},

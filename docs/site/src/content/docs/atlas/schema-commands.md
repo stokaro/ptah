@@ -431,7 +431,7 @@ $ head -3 out/public.hcl
 // ptah:not-described policy
 // ptah:not-described sequence
 $ ptah-compat schema apply --url "$PG_URL" --to file://out/public.hcl --dev-url "$DEV_URL" --dry-run
-Schema is synced, no changes to be made.
+Schema is synced, no changes to be made
 ```
 
 All three split strategies do this — per object (the default), `split "schema"`,
