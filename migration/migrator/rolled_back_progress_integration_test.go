@@ -259,6 +259,46 @@ func TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode(t *testing.T) {
 	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_mssql", "%27MSSQL%27", "MSSQL")
 }
 
+func TestRolledBackProgress_MySQLIsolatesTemporaryTablesBetweenAttempts(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runIsolatesTemporaryTablesBetweenAttempts(t, dbURL, "mysql_tmp")
+}
+
+func TestRolledBackProgress_MariaDBIsolatesTemporaryTablesBetweenAttempts(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runIsolatesTemporaryTablesBetweenAttempts(t, dbURL, "mariadb_tmp")
+}
+
+func TestRolledBackProgress_MySQLRejectsTemporaryMetadataShadow(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsTemporaryMetadataShadow(t, dbURL, "mysql_shadow")
+}
+
+func TestRolledBackProgress_MariaDBRejectsTemporaryMetadataShadow(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsTemporaryMetadataShadow(t, dbURL, "mariadb_shadow")
+}
+
+func TestRolledBackProgress_MySQLRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t, dbURL, "mysql_dirty_shadow")
+}
+
+func TestRolledBackProgress_MariaDBRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t, dbURL, "mariadb_dirty_shadow")
+}
+
+func TestRolledBackProgress_MySQLRejectsStaleTemporaryMetadataShadowBeforePlanning(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsStaleTemporaryMetadataShadowBeforePlanning(t, dbURL, "mysql_stale_shadow")
+}
+
+func TestRolledBackProgress_MariaDBRejectsStaleTemporaryMetadataShadowBeforePlanning(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsStaleTemporaryMetadataShadowBeforePlanning(t, dbURL, "mariadb_stale_shadow")
+}
+
 func TestRolledBackProgress_MySQLRejectsInheritedStorageEngine(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsInheritedStorageEngine(t, dbURL, "mysql_create_like")
@@ -1959,6 +1999,292 @@ func runRejectsMSSQLSQLModeChange(t *testing.T, dbURL, prefix string) {
 	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runIsolatesTemporaryTablesBetweenAttempts(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB",
+		names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	failingMigration := migrator.CreateMigrationFromSQL(
+		1,
+		"fail after writing a temporary table",
+		fmt.Sprintf(
+			"SET SESSION default_tmp_storage_engine = MyISAM; "+
+				"CREATE TEMPORARY TABLE %s (id INTEGER PRIMARY KEY); "+
+				"INSERT INTO %s VALUES (1); "+
+				"INSERT INTO %s SELECT id FROM %s; "+
+				"INSERT INTO %s VALUES (1)",
+			names.createdTable,
+			names.createdTable,
+			names.ledgerTable,
+			names.createdTable,
+			names.createdTable,
+		),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+	err = issue887Migrator(conn, names, failingMigration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `(?s).*Duplicate entry '1'.*`)
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(0))
+
+	retryMigration := migrator.CreateMigrationFromSQL(
+		1,
+		"retry on a fresh session",
+		fmt.Sprintf(
+			"SET SESSION default_tmp_storage_engine = MyISAM; "+
+				"CREATE TEMPORARY TABLE %s (id INTEGER PRIMARY KEY); "+
+				"INSERT INTO %s VALUES (1); "+
+				"INSERT INTO %s SELECT id FROM %s",
+			names.createdTable,
+			names.createdTable,
+			names.ledgerTable,
+			names.createdTable,
+		),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+	err = issue887Migrator(conn, names, retryMigration).MigrateUpWithOptions(
+		ctx,
+		migrator.MigrateUpOptions{AllowDirty: true},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+}
+
+func runRejectsTemporaryMetadataShadow(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	runRejectsTemporaryMetadataShadowCase(
+		t,
+		conn,
+		issue887Names(prefix+"_native"),
+		migrator.RevisionTableFormatPtah,
+		issue887NativeMetadataShadowSQL,
+	)
+	runRejectsTemporaryMetadataShadowCase(
+		t,
+		conn,
+		issue887Names(prefix+"_atlas"),
+		migrator.RevisionTableFormatAtlas,
+		issue887AtlasMetadataShadowSQL,
+	)
+}
+
+func runRejectsTemporaryMetadataShadowCase(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	names issue887TestNames,
+	format migrator.RevisionTableFormat,
+	shadowSQL func(string, issue887TestNames) string,
+) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"attempt to shadow migration metadata",
+		shadowSQL(conn.Info().Schema, names),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err := issue887MigratorWithFormat(conn, names, format, migration).MigrateUp(ctx)
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`.*migration 1 cannot run tx-mode file statement 1 because it references Ptah's migration metadata table .*which is reserved for transaction-witness bookkeeping; choose another relation name`,
+	)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"would read fake dirty metadata",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	mig := issue887MigratorWithFormat(conn, names, migrator.RevisionTableFormatPtah, migration).WithoutMigrationLock()
+	c.Assert(mig.Initialize(ctx), qt.IsNil)
+
+	err = conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
+		if _, execErr := scoped.ExecContext(ctx, issue887NativeTemporaryMetadataShadowTableSQL(names)); execErr != nil {
+			return execErr
+		}
+		if _, execErr := scoped.ExecContext(ctx, issue887NativeTemporaryDirtyMetadataShadowInsertSQL(names)); execErr != nil {
+			return execErr
+		}
+		return issue887MigratorWithFormat(
+			scoped,
+			names,
+			migrator.RevisionTableFormatPtah,
+			migration,
+		).WithoutMigrationLock().MigrateUp(ctx)
+	})
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`.*pinned MySQL-family session contains temporary table .* that shadows Ptah's migration metadata; retry on a clean session.*`,
+	)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func issue887NativeMetadataShadowSQL(_ string, names issue887TestNames) string {
+	return fmt.Sprintf(`CREATE TEMPORARY TABLE %s (
+version BIGINT PRIMARY KEY,
+description TEXT NOT NULL,
+applied_at TIMESTAMP NOT NULL,
+state VARCHAR(32) NOT NULL,
+applied INTEGER NOT NULL,
+total INTEGER NOT NULL,
+error TEXT NULL,
+error_stmt TEXT NULL,
+execution_time_ms BIGINT NOT NULL,
+checksum VARCHAR(64) NOT NULL
+) ENGINE=InnoDB;
+INSERT INTO %s VALUES (1, 'shadow', CURRENT_TIMESTAMP, 'pending', 0, 3, NULL, NULL, 0, '');
+CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB`,
+		names.revisionsTable,
+		names.revisionsTable,
+		names.createdTable,
+	)
+}
+
+func issue887AtlasMetadataShadowSQL(schema string, names issue887TestNames) string {
+	qualifiedMetadata := schema + "." + names.revisionsTable
+	return fmt.Sprintf(`CREATE TEMPORARY TABLE %s (
+version VARCHAR(255) PRIMARY KEY,
+description TEXT NOT NULL,
+type BIGINT NOT NULL,
+applied BIGINT NOT NULL,
+total BIGINT NOT NULL,
+executed_at TIMESTAMP NOT NULL,
+execution_time BIGINT NOT NULL,
+error TEXT NULL,
+error_stmt TEXT NULL,
+hash VARCHAR(255) NOT NULL,
+partial_hashes JSON NULL,
+operator_version VARCHAR(255) NOT NULL
+) ENGINE=InnoDB;
+INSERT INTO %s VALUES ('1', 'shadow', 2, 0, 3, CURRENT_TIMESTAMP, 0, NULL, NULL, '', JSON_ARRAY(), 'ptah');
+CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB`,
+		qualifiedMetadata,
+		qualifiedMetadata,
+		names.createdTable,
+	)
+}
+
+func runRejectsStaleTemporaryMetadataShadowBeforePlanning(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"would create target after fake applied metadata",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	mig := issue887MigratorWithFormat(conn, names, migrator.RevisionTableFormatPtah, migration).WithoutMigrationLock()
+	c.Assert(mig.Initialize(ctx), qt.IsNil)
+
+	err = conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
+		if _, execErr := scoped.ExecContext(ctx, issue887NativeTemporaryMetadataShadowTableSQL(names)); execErr != nil {
+			return execErr
+		}
+		if _, execErr := scoped.ExecContext(ctx, issue887NativeTemporaryAppliedMetadataShadowInsertSQL(names)); execErr != nil {
+			return execErr
+		}
+		return issue887MigratorWithFormat(
+			scoped,
+			names,
+			migrator.RevisionTableFormatPtah,
+			migration,
+		).WithoutMigrationLock().MigrateUp(ctx)
+	})
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`.*pinned MySQL-family session contains temporary table .* that shadows Ptah's migration metadata; retry on a clean session.*`,
+	)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func issue887NativeTemporaryMetadataShadowTableSQL(names issue887TestNames) string {
+	return fmt.Sprintf(`CREATE TEMPORARY TABLE %s (
+version BIGINT PRIMARY KEY,
+description TEXT NOT NULL,
+applied_at TIMESTAMP NOT NULL,
+state VARCHAR(32) NOT NULL,
+applied INTEGER NOT NULL,
+total INTEGER NOT NULL,
+error TEXT NULL,
+error_stmt TEXT NULL,
+execution_time_ms BIGINT NOT NULL,
+checksum VARCHAR(64) NOT NULL
+) ENGINE=InnoDB`,
+		names.revisionsTable,
+	)
+}
+
+func issue887NativeTemporaryAppliedMetadataShadowInsertSQL(names issue887TestNames) string {
+	return fmt.Sprintf(
+		"INSERT INTO %s VALUES (1, 'stale shadow', CURRENT_TIMESTAMP, 'applied', 1, 1, NULL, NULL, 0, '')",
+		names.revisionsTable,
+	)
+}
+
+func issue887NativeTemporaryDirtyMetadataShadowInsertSQL(names issue887TestNames) string {
+	return fmt.Sprintf(
+		"INSERT INTO %s VALUES (1, 'dirty shadow', CURRENT_TIMESTAMP, 'pending', 0, 1, 'fake', '', 0, '')",
+		names.revisionsTable,
+	)
 }
 
 func runRejectsInheritedStorageEngine(t *testing.T, dbURL, prefix string) {

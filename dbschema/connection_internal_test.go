@@ -156,6 +156,12 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 		nested, nestedErr := scoped.Conn(ctx)
 		c.Assert(nestedErr, qt.ErrorMatches, `database connection is already pinned to a session`)
 		c.Assert(nested, qt.IsNil)
+		currentErr := scoped.WithSessionOrCurrent(ctx, func(current *DatabaseConnection) error {
+			c.Assert(current, qt.Equals, scoped)
+			_, execErr := current.ExecContext(ctx, "CURRENT")
+			return execErr
+		})
+		c.Assert(currentErr, qt.IsNil)
 		c.Assert(scoped.Close(), qt.IsNil)
 		return nil
 	})
@@ -164,7 +170,7 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 	_, err = conn.ExecContext(ctx, "ROOT")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 1)
-	c.Assert(db.ExecCount(), qt.Equals, 3)
+	c.Assert(db.ExecCount(), qt.Equals, 4)
 }
 
 func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {

@@ -88,6 +88,29 @@ WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'`, schema
 	return nil
 }
 
+// refuseMySQLTemporaryMetadataShadow detects session state that would redirect
+// revision reads and writes away from the permanent InnoDB witness. MySQL and
+// MariaDB let a temporary table shadow a same-named permanent table even when
+// the reference is schema-qualified. WithSession discards the pinned connection
+// after this refusal, so the stale temporary object cannot reach a retry.
+func (m *Migrator) refuseMySQLTemporaryMetadataShadow(ctx context.Context) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return nil
+	}
+	var table string
+	var createSQL string
+	if err := m.conn.QueryRowContext(ctx, "SHOW CREATE TABLE "+m.qualifiedMigrationsTable()).Scan(&table, &createSQL); err != nil {
+		return fmt.Errorf("failed to inspect the pinned-session migration metadata table: %w", err)
+	}
+	if mysqlCreatesTemporaryTable(significantSQLTokens(createSQL, m.connectionDialect())) {
+		return fmt.Errorf(
+			"pinned MySQL-family session contains temporary table %s that shadows Ptah's migration metadata; retry on a clean session",
+			m.qualifiedMigrationsTable(),
+		)
+	}
+	return nil
+}
+
 func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error {
 	if !implicitCommitDialect(m.connectionDialect()) {
 		return nil
@@ -394,6 +417,42 @@ func mysqlReferencedCatalogName(tokens []lexer.Token, names map[string]struct{})
 	return "", false
 }
 
+func (m *Migrator) mysqlReferencesMigrationMetadata(tokens []lexer.Token) bool {
+	metadataSchema := configuredOrConnectionSchema(m.metadataTableSchemaName(), m.connectionSchemaName())
+	return mysqlReferencesNamedRelation(
+		tokens,
+		m.connectionSchemaName(),
+		metadataSchema,
+		m.migrationsTableName(),
+	)
+}
+
+func mysqlReferencesNamedRelation(
+	tokens []lexer.Token,
+	selectedSchema string,
+	targetSchema string,
+	targetName string,
+) bool {
+	for i, token := range tokens {
+		name, identifier := mysqlMigrationIdentifierValue(token)
+		if !identifier || !strings.EqualFold(name, targetName) || !mysqlRelationReference(tokens, i) {
+			continue
+		}
+		referencedSchema := selectedSchema
+		if i >= 2 && tokens[i-1].Value == "." {
+			schema, schemaIdentifier := mysqlMigrationIdentifierValue(tokens[i-2])
+			if !schemaIdentifier {
+				continue
+			}
+			referencedSchema = schema
+		}
+		if strings.EqualFold(referencedSchema, targetSchema) {
+			return true
+		}
+	}
+	return false
+}
+
 func mysqlRelationReference(tokens []lexer.Token, index int) bool {
 	if index >= 2 && tokens[index-1].Value == "." {
 		return mysqlDirectRelationReference(tokens, index-2)
@@ -469,14 +528,20 @@ func mysqlFollowsRenameTargetPrefix(tokens []lexer.Token) bool {
 }
 
 func mysqlFollowsAlterTableRenameTargetPrefix(tokens []lexer.Token) bool {
-	if len(tokens) < 4 || !tokens[0].MatchIdentifierValue("ALTER") ||
-		!tokens[1].MatchIdentifierValue("TABLE") ||
-		!matchesAnyKeyword(tokens[len(tokens)-1], "TO", "AS") {
+	if len(tokens) < 4 || !tokens[0].MatchIdentifierValue("ALTER") {
 		return false
 	}
-	return slices.ContainsFunc(tokens[2:len(tokens)-1], func(token lexer.Token) bool {
-		return token.MatchIdentifierValue("RENAME")
-	})
+	tableKeyword := mysqlTableKeyword(tokens)
+	if tableKeyword < 0 {
+		return false
+	}
+	optionStart := mysqlTableNameEnd(tokens, tableKeyword+1)
+	if optionStart < 0 || optionStart >= len(tokens) || !tokens[optionStart].MatchIdentifierValue("RENAME") {
+		return false
+	}
+	renamePrefix := tokens[optionStart+1:]
+	return len(renamePrefix) == 0 ||
+		(len(renamePrefix) == 1 && matchesAnyKeyword(renamePrefix[0], "TO", "AS"))
 }
 
 func mysqlFollowsDropObjectPrefix(tokens []lexer.Token) bool {

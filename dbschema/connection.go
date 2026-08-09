@@ -475,6 +475,25 @@ func (dc *DatabaseConnection) WithSession(
 	return use(&scoped)
 }
 
+// WithSessionOrCurrent calls use with one physical database session. Pool-backed
+// connections pin a new session and discard it afterward; already pinned
+// connections reuse the current session and leave its lifecycle with the caller.
+func (dc *DatabaseConnection) WithSessionOrCurrent(
+	ctx context.Context,
+	use func(*DatabaseConnection) error,
+) error {
+	if dc == nil || dc.db == nil {
+		return fmt.Errorf("database session requires an open database connection")
+	}
+	if use == nil {
+		return fmt.Errorf("database session callback is nil")
+	}
+	if dc.pinned {
+		return use(dc)
+	}
+	return dc.WithSession(ctx, use)
+}
+
 func refineMySQLForeignKeyCapabilities(
 	dialect string,
 	caps capability.Capabilities,

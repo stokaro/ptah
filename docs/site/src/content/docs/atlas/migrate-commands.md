@@ -230,9 +230,20 @@ the affected direction instead because their inner statements are opaque.
 MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
 and replays safe settings such as `SET SESSION time_zone` from a verified
-committed prefix before an automatic retry. A durable unknown-outcome witness
-blocks automatic retry until the database is inspected and the revision is
-repaired.
+committed prefix before an automatic retry.
+
+Temporary tables are also allowed: their DDL does not make permanent InnoDB
+work durable by itself, and discarding the session prevents temporary state
+from leaking into a retry. If a later implicit commit makes a prefix containing
+a temporary object durable, automatic resume refuses because that object cannot
+be reconstructed safely.
+
+A same-named temporary table cannot shadow the Atlas revision table: before
+reading or writing revision metadata, Ptah refuses and discards a pinned
+session that already contains that temporary table. It also rejects statements
+that directly reference the metadata relation, including through a
+schema-qualified name. A durable unknown-outcome witness blocks automatic retry
+until the database is inspected and the revision is repaired.
 
 The migration advisory lock serializes Ptah clients that use the same lock
 name. It cannot freeze DDL from a client that ignores that lock. Do not run

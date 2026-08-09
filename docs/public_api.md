@@ -191,6 +191,10 @@ callback. Root MySQL capability metadata remains conservative; on MySQL 8.4+
 the scoped connection refines its referenced-key policy from
 `restrict_fk_on_non_standard_key` on the pinned session before the callback,
 so planning and execution can safely use that same effective policy.
+Use `dbschema.DatabaseConnection.WithSessionOrCurrent` for reusable components
+that may run inside an existing pinned callback or from a pool-backed
+connection; it pins only when needed and otherwise leaves the current session
+lifecycle with the caller.
 
 `dbschema.DatabaseConnection.WithUntrustedSQLSession` pins a session that will
 execute SQL the caller does not trust and applies every engine-level
