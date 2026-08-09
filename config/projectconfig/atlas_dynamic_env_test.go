@@ -49,7 +49,6 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
-		prefix  string
 		forEach string
 		want    []dynamicEnvSummary
 	}{
@@ -59,35 +58,6 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 			want: []dynamicEnvSummary{
 				{Name: "local", URL: "second", Key: "0"},
 				{Name: "local", URL: "first", Key: "1"},
-			},
-		},
-		{
-			name: "list keeps source order",
-			prefix: `variable "targets" {
-  type    = list(string)
-  default = ["second", "first"]
-}
-`,
-			forEach: `var.targets`,
-			want: []dynamicEnvSummary{
-				{Name: "local", URL: "second", Key: "0"},
-				{Name: "local", URL: "first", Key: "1"},
-			},
-		},
-		{
-			name: "map sorts keys",
-			prefix: `variable "targets" {
-  type = map(string)
-  default = {
-    z = "last"
-    a = "first"
-  }
-}
-`,
-			forEach: `var.targets`,
-			want: []dynamicEnvSummary{
-				{Name: "local", URL: "first", Key: `"a"`},
-				{Name: "local", URL: "last", Key: `"z"`},
 			},
 		},
 		{
@@ -110,7 +80,7 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			raw := []byte(test.prefix + `env {
+			raw := []byte(`env {
   for_each = ` + test.forEach + `
   name     = atlas.env
   url      = each.value
@@ -351,17 +321,40 @@ func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
+		prefix  string
 		value   string
 		wantErr string
 	}{
 		{name: "number", value: `42`, wantErr: `schemahcl: for_each does not support number type`},
 		{name: "string", value: `"target"`, wantErr: `schemahcl: for_each does not support string type`},
 		{name: "null", value: `null`, wantErr: `schemahcl: for_each cannot be null`},
+		{
+			name: "typed list",
+			prefix: `variable "targets" {
+  type    = list(string)
+  default = ["first", "second"]
+}
+`,
+			value:   `var.targets`,
+			wantErr: `schemahcl: for_each does not support list of string type`,
+		},
+		{
+			name: "typed map",
+			prefix: `variable "targets" {
+  type = map(string)
+  default = {
+    first = "one"
+  }
+}
+`,
+			value:   `var.targets`,
+			wantErr: `schemahcl: for_each does not support map of string type`,
+		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			raw := []byte(`env {
+			raw := []byte(test.prefix + `env {
   for_each = ` + test.value + `
   name     = atlas.env
   url      = each.value
@@ -380,14 +373,14 @@ func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
 func TestParseAtlasCollectionDoesNotExposeForEachValueInBodyError(t *testing.T) {
 	c := qt.New(t)
 	const secret = "SUPERSECRET_DYNAMIC_TARGET_12345"
-	raw := []byte(`variable "targets" {
-  type      = list(string)
-  sensitive = true
-  default   = ["` + secret + `"]
+	raw := []byte(`variable "target" {
+	  type      = string
+	  sensitive = true
+	  default   = "` + secret + `"
 }
 
 env {
-  for_each = var.targets
+	  for_each = toset([var.target])
   name     = atlas.env
   url      = true
 }
@@ -405,14 +398,14 @@ env {
 func TestParseAtlasCollectionScrubsSensitiveForEachValueFromHCLDiagnostic(t *testing.T) {
 	c := qt.New(t)
 	const secret = "SUPERSECRET_DYNAMIC_FILE_12345"
-	raw := []byte(`variable "targets" {
-  type      = list(string)
-  sensitive = true
-  default   = ["` + secret + `"]
+	raw := []byte(`variable "target" {
+	  type      = string
+	  sensitive = true
+	  default   = "` + secret + `"
 }
 
 env {
-  for_each = var.targets
+	  for_each = toset([var.target])
   name     = atlas.env
   url      = file(each.value)
 }
@@ -433,16 +426,16 @@ env {
 func TestParseAtlasCollectionScrubsSensitiveForEachKeyFromHCLDiagnostic(t *testing.T) {
 	c := qt.New(t)
 	const secret = "SUPERSECRET_DYNAMIC_KEY_12345"
-	raw := []byte(`variable "targets" {
-  type      = map(string)
-  sensitive = true
-  default = {
-    "` + secret + `" = "sqlite://target.db"
-  }
+	raw := []byte(`variable "target" {
+	  type      = string
+	  sensitive = true
+	  default   = "` + secret + `"
 }
 
 env {
-  for_each = var.targets
+	  for_each = {
+	    (var.target) = "sqlite://target.db"
+	  }
   name     = atlas.env
   url      = file(each.key)
 }

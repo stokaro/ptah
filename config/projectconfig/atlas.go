@@ -631,17 +631,15 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 		return nil, fmt.Errorf("schemahcl: for_each must be wholly known")
 	}
 	forEachType := forEach.Type()
-	if !forEachType.IsListType() &&
-		!forEachType.IsTupleType() &&
-		!forEachType.IsMapType() &&
+	if !forEachType.IsTupleType() &&
 		!forEachType.IsObjectType() &&
 		!forEachType.IsSetType() {
 		return nil, fmt.Errorf("schemahcl: for_each does not support %s type", forEachType.FriendlyName())
 	}
 
 	configs := make([]Config, 0, forEach.LengthInt())
-	// cty preserves list/tuple order and gives map/object/set iterators a stable
-	// key order, so one iterator defines the public expansion order.
+	// cty preserves tuple order and gives object/set iterators a stable key
+	// order, so one iterator defines the public expansion order.
 	iterator := forEach.ElementIterator()
 	instanceNumber := 0
 	for iterator.Next() {

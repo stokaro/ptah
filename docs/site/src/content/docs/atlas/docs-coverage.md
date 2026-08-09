@@ -245,10 +245,11 @@ expressions are evaluated.
 
 Cloud, registry, data sources beyond the local subset, variable `validation` blocks, other variable type constraints such as `object(...)`, Atlas check-level lint policy, custom lint rules, unsupported lint analyzer options, unsupported format blocks, unsupported diff policy fields, and remote directory behavior are not implemented.
 
-**Conformance status.** Partially measured. As of 2026-08-08, parser, merge,
-direct-command, adapter, and live SQLite tests cover the supported local subset,
-whole-document structural decisions, selected-environment evaluation,
-multi-target apply with partial failure and retry, and ignored-name warnings.
+**Conformance status.** The committed companion reports do not yet measure
+dynamic env expansion. Main-repository parser, adapter, command, and live SQLite
+tests cover the supported local subset, whole-document structural decisions,
+selected-environment evaluation, multi-target apply with partial failure and
+retry, and ignored-name warnings.
 
 **Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#583`](https://github.com/stokaro/ptah/issues/583), [`stokaro/ptah#581`](https://github.com/stokaro/ptah/issues/581), [`stokaro/ptah#619`](https://github.com/stokaro/ptah/issues/619).
 
