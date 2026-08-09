@@ -395,6 +395,7 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 		return up.fn(ctx, conn, migration.upExecutionMode())
 	}
 	migration.upSQLFunc = up.fn
+	migration.upHasStatementInterceptor = up.statementIntercepted
 	migration.UpSQL = up.sql
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts
@@ -417,6 +418,7 @@ func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 		return down.fn(ctx, conn, migration.downExecutionMode())
 	}
 	migration.downSQLFunc = down.fn
+	migration.downHasStatementInterceptor = down.statementIntercepted
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.DownTxMode = down.txMode
