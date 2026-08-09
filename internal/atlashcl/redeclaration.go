@@ -100,29 +100,51 @@ const StrictRedeclarationsEnvVar = "PTAH_HCL_STRICT_REDECLARATIONS"
 // one enum name declared in two schemas is two objects rather than one declared
 // twice.
 //
-// The default is the bare name, and it is a parity floor rather than a model of
-// what an enum is. The pinned Atlas community binary v1.3.0 keys enums by their
-// bare name: measured on PostgreSQL 17.10, `enum "mood"` in schema public
-// alongside `enum "mood"` in schema other is `Error: duplicate enum "mood"`,
-// exit 1, and so is the two-label spelling `enum "public" "mood"` alongside
-// `enum "other" "mood"`. Reading that document at exit 0 is exactly the
-// direction the drop-in rule forbids.
+// The qualified name is what an enum IS, and it is what this parser uses unless
+// a caller asks for the bare-name identity through
+// [Options.BareNameEnumIdentity]. Only cmd/atlas asks, because there the bare
+// name is a parity floor: the pinned Atlas community binary v1.3.0 keys enums by
+// their bare name, and measured on PostgreSQL 17.10 `enum "mood"` in schema
+// public alongside `enum "mood"` in schema other is `Error: duplicate enum
+// "mood"` at exit 1, as is the two-label spelling `enum "public" "mood"`
+// alongside `enum "other" "mood"`. Reading that document at exit 0 on the
+// compatibility surface is exactly the direction the drop-in rule forbids.
+//
+// This variable turns the concession off where it is on, and it only ever
+// WIDENS: it can make the compatibility surface read a document that surface
+// would otherwise refuse, and there is no spelling of it that makes the native
+// surface unable to read its own output. `PTAH_HCL_SCHEMA_SCOPED_ENUMS=0` is
+// therefore a no-op on the native command tree rather than a way to break it,
+// and the variable keeps every boolean `PTAH_*` toggle's shape: true is the more
+// permissive side, so an absent variable fails CLOSED on the surface that has a
+// floor to fall to.
 //
 // That binary cannot read its own inspect output for such a realm, measured:
 // its `schema inspect` of a database holding public.mood and other.mood emits
 // both as two-label blocks and then refuses the file it just wrote. Ptah's IR
-// does model both, its renderer writes the same two-label spelling, and with
-// this variable set Ptah reads the document back and re-renders it byte for
-// byte -- the round trip that binary does not have. See
-// [go.5x5.cz/ptah/internal/atlashclrender] for the rendering half.
+// does model both, its renderer writes the same two-label spelling, and Ptah
+// reads the document back and re-renders it byte for byte -- the round trip that
+// binary does not have. See [go.5x5.cz/ptah/internal/atlashclrender] for the
+// rendering half.
 const SchemaScopedEnumsEnvVar = "PTAH_HCL_SCHEMA_SCOPED_ENUMS"
 
 // The declarations of the three variables, made once, in the package that owns
 // them. See [go.5x5.cz/ptah/internal/envbool].
 var (
-	mergeRedeclarationsVar  = envbool.New(MergeRedeclarationsEnvVar, false)
-	strictRedeclarationsVar = envbool.New(StrictRedeclarationsEnvVar, false)
-	schemaScopedEnumsVar    = envbool.New(SchemaScopedEnumsEnvVar, false)
+	mergeRedeclarationsVar = envbool.New(MergeRedeclarationsEnvVar, false)
+	// The one declaration here whose TRUE value REFUSES. See
+	// [go.5x5.cz/ptah/internal/envbool.NewOptInRefusal].
+	strictRedeclarationsVar = envbool.NewOptInRefusal(StrictRedeclarationsEnvVar,
+		"the accepting default is the drop-in floor rather than a safety"+
+			" decision: measured on PostgreSQL 17.10, the pinned Atlas community"+
+			" binary v1.3.0 reads a document repeating a view, a materialized"+
+			" view, a role or a unique constraint at exit 0, and so did Ptah"+
+			" before the refusal existed. Refusing those four by default would"+
+			" exit 1 where that binary exits 0, which is the one direction"+
+			" compatibility forbids in reverse. Forgetting to set this cannot"+
+			" let a wrong schema through -- the repeat is still applied exactly"+
+			" as that binary applies it.")
+	schemaScopedEnumsVar = envbool.New(SchemaScopedEnumsEnvVar, false)
 )
 
 // redeclarationPolicy is the three variables resolved once per parse, so one
@@ -133,7 +155,15 @@ type redeclarationPolicy struct {
 	schemaScopedEnums bool
 }
 
-func resolveRedeclarationPolicy() (redeclarationPolicy, error) {
+// resolveRedeclarationPolicy resolves the three variables against the identity
+// the CALLER's command tree asked for.
+//
+// bareNameEnumIdentity is the compatibility surface's concession, and the
+// variable can only turn it off -- never on. A variable that could also impose
+// it would give the native surface a spelling that makes `schema inspect`
+// unreadable by `schema apply`, which is the defect this parameter exists to
+// close rather than a capability anybody asked for.
+func resolveRedeclarationPolicy(bareNameEnumIdentity bool) (redeclarationPolicy, error) {
 	merge, err := mergeRedeclarationsVar.Resolve()
 	if err != nil {
 		return redeclarationPolicy{}, err
@@ -142,11 +172,15 @@ func resolveRedeclarationPolicy() (redeclarationPolicy, error) {
 	if err != nil {
 		return redeclarationPolicy{}, err
 	}
-	schemaScopedEnums, err := schemaScopedEnumsVar.Resolve()
+	forceSchemaScopedEnums, err := schemaScopedEnumsVar.Resolve()
 	if err != nil {
 		return redeclarationPolicy{}, err
 	}
-	return redeclarationPolicy{merge: merge, strict: strict, schemaScopedEnums: schemaScopedEnums}, nil
+	return redeclarationPolicy{
+		merge:             merge,
+		strict:            strict,
+		schemaScopedEnums: !bareNameEnumIdentity || forceSchemaScopedEnums,
+	}, nil
 }
 
 // declaredObject is one object a document declares, and its two fields are what
@@ -227,7 +261,7 @@ type declaration struct {
 // It runs after the body walk and before [goschema.Finalize], because Finalize
 // is what makes the second declaration invisible.
 func (p *parser) rejectRedeclarations() error {
-	policy, err := resolveRedeclarationPolicy()
+	policy, err := resolveRedeclarationPolicy(p.bareNameEnumIdentity)
 	if err != nil {
 		return err
 	}
@@ -328,6 +362,14 @@ func (p *parser) rejectRedeclarations() error {
 //   - `platform` is Ptah's own dialect-override block, and it already refuses a
 //     duplicated override key inside one dialect with its own error, so a
 //     collision is named where the keys are.
+//   - `partition` carries no name and is already refused by the parser itself,
+//     with `table %q has multiple partition blocks`, at the block that assigns
+//     it. It is written down here because the enumeration this comment claims
+//     is EVERY kind at EVERY nesting level, including the ones deliberately
+//     left alone: a kind absent from it reads as a kind the parser rejects, and
+//     `partition` is one the parser accepts. Adding a ledger row for it would
+//     only duplicate a refusal that already fires, and would fire LATER --
+//     after the whole body walk instead of at the second block.
 //
 // INSIDE A COLUMN. `as`, `identity` and `platform`. A repeated `as` or
 // `identity` is already refused by the parser itself -- "column can contain at
