@@ -1255,10 +1255,11 @@ func refusePartitionedConcurrentIndexRefs(
 	dbSchema *dbschematypes.DBSchema,
 	kind concurrentIndexPolicyKind,
 ) error {
-	partitioned := partitionedTableSet(dbSchema)
+	tables := indexTableFacts(dbSchema)
 	var offending []string
 	for _, ref := range refs {
-		if _, ok := partitioned[ref.TableName]; !ok {
+		facts, known := tables.lookup(ref.TableName)
+		if !known || !facts.partitioned {
 			continue
 		}
 		offending = append(offending, fmt.Sprintf("%q on %q", ref.Name, ref.TableName))
@@ -1346,70 +1347,111 @@ func concurrentIndexRefsForPopulatedTables(
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
-	populatedTables := populatedTableSet(dbSchema)
-	partitioned := partitionedTableSet(dbSchema)
+	tables := indexTableFacts(dbSchema)
 	var refs []types.IndexRef
 	for _, ref := range diff.IndexAdditions() {
-		if _, ok := partitioned[ref.TableName]; ok {
+		facts, known := tables.lookup(ref.TableName)
+		if !known || facts.partitioned || !facts.populated {
 			continue
 		}
-		if _, ok := populatedTables[ref.TableName]; ok {
-			refs = append(refs, ref)
-		}
+		refs = append(refs, ref)
 	}
 	return refs
 }
 
-// populatedTableSet indexes the tables a concurrent build should be preferred
-// for, under every spelling an index ref can use for its table.
+// tableConcurrencyFacts is what the concurrent-index decision needs to know
+// about the table an index ref names.
 //
-// A table whose row statistics the database could not report counts as
-// populated. PostgreSQL reports a never-analyzed relation as reltuples = -1 and
-// a relation whose cumulative counters were reset as n_live_tup = 0, and both
-// floor to the same 0 an empty table reports; reading that 0 as "empty" is how
-// a table holding millions of rows earned a blocking CREATE INDEX immediately
-// after a bulk load, a restored dump, or a crash-recovery restart. Choosing the
-// concurrent build when nothing is known costs a non-transactional migration
-// file on a table that may turn out to be empty; choosing the blocking build
-// costs writes for the length of the scan. Only the first is recoverable, so
-// the unknown is resolved toward it.
-//
-// A table absent from dbSchema entirely is a different case and stays
-// transactional: the migration creates it, so it starts empty.
-func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
-	return tableSetMatching(dbSchema, func(table dbschematypes.DBTable) bool {
-		return table.RowStatsUnknown || table.EstimatedRows > 0
-	})
+// populated is true for a table that holds rows, and for one whose row
+// statistics the database could not compute. PostgreSQL reports a relation
+// whose cumulative counters were reset as n_live_tup = 0, which floors to the
+// same 0 an empty table reports; reading that 0 as "empty" is how a table
+// holding millions of rows earned a blocking CREATE INDEX immediately after a
+// restored dump or a crash-recovery restart. Choosing the concurrent build when
+// nothing is known costs a non-transactional migration file on a table that may
+// turn out to be empty; choosing the blocking build costs writes for the length
+// of the scan. Only the first is recoverable, so the unknown resolves toward it.
+type tableConcurrencyFacts struct {
+	partitioned bool
+	populated   bool
 }
 
-// partitionedTableSet indexes the PostgreSQL declaratively partitioned parents.
-func partitionedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
-	return tableSetMatching(dbSchema, func(table dbschematypes.DBTable) bool {
-		return table.Partitioned
-	})
+// tableFactsIndex answers, for the table spelling an index ref carries, what
+// the catalog reported about the table that spelling names.
+//
+// Two spellings reach this lookup because the two sides of a diff qualify a
+// table differently: the PostgreSQL reader blanks the schema of the
+// connection's own schema, so a database-side ref is bare, while a Go entity
+// declared with an explicit schema produces "schema.table". A bare spelling
+// therefore has to be able to reach a schema-qualified table -- but only when
+// no table answers to it exactly, and never by pooling every schema's tables
+// into one set.
+//
+// That pooling is the wrong implementation this type exists to prevent. One
+// flat set keyed under both spellings makes a partitioned "app"."events" and an
+// ordinary "public"."events" indistinguishable, so a bare ref is answered by
+// whichever fact any table with that name carries: the ordinary table loses its
+// concurrent build, and an explicit diff.concurrent_index request is refused
+// with a diagnostic naming a table that is not partitioned. The two facts also
+// have to aggregate in opposite directions when the bare spelling really is
+// ambiguous -- partitioned only when every candidate is partitioned, populated
+// when any candidate is -- because both refusing and downgrading on a guess
+// costs a capability, while the concurrent build is the recoverable side of
+// each choice.
+type tableFactsIndex struct {
+	qualified map[string]tableConcurrencyFacts
+	bare      map[string]tableConcurrencyFacts
 }
 
-// tableSetMatching collects the selected tables under both the qualified and
-// the bare spelling, because an index ref carries whichever one the diff was
-// built from.
-func tableSetMatching(
-	dbSchema *dbschematypes.DBSchema,
-	selected func(dbschematypes.DBTable) bool,
-) map[string]struct{} {
-	out := make(map[string]struct{})
+// lookup resolves an index ref's table spelling. The second result is false
+// when no table in the schema answers to it at all -- the migration is creating
+// that table, so it starts empty and stays transactional.
+func (idx tableFactsIndex) lookup(tableName string) (tableConcurrencyFacts, bool) {
+	if facts, ok := idx.qualified[tableName]; ok {
+		return facts, true
+	}
+	facts, ok := idx.bare[tableName]
+	return facts, ok
+}
+
+// indexTableFacts indexes a read schema by both spellings an index ref can use.
+func indexTableFacts(dbSchema *dbschematypes.DBSchema) tableFactsIndex {
+	index := tableFactsIndex{
+		qualified: make(map[string]tableConcurrencyFacts),
+		bare:      make(map[string]tableConcurrencyFacts),
+	}
 	if dbSchema == nil {
-		return out
+		return index
 	}
 	for _, table := range dbSchema.Tables {
-		if !selected(table) {
-			continue
+		facts := tableConcurrencyFacts{
+			partitioned: table.Partitioned,
+			populated:   table.RowStatsUnknown || table.EstimatedRows > 0,
 		}
-		out[table.QualifiedName()] = struct{}{}
+		mergeTableConcurrencyFacts(index.qualified, table.QualifiedName(), facts)
 		if table.Schema != "" {
-			out[table.Name] = struct{}{}
+			mergeTableConcurrencyFacts(index.bare, table.Name, facts)
 		}
 	}
-	return out
+	return index
+}
+
+// mergeTableConcurrencyFacts folds one more candidate into a spelling that
+// several tables answer to.
+func mergeTableConcurrencyFacts(
+	into map[string]tableConcurrencyFacts,
+	key string,
+	facts tableConcurrencyFacts,
+) {
+	previous, seen := into[key]
+	if !seen {
+		into[key] = facts
+		return
+	}
+	into[key] = tableConcurrencyFacts{
+		partitioned: previous.partitioned && facts.partitioned,
+		populated:   previous.populated || facts.populated,
+	}
 }
 
 type splitSchemaDiffs struct {
