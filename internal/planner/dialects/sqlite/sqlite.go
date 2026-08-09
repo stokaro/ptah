@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
@@ -42,7 +43,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := rejectUnsupportedChanges(diff); err != nil {
 		return nil, err
 	}
-	rebuilds, err := planTableRebuilds(diff)
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	rebuilds, err := planTableRebuilds(diff, semantics)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +53,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	}
 
 	var result []ast.Node
-	addedTables, err := p.addTables(diff, generated)
+	addedTables, err := p.addTables(diff, generated, semantics)
 	if err != nil {
 		return nil, err
 	}
@@ -61,10 +63,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	result = append(result, modifiedTables...)
-	result = append(result, p.addViews(diff, generated)...)
-	result = append(result, p.modifyViews(diff, generated)...)
-	result = append(result, p.addTriggers(diff, generated, rebuilds)...)
-	result = append(result, p.modifyTriggers(diff, generated, rebuilds)...)
+	result = append(result, p.addViews(diff, generated, semantics)...)
+	result = append(result, p.modifyViews(diff, generated, semantics)...)
+	result = append(result, p.addTriggers(diff, generated, rebuilds, semantics)...)
+	result = append(result, p.modifyTriggers(diff, generated, rebuilds, semantics)...)
 	addedIndexes, err := p.addIndexes(diff, indexes, rebuilds)
 	if err != nil {
 		return nil, err
@@ -97,6 +99,10 @@ func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
 type tableRebuilds struct {
 	order   []string
 	targets map[string]rebuildTarget
+	// semantics answers "is this reference the table this rebuild covers". A
+	// trigger's owning table and a TableDiff's name are two different sources
+	// and do not have to spell the schema the same way.
+	semantics identifier.Semantics
 }
 
 // rebuildTarget records what a single table's rebuild has to account for.
@@ -109,14 +115,21 @@ type rebuildTarget struct {
 }
 
 func (r tableRebuilds) target(tableName string) (rebuildTarget, bool) {
-	target, ok := r.targets[tableName]
+	key := objectlookup.Find(r.order, tableName, r.semantics, identity)
+	if key == nil {
+		return rebuildTarget{}, false
+	}
+	target, ok := r.targets[*key]
 	return target, ok
 }
 
 func (r tableRebuilds) contains(tableName string) bool {
-	_, ok := r.targets[tableName]
+	_, ok := r.target(tableName)
 	return ok
 }
+
+// identity is the name-of accessor for a slice that already holds names.
+func identity(name string) string { return name }
 
 // planTableRebuilds decides which existing tables need a rebuild.
 //
@@ -125,8 +138,8 @@ func (r tableRebuilds) contains(tableName string) bool {
 // or generated expression, and any table constraint — has to be rewritten
 // through a new table. A constraint change that cannot be attributed to a table
 // is still refused, because there is nothing to rebuild.
-func planTableRebuilds(diff *types.SchemaDiff) (tableRebuilds, error) {
-	rebuilds := tableRebuilds{targets: map[string]rebuildTarget{}}
+func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (tableRebuilds, error) {
+	rebuilds := tableRebuilds{targets: map[string]rebuildTarget{}, semantics: semantics}
 	add := func(tableName string, addedColumns []string) {
 		target, seen := rebuilds.targets[tableName]
 		if !seen {
@@ -144,7 +157,7 @@ func planTableRebuilds(diff *types.SchemaDiff) (tableRebuilds, error) {
 		add(table.TableName, table.ColumnsAdded)
 	}
 
-	constrained, err := existingTablesWithConstraintChanges(diff)
+	constrained, err := existingTablesWithConstraintChanges(diff, semantics)
 	if err != nil {
 		return tableRebuilds{}, err
 	}
@@ -166,7 +179,7 @@ func planTableRebuilds(diff *types.SchemaDiff) (tableRebuilds, error) {
 		// rebuildCopiedColumns turns addedColumns into a set before using it, so
 		// a repeat cannot change the plan, and a guard against it would be a
 		// branch no fixture could redden.
-		add(tableName, addedColumnsFor(diff, tableName))
+		add(tableName, addedColumnsFor(diff, tableName, semantics))
 	}
 	return rebuilds, nil
 }
@@ -182,18 +195,27 @@ func tableDiffNeedsRebuild(table types.TableDiff) bool {
 // keep existing across the diff while gaining or losing a constraint. Adding
 // and dropping a table already carries its constraints inline, so those are
 // skipped.
-func existingTablesWithConstraintChanges(diff *types.SchemaDiff) ([]string, error) {
+// The two `Contains` questions below cross two different sources: a constraint's
+// owning table comes from the declaration or from the catalog, while
+// TablesAdded/TablesRemoved carry the comparator's spelling. Asking them as raw
+// string membership answered "not being created" for a table the diff creates as
+// `main.t` while the constraint names it `t`, and the table was then rebuilt as
+// well as created. SQLite folds ASCII, so the same split opens on case alone.
+func existingTablesWithConstraintChanges(
+	diff *types.SchemaDiff,
+	semantics identifier.Semantics,
+) ([]string, error) {
 	tables := map[string]bool{}
 	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {
 		named[constraint.Name] = true
-		if !slices.Contains(diff.TablesAdded, constraint.TableName) {
+		if !objectlookup.Contains(diff.TablesAdded, constraint.TableName, semantics) {
 			tables[constraint.TableName] = true
 		}
 	}
 	for _, constraint := range diff.ConstraintsRemovedWithTables {
 		named[constraint.Name] = true
-		if !slices.Contains(diff.TablesRemoved, constraint.TableName) {
+		if !objectlookup.Contains(diff.TablesRemoved, constraint.TableName, semantics) {
 			tables[constraint.TableName] = true
 		}
 	}
@@ -249,15 +271,14 @@ func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
 	return nil
 }
 
-func (p *Planner) addTables(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
-	added := make(map[string]bool, len(diff.TablesAdded))
-	for _, name := range diff.TablesAdded {
-		added[name] = true
-	}
-
+func (p *Planner) addTables(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) ([]ast.Node, error) {
 	var result []ast.Node
 	for _, table := range generated.Tables {
-		if !added[table.QualifiedName()] {
+		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
 			continue
 		}
 		node := fromschema.FromTable(table, generated.Fields, generated.Enums, DialectName)
@@ -360,7 +381,7 @@ func (p *Planner) rebuildTable(
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 ) ([]ast.Node, error) {
-	table := findTable(generated.Tables, target.tableName)
+	table := findTable(generated.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
 	if table == nil {
 		return nil, unsupportedFeaturef("rebuilding table %s requires the retained table definition", target.tableName)
 	}
@@ -414,13 +435,8 @@ func validateRebuildTablePreconditions(table goschema.Table, diff *types.SchemaD
 	return nil
 }
 
-func findTable(tables []goschema.Table, name string) *goschema.Table {
-	for i := range tables {
-		if tables[i].QualifiedName() == name {
-			return &tables[i]
-		}
-	}
-	return nil
+func findTable(tables []goschema.Table, name string, semantics identifier.Semantics) *goschema.Table {
+	return objectlookup.Qualified(tables, name, semantics)
 }
 
 func rebuildTableName(table goschema.Table) string {
@@ -789,20 +805,28 @@ func (p *Planner) removeTables(diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func (p *Planner) addViews(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addViews(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	var result []ast.Node
 	for _, name := range diff.ViewsAdded {
-		if view := findView(generated.Views, name); view != nil {
+		if view := findView(generated.Views, name, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyViews(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyViews(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	var result []ast.Node
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
+		if view := findView(generated.Views, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view).SetReplace())
 		}
 	}
@@ -817,14 +841,15 @@ func (p *Planner) removeViews(diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func findView(views []goschema.View, name string) *goschema.View {
-	return objectlookup.View(views, name)
+func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+	return objectlookup.View(views, name, semantics)
 }
 
 func (p *Planner) addTriggers(
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 	rebuilds tableRebuilds,
+	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
 	for _, ref := range diff.TriggersAdded {
@@ -833,7 +858,7 @@ func (p *Planner) addTriggers(
 		if rebuilds.contains(ref.TableName) {
 			continue
 		}
-		if trigger := findTrigger(generated.Triggers, ref.TableName, ref.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, ref.TableName, ref.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
@@ -844,13 +869,14 @@ func (p *Planner) modifyTriggers(
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 	rebuilds tableRebuilds,
+	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
 	for _, triggerDiff := range diff.TriggersModified {
 		if rebuilds.contains(triggerDiff.TableName) {
 			continue
 		}
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
@@ -865,8 +891,12 @@ func (p *Planner) removeTriggers(diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName)
+func findTrigger(
+	triggers []goschema.Trigger,
+	tableName, triggerName string,
+	semantics identifier.Semantics,
+) *goschema.Trigger {
+	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 func unsupportedFeaturef(format string, args ...any) error {
@@ -885,11 +915,23 @@ func unsupportedFeaturef(format string, args ...any) error {
 // schema level: such a table is in TablesModified with its ColumnsAdded, but
 // tableDiffNeedsRebuild does not select it, so the rebuild would otherwise be
 // planned without knowing which columns are new.
-func addedColumnsFor(diff *types.SchemaDiff, tableName string) []string {
-	for _, table := range diff.TablesModified {
-		if table.TableName == tableName {
-			return table.ColumnsAdded
-		}
+//
+// tableName arrives from a constraint's owning table and the TableDiff names
+// come from the comparator, so the two are matched by identity rather than as
+// text. A raw `==` here answered "no added columns" whenever the two spelled the
+// schema differently, and that answer is the #930 corruption itself: the rebuild
+// then copies the new column out of the old table, where SQLite reads the
+// unknown double-quoted identifier as a STRING LITERAL and writes the column's
+// own name into every row.
+func addedColumnsFor(diff *types.SchemaDiff, tableName string, semantics identifier.Semantics) []string {
+	table := objectlookup.Find(
+		diff.TablesModified,
+		tableName,
+		semantics,
+		func(candidate types.TableDiff) string { return candidate.TableName },
+	)
+	if table == nil {
+		return nil
 	}
-	return nil
+	return table.ColumnsAdded
 }
