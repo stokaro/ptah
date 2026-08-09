@@ -700,6 +700,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Live and differential corpus breadth](#live-and-differential-corpus-breadth) | Conformance coverage | [ptah-atlas-conformance#167](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
+| [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -1025,6 +1026,50 @@ The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse, so no invocation the binary refuses succeeds here.
 
 **Tracking.** [`stokaro/ptah#1101`](https://github.com/stokaro/ptah/issues/1101)
+
+### Exclude field selectors
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A field selector is the `.field` suffix behind a
+`[type=...]` selector: `--exclude '*[type=table].comment'` asks for the comment
+of every table to be dropped while the tables themselves stay. The pinned Atlas
+community binary accepts every such suffix and honors none of them. Measured on
+PostgreSQL 16 with two commented tables across two schemas, all three of
+
+```text
+--exclude '*[type=table].comment'
+--exclude 'public.*[type=table].comment'
+--exclude '*[type=table].*'
+```
+
+are exit `0` there with output byte-identical to the same command without the
+flag, comments included.
+
+`ptah-compat` honors the ones it can carry out — `[type=extension].version`,
+`.comment` on `table`, `view` and `materialized_view`, and `.*` for all of them
+— and refuses the rest by name before a database is contacted. So the first and
+third of those commands are exit `0` with the tables rendered and their comments
+gone, and a suffix such as `.charset` is exit `1` naming the fields that would
+have worked.
+
+The reason not to copy accept-and-ignore is the one the gap register already
+records for `file()`: an `--exclude` selector is a scoping instruction, and the
+reason to write one is usually that the object must not be touched. Accepting
+one and silently not carrying it out defeats that intent with no diagnostic, and
+on `schema apply` and `schema diff` the same shape of miss reaches a `DROP`.
+Both directions here are safe under the drop-in rule: honoring a selector
+subtracts more from a plan rather than less, and refusing one exits `1` where
+that binary exits `0`, never the reverse.
+
+The second of those commands stays exit `1` in `ptah-compat`, and for a
+different reason — the pattern-depth rule, not the field rule. That binary
+refuses the identical pattern on a schema-bound URL as
+`too many parts in pattern: "public.public.*[type=table].comment"`, and Ptah
+applies one depth rule to every scope, so accepting it would exit `0` where that
+binary exits `1`.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 
 A green docs build only proves the documentation site builds and internal links
 resolve. It is not parity evidence. Use the conformance reports for measured

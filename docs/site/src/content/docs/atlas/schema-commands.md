@@ -105,12 +105,24 @@ follows the documented Atlas behavior.
 
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors, and removes matching resources from HCL,
-SQL, JSON, and custom-template output. Field-level exclude selector support
-includes the Atlas-documented `*[type=extension].version` form.
+SQL, JSON, and custom-template output. Exporter blocks remain an explicit gap.
 
-Other field-level selectors, and type selectors on non-final pattern segments,
-fail explicitly before any database is contacted. Exporter blocks remain an
-explicit gap.
+A type selector sits on the final pattern segment, and `[type=schema]` may sit
+on the leading one: `*[type=schema].*[type=table]` names every table in every
+schema, and `app[type=schema].*[type=table]` narrows that to one schema. A type
+selector on any other segment is refused before a database is contacted.
+
+A **field selector** — the `.field` suffix behind a type selector — names a
+field to subtract while the object it belongs to stays. Ptah honors:
+
+- `[type=extension].version`
+- `.comment` on `table`, `view` and `materialized_view`
+- `.*`, which names every field the selected types support
+
+Any other field is refused, by name, before a database is contacted. See
+[the comparison](../comparison/#exclude-field-selectors) for why Ptah refuses
+these rather than accepting and ignoring them the way the pinned community
+binary does.
 
 A pattern matches an object under either spelling: its bare name, or its name
 qualified by the schema that owns it. Introspection reports an object in the
@@ -236,12 +248,25 @@ Error: too many parts in pattern: "public.public.users.name"
 The refusal is a usage error rather than a no-op on purpose. A pattern that
 deep is almost always an attempt to name a table, and matching it against
 columns would answer a question that was not asked by removing a column from a
-table the user was trying to keep whole. Parts are counted on the pattern as
-written, selector text included, so `*[type=extension].version` is accepted and
-`public.*[type=extension].version` is refused — the same arithmetic the
-community binary applies on a schema-bound URL. A pattern too deep for any
-scope, such as `*.*.*.*`, is refused before a database is contacted, so its
-message carries no schema prefix.
+table the user was trying to keep whole. A pattern too deep for any scope, such
+as `*.*.*.*`, is refused before a database is contacted, so its message carries
+no schema prefix.
+
+Parts are counted on the pattern as written, selector text and field suffix
+included:
+
+- `*[type=extension].version` and `*[type=table].comment` are accepted.
+- `public.*[type=extension].version` and `public.*[type=table].comment` are
+  refused — the same arithmetic the community binary applies on a schema-bound
+  URL, where it answers
+  `too many parts in pattern: "public.public.*[type=table].comment"`.
+- `*[type=schema].*[type=table]` is accepted in every scope: a leading
+  `[type=schema]` segment fills the schema slot itself, so the connection's
+  schema is not counted a second time.
+
+Counting the resource glob instead would accept the refused spellings, and since
+Ptah applies one depth rule to every scope that would mean exiting 0 where the
+community binary exits 1.
 
 ### How an inspected column type is written
 

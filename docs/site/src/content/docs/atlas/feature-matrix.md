@@ -130,7 +130,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is applied. `--dry-run` and `--auto-approve` exclude each other on the command line, as on CE. |
-| `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs plus one final-segment [type=...]; qualified globs now reach default-schema tables, views and their children, but enum and function filters still compare the bare name. |
+| `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs, one final-segment [type=...], and [type=schema] on the leading segment. Qualified globs reach every object kind. A child under a qualified object is a depth error. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
 | `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. |
@@ -145,7 +145,7 @@ seven of them as open capabilities regardless.
 | Exclude subtracts a named schema and its contents | ✅ | ✅ | ❔ | A one-part selector names a schema, which leaves with every object in it. Schemas were read and rendered but never asked, so `--exclude app` refused as unmatched and still planned app's drops. |
 | Exclude subtracts sequences, domains, composite types and range types | ✅ | ❔ | ❔ | `--exclude` reaches the same object kinds `--include` selects. Before, these four were read and cloned but never offered to a pattern, so excluding one was a silent no-op that still planned its DROP. |
 | Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply registers the shared helper set, so {{ json . }} renders an Atlas-shaped document. schema diff registers only sql, as the community binary does. |
-| Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. The community binary accepts a .field suffix and ignores it. |
+| Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | [type=extension].version, and .comment on table, view and materialized_view; .* names all of them. A field Ptah cannot subtract is refused, not ignored as the community binary does. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
 | Inspected document declares what it does not describe | ✅ | ❌ | ❌ | A compat inspect document records the block kinds it omitted, in its own header and in every split member, so a later apply reads the omission as unknown rather than as deletion intent. |
