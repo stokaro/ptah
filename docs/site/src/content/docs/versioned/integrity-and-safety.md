@@ -65,12 +65,20 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-`ptah-compat migrate apply`, `migrate status`, and `migrate set` enforce the
-same gate on `atlas.sum` directories with Atlas's own checksum output, matching
-official Atlas behavior. Reporting is not exempt: on a hashed directory whose
-only migration was deleted, an ungated `migrate status` announced
-"Database is up to date"
+`ptah-compat migrate validate`, `apply`, `status`, `set`, `new` and `diff`
+enforce the same gate on `atlas.sum` directories with Atlas's own checksum
+output, matching official Atlas behavior. Reporting is not exempt: on a hashed
+directory whose only migration was deleted, an ungated `migrate status`
+announced "Database is up to date"
 ([#974](https://github.com/stokaro/ptah/issues/974)).
+
+The verbs that **write** are on that list for a reason of their own. A gate that
+fired only on the reading verbs would still let `migrate new` append a file to a
+tampered directory and re-hash it on the way out, so the tampering would end up
+inside a directory that verifies clean — the laundering shape recorded for
+`migrate import` in [#1095](https://github.com/stokaro/ptah/issues/1095). All
+six verbs refuse before anything is written, which is what the pinned Atlas
+community binary v1.3.0 does on the same directory.
 
 ### The sum file has to agree with itself, too
 
