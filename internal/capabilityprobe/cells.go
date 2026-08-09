@@ -127,7 +127,12 @@ func (c Cell) String() string {
 //
 // The lines are the vendor-supported ones, checked against the vendors on
 // 2026-08-09, plus any line whose preset Ptah still ships — a preset with no
-// cell is a claim nothing in this repository can measure.
+// cell is a claim nothing in this repository can measure — plus any line this
+// repository's own docker-compose.yaml or integration workflow starts. That
+// last source is not decoration: a container CI runs and the matrix does not
+// declare is a server whose preset nothing here can describe, and cells_test.go
+// derives the check from those two files rather than from a list somebody has
+// to remember to edit.
 //
 // Four presets still have no cell, and each absence is deliberate:
 //
@@ -189,7 +194,18 @@ var Cells = []Cell{
 
 	// MySQL: the two LTS lines (endoflife.date/api/mysql.json, read
 	// 2026-08-09 — 9.7 latest 9.7.2 EOL 2034-04-21, 8.4 latest 8.4.11 EOL
-	// 2032-04-30; both flagged LTS).
+	// 2032-04-30; both flagged LTS), plus 26.7, which is the line this
+	// repository actually starts.
+	{
+		Dialect: platform.MySQL, Line: "26.7",
+		Preset: nil, PresetName: "",
+		Refinement: RefinedByVersion, Image: "mysql:26.7",
+		Note: "no measured MySQL 26 preset: newestMeasuredMySQLMajor is 9, so a 26 server resolves " +
+			"saturated onto MySQL84. This is the line docker-compose.yaml and " +
+			".github/workflows/go-integration-tests.yml pin, and a live mysql:26.7 reports VERSION() " +
+			"26.7.0 — so until a preset is measured for it, the servers this repository runs its own " +
+			"MySQL suite against are described by a stand-in",
+	},
 	{
 		Dialect: platform.MySQL, Line: "9.7",
 		Preset: capability.MySQL84, PresetName: "MySQL84",
@@ -228,7 +244,7 @@ var Cells = []Cell{
 	},
 
 	// ClickHouse has no version ladder: ResolveServerVersion parses the
-	// version and then discards it, so all three lines receive ClickHouse24.
+	// version and then discards it, so all four lines receive ClickHouse24.
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
@@ -243,6 +259,14 @@ var Cells = []Cell{
 		Dialect: platform.ClickHouse, Line: "25.8",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
 		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:25.8",
+	},
+	{
+		Dialect: platform.ClickHouse, Line: "24.10",
+		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
+		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:24.10",
+		Note: "the second ClickHouse service .github/workflows/go-integration-tests.yml starts, and " +
+			"the line the ClickHouse24 preset is named after; a live clickhouse/clickhouse-server:24.10 " +
+			"reports 24.10.4.191",
 	},
 
 	// SQL Server lines are numbered by product version here, not by the

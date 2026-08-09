@@ -10,6 +10,8 @@ package capabilityprobe
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -17,6 +19,9 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 )
+
+// probedDialects are the dialects the probe has a statement table for.
+var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaDB}
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
 // the matrix complete as the registry grows.
@@ -26,6 +31,14 @@ import (
 // complete. "Exactly once" rather than "at least once" is deliberate: two
 // experiments deciding the same key would let the later one overwrite the
 // earlier answer depending on table order.
+//
+// The two ways a key can be answered are counted SEPARATELY and only then
+// added. Seeding one counter from the declared-undecidable map and adding the
+// experiments to it — which is what this test used to do — makes the two
+// indistinguishable, so moving a key out of experiments and into undecided
+// keeps the total at one and coverage drops with nothing going red. Telling
+// them apart is what lets
+// TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 	c := qt.New(t)
 
@@ -34,30 +47,134 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 		registered[key] = true
 	}
 
-	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.MariaDB} {
+	for _, dialect := range probedDialects {
 		c.Run(dialect, func(c *qt.C) {
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 
-			answered := map[capability.Capability]int{}
-			for key := range dialectPlan.undecided {
-				answered[key]++
-			}
+			byExperiment := map[capability.Capability]int{}
 			for _, current := range dialectPlan.experiments {
-				c.Assert(len(current.decides) > 0, qt.IsTrue, qt.Commentf("an experiment that decides nothing cannot be run"))
+				c.Check(len(current.decides) > 0, qt.IsTrue, qt.Commentf("an experiment that decides nothing cannot be run"))
 				for _, key := range current.decides {
-					answered[key]++
+					byExperiment[key]++
 				}
+			}
+			declared := map[capability.Capability]int{}
+			for key := range dialectPlan.undecided {
+				declared[key]++
 			}
 
 			for key := range registered {
-				c.Assert(answered[key], qt.Equals, 1,
-					qt.Commentf("%s: capability %q is answered %d times, want exactly once", dialect, key, answered[key]))
+				c.Check(byExperiment[key]+declared[key], qt.Equals, 1,
+					qt.Commentf("%s: capability %q is answered %d times by an experiment and %d times by "+
+						"declaration, want exactly one answer in total",
+						dialect, key, byExperiment[key], declared[key]))
 			}
-			for key := range answered {
-				c.Assert(registered[key], qt.IsTrue,
-					qt.Commentf("%s: plan answers %q, which is not in the capability registry", dialect, key))
+			for key := range byExperiment {
+				c.Check(registered[key], qt.IsTrue,
+					qt.Commentf("%s: an experiment decides %q, which is not in the capability registry", dialect, key))
 			}
+			for key := range declared {
+				c.Check(registered[key], qt.IsTrue,
+					qt.Commentf("%s: the plan declares %q undecidable, which is not in the capability registry", dialect, key))
+			}
+		})
+	}
+}
+
+// TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy pins WHICH keys each
+// dialect is allowed to answer by declaration instead of by measurement.
+//
+// Counting answers cannot see this. A key moved from experiments into undecided
+// is still answered exactly once, so the count stays at one while the run
+// decides one row fewer — the cheapest way to make a stubborn row stop failing
+// is to declare it undecidable, and nothing about the totals notices. The
+// expected sets below are therefore written out: growing one is a deliberate
+// edit to a test, reviewed as the coverage reduction it is, rather than a
+// silent side effect of editing plans.go.
+//
+// Each entry is the set plans.go argues for in a comment at the point of
+// declaration. Postgres argues for none: everything it registers, it measures.
+func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tc := range []struct {
+		dialect string
+		want    []capability.Capability
+	}{{
+		dialect: platform.Postgres,
+		want:    nil,
+	}, {
+		dialect: platform.MySQL,
+		want:    []capability.Capability{capability.RoleManagement},
+	}, {
+		dialect: platform.MariaDB,
+		want:    []capability.Capability{capability.RoleManagement, capability.Sequences},
+	}} {
+		c.Run(tc.dialect, func(c *qt.C) {
+			dialectPlan, ok := planFor(tc.dialect)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(slices.Sorted(maps.Keys(dialectPlan.undecided)), qt.DeepEquals, tc.want,
+				qt.Commentf("%s declares a different set of keys undecidable in advance than this test allows; "+
+					"adding one lowers what the probe measures, so it belongs here as a reviewed edit", tc.dialect))
+		})
+	}
+}
+
+// TestDecidable_IsDerivedFromThePlanAndTheLine pins the floor's derivation
+// against what live servers actually decided on 2026-08-09: postgres:17 decided
+// 24 of 24, mysql:9.7 decided 23, mariadb:10.11 decided 22. Those runs are the
+// reason the floor can be this strict without failing a healthy server.
+func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
+	c := qt.New(t)
+
+	registered := len(capability.All())
+	for _, tc := range []struct {
+		name string
+		cell Cell
+		want int
+	}{{
+		name: "postgres declares nothing undecidable, so every registered row is owed",
+		cell: measuredCell,
+		want: registered,
+	}, {
+		name: "mysql owes one fewer: role_management names a surface no MySQL path reads",
+		cell: Cell{
+			Dialect: platform.MySQL, Line: "9.7",
+			Preset: capability.MySQL84, PresetName: "MySQL84",
+			Refinement: RefinedByVersion,
+		},
+		want: registered - 1,
+	}, {
+		name: "mariadb owes two fewer: sequences is a claim about the generator, not the engine",
+		cell: Cell{
+			Dialect: platform.MariaDB, Line: "10.11",
+			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
+			Refinement: RefinedByVersion,
+		},
+		want: registered - 2,
+	}, {
+		name: "a banner-refined line owes nothing, because no observation there can be credited to it",
+		cell: Cell{
+			Dialect: platform.CockroachDB, Line: "26.2",
+			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
+			Refinement: RefinedByBanner,
+		},
+		want: 0,
+	}, {
+		name: "a line with no measured preset owes nothing either",
+		cell: Cell{
+			Dialect: platform.MySQL, Line: "26.7",
+			Refinement: RefinedByVersion,
+			Note:       "no measured MySQL 26 preset",
+		},
+		want: 0,
+	}} {
+		c.Run(tc.name, func(c *qt.C) {
+			dialectPlan, ok := planFor(tc.cell.Dialect)
+			c.Assert(ok, qt.IsTrue)
+			report := reportOn(tc.cell, true, capability.Postgres17())
+			c.Assert(decidable(report, dialectPlan), qt.Equals, tc.want)
 		})
 	}
 }
@@ -67,12 +184,12 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 func TestPlans_DeclaredUndecidablesCarryAReason(t *testing.T) {
 	c := qt.New(t)
 
-	for _, dialect := range []string{platform.Postgres, platform.MySQL, platform.MariaDB} {
+	for _, dialect := range probedDialects {
 		c.Run(dialect, func(c *qt.C) {
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 			for key, reason := range dialectPlan.undecided {
-				c.Assert(len(reason) > 40, qt.IsTrue,
+				c.Check(len(reason) > 40, qt.IsTrue,
 					qt.Commentf("%s/%s: an undecidable reason has to say why, not just that", dialect, key))
 			}
 		})
@@ -278,6 +395,85 @@ func TestReportErr(t *testing.T) {
 			assertErrMatches(c, tc.build().Err(), tc.want)
 		})
 	}
+}
+
+// TestReportErr_TheFloorIsWhatThePlanPromised covers the erosion a
+// "decided at least one row" guard cannot see.
+//
+// A run that answered one row of twenty-four is not a run that measured this
+// server, and before the floor existed it exited zero. The rows below move the
+// decided count around a fixed promise, so the boundary is exercised from both
+// sides rather than only from the failing one.
+func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
+	c := qt.New(t)
+
+	registered := len(capability.All())
+	for _, tc := range []struct {
+		name  string
+		build func() *Report
+		want  string
+	}{{
+		name: "a run that decided everything its plan promised passes",
+		build: func() *Report {
+			return promisedReport(registered)
+		},
+		want: "",
+	}, {
+		name: "one promised row short is a failure, not a rounding error",
+		build: func() *Report {
+			return promisedReport(registered, capability.XMLType)
+		},
+		want: `(?s).*decided 23 of 24 capability rows, 1 fewer than the 24 the postgres plan promised to answer.*`,
+	}, {
+		name: "the shape the old floor let through: one row decided out of twenty-four",
+		build: func() *Report {
+			return promisedReport(registered, everyKeyExcept(capability.XMLType)...)
+		},
+		want: `(?s).*decided 1 of 24 capability rows, 23 fewer than the 24 the postgres plan promised to answer.*`,
+	}, {
+		name: "a plan that promised nothing still may not decide nothing",
+		build: func() *Report {
+			return promisedReport(0, everyKeyExcept()...)
+		},
+		want: `(?s).*decided 0 of 24 capability rows; a probe that measured nothing.*`,
+	}} {
+		c.Run(tc.name, func(c *qt.C) {
+			assertErrMatches(c, tc.build().Err(), tc.want)
+		})
+	}
+}
+
+// promisedReport builds a report on an attributable, measured line that
+// promised to decide `promised` rows and left `undecided` of them unanswered.
+func promisedReport(promised int, undecided ...capability.Capability) *Report {
+	preset := capability.Postgres17()
+	report := reportOn(measuredCell, true, preset)
+	report.Planned = true
+	report.Control = Attempt{Statement: nonsenseControl}
+	report.Resolution.Capabilities = preset
+	report.Resolution.VersionSpecific = true
+	report.Decidable = promised
+
+	observations := map[capability.Capability]observation{}
+	for _, key := range capability.All() {
+		observations[key] = decided(preset.Has(key))
+	}
+	for _, key := range undecided {
+		observations[key] = cannotDecide("the deciding statement for %q was never executed", key)
+	}
+	report.Rows = assemble(report, observations, nil)
+	return report
+}
+
+// everyKeyExcept returns the registry minus the named keys.
+func everyKeyExcept(keep ...capability.Capability) []capability.Capability {
+	var out []capability.Capability
+	for _, key := range capability.All() {
+		if !slices.Contains(keep, key) {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 // TestRun_RefusesAnEmptyMatrix pins the guard that stops a matrix covering

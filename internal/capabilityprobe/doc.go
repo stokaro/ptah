@@ -20,6 +20,16 @@
 // therefore also fails a run that decided nothing — a probe that skipped every
 // row must not read as a probe that passed every row.
 //
+// It fails a run that decided LESS THAN ITS PLAN PROMISED for the same reason.
+// A floor of one row is barely a floor: twenty-three of twenty-four could go
+// quietly unmeasured and the run would still exit zero. [Report.Decidable]
+// counts the keys the dialect's plan did not declare undecidable in advance —
+// derived from the plan, not written down per dialect, because a hand-kept
+// number drifts the moment a capability is registered and drifts downward. On
+// a line no observation can be credited to it is zero: every row there is
+// undecidable by construction, and demanding decisions would make the exit
+// code permanently uninformative rather than newly strict.
+//
 // # Why the deciding statement is not always the obvious one
 //
 // Four shapes of statement decide nothing on their own, and each of them was

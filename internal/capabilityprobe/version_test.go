@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/capabilityprobe"
 )
 
@@ -29,6 +30,13 @@ const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-lin
 // banner as 2025 and the YugabyteDB banner as 15.12 is what makes the corrected
 // rows mean something. Without the control this test would only assert that a
 // function returns what it was written to return.
+//
+// "The same rule" is an equivalence, and an equivalence nobody executes is a
+// comment. Two tests execute it instead of asserting it:
+// TestParseVersion_TheSharedParserReallyMisreadsTheSQLServerBanner below runs
+// the shared resolver on these bytes, and
+// capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners calls the
+// shared parser itself, where the numbers are readable.
 func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 	c := qt.New(t)
 
@@ -96,6 +104,38 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 			c.Assert(got.String(), qt.Equals, tc.want)
 		})
 	}
+}
+
+// TestParseVersion_TheSharedParserReallyMisreadsTheSQLServerBanner runs the
+// shared code on the SQL Server banner instead of describing what it would do.
+//
+// capability.parseVersion is unexported, so the executable surface is
+// capability.ResolveServerVersion on the postgres dialect: it saturates exactly
+// when the parsed major is above the newest measured PostgreSQL line. A banner
+// the shared parser reads as 2025 therefore saturates and the product version
+// it should have read, 17.0.4065.4, does not — one call each, opposite answers,
+// no equivalence taken on trust.
+//
+// YugabyteDB cannot be exercised the same way and that is the finding rather
+// than a gap: ResolveServerVersion matches "-yb-" before it parses anything, so
+// no exported surface routes that banner through the shared parser at all.
+// capability.TestResolveServerVersion_MasksTheYugabyteMisread executes the
+// masking, and capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners
+// executes the misread underneath it.
+func TestParseVersion_TheSharedParserReallyMisreadsTheSQLServerBanner(t *testing.T) {
+	c := qt.New(t)
+
+	shared := capability.ResolveServerVersion(platform.Postgres, sqlServer2025Banner)
+	c.Assert(shared.Saturated, qt.IsTrue,
+		qt.Commentf("the shared parser must have read a major above the newest measured PostgreSQL line "+
+			"(%s) out of this banner, which is only possible if it took the marketing year", shared.NewestMeasured))
+
+	corrected, err := capabilityprobe.ParseVersion(platform.SQLServer, sqlServer2025Banner, "")
+	c.Assert(err, qt.IsNil)
+	c.Assert(corrected.String(), qt.Equals, "17.0.4065.4")
+	c.Assert(capability.ResolveServerVersion(platform.Postgres, corrected.String()).Saturated, qt.IsFalse,
+		qt.Commentf("the version the sqlserver rule recovers is below that line, so the assertion above is "+
+			"about which number the shared parser picked and not about the banner being long"))
 }
 
 func TestParseVersion_RefusesABannerWithNoDigits(t *testing.T) {
