@@ -69,7 +69,7 @@ selection on standard error.`,
 	flags.StringArrayVar(&opts.fromURLs, diffFromFlag, nil, "Current schema state: file path, database URL, or migration directory (repeatable)")
 	flags.StringArrayVar(&opts.toURLs, diffToFlag, nil, "Desired schema state: file path, database URL, or migration directory (repeatable)")
 	flags.StringVar(&opts.devURL, diffDevURLFlag, "", "Dev database URL used to choose the SQL dialect and replay migration-directory sources")
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, diffIncludeFlag, nil, "Schema objects to include in diffing (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, diffExcludeFlag, nil, "Schema objects to exclude from diffing (Atlas-style selectors)")
 	flags.StringVar(&opts.format, diffFormatFlag, "sql", "Output format: sql or json")
