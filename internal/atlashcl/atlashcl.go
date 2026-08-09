@@ -158,6 +158,11 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// down the file, and before Finalize, which reads schemas off the same
 	// blocks for the positions it covers.
 	p.resolveDocumentTableRefs()
+	// Before Finalize, which folds a repeated declaration into the first one and
+	// is what turned a document the pinned binary refuses into exit 0.
+	if err := p.rejectRedeclarations(); err != nil {
+		return nil, err
+	}
 	goschema.Finalize(p.db)
 	// A document's own account of its limits is part of the document. It rides
 	// in the leading comment header rather than in a block, because it has to
@@ -249,6 +254,10 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
+	// declaredForeignKeys holds one entry per `foreign_key` block the document
+	// declared, recorded at the block because a single-column key leaves no
+	// distinguishable trace in the IR; see [parser.recordForeignKey].
+	declaredForeignKeys []declaration
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -344,9 +353,42 @@ func (p *parser) parseSchema(block *hclsyntax.Block) error {
 	return nil
 }
 
+// enumLabels reads an `enum` block's labels the way [parser.tableLabels] reads a
+// table's: one label names the enum, two name its schema and then the enum.
+//
+// The two-label spelling is not a Ptah invention. It is what the pinned Atlas
+// community binary v1.3.0 WRITES when one bare enum name is ambiguous in a
+// realm: measured on PostgreSQL 17.10, its `schema inspect` of a database
+// holding public.mood and other.mood emits `enum "other" "mood"` and
+// `enum "public" "mood"`, and it reads a document holding a single two-label
+// block at exit 0. Ptah refused that document with "enum block requires exactly
+// one label", so a file that binary wrote was unreadable here.
+//
+// A schema label that contradicts an explicit `schema =` attribute is an error
+// rather than a precedence question, which is the rule `table` already applies.
+func (p *parser) enumLabels(block *hclsyntax.Block) (tableLabels, error) {
+	schemaAttr := p.optionalRefName(block.Body.Attributes["schema"])
+	switch len(block.Labels) {
+	case 1:
+		return tableLabels{schema: schemaAttr, name: block.Labels[0]}, nil
+	case 2:
+		if schemaAttr != "" && schemaAttr != block.Labels[0] {
+			return tableLabels{}, p.blockError(
+				block,
+				"enum %q schema label conflicts with schema attribute %q",
+				block.Labels[1], schemaAttr,
+			)
+		}
+		return tableLabels{schema: block.Labels[0], name: block.Labels[1]}, nil
+	default:
+		return tableLabels{}, p.blockError(block, "enum block requires one or two labels")
+	}
+}
+
 func (p *parser) parseEnum(block *hclsyntax.Block) error {
-	if len(block.Labels) != 1 {
-		return p.blockError(block, "enum block requires exactly one label")
+	labels, err := p.enumLabels(block)
+	if err != nil {
+		return err
 	}
 	if err := p.rejectUnsupportedEnumAttrs(block); err != nil {
 		return err
@@ -356,7 +398,7 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 		return err
 	}
 	if len(values) == 0 {
-		return p.blockError(block, "enum %q requires values", block.Labels[0])
+		return p.blockError(block, "enum %q requires values", labels.name)
 	}
 	// The `schema` attribute is read rather than merely tolerated. It was
 	// accepted by rejectUnsupportedEnumAttrs and then discarded, so a document
@@ -365,8 +407,8 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	// schema the connection defaulted to (stokaro/ptah#1276). A `function`
 	// block's schema has always been read here; an enum's is the same fact.
 	p.db.Enums = append(p.db.Enums, goschema.Enum{
-		Name:   block.Labels[0],
-		Schema: p.optionalRefName(block.Body.Attributes["schema"]),
+		Name:   labels.name,
+		Schema: labels.schema,
 		Values: values,
 	})
 	return nil
@@ -498,6 +540,9 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCh
 		if err != nil {
 			return err
 		}
+		// Recorded before it is applied, because applying a single-column key
+		// writes it onto a field where a second application is invisible.
+		p.recordForeignKey(*table, spec.name)
 		if err := p.applyForeignKey(*table, fieldsStart, block, spec); err != nil {
 			return err
 		}
