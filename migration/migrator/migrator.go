@@ -1000,7 +1000,7 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 	return queryMigrationRows(
 		ctx,
 		m,
-		m.getRevisionsSQL,
+		(*Migrator).getRevisionsSQL,
 		m.scanRevisionRow,
 		"failed to query migration revisions",
 		"failed to scan migration revision",
@@ -1011,7 +1011,7 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 func queryMigrationRows[T any](
 	ctx context.Context,
 	m *Migrator,
-	query func() string,
+	query func(*Migrator) string,
 	scan func(rowScanner) (T, error),
 	queryErr string,
 	scanErr string,
@@ -1024,7 +1024,38 @@ func queryMigrationRows[T any](
 		return []T{}, nil
 	}
 
-	return queryMigrationRowsFrom(ctx, m.conn, query(), scan, queryErr, scanErr, iterErr)
+	var revisions []T
+	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+		rows, err := queryMigrationRowsFrom(
+			ctx,
+			scoped.conn,
+			query(scoped),
+			scan,
+			queryErr,
+			scanErr,
+			iterErr,
+		)
+		revisions = rows
+		return err
+	})
+	return revisions, err
+}
+
+func (m *Migrator) withMigrationMetadataSession(ctx context.Context, use func(*Migrator) error) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return use(m)
+	}
+	return m.conn.WithSessionOrCurrent(ctx, func(conn *dbschema.DatabaseConnection) error {
+		scoped := *m
+		scoped.conn = conn
+		if scoped.migrationsSchema == "" {
+			scoped.migrationsSchema = scoped.connectionSchemaName()
+		}
+		if err := scoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
+			return err
+		}
+		return use(&scoped)
+	})
 }
 
 type migrationRowsQueryer interface {
@@ -2127,6 +2158,9 @@ func (m *Migrator) withTransactionalMigrationSession(
 		scoped.conn = conn
 		if scoped.migrationsSchema == "" {
 			scoped.migrationsSchema = scoped.connectionSchemaName()
+		}
+		if err := scoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
+			return err
 		}
 		if err := scoped.restoreNoTransactionSessionPrefix(
 			ctx,
