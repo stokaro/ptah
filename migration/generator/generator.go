@@ -382,8 +382,9 @@ func latestAtlasVersionIn(names []string) int64 {
 //     cannot open a path outside the directory it holds.
 //
 // [atlasCheckpointNameStem] keeps the old rewriting for `migrate checkpoint`.
-// That verb has no measured counterpart on the pinned binary, and its writer
-// resolves the file by pathname rather than through a rooted handle.
+// That verb has no measured counterpart on the pinned binary, so there is
+// nothing to move towards; both writers now open the file through a rooted
+// handle.
 func atlasEmptyMigrationFileName(version int64, name string) string {
 	if name == "" {
 		return fmt.Sprintf("%d.sql", version)
@@ -397,10 +398,14 @@ func atlasEmptyMigrationFileName(version int64, name string) string {
 // This is what every Atlas-layout name used to go through. `migrate new` no
 // longer does, because that binary was measured writing the name verbatim there.
 // `migrate checkpoint` keeps it: the register that prompted the change records
-// no cell for the verb, so there is nothing measured to move towards, and
-// [WriteAtlasCheckpointFile] joins the stem onto a pathname instead of opening
-// it through a rooted directory handle, so a stem carrying a separator would
-// name a file outside the directory the caller asked for.
+// no cell for the verb, so there is nothing measured to move towards.
+//
+// Containment is no longer the reason. [WriteAtlasCheckpointFile] now creates
+// the file through a rooted directory handle, which refuses a name carrying a
+// separator rather than following it out of the directory (stokaro/ptah#1118),
+// so the stem rewriting is a naming convention and not a boundary. Removing it
+// would change file names for a verb with no measured counterpart, which is why
+// it stays.
 func atlasCheckpointNameStem(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ReplaceAll(name, " ", "-")
@@ -2692,7 +2697,6 @@ func latestPtahVersionIn(names []string) int64 {
 // migrationDirFileNames lists a migration directory by pathname. It is the
 // reader-side counterpart of migrationDirNames, which lists the same thing
 // through a bound writer handle; a directory that cannot be listed reads as
-// empty, so a version scan over a missing directory starts from scratch.
 func migrationDirFileNames(outputDir string) []string {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
@@ -2714,11 +2718,6 @@ func nameSet(names []string) map[string]bool {
 		set[name] = true
 	}
 	return set
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func withNoTransactionDirective(sql string) string {
@@ -2791,57 +2790,4 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	return &MigrationFiles{
 		Files: pairs,
 	}
-}
-
-// ensureMigrationOutputDir creates the migration output directory, including
-// every missing parent above it.
-//
-// The parents are the point. This used to os.Mkdir the leaf after requiring its
-// parent to already exist, so `--dir file://a/b` with no `a` failed with
-// `parent directory "…/a" is not available` and wrote nothing, where the pinned
-// community binary v1.3.0 created `a`, `a/b`, the migration file and atlas.sum
-// and exited 0 — measured on 2026-08-07 at two and at three missing levels
-// (stokaro/ptah#1241 item 4). Ptah's OTHER writing verb already did this: the
-// `migrate diff` writer creates parents through
-// internal/atlasmigrate.ensureMigrationDirParent, so the two writers disagreed
-// with each other as well as with that binary.
-//
-// What must NOT relax is a path component that exists and is not a directory.
-// os.MkdirAll refuses that with ENOTDIR naming the offending component, and the
-// pinned binary refuses it too (`--dir file://a/b` over a regular file `a`
-// exits 1 with `stat a/b: not a directory`), so both stay exit 1.
-func ensureMigrationOutputDir(outputDir string) error {
-	info, err := os.Stat(outputDir)
-	if err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("%q exists and is not a directory", outputDir)
-		}
-		return nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return os.MkdirAll(outputDir, 0755)
-}
-
-func writeNewMigrationFile(path, content string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	removeOnError := true
-	defer func() {
-		if removeOnError {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.WriteString(content); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	removeOnError = false
-	return nil
 }
