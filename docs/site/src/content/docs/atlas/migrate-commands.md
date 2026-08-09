@@ -386,8 +386,14 @@ ptah-compat migrate apply 2 \
 
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`,
-`--lock-name`, `--skip-lock`, and `--format`. `--format` executes a Go template
-against a Ptah apply result that mirrors Atlas's public apply-template fields:
+`--to-version`, `--lock-name`, `--skip-lock`, and `--format`. The pinned
+community binary registers every one of those except `--to-version`,
+`--lock-name`, and `--skip-lock`, which are documented on the wider Atlas
+distribution's `migrate apply` and adopted here under
+[#951](https://github.com/stokaro/ptah/issues/951).
+
+`--format` executes a Go template against a Ptah apply result that mirrors
+Atlas's public apply-template fields:
 `Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
 `Dir`; `{{ json . }}` emits the same result as JSON with database credentials
 redacted. With `--env`, Ptah can read `env.url`, `migration`, and
@@ -402,6 +408,20 @@ Formatted output contains one document per attempted target with one newline
 between adjacent documents. A structured execution failure stays in that
 target's report; stderr remains empty and the process exits `1`.
 
+`--to-version` bounds the run at a migration version: every pending migration up
+to and including that version runs, and nothing above it does. A version the
+directory does not carry is refused before any migration executes, and the bound
+cannot be combined with the positional `amount`, because the two select
+different prefixes and neither outranks the other. Under `--dry-run` the bound
+narrows the reported plan the same way.
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 20240101000002
+```
+
 `--lock-name` replaces the name of the session advisory lock that serializes
 migration runs (`ptah_migrate` by default). Two runs serialize only when they
 name the same lock, so this is how a Ptah run coordinates with another tool on
@@ -411,10 +431,13 @@ executes. An empty value is refused rather than falling back to the default
 name.
 
 `--skip-lock` acquires no lock at all: no wait, no timeout, and no
-serialization against another runner. It cannot be combined with `--lock-name`,
-because there is no lock to name. On dialects with no advisory-lock semantics —
-SQLite, ClickHouse, CockroachDB, and Spanner — an explicit `--lock-name` prints
-a note on stderr naming the lock that was not acquired.
+serialization against another runner. The lock is taken before the pending set
+is computed, so a run with nothing left to apply still waits on a held lock,
+and exits `0` under `--skip-lock` in the same state. It cannot be combined with
+`--lock-name`, because there is no lock to name. On dialects with no
+advisory-lock semantics — SQLite, ClickHouse, CockroachDB, and Spanner — an
+explicit `--lock-name` prints a note on stderr naming the lock that was not
+acquired.
 
 Atlas migration files may override global `file` or `none` with a leading
 header followed by a blank line:
@@ -612,9 +635,10 @@ that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
 names (`-- +goose Frobnicate`) stay comments, as they do in Atlas.
-Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
-`--lock-name`; Ptah follows that surface and rejects those flags on
-`migrate apply`.
+The pinned community binary does not register `migrate apply --dir-format`, and
+Ptah rejects it on `migrate apply` too; the directory format is selected there
+by the `?format=` query on `--dir`, as
+[Apply a migration directory](#apply-a-migration-directory) describes.
 
 The direct `migrate down --format` path uses the same snapshot for rollback
 planning, optional `--dev-url` shadow verification, target execution, and the
