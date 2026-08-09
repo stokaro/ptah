@@ -680,8 +680,8 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
 
 ### Where Tests Live
 
-- Unit tests are ordinary `*_test.go` files that need no server. `go test ./...
-  -count=1` runs the whole set.
+- Unit tests are ordinary `*_test.go` files that need no server.
+  `go test ./... -count=1` runs the whole set.
 - Integration tests live in `integration/gonative/` behind the `integration`
   build tag, which is why `go test ./...` does not compile them. Check the
   constraint line when adding a file there: a misspelled `//go:build` is not a
