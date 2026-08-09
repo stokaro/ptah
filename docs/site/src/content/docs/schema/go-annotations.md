@@ -195,19 +195,31 @@ The diff mode writes the validated HCL file but does not modify Go source. Run
 the same command without `--cleanup-diff` to apply the prevalidated cleanup
 plan.
 
+Before publishing HCL, cleanup accounts for every recognized standalone Ptah
+directive in the captured Go AST. Each directive must use a placement listed in
+the [Go annotation reference](../../reference/go-annotations/) and must produce
+the corresponding parsed schema object. A misplaced role/function directive or
+a file-scoped RLS directive that resolves to no RLS object stops the operation
+with its source file and line; neither the HCL output nor Go sources change.
+Comments that only share a prefix with a directive, such as
+`//ptah:schema:tableau`, are ordinary comments and remain byte-for-byte intact.
+
 :::caution[Cleanup is a one-time migration]
 Cleanup fails before HCL publication when the export reports any diagnostic,
 including the expected warning for each opaque SQL body. It also fails when the
-output uses a `.go` path, aliases a protected source, or no removable
-annotations remain. Export without cleanup, review the emitted bodies in
+output uses a `.go` path, aliases a protected source, a removable directive was
+not represented in the parsed schema, or no removable annotations remain.
+
+Export without cleanup, review the emitted bodies in
 `schema.hcl`, then remove all Ptah schema annotations manually in one reviewed
 change and switch the project to the HCL source. Do not rerun export after
 manual removal starts. An export with no annotations fails and preserves the
 existing HCL file. Annotations that produce no exportable HCL object fail with
-the same preservation guarantee. Ptah revalidates the Go source set before HCL
-publication and again before cleanup. If a source changes between those steps,
-the HCL file remains published but cleanup leaves every Go file unchanged and
-returns an error.
+the same preservation guarantee.
+
+Ptah revalidates the Go source set before HCL publication and again before
+cleanup. If a source changes between those steps, the HCL file remains published
+but cleanup leaves every Go file unchanged and returns an error.
 
 If a later source fails during a multi-file cleanup, Ptah rolls back earlier
 replacements only while they still match the exact cleaned file it committed.

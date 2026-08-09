@@ -163,6 +163,25 @@ type SchemaDiff struct {
 	// plans or uniqueness protections.
 	IndexesRemoved []IndexRef `json:"indexes_removed"`
 
+	// ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
+	// object is enforced by a UNIQUE constraint of the same name on the same
+	// table. It records what the object is; each planner spells the statement
+	// its engine accepts.
+	//
+	// PostgreSQL refuses the index spelling for one:
+	// `cannot drop index uq_users_email because constraint uq_users_email on
+	// table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
+	// planner drops the constraint instead. MySQL and MariaDB are the opposite
+	// case -- a unique key and its index are one catalog row that `DROP INDEX`
+	// drops, which is what the pinned community binary v1.3.0 plans there -- so
+	// their planners ignore the list and their plans are unchanged by it.
+	//
+	// The list is not PostgreSQL-only, because the down direction needs it on
+	// every engine: what was dropped was a UNIQUE constraint, and a rollback
+	// that reverses it into an index addition restores the wrong object (see
+	// the generator's reverseIndexRemovals).
+	ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
+
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
 	ExtensionsAdded []string `json:"extensions_added"`
@@ -205,10 +224,18 @@ type SchemaDiff struct {
 	CompositeTypesRemoved  []string            `json:"composite_types_removed"`
 	CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
 
-	// RangesAdded/Removed track PostgreSQL range types. Ranges have no in-place
-	// alter, so there is no Modified category (a change is drop + recreate).
-	RangesAdded   []string `json:"ranges_added"`
-	RangesRemoved []string `json:"ranges_removed"`
+	// RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
+	// no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE
+	// DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
+	// types already use.
+	//
+	// Modified used to be absent, and the comparator built name sets only, so
+	// changing the subtype of an existing range type produced an empty plan and
+	// `schema apply` reported "Schema is synced" while the database still held
+	// the old definition (stokaro/ptah#931 item 2).
+	RangesAdded    []string    `json:"ranges_added"`
+	RangesRemoved  []string    `json:"ranges_removed"`
+	RangesModified []RangeDiff `json:"ranges_modified"`
 
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.
@@ -243,9 +270,14 @@ type SchemaDiff struct {
 	// TriggersModified contains detailed information about changed triggers.
 	TriggersModified []TriggerDiff `json:"triggers_modified"`
 
-	// RLSPoliciesAdded contains names of RLS policies that exist in the target schema
-	// but not in the current database schema
-	RLSPoliciesAdded []string `json:"rls_policies_added"`
+	// RLSPoliciesAdded contains RLS policies that exist in the target schema
+	// but not in the current database schema.
+	//
+	// A policy name is scoped to its table, not to the schema, so the name on
+	// its own does not identify a policy: two tables may each carry one called
+	// "tenant_isolation". The table travels with the name for the same reason
+	// it does in TriggersAdded.
+	RLSPoliciesAdded []RLSPolicyRef `json:"rls_policies_added"`
 
 	// RLSPoliciesRemoved contains RLS policies that exist in the current database
 	// but not in the target schema (may remove an access-control protection)
@@ -415,6 +447,61 @@ func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef) {
 	d.IndexesRemoved = sortedIndexRefs(refs)
 }
 
+// SetConstraintBackedIndexRemovals replaces the constraint-backed index
+// removals with a sorted copy, in the same key order as SetIndexRemovals.
+func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef) {
+	d.ConstraintBackedIndexRemovals = sortedIndexRefs(refs)
+}
+
+// ConstraintBackedIndexRemovalSet keys ConstraintBackedIndexRemovals for the
+// membership test a planner makes once per rendered drop. The references are
+// the ones recorded in IndexesRemoved, so an exact match is the right test:
+// both come from the same introspected index.
+func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{} {
+	set := make(map[IndexRef]struct{}, len(d.ConstraintBackedIndexRemovals))
+	for _, ref := range d.ConstraintBackedIndexRemovals {
+		set[ref] = struct{}{}
+	}
+	return set
+}
+
+// IndexRemovalsRebuiltAsUniqueConstraints keys the index removals whose object
+// a UNIQUE constraint addition in the same plan puts back.
+//
+// This is the shape a rollback of a constraint-backed index replacement has:
+// the up direction turned a UNIQUE constraint into a plain index, so the down
+// direction drops that index and adds the constraint again — and ADD CONSTRAINT
+// ... UNIQUE builds an index of the constraint's name, so the two collide on
+// one name. PostgreSQL 17.10 answers the add with
+// `relation "uq_users_email" already exists (SQLSTATE 42P07)` and MySQL 9.7.1
+// with `Error 1061 (42000): Duplicate key name 'uq_users_email'` unless the
+// drop runs first, and the planners emit constraint additions before index
+// removals. A planner therefore emits the drop with the addition and skips it
+// where it would otherwise have landed, which is what this set is for.
+//
+// The match is exact rather than semantics-folded: both sides name the same
+// introspected object, recorded from one IndexRef by the reversal that built
+// the addition.
+func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{} {
+	if len(d.ConstraintsAddedWithTables) == 0 || len(d.IndexesRemoved) == 0 {
+		return nil
+	}
+	additions := make(map[IndexRef]struct{}, len(d.ConstraintsAddedWithTables))
+	for _, add := range d.ConstraintsAddedWithTables {
+		if add.Type != "UNIQUE" || add.TableName == "" {
+			continue
+		}
+		additions[IndexRef{Name: add.Name, TableName: add.TableName}] = struct{}{}
+	}
+	set := make(map[IndexRef]struct{}, len(additions))
+	for _, ref := range d.IndexesRemoved {
+		if _, rebuilt := additions[ref]; rebuilt {
+			set[ref] = struct{}{}
+		}
+	}
+	return set
+}
+
 func sortedIndexRefs(refs []IndexRef) []IndexRef {
 	if len(refs) == 0 {
 		return nil
@@ -453,7 +540,7 @@ func (d *SchemaDiff) hasSequenceChanges() bool {
 func (d *SchemaDiff) hasUserTypeChanges() bool {
 	return len(d.DomainsAdded) > 0 || len(d.DomainsRemoved) > 0 || len(d.DomainsModified) > 0 ||
 		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0 ||
-		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0
+		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0 || len(d.RangesModified) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -494,10 +581,19 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.GrantOptionsRevoked) > 0
 }
 
-// hasConstraintChanges returns true if there are any constraint-related changes
+// hasConstraintChanges returns true if there are any constraint-related changes.
+//
+// The table-qualified lists are consulted as well as the bare name lists. The
+// comparator fills both halves together, but a caller that builds a diff from
+// the table-qualified halves alone — a planner test, a policy filter that
+// rewrites one list — would otherwise hold a diff that carries constraints and
+// answers false to HasChanges, and every check built on HasChanges would report
+// a synced schema.
 func (d *SchemaDiff) hasConstraintChanges() bool {
 	return len(d.ConstraintsAdded) > 0 ||
-		len(d.ConstraintsRemoved) > 0
+		len(d.ConstraintsRemoved) > 0 ||
+		len(d.ConstraintsAddedWithTables) > 0 ||
+		len(d.ConstraintsRemovedWithTables) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.
@@ -641,15 +737,63 @@ type FunctionDiff struct {
 }
 
 // DomainDiff represents changes to a PostgreSQL domain type.
+//
+// Changes is the human-readable "old -> new" payload. CurrentBaseType is the
+// from-side of the same comparison kept as a type spelling rather than prose,
+// because a plan that drops this domain has to be ordered by the shape the
+// database holds now. See the comment on CurrentBaseType.
 type DomainDiff struct {
 	DomainName string            `json:"domain_name"`
 	Changes    map[string]string `json:"changes"`
+
+	// CurrentBaseType is the base type the domain has in the database being
+	// compared against, in that catalog's own spelling -- the from-side of the
+	// "type" entry in Changes, structurally rather than as prose.
+	//
+	// A modification is reconciled as a non-CASCADE DROP followed by a CREATE.
+	// The CREATE belongs to the desired definitions, but the DROP executes
+	// against the database as it stands, so only the references it holds now
+	// can block it, and those are the ones recorded here. The two sides
+	// disagree exactly when the modification is what moved a reference.
+	//
+	// Empty when the caller built the diff by hand or the domain's from-side is
+	// unknown; the drop ordering then falls back to declaration order.
+	CurrentBaseType string `json:"current_base_type,omitempty"`
+}
+
+// RangeDiff represents changes to an existing PostgreSQL range type.
+type RangeDiff struct {
+	RangeName string            `json:"range_name"`
+	Changes   map[string]string `json:"changes"`
+
+	// CurrentSubtype is the subtype the range has in the database being compared
+	// against, in that catalog's own spelling. It is the from-side used to order
+	// the non-CASCADE DROP, for the same reason DomainDiff.CurrentBaseType is:
+	// the DROP runs against the database as it stands, so only the references
+	// that database holds now can block it.
+	//
+	// Empty when the caller built the diff by hand; the drop ordering then falls
+	// back to declaration order.
+	CurrentSubtype string `json:"current_subtype,omitempty"`
 }
 
 // CompositeTypeDiff represents changes to a PostgreSQL composite type.
+//
+// Changes is the human-readable "old -> new" payload. CurrentFieldTypes is the
+// from-side of the same comparison kept as type spellings, for the reason given
+// on DomainDiff.CurrentBaseType.
 type CompositeTypeDiff struct {
 	TypeName string            `json:"type_name"`
 	Changes  map[string]string `json:"changes"`
+
+	// CurrentFieldTypes are the field types the composite has in the database
+	// being compared against, in that catalog's own spellings and in field
+	// order. They order the non-CASCADE DROP the recreate path emits, which
+	// runs against the current shape rather than the desired one.
+	//
+	// Empty when the caller built the diff by hand or the type's from-side is
+	// unknown; the drop ordering then falls back to declaration order.
+	CurrentFieldTypes []string `json:"current_field_types,omitempty"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.
@@ -666,6 +810,43 @@ type SequenceDiff struct {
 type ViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
+
+	// PreviousBody is the view body that is in force before this diff is
+	// applied: the database side of a forward comparison, and the post-up side
+	// of a reversed one. It is what makes the modification path decidable.
+	//
+	// PostgreSQL accepts CREATE OR REPLACE VIEW only when the new query yields
+	// the old column list with columns appended to the end -- same names, same
+	// types, same order. Dropping, renaming or retyping a column is refused at
+	// execution time, and a down migration built with CREATE OR REPLACE is
+	// therefore un-appliable for every view modification except the one shape
+	// the up migration is least likely to have made. A planner that cannot see
+	// the prior body cannot tell the legal case from the refused one, so it has
+	// to choose between an un-appliable statement and always dropping the view
+	// with CASCADE, which takes dependents with it.
+	//
+	// An empty value means "not known". It does not on its own select a plan:
+	// what a planner cannot decide is settled by Rollback below, so a forward
+	// plan still attempts the replace -- the engine refuses it if it is illegal,
+	// and refusing costs nothing -- while a rollback takes the drop and
+	// recreate that always applies.
+	PreviousBody string `json:"previous_body,omitempty"`
+
+	// Rollback reports that this entry is being planned in the DOWN direction:
+	// the statement rendered for it runs while an operator is undoing a
+	// migration.
+	//
+	// It decides nothing on its own. It settles the cases where a planner cannot
+	// prove whether the engine accepts an in-place replace, and the two
+	// directions want opposite answers there. Going forward, the replace is
+	// worth attempting: it keeps dependent objects and the privileges granted on
+	// the view, and if the engine refuses it the migration stops with nothing
+	// destroyed. A rollback cannot be stopped that way -- it is already running
+	// during the incident -- so it takes the drop-and-recreate that always
+	// applies, and pays for it by rebuilding what CASCADE removes.
+	//
+	// Reverse plan builders set it; a forward comparison leaves it false.
+	Rollback bool `json:"rollback,omitempty"`
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
@@ -689,9 +870,11 @@ type TriggerDiff struct {
 
 // RLSPolicyRef represents a reference to an RLS policy with its table information.
 //
-// This structure is used to identify RLS policies that need to be dropped,
-// providing both the policy name and the table it belongs to. This is necessary
-// because PostgreSQL requires both pieces of information for DROP POLICY statements.
+// This structure identifies an RLS policy on both sides of a diff -- policies
+// added as well as policies dropped. The table is not decoration: a PostgreSQL
+// policy name is scoped to its table, so two tables in one schema may each carry
+// a policy called "tenant_isolation", and both CREATE POLICY and DROP POLICY
+// need the table to say which one is meant.
 //
 // # Example Usage
 //

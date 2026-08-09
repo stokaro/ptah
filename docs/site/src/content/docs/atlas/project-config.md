@@ -152,6 +152,11 @@ resources inside it, and the configured exclusions subtract from that
 selection last, exactly like CLI `--exclude`. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
+`env.schema.mode.sensitive` accepts Atlas's `DENY` and `ALLOW` values. Both are
+no-ops because Ptah does not emit sensitive values through the supported local
+workflows. Ptah records either spelling as an ignored compatibility construct
+and warns that it has no effect.
+
 Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`,
 `liquibase`, and `dbmate` values while evaluating `atlas.hcl`, and
 `ptah-compat migrate apply` executes all of them.
@@ -356,12 +361,35 @@ are accepted; other URL schemes fail explicitly. `--var name=value` can be
 repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions.
 
-Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
-`list(string)` — the attribute Atlas requires — so one
-`atlas.hcl` with typed variables works with both binaries. `--var` overrides
-convert to the declared type, and repeated `--var` flags fill a `list(string)`
-variable. Overrides of the wrong shape, defaults that do not match the declared
-type, and other type constraints such as `object(...)` fail with named errors.
+A `--var` carrying no `=` is refused where it is written, on every verb, in the
+community CLI's own words
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```bash
+ptah-compat migrate status --dir file://migrations --url "$DATABASE_URL" --var novalue
+# Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+```
+
+The refusal precedes everything the verb itself requires — the missing `--url`,
+the missing `--dir`, the arity check — and it fires on every verb, including the
+ones that never read the flag. A value is checked field by field as CSV, so
+`--var a=1,b` is refused naming `b`. Only the separator is required within a
+field: an empty name and an empty value are both accepted, because both are
+accepted there.
+
+`PTAH_VAR` carries the same rule and the same sentence, since the value reaches
+the same check:
+
+```text
+Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
+```
+
+Variable blocks accept the `type` constraints `string`, `number`, `bool`,
+`list(string)`, and `map(string)`. `--var` overrides convert to scalar types,
+and repeated flags fill a `list(string)` variable. `map(string)` values come
+from defaults or HCL expressions because the string/list flag syntax does not
+encode maps. Overrides of the wrong shape, defaults that do not match the
+declared type, and other constraints such as `object(...)` fail with named errors.
 `sensitive = true` is accepted; parse-time conversion errors print
 `(sensitive value)` instead of the variable's value, though a sensitive value
 interpolated into a URL or path can still appear in downstream errors that
@@ -373,17 +401,66 @@ use it as the default. Atlas-compatible `migrate apply` does not need to select
 an environment when both `--url` and `--dir` are explicit. Other ambiguous or
 unsupported environment layouts fail instead of guessing.
 
-## Unsupported means error
+### Expand one environment into several targets
 
-Ptah intentionally rejects unsupported project config constructs. This prevents
-a dangerous half-configured state where a user believes an Atlas setting is in
-effect but Ptah silently ignored it.
+Use `for_each` when one Atlas environment applies the same migration directory
+to several databases:
+
+```hcl
+env {
+  for_each = toset([
+    "sqlite://bar.db?_fk=1",
+    "sqlite://foo.db?_fk=1",
+  ])
+  name = atlas.env
+  url  = each.value
+
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+`atlas.env` is the requested `--env` value. `each.key` and `each.value` expose
+the current collection entry. For an unlabeled block,
+`name` must depend on `atlas.env`; a static name or a name based only on
+`each.key` does not define the requested environment. A labeled block uses its
+label as the initial candidate when `name` is absent. Every expanded instance
+of an admitted block is evaluated before its resulting name is filtered, so an
+invalid nonmatching instance still fails. Tuples and lists keep source order;
+objects, maps, and sets use stable key order. As a Ptah extension, typed list
+and map values are accepted for env `for_each` in addition to tuple, object,
+and set values.
+
+`ptah-compat migrate apply --env local` runs every selected target sequentially
+and stops at the first failure. A formatted run emits one document per attempted
+target with one newline between adjacent documents. Commands that require one
+project instance reject a multi-instance selection instead of choosing one.
+
+## Structural validation and ignored names
+
+Ptah gives each project-config name one of three outcomes:
+
+| Outcome | Result |
+| --- | --- |
+| Supported | Parsed into project config; expressions are evaluated for the selected environment. |
+| Structurally unsupported | Fails with `unsupported atlas.hcl construct ...`, including in an unselected environment. |
+| Ignored by Atlas CE | Accepted for compatibility and reported on stderr as having no effect. |
+
+The ignored category contains only names that Atlas CE itself accepts without
+acting on. Ptah does not silently discard them. A successful command reports
+each ignored source location once:
+
+```text
+warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks are evaluated only in the selected
-environment, so an unselected environment may still refer to variables, files,
-or environment values that are unavailable in the current invocation. Global
-`variable`, `locals`, and `data` blocks are evaluated separately to build the
-shared context before environment selection.
+environment. Expressions inside `env` blocks, including ignored attributes and
+block bodies, are evaluated only in the selected environment. An unselected
+environment may therefore refer to variables, files, or environment values
+unavailable in the current invocation. Global `variable`, `locals`, and `data`
+blocks are evaluated separately to build the shared context before environment
+selection.

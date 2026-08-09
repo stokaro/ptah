@@ -16,6 +16,9 @@ func (r *renderer) renderExtensions() {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, extension := range extensions {
+		if r.omitRefusedExtension("extensions."+extension.Name, extension) {
+			continue
+		}
 		r.linef(`extension %s {`, quote(extension.Name))
 		if extension.IfNotExists {
 			r.trueAttr(1, "if_not_exists")
@@ -33,14 +36,28 @@ func (r *renderer) renderSequences() {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, sequence := range sequences {
+		if r.omitRefusedBlock("sequences."+sequence.QualifiedName(), blockSequence, sequence.Name) {
+			continue
+		}
 		sequence.Canonicalize()
 		r.linef(`sequence %s {`, quote(sequence.Name))
 		if sequence.Schema != "" {
-			r.rawAttr(1, "schema", schemaRef(sequence.Schema))
+			r.rawAttr(1, "schema", r.schemaRef(sequence.Schema))
 		}
-		if sequence.AsType != "" {
-			r.rawAttr(1, "type", typeExpr(sequence.AsType))
-		}
+		// A quoted string, not the bare word `bigint`. Bare, it is an HCL
+		// variable reference with nothing behind it and the pinned Atlas
+		// community binary v1.3.0 refuses the whole file with `There is no
+		// variable named "bigint"`. Quoted, the file evaluates and that binary
+		// gets as far as its own feature gap -- `postgres: sequences are not
+		// supported by this version` -- which is the signal that nothing in this
+		// block is unreadable any more (stokaro/ptah#1251).
+		//
+		// The gap means that binary never writes a sequence block, so it cannot
+		// say which readable spelling it would prefer; `sql("bigint")` reaches
+		// the same message. The quoted string is chosen because it is what Ptah's
+		// own parser reads back to the same AsType, and because the value is
+		// always one of smallint/integer/bigint, never SQL needing an escape.
+		r.stringAttr(1, "type", sequence.AsType)
 		r.int64PtrAttr(1, "start", sequence.Start)
 		r.int64PtrAttr(1, "increment", sequence.Increment)
 		r.int64PtrAttr(1, "min_value", sequence.MinValue)
@@ -89,9 +106,9 @@ func (r *renderer) renderDomain(domain goschema.Domain) {
 	domain.Canonicalize()
 	r.linef(`domain %s {`, quote(domain.Name))
 	if domain.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(domain.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(domain.Schema))
 	}
-	r.rawAttr(1, "type", typeExpr(domain.BaseType))
+	r.rawAttr(1, "type", userTypeExpr(domain.BaseType))
 	if domain.NotNull {
 		r.rawAttr(1, "null", "false")
 	}
@@ -112,12 +129,12 @@ func (r *renderer) renderComposite(composite goschema.CompositeType) {
 	composite.Canonicalize()
 	r.linef(`composite %s {`, quote(composite.Name))
 	if composite.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(composite.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(composite.Schema))
 	}
 	r.stringAttr(1, "comment", composite.Comment)
 	for _, field := range composite.Fields {
 		r.linef(`  field %s {`, quote(field.Name))
-		r.rawAttr(2, "type", typeExpr(field.Type))
+		r.rawAttr(2, "type", userTypeExpr(field.Type))
 		r.line("  }")
 	}
 	r.line("}")
@@ -128,9 +145,9 @@ func (r *renderer) renderRange(rangeType goschema.Range) {
 	rangeType.Canonicalize()
 	r.linef(`range %s {`, quote(rangeType.Name))
 	if rangeType.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(rangeType.Schema))
+		r.rawAttr(1, "schema", r.schemaRef(rangeType.Schema))
 	}
-	r.rawAttr(1, "subtype", typeExpr(rangeType.Subtype))
+	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
 	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
 	r.stringAttr(1, "collation", rangeType.Collation)
 	r.stringAttr(1, "canonical", rangeType.Canonical)
@@ -151,7 +168,7 @@ func (r *renderer) renderManagedData() {
 	})
 	for _, data := range managedData {
 		r.line("data {")
-		r.rawAttr(1, "table", objectRef("table", managedDataTable(data)))
+		r.rawAttr(1, "table", r.tableRef(managedDataTable(data)))
 		r.rawAttr(1, "keys", stringList(data.Keys))
 		r.stringAttr(1, "file", data.File)
 		r.line("}")
@@ -232,15 +249,36 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	name := objectNameFromQualified(function.Name)
 	r.linef(`function %s {`, quote(name))
 	if schema := schemaNameFromQualified(function.Name); schema != "" {
-		r.rawAttr(1, "schema", schemaRef(schema))
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
+	// Every one of these four is a quoted string rather than a bare word.
+	// Measured on the pinned Atlas community binary v1.3.0, one attribute varied
+	// at a time against a function block it accepts:
+	//
+	//	lang = PLpgSQL         exit 1  There is no variable named "PLpgSQL"
+	//	lang = SQL             exit 1  There is no variable named "SQL"
+	//	lang = "PLpgSQL"       exit 0
+	//	return = trigger       exit 1  There is no variable named "trigger"
+	//	return = bigint        exit 1  There is no variable named "bigint"
+	//	return = "trigger"     exit 0
+	//	security = INVOKER     exit 1  There is no variable named "INVOKER"
+	//	security = "INVOKER"   exit 0
+	//	volatility = VOLATILE  exit 1  There is no variable named "VOLATILE"
+	//	volatility = "VOLATILE" exit 0
+	//
+	// `return` needed its own rows because it looks like a type position and is
+	// not: a bare `bigint` evaluates as a column's `type` and fails here, so
+	// typeExpr was the wrong renderer for it whatever the return type is.
+	//
+	// That binary accepts the block and emits nothing for it -- its output for a
+	// file with the function is byte-identical to the same file without it, and
+	// `lang = "BANANA"` is accepted too -- so it validates none of these values
+	// and the only thing to match is that the file evaluates at all.
 	r.rawAttr(1, "lang", atlasLanguage(function.Language))
-	if function.Returns != "" {
-		r.rawAttr(1, "return", typeExpr(function.Returns))
-	}
+	r.stringAttr(1, "return", function.Returns)
 	r.renderFunctionArgs(function)
-	r.rawAttr(1, "security", rawIdentifier(function.Security))
-	r.rawAttr(1, "volatility", rawIdentifier(function.Volatility))
+	r.stringAttr(1, "security", function.Security)
+	r.stringAttr(1, "volatility", function.Volatility)
 	r.stringAttr(1, "as", function.Body)
 	r.stringAttr(1, "comment", function.Comment)
 	r.line("}")
@@ -273,7 +311,7 @@ func (r *renderer) renderViews() {
 		name := objectNameFromQualified(view.Name)
 		r.linef(`view %s {`, quote(name))
 		if schema := schemaNameFromQualified(view.Name); schema != "" {
-			r.rawAttr(1, "schema", schemaRef(schema))
+			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.stringAttr(1, "as", view.Body)
 		if view.WithCheck {
@@ -304,7 +342,7 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	name := objectNameFromQualified(view.Name)
 	r.linef(`materialized %s {`, quote(name))
 	if schema := schemaNameFromQualified(view.Name); schema != "" {
-		r.rawAttr(1, "schema", schemaRef(schema))
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "as", view.Body)
 	// Emit refresh_strategy only when it differs from the canonical default so
@@ -346,11 +384,33 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 		return
 	}
 	r.linef(`trigger %s {`, quote(trigger.Name))
-	r.rawAttr(1, "on", objectRef("table", trigger.Table))
+	// A trigger's target is a relation, not a table: `INSTEAD OF` triggers only
+	// exist on views, and Trigger.Table is where the reader puts one. Measured
+	// on PostgreSQL 17, `CREATE TRIGGER v_ins INSTEAD OF INSERT ON v` inspected
+	// whole and put to the pinned Atlas community binary v1.3.0,
+	// `on = table.v` is refused with `This object does not have an attribute
+	// named "v"` and `on = view.v` is read at exit 0. Where the document
+	// declares no single block to name, the quoted name is what evaluates --
+	// measured on the same binary, `on = "other.v"` at exit 0 against a document
+	// carrying `view "v"` in two schemas, where `on = table.other.v` is refused.
+	r.rawAttr(1, "on", r.relationRef(trigger.Table, quote(trigger.Table)))
 	r.linef("  %s {", timing)
 	r.rawAttr(2, event, "true")
 	r.line("  }")
-	r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(trigger.ForEach, "ROW")))
+	// Quoted, for the same reason as everywhere else in this file. Measured on
+	// the pinned Atlas community binary v1.3.0 against a trigger block it
+	// accepts, one operand varied:
+	//
+	//	for = ROW          exit 1  There is no variable named "ROW"
+	//	for = "ROW"        exit 0
+	//	for = "STATEMENT"  exit 0
+	//	(attribute absent) exit 0
+	//
+	// The block is accepted and dropped, not modeled: that binary's output for a
+	// file containing it is byte-identical to the same file without it, and
+	// `for = "BANANA"` is accepted just as readily. So there is no spelling of
+	// its own to match, only the requirement that the file evaluate.
+	r.stringAttr(1, "for", firstNonEmpty(trigger.ForEach, "ROW"))
 	r.stringAttr(1, "as", trigger.Body)
 	r.stringAttr(1, "comment", trigger.Comment)
 	r.line("}")
@@ -367,11 +427,26 @@ func (r *renderer) renderRLSPolicies() {
 			r.warn("rls_policies."+policy.Name, "RLS policy requires a target table for HCL schema export")
 			continue
 		}
+		if r.omitRefusedBlock("rls_policies."+policy.Name, blockPolicy, policy.Name) {
+			continue
+		}
 		r.linef(`policy %s {`, quote(policy.Name))
-		r.rawAttr(1, "on", objectRef("table", policy.Table))
-		r.rawAttr(1, "for", rawIdentifier(firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL")))
+		r.rawAttr(1, "on", r.tableRef(policy.Table))
+		// Quoted. Measured on the pinned Atlas community binary v1.3.0, one
+		// operand varied against an otherwise identical policy block:
+		//
+		//	for = ALL      exit 1  There is no variable named "ALL"
+		//	for = "ALL"    exit 1  postgres: policies are not supported by this version
+		//	for = "SELECT" exit 1  postgres: policies are not supported by this version
+		//
+		// Like the sequence, the block never gets past that binary's own feature
+		// gap, so the reachable target is the message changing from a parse
+		// failure over Ptah's rendering to a statement about what that binary
+		// models. The quoted string is what Ptah's parser reads back to the same
+		// PolicyFor.
+		r.stringAttr(1, "for", firstNonEmpty(strings.ToUpper(policy.PolicyFor), "ALL"))
 		if policy.ToRoles != "" {
-			r.rawAttr(1, "to", roleTargets(policy.ToRoles))
+			r.rawAttr(1, "to", r.roleTargets(policy.ToRoles))
 		}
 		r.stringAttr(1, "using", policy.UsingExpression)
 		r.stringAttr(1, "check", policy.WithCheckExpression)
@@ -382,25 +457,34 @@ func (r *renderer) renderRLSPolicies() {
 }
 
 func (r *renderer) renderGrants() {
-	grants := append([]goschema.Grant(nil), r.db.Grants...)
+	// Incomplete grants are dropped BEFORE the sort, because the sort key is
+	// [renderer.grantTarget] and rendering a target records the schema
+	// reference it writes. Asking it about a grant that is then skipped would
+	// declare a `schema` block for a `permission` block the document does not
+	// contain -- a declaration of nothing, which is the failure this render's
+	// collected schema set exists to avoid in the other direction.
+	grants := make([]goschema.Grant, 0, len(r.db.Grants))
+	for _, grant := range r.db.Grants {
+		grant.Canonicalize()
+		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
+			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
+			continue
+		}
+		grants = append(grants, grant)
+	}
 	slices.SortFunc(grants, func(a, b goschema.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
-			cmp.Compare(grantTarget(a), grantTarget(b)),
+			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
 			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
 		)
 	})
 	for _, grant := range grants {
-		grant.Canonicalize()
-		target := grantTarget(grant)
-		if grant.Role == "" || target == "" || len(grant.Privileges) == 0 {
-			r.warn("grants."+grant.Role, "grant requires role, table, schema, or sequence target, and at least one privilege")
-			continue
-		}
+		target := r.grantTarget(grant)
 		r.line("permission {")
-		r.rawAttr(1, "to", roleTarget(grant.Role))
+		r.rawAttr(1, "to", r.roleTarget(grant.Role))
 		r.rawAttr(1, "for", target)
-		r.rawAttr(1, "privileges", rawList(grant.Privileges))
+		r.rawAttr(1, "privileges", privilegeList(grant.Privileges))
 		if grant.WithOption {
 			r.trueAttr(1, "grantable")
 		}
@@ -545,53 +629,212 @@ func triggerEventAttr(event string) (string, bool) {
 	return "", false
 }
 
+// atlasLanguage renders a function's `lang` attribute: the canonical spelling
+// of the language name, quoted. See renderFunction for the measurement that
+// says the bare form is refused for every value, canonical or not.
 func atlasLanguage(language string) string {
 	switch strings.ToLower(language) {
 	case "sql":
-		return "SQL"
+		return quote("SQL")
 	case "plpgsql":
-		return "PLpgSQL"
+		return quote("PLpgSQL")
 	default:
 		return quote(language)
 	}
 }
 
-func roleTargets(value string) string {
+func (r *renderer) roleTargets(value string) string {
 	roles, ok := splitTopLevelComma(value)
 	if !ok {
 		return stringList([]string{value})
 	}
 	targets := make([]string, 0, len(roles))
 	for _, role := range roles {
-		targets = append(targets, roleTarget(role))
+		targets = append(targets, r.roleTarget(role))
 	}
 	return "[" + strings.Join(targets, ", ") + "]"
 }
 
-func roleTarget(value string) string {
+// roleTarget renders one grantee.
+//
+// PUBLIC is written as a quoted string rather than the bare word it is in SQL.
+// Bare, it is an HCL variable reference with nothing to resolve it to, and the
+// pinned Atlas community binary v1.3.0 refuses the whole file with
+// `There is no variable named "PUBLIC"` -- it drops a block whose name it does
+// not model, but only after the body evaluates (stokaro/ptah#1234).
+//
+// A named role is a `role.<name>` traversal only where the document declares
+// the matching block. That precondition was written down when PUBLIC was fixed
+// and never enforced, and a grantee is exactly where it fails: a `permission`
+// block is a child of the object granted on, so `--exclude '*[type=role]'`
+// takes away the role blocks and leaves every grant to them behind. Measured on
+// PostgreSQL 17, one operand varied against an otherwise identical document:
+//
+//	role "app" declared, to = role.app   exit 0
+//	role "app" absent,   to = role.app   exit 1  There is no variable named "role"
+//	role "app" absent,   to = "app"      exit 0
+//
+// Quoting where the block is absent loses nothing, which is what separates this
+// from [renderer.tableRef]: there, the short form would destroy the schema the
+// qualified name carried, so an unresolvable reference keeps the qualified
+// spelling. A grantee carries no second part to lose, and Ptah's own parser
+// reads either spelling back to the same role through roleTargetName, so the
+// round trip is unaffected either way.
+func (r *renderer) roleTarget(value string) string {
 	value = strings.TrimSpace(value)
 	if strings.EqualFold(value, "PUBLIC") {
-		return "PUBLIC"
+		return quote("PUBLIC")
 	}
-	if value == "" {
+	if value == "" || !r.documentDeclaresRole(value) {
 		return quote(value)
 	}
 	return "role" + objectRefPart(value)
 }
 
-func grantTarget(grant goschema.Grant) string {
+// grantTargetName is the raw name a grant targets, with no reference rendered
+// and nothing recorded. It answers "is this grant complete" without asking
+// [renderer.grantTarget], which has the side effect of declaring a schema.
+func grantTargetName(grant goschema.Grant) string {
+	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence)
+}
+
+// grantTarget renders the object a `permission` block is about.
+//
+// The IR names the object; the document decides how to spell it. A grant on a
+// view arrives in OnTable -- PostgreSQL reports the owner's implicit privileges
+// on a view exactly as it does on a table, and the reader keeps that shape --
+// so the field it came in on cannot be what picks the block type, or every
+// database carrying a view writes `for = table.<view>` against a document
+// declaring `view "<view>"`. That is [renderer.relationRef]'s question, and the
+// field only decides what to write when the document declares no single block
+// to name.
+func (r *renderer) grantTarget(grant goschema.Grant) string {
 	if grant.OnSchema != "" {
-		return schemaRef(grant.OnSchema)
+		return r.schemaRef(grant.OnSchema)
 	}
 	if grant.OnTable != "" {
-		return objectRef("table", grant.OnTable)
+		return r.relationRef(grant.OnTable, quote(grant.OnTable))
 	}
 	if grant.OnSequence != "" {
-		return objectRef("sequence", grant.OnSequence)
+		// A sequence keeps a traversal even unresolved, because the word is the
+		// only thing that says which OBJECT this grant is about: Ptah's own
+		// reader takes `for = "order_seq"` as a grant on a relation and would
+		// emit `GRANT ... ON TABLE`. See [objectRef] for what the pinned binary
+		// does with a sequence block in either spelling.
+		return r.relationRef(grant.OnSequence, objectRef(blockSequence, grant.OnSequence))
 	}
 	return ""
 }
 
+// relationRef renders a reference from a position that can name any relation:
+// a `permission` target and a `trigger`'s `on`, both of which reach a view on
+// an ordinary PostgreSQL database.
+//
+// The block type comes from [renderer.documentDeclares] -- from what this
+// document writes -- rather than from the IR field the name arrived on or from
+// the position doing the referring. A reference the document CAN resolve loses
+// the schema for the same reason [renderer.tableRef] drops it: the block is
+// named by its labels alone.
+//
+// unresolved is what to write when there is no single block to name -- because
+// the document declares nothing under the label, or because it declares the
+// label TWICE, which two schemas holding a relation of one name is all it
+// takes. For a relation that is a QUOTED name, and the quoting is the whole
+// point: a traversal has no spelling left that both evaluates and keeps the
+// schema. Measured on the pinned Atlas community binary v1.3.0 against one
+// document declaring `view "v"` in `other` and `view "v"` in `public`, one
+// operand varied and nothing else touched:
+//
+//	for = table.other.v  exit 1  Unsupported attribute; This object does not
+//	                             have an attribute named "other"
+//	for = view.other.v   exit 1  same message
+//	for = table.gone     exit 1  ... an attribute named "gone"
+//	for = "other.v"      exit 0
+//	for = "gone"         exit 0
+//
+// and against the same document with the two table blocks removed, so that no
+// `table` block is declared at all, `for = table.other.v` is refused with
+// `Unknown variable; There is no variable named "table"` instead.
+//
+// The short form view.v evaluates there (exit 0) and is still wrong: two blocks
+// carry that label, so it names neither in particular, and Ptah's own reader
+// refuses to guess -- relationBlockSchema in internal/atlashcl returns nothing
+// for a label it finds twice -- so the schema would be dropped for good. The
+// quoted name is the only spelling that both evaluates and survives the round
+// trip; relationRefName reads it straight back.
+func (r *renderer) relationRef(name, unresolved string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return unresolved
+	}
+	block, declared := r.documentDeclares(ref.Name)
+	if !declared || (ref.Qualified && block.schema != ref.Schema) {
+		return unresolved
+	}
+	return block.kind + objectRefPart(ref.Name)
+}
+
+// tableRef renders a reference from a position that can only be about a table:
+// a foreign key's `ref_columns`, a row-level security `policy`'s `on`, and a
+// `data` block's `table`. No engine Ptah renders for lets a foreign key or an
+// RLS policy name a view, and a `data` block is Ptah's own construct for seeding
+// rows, so there is no second block type for these to resolve to and the kind is
+// not a question. A position that CAN name one goes through
+// [renderer.relationRef] instead.
+//
+// A reference in HCL names a BLOCK, and a block is named by its labels. Ptah
+// writes a table block with one label, so `table.<schema>.<name>` does not read
+// as "the table <name> in schema <schema>" -- it reads as "the <schema>
+// attribute of the table object", which is exactly what the pinned Atlas
+// community binary v1.3.0 says. Measured on PostgreSQL 17, realm-scope dev URL,
+// with `users` in `other` and `posts` in `public`, one operand varied:
+//
+//	ref_columns = [table.users.column.id]        exit 0
+//	ref_columns = [table.other.users.column.id]  exit 1  Unsupported attribute;
+//	                                                     This object does not have
+//	                                                     an attribute named "other"
+//	on = table.users        (trigger)            exit 0
+//	on = table.other.users  (trigger)            exit 1  same message
+//	for = table.users       (permission)         exit 0
+//	for = table.other.users (permission)         exit 1  same message
+//
+// It is not a cross-schema special case: with the target in the SAME schema as
+// the referring table, `table.public.users` is refused the same way. The short
+// form is that binary's OWN spelling -- its inspect of the cross-schema foreign
+// key above emits `ref_columns = [table.users.column.id]`.
+//
+// The schema is dropped only when [renderer.documentResolvesTableRef] says this
+// document resolves the short form back to the same table, because that is the
+// only case where nothing is lost. A reference to a table the document does not
+// render -- a filtered export, an orphan trigger -- keeps the qualified form:
+// there is no block to read the schema off on the way back, so the short form
+// would destroy it irrecoverably, and a document missing the referenced table is
+// not readable by that binary under either spelling (stokaro/ptah#1260).
+// Everything the short form is not written for -- an empty name, a name that
+// does not parse, one carrying no schema, one this document cannot resolve --
+// falls through to [objectRef], which is what Ptah wrote for every reference
+// before this rule existed.
+func (r *renderer) tableRef(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok || !ref.Qualified || !r.documentResolvesTableRef(ref.Schema, ref.Name) {
+		return objectRef(blockTable, name)
+	}
+	return blockTable + objectRefPart(ref.Name)
+}
+
+// objectRef renders a reference to a block of a named kind, with whatever
+// schema the name carries.
+//
+// It is what [renderer.tableRef] falls back to, and what
+// [renderer.grantTarget] hands [renderer.relationRef] for a SEQUENCE target,
+// and the only thing that writes a two-part reference. A grant on a
+// sequence therefore keeps `sequence.<schema>.<name>` where the schema is
+// spelled out and the document declares no block to read it back off. Nothing
+// measured says which spelling the pinned binary would take there in any case:
+// it refuses any PostgreSQL file declaring a sequence block at all, with
+// `postgres: sequences are not supported by this version`, so both
+// `for = sequence.order_seq` and `for = "order_seq"` reach that same message
+// while the block is kept -- measured on PostgreSQL 17.
 func objectRef(kind, name string) string {
 	if name == "" {
 		return quote("")
@@ -611,23 +854,32 @@ func objectRef(kind, name string) string {
 	return kind + strings.Join(refParts, "")
 }
 
-func rawList(values []string) string {
+// privilegeList renders a permission block's privileges.
+//
+// Each privilege is quoted for the same reason PUBLIC is: `privileges = [USAGE]`
+// is a list containing an unresolvable variable reference, and the pinned
+// community binary v1.3.0 refuses the file over it. Measured on that binary,
+// with everything else held fixed:
+//
+//	to = PUBLIC    privileges = [USAGE]      refused
+//	to = "PUBLIC"  privileges = [USAGE]      refused
+//	to = PUBLIC    privileges = ["USAGE"]    refused
+//	to = "PUBLIC"  privileges = ["USAGE"]    accepted
+//
+// so both attributes had to move, and each row above is what says so.
+//
+// Empty entries are dropped rather than emitted as "", which would round trip
+// as a privilege named nothing.
+func privilegeList(values []string) string {
 	items := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
-		items = append(items, rawIdentifier(value))
+		items = append(items, quote(value))
 	}
 	return "[" + strings.Join(items, ", ") + "]"
-}
-
-func rawIdentifier(value string) string {
-	if isHCLIdentifier(value) {
-		return value
-	}
-	return quote(value)
 }
 
 func objectNameFromQualified(value string) string {

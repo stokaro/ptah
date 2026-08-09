@@ -7,8 +7,10 @@ import (
 )
 
 type atlasBodyStructure struct {
-	attributes []string
-	blocks     map[string]atlasBlockStructure
+	attributes             []string
+	blocks                 map[string]atlasBlockStructure
+	allowUnknownAttributes bool
+	allowUnknownBlocks     bool
 }
 
 type atlasBlockStructure struct {
@@ -18,76 +20,102 @@ type atlasBlockStructure struct {
 
 func atlasEnvBodyStructure() atlasBodyStructure {
 	return atlasBodyStructure{
-		attributes: []string{"dev", "exclude", "src", "url"},
+		attributes:             []string{"dev", "exclude", "for_each", "name", "src", "url"},
+		allowUnknownAttributes: true,
+		allowUnknownBlocks:     true,
 		blocks: map[string]atlasBlockStructure{
 			"diff": {
-				body: atlasBodyStructure{blocks: map[string]atlasBlockStructure{
-					"concurrent_index": {
-						body: atlasBodyStructure{attributes: []string{"create", "drop"}},
+				body: atlasBodyStructure{
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
+					blocks: map[string]atlasBlockStructure{
+						"concurrent_index": {
+							body: atlasBodyStructure{
+								attributes:             []string{"create", "drop"},
+								allowUnknownAttributes: true,
+							},
+						},
+						"skip": {
+							body: atlasBodyStructure{
+								attributes:             []string{"drop_schema", "drop_table"},
+								allowUnknownAttributes: true,
+							},
+						},
 					},
-					"skip": {
-						body: atlasBodyStructure{attributes: []string{"drop_schema", "drop_table"}},
-					},
-				}},
+				},
 			},
 			"format": {
-				body: atlasBodyStructure{blocks: map[string]atlasBlockStructure{
-					"migrate": {
-						body: atlasBodyStructure{attributes: []string{"apply", "diff", "lint", "status"}},
+				body: atlasBodyStructure{
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
+					blocks: map[string]atlasBlockStructure{
+						"migrate": {
+							body: atlasBodyStructure{attributes: []string{"apply", "diff", "lint", "status"}},
+						},
+						"schema": {
+							body: atlasBodyStructure{attributes: []string{"apply", "clean", "diff", "inspect"}},
+						},
 					},
-					"schema": {
-						body: atlasBodyStructure{attributes: []string{"apply", "clean", "diff", "inspect"}},
-					},
-				}},
+				},
 			},
 			"lint": {
 				body: atlasBodyStructure{
-					attributes: []string{"latest", "log"},
+					attributes:             []string{"latest", "log"},
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
 					blocks: map[string]atlasBlockStructure{
-						"concurrent_index": {body: atlasBodyStructure{attributes: []string{"error"}}},
-						"condrop":          {body: atlasBodyStructure{attributes: []string{"error"}}},
-						"data_depend":      {body: atlasBodyStructure{attributes: []string{"error"}}},
-						"destructive":      {body: atlasBodyStructure{attributes: []string{"error"}}},
-						"git":              {body: atlasBodyStructure{attributes: []string{"base", "dir"}}},
-						"incompatible":     {body: atlasBodyStructure{attributes: []string{"error"}}},
-						"nestedtx":         {body: atlasBodyStructure{attributes: []string{"error"}}},
+						"concurrent_index": {body: atlasTolerantLeafStructure("error")},
+						"condrop":          {body: atlasTolerantLeafStructure("error")},
+						"data_depend":      {body: atlasTolerantLeafStructure("error")},
+						"destructive":      {body: atlasTolerantLeafStructure("error")},
+						"git":              {body: atlasTolerantLeafStructure("base", "dir")},
+						"incompatible":     {body: atlasTolerantLeafStructure("error")},
+						"nestedtx":         {body: atlasTolerantLeafStructure("error")},
 					},
 				},
 			},
 			"migration": {
-				body: atlasBodyStructure{attributes: []string{
+				body: atlasTolerantLeafStructure(
 					"dir",
 					"exec_order",
 					"format",
 					"lock_timeout",
 					"revisions_schema",
 					"tx_mode",
-				}},
+				),
 			},
 			"schema": {
 				body: atlasBodyStructure{
-					attributes: []string{"src"},
+					attributes:             []string{"src"},
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
 					blocks: map[string]atlasBlockStructure{
 						"mode": {
-							body: atlasBodyStructure{attributes: []string{
+							body: atlasTolerantLeafStructure(
 								"funcs",
 								"objects",
 								"permissions",
 								"roles",
-								"sensitive",
 								"tables",
 								"triggers",
 								"types",
 								"views",
-							}},
+							),
 						},
 						"repo": {
-							body: atlasBodyStructure{attributes: []string{"name"}},
+							body: atlasTolerantLeafStructure("name"),
 						},
 					},
 				},
 			},
 		},
+	}
+}
+
+func atlasTolerantLeafStructure(attributes ...string) atlasBodyStructure {
+	return atlasBodyStructure{
+		attributes:             attributes,
+		allowUnknownAttributes: true,
 	}
 }
 
@@ -110,7 +138,10 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 	// parsers' own switch defaults would have changed nothing here.
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		if !slices.Contains(structure.attributes, name) {
-			if err := p.tolerateUnknownAttr(scope, name, body.Attributes[name]); err != nil {
+			if !structure.allowUnknownAttributes {
+				return unsupportedAttr(name, body.Attributes[name])
+			}
+			if err := p.recordIgnoredAttr(scope, name, body.Attributes[name]); err != nil {
 				return err
 			}
 			continue
@@ -121,7 +152,10 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 	for _, block := range body.Blocks {
 		blockStructure, ok := structure.blocks[block.Type]
 		if !ok {
-			if err := p.tolerateUnknownBlock(scope, block); err != nil {
+			if !structure.allowUnknownBlocks {
+				return unsupportedBlock(block)
+			}
+			if err := p.recordIgnoredBlock(scope, block); err != nil {
 				return err
 			}
 			continue

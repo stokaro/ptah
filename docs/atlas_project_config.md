@@ -196,7 +196,9 @@ explicit `--exclude` flag is provided.
 matching Atlas-style resource exclusions for object kinds represented in Ptah's
 schema IR. `sensitive = DENY` is accepted as a no-op because Ptah does not emit
 sensitive values through the supported local workflows. `sensitive = ALLOW` is
-rejected until Ptah has explicit sensitive-value semantics.
+also accepted as a no-op, matching Atlas CE's project-config decoding. Both
+values produce the ignored-construct warning because Ptah has no
+sensitive-value behavior to enable or disable.
 
 `env.schema.repo` names a schema repository in a hosted registry. Its `name` is
 accepted and type-checked as a string, and nothing reads it afterwards — the
@@ -311,6 +313,9 @@ config workflows:
 - `getenv("NAME")` for environment-provided URLs and settings.
 - `file("path")` for local file contents, relative to the `atlas.hcl` file.
 - `fileset("glob")` for local file lists, relative to the `atlas.hcl` file.
+- `toset(value)` for deterministic environment-instance expansion.
+- `atlas.env`, plus `each.key` and `each.value` inside an env expanded with
+  `for_each`.
 - `data "hcl_schema" "name"` blocks with either `path` or `paths`, exposed as
   `data.hcl_schema.<name>.url`.
 - `format(format_string, values...)` and `jsonencode(value)` for Atlas-style
@@ -392,19 +397,69 @@ Atlas-compatible commands under `ptah-compat schema ...` and
   repeated values for the same variable become a string list, matching Atlas's
   local project-variable behavior.
 
+`-c` and `--env` **select** a project file, so naming either one and having no
+`atlas.hcl` is an error on both binaries. `--var` only **supplies values** to a
+project file, so it does not require one: with no `atlas.hcl` present the
+command runs with no project at all. This holds on every verb. It previously
+held only on the verbs whose flags Cobra parses, and `migrate hash`,
+`migrate validate`, `migrate new`, `migrate down`, `migrate checkpoint`,
+`migrate edit`, `migrate rebase`, `migrate rm`, `migrate test` and
+`schema test` answered `failed to read atlas config atlas.hcl: …` at exit 1
+where the pinned Atlas community binary v1.3.0 exits 0
+([#1241](https://github.com/stokaro/ptah/issues/1241) item 12).
+
+Not requiring a project file is not the same as not reading the flag. The
+**syntax** of `--var` is checked wherever it is spelled, with or without an
+`atlas.hcl`, because the pinned binary parses it while parsing flags and refuses
+a malformed value before it looks for a project file:
+
+```console
+$ ptah-compat migrate validate --dir file://migrations --var foo
+Error: invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"
+$ echo $?
+1
+```
+
+The value is comma-separated, and each field is checked, so `--var a=1,b` is
+refused naming `b`. An empty name is accepted here — `--var =v` passes, as it
+does on the pinned binary — and refused later by the project loader, where a
+file is actually being evaluated.
+
+"Wherever it is spelled" includes the commands that never look at the value.
+`--var` is registered once, on the `schema` and `migrate` groups, so every
+descendant accepts it — including the group commands themselves, `schema fmt`,
+and `migrate import`, none of which read a project file. A check that lived only
+where a consumer asked for the values left those unrefused, which mattered most
+on the one that writes:
+
+```console
+$ ptah-compat migrate import --from file://src --to file://dst --dir-format flyway --var foo
+Error: invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"
+$ echo $?
+1
+$ ls dst
+ls: dst: No such file or directory
+```
+
+The refusal therefore runs for every command under both groups, before the
+command does any work — so `ptah-compat migrate new nm --var foo` creates no
+migration directory, no migration file and no `atlas.sum`, and
+`ptah-compat schema fmt --var foo` reformats nothing.
+
 A `variable` block without a `default` is valid when the invocation provides a
 matching `--var name=value`. Variable blocks accept the `type` constraints
-`string`, `number`, `bool`, and `list(string)` — the attribute the official
-Atlas binary requires:
+`string`, `number`, `bool`, `list(string)`, and `map(string)`:
 
 - `--var` overrides convert to the declared type: `--var latest=3` becomes a
   number and `--var concurrent=true` becomes a bool. Bool conversion follows
   cty's rules: `1` and `0` convert, while `True` and `yes` fail with the
   wrong-shape error. Repeated `--var name=value` flags build a `list(string)`
   value.
+- `map(string)` is available to defaults and HCL expressions. The string/list
+  `--var` flag syntax does not encode map values.
 - A `default` that does not convert to the declared type, an override of the
   wrong shape, and any other type constraint (for example `object(...)`,
-  `map(...)`, or `tuple(...)`) fail with named errors.
+  `set(...)`, or `tuple(...)`) fail with named errors.
 - `sensitive = true` is accepted. Parse-time conversion errors print
   `(sensitive value)` instead of the variable's value; a sensitive value
   interpolated into a URL or path can still appear in downstream errors that
@@ -425,6 +480,39 @@ values are required and multiple envs remain ambiguous, Ptah returns:
 ```text
 atlas.hcl contains multiple env blocks; pass --env
 ```
+
+An env block can expand into several instances with `for_each`. Labeled and
+unlabeled blocks both support the meta-attributes:
+
+```hcl
+env {
+  for_each = toset([
+    "sqlite://bar.db?_fk=1",
+    "sqlite://foo.db?_fk=1",
+  ])
+  name = atlas.env
+  url  = each.value
+
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+For an unlabeled block selected with `--env`, `name` must depend on `atlas.env`;
+a static name or a name based only on `each.key` does not define that selected
+environment. Labeled blocks use their label as the initial candidate. Every
+expanded instance of an admitted block is evaluated before its resulting name
+is filtered, so an invalid nonmatching instance still fails the command. Tuple
+and list instances keep source order; object, map, and set instances use stable
+key order. As a Ptah extension, typed list and map values are accepted for env
+`for_each` in addition to tuple, object, and set values.
+
+`ptah-compat migrate apply --env local` runs every selected instance in that
+order and stops at the first failure. With `--format '{{ json . }}'`, each
+attempt writes one JSON document and adjacent documents are separated by one
+newline. Other commands and the singular project-config Go APIs reject a
+selection that produces more than one instance instead of choosing one.
 
 ## Precedence
 
@@ -503,30 +591,45 @@ supported `diff` policy.
 `ptah-compat migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
 `format.migrate.diff`, and supported `diff` policy.
 
-## Unsupported constructs
+## Structural contract and ignored names
 
-Ptah intentionally rejects everything outside the documented subset. Unsupported
-attributes, unsupported data sources, unsupported lint policy blocks or attributes,
-Cloud or registry URLs such as `atlas://`, unsupported format blocks,
-unsupported diff policy fields, duplicate `migration` or `lint` blocks,
-variables without defaults that are not supplied through `--var` fail with a
+Ptah classifies every `atlas.hcl` name into one of three outcomes:
+
+| Outcome | Behavior |
+| --- | --- |
+| Supported | Ptah parses the value into project config and evaluates its expression when the containing environment is selected. |
+| Structurally unsupported | Ptah rejects the file with a location-aware error, even when the construct is in an unselected environment. |
+| Ignored by Atlas CE | Ptah accepts the name for compatibility, records it in `Config.IgnoredConstructs`, and the CLI warns that it has no effect. |
+
+Structurally unsupported attributes, data sources, lint policy shapes, format
+fields, diff policy fields, labels, and duplicate supported blocks fail with a
 location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2
 ```
 
-This hard-fail policy prevents partially interpreted Atlas project configs from
-silently changing migration behavior.
+Ptah does not turn a construct that Atlas CE decodes or enforces into a no-op.
+The ignored category is limited to names that Atlas CE itself accepts without
+acting on. The CLI writes one warning per ignored source location:
+
+```text
+warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
+
+This distinction preserves Atlas CE's unknown-name behavior without hiding a
+likely typo or a policy that does nothing. The warning goes to stderr; stdout
+and the success exit code remain unchanged.
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks are evaluated only in the selected
-environment, so an unselected environment may still refer to variables, files,
-or environment values that are unavailable in the current invocation. Global
-`variable`, `locals`, and `data` blocks are evaluated separately to build the
-shared context before environment selection.
+environment. Expressions inside `env` blocks, including bodies and values of
+ignored names, are evaluated only in the selected environment. An unselected
+environment may therefore refer to variables, files, or environment values
+unavailable in the current invocation. Global `variable`, `locals`, and `data`
+blocks are evaluated separately to build the shared context before environment
+selection.
 
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value. An explicit CLI path flag still wins over

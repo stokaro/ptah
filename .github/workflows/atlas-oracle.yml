@@ -26,6 +26,16 @@ jobs:
       # engine does not have -- and those are the two verdicts that run exists to
       # keep apart.
       PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: 'postgres://postgres:pw@localhost:5432/dev?sslmode=disable&search_path=public'
+      # A second dev database, REALM-scoped: no search_path, so the binary is
+      # willing to materialize a document declaring more than one schema. The
+      # one above is deliberately scoped to `public` and refuses such a document
+      # with `cannot use HCL with more than 1 schema when dev-url is limited to
+      # schema "public"`, which is a verdict about the dev URL rather than about
+      # the document. It is a SEPARATE database because a realm-scoped read
+      # requires a clean one: measured on PostgreSQL 17, a leftover schema makes
+      # the next read fail with `sql/migrate: connected database is not clean:
+      # found schema "other"`, so it must not share with the runs above.
+      PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL: 'postgres://postgres:pw@localhost:5432/realmdev?sslmode=disable'
 
     services:
       postgres:
@@ -46,6 +56,13 @@ jobs:
 
       - name: Configure oracle path
         run: echo "PTAH_ATLAS_ORACLE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
+
+      # The realm-scoped dev database the two-schema document needs. The service
+      # creates only `dev`, and that one is scoped to a single schema on purpose.
+      - name: Create the realm-scoped dev database
+        run: >-
+          PGPASSWORD=pw psql -h localhost -p 5432 -U postgres -d postgres
+          -v ON_ERROR_STOP=1 -c 'CREATE DATABASE realmdev'
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -133,18 +150,34 @@ jobs:
       # The set of column types the HCL schema models is the third contract in
       # this repository whose authority is the community binary rather than any
       # document (stokaro/ptah#1138). A wrong row emits HCL that binary refuses
-      # to read, so the set is re-measured here instead of being trusted.
-      # Listed before it is run, for the same reason as above.
-      - name: Verify column-type conformance selection
+      # to read, so the set is re-measured here instead of being trusted. The
+      # set of top-level BLOCK types it refuses is the same kind of contract
+      # (stokaro/ptah#1251): ptah-compat omits those blocks by default, and a
+      # list nothing re-measures would go on withholding a construct that binary
+      # started modeling. The spelling of a table REFERENCE is another
+      # (stokaro/ptah#1260): `table.<schema>.<name>` costs the whole document,
+      # so the rendered output is put to that binary here rather than trusted.
+      # The last one is the WHOLE inspected document (stokaro/ptah#1234): a
+      # permission body that does not evaluate and a `schema.<name>` reference
+      # nothing declares are properties of the file rather than of any one
+      # attribute, so neither is visible to the runs above.
+      # All of them live in internal/atlashclrender and are listed before they
+      # are run, for the same reason as above.
+      - name: Verify HCL render conformance selection
         run: |
           GOWORK=off go test -list '^TestOracle' \
             ./internal/atlashclrender > "$RUNNER_TEMP/atlas-column-type-tests"
           cat "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleModeledColumnTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleAcceptsTheWrapItFallsBackTo' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 2
+          grep -Fx 'TestOracleAtlasRefusedBlockTypesMatchTheBinary' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleToleratesTheBlockTypesPtahStillRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleReadsTheReferenceSpellingPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleReadsTheInspectedDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          grep -Fx 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 7
 
-      - name: Run column-type conformance tests
+      - name: Run HCL render conformance tests
         run: |
           GOWORK=off go test -count=1 -v -run '^TestOracle' ./internal/atlashclrender \
             > "$RUNNER_TEMP/atlas-column-type-run" 2>&1 || {
@@ -156,6 +189,98 @@ jobs:
           # database URL -- which would leave every PostgreSQL row unmeasured
           # while the job stayed green. Both are fatal here.
           ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-column-type-run"
+          # A selection that matched no subtest is the other way to stay green
+          # while measuring nothing: the refused list is the whole subject here,
+          # so its rows are named rather than counted in bulk.
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/base' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/extension' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/policy' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAtlasRefusedBlockTypesMatchTheBinary/postgres/refused/sequence' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/postgres/tolerated/wibble' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleToleratesTheBlockTypesPtahStillRenders/sqlite/tolerated/sequence' "$RUNNER_TEMP/atlas-column-type-run"
+          # Same reason for the reference spelling (stokaro/ptah#1260): its two
+          # rows are a pair, and only the pair is a measurement. `rendered`
+          # alone would pass on a build that had stopped shortening anything,
+          # and `qualified` alone says nothing about what Ptah writes today.
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/postgres/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/postgres/qualified' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheReferenceSpellingPtahRenders/sqlite/qualified' "$RUNNER_TEMP/atlas-column-type-run"
+          # The array rows are a pair for the same reason (stokaro/ptah#1138).
+          # The wrapped row alone would pass on a build that had stopped
+          # refusing anything, and the quoted row alone says nothing about the
+          # spelling Ptah writes today. Both are named so a selection that
+          # silently stopped matching them cannot leave the job green.
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_wraps_a_sized_array_whose_element_name_is_modeled' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_that_same_array_quoted' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_an_array_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
+
+          # And for the whole-document run (stokaro/ptah#1234). Each `rendered`
+          # row is only a measurement next to the mutation that makes the same
+          # document unreadable, so both halves of each pair are named. The
+          # grant-only document is the one no prediction reaches: it is what an
+          # EMPTY database inspects to, with no table anywhere to declare a
+          # schema from. The table-and-view document is the one no FILTER
+          # reaches: it is the default invocation on any database carrying a
+          # view, and its pair is what says a permission target names the block
+          # type the document declares rather than the field the name arrived on.
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_with_grants/unreadable/PUBLIC_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_whose_roles_were_excluded/unreadable/a_grantee_reference_with_no_role_block_anywhere' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_and_a_view_with_grants_on_both/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/a_table_and_a_view_with_grants_on_both/unreadable/a_view_named_as_a_table' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/a_table_and_a_view_with_grants_on_both/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/postgres/nothing_but_the_grant_every_database_has/unreadable/a_schema_reference_with_no_block' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheInspectedDocumentPtahRenders/sqlite/nothing_but_the_grant_every_database_has/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          # And for the shape a relation LABEL is not unique in: two schemas each
+          # holding a view named `v`, which is a DEFAULT inspect of a
+          # realm-scoped URL. Its three mutations are named for the same reason
+          # -- `rendered` alone would pass on a build that had gone back to
+          # writing an unreadable traversal, since the mutation is what says the
+          # traversal is refused. PostgreSQL only: the binary refuses a
+          # two-schema document on SQLite outright, so there is no SQLite row.
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_grant_target_named_as_a_qualified_table' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_grant_target_named_as_a_qualified_view' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders/unreadable/a_trigger_target_named_as_a_qualified_table' "$RUNNER_TEMP/atlas-column-type-run"
+
+      # A schema DIRECTORY is an ordered script, and that is a contract whose
+      # authority is the community binary too (stokaro/ptah#940). It reads one
+      # by executing every file against the dev database, so a file that
+      # redeclares an object an earlier file declared is an engine error there.
+      # Ptah reads the same directory by merging parsed files, which is a
+      # different mechanism that can agree only where it is measured -- and the
+      # first cut of it exited 0, having really applied a table that appears in
+      # no file. Listed before it is run, for the same reason as above.
+      - name: Verify schema-directory conformance selection
+        run: |
+          GOWORK=off go test -list '^TestOracle' \
+            ./cmd/atlas > "$RUNNER_TEMP/atlas-schema-dir-tests"
+          cat "$RUNNER_TEMP/atlas-schema-dir-tests"
+          grep -Fx 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject' "$RUNNER_TEMP/atlas-schema-dir-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-schema-dir-tests")" -eq 1
+
+      - name: Run schema-directory conformance tests
+        run: |
+          GOWORK=off go test -count=1 -v -run '^TestOracle' ./cmd/atlas \
+            > "$RUNNER_TEMP/atlas-schema-dir-run" 2>&1 || {
+              cat "$RUNNER_TEMP/atlas-schema-dir-run"
+              exit 1
+            }
+          cat "$RUNNER_TEMP/atlas-schema-dir-run"
+          # A missing oracle skips these silently. That is the exact failure
+          # mode this job exists to prevent, so a skip fails the job.
+          ! grep -q 'SKIPPED' "$RUNNER_TEMP/atlas-schema-dir-run"
+          # The refusing row alone would pass on a build that refused every
+          # directory, so the rows that must stay exit 0 are named too: a
+          # selection that silently stopped matching them cannot leave the job
+          # green.
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/redeclared' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/distinct' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/guarded' "$RUNNER_TEMP/atlas-schema-dir-run"
+          grep -Fq 'TestOracleAgreesOnADirectoryThatRedeclaresAnObject/hcl_redeclared' "$RUNNER_TEMP/atlas-schema-dir-run"
 
       - name: Regenerate Atlas CE corpus
         run: >-

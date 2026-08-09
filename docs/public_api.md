@@ -15,6 +15,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/config`
 - `go.5x5.cz/ptah/config/projectconfig`
 - `go.5x5.cz/ptah/core/ast`
+- `go.5x5.cz/ptah/core/coverage`
 - `go.5x5.cz/ptah/core/goschema`
 - `go.5x5.cz/ptah/core/platform`
 - `go.5x5.cz/ptah/core/platform/capability`
@@ -50,7 +51,14 @@ online-DDL policy is parsed, merged, validated, and then passed to migration
 execution without a second configuration-file read.
 `ParseAtlasFSWithOptions` lets embedders evaluate `atlas.hcl` against an
 already anchored or immutable `fs.FS`; `file()` and `fileset()` resolve only
-through that filesystem.
+through that filesystem. Use `ParseAtlasFSCollectionWithOptions`,
+`ParseAtlasCollectionWithOptions`, or `LoadCollection` when an env `for_each`
+can select several independent configs. The singular functions require exactly
+one selected instance and return an error rather than discarding the others.
+`Config.IgnoredConstructs` identifies names that
+Atlas CE accepts without acting on, with kind and source location. `Merge`
+preserves this diagnostic metadata from both inputs. Ptah's command layer warns
+for each entry; embedders can choose their own reporting policy.
 
 `core/renderer.GetOrderedCreateStatements` and its capability-aware variant
 render complete schema DDL fail-closed. Non-SQLite targets return all table
@@ -62,6 +70,15 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 `ValidateSchema` and `ValidateSchemaWithCapabilities` run the same complete
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
+
+`core/coverage` carries what a schema description does **not** claim to
+describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
+hold one, and schema comparison consults both: the desired state's record gates
+removals and the introspected state's record gates additions. Its zero value
+claims everything, so an embedder that never sets one gets exactly the
+comparison it got before the field existed. Set it when a reader was asked about
+less than the whole database, or a projection left something out on purpose;
+leaving it zero there is how an object nobody looked at becomes a `DROP`.
 
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
@@ -89,8 +106,14 @@ integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Capture
 does not apply the lint policy automatically: embedders call `LoadConfigFS`
 and pass its `Dialect`, `DisabledRules`, and `Rules` through `lint.Options`.
+
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
-including selectors with leading or trailing whitespace.
+including selectors with leading or trailing whitespace. It also rejects
+unsupported dialects and empty, malformed, or non-normalized exclusion globs
+instead of silently weakening the effective policy. `lint.ValidateOptions`
+checks selectors against the active rule registry without reading migration
+files; call it before a no-work return or an execution override that can skip
+`LintFS` or `AnalyzeFS`.
 
 Finding contexts identify the exact statement and affected tables or columns;
 column subjects can also carry the parent table and declared data type. Each
@@ -109,9 +132,17 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path. For SQL-backed
 `no_transaction` migrations, Ptah durably checkpoints the statement before
-calling the observer. Atlas-format down execution is excluded because it
-preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` remains
-opaque and has no statement-level checkpointing.
+calling the observer, including Atlas-format down execution. Process exit,
+context cancellation, or deadline while execution is in flight preserves the
+unknown-outcome marker. A custom `MigrationFunc` remains opaque and has no
+statement-level checkpointing.
+
+Dirty SQL-backed resumes verify the already committed source prefix before
+skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
+use cumulative `partial_hashes`. A failure after changing transaction mode
+cannot reduce the recorded applied count below that verified prefix.
+`RepairMigration` holds the session advisory lock across revision inspection,
+resumed SQL, safety checks, and the final metadata write.
 
 Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
 with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or
@@ -136,6 +167,14 @@ migration lock before transaction-mode validation, including empty plans. It
 is a metadata-only observer and cannot abort execution. `Preflight` remains the
 abort-capable hook after validation, so user-facing start output is not emitted
 for a statically invalid migration.
+
+`MigrateUpOptions.DiscardRolledBackFailure` models the Atlas revision-table
+compatibility surface, which treats a confirmed transactional rollback as no
+recorded attempt. It has no effect with the native Ptah revision-table format.
+With the Atlas format, it removes only the failed revision written by the
+current invocation and only after `Rollback` succeeds. Existing dirty rows,
+partial progress, rollback failure, commit failure, and unknown statement
+outcomes remain dirty and block automatic retry.
 
 `migration/migrator.WithStatementValidator` installs a pre-execution safety
 gate on a filesystem provider. Ptah splits and validates every statement in one
@@ -202,7 +241,8 @@ changed.
 cross-process publication lock and rejects concurrent use of one plan with
 `generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience
 composition of planning and publication and propagates its context through
-both phases.
+both phases. The returned `generator.MigrationFiles.Files` slice is the
+authoritative list of generated pairs and published paths, in apply order.
 
 `migration/safety.RenderJSON` writes a `safety.Report` containing the highest
 risk, destructive verdict, and rendered statement assessments. The native
@@ -210,13 +250,18 @@ risk, destructive verdict, and rendered statement assessments. The native
 output. `GenerateMigrationOptions.ReportFormat: "json"` instead publishes one
 `.safety.json` file beside each generated migration pair.
 
-Candidate shadow failures preserve a typed
+Candidate and baseline shadow failures preserve a typed
 `*generator.ShadowVerificationError` through `PlanMigration`,
-`GenerateMigration`, and command wrappers. Use `errors.As` to inspect
-`Result.Stage` and the structured `Result.Mismatches`; operational failures
-also expose their underlying error through `Unwrap`. A schema mismatch carries
-the complete, deterministically ordered mismatch list without a wrapped
-execution error.
+`GenerateMigration`, `VerifyBaselineShadow`, and command wrappers. Use
+`errors.As` to inspect `Result.Stage` and the structured `Result.Mismatches`;
+operational failures also expose their underlying error through `Unwrap`. A
+schema mismatch carries the complete, deterministically ordered mismatch list
+without a wrapped execution error. Baseline failures retain the
+`baseline shadow check failed:` display prefix while preserving this typed
+contract. Candidate and baseline verification share stage names at common
+boundaries. Baseline verification can additionally report `target-introspect`,
+`reset-schemas`, and `drop-metadata`; candidate-only `round-trip-down` and
+`round-trip-up` stages do not occur during baseline verification.
 
 `migration/generator.VerifyRollbackFromShadow` requires the caller's open
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live
@@ -253,6 +298,32 @@ canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
+
+Row-level security policies are carried the same way. `RLSPoliciesAdded` and
+`RLSPoliciesRemoved` are `[]RLSPolicyRef`, and `RLSPoliciesModified` is
+`[]RLSPolicyDiff`; all three name the owning table alongside the policy name.
+The pair is the identity, not decoration: a PostgreSQL policy name is scoped to
+its table, so two tables in one schema may each carry a policy called
+`tenant_isolation` and neither the comparator nor the planner can tell them
+apart from the name. The table half is matched under the diff's identifier
+semantics rather than as a raw string, which is what makes the desired
+spelling `public.orders` and the introspected spelling `orders` one table
+across the forward and reverse directions. Embedders that build these lists by
+hand must fill both fields; a reference the target schema cannot resolve is
+rejected with `ptaherr.ErrInvalidSchemaDiff` rather than silently omitted from
+the plan.
+
+`migration/schemadiff/types.ViewDiff` also records the view body that is in
+force before the diff is applied, and whether the entry is being planned as a
+rollback. Planners read the body to decide whether the target engine accepts an
+in-place view replacement; PostgreSQL accepts `CREATE OR REPLACE VIEW` only when
+the new query appends to the old column list over the same relations. Where that
+can be neither proved nor ruled out — an unknown prior body, a `WITH` prefix, a
+`SELECT *` projection, a top-level set operation — the rollback flag settles it:
+a forward plan keeps the replacement, which preserves dependent objects and the
+privileges on the view and fails loudly if the engine refuses it, while a
+rollback drops and recreates, which always applies. Embedders that build a
+`ViewDiff` by hand and leave both fields empty get the forward answer.
 
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.

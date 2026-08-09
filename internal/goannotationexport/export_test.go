@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
+	"go.5x5.cz/ptah/internal/goannotationcleanup"
 	"go.5x5.cz/ptah/internal/goannotationexport"
 )
 
@@ -352,6 +353,209 @@ const placeholder = 0
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 	assertFileBytes(c, source, sourceData)
 	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_CleanupRejectsDetachedRecognizedDirective(t *testing.T) {
+	c := qt.New(t)
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:role name="app"
+const placeholder = 0
+`)
+	outputData := []byte("previous useful schema\n")
+	tests := []struct {
+		name   string
+		dryRun bool
+		diff   bool
+	}{
+		{name: "write"},
+		{name: "dry run", dryRun: true},
+		{name: "diff", diff: true},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			source := filepath.Join(root, "model.go")
+			output := filepath.Join(root, "schema.hcl")
+			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+			result, err := goannotationexport.Export(goannotationexport.Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+				DryRun:     test.dryRun,
+				Diff:       test.diff,
+			})
+
+			c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+			c.Assert(err.Error(), qt.Contains, "ptah:schema:role")
+			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+			assertFileBytes(c, source, sourceData)
+			assertFileBytes(c, output, outputData)
+		})
+	}
+}
+
+func TestExport_FailurePath_CleanupRejectsFileScopedRLSWithoutExportedObject(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:rls:policy name="ghost_policy" table="ghosts" using="true"
+const placeholder = 0
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_CleanupRejectsShadowedFileScopedRLS(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:rls:policy name="users_policy" table="users" using="owner_id = current_user_id()"
+const firstPolicy = 0
+
+//ptah:schema:rls:policy name="users_policy" table="users" using="admin = true"
+const shadowedPolicy = 0
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
+	c.Assert(err.Error(), qt.Contains, ":9:")
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_FailurePath_CleanupRejectsShadowedEnum(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:enum name="status" values="pending,active"
+type FirstStatus struct{}
+
+//ptah:schema:enum name="status" values="disabled,deleted"
+type SecondStatus struct{}
+
+//ptah:schema:table name="users"
+type User struct{}
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
+	c.Assert(err.Error(), qt.Contains, ":3:")
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
+}
+
+func TestExport_HappyPath_NearPrefixDirectiveIsPreservedByCleanup(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:tableau name="not_a_table"
+//ptah:schema:table name="users"
+type User struct{}
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.Equals, 1)
+	c.Assert(result.RemovedLines, qt.Equals, 1)
+	after, err := os.ReadFile(source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(after), qt.Contains, `//ptah:schema:tableau name="not_a_table"`)
+	c.Assert(string(after), qt.Not(qt.Contains), `//ptah:schema:table name="users"`)
+}
+
+func TestExport_HappyPath_CleanupMatchesEscapedRLSAttributes(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+
+//ptah:schema:rls:policy name="tenant_policy" table="users" using="tenant = \"acme\""
+const policyMarker = 0
+`)
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    root,
+		OutputPath: output,
+		Cleanup:    true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.RemovedLines, qt.Equals, 2)
+	after, err := os.ReadFile(source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(after), qt.Not(qt.Contains), "ptah:schema")
+	outputData, err := os.ReadFile(output)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(outputData), qt.Contains, `using = "tenant = \"acme\""`)
 }
 
 func TestExport_HappyPath_ParserAcceptedNonRemovableAnnotationIsNotEmpty(t *testing.T) {

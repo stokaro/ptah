@@ -127,7 +127,11 @@ func PreparePlanFile(
 		return PlanFile{}, err
 	}
 
-	fromFingerprint, err := SchemaFingerprint(computation.current)
+	from, err := planSourceSchema(conn, computation, opts.Exclude)
+	if err != nil {
+		return PlanFile{}, err
+	}
+	fromFingerprint, err := SchemaFingerprint(from)
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("fingerprint current schema: %w", err)
 	}
@@ -152,6 +156,44 @@ func PreparePlanFile(
 		Destructive:     destructive,
 		Statements:      statements,
 	}, nil
+}
+
+// planSourceSchema is the target state a plan's from-fingerprint describes.
+//
+// It has to be the read [VerifyPlanTarget] will make when the plan is used, and
+// that read is the connection's own default: a plan file records an exclude
+// list and no schema scope, so nothing in it can tell the verifier which
+// schemas the planning run covered. Planning may nonetheless have read wider —
+// the database side is read at the scope the desired state names, so a document
+// declaring a schema beyond the connected one is compared against it — and
+// fingerprinting that wider read made a freshly saved plan report itself stale
+// against the database it had just been computed from. Measured on PostgreSQL
+// 17.10, a two-schema document against a database holding `public.a` and an
+// empty `extra`: `schema plan` then `schema apply --plan` refused with "the
+// target database schema does not match the plan's source fingerprint" with
+// nothing having changed in between.
+//
+// The extra read happens only when the two scopes differ, which is the case a
+// desired state naming another schema creates and no other. The exclusion is
+// applied here the way computeApplyPlan applied it to its own read, so the two
+// fingerprints describe the same subtraction.
+func planSourceSchema(
+	conn *dbschema.DatabaseConnection,
+	computation applyComputation,
+	exclude []string,
+) (*types.DBSchema, error) {
+	if computation.readScope == nil {
+		return computation.current, nil
+	}
+	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read database schema: %w", err)
+	}
+	current, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(current, exclude, conn.Info().Schema)
+	if err != nil {
+		return nil, fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
+	}
+	return current, nil
 }
 
 // classifyPlanStatements records the safety assessment of each raw statement

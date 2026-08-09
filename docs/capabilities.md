@@ -90,7 +90,11 @@ so typos fail fast. Current registry:
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
 | `drop_index_concurrently` | `DROP INDEX CONCURRENTLY` (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit `CONCURRENTLY`) |
-| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL |
+| `views` | Standalone `CREATE VIEW … AS <query>` objects |
+| `materialized_views` | `CREATE MATERIALIZED VIEW`: a view whose query result is stored. Requires `views` |
+| `functions` | User-defined functions declared with a return type, a language, and a body |
+| `triggers` | `CREATE TRIGGER` objects |
+| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL. Requires `triggers` |
 | `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
@@ -110,7 +114,9 @@ so typos fail fast. Current registry:
 2. **Requirement edges** — an enabled capability with a disabled prerequisite
    is a contradiction (`drop_constraint_if_exists` without
    `drop_constraint_generic`: an `IF EXISTS` variant of a statement the target
-   does not have).
+   does not have). The object-kind keys carry the same rule: a refinement
+   cannot outlive its object, so `materialized_views` requires `views` and
+   `create_or_replace_trigger` requires `triggers`.
 3. **Mutual exclusion groups** — at most one member of a group may be enabled
    (`enum_inline_column` vs `enum_custom_type`: a dialect models enums one way
    or the other).
@@ -134,6 +140,10 @@ composed sets yourself.
 | `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -151,7 +161,7 @@ Version lines: `MySQL84()` covers MySQL 8.4+ and 9.x; `MySQL8019()` covers
 older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
-PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
+PostgreSQL 17; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER`).
 
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
@@ -164,6 +174,72 @@ schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
 indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone
 sequence objects and drift-safe normalization for SQL Server-specific view,
 trigger, and index metadata are outside the initial SQL Server subset.
+
+### Saturation: servers newer than the newest measured line
+
+Every version ladder above ends in an open-topped arm, so a server newer than
+anything Ptah measured still resolves to the newest preset in its dialect. That
+is a stand-in, not a match: whatever the newer release gained or lost is
+unmodeled.
+
+The preset such a server receives is byte-identical to `ForDialect`'s, which is
+exactly what `ForServerVersionResult`'s boolean means by "no version-specific
+preset could be selected". So the boolean is `false` there:
+
+```go
+caps, versionSpecific := capability.ForServerVersionResult("mysql", "26.7.0")
+// caps            == capability.MySQL84() == capability.ForDialect("mysql")
+// versionSpecific == false   (26.x ran off the top of the ladder)
+```
+
+`ResolveServerVersion` separates that fallback from the other one — a version
+that could not be parsed at all — and names the line the server was planned as:
+
+```go
+resolution := capability.ResolveServerVersion("mysql", "26.7.0")
+// resolution.Capabilities    == capability.MySQL84()
+// resolution.VersionSpecific == false   (the dialect default was used)
+// resolution.Saturated       == true    (26.x is past the newest measured line)
+// resolution.NewestMeasured  == "9.x"
+```
+
+`Saturated` and `VersionSpecific` are never both true.
+
+The newest measured line per refined dialect:
+
+| Dialect | Newest measured line | Saturates above major |
+| --- | --- | --- |
+| MySQL | 9.x (`MySQL84()`) | 9 |
+| MariaDB | 11.x (`MariaDB1011()`) | 11 |
+| PostgreSQL | 17.x (`Postgres17()`) | 17 |
+
+PostgreSQL 18 therefore resolves saturated even though the integration matrix
+already runs `postgres:18`: Ptah has no measured PostgreSQL 18 capability line
+yet, so 18 is planned with the PostgreSQL 17 preset and says so.
+
+Raising one of those numbers is the deliberate act of claiming a newer server
+line behaves like the preset it lands on. Do it in the change that measures
+that line — never as a side effect of bumping a container tag.
+
+Saturation is only defined where this package has a version ladder. ClickHouse,
+SQLite and SQL Server have no ladder at all, and CockroachDB, YugabyteDB and
+Spanner are resolved from the banner without consulting a version; all six
+report `Saturated=false` and an empty `NewestMeasured`. Refining those dialects
+is the remaining scope of issue #916.
+
+`dbschema.ConnectToDatabase` is the one production caller of the version-aware
+selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
+server version, and the line it was planned as; an unparseable version is
+recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
+deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
+emits nothing, and connecting to a supported server is a clean run. The
+integration matrix runs `postgres:18`, so a saturated resolution there fires on
+every connection — a warning would be noise on every command rather than a
+diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
+`NewestMeasured` from `ResolveServerVersion` directly.
+
+Surfacing an unrefined version to the user on a channel of its own is
+criterion 6 of issue #916 and belongs with the CLI work that owns that channel.
 
 ### Composition
 
@@ -283,6 +359,19 @@ value or wants to pin a specific server version in tests/CI.
   scenarios that run against live OSS containers in CI. Spanner currently has
   capability, planning, rendering, URL, and detection coverage only; there is
   no OSS Spanner PostgreSQL-interface container in the integration suite.
+- **Object kinds across the PostgreSQL family (#929).** One planner and one
+  renderer serve PostgreSQL, CockroachDB, YugabyteDB, and Spanner, so the
+  `views`, `materialized_views`, `functions`, and `triggers` keys are what lets
+  one member of that family refuse an object kind. Spanner disables the last
+  three: a Spanner view does not store its query result, and Spanner does not
+  run user code in the database. A refused object is not dropped in silence —
+  the renderer writes
+  `-- SPANNER: trigger users_touch is not supported by this target; skipped.`
+  in its place, and because `schema render` and the apply planner both pass
+  through that renderer, the two commands say the same thing about the same
+  object. Every row of these four keys was measured against a live server of
+  that engine except Spanner's, which has no container and no live test (#942)
+  and follows Google's documentation.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and

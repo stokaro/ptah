@@ -95,17 +95,33 @@ func newAtlasMigrateIntegrityCommand(
 		if err != nil {
 			return err
 		}
+		// Both verbs reaching this wrapper -- `migrate hash` and
+		// `migrate validate` -- take no positional, so the stray-argument
+		// refusal runs here on BOTH branches rather than only on the one that
+		// executes directly.
+		//
+		// It used to run only on the direct branch, leaving the forwarding
+		// branch to the native command's own validator. That answered with the
+		// native wording, which does not say where the value belongs. Refusing
+		// a trailing positional is a deliberate divergence from the pinned
+		// community binary v1.3.0, which accepts one and silently discards it,
+		// and a divergence is only defensible when the refusal is more useful
+		// than the acceptance (stokaro/ptah#1241 item 13).
+		//
+		// `migrate new`, which does take a migration name, is built by
+		// newAtlasAdapterCommand directly and never reaches this wrapper; it
+		// shares only atlasVerbFlagSet, which registers flags and no
+		// positionals.
+		if err := checkAtlasMigrateSourceArgs(cmd, verb, source.projectArgs); err != nil {
+			return err
+		}
 		if atlasmigrate.ReadsNativeAtlasDir(source.format) {
 			return forward(cmd, source.forwardArgs)
 		}
-		// The forwarding path above lets the native command reject an unknown
-		// flag or a stray positional. This path executes directly, so it has to
-		// reject them itself instead of silently dropping them. It belongs to
-		// this wrapper rather than to the resolver because a caller that
-		// forwards on BOTH branches -- `migrate new`, which refuses a foreign
-		// layout instead of converting it -- would otherwise have its positional
-		// migration name rejected before the refusal it was owed.
-		if err := checkAtlasMigrateSourceArgs(cmd, verb, source.projectArgs); err != nil {
+		// Only the directly executed path can report what the project file
+		// declares and this run ignores; the forwarded native command reports
+		// its own.
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
 			return err
 		}
 		return run(cmd, source)
@@ -169,15 +185,19 @@ func resolveAtlasMigrateSource(
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
 	if err != nil {
-		// A ?format= query is the only thing that can carry a format value other
-		// than the configured one, so it is the only thing that can be blamed
-		// for a rejected one. A query carrying only ignored keys selects
-		// nothing, and the blame stays on --dir-format.
-		spelling := "--dir-format"
-		if atlasmigrate.DirFormatFromQuery(localDir.Query) {
-			spelling = "--dir"
-		}
-		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s %s: %w", verb.use, spelling, err)
+		return atlasMigrateSource{}, fmt.Errorf(
+			"atlas migrate %s %s: %w",
+			verb.use,
+			atlasDirFormatSpelling(localDir.Query),
+			err,
+		)
+	}
+
+	// Positioned after the format value has been accepted and before this verb's
+	// atlas.sum gate; see [reportIgnoredDirQuery] for the two rules that fix the
+	// position.
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), verb.use, localDir.Query); err != nil {
+		return atlasMigrateSource{}, err
 	}
 
 	devURL, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dev-url"))
@@ -414,7 +434,7 @@ func checkAtlasMigrateSourceArgs(cmd *cobra.Command, verb atlasVerb, args []stri
 	if err := flagSet.Parse(args); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	return cmdutil.NoPositionalArgs(cmd, flagSet.Args())
+	return cmdutil.NoPositionalArgsHint("name the migration directory with --dir")(cmd, flagSet.Args())
 }
 
 // atlasVerbFlagSet builds the pflag set for one Atlas verb's own flags, so a

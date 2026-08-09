@@ -46,7 +46,7 @@ metadata.`,
 	flags.StringVar(&opts.dirFormat, "dir-format", opts.dirFormat, "Migration directory format")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the revision table")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the migration directory with --dir"))
 	return cmd
 }
 
@@ -128,7 +128,7 @@ func runAtlasMigrateStatus(
 	// diagnostic an invocation carrying two bad values prints. The query
 	// spelling cannot be resolved yet — it lives in --dir — so this pass sees
 	// the configured value alone and the two are combined below.
-	if _, err := resolveAtlasVerbDirFormat("status", opts.dirFormat, nil); err != nil {
+	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "status", opts.dirFormat, nil); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
@@ -151,7 +151,7 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
-	format, err := resolveAtlasVerbDirFormat("status", opts.dirFormat, localDir.Query)
+	format, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "status", opts.dirFormat, localDir.Query)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

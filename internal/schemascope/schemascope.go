@@ -353,11 +353,19 @@ func dbTableReferenceAllowed(keptTables map[string]struct{}, tableName string) b
 }
 
 func keepReferencedGeneratedEnums(enums []goschema.Enum, fields []goschema.Field) []goschema.Enum {
+	// Every field type is a candidate reference; the keep below intersects them
+	// with the names the schema actually declares as enums, so a type that names
+	// something else simply never matches.
+	//
+	// This used to admit only types spelled "enum_*". A scoped run therefore
+	// dropped the CREATE TYPE for an enum named e.g. "status_kind" while the
+	// column still named it, and `ptah schema test --schema public` died with
+	// `type "status_kind" does not exist` (SQLSTATE 42704) -- a hard failure,
+	// not the silent under-generation the rest of stokaro/ptah#931 item 1
+	// produced.
 	referenced := make(map[string]struct{})
 	for _, field := range fields {
-		if strings.HasPrefix(field.Type, "enum_") {
-			referenced[field.Type] = struct{}{}
-		}
+		referenced[field.Type] = struct{}{}
 	}
 	return keep(enums, func(enum goschema.Enum) bool {
 		_, ok := referenced[enum.Name]

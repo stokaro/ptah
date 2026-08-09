@@ -13,6 +13,16 @@ type LoadOptions struct {
 // required to exist; an empty PtahPath uses the optional conventional
 // ./ptah.yaml path.
 func Load(opts LoadOptions) (Config, error) {
+	configs, err := LoadCollection(opts)
+	if err != nil {
+		return Config{}, err
+	}
+	return singularAtlasConfig(configs, opts.EnvName)
+}
+
+// LoadCollection reads Ptah and Atlas project config files and returns every
+// selected Atlas instance merged over the Ptah config.
+func LoadCollection(opts LoadOptions) ([]Config, error) {
 	ptahPath := opts.PtahPath
 	if ptahPath == "" {
 		ptahPath = PtahFileName
@@ -29,14 +39,18 @@ func Load(opts LoadOptions) (Config, error) {
 
 	ptah, err := loadPtahFile(ptahPath, opts.EnvName, ptahSource)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
-	atlas, err := LoadAtlasFileWithOptions(atlasPath, AtlasLoadOptions{
+	atlas, err := LoadAtlasFileCollectionWithOptions(atlasPath, AtlasLoadOptions{
 		EnvName: opts.EnvName,
 		Vars:    opts.AtlasVars,
 	})
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
-	return Merge(ptah, atlas), nil
+	configs := make([]Config, len(atlas))
+	for i := range atlas {
+		configs[i] = Merge(ptah, atlas[i])
+	}
+	return configs, nil
 }

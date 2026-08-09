@@ -112,6 +112,26 @@ func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
 	c.Assert(count, qt.Equals, 0)
 }
 
+func TestDatabaseConnectionWithSession_PreservesInMemorySQLiteLifetime(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	_, err = conn.ExecContext(t.Context(), "CREATE TABLE session_rows (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	err = conn.WithSession(t.Context(), func(scoped *dbschema.DatabaseConnection) error {
+		_, execErr := scoped.ExecContext(t.Context(), "INSERT INTO session_rows (id) VALUES (1)")
+		return execErr
+	})
+	c.Assert(err, qt.IsNil)
+
+	var count int
+	err = conn.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM session_rows").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+}
+
 func TestDatabaseConnectionWithIsolatedQuerySession_RollsBackWrites(t *testing.T) {
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(

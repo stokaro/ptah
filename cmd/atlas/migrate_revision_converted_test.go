@@ -3,12 +3,9 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
 
 // These tests pin stokaro/ptah#1002 on `ptah-compat migrate status` and
@@ -29,6 +26,10 @@ import (
 const (
 	revisionConvertedFirst  = "V1__first.sql"
 	revisionConvertedSecond = "V2__second.sql"
+	// revisionConvertedFirstToken is the version the FIRST file spells: what
+	// Flyway calls it, what the pinned community binary v1.3.0 calls it, and
+	// since stokaro/ptah#1206 what `migrate set` takes here.
+	revisionConvertedFirstToken = "1"
 )
 
 // writeConvertedFlywayDir writes a two-migration Flyway directory and no
@@ -51,32 +52,6 @@ func hashConvertedFlywayDir(c *qt.C, dir string) {
 	c.Helper()
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
-}
-
-// convertedFlywayVersions returns the Atlas versions the Flyway directory
-// converts to, in execution order.
-//
-// They are read from the importer rather than written into the test, because
-// they are not the Flyway tokens. Ptah's migrator identifies a migration by an
-// int64 while the community binary identifies a Flyway migration by an opaque
-// string, so the conversion projects one space onto the other and the numbers
-// it produces are large and synthetic. Pinning them literally here would pin
-// that projection, which is not what these tests are about.
-func convertedFlywayVersions(c *qt.C, dir string) []string {
-	c.Helper()
-	loaded, err := atlasmigrateimport.LoadFS(
-		os.DirFS(dir),
-		dir,
-		atlasmigrateimport.FormatFlyway,
-	)
-	c.Assert(err, qt.IsNil)
-	versions := make([]string, 0, len(loaded.Entries))
-	for _, entry := range loaded.Entries {
-		name, _, found := strings.Cut(entry.Name, "_")
-		c.Assert(found, qt.IsTrue, qt.Commentf("converted entry %q carries no version prefix", entry.Name))
-		versions = append(versions, name)
-	}
-	return versions
 }
 
 // revisionDBURL returns a URL for a database file that does not exist yet, so
@@ -188,22 +163,27 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 // stopped refusing the layout, and recorded a version no converted file
 // carries, would still exit 0 here — and would then report two pending
 // migrations rather than one.
+//
+// The operand is the Flyway version TOKEN since stokaro/ptah#1206. It used to be
+// the int64 ordering key the token converts to, read back out of the importer;
+// that spelling was the only one this build accepted and the only one the
+// pinned community binary v1.3.0 refuses, so it is retired here rather than
+// carried alongside. The convertedFlywayVersions helper this test used to call
+// went with it — nothing else consulted the projection.
 func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 	dir := writeConvertedFlywayDir(c)
 	hashConvertedFlywayDir(c, dir)
-	versions := convertedFlywayVersions(c, dir)
-	c.Assert(versions, qt.HasLen, 2)
 	url := revisionDBURL(c)
 
 	stdout, stderr, err := runCompatExit(
-		"migrate", "set", versions[0],
+		"migrate", "set", revisionConvertedFirstToken,
 		"--dir", "file://"+dir+"?format=flyway",
 		"--url", url,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-	c.Assert(stdout, qt.Contains, "Current version is "+versions[0])
+	c.Assert(stdout, qt.Contains, "Current version is "+revisionConvertedFirstToken+" (1 set)")
 
 	stdout, stderr, err = runCompatExit(
 		"migrate", "status",

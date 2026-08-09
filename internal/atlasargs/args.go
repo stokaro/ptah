@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // LocalDir describes a parsed local Atlas migration directory URL.
@@ -114,6 +116,26 @@ func NativeUint(name, shorthand, usage, nativeName string) Flag {
 func NativeLocalDir(name, shorthand, usage, nativeName string) Flag {
 	flag := NativeString(name, shorthand, usage, nativeName)
 	flag.MapValue = LocalDirValue
+	return flag
+}
+
+// NativeLocalDirDefault is [NativeLocalDir] carrying the Atlas-documented
+// default directory URL for the flag.
+//
+// The default is what [registerAtlasFlags] prints in `--help` and what
+// [appendDefaultArgs] folds into the arguments when no layer named a directory,
+// so declaring it here is what makes the help line and the runtime agree. On
+// the pinned community binary v1.3.0 every migrate verb that registers --dir
+// documents `(default "file://migrations")`; Ptah honored it on some verbs and
+// not others, and `migrate new` printed the flag with no default at all while
+// refusing to run without one (stokaro/ptah#1241 item 3).
+//
+// It is a DEFAULT, not a fallback: a --dir naming a directory that is not there
+// still fails, because the value only ever fills in for an absent flag and is
+// never consulted after a failed open.
+func NativeLocalDirDefault(name, shorthand, usage, nativeName, defaultValue string) Flag {
+	flag := NativeLocalDir(name, shorthand, usage, nativeName)
+	flag.Default = defaultValue
 	return flag
 }
 
@@ -501,17 +523,23 @@ func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
 			continue
 		}
 		value, ok := os.LookupEnv(envName("PTAH", flag.Name))
-		if !ok || value == "" {
+		if !ok {
 			continue
 		}
 		if flag.Kind == BoolFlag {
-			parsed, err := strconv.ParseBool(value)
+			// One grammar and one error for every boolean PTAH_* variable, and an
+			// explicitly empty one is a configuration error rather than a silent
+			// "unset". See [go.5x5.cz/ptah/internal/envbool] and
+			// stokaro/ptah#1334.
+			parsed, err := envbool.Parse(envName("PTAH", flag.Name), value)
 			if err != nil {
-				return nil, fmt.Errorf("invalid boolean value %q for %s", value, envName("PTAH", flag.Name))
+				return nil, err
 			}
 			if !parsed {
 				continue
 			}
+		} else if value == "" {
+			continue
 		}
 		if flag.Kind == UintFlag {
 			if _, err := strconv.ParseUint(value, 0, 64); err != nil {

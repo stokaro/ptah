@@ -15,6 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -39,6 +40,21 @@ type Options struct {
 	// the order the parser reached them. Optional; nil discards them, which is
 	// what the community binary does.
 	RecordIgnored func(IgnoredName)
+
+	// RecordSchemaBlock receives every TOP-LEVEL `schema` block the document
+	// declares, in file order, one call per block. Optional; nil discards them.
+	//
+	// It reports blocks rather than schemas because those are two different
+	// numbers and the caller needs the first: `goschema.Finalize` folds two
+	// `schema "main"` blocks into one schema, and the pinned Atlas community
+	// binary v1.3.0 counts that document as two. See [declaredSchemaBlocks].
+	//
+	// The recorder fires for a document that parses, whatever the caller then
+	// does with the count. Deciding what "too many" means needs facts this
+	// parser does not have -- which URL the run is limited to -- so the rule
+	// lives with the caller that knows them
+	// (go.5x5.cz/ptah/internal/schemafile.Options.SchemaScope).
+	RecordSchemaBlock func(SchemaBlock)
 
 	// Vars supplies values for the file's `variable` blocks, spelled the way
 	// `--var` spells them: one entry per flag occurrence, each entry a
@@ -87,14 +103,16 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		return nil, fmt.Errorf("parse HCL schema: unsupported body type %T", file.Body)
 	}
 
+	schemaBlocks := declaredSchemaBlocks(body)
 	p := parser{
-		src:           data,
-		filename:      filename,
-		sourceDir:     filepath.Dir(filename),
-		db:            &goschema.Database{},
-		tolerant:      opts.IgnoreUnknownNames,
-		recordIgnored: opts.RecordIgnored,
-		refContext:    columnRefContext(body),
+		src:             data,
+		filename:        filename,
+		sourceDir:       filepath.Dir(filename),
+		db:              &goschema.Database{},
+		tolerant:        opts.IgnoreUnknownNames,
+		recordIgnored:   opts.RecordIgnored,
+		refContext:      columnRefContext(body),
+		declaredSchemas: schemaBlockNames(schemaBlocks),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -104,6 +122,13 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// block error, so the classification has to run ahead of the body walk.
 	if err := classifyProjectFile(body, filename); err != nil {
 		return nil, err
+	}
+	// After the project-file verdict, so a document that is not a schema file at
+	// all never contributes a schema block to a caller's count.
+	if opts.RecordSchemaBlock != nil {
+		for _, block := range schemaBlocks {
+			opts.RecordSchemaBlock(block)
+		}
 	}
 	// The evaluation context is built from the file's own variable and locals
 	// blocks, so it has to exist before any attribute is read -- including the
@@ -129,7 +154,21 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	if err := p.parseBody(body); err != nil {
 		return nil, err
 	}
+	// After the walk, because a reference may name a block declared further
+	// down the file, and before Finalize, which reads schemas off the same
+	// blocks for the positions it covers.
+	p.resolveDocumentTableRefs()
 	goschema.Finalize(p.db)
+	// A document's own account of its limits is part of the document. It rides
+	// in the leading comment header rather than in a block, because it has to
+	// survive being read by tools that are not Ptah -- the pinned Atlas
+	// community binary v1.3.0 reads a document carrying it at exit 0 -- and
+	// because a block would need a name that binary refuses.
+	notDescribed, err := coverage.DecodeHeader(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse HCL schema %s: %w", filename, err)
+	}
+	p.db.NotDescribed = notDescribed
 	return p.db, nil
 }
 
@@ -202,6 +241,14 @@ type parser struct {
 	// refContext decides a conditional inside a column reference. Built once
 	// from the file's own `variable` blocks -- see columnRefContext.
 	refContext *hcl.EvalContext
+	// declaredSchemas holds the labels of the file's top-level `schema`
+	// blocks, collected before the walk so a dropped body can name one that is
+	// declared further down -- see droppedSchemaRoot.
+	declaredSchemas []string
+	// pendingForeignRefs holds the single-column foreign key targets that can
+	// only be read once every table block is known; see
+	// [parser.resolveDocumentTableRefs].
+	pendingForeignRefs []pendingForeignRef
 }
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
@@ -311,8 +358,15 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	if len(values) == 0 {
 		return p.blockError(block, "enum %q requires values", block.Labels[0])
 	}
+	// The `schema` attribute is read rather than merely tolerated. It was
+	// accepted by rejectUnsupportedEnumAttrs and then discarded, so a document
+	// declaring `enum "mood" { schema = schema.extra }` was read back as an
+	// enum belonging to nothing, and applying it created the type in whatever
+	// schema the connection defaulted to (stokaro/ptah#1276). A `function`
+	// block's schema has always been read here; an enum's is the same fact.
 	p.db.Enums = append(p.db.Enums, goschema.Enum{
 		Name:   block.Labels[0],
+		Schema: p.optionalRefName(block.Body.Attributes["schema"]),
 		Values: values,
 	})
 	return nil
@@ -1013,6 +1067,10 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		if err != nil {
 			return nil, nil, err
 		}
+		nullsOrder, err := p.indexPartNullsOrder(nested)
+		if err != nil {
+			return nil, nil, err
+		}
 		operator := p.optionalSQLExpression(nested.Body.Attributes["ops"])
 		prefix := p.optionalRawExpr(nested.Body.Attributes["prefix"])
 		if columnAttr != nil {
@@ -1021,7 +1079,13 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 				return nil, nil, err
 			}
 			columns = append(columns, column)
-			parts = append(parts, goschema.IndexPart{Name: column, Operator: operator, Prefix: prefix, Desc: desc})
+			parts = append(parts, goschema.IndexPart{
+				Name:       column,
+				Operator:   operator,
+				Prefix:     prefix,
+				Desc:       desc,
+				NullsOrder: nullsOrder,
+			})
 			continue
 		}
 		if prefix != "" {
@@ -1029,9 +1093,48 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		}
 		expr := p.exprString(exprAttr)
 		columns = append(columns, expr)
-		parts = append(parts, goschema.IndexPart{Expr: expr, Operator: operator, Desc: desc})
+		parts = append(parts, goschema.IndexPart{
+			Expr:       expr,
+			Operator:   operator,
+			Desc:       desc,
+			NullsOrder: nullsOrder,
+		})
 	}
 	return columns, parts, nil
+}
+
+// indexPartNullsOrder reads the NULLS ordering of one index key.
+//
+// The two attributes are the spelling the community binary's own
+// `schema inspect` emits for a PostgreSQL index, so a file it produced was
+// reaching Ptah with the ordering silently dropped by the unknown-attribute
+// tolerance -- the property was accepted and then ignored. Only an ordering
+// that deviates from the direction's default is recorded, matching what
+// #1271's reader does with pg_index.indoption, so an explicit
+// `nulls_last = true` on an ascending key stays equal to an omitted one
+// instead of planning a rebuild (issue #1272).
+//
+// Setting both to true is refused rather than resolved: a key has one NULLS
+// ordering, and picking one of the two for the author would be a guess.
+func (p *parser) indexPartNullsOrder(block *hclsyntax.Block) (string, error) {
+	first, err := p.optionalIndexOnBool(block, "nulls_first", false)
+	if err != nil {
+		return "", err
+	}
+	last, err := p.optionalIndexOnBool(block, "nulls_last", false)
+	if err != nil {
+		return "", err
+	}
+	if first && last {
+		return "", p.blockError(block, "index on cannot set both nulls_first and nulls_last")
+	}
+	if first {
+		return goschema.NullsOrderFirst, nil
+	}
+	if last {
+		return goschema.NullsOrderLast, nil
+	}
+	return "", nil
 }
 
 type primaryKeySpec struct {
@@ -1308,6 +1411,12 @@ func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *h
 		field.ForeignKeyName = spec.name
 		field.OnDelete = spec.onDelete
 		field.OnUpdate = spec.onUpdate
+		p.pendingForeignRefs = append(p.pendingForeignRefs, pendingForeignRef{
+			field:  i,
+			owner:  table,
+			table:  spec.foreignTable,
+			column: spec.foreignColumns[0],
+		})
 		return nil
 	}
 	return nil
@@ -1547,11 +1656,13 @@ func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedIndexOnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"column": true,
-		"expr":   true,
-		"ops":    true,
-		"prefix": true,
-		"desc":   true,
+		"column":      true,
+		"expr":        true,
+		"ops":         true,
+		"prefix":      true,
+		"desc":        true,
+		"nulls_first": true,
+		"nulls_last":  true,
 	}, "index on")
 }
 
@@ -1642,6 +1753,14 @@ func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error 
 	return nil
 }
 
+// markPrimaryFields moves a single-column table-level primary key onto the
+// column so it renders inline. The column's `null` attribute is left as the
+// document wrote it: measured on the pinned Atlas community v1.3.0 binary,
+// `schema apply` from a table whose key column says `null = true` builds a
+// SQLite table whose `pragma table_info.notnull` is 0 for that column, so
+// clearing the flag here would apply a stricter table than the document asked
+// for. Where the flag is absent the HCL parser already defaults it to NOT NULL.
+// See stokaro/ptah#1235.
 func markPrimaryFields(fields []goschema.Field, columns []string) {
 	if len(columns) != 1 {
 		return
@@ -1649,7 +1768,6 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 	for i := range fields {
 		if fields[i].Name == columns[0] {
 			fields[i].Primary = true
-			fields[i].Nullable = false
 			return
 		}
 	}

@@ -3,7 +3,8 @@ title: Protobuf schema export
 description: Export Go entities to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.
 ---
 
-Project the schema Ptah parses from Go annotations into a Protobuf definition:
+Project the desired schema Ptah parses — Go annotations under `--root-dir`, or a
+YAML, HCL, or SQL file named by `--schema-file` — into a Protobuf definition:
 one message per table, one enum per enum column, and scalar fields for foreign
 keys. Unlike the OpenAPI and GraphQL targets on
 [API schema export](../export/), this one is stateful. Protobuf field numbers
@@ -17,9 +18,9 @@ and column names, translated types, and enum values. It does **not** carry the
 comments the source schema supplies unless you ask for them with
 [`--proto-comments all`](#control-what-the-contract-says).
 
-Prerequisites: a built `ptah` binary and a directory of annotated Go models.
-`buf` and `protoc` are needed only if you want to lint or compatibility-check
-the result yourself.
+Prerequisites: a built `ptah` binary and a desired schema — a directory of
+annotated Go models, or a YAML, HCL, or SQL schema file. `buf` and `protoc` are
+needed only if you want to lint or compatibility-check the result yourself.
 
 :::caution[Wire compatibility is not API safety]
 Compatibility checks prevent accidental field-number reuse and detect selected
@@ -174,13 +175,36 @@ Ptah protects that state in both directions:
 - The write is atomic. A refusal, a render failure, or an invalid generated
   file leaves the previous version byte-identical on disk.
 
+## Export from a schema file
+
+The desired schema does not have to be Go. `--schema-file` names a YAML, HCL, or
+SQL schema file, exactly as it does on
+[`ptah schema render`](../../reference/native-commands/):
+
+```bash
+ptah schema export --to protobuf \
+  --schema-file schema.yaml \
+  --out ./proto/acme/inventory/v1/schema.proto \
+  --proto-package acme.inventory.v1
+```
+
+The source format never reaches the generated file: a schema file and the
+annotated Go models describing the same tables produce the same `.proto`, down
+to the field numbers and the content digest. Moving a project from Go
+annotations to a schema file therefore does not restart its numbering history.
+
+`--from` declares the file's format and is checked against its extension, so
+`--from yaml --schema-file schema.sql` is refused rather than parsed as the
+wrong format. Leave `--from` unset and the extension decides.
+
 ## Flags
 
 | Flag | Required | Meaning |
 | --- | --- | --- |
 | `--to protobuf` | yes | Selects this target. |
-| `--from` | no | Source format. Only `go` is supported, and it is the default. |
+| `--from` | no | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, or `sql`. Checked against the file extension; leave it unset to take the format from the extension. |
 | `--root-dir` | no | Directory scanned for Go annotations (default `.`). |
+| `--schema-file` | no | YAML, HCL, or SQL schema file to export instead of Go annotations. Repeatable; merged with `--root-dir` when both are given. |
 | `--out` | yes | Destination `.proto`. Also the compatibility state read back on the next run. |
 | `--proto-package` | yes | Protobuf package, `lower_snake.case` segments, for example `acme.inventory.v1`. |
 | `--go-package` | no | Emitted as `option go_package`. |
@@ -648,10 +672,13 @@ Every check below runs before anything is written, and each exits with code
 Every bullet below ends with either the issue that tracks it or the reason it is
 permanent, so nothing on this list is an unowned gap.
 
-- The source is Go annotations only. There is no `--schema-file` or database
-  URL for this target; run [`ptah introspect`](../../start/adopt-an-existing-database/)
-  first to generate annotated models from an existing database. Tracked by
-  [#1144](https://github.com/stokaro/ptah/issues/1144).
+- A live database is not a source. `--root-dir` and `--schema-file` cover Go
+  annotations, YAML, HCL, and SQL; there is no database URL for this target, so
+  run [`ptah introspect`](../../start/adopt-an-existing-database/) first to
+  generate annotated models from an existing database and export those. That
+  split is permanent because a wire contract is reviewed from a file in version
+  control, and introspection is the reviewable step that turns a database into
+  one.
 - Table selection is the narrowest available projection. There are no
   field-level allowlists, read/write visibility rules, sensitive-field markers,
   or API-specific aliases. Use a curated annotation source or wrapper messages

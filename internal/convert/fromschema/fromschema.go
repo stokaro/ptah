@@ -62,6 +62,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -342,14 +343,31 @@ func fieldWithPlatformValues(
 	return newField
 }
 
+// declaredEnum returns the enum the schema declares under the name fieldType,
+// or nil when fieldType names something else.
+//
+// This is the ONLY test for "is this column an enum". Ptah used to additionally
+// require the type name to start with "enum_", an undocumented convention that
+// appears nowhere in `ptah schema annotations`. An enum called "status_kind" was
+// therefore left as the bare type name in CREATE TABLE while the same dialects
+// skip standalone CREATE TYPE emission, so the values disappeared entirely and
+// the DDL named a type the server had never heard of (stokaro/ptah#931 item 1).
+// A declaration is what makes a type an enum; how it is spelled is not.
+func declaredEnum(fieldType string, enums []goschema.Enum) *goschema.Enum {
+	for i := range enums {
+		if enums[i].Name == fieldType {
+			return &enums[i]
+		}
+	}
+	return nil
+}
+
 func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform string) goschema.Field {
-	if !strings.HasPrefix(field.Type, "enum_") {
+	enum := declaredEnum(field.Type, enums)
+	if enum == nil {
 		return field
 	}
 
-	if enums == nil {
-		return field
-	}
 	// Validate enum field
 	validateEnumField(field, enums)
 
@@ -360,17 +378,23 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 	// at the same time, which is how `--dialect sqlite3` used to drop the enum
 	// entirely and render the column as the bare type name `enum_status`.
 	if emitsStandaloneEnumDefinitions(targetPlatform) {
+		// A standalone enum type is created in a schema, and a column declared
+		// against it has to name the same one. The declared type is matched by
+		// bare name -- that is what makes an annotation `type="mood"` find the
+		// enum -- so the qualifier is put back here, from the enum's own
+		// schema, rather than being expected in the field.
+		//
+		// Without it, `CREATE TYPE "extra"."mood"` was followed by
+		// `CREATE TABLE "extra"."b" ("feeling" mood)`, which resolves through
+		// search_path and fails with `type "mood" does not exist` on every
+		// schema off the path (stokaro/ptah#1276). An enum with no schema is
+		// left exactly as it was, which is every enum a Go annotation, a YAML
+		// schema, or a single-schema read can produce.
+		field.Type = enum.QualifiedName()
 		return field
 	}
 
-	for _, enum := range enums {
-		if enum.Name != field.Type {
-			continue
-		}
-		return applyInlineEnumModel(field, enum, targetPlatform)
-	}
-
-	return field
+	return applyInlineEnumModel(field, *enum, targetPlatform)
 }
 
 func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatform string) goschema.Field {
@@ -498,6 +522,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable - only override default if explicitly set to false
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
@@ -585,6 +610,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
@@ -1514,7 +1540,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 // Returns an *ast.EnumNode ready for SQL generation by dialect-specific visitors.
 // The visitor implementation determines how the enum is rendered for each database type.
 func FromEnum(enum goschema.Enum) *ast.EnumNode {
-	return ast.NewEnum(enum.Name, enum.Values...)
+	return ast.NewEnum(enum.QualifiedName(), enum.Values...)
 }
 
 // qualifyTypeName returns schema.name when schema is set, or name otherwise. The
@@ -2048,11 +2074,19 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 2b. Add standalone sequence definitions (PostgreSQL-specific) before any
-	// tables, because a sequence may back a column DEFAULT. The OWNED BY
-	// association is emitted later (after tables) via
-	// appendPostgreSQLPostForeignKeyFeatureStatements.
-	if isPostgreSQLFamilyPlatform(targetPlatform) {
+	// 2b. Add standalone sequence definitions before any tables, because a
+	// sequence may back a column DEFAULT. The OWNED BY association is emitted
+	// later (after tables) via appendPostgreSQLPostForeignKeyFeatureStatements
+	// on the PostgreSQL path; it has no MySQL-family equivalent.
+	//
+	// The MySQL family is included because MariaDB has had real SEQUENCE objects
+	// since 10.3 and capability.MariaDB1011 says so. Gating this on the
+	// PostgreSQL family alone made `--dialect mariadb` drop a declared sequence
+	// with no statement and no diagnostic while the capability registry
+	// advertised Sequences: true (stokaro/ptah#931 item 8). The renderer decides
+	// what a sequence means for the concrete target: MariaDB emits CREATE
+	// SEQUENCE, MySQL emits a not-supported comment.
+	if emitsStandaloneSequences(targetPlatform) {
 		for _, sequence := range database.Sequences {
 			sequenceNode := FromSequence(sequence)
 			sequenceNode.OwnedBy = ""
@@ -2071,20 +2105,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		}
 	}
 
-	// 3b. Add PostgreSQL user-defined types (domains, ranges, then composites)
-	// before tables so columns can reference them. Ordering within the group:
-	// domains and ranges reference base subtypes; composites may reference
-	// domains/enums, so they come last.
+	// 3b. Add PostgreSQL user-defined types before tables so columns can
+	// reference them, ordered by what each definition names rather than by
+	// kind. Enums are already out, above, and reference nothing.
 	if isPostgreSQLFamilyPlatform(targetPlatform) {
-		for _, domain := range database.Domains {
-			statements.Statements = append(statements.Statements, FromDomain(domain))
-		}
-		for _, rangeType := range database.Ranges {
-			statements.Statements = append(statements.Statements, FromRange(rangeType))
-		}
-		for _, composite := range database.CompositeTypes {
-			statements.Statements = append(statements.Statements, FromCompositeType(composite))
-		}
+		statements.Statements = append(statements.Statements, orderedUserTypeStatements(database)...)
 	}
 
 	// 4. Add table definitions (they may be referenced by indexes)
@@ -2092,7 +2117,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	appendTableStatements(statements, database, allFields, targetPlatform)
 
 	isPostgreSQL := isPostgreSQLFamilyPlatform(targetPlatform)
-	if isPostgreSQL {
+	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
 		appendPostgreSQLPreIndexFeatureStatements(statements, database)
 	}
 
@@ -2110,7 +2135,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
 	}
 
-	if isPostgreSQL {
+	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
 		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database)
 	}
 
@@ -2125,6 +2150,49 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	return statements
+}
+
+// orderedUserTypeStatements returns CREATE DOMAIN / CREATE TYPE for every
+// domain, range and composite the schema declares, ordered so a type is created
+// before whatever names it.
+//
+// The three kinds share one namespace and reference each other in both
+// directions -- `CREATE DOMAIN d AS addr` needs the composite `addr` first,
+// `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first -- so emitting
+// kind by kind gets one direction wrong whichever kind goes first, and
+// PostgreSQL has no forward declaration for a type. This is the same ordering
+// the migration planner applies to the types a diff adds; a schema rendered
+// whole has to hold it too, or `ptah generate` writes a script that stops at
+// `ERROR: type "addr" does not exist`.
+func orderedUserTypeStatements(database goschema.Database) []ast.Node {
+	total := len(database.Domains) + len(database.Ranges) + len(database.CompositeTypes)
+	byName := make(map[string]ast.Node, total)
+	userTypes := make([]deporder.UserType, 0, total)
+
+	for _, domain := range database.Domains {
+		byName[domain.QualifiedName()] = FromDomain(domain)
+		userTypes = append(userTypes, deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}})
+	}
+	for _, rangeType := range database.Ranges {
+		byName[rangeType.QualifiedName()] = FromRange(rangeType)
+		userTypes = append(userTypes, deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}})
+	}
+	for _, composite := range database.CompositeTypes {
+		references := make([]string, 0, len(composite.Fields))
+		for _, field := range composite.Fields {
+			references = append(references, field.Type)
+		}
+		byName[composite.QualifiedName()] = FromCompositeType(composite)
+		userTypes = append(userTypes, deporder.UserType{Name: composite.QualifiedName(), References: references})
+	}
+
+	nodes := make([]ast.Node, 0, len(userTypes))
+	for _, name := range deporder.UserTypesForCreate(userTypes) {
+		if node, ok := byName[name]; ok {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
 }
 
 func appendTableStatements(
@@ -2213,6 +2281,23 @@ func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementLi
 	}
 }
 
+// supportsStandaloneViewsAndTriggers reports whether a target OUTSIDE the
+// PostgreSQL family gets view and trigger nodes appended. The family itself is
+// served by appendPostgreSQLPostForeignKeyFeatureStatements above.
+//
+// This stays a list of engines rather than a capability question, and the
+// engine it excludes is the reason. capability.ClickHouse24 says ClickHouse
+// hosts views, because it does — measured live on 24.8.14, both plain and
+// materialized. Ptah's ClickHouse renderer has no view emission and answers
+// "CLICKHOUSE does not support CREATE VIEW" instead, so asking the capability
+// here would append a node whose only rendering is that refusal. The two
+// answers converge when stokaro/ptah#931 item 7 gives the ClickHouse renderer
+// its view and trigger emissions; this predicate is the place that then
+// becomes capability.Views and capability.Triggers.
+//
+// Within the PostgreSQL family the question is already asked by capability, in
+// the renderer, so that `schema render` and the apply planner cannot disagree
+// (stokaro/ptah#929).
 func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite:
@@ -2226,9 +2311,52 @@ func appendViewAndTriggerStatements(statements *ast.StatementList, database gosc
 	for _, view := range database.Views {
 		statements.Statements = append(statements.Statements, FromView(view))
 	}
+	// Materialized views are appended even though none of these targets can
+	// host one. Dropping them here made `schema render` exit 0 having silently
+	// under-generated, while `schema apply` on the same model refused with an
+	// unsupported-feature error -- and render is the documented way to check a
+	// model before applying it. The renderer for each of these dialects refuses
+	// the node, so the two surfaces now give the same answer.
+	for _, view := range database.MaterializedViews {
+		statements.Statements = append(statements.Statements, FromMaterializedView(view))
+	}
 	for _, trigger := range database.Triggers {
 		statements.Statements = append(statements.Statements, FromTrigger(trigger))
 	}
+}
+
+// emitsStandaloneSequences reports whether a declared //ptah:schema:sequence
+// should reach the target's renderer as a CREATE SEQUENCE node.
+//
+// It answers "does this dialect's renderer have something to say about a
+// sequence", not "does this engine have sequences" -- the renderer makes the
+// second call from the capability set, and emits either the statement or a
+// named skip diagnostic. Dropping the node here instead is what made a declared
+// sequence disappear from `schema render` with no trace.
+//
+// SQLite and SQL Server are absent deliberately. Their renderers answer with a
+// flat "CREATE SEQUENCE is not supported", which is true of SQLite and false of
+// SQL Server (it has had sequences since 2012), so routing the node to SQL
+// Server would trade a silent omission for a wrong statement. Both belong to
+// the SQL-schema-file object-kind work, not here.
+func emitsStandaloneSequences(targetPlatform string) bool {
+	return isPostgreSQLFamilyPlatform(targetPlatform) ||
+		isMySQLFamilyTarget(targetPlatform) ||
+		reportsUnsupportedSchemaObjects(targetPlatform)
+}
+
+// reportsUnsupportedSchemaObjects reports whether a target that can host none of
+// the PostgreSQL-family object kinds should nonetheless receive their AST nodes,
+// so its own renderer can say so.
+//
+// ClickHouse implements a notSupported() diagnostic for every one of these kinds
+// -- sequences, roles, functions, views, materialized views, triggers, policies,
+// RLS and grants -- and none of them was ever reached, because this converter
+// dropped the nodes first. `ptah schema apply --dialect clickhouse --dry-run` on
+// a schema declaring all of them planned one CREATE TABLE and exited 0, while
+// the PostgreSQL control planned eight statements (stokaro/ptah#931 item 7).
+func reportsUnsupportedSchemaObjects(targetPlatform string) bool {
+	return platform.NormalizeDialect(targetPlatform) == platform.ClickHouse
 }
 
 func isSQLiteTarget(targetPlatform string) bool {
@@ -2338,11 +2466,12 @@ func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {
 	astParts := make([]ast.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		astParts = append(astParts, ast.IndexPart{
-			Name:     part.Name,
-			Expr:     part.Expr,
-			Operator: part.Operator,
-			Prefix:   part.Prefix,
-			Desc:     part.Desc,
+			Name:       part.Name,
+			Expr:       part.Expr,
+			Operator:   part.Operator,
+			Prefix:     part.Prefix,
+			Desc:       part.Desc,
+			NullsOrder: part.NullsOrder,
 		})
 	}
 	return astParts
@@ -2418,18 +2547,9 @@ func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
 // Validation warnings are logged but do not stop the conversion process, allowing for
 // graceful handling of incomplete or evolving schema definitions.
 func validateEnumField(field goschema.Field, enums []goschema.Enum) {
-	if !strings.HasPrefix(field.Type, "enum_") {
-		return
-	}
-
-	// Find the corresponding global enum
-	var globalEnum *goschema.Enum
-	for _, enum := range enums {
-		if enum.Name == field.Type {
-			globalEnum = &enum
-			break
-		}
-	}
+	// Enum identity is the declaration, not an "enum_" name prefix; see
+	// declaredEnum.
+	globalEnum := declaredEnum(field.Type, enums)
 
 	// If no global enum found, this might be an issue but we don't panic
 	// as the field might be using a custom enum type

@@ -64,7 +64,10 @@ func TestParser_ParseCreateTable_Basic(t *testing.T) {
 	c.Assert(idColumn.Name, qt.Equals, "id")
 	c.Assert(idColumn.Type, qt.Equals, "INTEGER")
 	c.Assert(idColumn.Primary, qt.IsTrue)
-	c.Assert(idColumn.Nullable, qt.IsFalse) // Primary keys are NOT NULL
+	// The DDL said PRIMARY KEY, not NOT NULL, and the parser reports what it
+	// read. Inventing the second one here made every SQLite source claim a
+	// constraint it never wrote; see stokaro/ptah#1235.
+	c.Assert(idColumn.Nullable, qt.IsTrue)
 
 	// Check second column (name)
 	nameColumn := createTable.Columns[1]

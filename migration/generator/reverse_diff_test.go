@@ -97,8 +97,11 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 
 	// Create a schema diff that adds RLS policies (simulating an up migration)
 	upDiff := &types.SchemaDiff{
-		RLSPoliciesAdded: []string{"area_user_isolation", "commodity_user_isolation"},
-		TablesAdded:      []string{"areas", "commodities"},
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{PolicyName: "area_user_isolation", TableName: "areas"},
+			{PolicyName: "commodity_user_isolation", TableName: "commodities"},
+		},
+		TablesAdded: []string{"areas", "commodities"},
 	}
 
 	// Create a database schema that includes the RLS policies with table names
@@ -182,8 +185,12 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 
 	// Create a schema diff that adds RLS policies (simulating an up migration)
 	upDiff := &types.SchemaDiff{
-		RLSPoliciesAdded: []string{"area_tenant_isolation", "area_user_isolation", "commodity_tenant_isolation"},
-		TablesAdded:      []string{"areas", "commodities"},
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{PolicyName: "area_tenant_isolation", TableName: "areas"},
+			{PolicyName: "area_user_isolation", TableName: "areas"},
+			{PolicyName: "commodity_tenant_isolation", TableName: "commodities"},
+		},
+		TablesAdded: []string{"areas", "commodities"},
 	}
 
 	// Create a database schema that includes the tables but NOT the RLS policies
@@ -270,7 +277,10 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		ExtensionsRemoved: []string{"postgis"},
 		FunctionsAdded:    []string{"get_tenant_id", "set_tenant_context"},
 		FunctionsRemoved:  []string{"old_function"},
-		RLSPoliciesAdded:  []string{"user_policy", "tenant_policy"},
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{PolicyName: "user_policy", TableName: "users"},
+			{PolicyName: "tenant_policy", TableName: "posts"},
+		},
 		RLSPoliciesRemoved: []types.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "old_table"},
 		},
@@ -309,12 +319,17 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.FunctionsRemoved, qt.DeepEquals, input.FunctionsAdded)
 
 	// Verify RLS policy reversals
-	expectedRLSPoliciesAdded := []string{"old_policy"}
+	expectedRLSPoliciesAdded := []types.RLSPolicyRef{
+		{PolicyName: "old_policy", TableName: "old_table"},
+	}
 	c.Assert(result.RLSPoliciesAdded, qt.DeepEquals, expectedRLSPoliciesAdded)
 
+	// The reversal carries each policy's own table through instead of
+	// re-deriving it from the policy name, which is why these are no longer
+	// empty.
 	expectedRLSPoliciesRemoved := []types.RLSPolicyRef{
-		{PolicyName: "user_policy", TableName: ""},
-		{PolicyName: "tenant_policy", TableName: ""},
+		{PolicyName: "user_policy", TableName: "users"},
+		{PolicyName: "tenant_policy", TableName: "posts"},
 	}
 	c.Assert(result.RLSPoliciesRemoved, qt.DeepEquals, expectedRLSPoliciesRemoved)
 
@@ -633,72 +648,6 @@ func TestReverseSchemaDiff_RoleModifications(t *testing.T) {
 	c.Assert(reversedRole.Changes["password"], qt.Equals, "new_hash -> old_hash")
 }
 
-func TestConvertRLSPolicyRefsToNames(t *testing.T) {
-	c := qt.New(t)
-
-	input := []types.RLSPolicyRef{
-		{PolicyName: "user_policy", TableName: "users"},
-		{PolicyName: "tenant_policy", TableName: "tenants"},
-	}
-
-	result := convertRLSPolicyRefsToNames(input)
-
-	expected := []string{"user_policy", "tenant_policy"}
-	c.Assert(result, qt.DeepEquals, expected)
-}
-
-func TestConvertRLSPolicyNamesToRefs(t *testing.T) {
-	c := qt.New(t)
-
-	input := []string{"user_policy", "tenant_policy"}
-
-	result := convertRLSPolicyNamesToRefs(input)
-
-	expected := []types.RLSPolicyRef{
-		{PolicyName: "user_policy", TableName: ""},
-		{PolicyName: "tenant_policy", TableName: ""},
-	}
-	c.Assert(result, qt.DeepEquals, expected)
-}
-
-func TestConvertRLSPolicyNamesToRefsWithSchema(t *testing.T) {
-	c := qt.New(t)
-
-	input := []string{"user_policy", "tenant_policy", "unknown_policy"}
-
-	// Create a mock schema with RLS policies
-	schema := &goschema.Database{
-		RLSPolicies: []goschema.RLSPolicy{
-			{Name: "user_policy", Table: "users"},
-			{Name: "tenant_policy", Table: "tenants"},
-			// Note: unknown_policy is not in the schema
-		},
-	}
-
-	result := convertRLSPolicyNamesToRefsWithSchema(input, schema)
-
-	expected := []types.RLSPolicyRef{
-		{PolicyName: "user_policy", TableName: "users"},
-		{PolicyName: "tenant_policy", TableName: "tenants"},
-		{PolicyName: "unknown_policy", TableName: ""}, // Table name not found, remains empty
-	}
-	c.Assert(result, qt.DeepEquals, expected)
-}
-
-func TestConvertRLSPolicyNamesToRefsWithSchema_NilSchema(t *testing.T) {
-	c := qt.New(t)
-
-	input := []string{"user_policy", "tenant_policy"}
-
-	result := convertRLSPolicyNamesToRefsWithSchema(input, nil)
-
-	expected := []types.RLSPolicyRef{
-		{PolicyName: "user_policy", TableName: ""},
-		{PolicyName: "tenant_policy", TableName: ""},
-	}
-	c.Assert(result, qt.DeepEquals, expected)
-}
-
 func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	c := qt.New(t)
 
@@ -712,7 +661,10 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 		FunctionsAdded: []string{"get_current_tenant_id", "set_tenant_context"},
 
 		// Add some RLS policies
-		RLSPoliciesAdded: []string{"user_tenant_isolation", "area_tenant_isolation"},
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{PolicyName: "user_tenant_isolation", TableName: "users"},
+			{PolicyName: "area_tenant_isolation", TableName: "areas"},
+		},
 
 		// Enable RLS on tables
 		RLSEnabledTablesAdded: []string{"users", "areas"},
@@ -735,8 +687,8 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 
 	// RLS policies should be removed in down migration
 	expectedPolicyRefs := []types.RLSPolicyRef{
-		{PolicyName: "user_tenant_isolation", TableName: ""},
-		{PolicyName: "area_tenant_isolation", TableName: ""},
+		{PolicyName: "user_tenant_isolation", TableName: "users"},
+		{PolicyName: "area_tenant_isolation", TableName: "areas"},
 	}
 	c.Assert(downDiff.RLSPoliciesRemoved, qt.DeepEquals, expectedPolicyRefs)
 	c.Assert(downDiff.RLSPoliciesAdded, qt.HasLen, 0)

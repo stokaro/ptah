@@ -228,6 +228,20 @@ type ColumnNode struct {
 	// the call back instead of a bare identifier the Atlas community binary
 	// refuses.
 	TypeRawSQL bool
+	// EnumType records that the column's declared type names an enum the schema
+	// declares, rather than a built-in type.
+	//
+	// PostgreSQL needs this to attach `USING <column>::<type>` when an existing
+	// column changes type into an enum: without the cast the server refuses the
+	// migration with `column ... cannot be cast automatically` (SQLSTATE 42804).
+	// Identity comes from the declaration and never from the type's spelling --
+	// an enum called "status_kind" is exactly as much an enum as one called
+	// "enum_status" (stokaro/ptah#931 item 1).
+	//
+	// Dialects that model enums on the column instead of as a standalone type
+	// rewrite Type to their inline form (MySQL `ENUM(...)`, SQLite `TEXT` plus a
+	// CHECK), and this flag still reports what the author declared.
+	EnumType bool
 	// Nullable indicates whether the column allows NULL values (default: true)
 	Nullable bool
 	// Primary indicates whether this column is part of the primary key
@@ -293,15 +307,40 @@ func (n *ColumnNode) Accept(visitor Visitor) error {
 
 // SetPrimary marks the column as a primary key and returns the column for chaining.
 //
-// Setting a column as primary automatically makes it NOT NULL, as primary keys
-// cannot contain NULL values in SQL.
+// Nullability is left alone. "A primary key is NOT NULL" is a rule of the
+// dialect, not of this AST: SQLite does not enforce it on a rowid table, where
+// `id INTEGER PRIMARY KEY` is a rowid alias whose `pragma table_info.notnull`
+// is 0 and which accepts an explicit NULL insert. Clearing the flag here made
+// every reader of a SQLite database and every parser of SQLite DDL invent a
+// NOT NULL its source never wrote, so a dump taken through `schema inspect`
+// restored a stricter table than the one it read. See stokaro/ptah#1235.
+//
+// The dialects that do enforce it say so in their own renderer, which is where
+// the dialect is known. On the CREATE TABLE path they always have: the
+// PostgreSQL, MySQL, MariaDB and SQL Server renderers write NOT NULL beside
+// PRIMARY KEY without consulting this flag, and the ClickHouse renderer
+// excludes a primary-key column from Nullable() wrapping.
+//
+// The ALTER path is not free of it, and assuming otherwise cost a live
+// regression. The PostgreSQL and SQL Server MODIFY-COLUMN renderers do read
+// this flag, and PostgreSQL refuses `ALTER COLUMN ... DROP NOT NULL` on a key
+// column outright (SQLSTATE 42P16), so leaving the flag set there made every
+// modification of a single-column key column unappliable. Both now take the
+// primary-key branch as well; see the guards in core/renderer, pinned by
+// TestModifyColumn_KeyColumnNeverRendersNullable across every supported
+// dialect. Any new consumer of this flag owes the same decision.
+//
+// SQLite's own answer is not "never" either, and a consumer that reads it as
+// such is wrong in the other direction: a STRICT or WITHOUT ROWID table does
+// make its key columns NOT NULL, and the catalog reports them that way. The
+// rule is a property of the table rather than of the dialect, so it lives in
+// internal/sqlitekey with the measured shape table rather than here.
 //
 // Example:
 //
 //	column.SetPrimary()
 func (n *ColumnNode) SetPrimary() *ColumnNode {
 	n.Primary = true
-	n.Nullable = false // Primary keys are always NOT NULL
 	return n
 }
 
@@ -520,7 +559,18 @@ type IndexPart struct {
 	Prefix string
 	// Desc indicates DESC ordering for this index part.
 	Desc bool
+	// NullsOrder carries an explicit NULLS ordering: "FIRST", "LAST", or
+	// empty when the part uses the direction's default. PostgreSQL's defaults
+	// are NULLS LAST for ASC and NULLS FIRST for DESC, so an empty value
+	// renders no clause and reproduces the index either way.
+	NullsOrder string
 }
+
+// Index NULLS ordering spellings for IndexPart.NullsOrder.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
 
 // Reference returns the column name or expression represented by the index part.
 func (p IndexPart) Reference() string {
@@ -1048,11 +1098,25 @@ func (n *IndexNode) SetIfNotExists() *IndexNode {
 // and dialect-specific features. Different databases have different
 // syntax for dropping indexes (some require table name, others don't).
 type DropIndexNode struct {
-	// Name is the raw, unqualified index identifier. Dialect renderers derive
-	// its namespace from Table.
+	// Name is the index identifier the statement names, and it is the only
+	// place a schema qualifier can live when the statement names no table.
+	//
+	// A planned drop names the index bare and carries the namespace on Table,
+	// which is where every renderer reads it from. A drop recovered from SQL
+	// text may have no table to record: PostgreSQL and SQLite spell the
+	// statement `DROP INDEX app.idx`, putting a schema on the index and naming
+	// no table at all, where MySQL, MariaDB, SQL Server and CockroachDB name
+	// the table and leave the index bare. Name therefore carries whatever
+	// qualifier the source spelled on the index, and nothing more.
+	//
+	// Anything that has to answer "which schema is this index in" reads Table
+	// first and falls back to Name, never the other way round: a bare Name is
+	// unqualified and belongs to its table's schema, so reading it first would
+	// place `DROP INDEX app.idx` inside every schema (stokaro/ptah#1296).
 	Name string
 	// Table is the qualified owning table. It is required for every planned
-	// index drop even when the target SQL names the index by schema.
+	// index drop even when the target SQL names the index by schema, and it is
+	// empty for a drop parsed from a statement that names no table -- see Name.
 	Table string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
@@ -1064,6 +1128,23 @@ type DropIndexNode struct {
 	// planners set it only for standalone index drops the caller routes into a
 	// no_transaction migration.
 	Concurrently bool
+	// Cascade requests DROP INDEX ... CASCADE, which also drops the objects
+	// that depend on the index. Only PostgreSQL's grammar has the clause;
+	// every other renderer ignores the flag. RESTRICT, the opposite spelling,
+	// is the default everywhere and is therefore not modeled: a node with
+	// Cascade unset already means it.
+	Cascade bool
+	// EnforcesUniqueConstraint reports that the index being dropped is the one
+	// a UNIQUE constraint of the same name enforces, so the statement removes a
+	// uniqueness protection and not only an access path.
+	//
+	// It carries no SQL: on MySQL and MariaDB, the engines that reach it, a
+	// unique key and its constraint are one catalog row and DROP INDEX is the
+	// statement that removes it. It exists so risk classification can tell the
+	// two apart, because the spelling cannot: dropping `uq_users_email` and
+	// dropping `idx_users_email` are the same statement shape and a very
+	// different change to the data's guarantees.
+	EnforcesUniqueConstraint bool
 	// Comment is an optional comment for the drop operation
 	Comment string
 }
@@ -1121,6 +1202,27 @@ func (n *DropIndexNode) SetIfExists() *DropIndexNode {
 //	dropIndex.SetConcurrently()
 func (n *DropIndexNode) SetConcurrently() *DropIndexNode {
 	n.Concurrently = true
+	return n
+}
+
+// SetCascade marks the drop to use CASCADE.
+//
+// The clause only reaches the SQL on PostgreSQL, whose DROP INDEX is the only
+// one of Ptah's targets that has it.
+//
+// Example:
+//
+//	dropIndex.SetCascade()
+func (n *DropIndexNode) SetCascade() *DropIndexNode {
+	n.Cascade = true
+	return n
+}
+
+// SetEnforcesUniqueConstraint records that this drop removes the index a
+// UNIQUE constraint of the same name enforces. It changes no SQL; see
+// [DropIndexNode.EnforcesUniqueConstraint].
+func (n *DropIndexNode) SetEnforcesUniqueConstraint() *DropIndexNode {
+	n.EnforcesUniqueConstraint = true
 	return n
 }
 

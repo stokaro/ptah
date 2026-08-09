@@ -14,10 +14,12 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -61,7 +63,6 @@ $EDITOR before the directory checksum is finalized. Docker dev databases
 remain an explicit follow-up gap. When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
 diff policy values.`,
-		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
 			if len(args) == 1 {
@@ -74,7 +75,7 @@ diff policy values.`,
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to replay migrations and compute the diff")
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
-	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
+	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
@@ -84,7 +85,14 @@ diff policy values.`,
 	if err := flags.MarkHidden("dry-run"); err != nil {
 		panic(err)
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	// The arity validator is passed HERE, not declared in the literal above:
+	// ConfigureCommandArgs assigns cmd.Args unconditionally, so a
+	// `Args: cobra.MaximumNArgs(1)` field was overwritten with nil and this verb
+	// silently accepted every extra positional. `migrate diff --to … one two`
+	// exited 0 where the pinned community binary v1.3.0 exits 1 with
+	// `accepts at most 1 arg(s), received 2` (stokaro/ptah#1231 case 8); the
+	// message below is cobra's own, which is where that binary's comes from too.
+	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))
 	return cmd
 }
 
@@ -156,14 +164,32 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
-	// Unknown query keys are ignored here exactly as they are on the verbs that
-	// already accept them; a ?format= naming a foreign layout stays refused,
-	// because this verb WRITES and Ptah does not compute that layout's covered
-	// file set (stokaro/ptah#1013 section 1).
-	if err := checkWritingVerbDirQuery(localDir.Query); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+	// Both spellings that can name the directory's layout are resolved here,
+	// once, with the `--dir` query outranking `--dir-format`. Unknown query keys
+	// are ignored exactly as they are on the verbs that already accept them, and
+	// a value neither spelling can parse is refused ahead of the atlas.sum gate,
+	// which is where the community binary refuses it. See
+	// [resolveWritingVerbDirFormat] for the measured table.
+	dirFormat, err := resolveWritingVerbDirFormat(opts.dirFormat, localDir.Query)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"atlas migrate diff %s: %w",
+			atlasDirFormatSpelling(localDir.Query),
+			err,
+		))
 	}
-	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir); err != nil {
+	// Positioned after the format refusal above and before the atlas.sum gate
+	// below, which is where every verb that reads a `--dir` query reports it;
+	// see [reportIgnoredDirQuery] for the two rules that fix the position.
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "diff", localDir.Query); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// The gate runs over the SELECTED layout's covered set. On a foreign layout
+	// that is not the Atlas set — golang-migrate's atlas.sum covers the
+	// `.up.sql` halves alone — so verifying the Atlas one here would refuse a
+	// directory the community binary, and this binary's own `migrate hash`,
+	// both call clean.
+	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir, dirFormat); err != nil {
 		return err
 	}
 	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
@@ -182,7 +208,7 @@ func runAtlasMigrateDiff(
 		(len(projectCfg.SchemaSources) > 0 || atlasExternalSchemaConfigured(projectCfg)) {
 		opts.toURLs = []string{"env://src"}
 	}
-	desired, err := prepareAtlasMigrateDiffSource(opts, projectEnv)
+	desired, err := prepareAtlasMigrateDiffSource(opts, dirFormat, projectEnv)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -234,13 +260,24 @@ func runAtlasMigrateDiff(
 		SourceConnectTimeout: dbcli.DefaultConnectTimeout,
 		Name:                 name,
 		Format:               format,
-		Schemas:              opts.schemas,
-		LockTimeout:          lockTimeout,
-		Policy:               policy,
-		Qualifier:            qualifier,
-		DryRun:               opts.dryRun,
-		Vars:                 schemaVars,
-		PreparePublication:   preparePublication,
+		// The layout both spellings resolved to, carried through as one value.
+		// The writer converts the existing directory through it, names and
+		// composes the new files in it, and hashes its covered set.
+		DirFormat: dirFormat,
+		// The reverse rule `migration/generator` has always applied to its own
+		// `.down.sql` half, injected rather than imported: that package imports
+		// this command tree's library half in ten places, so the dependency
+		// cannot be pointed the other way (stokaro/ptah#1013). Every layout but
+		// the native Atlas one carries a rollback half, and this is what fills
+		// it.
+		PlanReverse:        generator.ReverseSchemaDiff,
+		Schemas:            opts.schemas,
+		LockTimeout:        lockTimeout,
+		Policy:             policy,
+		Qualifier:          qualifier,
+		DryRun:             opts.dryRun,
+		Vars:               schemaVars,
+		PreparePublication: preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
 		// the locked snapshot. Passing it in is what keeps this verb from
 		// carrying a second definition of a verified directory: without it the
@@ -248,7 +285,14 @@ func runAtlasMigrateDiff(
 		// lost its sum between the preflight and the lock would be written to
 		// and re-hashed.
 		VerifyDir: func(fsys fs.FS) error {
-			return checkNativeAtlasDirChecksum(cmd, fsys)
+			return checkAtlasWriteDirChecksum(cmd, fsys, dirFormat)
+		},
+		// Checked here rather than on the way in, because that is where the
+		// community binary decides it: a name it cannot turn into a file refuses
+		// a diff that has changes and passes one that has none. See
+		// [checkAtlasMigrationName] for the measured table.
+		VerifyName: func(name string) error {
+			return checkAtlasMigrationName("diff", name)
 		},
 	})
 	if err != nil {
@@ -316,8 +360,25 @@ func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
 		!cmd.Flags().Changed("dev-url")
 }
 
+// prepareAtlasMigrateDiffSource validates the desired-state flags and the
+// resolved directory layout.
+//
+// dirFormat arrives already resolved from both spellings rather than being
+// re-derived from opts.dirFormat here, so "which layout is this run writing"
+// has one answer.
+//
+// A foreign layout used to be refused at this position. It is not any more:
+// stokaro/ptah#1013 taught this verb to write the five external layouts, so the
+// value is now carried into the writer instead. What did NOT move is the
+// position of the value's own validation — an unparsable `--dir-format ATLAS`
+// is still refused ahead of the atlas.sum gate by
+// [resolveWritingVerbDirFormat], and a parsable foreign one still reaches the
+// gate first, which is where the community binary answers it: measured on the
+// pinned v1.3.0, an unhashed directory with `--dir-format goose` prints the
+// checksum error, not a format complaint.
 func prepareAtlasMigrateDiffSource(
 	opts atlasMigrateDiffOptions,
+	dirFormat atlasmigrateimport.Format,
 	projectEnv atlassource.ProjectEnv,
 ) (atlassource.Set, error) {
 	if len(opts.toURLs) == 0 {
@@ -326,9 +387,15 @@ func prepareAtlasMigrateDiffSource(
 	if strings.TrimSpace(opts.devURL) == "" {
 		return atlassource.Set{}, fmt.Errorf("--dev-url is required")
 	}
-	dirFormat := strings.ToLower(strings.TrimSpace(opts.dirFormat))
-	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
-		return atlassource.Set{}, fmt.Errorf("atlas migrate diff currently writes Atlas-format migration directories only")
+	if opts.edit && !atlasmigrate.ReadsNativeAtlasDir(dirFormat) {
+		// `migrate new` draws the same line, for the same reason: the editor
+		// opens the staged files and the operator's edits are then hashed, and
+		// on a layout whose rollback half is a second file or a directive
+		// section that promise is one this surface has not measured.
+		return atlassource.Set{}, fmt.Errorf(
+			"atlas migrate diff --edit: --edit applies only to an atlas directory, but this directory is read as %s",
+			dirFormat,
+		)
 	}
 	if opts.edit && opts.dryRun {
 		return atlassource.Set{}, fmt.Errorf("atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit")

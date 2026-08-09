@@ -47,6 +47,30 @@ and the migration fails partway through. Ptah honors it.
 Differences of this kind are listed in the [gap register](#gap-register) with
 the measurement behind them, so you can see which way each one goes.
 
+### Capability parity, not interface parity
+
+Ptah's Atlas compatibility layer does not define a separate feature set.
+
+Capabilities implemented for Atlas compatibility are also available through
+Ptah's native workflows when they are generally useful database-schema or
+migration capabilities.
+
+The interfaces may differ: `ptah-compat` preserves Atlas-shaped commands and
+compatibility contracts, while `ptah` uses Ptah-native commands and
+configuration.
+
+Atlas-specific adapters and compatibility representations — for example
+`atlas://` resolution, Atlas file and config codecs, revision-history
+compatibility, or Atlas-specific CLI and output behavior — are not duplicated
+in the native interface unless they have independent Ptah value.
+
+So the promise is about capabilities, not about command lines. The native
+binary accepts no Atlas CLI aliases, and the two binaries are not
+command-for-command equivalent: Atlas command spellings live only in
+`ptah-compat`. The [command parity table](#command-parity) below shows which
+native verb answers each Atlas one, and the differences in what each verb
+records or refuses are named in the sections that follow it.
+
 ## Command parity
 
 | Task | Native Ptah | `ptah-compat` | Atlas OSS |
@@ -188,10 +212,10 @@ Atlas-side rows are the recorded transcripts, so behavior beyond those inputs is
 
 There is no `atlas.hcl` spelling of this selector. Atlas documents `exclude`
 but no `include` attribute on the `env` block; CE accepts `include = [...]`
-there only because it accepts any unknown env attribute — a run with
+there only because it accepts any unknown env attribute. A run with
 `not_a_real = [...]` is likewise accepted and prints the full schema. Ptah
-rejects unknown `atlas.hcl` constructs instead of ignoring them, so
-`env.include` fails explicitly.
+accepts `env.include` under the same unknown-name rule, leaves it without
+effect, and writes a location-aware warning to stderr.
 
 **Atlas OSS.** `atlas schema inspect` is documented as an open CLI feature for inspecting a database schema with HCL, SQL, JSON, template output forms, split/write file exports, and resource exclusion filters. The pinned Atlas CE flag surface does not register `schema inspect --include`.
 
@@ -288,9 +312,9 @@ Docker dev databases remain a gap.
 
 ### Failed rollback state
 
-**Ptah.** Native `ptah migrations down` records a rollback that failed partway: the revision row is marked failed with `error=<message>`, `direction=down`, and `applied` set to the number of down statements that completed (`0` when the first one fails or the dialect rolled the body back), so `ptah migrations status` reports the dirty state and names the version, `ptah migrations repair` has a row to act on, and a later `ptah migrations up` refuses to stack work on the unfinished rollback. Repair follows the recorded direction: on such a row `--resume-from` runs the remaining *down* statements and removes the revision once the rollback finishes, and a rollback that already committed a statement is refused rather than recorded applied unless `--force` says the schema was restored.
+**Ptah.** `ptah migrations down` records a rollback that failed partway in both revision-table formats: the revision row is marked failed with `error=<message>`, `direction=down`, and `applied` set to the number of down statements that completed (`0` when the first one fails or the dialect rolled the body back), so status reports the dirty state, repair has a row to act on, and a later up refuses to stack work on the unfinished rollback. Repair follows the recorded direction: `--resume-from` runs the remaining *down* statements and removes the revision once the rollback finishes, and a rollback that already committed a statement is refused rather than recorded applied unless `--force` says the schema was restored.
 
-`ptah-compat migrate down` reproduces Atlas's bookkeeping instead, because a database the compat surface touched has to read the same way to Atlas: the revision row is left byte-identical and both binaries then report the version as applied. On the default per-file transaction mode the body is rolled back with the transaction; a down marked `-- atlas:txmode none` leaves the statements that completed applied, so the schema can be half-reverted behind a row that reads as fully applied. The trade is explicit — drop-in fidelity on the Atlas surface, recoverable state on the native one. The split follows the revision table format, so native runs using `--revision-format atlas` follow the Atlas side too. See [Roll back migrations](../../versioned/rollback/).
+`ptah-compat migrate down` retains the Atlas revision-table schema but deliberately does not reproduce Atlas's hidden failed-down state. Ptah uses the existing `operator_version` field to mark rollback direction and the existing progress/error fields to make a partial rollback recoverable. A successful down still deletes the row. An Atlas reader can inspect the same table, but may report a Ptah-recorded failed rollback differently from one Atlas itself hid. See [Roll back migrations](../../versioned/rollback/).
 
 **Atlas OSS.** The pinned Atlas CE binary registers `migrate down` as a community-abort stub, so the capability is unreachable there.
 
@@ -503,11 +527,18 @@ Native lint and plan commands can attach canonical reports to exact migration or
 
 **Ptah.** Ptah parses strict HCL schema and Atlas project config subsets.
 
-Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy feed Atlas-compatible commands, including local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`), repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, `data.external_schema.<name>.url` (gated behind `--allow-external-schema` / `PTAH_ALLOW_EXTERNAL_SCHEMA`), and `lint.latest` / `lint.git` changeset defaults for migration linting.
+Evaluated local env, schema, format, diff, and lint settings feed
+Atlas-compatible commands. The evaluator supports typed variables (`string`,
+`number`, `bool`, `list(string)`, `map(string)`), string/list `--var` overrides,
+locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `toset`, local and
+external schema data sources, and migration-lint changeset defaults. Env
+`for_each` expansion is supported by `migrate apply`.
 
 Ptah also composes a desired-schema schema from multiple sources — several Go roots, or a mix of Go annotations, YAML, HCL, and SQL — via repeatable `--root-dir` and `--schema-file` flags on `ptah schema render`, `ptah schema compare`, `ptah migrations plan`, and `ptah migrations generate`, an open, local, no-account counterpart to Atlas's Pro `composite_schema` data source.
 
-Unsupported constructs fail explicitly rather than being silently ignored.
+Structurally unsupported constructs fail explicitly. Names that Atlas CE
+accepts without acting on are accepted for compatibility and reported as
+having no effect.
 
 **Atlas OSS.** Atlas OSS supports SQL and HCL schema sources. The community binary rejects the `data "external_schema"` project data source (measured 2026-08-01, Atlas CE v1.2.0: exit 1, `Error: data.external_schema is not supported by the community version of Atlas.`); Ptah evaluates it in the open build behind the external-schema opt-in.
 
@@ -642,9 +673,14 @@ Each area below states the current status and links the evidence behind it.
 
 **Ptah status.** Strict supported subset.
 
-Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy can feed `ptah-compat ... --env` commands, including local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`), repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`.
+Evaluated local env, schema, format, diff, and lint settings can feed
+`ptah-compat ... --env` commands. Typed variables include `map(string)` for HCL
+defaults and expressions; `toset`, `atlas.env`, `each.key`, and `each.value`
+support ordered multi-target `migrate apply` expansion.
 
-Unsupported constructs fail explicitly instead of being ignored.
+Structurally unsupported constructs fail explicitly. Names that Atlas CE
+accepts without acting on are accepted and reported once per source location
+instead of becoming silent no-ops.
 
 **Evidence.** [Atlas project config](../project-config/)
 
@@ -672,6 +708,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Live and differential corpus breadth](#live-and-differential-corpus-breadth) | Conformance coverage | [ptah-atlas-conformance#167](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
+| [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -688,7 +725,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 
 **Current boundary.** `ptah-compat migrate down` is an Atlas OSS command path and recognizes the documented Atlas-style flag names. Flags mapped to native behavior include `--url`, `--dir`, `--to-version`, `--dry-run`, `--revisions-schema`, and `--lock-timeout`.
 
-The forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through selects ptah bookkeeping.
+The forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `ptah-compat migrate apply` wrote; the native `--revision-format ptah` pass-through selects the Ptah layout. Both layouts retain Ptah's recoverable failed-down bookkeeping instead of hiding a partial rollback.
 
 `--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (the native `ptah migrations down --shadow-db` verification), and `--format` renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error`. Both output paths start real rollbacks without reading stdin, matching Atlas; native `ptah migrations down` keeps its confirmation prompt.
 
@@ -737,7 +774,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
-The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate apply --to-version`, or `migrate apply --lock-name`, so Ptah rejects those flags as unknown.
+The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah rejects it as unknown too. It does not register `migrate apply --to-version`, `--lock-name`, or `--skip-lock` either, but those three are documented on the wider Atlas distribution's `migrate apply` and Ptah implements them; see [Migration apply](../docs-coverage/#migration-apply) for the measured behavior.
 
 `ptah-compat schema apply --to` and `ptah-compat schema diff --from/--to` accept local schema files, one database URL, one migration directory replayed on the required `--dev-url` dev database, or one `env://` reference resolved through the evaluated `atlas.hcl` env; source kinds cannot be mixed within a flag, and unsupported schemes such as `atlas://` fail before the target database is contacted.
 
@@ -757,7 +794,9 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, `migrate
 
 `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and `validate` now register Atlas `--dir-format` with default `atlas`; `hash` writes `atlas.sum` by default, `new` creates a single Atlas `.sql` skeleton and updates `atlas.sum`, and `set`/`status` use Atlas revision-table metadata with `--revisions-schema` support.
 
-Atlas's external migration-tool `--dir-format` values are read directly by `hash`, `validate`, `lint`, `status`, and `set`, under both that spelling and `?format=` on `--dir`. On `migrate new` they still fail explicitly, and `migrate new` and `migrate diff` refuse a `--dir` query outright, because both write into the directory without verifying it first ([#1086](https://github.com/stokaro/ptah/issues/1086)); convert those through `ptah-compat migrate import` first.
+Atlas's external migration-tool `--dir-format` values are read directly by `hash`, `validate`, `lint`, `status`, and `set`, under both that spelling and `?format=` on `--dir`, and `migrate new` writes the selected layout. `migrate diff` is the one verb that still refuses a foreign layout under either spelling, because every foreign layout it would write carries reverse SQL that Ptah's diff does not plan yet ([#1013](https://github.com/stokaro/ptah/issues/1013)); convert that directory through `ptah-compat migrate import` first.
+
+A `--dir` query key other than `format` is ignored on the eight verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`, `status` and `validate` — as Atlas ignores it, and named on standard error so a misspelled one is not silent; `PTAH_STRICT_DIR_QUERY=1` refuses it instead. `checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` still refuse a `--dir` query outright, which is an internal inconsistency tracked in [#1013](https://github.com/stokaro/ptah/issues/1013) rather than a parity gap: the pinned community binary answers `unknown flag: --dir` on all of them.
 
 `ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; Docker dev databases and web reports remain gaps.
 
@@ -776,7 +815,7 @@ reference, with desired/dev database aliases rejected before connection.
 `atlas.sum` updates only after every generated file was written. Docker dev
 databases remain a follow-up gap.
 
-`ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; Atlas OSS does not register `migrate apply --dir-format`, and Ptah rejects it there.
+`ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`, `--skip-lock`, `--to-version`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; the pinned community binary does not register `migrate apply --dir-format`, and Ptah rejects it there.
 
 Per-file `atlas:txmode` precedence and validation match the measured Atlas CE
 `v1.3.0` plain-file matrix. Global `file` and `none` accept explicit file or
@@ -839,44 +878,54 @@ Revisit when the conformance Atlas pin advances past v1.2.0.
 
 ### Revision row for a migration whose body failed
 
-**Type.** Deliberate divergence
+**Type.** Compatibility behavior with a native safety difference
 
-**Current boundary.** When a migration body fails inside a transaction, the
-pinned community binary v1.3.0 writes no revision row — its insert rolls back
-with the body. Ptah writes one, durably, outside that transaction. Measured
-across the transaction-mode matrix:
+**Current boundary.** When a migration body fails inside a transaction and
+rollback succeeds, the pinned community binary v1.3.0 writes no revision row.
+`ptah-compat` now reaches the same end state and retries the whole file on the
+next apply. Native `ptah migrations up` keeps a durable failed row for status
+and repair workflows.
 
-```text
---tx-mode file, no file directive     binary 0 rows   ptah 1 row
---tx-mode file, -- atlas:txmode file  binary 0 rows   ptah 1 row
---tx-mode all,  no file directive     binary 0 rows   ptah 1 row
---tx-mode none, -- atlas:txmode file  binary 0 rows   ptah 1 row
---tx-mode none, -- atlas:txmode none  binary 1 row    ptah 1 row
-```
-
-The boundary is the transaction, not the directive spelling: the four that
-differ are the ones where the body ran transactionally, and the row that has
-nothing to roll back agrees. The reason for the divergence is that the failure
-should survive the run that caused it — `migrate status` reports the dirty
-version, `ptah migrations repair` has a row to act on, and a retry resumes
-rather than stacking work on an unfinished migration.
-
-It costs nothing on the interop path, which is the part worth measuring rather
-than assuming. Handed a database Ptah left in that state, the community binary
-re-runs the whole migration and reports clean:
+Measured across the effective transaction-mode matrix:
 
 ```text
-ptah-compat migrate apply --tx-mode file   leaves 1 row, applied=0
-atlas migrate apply   on that database     exit 0, "1 migration, 2 sql statements"
-atlas migrate status  on that database     Migration Status: OK
+effective file transaction   binary 0 rows   ptah-compat 0 rows   native 1 row
+effective all transaction    binary 0 rows   ptah-compat 0 rows   native 1 row
+effective no transaction     binary 1 row    ptah-compat 1 row    native 1 row
 ```
 
-It does not refuse, does not skip the statements the row might have implied
-were already done, and does not need `--allow-dirty`. `applied=0` is honest —
-the transaction rolled everything back — and it reads as a pending version
-rather than as damage.
+The compatibility cleanup is fail-closed. It removes a zero-progress row only
+after `Rollback` returns success. A rollback error, commit error, unknown
+statement outcome, or any committed statement keeps the row. Those states
+still require explicit recovery, so parity does not erase evidence when the
+database outcome is uncertain.
 
-**Tracking.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196)
+**Evidence.** [`stokaro/ptah#1196`](https://github.com/stokaro/ptah/issues/1196),
+[`stokaro/ptah#1333`](https://github.com/stokaro/ptah/issues/1333)
+
+### Dirty retry verifies committed statements
+
+**Type.** Deliberate safety divergence
+
+**Current boundary.** Atlas CE resumes a dirty non-transactional revision from
+`applied + 1` by statement index. Ptah first proves that every statement it
+will skip has unchanged source text. Ptah-format rows store a `partial:h1:`
+checksum for the committed prefix; Atlas-format rows use the existing
+`partial_hashes` column. A changed prefix, malformed metadata, or contradictory
+hash count is refused, as are negative progress counters, `applied > total`,
+and a native `state=applied` row whose counters are incomplete. Invalid
+metadata is rejected by revision listing, status, version, and apply operations
+rather than being hidden as a clean row. Legacy rows without prefix metadata
+resume only while their full-file hash still matches.
+
+Editing only the unapplied suffix remains supported. If that retry changes from
+`none` to `file` or `all` and its transaction rolls back, Ptah retains the
+previously committed `applied` floor rather than making a later run replay SQL.
+Process exit, context cancellation, or deadline while an autocommit statement
+is in flight preserves the unknown-outcome marker.
+
+This is stricter than Atlas CE in the safe direction: uncertain recovery exits
+non-zero instead of skipping SQL based only on a stale integer offset.
 
 ### Recorded revision `error` text on a failed migration
 
@@ -918,9 +967,10 @@ parent-traversal path, and a plain relative name that resolves out of the
 directory through a symbolic link. The refusal names which of the three applies
 and points at `getenv()` for passing a value in from outside.
 
-This is the one place `ptah-compat` is deliberately stricter than the binary it
-replaces, and it is stricter rather than looser, so it cannot exit 0 where the
-binary exits 1. The reason is that an `atlas.hcl` is usually repository-controlled
+This is one of two places `ptah-compat` is deliberately stricter than the binary
+it replaces — the other is the invalid-index refusal below — and it is stricter
+rather than looser, so it cannot exit 0 where the binary exits 1. The reason is
+that an `atlas.hcl` is usually repository-controlled
 and `file()` is evaluated before anything is applied: without confinement, a
 config file arriving in a pull request can read any file the process can and
 place the contents somewhere observable, such as a database URL or an error
@@ -934,6 +984,86 @@ scenarios in the conformance repository, so the day a community build starts
 confining `file()` the gate goes red and this divergence can be retired.
 
 **Tracking.** [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042)
+
+### A migration that would be recorded over an invalid index
+
+**Type.** Deliberate divergence
+
+**Current boundary.** On PostgreSQL, `ptah-compat migrate apply` refuses a
+migration while an index that migration creates is reported unusable by
+`pg_index` (`indisvalid` or `indisready` false). The pinned community binary
+v1.3.0 applies it and records it.
+
+Measured on PostgreSQL 17.10, identical fixture on both: a `members` table whose
+duplicate rows made an earlier `CREATE UNIQUE INDEX CONCURRENTLY` fail, the
+duplicates then removed, and one migration carrying `-- atlas:txmode none` and
+the same `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS` statement.
+
+| | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply --allow-dirty` | exit `0`, `-- ok`, 1 statement | exit `1`, names the index and `REINDEX` |
+| `pg_index` afterwards | `indisvalid=f`, `indisready=f` | unchanged, nothing written |
+| revision row afterwards | `20260808000001` applied 1/1, no error | no row |
+| duplicate `INSERT` afterwards | accepted, 2 rows share the email | n/a |
+| after `REINDEX INDEX CONCURRENTLY` | n/a | exit `0`, `indisvalid=t`, row recorded, duplicate rejected |
+
+The leftover keeps the name, so `IF NOT EXISTS` skips it and the statement
+reports success over an index that enforces nothing. Recording that as applied
+means the tooling reports a constraint the database does not have, and nothing
+will look again. Ptah also rejects another index or non-index relation that owns
+the schema-level name. It resolves an unqualified drop and target through the
+active `search_path`, permits cleanup only when that exact drop will run first
+in this attempt, and positively rechecks the active transaction or connection
+before recording the revision. A drop skipped by dirty-resume is not cleanup.
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse, so no invocation the binary refuses succeeds here.
+
+**Tracking.** [`stokaro/ptah#1101`](https://github.com/stokaro/ptah/issues/1101)
+
+### Exclude field selectors
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A field selector is the `.field` suffix behind a
+`[type=...]` selector: `--exclude '*[type=table].comment'` asks for the comment
+of every table to be dropped while the tables themselves stay. The pinned Atlas
+community binary accepts every such suffix and honors none of them. Measured on
+PostgreSQL 16 with two commented tables across two schemas, all three of
+
+```text
+--exclude '*[type=table].comment'
+--exclude 'public.*[type=table].comment'
+--exclude '*[type=table].*'
+```
+
+are exit `0` there with output byte-identical to the same command without the
+flag, comments included.
+
+`ptah-compat` honors the ones it can carry out — `[type=extension].version`,
+`.comment` on `table`, `view` and `materialized_view`, and `.*` for all of them
+— and refuses the rest by name before a database is contacted. So the first and
+third of those commands are exit `0` with the tables rendered and their comments
+gone, and a suffix such as `.charset` is exit `1` naming the fields that would
+have worked.
+
+The reason not to copy accept-and-ignore is the one the gap register already
+records for `file()`: an `--exclude` selector is a scoping instruction, and the
+reason to write one is usually that the object must not be touched. Accepting
+one and silently not carrying it out defeats that intent with no diagnostic, and
+on `schema apply` and `schema diff` the same shape of miss reaches a `DROP`.
+Both directions here are safe under the drop-in rule: honoring a selector
+subtracts more from a plan rather than less, and refusing one exits `1` where
+that binary exits `0`, never the reverse.
+
+The second of those commands stays exit `1` in `ptah-compat`, and for a
+different reason — the pattern-depth rule, not the field rule. That binary
+refuses the identical pattern on a schema-bound URL as
+`too many parts in pattern: "public.public.*[type=table].comment"`, and Ptah
+applies one depth rule to every scope, so accepting it would exit `0` where that
+binary exits `1`.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 
 A green docs build only proves the documentation site builds and internal links
 resolve. It is not parity evidence. Use the conformance reports for measured

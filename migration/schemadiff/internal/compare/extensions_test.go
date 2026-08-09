@@ -114,7 +114,7 @@ func TestExtensions(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			// Run the comparison
-			compare.Extensions(generated, database, diff, nil)
+			compare.Extensions(generated, database, diff, nil, compare.CoverageOf(generated, database))
 
 			// Verify results
 			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)
@@ -221,7 +221,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			// Run the comparison
-			compare.Extensions(generated, database, diff, nil)
+			compare.Extensions(generated, database, diff, nil, compare.CoverageOf(generated, database))
 
 			// Verify results using custom verification function
 			tt.verify(c, diff)
@@ -291,11 +291,11 @@ func TestExtensions_EdgeCases(t *testing.T) {
 			// Run the comparison and check for panics
 			if tt.expectPanic {
 				c.Assert(func() {
-					compare.Extensions(tt.generated, tt.database, diff, nil)
+					compare.Extensions(tt.generated, tt.database, diff, nil, compare.CoverageOf(tt.generated, tt.database))
 				}, qt.PanicMatches, ".*")
 			} else {
 				// Should not panic
-				compare.Extensions(tt.generated, tt.database, diff, nil)
+				compare.Extensions(tt.generated, tt.database, diff, nil, compare.CoverageOf(tt.generated, tt.database))
 				// Basic sanity check - diff should be populated
 				c.Assert(diff, qt.IsNotNil)
 			}
@@ -409,7 +409,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			// Run the comparison with options
-			compare.Extensions(generated, database, diff, tt.options)
+			compare.Extensions(generated, database, diff, tt.options, compare.CoverageOf(generated, database))
 
 			// Verify results
 			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)

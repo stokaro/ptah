@@ -110,10 +110,13 @@ environment variable rather than a flag this surface must not grow:
 PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 ```
 
-It parses as a boolean, rejects a non-boolean value outright, warns on stderr
-while active, and bypasses checks only — `atlas.sum` verification and revision
-bookkeeping are unaffected. See
-[Pre-migration checks](../../versioned/integrity-and-safety/).
+It reads like every other boolean `PTAH_*` variable — unset enforces the checks,
+a valid boolean is honored, and anything else, an exported empty value included,
+fails the run before a migration is applied. It warns on stderr while active and
+bypasses checks only: `atlas.sum` verification and revision bookkeeping are
+unaffected. See
+[Pre-migration checks](../../versioned/integrity-and-safety/) and
+[Boolean environment variables](../configuration/#boolean-environment-variables).
 
 Native twin: [`ptah migrations up`](../native-commands/).
 
@@ -195,6 +198,33 @@ An empty `--dir-format`, a query parameter other than `format`, and a repeated
 empty value and the unknown key select the atlas layout, and a repeated key
 takes the first value.
 
+`format` is the only query key that selects anything. A key that selected
+nothing is named on standard error and the run continues, on each of the eight
+verbs that accepts a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`,
+`set`, `status` and `validate`:
+
+```text
+note: atlas migrate apply --dir: ignoring migration directory URL query key
+"fromat". Only ?format= selects the directory layout. Set
+PTAH_STRICT_DIR_QUERY=1 to refuse an unrecognized key instead.
+```
+
+The exit code and everything on standard output are unchanged, so a script
+reading either sees exactly what Atlas produces. The note exists because
+dropping the key is what Atlas does and saying nothing about it is not: a
+misspelled `?fromat=goose` selects no layout on either tool, so the directory is
+read as the atlas layout while you believe it is being read as Goose. Set
+[`PTAH_STRICT_DIR_QUERY=1`](../../atlas/overview/#the-variables) to make that a
+refusal instead.
+
+`checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir` too and
+refuse any query on it — `migration directory URL query parameters are not
+supported for this command` — so neither the note nor the variable applies
+there. The pinned community binary answers `unknown flag: --dir` on all six, so
+this is stricter than a CLI with no contract on those verbs rather than a parity
+gap; it is tracked in
+[#1013](https://github.com/stokaro/ptah/issues/1013).
+
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
 - a semicolon in the query, such as `?format=flyway;x=1`, which Atlas drops
@@ -210,10 +240,37 @@ with `migrate apply`, so relaxing one widens what the integrity gate accepts.
 directory read through `?format=` over the same per-layout file set `hash`
 writes, so what `migrate hash` writes is what `migrate apply` verifies.
 
-`migrate new` writes the selected layout, gating the directory over that
-layout's covered file set first. `migrate diff` is the one verb that still
-refuses a non-`atlas` layout under both spellings: it emits planned migration
-SQL, and nothing writes a migration body in a foreign tool's convention yet.
+`migrate new` and `migrate diff` both write the selected layout, gating the
+directory over that layout's covered file set first. `migrate diff` composes
+each layout's own files: a forward and a rollback file for `golang-migrate`
+(`.up.sql` / `.down.sql`) and `flyway` (`V…` / `U…`), both halves under
+directives in one file for `goose` and `dbmate`, and a changeset carrying
+`--rollback:` lines for `liquibase`. `atlas.sum` is written over that layout's
+covered file set, so the community binary's own `migrate validate` reads back
+what Ptah wrote.
+
+The generated SQL is Ptah's renderer's, on every layout including `atlas` — the
+layout is what these follow, not the DDL text. On `liquibase`, Ptah writes ONE
+changeset carrying the whole migration and all of its `--rollback:` lines, where
+the community binary writes one changeset per statement; rolling the migration
+back is exact either way, but Ptah does not offer per-statement rollback there,
+because pairing each forward statement with a reverse statement would be a guess
+about a reverse plan that is computed for the run as a whole.
+
+The rollback half is planned against the state the migration starts from, not
+the state it produces, so a forward migration that DROPS a table rolls back into
+the CREATE TABLE that puts it back. That re-created table carries its own
+primary key and its single-column foreign keys, and the rollback does not repeat
+them; a rollback that did is refused by the server outright. A CHECK constraint
+is not in the table body at all, so it is restored by its own statement.
+
+Two differences survive that round trip, on this verb and on
+`ptah migrations generate` alike. The restored primary key takes the server's
+default name rather than the name it had, because the table body has nowhere to
+put one. A column that was UNIQUE comes back both from the table body and from
+the named constraint, so the restored table holds two unique constraints where
+it held one. Neither stops the rollback from applying; both mean a
+`schema diff` immediately after a rollback can report work to do.
 
 ### `ptah-compat migrate lint`
 
@@ -233,10 +290,17 @@ fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 
 | Flag | Behavior |
 | --- | --- |
-| `--latest N` | Maps to native changeset linting. |
-| `--git-base`, `--git-dir` | Map to native changeset linting. |
-| `--dev-url` | Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
+| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. |
+| `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. |
+| `--dev-url` | Required. Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
 | `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
+
+Both requirements are the community binary's, reproduced word for word — a run
+missing `--dev-url` answers `required flag(s) "dev-url" not set` and one naming
+no changeset answers `--latest or --git-base is required`, each at exit 1. Either
+selector may come from the selected `atlas.hcl` env instead of the command line.
+`PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` runs the analysis with no dev database, which
+Ptah can do and that binary cannot.
 
 Docker dev databases and web reports remain explicit gaps.
 Native twin: [`ptah migrations lint`](../native-commands/).
@@ -266,11 +330,22 @@ name and writes the version alone, but such a file is one Ptah's own
 `migrate apply` cannot read back on `golang-migrate`, `goose`, `liquibase` and
 `dbmate`, so it is not created.
 
+A migration name may not contain a path separator on this verb or on
+`migrate diff`: the name becomes part of the file name, so a `/` in it selects a
+directory that is not there. The run is refused and nothing is written, matching
+the community binary's refusal of the same input
+([#1231](https://github.com/stokaro/ptah/issues/1231)). Nothing else about a
+name is refused — a space, a backslash and `..` are accepted, as they are there.
+
 The directory's existing `atlas.sum` is verified first — over the selected
 layout's covered file set — with the same output `migrate apply` and
 `migrate validate` produce, and nothing is created when the check fails; see
 [Which verbs enforce `atlas.sum`](../../atlas/migrate-commands/#which-verbs-enforce-atlassum).
-An unrecognized `--dir` query key is ignored, as it is on every other verb.
+An unrecognized `--dir` query key is ignored here and named on standard error,
+as it is on the other seven verbs that accept a `--dir` query — `apply`,
+`diff`, `hash`, `lint`, `set`, `status` and `validate`. It is not ignored on
+`checkpoint`, `down`, `edit`, `rebase`, `rm` or `test`: those refuse a `--dir`
+query outright, as the shared rules above record.
 
 `--dir` must name a scheme on this verb and on `migrate diff`, as it must on
 every Atlas verb: `--dir migrations` is refused with
@@ -278,6 +353,15 @@ every Atlas verb: `--dir migrations` is refused with
 nothing. The same applies to its `PTAH_DIR` twin. The verbs that only read a
 directory still accept a bare path, as does `atlas.hcl` `migration.dir`
 ([#1186](https://github.com/stokaro/ptah/issues/1186)).
+
+Omitted entirely, `--dir` defaults to `file://migrations`, so
+`ptah-compat migrate new add_users` creates `./migrations` and writes into it
+([#1241](https://github.com/stokaro/ptah/issues/1241)). Missing parents are
+created too: `--dir file://db/migrations` creates `db` and `db/migrations`. A
+path component that exists and is not a directory is still refused, and nothing
+is written. See
+[The `--dir` default](../../atlas/migrate-commands/#the---dir-default) for how
+the default ranks against `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl`.
 
 ### `ptah-compat migrate set [version]`
 
@@ -296,10 +380,15 @@ Forwards to `ptah migrations down` with mapped Atlas flags.
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |
 | `--format` | Flag or `PTAH_FORMAT`; renders an Atlas Go-template report. Real and dry-run rollbacks are non-interactive. |
-| `--revision-format` | Defaults to `atlas`, like `migrate set`. The native `ptah` pass-through selects ptah bookkeeping. |
+| `--revision-format` | Defaults to the `atlas` table layout, like `migrate set`. The native `ptah` pass-through selects the `ptah` layout. Both retain recoverable failed-down state. |
 
-Because the forward defaults to Atlas revision bookkeeping, a bare invocation
+Because the forward defaults to the Atlas revision-table layout, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
+
+A failed rollback stays dirty even with the Atlas layout. Resume it with
+`ptah migrations repair --dir-format atlas --revision-format atlas`, using the
+same database, directory, revision schema, version, and required
+`--resume-from` statement as the failed compat run.
 
 The command starts a real rollback without reading stdin, matching Atlas. It
 does not accept the native `--confirm` flag. Review `--url`, `--dir`, and
@@ -332,6 +421,21 @@ yet, or holds no top-level `*.sql`, is not, which is how a project's first
 migration gets written. An unrecognized `--dir` query key is ignored; a
 `?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
 nothing writes planned migration SQL in a foreign tool's convention yet.
+
+Both spellings of the layout are read the way the other verbs that accept a
+`--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`
+and `--dir-format " atlas "` are rejected rather than coerced, and an explicit
+`?format=` outranks `--dir-format` — `--dir "file://migrations?format=atlas"
+--dir-format golang-migrate` writes the Atlas-layout migration. An
+unrecognized query key selects no layout, so `--dir-format` still decides
+there.
+
+The verb takes at most one positional, the migration name, and a second one is
+refused with `accepts at most 1 arg(s), received 2`
+([#1231](https://github.com/stokaro/ptah/issues/1231)). The name may not contain
+a path separator, checked where the file would be written: a diff that finds no
+changes writes nothing, never reaches the name, and still exits 0 — which is
+what the community binary does.
 
 **Desired state (`--to`)** accepts one of: local `.hcl`, `.yaml`, `.yml`, or
 `.sql` files; one directly connectable database URL; one local Atlas migration
@@ -473,10 +577,11 @@ an Atlas CE stub.
 `?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
 aborts every `migrate checkpoint` invocation, so there is no CE behavior to
 diverge from here and refusing an unimplemented spelling loudly is the intended
-outcome. That is **not** true of the other verbs that share the refusal —
-`migrate lint`, `new`, `diff`, `set` and `status` — where CE exits 0 and honors
-the parameter; those are parity defects, tracked in the feature matrix and its
-linked issues, not deliberate.
+outcome. `migrate diff` is now the only other verb that refuses it, and there
+the refusal **is** a parity defect rather than a deliberate choice: CE exits 0
+and writes the migration in the named layout, reverse SQL included. It is
+tracked in the feature matrix and its linked issues. `migrate lint`, `new`,
+`set` and `status` honor the parameter today.
 
 ### `ptah-compat migrate test [paths]`
 
@@ -610,6 +715,13 @@ and applies it after interactive confirmation or explicit `--auto-approve`.
 **Desired state (`--to`)** accepts one of:
 
 - local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` schema files;
+- one `file://` directory of `.sql` or `.hcl` schema files, read in filename
+  order as an ordered script — the two formats together are ambiguous, other
+  extensions are ignored, an empty directory is refused, a subdirectory is
+  refused rather than descended into, and a file that declares an object an
+  earlier file already declared is refused (`read state from "2_b.sql": table
+  "users" already exists`) unless its declaration carries `IF NOT EXISTS` or
+  `OR REPLACE`;
 - one directly connectable database URL;
 - one migration directory (a `file://` directory containing `atlas.sum`)
   replayed on the required `--dev-url` dev database;
@@ -624,13 +736,38 @@ the target database is contacted.
 
 | Flag | Behavior |
 | --- | --- |
-| `--dry-run` | Prints the plan without applying. |
+| `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
+| `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
 | `--tx-mode` | `file` and `all` execute the generated plan in one transaction; `none` executes statements without transaction wrapping. |
-| `--format` | Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. |
+| `--format` | Atlas-style templates over planned changes with `sql`, `.MarshalSQL`, and the shared helper set including `json`. `{{ json . }}` renders `{Driver, URL, Changes{Applied\|Pending}}`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
 | `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
 | `--file`/`-f` | Atlas's hidden alias, accepted for local HCL or SQL paths. |
 | `--env` | Reads `env.url`, `env.src`, `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy from `atlas.hcl`. |
+
+`--dry-run` and `--auto-approve` contradict each other — one asks for the plan
+and no execution, the other for execution with no prompt — and the pair is
+refused rather than silently resolved
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```text
+Error: if any flags in the group [dry-run auto-approve] are set none of the others can be; [auto-approve dry-run] were all set
+```
+
+The rule reads the command line, not the environment. `PTAH_DRY_RUN` is not a
+typed `--dry-run` for this purpose, so a wrapper that exports it does not turn
+every `--auto-approve` in the pipeline into a refusal: the run behaves the way
+`--dry-run` alone does, printing the plan and applying nothing.
+
+```bash
+PTAH_DRY_RUN=1 ptah-compat schema apply -u "$DATABASE_URL" \
+  --to file://schema.sql --dev-url "$DEV_URL" --auto-approve
+# Planned schema changes: … (exit 0, nothing executed)
+```
+
+The variable does not work in the other direction either. Typing both flags is
+still typing both, so adding `--dry-run` to the command line above is refused
+with the same sentence whether or not the variable is exported.
 
 `--env` evaluation includes local variable defaults, locals, `getenv`, `file`,
 `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url` references.
@@ -707,12 +844,16 @@ stderr note names the lock that was not acquired.
 rather than waited on, so concurrent applies can interleave. It cannot be
 combined with `--lock-name`.
 
-**`--dev-url` rehearsal.** Before a non-dry-run apply, `--dev-url` rehearses the
-exact ordered plan on the dev database — reset, the target's current schema
-recreated, then the planned (or edited) statements executed under the same
-transaction mode. A failed rehearsal refuses the apply with the target
-unchanged; the dev database must not be the target and must share its schema
-scope.
+**`--dev-url` rehearsal.** `--dev-url` is required whenever `--to` is not
+already a live database, failing with Atlas's `--dev-url cannot be empty`
+message otherwise; a database `--to` needs none, and
+`PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning without one. Before the
+apply, `--dev-url` rehearses the exact ordered plan on the dev database — reset,
+the target's current schema recreated, then the planned (or edited) statements
+executed under the same transaction mode. A failed rehearsal refuses the apply
+with the target unchanged; the dev database must not be the target and must
+share its schema scope. The rehearsal runs under `--dry-run` too, so a dry run
+cannot report a plan the real apply would refuse.
 
 Native twin: [`ptah schema apply`](../native-commands/).
 

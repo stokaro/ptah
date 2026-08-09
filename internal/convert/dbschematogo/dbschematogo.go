@@ -6,6 +6,7 @@ package dbschematogo
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -43,6 +44,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertRoles(database, dbSchema.Roles)
 	database.Grants = convertGrants(dbSchema.Grants)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
+	// What the read did not look at is part of what the read said. Dropping it
+	// here would turn the reader's silence back into desired absence one
+	// conversion after it was recorded (stokaro/ptah#1276).
+	database.NotDescribed = dbSchema.NotDescribed
 
 	return database
 }
@@ -83,10 +88,19 @@ func newDatabase() *goschema.Database {
 	}
 }
 
+// convertEnums carries the schema the reader recorded, exactly as the domain,
+// composite and range conversions below do.
+//
+// Dropping it made every enum in the result belong to whatever schema the
+// consumer defaulted to. On a read covering more than one schema that is a
+// claim about a type the database does not hold: `extra.mood` was described as
+// `public.mood`, applying the description built the type in `public`, and the
+// column in `extra` that uses it was typed against it (stokaro/ptah#1276).
 func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
 	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, goschema.Enum{
 			Name:   dbEnum.Name,
+			Schema: dbEnum.Schema,
 			Values: dbEnum.Values,
 		})
 	}
@@ -191,12 +205,30 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
-			Type:          dbIndex.Type,
+			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,
+
+			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
+			// Carried rather than recomputed: only the reader has the catalog,
+			// and an operator class the index's own DDL leaves implicit is
+			// reachable no other way.
+			RequiresExtensions: slices.Clone(dbIndex.RequiresExtensions),
 		}
 		indexes = append(indexes, index)
 	}
 	return indexes
+}
+
+// indexType picks the value goschema.Index.Type carries for an introspected
+// index. goschema keeps one field for two concepts the database layer keeps
+// apart: the PostgreSQL access method (btree/gin/gist/brin/hash) and the
+// ClickHouse data-skipping-index type (minmax/bloom_filter/...). No reader
+// sets both, so the choice is unambiguous.
+func indexType(index dbschematypes.DBIndex) string {
+	if index.Method != "" {
+		return index.Method
+	}
+	return index.Type
 }
 
 func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
@@ -206,8 +238,11 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 	converted := make([]goschema.IndexPart, len(parts))
 	for position, part := range parts {
 		converted[position] = goschema.IndexPart{
-			Name: part.Name,
-			Desc: part.Desc,
+			Name:       part.Name,
+			Expr:       part.Expr,
+			Operator:   part.Operator,
+			Desc:       part.Desc,
+			NullsOrder: part.NullsOrder,
 		}
 	}
 	return converted
@@ -219,6 +254,10 @@ func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes
 			Name:        dbExtension.Name,
 			IfNotExists: true, // Default to true for down migrations for safety
 			Version:     dbExtension.Version,
+			// Carried rather than recomputed: only the reader has the catalog,
+			// and the Atlas-compatible renderer needs it to tell an extension
+			// nothing depends on from one a column type still needs.
+			Provides: dbExtension.Provides,
 		}
 
 		// Set comment if available
@@ -250,11 +289,21 @@ func convertRLSPolicies(
 	}
 }
 
+// convertFunctions carries the schema the reader recorded, in Name, which is
+// where goschema.Function keeps it -- the same place views and materialized
+// views keep theirs, and the same place the HCL parser already writes it from a
+// `function` block's `schema` attribute.
+//
+// Dropping it left the name unqualified, so the Atlas-compatible render wrote a
+// `function` block with no schema attribute at all and an apply recreated the
+// function in whatever schema the connection defaulted to. On a read covering
+// more than one schema, `extra.f_extra` came back as `public.f_extra`
+// (stokaro/ptah#1276).
 func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.DBFunction) {
 	for _, dbFunction := range dbFunctions {
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
-			Name:       dbFunction.Name,
+			Name:       dbFunction.QualifiedName(),
 			Parameters: dbFunction.Parameters,
 			Returns:    dbFunction.Returns,
 			Language:   dbFunction.Language,
@@ -475,6 +524,9 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
 		OnDelete:        derefString(dbConstraint.DeleteRule),
 		OnUpdate:        derefString(dbConstraint.UpdateRule),
+		// The index backing this constraint is dropped above so the constraint
+		// renders once; what that index needed does not go with it.
+		RequiresExtensions: slices.Clone(dbConstraint.RequiresExtensions),
 	}, true
 }
 
@@ -526,14 +578,11 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	if serialType := postgresSerialType(dbColumn); serialType != "" {
 		return serialType
 	}
-	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
-		return dbColumn.UDTName
-	}
 	// The server's own spelling wins wherever the reader had to ask for it,
-	// which today means PostgreSQL array columns. DataType there is the bare
-	// category "ARRAY" -- a word no engine accepts as a type, so a schema read
-	// back out of a database rendered DDL that could not be executed
-	// (stokaro/ptah#1138).
+	// which today means PostgreSQL array and domain columns. DataType for an
+	// array is the bare category "ARRAY" -- a word no engine accepts as a type,
+	// so a schema read back out of a database rendered DDL that could not be
+	// executed (stokaro/ptah#1138).
 	//
 	// It is read from FormattedType rather than from ColumnType deliberately.
 	// ColumnType is also what the Atlas-compatible JSON inspect output prints,
@@ -542,8 +591,35 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	// today. Routing the fix through ColumnType would have made that surface
 	// disagree with the binary in order to fix a surface the binary does not
 	// have.
+	//
+	// It stays AHEAD of the USER-DEFINED branch below, and that order is the
+	// whole content of one half of #1138. A domain whose base type is itself
+	// user-defined is reported by information_schema with data_type
+	// "USER-DEFINED" and udt_name naming the BASE, while domain_name names the
+	// domain -- so with the branches the other way round the domain was
+	// flattened to its base and the CHECK it carries was silently dropped.
+	// Measured on PostgreSQL 17, one cluster, two domains that differ only in
+	// what they are built on:
+	//
+	//	CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
+	//	CREATE DOMAIN positive_int AS integer CHECK (VALUE > 0);
+	//
+	//	column      data_type      udt_name   domain_name   format_type
+	//	c_point3d   USER-DEFINED   cube       point3d       point3d
+	//	c_domain    integer        int4       positive_int  positive_int
+	//
+	// Before this, c_point3d inspected as `cube` and c_domain as
+	// `positive_int`: applying that document back built the column as a bare
+	// cube, so the domain and its constraint were gone from the database with
+	// nothing reported. The pinned community binary v1.3.0 renders
+	// `sql("point3d")` for the same column, so this is also the compatible
+	// answer. The same split is visible on stock extension domains -- `lo`
+	// (over oid) survived while `earth` (over cube) did not.
 	if dbColumn.FormattedType != "" {
 		return dbColumn.FormattedType
+	}
+	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
+		return dbColumn.UDTName
 	}
 	if dbColumn.ColumnType != "" {
 		return dbColumn.ColumnType
@@ -554,7 +630,23 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	return dbColumn.DataType
 }
 
+// postgresSerialType reports the SERIAL shorthand a column can be written back
+// as, or "" when it cannot.
+//
+// A domain column can never be written back as SERIAL. PostgreSQL's SERIAL
+// shorthand only ever builds a column of an integer type, so spelling a column
+// of domain `positive` as SERIAL rebuilds it as a plain integer and drops the
+// domain's CHECK with it. The domain wins, and the sequence default it was
+// drawing from is then carried as an ordinary default rather than folded into
+// the shorthand. Measured on PostgreSQL 17.10 against `id positive DEFAULT
+// nextval('s')` with the sequence OWNED BY that column: the pinned binary
+// v1.3.0 reports `type = sql("positive")` with the nextval default beside it,
+// and Ptah reported `type = serial` with no default at all. See
+// stokaro/ptah#1242.
 func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
+	if dbColumn.DomainName != "" {
+		return ""
+	}
 	if !dbColumn.IsAutoIncrement || dbColumn.ColumnDefault == nil ||
 		!strings.Contains(strings.ToLower(*dbColumn.ColumnDefault), "nextval(") {
 		return ""

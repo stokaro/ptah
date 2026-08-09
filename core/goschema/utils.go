@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1085,6 +1087,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Grants: Deduplicated by role + privileges + grant option + (table or schema) target
 //   - Roles: Deduplicated by role name
 //   - Schemas: Deduplicated by schema name
+//   - RLS policies: Deduplicated by resolved table + policy name combination
 //
 // Composite finalization additionally deduplicates sequences, domains,
 // composite types, ranges, and exact managed-data declarations. Grants retain
@@ -1096,11 +1099,11 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
-	deduplicateDatabase(r, structDeduplicationScope, unscopedDeduplication)
+	deduplicateDatabase(r, structDeduplicationScope)
 }
 
 func deduplicateComposite(r *Database) {
-	deduplicateDatabase(r, compositeDeduplicationScope, compositeDeduplicationScope)
+	deduplicateDatabase(r, compositeDeduplicationScope)
 	r.Sequences = deduplicateNamedDefinitions(r.Sequences, func(sequence Sequence) string {
 		return sequence.QualifiedName()
 	})
@@ -1122,10 +1125,6 @@ func structDeduplicationScope(_ tableScopeResolver, structName, _ string) string
 	return structName
 }
 
-func unscopedDeduplication(_ tableScopeResolver, _, _ string) string {
-	return ""
-}
-
 func compositeDeduplicationScope(resolver tableScopeResolver, structName, tableName string) string {
 	return resolver.resolve(structName, tableName)
 }
@@ -1133,7 +1132,6 @@ func compositeDeduplicationScope(resolver tableScopeResolver, structName, tableN
 func deduplicateDatabase(
 	r *Database,
 	resolveScope deduplicationScope,
-	resolvePolicyScope deduplicationScope,
 ) {
 	resolver := newTableScopeResolver(r.Tables)
 	r.Schemas = deduplicateSchemas(r.Schemas)
@@ -1152,7 +1150,9 @@ func deduplicateDatabase(
 	})
 
 	deduplicateSchemaObjects(r)
-	r.RLSPolicies = deduplicateRLSPolicies(r.RLSPolicies, resolver, resolvePolicyScope)
+	rlsResolver := newRLSTableResolver(r.Tables, resolver)
+	bindRLSTables(r, rlsResolver)
+	r.RLSPolicies = deduplicateRLSPolicies(r.RLSPolicies, rlsResolver)
 	r.RLSEnabledTables = deduplicateNamedDefinitions(r.RLSEnabledTables, func(table RLSEnabledTable) string {
 		return table.Table
 	})
@@ -1197,18 +1197,167 @@ func deduplicateExtensions(extensions []Extension) []Extension {
 	return deduplicated
 }
 
-func deduplicateRLSPolicies(
-	policies []RLSPolicy,
-	resolver tableScopeResolver,
-	resolveScope deduplicationScope,
-) []RLSPolicy {
-	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) string {
-		return resolveScope(resolver, policy.StructName, policy.Table) + "." + policy.Name
+// rlsTableSemantics are the identifier rules the owning table of a row-level
+// security declaration is folded with. Row-level security is a
+// PostgreSQL-family construct, so the default schema an unqualified table
+// lands in is `public`.
+var rlsTableSemantics = identifier.ForDialect(platform.Postgres)
+
+// rlsTableResolver answers one question: which declared table does this
+// row-level security declaration name?
+//
+// One table has more than one spelling, and PostgreSQL reaches it through all
+// of them. A table declared as `orders` is named by `orders`, by
+// `public.orders`, and by `ORDERS`, because an unquoted identifier folds to
+// lower case. Measured on PostgreSQL 17.10, `CREATE POLICY p ON orders`
+// followed by either `CREATE POLICY p ON public.orders` or
+// `CREATE POLICY p ON ORDERS` exits 3 with `policy "p" for table "orders"
+// already exists`: one policy declared twice, not two policies.
+//
+// Answering that question in one place is the point. Keying deduplication by
+// the string each declaration happened to use kept both, and `ptah schema
+// render` then emitted a pair of CREATE POLICY statements the database rejects
+// (stokaro/ptah#1276).
+//
+// Resolution never invents a name. It maps a reference onto a table that is
+// declared, or leaves the reference alone:
+//
+//   - the exact spelling wins, through [tableScopeResolver.resolve];
+//   - failing that, the table identity wins, which is what folds
+//     `public.orders` onto a table declared without a schema.
+//
+// There is deliberately no case fold here, and that is the whole point of this
+// comment. `ORDERS` and `"ORDERS"` are two different instructions to
+// PostgreSQL -- the first names `orders`, the second names `ORDERS` -- and by
+// the time a declaration reaches this resolver the two are the same string.
+// Folding here therefore had to be wrong for one of two inputs it cannot tell
+// apart, and being wrong for the quoted one relocated an access-control
+// declaration onto a relation the author did not name (stokaro/ptah#1311).
+// Measured on PostgreSQL 17.10 against a database holding only `orders`,
+// `CREATE POLICY p ON "ORDERS"` exits 1 with `relation "ORDERS" does not
+// exist`, while the folded render `CREATE POLICY "p" ON "orders"` exits 0 and
+// leaves a pg_policy row on `public.orders`.
+//
+// Quoting is resolved where it still exists instead. The SQL frontend folds
+// each component of a row-level security table reference as PostgreSQL does --
+// unquoted components lose their case, quoted components keep it -- so a
+// reference arrives here already naming its relation. Sources with no quoting
+// syntax at all (Go annotations, YAML, HCL, a hand-built [Database]) are
+// case-preserving by construction, because Ptah quotes every identifier it
+// renders; for them the declaration is already the relation and there is
+// nothing to fold. A reference that matches no declared table keeps its own
+// spelling, so the render reproduces the database's own answer rather than
+// quietly succeeding somewhere else.
+type rlsTableResolver struct {
+	scopes     tableScopeResolver
+	byIdentity map[string]string
+}
+
+func newRLSTableResolver(tables []Table, scopes tableScopeResolver) rlsTableResolver {
+	resolver := rlsTableResolver{
+		scopes:     scopes,
+		byIdentity: make(map[string]string, len(tables)),
+	}
+	for _, table := range tables {
+		qualifiedName := table.QualifiedName()
+		identity := rlsTableSemantics.QualifiedTableIdentityKey(qualifiedName)
+		addTableScope(resolver.byIdentity, identity, qualifiedName)
+	}
+	return resolver
+}
+
+func (r rlsTableResolver) resolve(structName, table string) string {
+	scoped := r.scopes.resolve(structName, table)
+	identity := rlsTableSemantics.QualifiedTableIdentityKey(scoped)
+	if declared := resolvedTableScope(r.byIdentity, identity, ""); declared != "" {
+		return declared
+	}
+	return scoped
+}
+
+// bindRLSTables rewrites the table every row-level security declaration names
+// onto the declared table it reaches, so the rest of the pipeline sees one
+// spelling.
+//
+// Deduplicating on the resolved table is not enough on its own, because
+// deduplication keeps the first declaration and the first one may be the
+// variant spelling. On a table declared as `orders`, a schema whose first
+// policy says `ON ORDERS` rendered `CREATE POLICY "p" ON "ORDERS"` -- a table
+// nothing declared -- and PostgreSQL answered `relation "ORDERS" does not
+// exist`. That predates the table-scoped key and it is what "make every
+// spelling reach one answer" has to mean for a renderer that quotes what it is
+// given.
+//
+// A declaration whose table matches nothing declared keeps its spelling: it is
+// not this function's business to guess at a table it cannot see. "Matches" is
+// [rlsTableResolver.resolve]'s answer, and the case fold inside it only runs
+// downwards, so a file declaring `"ORDERS"` and naming `orders` does not match:
+// the render keeps `orders`, and PostgreSQL answers `relation "orders" does not
+// exist` exactly as it answers the source file.
+func bindRLSTables(r *Database, resolver rlsTableResolver) {
+	for index := range r.RLSPolicies {
+		policy := &r.RLSPolicies[index]
+		policy.Table = boundRLSTable(resolver, policy.StructName, policy.Table)
+	}
+	for index := range r.RLSEnabledTables {
+		enabled := &r.RLSEnabledTables[index]
+		enabled.Table = boundRLSTable(resolver, enabled.StructName, enabled.Table)
+	}
+}
+
+// boundRLSTable leaves an omitted table alone. A declaration attached to a Go
+// struct names its table through that struct, and the renderer resolves it
+// there.
+func boundRLSTable(resolver rlsTableResolver, structName, table string) string {
+	if strings.TrimSpace(table) == "" {
+		return table
+	}
+	return resolver.resolve(structName, table)
+}
+
+// rlsPolicyIdentity is what makes two row-level security policies the same
+// policy: the table that owns it, and its own name.
+//
+// It is a struct rather than a joined string because both components are
+// PostgreSQL identifiers and either may contain a dot when quoted, while
+// Table.QualifiedName already spends the dot structurally. Any separator is
+// therefore ambiguous; a struct key cannot be.
+type rlsPolicyIdentity struct {
+	table  string
+	policy string
+}
+
+// deduplicateRLSPolicies keeps one policy per (table, policy name) pair.
+//
+// The table has to be part of the key. A PostgreSQL policy name is scoped to
+// its table: `CREATE POLICY tenant_isolation` succeeds once on each of two
+// tables in one schema and is refused only when repeated on the same table.
+// The single-source path used to key on the policy name alone, which silently
+// dropped the second of two identically named policies before the comparator
+// ever saw it (stokaro/ptah#1276).
+//
+// The table component is the declared table the policy names rather than the
+// string it was written with, which is [rlsTableResolver]'s subject.
+func deduplicateRLSPolicies(policies []RLSPolicy, resolver rlsTableResolver) []RLSPolicy {
+	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) rlsPolicyIdentity {
+		return rlsPolicyIdentity{
+			table:  resolver.resolve(policy.StructName, policy.Table),
+			policy: policy.Name,
+		}
 	})
 }
 
-func deduplicateNamedDefinitions[T any](definitions []T, identity func(T) string) []T {
-	seen := make(map[string]struct{}, len(definitions))
+// deduplicateNamedDefinitions keeps the first definition per identity.
+//
+// The key type is a parameter rather than a string so a caller whose identity
+// has SEVERAL components can use a struct instead of joining them with a
+// separator. Joining is not safe here: every component is a PostgreSQL
+// identifier, quoting lets any of them contain the separator, and the encoding
+// then stops being injective -- table `a` with policy `"b.c"` and table `a.b`
+// with policy `c` both render as `a.b.c`, and one of two distinct policies is
+// dropped (stokaro/ptah#1276). Single-component callers keep passing strings.
+func deduplicateNamedDefinitions[T any, K comparable](definitions []T, identity func(T) K) []T {
+	seen := make(map[K]struct{}, len(definitions))
 	deduplicated := make([]T, 0, len(definitions))
 	for _, definition := range definitions {
 		key := identity(definition)

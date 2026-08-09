@@ -72,18 +72,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 166 capabilities below:
+Across the 178 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 92 |
-| Ptah supports it with a stated limitation | 50 |
-| Ptah does not implement it | 24 |
-| Ptah and Atlas CE both support it | 24 |
+| Ptah supports it fully | 107 |
+| Ptah supports it with a stated limitation | 49 |
+| Ptah does not implement it | 22 |
+| Ptah and Atlas CE both support it | 33 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 20 |
-| Atlas CE has it and Ptah does not, or only in part | 26 |
-| An Atlas column is ❔ — not established by this page's evidence | 5 |
+| Ptah has it and neither Atlas edition does | 23 |
+| Atlas CE has it and Ptah does not, or only in part | 24 |
+| An Atlas column is ❔ — not established by this page's evidence | 9 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -109,13 +109,14 @@ seven of them as open capabilities regardless.
 | Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`. |
 | Composite multi-source desired schema | ✅ | ❌ | ✅ | Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source. |
 | Desired-schema artifacts in an OCI registry | ✅ | ❌ | ✅ | `ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2. |
-| Directory of .hcl files as one schema source | ❌ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` are refused (schema file is a directory); globs are not expanded. Multi-file needs one flag per file. The community binary reads such a directory. |
+| Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order as an ordered script: mixed formats, an empty directory, a subdirectory and a redeclaration refuse. |
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
-| HCL foreign_key deferrable | ❌ | ❌ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either. |
+| HCL foreign_key deferrable | 🟡 | ❌ | ❌ | `ptah-compat` accepts and drops it at exit 0; native `ptah` exits 2 naming the attribute. DEFERRABLE is absent from the Ptah IR, so YAML and Go annotations lack it too; the binary plans none either. |
 | HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. yamldecode, yamlencode, uuid and print stay refused where it evaluates. |
-| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. Still rejected by name (`ptah-compat` exit 1, native `ptah` exit 2): top-level "lock"/"atlas"; table block "dynamic". The community binary ignores both. |
-| HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The community binary drops row_security silently. |
+| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `ptah-compat` drops top-level "lock"/"atlas" and a table "dynamic" at exit 0; a body naming `dynamic.value` exits 1 on both. Native `ptah` exits 2. |
+| HCL names outside the parsed subset | 🟡 | ✅ | ❔ | `ptah-compat` drops an unmodeled top-level name whose body names a declared schema: `procedure { schema = schema.main }` exits 0, `schema.nope` exits 1 on both binaries. Native `ptah` refuses by name. |
+| HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The binary drops row_security; ptah-compat plans it. |
 | HCL top-level blocks Ptah parses | ✅ | 🟡 | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum. |
 | HCL variable blocks and var.* references | ✅ | ✅ | ✅ | `variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable "x"` — the community binary's own text. |
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
@@ -129,21 +130,26 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is what gets planned, rehearsed, and applied. |
-| `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs plus one final-segment [type=...]; qualified globs now reach default-schema tables, views and their children, but enum and function filters still compare the bare name. |
+| `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is applied. `--dry-run` and `--auto-approve` exclude each other on the command line, as on CE. |
+| `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs, one final-segment [type=...], and [type=schema] on the leading segment. Qualified globs reach every object kind. A child under a qualified object is a depth error. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Names define the schema universe for apply and diff; repeated and comma-separated values union deterministically. |
 | `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. A selection matching nothing renders nothing, exits 0, and says so on stderr. |
 | `schema inspect --output` | ✅ | ❌ | ✅ | `-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document. |
 | Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; others run unlocked with a note. `--lock-name` and `--skip-lock` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
-| Desired-state sources for `--to` and `--from` | 🟡 | ✅ | ✅ | Files, one DB URL, one atlas.sum dir, or env://. A plain file:// schema directory without atlas.sum is rejected; atlas:// fails early. |
-| Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed; dev==target and failed rehearsal abort. docker:// dev URLs have their own row. |
+| Compat inspect block superset opt-in | ✅ | ❌ | ❌ | Compat inspect omits unreferenced extension, sequence and policy blocks; an env variable restores them. |
+| Desired-state sources for `--to` and `--from` | ✅ | ✅ | ✅ | Files, a file:// directory of .sql or .hcl schema files, one DB URL, one atlas.sum dir, or env://; atlas:// fails early. |
+| Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed, under `--dry-run` too; dev==target and failed rehearsal abort. A non-database `--to` requires `--dev-url`. |
 | Drift detection against desired schema | ✅ | ❌ | ✅ | Native `ptah schema drift`: `--severity`, `--exit-code`, `--ignore`, text/json/github-actions. Atlas Cloud drift monitoring is out of scope. |
-| Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply and diff register only the sql helper: {{ json . }} fails to parse. json/hcl/mermaid/split/write and .Realm are inspect-only. |
-| Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | Only [type=extension].version is honored; other .field suffixes and non-final [type=...] fail before any database is contacted. The community binary accepts a .field suffix and ignores it. |
+| Exclude selector that matches nothing is diagnosed | ✅ | ❌ | ❔ | A selector naming no object warns on inspect and diff and exits 1 on apply, and only a filter that asked it may call it empty; a PTAH_ATLAS opt-in restores the permissive behavior. |
+| Exclude subtracts a named schema and its contents | ✅ | ✅ | ❔ | A one-part selector names a schema, which leaves with every object in it. Schemas were read and rendered but never asked, so `--exclude app` refused as unmatched and still planned app's drops. |
+| Exclude subtracts sequences, domains, composite types and range types | ✅ | ❔ | ❔ | `--exclude` reaches the same object kinds `--include` selects. Before, these four were read and cloned but never offered to a pattern, so excluding one was a silent no-op that still planned its DROP. |
+| Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply registers the shared helper set, so {{ json . }} renders an Atlas-shaped document. schema diff registers only sql, as the community binary does. |
+| Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | [type=extension].version, and .comment on table, view and materialized_view; .* names all of them. A field Ptah cannot subtract is refused, not ignored as the community binary does. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
+| Inspected document declares what it does not describe | ✅ | ❌ | ❌ | A compat inspect document records the block kinds it omitted, in its own header and in every split member, so a later apply reads the omission as unknown rather than as deletion intent. |
 | JSON output for native schema diff | ✅ | ➖ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
@@ -151,7 +157,7 @@ seven of them as open capabilities regardless.
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; `--format` sql\|json\|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export. |
-| Schema-qualified exclude globs for enums and functions | 🟡 | 🟡 | ❔ | Tables, views and extensions match schema-qualified exclude globs; enum and function filters compare the bare name only. The community binary matches `app.mood`; it reports no functions. |
+| Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ❔ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |
 | Verb `schema stats` | ❌ | ❌ | ✅ | Beyond the CE pin: in Atlas it exists as `schema stats inspect` (OpenMetrics) and rejects SQLite at runtime; the gap register triages it out of scope as observability. |
 | Verb `schema validate` | 🟡 | ❌ | ✅ | Beyond the CE pin: no validate verb; the gap register triage covers it with native schema render parse/load validation plus schema test and schema apply `--dry-run`. |
 
@@ -159,6 +165,8 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
+| An empty migration directory is not a checksum error | ✅ | ✅ | ✅ | `ptah-compat migrate validate` and `migrate lint --latest` exit 0 on a directory holding no migration files. Native `ptah migrations validate` and `ptah migrations lint` keep their refusals. |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format revision tables are covered. |
 | Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah refuses an Atlas directory holding one, naming every such file; CE executes it keyed on the version string the name spells. Dropping it at exit 0 was stokaro/ptah#846. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❌ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL. |
@@ -171,20 +179,21 @@ seven of them as open capabilities regardless.
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it. |
 | External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | hash, validate, lint, status, set and new read the selected Atlas source layout under both `?format=` and `--dir-format`; new also writes it. Only diff still needs migrate import first. |
-| Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Native `ptah migrations down` marks the row failed with the error and completed-statement count, so status reports it dirty and `migrations repair` clears it; compat matches Atlas, which records none. |
+| Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Ptah records failed rollback direction, error, and completed-statement count in both revision-table formats; compat keeps the Atlas schema but does not copy Atlas's hidden failed-down state. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as Atlas CE runs it. Editing the body then fails on a Ptah revision checksum where CE exits 0. |
-| Generate migrations from a schema diff | 🟡 | ✅ | ✅ | New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry. |
-| migrate apply `--allow-dirty` semantics | 🟡 | ✅ | ✅ | Flag gates a dirty revision row, not a non-empty target: a pre-populated database applies without it, and the recovery re-insert fails with UNIQUE on atlas_schema_revisions (SQLite). |
+| Generate migrations from a schema diff | 🟡 | ✅ | ✅ | diff and new stamp the UTC YYYYMMDDHHMMSS second, stepping only past a version already taken, as CE does; checkpoint and rebase bump past the newest. Every step parses back as a second. |
+| migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Requests a verified dirty-row retry and unmanaged-object adoption. Recovery skips only an unchanged committed prefix and preserves progress; URL scope selects tables or schemas for adoption. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
-| Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed. |
-| Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; Atlas's features page marks the lint CLI Pro. Ptah loads custom rules only through the Go API at compile time. |
+| Migration import from other tools | 🟡 | ✅ | ✅ | Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and orders `R__` last. Liquibase XML/YAML/JSON not parsed. |
+| Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with a basic Open rule set; its features page marks the lint CLI Pro. Compat requires `--dev-url` as CE does, with an opt-in that lifts only that. |
 | Migration lock, lock timeout, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks. `--lock-name` and `--skip-lock` on `migrate apply` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Migration status report | ✅ | ✅ | ✅ | Compat status mirrors the Atlas default report shape and renders Go templates over .Env, .Available, .Applied, .Pending, .Current, .Next. Native ptah keeps its own block. |
 | Online DDL routing via gh-ost or pt-osc | ✅ | ❌ | ❌ | ptah.yaml online_ddl.tool (ghost\|pt-osc), threshold_rows, args, and fallback (error\|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. CE has no such routing. |
 | Pre-migration database backups (`--pg-dump-to`) | ✅ | ❌ | ❌ | `--pg-dump-to` writes a pg_dump custom-format backup and `--mysqldump-to` a SQL backup before applying or rolling back; ptah.yaml key migration.pg_dump_to. |
 | Pre-migration webhook and shell hook gates | ✅ | ❌ | ❌ | `--webhook` POSTs migration metadata and requires HTTP 200; `--pre-up-hook`/`--pre-down-hook` run a shell command that must exit 0, else the run aborts. Also ptah.yaml migration.webhook/pre_up_hook. |
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❌ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
-| Repair dirty or partial revision state | ✅ | ❌ | ❌ | `--resume-from` finishes the failed body: up statements before marking applied, down statements before removing the revision. No repair verb in the pinned CE inventory or reviewed Atlas evidence. |
+| Repair dirty or partial revision state | ✅ | ❌ | ❌ | Under the migration advisory lock, `--resume-from` verifies the committed prefix, then finishes up before marking applied or down before removing the revision. Atlas CE has no repair verb. |
+| Report of an ignored `--dir` URL query key | ✅ | ❌ | ❌ | Only `?format=` selects a layout. On the eight verbs accepting a `--dir` query, other keys are ignored, named on stderr, exit 0 unchanged; `PTAH_STRICT_DIR_QUERY=1` refuses. Six verbs take no query. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
 | Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
@@ -197,6 +206,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| `migrate lint` requires `--latest` or `--git-base` | ✅ | ✅ | ✅ | Refused before the directory is read and before `--dev-url` is contacted. `PTAH_ATLAS_LINT_ALL_VERSIONS=1` restores linting the whole directory here; native `ptah migrations lint` needs no scope. |
 | `schema apply --skip-lint` | ✅ | ❌ | ✅ | With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE. |
 | Analyzers that need a dev-database schema diff | 🟡 | ✅ | ✅ | Ptah's analyzers read SQL text, so a concern whose subject appears only in the resulting schema is unreported: a RENAME COLUMN draws DS103 from both, but only Atlas adds MF103 for the new column. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
@@ -204,7 +214,7 @@ seven of them as open capabilities regardless.
 | Atlas web reports (`--web`) | ❌ | ❌ | ✅ | Not registered on migrate lint or schema diff; rejected as an unknown flag. Pinned Atlas CE v1.2.0 does not register it either. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. Explicit-only on migrate down. |
 | CI integration (GitHub Action, annotations) | ✅ | 🟡 | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only. |
-| Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules only from Go (lint.Register, Options.ExtraRules); atlas.hcl rule, review, naming, non_linear blocks and force all fail. |
+| Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules run only through Go registration. Atlas project rule, review, naming, non_linear, and force names are accepted as Atlas CE no-ops and reported as having no effect. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Dev-URL schema scope on `migrate lint` | ✅ | ✅ | ✅ | `ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
@@ -222,7 +232,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose `--report` and `--seed-dir` and name a docker:// `--dev-url` refusal. schema test takes `-s/--schema`, a Go directory, a .sql or .hcl file, or a database URL; env:// stays refused. |
-| Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused, and schema apply `--dry-run` skips the rehearsal entirely. |
+| Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
@@ -232,7 +242,9 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Rejects atlas, script, exporter, deployment; env for_each and schemas; migration baseline, skip_report, repo; data blocks but hcl_schema and external_schema. |
+| `--var` does not require an `atlas.hcl` | ✅ | ✅ | ✅ | `-c` and `--env` select a project file and still require one. `--var` only supplies values to one, on every verb. Its syntax is still checked with no `atlas.hcl` present. |
+| A malformed `--var` is refused wherever it is spelled | ✅ | ✅ | ✅ | CE parses `--var` while parsing flags, so a value with no `=` is refused before any project file is sought. Ptah checks it on every command under `schema` and `migrate`, even ones that never read it. |
+| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Validates every env. `migrate apply` expands labeled or unlabeled env `for_each` in stable order; typed list/map are Ptah extensions. Other commands require one instance. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. |
 | data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct. |
@@ -241,41 +253,41 @@ seven of them as open capabilities regardless.
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❌ | ❌ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable. |
 | Remote and template directory sources | ❌ | ✅ | ✅ | An atlas.hcl data-source question, not a registry one: ptah-compat migration.dir takes file:// only. Native oci:// distribution is a separate ptah path. |
-| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Only file, fileset, format, getenv, jsonencode evaluate; variable type (string, number, bool, list(string)) and sensitive are honored; validation and env for_each are rejected. |
+| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | file, fileset, format, getenv, jsonencode, and toset evaluate. Variables add map(string). Env `for_each` exposes atlas.env, each.key, and each.value. |
 
 ## Databases and schema objects
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables and indexes only. Views, matviews, functions, triggers, roles, grants, RLS, sequences, domains and CHECKs vanish from the plan with no diagnostic. |
-| CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS. SERIAL is a hard error. Offline render also omits views, functions and triggers. |
-| Domains, composite types, and range types | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` also emits them on YugabyteDB. Range subtype changes produce no diff. The community binary reports none of the three when they exist. |
-| Enum types | 🟡 | ✅ | ✅ | MySQL/SQLite/SQL Server inline-enum rewrite fires only if the type name starts with `enum_`; other names emit the bare type name verbatim. |
-| Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. MySQL/MariaDB render an empty statement instead of the intended comment. The community binary refuses extension blocks. |
-| Functions | 🟡 | ❌ | ✅ | `schema render`: PostgreSQL only, silent on MySQL/MariaDB. `schema apply` also emits CREATE FUNCTION on YugabyteDB; MySQL drops it silently. |
-| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error; extensions, functions, domains, roles/grants, RLS and MariaDB SEQUENCE objects are dropped silently. DDL auto-commit blocks rollback. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes and column CHECKs (as named table constraints). Every other object kind is named by a not-supported comment on both `render` and `apply`; domains, composites and ranges still drop. |
+| CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent indexes, sequences, XML, advisory locks, roles and RLS. SERIAL is a hard error. Views, matviews, functions and triggers render, matching what the apply planner emits. |
+| Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
+| Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
+| Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. Every other target names the extension it cannot host, on both `render` and `apply`. The community binary refuses extension blocks. |
+| Functions | 🟡 | ❌ | ✅ | `schema render` and `schema apply` both emit CREATE FUNCTION for PostgreSQL, CockroachDB and YugabyteDB. Spanner names the function as skipped in both. MySQL/MariaDB drop it silently. |
+| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects get a not-supported comment on both. Functions, domains, roles/grants and RLS still drop silently. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
-| PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Only engine where views, functions, sequences, roles, RLS and domains are emitted; presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits CREATE ROLE on YugabyteDB. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops a `role` block silently. |
-| Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums and FKs render as skip comments, SERIAL hard-errors, no dedicated driver (uses the PostgreSQL pgx path), and no live container or live test exists. |
-| SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | The mssql and tsql aliases silently drop views and triggers that sqlserver emits; render's default dialect list and `--dialect` help omit SQL Server; no sequences, RLS, roles/grants or matviews. |
+| PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
+| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL emits all three; YugabyteDB refuses RLS; CockroachDB and Spanner refuse both. SQL files read ROLE, GRANT, POLICY, ENABLE RLS. Atlas prices this as Pro; CE no-ops `role` silently. |
+| Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, FKs, sequences, matviews, functions and triggers render as named skip comments. SERIAL hard-errors, no dedicated driver (PostgreSQL pgx path), and no live container or test exists. |
+| SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Every accepted spelling renders the same DDL, and SQL Server is in `schema render`'s default dialect list and its `--dialect` help. No sequences, RLS, roles/grants or matviews. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
-| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL only in `schema render`; `schema apply` emits it on YugabyteDB too. SQL schema files read CREATE SEQUENCE. |
+| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB emit CREATE SEQUENCE in `schema render` and `schema apply` alike; five other targets name it as skipped in both; only SQLite and SQL Server still drop it silently. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
-| Triggers | 🟡 | ❌ | ✅ | `--dialect mssql`/`tsql` drop them while `sqlserver` renders them; MySQL forces FOR EACH ROW; SQL Server rewrites BEFORE to AFTER silently. |
-| Views and materialized views | 🟡 | ❌ | ✅ | Matviews render on PostgreSQL only; SQL schema files read both. Elsewhere behavior differs by engine: MySQL/MariaDB apply errors, YugabyteDB live apply plans them, ClickHouse drops them silently. |
-| YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Live apply does plan roles, grants, sequences, domains, views, matviews, functions and triggers; only RLS and concurrent indexes are gated off. Offline render omits all of them. |
+| Triggers | 🟡 | ❌ | ✅ | Every accepted spelling of an engine renders the same trigger DDL; Spanner names it skipped. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading it. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Views render everywhere but ClickHouse, which names them instead; matviews on PostgreSQL, CockroachDB and YugabyteDB, with Spanner naming it skipped. No target drops either kind in silence. |
+| YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Offline render and live apply agree: both emit roles, grants, sequences, domains, views, matviews, functions and triggers. Only RLS and concurrent indexes are gated off. |
 
 ## Go embedding and developer tooling
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Annotation metadata as JSON Schema | ✅ | ➖ | ➖ | Emits a JSON Schema describing every //ptah directive and attribute; Atlas has no //ptah annotation set for the concept to apply to. |
-| API schema export: OpenAPI 3.0 and GraphQL | ✅ | ❌ | ❌ | Go annotations to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list. |
+| API schema export: OpenAPI 3.0 and GraphQL | ✅ | ❌ | ❌ | Go annotations, or a YAML, HCL or SQL schema file, to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list. |
 | Concurrency-guarded migration plan publication | ✅ | ➖ | ➖ | generator.PlanMigration binds a plan to a directory snapshot; WriteFiles rejects changed history (ErrMigrationDirectoryChanged) under a cross-process lock; concurrent reuse fails (ErrMigrationPlanInUs |
-| Go annotations to HCL export with cleanup | ✅ | ➖ | ➖ | Writes HCL from Go annotations; cleanup requires zero diagnostics. Function, view, materialized-view, and trigger bodies are emitted as opaque HCL text, reported, and block cleanup. |
+| Go annotations to HCL export with cleanup | ✅ | ➖ | ➖ | Writes HCL from Go annotations; cleanup requires zero diagnostics and refuses unparsed directives. Opaque function, view, materialized-view, and trigger bodies are reported and block cleanup. |
 | Pinned database sessions (WithSession) | ✅ | ➖ | ➖ | `WithSession` on `DatabaseConnection` pins one physical session for a callback, rebinding reader/writer/SQL runner, and discards the connection so session state cannot leak. |
-| Protobuf schema export with pinned field numbers | ✅ | ❌ | ❌ | Edition 2023 output; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory. |
+| Protobuf schema export with pinned field numbers | ✅ | ❌ | ❌ | Edition 2023 output from Go annotations or a YAML, HCL or SQL schema file; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory. |
 | ptah-ls annotation language server | ✅ | ➖ | ➖ | stdio LSP over //ptah annotations: hover, completion, diagnostics, plus a VS Code extension. Tied to Ptah's own annotation syntax. |
 | Public API compatibility gate | ✅ | ➖ | ➖ | check-public-api.sh keeps the committed API baseline and the package tree in sync; pre-v1 breaks need a per-baseline approval line. |
 | Query builder for parameterized SQL | 🟡 | ➖ | ➖ | Joins, DISTINCT, GROUP BY, HAVING and RETURNING work; no subqueries, CTEs, LIKE or upsert; SQL Server and ClickHouse error. |

@@ -69,7 +69,7 @@ which Ptah does not evaluate.`,
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
 	registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the states with --from and --to"))
 	return cmd
 }
 
@@ -81,10 +81,11 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	mode := ignoreMissingEnvSelection
 	if needsAtlasSchemaDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
+		mode = reportMissingEnvSelection
 	}
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

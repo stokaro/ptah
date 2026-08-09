@@ -18,9 +18,11 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -91,6 +93,7 @@ func writeDiffArtifacts(
 	contents []MigrationFileContent,
 	baseSnapshot fsnapshot.Snapshot,
 	prepare func([]string) error,
+	layout diffWriteLayout,
 ) (DiffResult, error) {
 	return writeDiffArtifactsWithSumWriter(
 		ctx,
@@ -99,8 +102,42 @@ func writeDiffArtifacts(
 		contents,
 		baseSnapshot,
 		prepare,
+		layout,
 		publishDirSum,
 	)
+}
+
+// diffWriteLayout carries the two things one `migrate diff` write needs to know
+// about the directory's layout that the file contents themselves do not say.
+//
+// versionFS is separate from the base snapshot on purpose. The next version is
+// chosen by looking at the versions the directory already holds, and on a
+// foreign layout those are only readable through the converter — a
+// golang-migrate `3_init.up.sql` is version 3 to a reader that knows the
+// layout and nothing at all to the Atlas file-name parser. The caller passes
+// the CONVERTED view here and the real directory as baseSnapshot, so the
+// version comes from what the directory means while the checksum comes from
+// what it contains.
+//
+// A zero value is the native Atlas layout with no separate version view, which
+// is what every caller outside `migrate diff` wants.
+type diffWriteLayout struct {
+	format    atlasmigrateimport.Format
+	versionFS fs.FS
+}
+
+func (l diffWriteLayout) dirFormat() atlasmigrateimport.Format {
+	if l.format == "" {
+		return atlasmigrateimport.FormatAtlas
+	}
+	return l.format
+}
+
+func (l diffWriteLayout) versionSource(base fsnapshot.Snapshot) fs.FS {
+	if l.versionFS != nil {
+		return l.versionFS
+	}
+	return base
 }
 
 func writeDiffArtifactsWithSumWriter(
@@ -110,6 +147,7 @@ func writeDiffArtifactsWithSumWriter(
 	contents []MigrationFileContent,
 	baseSnapshot fsnapshot.Snapshot,
 	prepare func([]string) error,
+	layout diffWriteLayout,
 	writeSum func(*migrationWriterDir, *migratesum.SumFile) (string, error),
 ) (DiffResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -118,11 +156,11 @@ func writeDiffArtifactsWithSumWriter(
 	if err := recoverPendingPublication(w); err != nil {
 		return DiffResult{}, fmt.Errorf("recover previous migration artifact publication: %w", err)
 	}
-	version, err := nextMigrationVersionFS(baseSnapshot, len(contents))
+	version, err := nextMigrationVersionFS(layout.versionSource(baseSnapshot), len(contents))
 	if err != nil {
 		return DiffResult{}, err
 	}
-	batch, err := stageMigrationBatchAt(w, name, version, contents)
+	batch, err := stageMigrationBatchAtInFormat(w, name, version, contents, layout.dirFormat())
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -137,6 +175,7 @@ func writeDiffArtifactsWithSumWriter(
 		baseSnapshot,
 		batch,
 		stagedContents,
+		layout.dirFormat(),
 	)
 	if err != nil {
 		return DiffResult{}, errors.Join(err, removeStagedFiles(w, batch.stagedNames))
@@ -179,24 +218,13 @@ func writeDiffArtifactsWithSumWriter(
 	return result, nil
 }
 
-// PublishArtifactsLocked durably publishes all artifacts as one batch. The
-// caller must hold the migration-directory lock for dir.
-func PublishArtifactsLocked(
-	ctx context.Context,
-	dir string,
-	artifacts []PublicationArtifact,
-) ([]string, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	w, err := createMigrationWriterDir(nil, dir)
-	if err != nil {
-		return nil, err
-	}
-	paths, publishErr := publishArtifactsLocked(ctx, w, artifacts)
-	return paths, errors.Join(publishErr, w.Close())
-}
-
+// publishArtifactsLocked durably publishes all artifacts as one batch through
+// the caller's bound handle. The caller must hold the migration-directory lock.
+//
+// There is deliberately no pathname-taking entry point beside it. The one that
+// existed took a dir string and bound its own handle, which meant the batch
+// could be published to a filesystem object the caller had never verified
+// (stokaro/ptah#1118); MigrationWriter.PublishArtifacts is the only way in.
 func publishArtifactsLocked(
 	ctx context.Context,
 	w *migrationWriterDir,
@@ -335,10 +363,19 @@ func contentDigest(contents []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// preparePublicationSnapshot builds the directory as publication will leave it
+// and the atlas.sum that covers it.
+//
+// The sum is computed over the covered set of the layout the files were written
+// in, not of the Atlas one. On a golang-migrate directory that is the `.up.sql`
+// halves alone: hashing the Atlas set there would cover both halves of every
+// pair and produce a sum the community binary — and this binary's own
+// `migrate hash` — then refuse.
 func preparePublicationSnapshot(
 	baseSnapshot fsnapshot.Snapshot,
 	batch migrationBatch,
 	contents []MigrationFileContent,
+	format atlasmigrateimport.Format,
 ) (fsnapshot.Snapshot, *migratesum.SumFile, error) {
 	files := make(map[string][]byte, len(batch.names))
 	for i, name := range batch.names {
@@ -348,14 +385,32 @@ func preparePublicationSnapshot(
 	if err != nil {
 		return fsnapshot.Snapshot{}, nil, fmt.Errorf("build published migration snapshot: %w", err)
 	}
-	sum, err := migratesum.ComputeWithFormat(
-		publishedSnapshot,
-		migrator.MigrationDirFormatAtlas,
-	)
+	sum, err := computePublicationSum(publishedSnapshot, format)
 	if err != nil {
 		return fsnapshot.Snapshot{}, nil, fmt.Errorf("compute published migration checksum: %w", err)
 	}
 	return publishedSnapshot, sum, nil
+}
+
+// computePublicationSum hashes a published directory as format's own reader
+// selects it.
+//
+// The native Atlas layout keeps going through [migratesum.ComputeWithFormat],
+// which is the computation every other native-layout path in this repository
+// already runs; only the foreign layouts take the covered-set route, so this
+// change cannot move an atlas.sum the Atlas layout was already producing.
+func computePublicationSum(
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+) (*migratesum.SumFile, error) {
+	if ReadsNativeAtlasDir(format) {
+		return migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	}
+	names, err := atlasmigrateimport.SumFileNames(fsys, format)
+	if err != nil {
+		return nil, err
+	}
+	return migratesum.ComputeAtlasFiles(fsys, names)
 }
 
 func beginPublication(
@@ -1290,11 +1345,28 @@ func stageMigrationBatchAt(
 	version int64,
 	contents []MigrationFileContent,
 ) (migrationBatch, error) {
+	return stageMigrationBatchAtInFormat(
+		w,
+		name,
+		version,
+		contents,
+		atlasmigrateimport.FormatAtlas,
+	)
+}
+
+func stageMigrationBatchAtInFormat(
+	w *migrationWriterDir,
+	name string,
+	version int64,
+	contents []MigrationFileContent,
+	format atlasmigrateimport.Format,
+) (migrationBatch, error) {
 	return stageMigrationBatchAtWithModeDetector(
 		w,
 		name,
 		version,
 		contents,
+		format,
 		detectPublicationMode,
 	)
 }
@@ -1304,24 +1376,26 @@ func stageMigrationBatchAtWithModeDetector(
 	name string,
 	version int64,
 	contents []MigrationFileContent,
+	format atlasmigrateimport.Format,
 	detectMode func(*pathguard.OpenedDirectory, string) (publicationMode, error),
 ) (migrationBatch, error) {
 	if !w.Exists() {
 		return migrationBatch{}, w.missingDirError()
 	}
-	batch := migrationBatch{
-		paths:       make([]string, 0, len(contents)),
-		names:       make([]string, 0, len(contents)),
-		stagedNames: make([]string, 0, len(contents)),
+	artifacts, err := composeMigrationArtifacts(format, name, version, contents)
+	if err != nil {
+		return migrationBatch{}, err
 	}
-	for i, content := range contents {
-		fileVersion := version + int64(i)
-		slug := migrationSlug(name + content.NameSuffix)
-		fileName := fmt.Sprintf("%d_%s.sql", fileVersion, slug)
+	batch := migrationBatch{
+		paths:       make([]string, 0, len(artifacts)),
+		names:       make([]string, 0, len(artifacts)),
+		stagedNames: make([]string, 0, len(artifacts)),
+	}
+	for _, artifact := range artifacts {
 		stagedName, err := stageRootedFile(
 			w.dir,
 			stagedMigrationPattern,
-			[]byte(content.SQL),
+			artifact.Contents,
 			publishedFileMode,
 		)
 		if err != nil {
@@ -1330,8 +1404,8 @@ func stageMigrationBatchAtWithModeDetector(
 				removeStagedFiles(w, batch.stagedNames),
 			)
 		}
-		batch.paths = append(batch.paths, filepath.Join(w.path, fileName))
-		batch.names = append(batch.names, fileName)
+		batch.paths = append(batch.paths, filepath.Join(w.path, artifact.Name))
+		batch.names = append(batch.names, artifact.Name)
 		batch.stagedNames = append(batch.stagedNames, stagedName)
 	}
 	mode, err := detectMode(w.dir, batch.stagedNames[0])
@@ -1410,12 +1484,17 @@ func stageRootedFile(
 // yields an unparseable stamp degrades to a usable version rather than an
 // error from a function with nothing to report.
 func MigrationVersion() int64 {
-	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	version, err := strconv.ParseInt(migrationVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
 		return migrator.GetNextMigrationVersion()
 	}
 	return version
 }
+
+// migrationVersionClock reads the wall clock [MigrationVersion] stamps from. It
+// is a variable so a test can freeze the second and then state the exact version
+// a scan must choose; production never assigns it.
+var migrationVersionClock = func() time.Time { return time.Now().UTC() }
 
 // nextMigrationVersionFS returns the first version at which count consecutive
 // migration versions are all free.
@@ -1425,6 +1504,12 @@ func MigrationVersion() int64 {
 // empty directory it started from `time.Now().Unix()`, a ten-digit epoch rather
 // than a timestamp, and on a directory whose newest version ended in `59`
 // seconds it produced `...235960`, which is not a time anyone can parse back.
+//
+// Collisions alone can still reach `...235960`, which is why the step asks
+// [migrationversion.WritableRun] rather than adding one: two diffs inside the
+// same second at :59, or a single plan whose concurrent-index half is staged at
+// version+1 (see BuildMigrationFileContents), both land there otherwise
+// (stokaro/ptah#938).
 func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
 	if err != nil {
@@ -1434,11 +1519,24 @@ func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 	for _, file := range files {
 		taken[file.Version] = struct{}{}
 	}
-	version := MigrationVersion()
-	for collidesWithTakenVersions(taken, version, count) {
+	return firstFreeMigrationVersionRun(taken, MigrationVersion(), count)
+}
+
+// firstFreeMigrationVersionRun is the version scan with the clock and the
+// directory already read, so it can be stated as a value rather than raced
+// against a real second.
+func firstFreeMigrationVersionRun(taken map[int64]struct{}, version int64, count int) (int64, error) {
+	for {
+		base, err := migrationversion.WritableRun(version, count, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = base
+		if !collidesWithTakenVersions(taken, version, count) {
+			return version, nil
+		}
 		version++
 	}
-	return version, nil
 }
 
 // collidesWithTakenVersions reports whether any of the count consecutive

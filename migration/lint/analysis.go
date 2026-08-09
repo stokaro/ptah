@@ -1,8 +1,10 @@
 package lint
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -13,6 +15,40 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+// errNoSQLMigrationFiles reports a directory holding no *.sql file at all. It
+// is a sentinel rather than an inline message because the Atlas-compatible
+// profile answers it with an empty analysis instead of a failure, and telling
+// the two apart by message text would break the moment the wording changed.
+var errNoSQLMigrationFiles = errors.New("no *.sql migration files found")
+
+// loadAnalyzableSources reads the SQL sources to analyze, returning an empty
+// set for a directory that holds none on a surface where that is nothing to do
+// rather than a failure. Every step below iterates over the returned names, so
+// an empty set analyzes to an empty result with no branch of its own.
+//
+// An empty migration directory analyzes to nothing on the Atlas-compatible
+// surface, where the pinned community binary v1.3.0 exits 0 with no output for
+// `migrate lint --latest 1` on one.
+//
+// The native profile keeps the refusal: `ptah migrations lint` names a
+// directory to analyze, and answering "no findings" for a directory that holds
+// nothing to analyze reports success for work never done. The Atlas surface
+// cannot afford that reading, because its verb runs in a repository's CI
+// before the first migration exists (stokaro/ptah#1241, adjacent to item 7).
+func loadAnalyzableSources(
+	fsys fs.FS,
+	profile CompatibilityProfile,
+) (sqlSources, []string, error) {
+	sources, names, err := loadSQLSources(fsys)
+	if err == nil {
+		return sources, names, nil
+	}
+	if profile == CompatibilityProfileAtlas && errors.Is(err, errNoSQLMigrationFiles) {
+		return sqlSources{}, nil, nil
+	}
+	return nil, nil, err
+}
 
 // CompatibilityProfile selects command-surface-specific lint semantics.
 type CompatibilityProfile string
@@ -154,12 +190,21 @@ type File struct {
 	// can contribute zero, one, or several changes, so len(Changes) is not the
 	// statement count. Ordered by statement, then by the order changes appear
 	// within each statement.
-	Changes         []SchemaChange
+	Changes []SchemaChange
+	// scopeExcluded holds the statement indexes the reviewed-schema filter left
+	// out, so a finding about one of them is dropped by the same decision that
+	// dropped its change. Without it the two disagreed: a rule that attaches no
+	// subject produced a finding for a statement the scope had already removed
+	// from the counts (stokaro/ptah#1249).
+	scopeExcluded   map[int]bool
 	suppressedRules []atlaslint.Target
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.
 	compatibility CompatibilityProfile
+	// baseline is the schema state this file's version starts from, when the
+	// caller supplied one. Rules read it for facts the statement cannot carry.
+	baseline baselineColumns
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -176,9 +221,10 @@ type VersionSelection struct {
 // copies, so callers cannot modify the captured files, findings, or source
 // snapshot.
 type Analysis struct {
-	files    []File
-	findings []Finding
-	snapshot fsnapshot.Snapshot
+	files            []File
+	findings         []Finding
+	snapshot         fsnapshot.Snapshot
+	baselineVersions []int64
 }
 
 // Files returns every prepared migration file in the captured directory.
@@ -202,6 +248,17 @@ func (a Analysis) Findings() []Finding {
 	return cloneFindings(a.findings)
 }
 
+// BaselineVersions returns the analyzed migration versions whose starting
+// schema state would let a second analysis say more than SQL text alone can,
+// sorted ascending.
+//
+// It is empty for a run that already has nothing to gain, so a caller can skip
+// the dev-database round trips and the second analysis entirely. Feed the
+// versions back through [Options.Baseline]; see [BaselineColumn].
+func (a Analysis) BaselineVersions() []int64 {
+	return slices.Clone(a.baselineVersions)
+}
+
 // SnapshotFS returns a read-only filesystem containing the SQL sources,
 // integrity files, and lint configuration captured for this analysis. Each call
 // returns an independent snapshot view.
@@ -220,6 +277,7 @@ func cloneFiles(files []File) []File {
 func cloneFile(file File) File {
 	file.suppressedRules = slices.Clone(file.suppressedRules)
 	file.Changes = slices.Clone(file.Changes)
+	file.scopeExcluded = maps.Clone(file.scopeExcluded)
 	statements := file.Statements
 	file.Statements = make([]Statement, len(statements))
 	for i := range statements {
@@ -249,27 +307,39 @@ func cloneFindings(findings []Finding) []Finding {
 	return cloned
 }
 
+// ValidateOptions checks a lint policy without reading migration files. Apply
+// gates should call it before any early return or bypass that can skip analysis.
+func ValidateOptions(opts Options) error {
+	_, _, err := validateOptions(opts)
+	return err
+}
+
+func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) {
+	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
+		return "", nil, err
+	}
+	rules := rulesForOptions(opts)
+	if err := validateRules(rules); err != nil {
+		return "", nil, err
+	}
+	if err := validateRuleConfigs(opts.RuleConfigs); err != nil {
+		return "", nil, err
+	}
+	if err := validateRuleSelectors(opts.Disabled); err != nil {
+		return "", nil, err
+	}
+	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
+		return "", nil, err
+	}
+	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	return dirFormat, rules, err
+}
+
 // AnalyzeFS captures and analyzes every *.sql file under fsys recursively.
 // Input file contents are read exactly once; template rendering, linting,
 // replay, and reporting can all consume the returned immutable snapshot.
 func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
-	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
-		return Analysis{}, err
-	}
-	rules := rulesForOptions(opts)
-	if err := validateRules(rules); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateRuleConfigs(opts.RuleConfigs); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateRuleSelectors(opts.Disabled); err != nil {
-		return Analysis{}, err
-	}
-	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
-		return Analysis{}, err
-	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	dirFormat, rules, err := validateOptions(opts)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -277,7 +347,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	if err != nil {
 		return Analysis{}, err
 	}
-	sources, names, err := loadSQLSources(snapshot)
+	sources, names, err := loadAnalyzableSources(snapshot, opts.Compatibility)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -306,6 +376,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 
 	mode := modeForDialect(opts.Dialect)
 	scope := newSchemaScope(opts.SchemaScope)
+	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -322,6 +393,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			opts.Selection,
 			opts.Compatibility,
 			scope,
+			baseline,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -335,7 +407,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			continue
 		}
 		file := cloneFile(files[i])
-		findings = append(findings, scope.keepFindings(runRules(&file, opts, rules))...)
+		findings = append(findings, scope.keepFindings(file.scopeExcluded, runRules(&file, opts, rules))...)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
@@ -348,9 +420,10 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	})
 
 	return Analysis{
-		files:    files,
-		findings: cloneFindings(findings),
-		snapshot: snapshot,
+		files:            files,
+		findings:         cloneFindings(findings),
+		snapshot:         snapshot,
+		baselineVersions: baselineVersions(files),
 	}, nil
 }
 
@@ -382,7 +455,7 @@ func loadSQLSources(fsys fs.FS) (sqlSources, []string, error) {
 		return nil, nil, fmt.Errorf("list migration files: %w", err)
 	}
 	if len(names) == 0 {
-		return nil, nil, fmt.Errorf("no *.sql migration files found")
+		return nil, nil, errNoSQLMigrationFiles
 	}
 	sort.Strings(names)
 	sources := make(sqlSources, len(names))
@@ -463,6 +536,7 @@ func prepareFile(
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
 	scope schemaScope,
+	baseline map[int64]baselineColumns,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -493,6 +567,7 @@ func prepareFile(
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
+		baseline:       baseline[version],
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
@@ -542,7 +617,7 @@ func prepareFile(
 				suppressedRules: rawStmt.suppressedRules,
 			})
 		}
-		file.Changes = extractSchemaChanges(&file, dialect, scope)
+		file.Changes, file.scopeExcluded = extractSchemaChanges(&file, dialect, scope)
 	}
 	return file, nil
 }

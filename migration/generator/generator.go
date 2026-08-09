@@ -31,8 +31,8 @@ import (
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -138,29 +138,40 @@ type MigrationFilePair struct {
 	NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
 }
 
-// MigrationFiles represents the generated migration files.
+// MigrationFiles represents the generated migration files. Files is the
+// authoritative ordered list of migration pairs and their published paths.
 type MigrationFiles struct {
-	UpFile     string              // Path to the first up migration file
-	DownFile   string              // Path to the first down migration file
-	ReportFile string              // Path to the first safety report file, when requested
-	Version    int64               // First migration version (timestamp)
-	Files      []MigrationFilePair // All generated migration file pairs, in apply order
+	Files []MigrationFilePair // All generated migration file pairs, in apply order
 }
 
 // MigrationPlan is a fully validated migration that has not been written to
 // disk yet. WriteFiles publishes the planned migration once.
 type MigrationPlan struct {
-	mu           sync.Mutex
-	outputDir    string
-	outputState  migrationDirectoryState
-	reportFormat string
-	specs        []generatedMigrationSpec
-	written      bool
-}
-
-type migrationDirectoryState struct {
-	exists   bool
-	snapshot fsnapshot.Snapshot
+	mu        sync.Mutex
+	outputDir string
+	// dir is the migration directory, bound while the plan was built and held
+	// open until the plan's one publication attempt returns. It is what makes
+	// the plan a claim on a filesystem object rather than on a pathname:
+	// publication verifies and writes through this one handle, so a directory
+	// replaced -- or removed and recreated -- between the two exported calls
+	// cannot receive the batch (stokaro/ptah#1118).
+	//
+	// It is nil once the handles have been released, which is what marks the
+	// plan spent. WriteFilesContext releases them on the way out whether the
+	// publication succeeded or failed, so the window in which the plan holds
+	// the directory ends at a point the caller controls rather than at the next
+	// garbage collection. A plan that is never published at all still releases
+	// them when it is collected, because os.Root closes its descriptor from a
+	// finalizer.
+	dir *atlasmigrate.MigrationWriter
+	// plannedContents is what dir held when the plan was built, and nothing
+	// else. It used to carry a filesystem identity beside the contents; identity
+	// now lives in dir, which is a handle rather than a detached fs.FileInfo the
+	// operating system is free to reissue to a replacement.
+	plannedContents fsnapshot.Snapshot
+	reportFormat    string
+	specs           []generatedMigrationSpec
+	written         bool
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -178,6 +189,14 @@ type EmptyMigrationOptions struct {
 
 // GenerateEmptyMigration creates skeleton migration files for manual SQL
 // authoring.
+//
+// The whole creation runs through one rooted migration-directory handle, bound
+// before anything is read or written: the directory is materialized, the
+// version scanned, the files created and atlas.sum committed through that one
+// handle rather than through the pathname it was selected by
+// (stokaro/ptah#1118). When AllowedOutputRoot is set the handle is opened
+// through it, so the transaction stays inside that root even if the directory
+// or one of its ancestors is replaced after the path was validated.
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error) {
 	name := strings.TrimSpace(opts.MigrationName)
 	if strings.TrimSpace(opts.OutputDir) == "" {
@@ -192,81 +211,142 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 	if err != nil {
 		return nil, fmt.Errorf("error validating output directory: %w", err)
 	}
-	if dirFormat == migrator.MigrationDirFormatAtlas {
-		return generateEmptyAtlasMigration(name, outputDir)
-	}
-	if err := validateEmptyMigrationName(name); err != nil {
+	// The Atlas layout derives its own file name from the migration name and
+	// accepts an empty one, so only the paired layout validates it here -- and
+	// it validates before the directory is bound, so a rejected name never
+	// creates a directory.
+	if dirFormat != migrator.MigrationDirFormatAtlas {
+		if err := validateEmptyMigrationName(name); err != nil {
+			return nil, err
+		}
+	} else if err := checkAtlasEmptyMigrationNameReadable(name); err != nil {
 		return nil, err
 	}
 
-	version := migrator.GetNextMigrationVersion()
-	version = nextAvailableMigrationVersion(outputDir, version, name)
-	generatedAt := time.Now().UTC().Format(time.RFC3339)
+	root, err := openOutputRoot(opts.AllowedOutputRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = closeOutputRoot(root) }()
 
-	return createMigrationFiles(
-		outputDir,
-		version,
-		name,
-		emptyMigrationSQL(name, generatedAt, "UP"),
-		emptyMigrationSQL(name, generatedAt, "DOWN"),
-	)
+	return writeEmptyMigration(root, outputDir, name, dirFormat)
 }
 
-func generateEmptyAtlasMigration(name, outputDir string) (*MigrationFiles, error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-	version := nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
-	for {
-		filePath := filepath.Join(outputDir, atlasEmptyMigrationFileName(version, name))
-		if err := writeNewMigrationFile(filePath, ""); err != nil {
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write atlas migration file: %w", err)
-		}
-		if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {
-			_ = os.Remove(filePath)
-			return nil, fmt.Errorf("failed to write atlas migration checksum: %w", err)
-		}
-		pair := MigrationFilePair{
-			UpFile:  filePath,
-			Version: version,
-		}
-		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
-	}
-}
+// atlasVersionClock reads the wall clock an Atlas-layout version is stamped
+// from. It is a variable so a test can freeze the second and then state the
+// exact version a scan must choose; production never assigns it.
+var atlasVersionClock = func() time.Time { return time.Now().UTC() }
 
 func nextAtlasMigrationVersion() int64 {
-	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	version, err := strconv.ParseInt(atlasVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
 		return migrator.GetNextMigrationVersion()
 	}
 	return version
 }
 
+// nextAvailableAtlasMigrationVersion answers the version question for a
+// directory named by pathname, for readers that are not inside a writer
+// transaction. A writer holding a rooted handle asks nextAvailableAtlasVersion
+// over the names it listed through that handle instead, so it never resolves
+// the directory a second time.
 func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
-	if latest := latestExistingAtlasMigrationVersion(outputDir); latest >= version {
-		version = latest + 1
-	}
-	for fileExists(filepath.Join(outputDir, atlasEmptyMigrationFileName(version, ""))) {
-		version++
-	}
-	return version
-}
-
-func latestExistingAtlasMigrationVersion(outputDir string) int64 {
-	entries, err := os.ReadDir(outputDir)
+	next, err := nextAvailableAtlasVersion(migrationDirFileNames(outputDir), version)
 	if err != nil {
 		return 0
 	}
-	var latest int64
-	for _, entry := range entries {
-		if entry.IsDir() {
+	return next
+}
+
+// nextAvailableAtlasVersion returns a version that outranks every migration in
+// names. It is the CHECKPOINT rule: a checkpoint whose version does not sort
+// above the history it squashes would be replayed on top of that history by a
+// fresh database (stokaro/ptah#954), so here the bump past the newest migration
+// is the point.
+//
+// It is deliberately NOT the rule `migrate new` uses -- see
+// firstFreeAtlasVersion. The bump is also why this one can run out of versions:
+// a directory whose newest migration is at [migrationversion.AtlasMax] has
+// nothing above it, and `migrate import --dir-format flyway` puts a repeatable
+// migration exactly there. Before stokaro/ptah#938 that computed
+// math.MinInt64 and wrote it.
+//
+// The bump asks [migrationversion.Advance] rather than adding one, so it steps
+// to the next real second instead of the next integer. Beside a
+// `29991231235959_future.sql` the raw increment wrote a checkpoint at
+// 29991231235960 -- sixty seconds past the minute, an instant time.Parse
+// refuses -- and a second checkpoint then wrote 29991231235961 on top of it.
+func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
+	if latest := latestAtlasVersionIn(names); latest >= version {
+		next, err := migrationversion.Advance(latest, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = next
+	}
+	taken := nameSet(names)
+	for taken[atlasEmptyMigrationFileName(version, "")] {
+		next, err := migrationversion.Advance(version, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = next
+	}
+	return version, nil
+}
+
+// firstFreeAtlasVersion returns the first version at or after version that no
+// migration in names already occupies. It is the rule `migrate new` writes an
+// Atlas-layout migration with, and it does NOT bump past the newest migration.
+//
+// Two measurements settle that. The pinned community binary v1.3.0 stamps the
+// current UTC second and nothing else: into a directory holding
+// `29991231235959_future.sql` it writes today's version, sorting BELOW the
+// migration already there. And `migrate diff` in this binary has done the same
+// since stokaro/ptah#1218 (see atlasmigrate.nextMigrationVersionFS), as does
+// `migrate new` for the five external layouts (atlasmigrate.WriteSkeletonMigration).
+// Bumping here made `migrate new` the one verb in the binary stamping a
+// different shape: on that directory it wrote `29991231235960`, a version that
+// is not a time anyone can parse back, while `migrate diff` a second later
+// wrote the ordinary UTC stamp (stokaro/ptah#938).
+//
+// The collision step asks [migrationversion.Writable] rather than testing the
+// bounds itself, so two migrations created inside the same second at :59 land
+// on the next real second instead of on a sixtieth one.
+func firstFreeAtlasVersion(names []string, version int64) (int64, error) {
+	taken := atlasVersionsIn(names)
+	for {
+		free, err := migrationversion.Writable(version, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = free
+		if _, ok := taken[version]; !ok {
+			return version, nil
+		}
+		version++
+	}
+}
+
+// atlasVersionsIn returns the versions names already occupy. A version is taken
+// by ANY migration at it, whatever its description, which is what the reader
+// orders by and what atlasmigrate.nextMigrationVersionFS already checks.
+func atlasVersionsIn(names []string) map[int64]struct{} {
+	taken := make(map[int64]struct{}, len(names))
+	for _, name := range names {
+		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
+		if err != nil {
 			continue
 		}
-		migrationFile, err := migrator.ParseAtlasMigrationFileName(entry.Name())
+		taken[migrationFile.Version] = struct{}{}
+	}
+	return taken
+}
+
+func latestAtlasVersionIn(names []string) int64 {
+	var latest int64
+	for _, name := range names {
+		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
 		if err != nil {
 			continue
 		}
@@ -277,15 +357,51 @@ func latestExistingAtlasMigrationVersion(outputDir string) int64 {
 	return latest
 }
 
+// atlasEmptyMigrationFileName composes the Atlas-layout file name `migrate new`
+// writes, and it carries the caller's name unchanged.
+//
+// It used to rewrite the name first: spaces became hyphens and every character
+// outside [-_0-9A-Za-z] was dropped, so `migrate new "add users table"` wrote
+// `<version>_add-users-table.sql` and `migrate new "add_users.sql"` wrote
+// `<version>_add_userssql.sql`. The Atlas layout is not ours to rename in: the
+// pinned community binary v1.3.0 composes `<version>_<name>.sql` from the name
+// verbatim, so the same two commands write `<version>_add users table.sql` and
+// `<version>_add_users.sql.sql` there (measured 2026-08-08). The file name is
+// covered by atlas.sum, so a rewritten name is also a different checksum for the
+// same command (stokaro/ptah#1235 findings 8.6 and 8.7).
+//
+// Two rules still apply and are deliberate, not leftovers:
+//
+//   - [GenerateEmptyMigration] trims leading and trailing whitespace off the
+//     name for every layout. That binary keeps it -- `migrate new "  padded  "`
+//     writes `<version>_  padded  .sql` -- but a file name with trailing spaces
+//     does not survive every filesystem this tool writes into, and no finding in
+//     that register asks for one.
+//   - A path separator is refused rather than stripped, on the compatibility
+//     surface by checkAtlasMigrationName and here by the rooted writer, which
+//     cannot open a path outside the directory it holds.
+//
+// [atlasCheckpointNameStem] keeps the old rewriting for `migrate checkpoint`.
+// That verb has no measured counterpart on the pinned binary, and its writer
+// resolves the file by pathname rather than through a rooted handle.
 func atlasEmptyMigrationFileName(version int64, name string) string {
-	name = atlasEmptyMigrationName(name)
 	if name == "" {
 		return fmt.Sprintf("%d.sql", version)
 	}
 	return fmt.Sprintf("%d_%s.sql", version, name)
 }
 
-func atlasEmptyMigrationName(name string) string {
+// atlasCheckpointNameStem maps a checkpoint description onto a conservative file
+// name stem: spaces to hyphens, everything outside [-_0-9A-Za-z] dropped.
+//
+// This is what every Atlas-layout name used to go through. `migrate new` no
+// longer does, because that binary was measured writing the name verbatim there.
+// `migrate checkpoint` keeps it: the register that prompted the change records
+// no cell for the verb, so there is nothing measured to move towards, and
+// [WriteAtlasCheckpointFile] joins the stem onto a pathname instead of opening
+// it through a rooted directory handle, so a stem carrying a separator would
+// name a file outside the directory the caller asked for.
+func atlasCheckpointNameStem(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ReplaceAll(name, " ", "-")
 	var b strings.Builder
@@ -302,6 +418,45 @@ func isAtlasMigrationNameChar(r rune) bool {
 		('0' <= r && r <= '9') ||
 		('A' <= r && r <= 'Z') ||
 		('a' <= r && r <= 'z')
+}
+
+// checkAtlasEmptyMigrationNameReadable refuses a migration name whose composed
+// file name this tool would read back as something other than the new up
+// migration it just wrote.
+//
+// Writing the name verbatim means it can now reach the Atlas file-name grammar,
+// and one suffix collides with it: [migrator.ParseAtlasMigrationFileName]
+// classifies `<version>_x.down.sql` as the down half of a pair, because Atlas
+// importers emit that spelling for golang-migrate directories. So `migrate new
+// "x.down"` would write a file `migrate status` then refuses with `Atlas
+// migration version <version> has down migration but no up migration`, exit 1 --
+// one verb producing a directory another verb cannot read.
+//
+// The check is a round trip rather than a list of banned suffixes, so a later
+// change to that grammar cannot reopen the hole silently.
+//
+// This refusal is stricter than the pinned community binary v1.3.0, which
+// writes `<version>_x.down.sql` at exit 0 and reads it back as a pending
+// migration at exit 0. Ptah refusing to WRITE it does not fix Ptah's reader:
+// that binary can still hand us such a directory, and `migrate status` still
+// exits 1 on it. That reader gap is a separate divergence and is reported, not
+// closed, by the change that introduced this guard.
+func checkAtlasEmptyMigrationNameReadable(name string) error {
+	// The version is a stand-in: the grammar this probes keys on the name's
+	// suffix, not on the digits in front of it, and the message quotes the shape
+	// rather than a version no caller asked for.
+	const probeVersion = 1
+	fileName := atlasEmptyMigrationFileName(probeVersion, name)
+	parsed, err := migrator.ParseAtlasMigrationFileName(fileName)
+	if err == nil && parsed.Version == probeVersion && parsed.Direction == "up" {
+		return nil
+	}
+	shape := "<version>" + strings.TrimPrefix(fileName, strconv.FormatInt(probeVersion, 10))
+	return fmt.Errorf(
+		"migration name %q composes the file name %s, which this tool does not read back as a new migration",
+		name,
+		shape,
+	)
 }
 
 func validateEmptyMigrationName(name string) error {
@@ -351,31 +506,9 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
 	// Go entities directory.
-	generated := opts.Generated
-	if generated == nil {
-		var entitiesDir string
-
-		if opts.GoEntitiesFS == nil {
-			// Default to using the real filesystem
-			// We need to set up the filesystem root and relative path correctly
-			absPath, err := filepath.Abs(opts.GoEntitiesDir)
-			if err != nil {
-				return nil, fmt.Errorf("error resolving root directory path: %w", err)
-			}
-
-			// Use the parent directory as filesystem root and the basename as the path
-			fsRoot := filepath.Dir(absPath)
-			entitiesDir = filepath.Base(absPath)
-			opts.GoEntitiesFS = os.DirFS(fsRoot)
-		} else {
-			// For custom filesystems, use the path as-is
-			entitiesDir = opts.GoEntitiesDir
-		}
-
-		generated, err = goschema.ParseFS(opts.GoEntitiesFS, entitiesDir)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing Go entities: %w", err)
-		}
+	generated, err := resolveDesiredSchema(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Connect to database and read current schema
@@ -395,10 +528,25 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
-	if err := recoverMigrationPublication(ctx, opts.OutputDir); err != nil {
+	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
 	}
-	outputState, err := captureMigrationDirectoryState(opts.OutputDir)
+	// Bind the migration directory here, at planning time, and hold it. Every
+	// later step of this plan -- the version scan below, the pre-publication
+	// verification, and the publication itself -- addresses that one handle.
+	writer, err := bindPlannedMigrationDir(opts.AllowedOutputRoot, opts.OutputDir)
+	if err != nil {
+		return nil, err
+	}
+	// Planning can still fail, or find nothing to do, on any of the paths
+	// below. Only a plan that is handed back keeps the handles.
+	planned := false
+	defer func() {
+		if !planned {
+			_ = writer.Close()
+		}
+	}()
+	plannedContents, err := captureMigrationDirectoryContents(writer)
 	if err != nil {
 		return nil, fmt.Errorf("capture migration directory before planning: %w", err)
 	}
@@ -423,9 +571,14 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, nil
 	}
 
-	// 4. Generate migration version (timestamp)
+	// 4. Generate migration version (timestamp). The scan for a free version
+	// reads the bound handle rather than the pathname, so the names this plan
+	// avoids colliding with are the ones in the directory it will publish into.
 	version := migrator.GetNextMigrationVersion()
-	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
+	version, err = nextAvailableMigrationVersion(writer, version, opts.MigrationName)
+	if err != nil {
+		return nil, fmt.Errorf("error reading migration directory: %w", err)
+	}
 	slog.Debug("Generated migration version", "version", version)
 
 	qualifier, err := atlasmigrate.ParseQualifier(opts.SchemaQualifier)
@@ -467,17 +620,67 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		}
 	}
 
+	planned = true
 	return &MigrationPlan{
-		outputDir:    opts.OutputDir,
-		outputState:  outputState,
-		reportFormat: opts.ReportFormat,
-		specs:        specs,
+		outputDir:       opts.OutputDir,
+		dir:             writer,
+		plannedContents: plannedContents,
+		reportFormat:    opts.ReportFormat,
+		specs:           specs,
 	}, nil
 }
 
-func recoverMigrationPublication(ctx context.Context, outputDir string) error {
-	if err := os.MkdirAll(filepath.Dir(filepath.Clean(outputDir)), 0755); err != nil {
-		return fmt.Errorf("create migration directory parent: %w", err)
+// resolveDesiredSchema answers what the migration should bring the database to:
+// a pre-merged schema when the caller assembled one from several sources, and
+// otherwise the Go entities directory, parsed through a filesystem rooted at its
+// parent so the scan cannot walk out of the directory the caller named.
+func resolveDesiredSchema(opts GenerateMigrationOptions) (*goschema.Database, error) {
+	if opts.Generated != nil {
+		return opts.Generated, nil
+	}
+	entitiesFS := opts.GoEntitiesFS
+	entitiesDir := opts.GoEntitiesDir
+	if entitiesFS == nil {
+		absPath, err := filepath.Abs(opts.GoEntitiesDir)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving root directory path: %w", err)
+		}
+		entitiesFS = os.DirFS(filepath.Dir(absPath))
+		entitiesDir = filepath.Base(absPath)
+	}
+	generated, err := goschema.ParseFS(entitiesFS, entitiesDir)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing Go entities: %w", err)
+	}
+	return generated, nil
+}
+
+// recoverMigrationPublication resolves an interrupted publication left by an
+// earlier run, before this one starts planning. It resolves the directory by
+// pathname because it is the start of its own transaction rather than a step
+// inside this one; the levels above it are still created through the confining
+// root, so a recovery run cannot materialize directories outside it.
+func recoverMigrationPublication(
+	ctx context.Context,
+	allowedOutputRoot, outputDir string,
+) error {
+	root, err := openOutputRoot(allowedOutputRoot)
+	if err != nil {
+		return err
+	}
+	return errors.Join(
+		recoverMigrationPublicationWithin(ctx, root, outputDir),
+		closeOutputRoot(root),
+	)
+}
+
+func recoverMigrationPublicationWithin(
+	ctx context.Context,
+	root *pathguard.OpenedDirectory,
+	outputDir string,
+) error {
+	if err := atlasmigrate.EnsureMigrationParent(root, outputDir); err != nil {
+		return err
 	}
 	if err := atlasmigrate.RecoverPendingPublication(ctx, outputDir); err != nil {
 		return fmt.Errorf("recover migration publication before planning: %w", err)
@@ -493,6 +696,26 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 
 // WriteFilesContext publishes the migration artifacts represented by the plan.
 // The context bounds waiting for the migration-directory publication lock.
+//
+// The plan already holds the migration directory. This call does not reopen it:
+// under the lock it revalidates the handle it was given, compares the contents
+// against what planning recorded, and publishes through that same handle.
+//
+// One call is one use of the plan. Whatever this call returns, it releases the
+// migration directory handles before returning, so a failed publication ends
+// the plan's hold on the directory at a moment the caller can observe instead
+// of at the next garbage collection. A plan whose attempt already happened is
+// reported rather than retried: its recorded contents and its chosen version
+// both describe a directory as it was before the attempt, so the honest retry
+// is a fresh PlanMigration.
+//
+// It used to reopen the directory by pathname here and decide whether it was
+// still the planned one by comparing an fs.FileInfo captured before any handle
+// existed. That comparison is only as good as the operating system's promise
+// not to reissue an identifier, and it makes no such promise: measured on ext4,
+// a directory removed and recreated at the same pathname took its inode number
+// back in 20 of 20 cycles, so the guard stayed silent on exactly the
+// substitution an attacker performs most easily (stokaro/ptah#1118).
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error) {
 	if p == nil {
 		return nil, fmt.Errorf("migration plan is nil")
@@ -504,33 +727,20 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
 	}
+	if p.dir == nil {
+		return nil, fmt.Errorf("migration plan was released by a failed publication")
+	}
+	// The plan is single-use, so the handles have no reader left once this call
+	// returns -- on the failure paths as much as on the successful one.
+	defer p.release()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(filepath.Clean(p.outputDir)), 0755); err != nil {
-		return nil, fmt.Errorf("create migration directory parent: %w", err)
-	}
 	var files *MigrationFiles
 	err := atlasmigrate.WithMigrationDirectoryLock(ctx, p.outputDir, 0, func(context.Context) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		currentState, err := captureMigrationDirectoryState(p.outputDir)
-		if err != nil {
-			return fmt.Errorf("capture migration directory before publication: %w", err)
-		}
-		if !p.outputState.equal(currentState) {
-			return ErrMigrationDirectoryChanged
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		files, err = createMigrationFilesFromSpecs(ctx, p.outputDir, p.reportFormat, p.specs)
-		if err != nil {
-			return fmt.Errorf("error creating migration files: %w", err)
-		}
-		p.written = true
-		return nil
+		published, publishErr := p.publishLocked(ctx)
+		files = published
+		return publishErr
 	})
 	if err != nil {
 		return nil, err
@@ -538,26 +748,128 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	return files, nil
 }
 
-func captureMigrationDirectoryState(outputDir string) (migrationDirectoryState, error) {
-	info, err := os.Stat(outputDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return migrationDirectoryState{}, nil
+// release closes the migration directory handles the plan holds and marks the
+// plan spent. It is idempotent and runs with p.mu held.
+//
+// Deterministic release is the point. os.Root closes its descriptor from a
+// finalizer, so an unreleased handle survives until the next collection; on
+// Windows that is also the window in which nothing else can rename or remove
+// the migration directory, and a failed publication would otherwise leave that
+// window open with no event that ends it (stokaro/ptah#1118).
+func (p *MigrationPlan) release() {
+	if p.dir == nil {
+		return
 	}
-	if err != nil {
-		return migrationDirectoryState{}, err
-	}
-	if !info.IsDir() {
-		return migrationDirectoryState{}, fmt.Errorf("%q exists and is not a directory", outputDir)
-	}
-	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(outputDir))
-	if err != nil {
-		return migrationDirectoryState{}, err
-	}
-	return migrationDirectoryState{exists: true, snapshot: snapshot}, nil
+	_ = p.dir.Close()
+	p.dir = nil
 }
 
-func (s migrationDirectoryState) equal(other migrationDirectoryState) bool {
-	return s.exists == other.exists && s.snapshot.Equal(other.snapshot)
+func (p *MigrationPlan) publishLocked(ctx context.Context) (*MigrationFiles, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := p.dir.Revalidate(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMigrationDirectoryChanged, err)
+	}
+	currentContents, err := captureMigrationDirectoryContents(p.dir)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory before publication: %w", err)
+	}
+	// The contents check is the concurrency half of the guard: another writer
+	// that added a migration while this plan was outstanding. Which filesystem
+	// object is being committed to was settled by Revalidate above.
+	if !p.plannedContents.Equal(currentContents) {
+		return nil, ErrMigrationDirectoryChanged
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	notifyMigrationPublicationVerified()
+	files, err := publishPlannedMigration(ctx, p.dir, p.reportFormat, p.specs)
+	if err != nil {
+		return nil, fmt.Errorf("error creating migration files: %w", err)
+	}
+	p.written = true
+	return files, nil
+}
+
+// captureMigrationDirectoryContents reads the migration directory through the
+// bound handle, so what the publication compares is the object it is about to
+// commit to rather than whatever the pathname resolves to at comparison time.
+//
+// A directory the writer bound as absent reads as the empty snapshot. It cannot
+// have appeared since -- Revalidate refuses that before this runs -- so the two
+// captures either both describe the bound object or both describe nothing.
+func captureMigrationDirectoryContents(
+	writer *atlasmigrate.MigrationWriter,
+) (fsnapshot.Snapshot, error) {
+	if !writer.Exists() {
+		return fsnapshot.Snapshot{}, nil
+	}
+	fsys, err := writer.FS()
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, explainMigrationDirectoryRead(writer, err)
+	}
+	return snapshot, nil
+}
+
+// explainMigrationDirectoryRead names the entries that make a migration
+// directory unreadable through the handle the run bound, when that is what went
+// wrong. Any other failure is returned unchanged.
+//
+// The reachable cause is a migration file that is a symbolic link out of the
+// migration directory -- a shared migration linked in from elsewhere. Reading
+// the directory by pathname followed such a link, and reading it through the
+// bound handle does not, so this is a refusal rather than an accident: every
+// read, checksum and publication of the directory goes through the object the
+// run opened, and a file whose bytes live outside it cannot be part of a
+// directory Ptah is willing to seal (stokaro/ptah#1118). A link that resolves
+// inside the migration directory stays supported and never reaches this.
+//
+// The diagnosis runs only after a failed capture, so the successful path pays
+// nothing for it.
+func explainMigrationDirectoryRead(writer *atlasmigrate.MigrationWriter, cause error) error {
+	escaping := escapingMigrationEntries(writer)
+	if len(escaping) == 0 {
+		return cause
+	}
+	return fmt.Errorf(
+		"migration directory %s: symbolic links resolving outside it: %s;"+
+			" a migration file linked in from another directory is refused because"+
+			" the whole directory is read, checksummed and published through the"+
+			" directory itself: %w",
+		writer.Path(),
+		strings.Join(escaping, ", "),
+		cause,
+	)
+}
+
+// escapingMigrationEntries lists the migration directory's symbolic links that
+// do not resolve inside it, asked through the bound handle: the link itself is
+// visible as an entry, and a stat that cannot follow it is the escape.
+func escapingMigrationEntries(writer *atlasmigrate.MigrationWriter) []string {
+	entries, err := writer.Entries()
+	if err != nil {
+		return nil
+	}
+	fsys, err := writer.FS()
+	if err != nil {
+		return nil
+	}
+	var escaping []string
+	for _, entry := range entries {
+		if entry.Type()&fs.ModeSymlink == 0 {
+			continue
+		}
+		if _, statErr := fs.Stat(fsys, entry.Name()); statErr != nil {
+			escaping = append(escaping, entry.Name())
+		}
+	}
+	return escaping
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
@@ -896,6 +1208,12 @@ func concurrentIndexRefsForPolicy(
 // A removal that is also an addition under the same identity is a redefinition
 // whose drop the planner pairs with the rebuild; it is excluded here so the
 // pair is never split across a transactional and a non-transactional file.
+//
+// A UNIQUE constraint's backing index is excluded for a different reason: it is
+// not dropped as an index at all (the planner spells it
+// ALTER TABLE ... DROP CONSTRAINT), and PostgreSQL has no concurrent form of
+// that statement. Routing it into the no-transaction file would also strand the
+// marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
 	diff *types.SchemaDiff,
 	info dbschematypes.DBInfo,
@@ -915,9 +1233,13 @@ func concurrentIndexDropRefsForPolicy(
 		diff.EffectiveIdentifierSemantics(info.Dialect),
 		diff.IndexAdditions(),
 	)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	var refs []types.IndexRef
 	for _, ref := range diff.IndexRemovals() {
 		if additions.Contains(ref) {
+			continue
+		}
+		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
 			continue
 		}
 		refs = append(refs, ref)
@@ -1023,6 +1345,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.EnumsModified = slices.Clone(diff.EnumsModified)
 	clone.IndexesAdded = slices.Clone(diff.IndexesAdded)
 	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
+	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
@@ -1039,6 +1362,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.CompositeTypesModified = slices.Clone(diff.CompositeTypesModified)
 	clone.RangesAdded = slices.Clone(diff.RangesAdded)
 	clone.RangesRemoved = slices.Clone(diff.RangesRemoved)
+	clone.RangesModified = slices.Clone(diff.RangesModified)
 	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
 	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
 	clone.ViewsModified = slices.Clone(diff.ViewsModified)
@@ -1371,6 +1695,44 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // to rebuild prior FK/PK/CHECK/UNIQUE definitions for reversed constraint
 // additions; it may be nil when callers only have the generated schema (the
 // reversed additions then fall back to the name-only path).
+//
+// # Every field of SchemaDiff is accounted for here
+//
+// This function builds a fresh SchemaDiff literal, and a literal that
+// enumerates fields has no compiler check for the ones it forgets. Nine fields
+// -- views, materialized views and triggers, added/removed/modified -- were
+// once simply absent, so every down migration silently dropped those whole
+// categories: an up that created a view rolled back to "No rollback operations
+// needed" and left the view in place (issue #1287). Three dispositions are
+// available, and every field must have exactly one:
+//
+//   - Exchanged. Added and removed swap where both sides carry the same kind of
+//     value and the reverse operation is the inverse of the forward one:
+//     tables, enums, indexes, extensions, functions, sequences, domains,
+//     composite types, ranges, views, materialized views, triggers, RLS
+//     policies, RLS enablement, roles, grants, grant options and constraints.
+//   - Carried. A Modified entry is not the inverse of itself. The planner
+//     re-renders a modified object from the schema it is handed, and the down
+//     direction is handed the pre-change database schema, so carrying the entry
+//     across is what restores the prior definition. Only the recorded
+//     "old -> new" description is flipped, plus any recorded prior state (a
+//     view's PreviousBody) that names a side rather than a change.
+//   - Derived. IdentifierSemantics is cloned rather than reversed: it describes
+//     the catalog the diff was measured against, which does not have a
+//     direction. The table-qualified constraint collections are rebuilt from
+//     the pre-change database schema by reverseConstraintAdditions and
+//     reverseConstraintRemovals rather than swapped, because a down migration
+//     must restore the prior body, not the new one. ConstraintBackedIndexRemovals
+//     is derived too, and it redirects rather than reverses: it names the subset
+//     of the index removals whose object is really a UNIQUE constraint, so
+//     reverseIndexRemovals turns exactly that subset into constraint additions
+//     rebuilt from the introspected constraint, and leaves the rest as index
+//     additions.
+//
+// No field is deliberately dropped, and none is unreachable in the down
+// direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
+// that by reflection: it zeroes one field of a fully populated diff at a time
+// and fails when doing so leaves the reverse plan unchanged.
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	reversed := &types.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
@@ -1398,20 +1760,49 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		// Reverse user-defined type operations
 		DomainsAdded:           diff.DomainsRemoved,
 		DomainsRemoved:         diff.DomainsAdded,
-		DomainsModified:        reverseDomainDiffs(diff.DomainsModified),
+		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema),
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified),
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
+		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
 		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
 
-		// Reverse RLS policy operations
-		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved),                 // Policies to remove become policies to add (convert RLSPolicyRef to string)
-		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefsWithSchema(diff.RLSPoliciesAdded, schema), // Policies to add become policies to remove (convert string to RLSPolicyRef with table resolution)
+		// Reverse view, materialized view and trigger operations.
+		//
+		// Each side carries the same kind of value (view names, materialized
+		// view names, table-qualified trigger refs) and DROP is the inverse of
+		// CREATE for all three, so the plain swap is the correct reversal.
+		//
+		// The Modified entries are carried across rather than swapped: the
+		// planner re-renders a modified object from the schema it is handed,
+		// which in the down direction is the pre-change database schema, so the
+		// entry itself is what selects the prior definition. A view carries the
+		// body it will be replacing as well, and THAT is a side rather than a
+		// change, so it is exchanged for the up migration's target body -- the
+		// state the database is actually in when the rollback runs.
+		ViewsAdded:    diff.ViewsRemoved, // Views to remove become views to add
+		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
+		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema),
+
+		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
+		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
+		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified),
+
+		TriggersAdded:    diff.TriggersRemoved, // Triggers to remove become triggers to add
+		TriggersRemoved:  diff.TriggersAdded,   // Triggers to add become triggers to remove
+		TriggersModified: reverseTriggerDiffs(diff.TriggersModified),
+
+		// Reverse RLS policy operations. Both directions carry the owning
+		// table, so reversing is a swap and no name-to-table resolution is
+		// needed -- the resolution that used to happen here keyed a map by
+		// policy name and lost one of two policies that shared one.
+		RLSPoliciesAdded:    slices.Clone(diff.RLSPoliciesRemoved), // Policies to remove become policies to add
+		RLSPoliciesRemoved:  slices.Clone(diff.RLSPoliciesAdded),   // Policies to add become policies to remove
 		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
 
 		// Reverse RLS table enablement operations
@@ -1447,9 +1838,100 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
-	reversed.SetIndexAdditions(diff.IndexRemovals())
+	// A re-created table brings its own primary key and field-level foreign keys
+	// back with it, so listing those a second time as constraint additions is
+	// how a rollback of a DROP TABLE became unexecutable. This runs before the
+	// index-removal restorations are appended purely for readability: those are
+	// UNIQUE constraints, which the rule deliberately never drops.
+	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemovedWithTables, dbSchema)
+	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
+	reversed.SetIndexAdditions(indexAdditions)
 	reversed.SetIndexRemovals(diff.IndexAdditions())
+	for _, restored := range constraintRestorations {
+		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
+		reversed.ConstraintsAddedWithTables = append(reversed.ConstraintsAddedWithTables, restored)
+	}
 	return reversed
+}
+
+// reverseIndexRemovals splits the up direction's index removals by what the
+// object each one names actually is, because the down direction has to put that
+// object back and only one of the two spellings does.
+//
+// An ordinary index removal reverses into an index addition, which the down
+// path resolves from the introspected schema. A removal the comparator marked
+// as constraint-backed (ConstraintBackedIndexRemovals) does not: the object is
+// a UNIQUE constraint whose index carries the constraint's name, the up
+// direction dropped it with ALTER TABLE ... DROP CONSTRAINT, and the statement
+// that restores it is ALTER TABLE ... ADD CONSTRAINT ... UNIQUE. Reversing it
+// into an index addition is wrong twice over: the down path builds its target
+// from ConvertDBSchemaToGoSchema, which deliberately omits a constraint-backed
+// index (it is the constraint's, not an index of its own), so the addition has
+// no definition to resolve and down generation fails outright with
+// `added index users.uq_users_email at position 0 is missing or ambiguous in
+// the target schema` -- and where it did resolve it would rebuild a plain
+// unique index in place of the constraint, leaving the rollback's catalog
+// different from the one the migration started against.
+//
+// The prior body comes from the introspected constraint, the same source
+// reverseConstraintAdditions restores a removed UNIQUE constraint from, so a
+// covering INCLUDE list and NULLS [NOT] DISTINCT survive the round trip.
+//
+// A marked removal with no introspected constraint to rebuild from -- a nil
+// dbSchema, or a hand-built diff -- stays an index addition rather than
+// disappearing. That is the loud failure above, which is the right outcome: a
+// down migration that silently omits the uniqueness protection it is supposed
+// to restore is worse than one that refuses to be generated.
+func reverseIndexRemovals(
+	diff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
+) (additions []types.IndexRef, restored []types.ConstraintAdditionInfo) {
+	removals := diff.IndexRemovals()
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	if len(constraintBacked) == 0 {
+		return removals, nil
+	}
+	uniqueConstraints := introspectedUniqueConstraintsByHost(dbSchema)
+	for _, ref := range removals {
+		if _, ownedByConstraint := constraintBacked[ref]; !ownedByConstraint {
+			additions = append(additions, ref)
+			continue
+		}
+		dbConstraint, hasBody := uniqueConstraints[tableMemberKey{table: ref.TableName, member: ref.Name}]
+		columns := dbConstraint.ColumnNamesOrDefault()
+		if !hasBody || len(columns) == 0 {
+			additions = append(additions, ref)
+			continue
+		}
+		restored = append(restored, types.ConstraintAdditionInfo{
+			Name:           ref.Name,
+			TableName:      ref.TableName,
+			Type:           "UNIQUE",
+			Columns:        slices.Clone(columns),
+			IncludeColumns: slices.Clone(dbConstraint.IncludeColumns),
+			NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
+		})
+	}
+	return additions, restored
+}
+
+// introspectedUniqueConstraintsByHost keys the pre-change UNIQUE constraints by
+// the host table and name an IndexRef names, which is the identity the
+// comparator marked the removal under.
+func introspectedUniqueConstraintsByHost(
+	dbSchema *dbschematypes.DBSchema,
+) map[tableMemberKey]dbschematypes.DBConstraint {
+	constraints := make(map[tableMemberKey]dbschematypes.DBConstraint)
+	if dbSchema == nil {
+		return constraints
+	}
+	for _, constraint := range dbSchema.Constraints {
+		if constraint.Type != "UNIQUE" {
+			continue
+		}
+		constraints[tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}] = constraint
+	}
+	return constraints
 }
 
 func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
@@ -1930,67 +2412,167 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 	return reversed
 }
 
-func reverseDomainDiffs(domainDiffs []types.DomainDiff) []types.DomainDiff {
+// reverseDomainDiffs turns each modified domain around for the down direction.
+//
+// CurrentBaseType has to be re-derived rather than carried over: it names the
+// shape the DROP will run against, and a down migration runs against the shape
+// the up migration created. schema is the up direction's target, so that is
+// where the down direction's from-side lives. A nil schema leaves it empty and
+// the drop ordering falls back to declaration order.
+func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Database) []types.DomainDiff {
 	reversed := make([]types.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
-		reversed[i] = types.DomainDiff{DomainName: domainDiff.DomainName, Changes: reverseChangeMap(domainDiff.Changes)}
+		reversed[i] = types.DomainDiff{
+			DomainName:      domainDiff.DomainName,
+			Changes:         reverseChangeMap(domainDiff.Changes),
+			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
+		}
 	}
 	return reversed
 }
 
-func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff) []types.CompositeTypeDiff {
+// reverseViewDiffs carries modified views into the down direction.
+//
+// The entry is carried across rather than swapped with anything: the planner
+// renders a modified view from the schema it is given (the pre-change database
+// schema, in the down direction), so the entry itself is what selects the prior
+// definition.
+//
+// PreviousBody is different in kind: it names the body the view HAS when the
+// statement runs, not a change. When the rollback runs, the database holds what
+// the up migration wrote, which is the generated schema's body -- so that is
+// what the reversed entry must carry. Getting this wrong is not cosmetic: the
+// PostgreSQL planner reads it to decide whether CREATE OR REPLACE VIEW is legal
+// for the rollback, and PostgreSQL refuses the replace for every column-list
+// change except a trailing append.
+//
+// A nil schema (the deprecated reverseSchemaDiff entry point) leaves it empty,
+// which planners read as "not known" and answer with drop-and-recreate. That is
+// the safe direction: it always applies.
+//
+// Rollback is set for the same reason and is the other half of it. Where a
+// planner can neither prove the replace legal nor prove it refused, the answer
+// it should give differs by direction, and this is the only place that knows
+// which direction is being built.
+func reverseViewDiffs(viewDiffs []types.ViewDiff, schema *goschema.Database) []types.ViewDiff {
+	reversed := make([]types.ViewDiff, len(viewDiffs))
+	for i, viewDiff := range viewDiffs {
+		reversed[i] = types.ViewDiff{
+			ViewName:     viewDiff.ViewName,
+			Changes:      reverseChangeMap(viewDiff.Changes),
+			PreviousBody: generatedViewBody(schema, viewDiff.ViewName),
+			Rollback:     true,
+		}
+	}
+	return reversed
+}
+
+// reverseRangeDiffs mirrors reverseDomainDiffs for range types.
+func reverseRangeDiffs(rangeDiffs []types.RangeDiff, schema *goschema.Database) []types.RangeDiff {
+	reversed := make([]types.RangeDiff, len(rangeDiffs))
+	for i, rangeDiff := range rangeDiffs {
+		reversed[i] = types.RangeDiff{
+			RangeName:      rangeDiff.RangeName,
+			Changes:        reverseChangeMap(rangeDiff.Changes),
+			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
+		}
+	}
+	return reversed
+}
+
+func generatedViewBody(schema *goschema.Database, viewName string) string {
+	if schema == nil {
+		return ""
+	}
+	for _, view := range schema.Views {
+		if view.Name == viewName {
+			return strings.TrimSpace(view.Body)
+		}
+	}
+	return ""
+}
+
+func targetRangeSubtype(schema *goschema.Database, name string) string {
+	if schema == nil {
+		return ""
+	}
+	for _, rangeType := range schema.Ranges {
+		if rangeType.QualifiedName() == name {
+			return rangeType.Subtype
+		}
+	}
+	return ""
+}
+
+// reverseMaterializedViewDiffs carries modified materialized views into the
+// down direction, on the same terms as reverseViewDiffs. A materialized view
+// has no in-place replace at all, so there is no prior body to record: both
+// directions drop and recreate it.
+func reverseMaterializedViewDiffs(viewDiffs []types.MaterializedViewDiff) []types.MaterializedViewDiff {
+	reversed := make([]types.MaterializedViewDiff, len(viewDiffs))
+	for i, viewDiff := range viewDiffs {
+		reversed[i] = types.MaterializedViewDiff{ViewName: viewDiff.ViewName, Changes: reverseChangeMap(viewDiff.Changes)}
+	}
+	return reversed
+}
+
+// reverseTriggerDiffs carries modified triggers into the down direction, on the
+// same terms as reverseViewDiffs. TableName is part of the trigger's identity
+// rather than a changed value, so it is preserved. PostgreSQL 17.10 accepts
+// CREATE OR REPLACE TRIGGER even for a timing change, so a trigger needs no
+// legality test of its own.
+func reverseTriggerDiffs(triggerDiffs []types.TriggerDiff) []types.TriggerDiff {
+	reversed := make([]types.TriggerDiff, len(triggerDiffs))
+	for i, triggerDiff := range triggerDiffs {
+		reversed[i] = types.TriggerDiff{
+			TriggerName: triggerDiff.TriggerName,
+			TableName:   triggerDiff.TableName,
+			Changes:     reverseChangeMap(triggerDiff.Changes),
+		}
+	}
+	return reversed
+}
+
+// reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
+func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff, schema *goschema.Database) []types.CompositeTypeDiff {
 	reversed := make([]types.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
-		reversed[i] = types.CompositeTypeDiff{TypeName: compositeDiff.TypeName, Changes: reverseChangeMap(compositeDiff.Changes)}
+		reversed[i] = types.CompositeTypeDiff{
+			TypeName:          compositeDiff.TypeName,
+			Changes:           reverseChangeMap(compositeDiff.Changes),
+			CurrentFieldTypes: targetCompositeFieldTypes(schema, compositeDiff.TypeName),
+		}
 	}
 	return reversed
 }
 
-// convertRLSPolicyRefsToNames converts RLSPolicyRef slice to policy names for down migrations
-func convertRLSPolicyRefsToNames(policyRefs []types.RLSPolicyRef) []string {
-	names := make([]string, len(policyRefs))
-	for i, policyRef := range policyRefs {
-		names[i] = policyRef.PolicyName
+func targetDomainBaseType(schema *goschema.Database, name string) string {
+	if schema == nil {
+		return ""
 	}
-	return names
+	for _, domain := range schema.Domains {
+		if domain.QualifiedName() == name {
+			return domain.BaseType
+		}
+	}
+	return ""
 }
 
-// convertRLSPolicyNamesToRefs converts policy names to RLSPolicyRef for down migrations
-// This is needed because RLSPoliciesAdded contains policy names (strings) but
-// RLSPoliciesRemoved needs RLSPolicyRef (with both policy name and table name)
-//
-// Deprecated: Use convertRLSPolicyNamesToRefsWithSchema for proper table name resolution
-func convertRLSPolicyNamesToRefs(policyNames []string) []types.RLSPolicyRef {
-	return convertRLSPolicyNamesToRefsWithSchema(policyNames, nil)
-}
-
-// convertRLSPolicyNamesToRefsWithSchema converts policy names to RLSPolicyRef for down migrations
-// with proper table name resolution using the provided schema context
-func convertRLSPolicyNamesToRefsWithSchema(policyNames []string, schema *goschema.Database) []types.RLSPolicyRef {
-	refs := make([]types.RLSPolicyRef, len(policyNames))
-
-	// Create a lookup map for policy name to table name if schema is provided
-	policyToTable := make(map[string]string)
-	if schema != nil {
-		for _, policy := range schema.RLSPolicies {
-			policyToTable[policy.Name] = policy.Table
-		}
+func targetCompositeFieldTypes(schema *goschema.Database, name string) []string {
+	if schema == nil {
+		return nil
 	}
-
-	for i, policyName := range policyNames {
-		tableName := ""
-		if schema != nil {
-			if table, found := policyToTable[policyName]; found {
-				tableName = table
-			}
+	for _, composite := range schema.CompositeTypes {
+		if composite.QualifiedName() != name {
+			continue
 		}
-
-		refs[i] = types.RLSPolicyRef{
-			PolicyName: policyName,
-			TableName:  tableName,
+		fieldTypes := make([]string, len(composite.Fields))
+		for i, field := range composite.Fields {
+			fieldTypes[i] = field.Type
 		}
+		return fieldTypes
 	}
-	return refs
+	return nil
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
@@ -2044,31 +2626,59 @@ func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
 	return reversed
 }
 
-func nextAvailableMigrationVersion(outputDir string, version int64, migrationName string) int64 {
-	if latest := latestExistingMigrationVersion(outputDir); latest >= version {
-		version = latest + 1
+// nextAvailableMigrationVersion answers the version question over the names
+// listed through the writer handle the plan already holds, so the version it
+// avoids colliding with comes from the directory the plan will publish into
+// rather than from whatever the pathname resolves to while it is being chosen.
+func nextAvailableMigrationVersion(
+	writer *atlasmigrate.MigrationWriter,
+	version int64,
+	migrationName string,
+) (int64, error) {
+	names, err := migrationDirNames(writer)
+	if err != nil {
+		return 0, err
 	}
+	return nextAvailablePtahVersion(names, version, migrationName)
+}
+
+// nextAvailablePtahVersion keeps the paired layout's monotonic rule: the clock,
+// bumped past the newest migration when the clock does not already outrank it.
+// Nothing outside Ptah reads this layout, so no parity argument moves it off a
+// version that only ever goes forwards.
+//
+// What did move is the arithmetic. The bump is bounded by what a ten-digit
+// NNNNNNNNNN prefix can hold, because past it the writer produced an
+// eleven-digit name -- `10000000000_addposts.up.sql` -- that
+// [migrator.ParseMigrationFileName] refuses, so discovery dropped the file with
+// no diagnostic and `migrations up` reported success without running it
+// (stokaro/ptah#938).
+func nextAvailablePtahVersion(names []string, version int64, migrationName string) (int64, error) {
+	if latest := latestPtahVersionIn(names); latest >= version {
+		next, err := migrationversion.Next(latest, migrator.MigrationDirFormatPtah)
+		if err != nil {
+			return 0, err
+		}
+		version = next
+	}
+	taken := nameSet(names)
 	for {
-		upFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "up"))
-		downFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "down"))
-		if !fileExists(upFilePath) && !fileExists(downFilePath) {
-			return version
+		if err := migrationversion.Check(version, migrator.MigrationDirFormatPtah); err != nil {
+			return 0, err
+		}
+		upName := migrator.GenerateMigrationFileName(version, migrationName, "up")
+		downName := migrator.GenerateMigrationFileName(version, migrationName, "down")
+		if !taken[upName] && !taken[downName] {
+			return version, nil
 		}
 		version++
 	}
 }
 
-func latestExistingMigrationVersion(outputDir string) int64 {
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return 0
-	}
+func latestPtahVersionIn(names []string) int64 {
 	var latest int64
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		migrationFile, err := migrator.ParseMigrationFileName(entry.Name())
+	for _, name := range names {
+		migrationFile, err := migrator.ParseMigrationFileName(name)
 		if err != nil {
 			continue
 		}
@@ -2077,6 +2687,33 @@ func latestExistingMigrationVersion(outputDir string) int64 {
 		}
 	}
 	return latest
+}
+
+// migrationDirFileNames lists a migration directory by pathname. It is the
+// reader-side counterpart of migrationDirNames, which lists the same thing
+// through a bound writer handle; a directory that cannot be listed reads as
+// empty, so a version scan over a missing directory starts from scratch.
+func migrationDirFileNames(outputDir string) []string {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+func nameSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		set[name] = true
+	}
+	return set
 }
 
 func fileExists(path string) bool {
@@ -2092,66 +2729,6 @@ func withNoTransactionDirective(sql string) string {
 		return sql
 	}
 	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
-}
-
-// createMigrationFiles creates the up and down migration files
-func createMigrationFiles(outputDir string, version int64, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	for {
-		upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
-		downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
-
-		upFilePath := filepath.Join(outputDir, upFileName)
-		downFilePath := filepath.Join(outputDir, downFileName)
-
-		if err := writeNewMigrationFile(upFilePath, upSQL); err != nil {
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write up migration file: %w", err)
-		}
-
-		if err := writeNewMigrationFile(downFilePath, downSQL); err != nil {
-			_ = os.Remove(upFilePath)
-			if errors.Is(err, os.ErrExist) {
-				version++
-				continue
-			}
-			return nil, fmt.Errorf("failed to write down migration file: %w", err)
-		}
-
-		pair := MigrationFilePair{
-			UpFile:   upFilePath,
-			DownFile: downFilePath,
-			Version:  version,
-		}
-		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
-	}
-}
-
-func createMigrationFilesFromSpecs(
-	ctx context.Context,
-	outputDir, reportFormat string,
-	specs []generatedMigrationSpec,
-) (*MigrationFiles, error) {
-	if len(specs) == 0 {
-		return nil, nil
-	}
-	artifacts, pairs, err := renderMigrationArtifacts(outputDir, reportFormat, specs)
-	if err != nil {
-		return nil, err
-	}
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-	if _, err := atlasmigrate.PublishArtifactsLocked(ctx, outputDir, artifacts); err != nil {
-		return nil, err
-	}
-	return migrationFilesFromPairs(pairs), nil
 }
 
 func renderMigrationArtifacts(
@@ -2211,16 +2788,28 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	if len(pairs) == 0 {
 		return nil
 	}
-	first := pairs[0]
 	return &MigrationFiles{
-		UpFile:     first.UpFile,
-		DownFile:   first.DownFile,
-		ReportFile: first.ReportFile,
-		Version:    first.Version,
-		Files:      pairs,
+		Files: pairs,
 	}
 }
 
+// ensureMigrationOutputDir creates the migration output directory, including
+// every missing parent above it.
+//
+// The parents are the point. This used to os.Mkdir the leaf after requiring its
+// parent to already exist, so `--dir file://a/b` with no `a` failed with
+// `parent directory "…/a" is not available` and wrote nothing, where the pinned
+// community binary v1.3.0 created `a`, `a/b`, the migration file and atlas.sum
+// and exited 0 — measured on 2026-08-07 at two and at three missing levels
+// (stokaro/ptah#1241 item 4). Ptah's OTHER writing verb already did this: the
+// `migrate diff` writer creates parents through
+// internal/atlasmigrate.ensureMigrationDirParent, so the two writers disagreed
+// with each other as well as with that binary.
+//
+// What must NOT relax is a path component that exists and is not a directory.
+// os.MkdirAll refuses that with ENOTDIR naming the offending component, and the
+// pinned binary refuses it too (`--dir file://a/b` over a regular file `a`
+// exits 1 with `stat a/b: not a directory`), so both stay exit 1.
 func ensureMigrationOutputDir(outputDir string) error {
 	info, err := os.Stat(outputDir)
 	if err == nil {
@@ -2232,14 +2821,7 @@ func ensureMigrationOutputDir(outputDir string) error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-
-	parent := filepath.Dir(outputDir)
-	if parentInfo, statErr := os.Stat(parent); statErr != nil {
-		return fmt.Errorf("parent directory %q is not available: %w", parent, statErr)
-	} else if !parentInfo.IsDir() {
-		return fmt.Errorf("parent path %q is not a directory", parent)
-	}
-	return os.Mkdir(outputDir, 0755)
+	return os.MkdirAll(outputDir, 0755)
 }
 
 func writeNewMigrationFile(path, content string) error {

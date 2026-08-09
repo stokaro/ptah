@@ -118,7 +118,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		TriggersAdded:             []types.TriggerRef{{TableName: "users", TriggerName: "missing_trigger"}},
 		TriggersRemoved:           []types.TriggerRef{{TableName: "users", TriggerName: "extra_trigger"}},
 		TriggersModified:          []types.TriggerDiff{{TableName: "users", TriggerName: "changed_trigger", Changes: changes}},
-		RLSPoliciesAdded:          []string{"missing_policy"},
+		RLSPoliciesAdded:          []types.RLSPolicyRef{{TableName: "users", PolicyName: "missing_policy"}},
 		RLSPoliciesRemoved:        []types.RLSPolicyRef{{TableName: "users", PolicyName: "extra_policy"}},
 		RLSPoliciesModified:       []types.RLSPolicyDiff{{TableName: "users", PolicyName: "changed_policy", Changes: changes}},
 		RLSEnabledTablesAdded:     []string{"missing_rls_table"},
@@ -211,6 +211,51 @@ func mismatchKinds(mismatches []ShadowMismatch) []string {
 	return kinds
 }
 
+// TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy pins the shape of
+// the two policy-reference mismatches, not only their kinds. ShadowMismatch is
+// serialized into the shadow verification report, so a reader of that JSON is
+// told which policy is missing and which table it belongs to. Reporting a bare
+// name could not distinguish two tables that each carry a policy called
+// tenant_isolation, which PostgreSQL permits (stokaro/ptah#1276).
+//
+// Ordering is part of the contract too: the refs are sorted by table first, so
+// alpha_orders leads zeta_orders regardless of the order the comparison put
+// them in.
+func TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		RLSPoliciesAdded: []types.RLSPolicyRef{
+			{TableName: "zeta_orders", PolicyName: "tenant_isolation"},
+			{TableName: "alpha_orders", PolicyName: "tenant_isolation"},
+		},
+		RLSPoliciesRemoved: []types.RLSPolicyRef{
+			{TableName: "zeta_orders", PolicyName: "legacy_isolation"},
+		},
+	}
+
+	c.Assert(collectShadowMismatches(diff), qt.DeepEquals, []ShadowMismatch{
+		{
+			Kind:    "missing_rls_policy",
+			Table:   "alpha_orders",
+			Object:  "alpha_orders.tenant_isolation",
+			Message: "missing RLS policy alpha_orders.tenant_isolation",
+		},
+		{
+			Kind:    "missing_rls_policy",
+			Table:   "zeta_orders",
+			Object:  "zeta_orders.tenant_isolation",
+			Message: "missing RLS policy zeta_orders.tenant_isolation",
+		},
+		{
+			Kind:    "extra_rls_policy",
+			Table:   "zeta_orders",
+			Object:  "zeta_orders.legacy_isolation",
+			Message: "extra RLS policy zeta_orders.legacy_isolation",
+		},
+	})
+}
+
 func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
 	c := qt.New(t)
 
@@ -220,7 +265,14 @@ func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, migrator.GenerateMigrationFileName(105, "future", "up")), []byte("SELECT 1;"), 0600)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(nextAvailableMigrationVersion(dir, 100, "add_email"), qt.Equals, int64(106))
+	writer, err := bindPlannedMigrationDir("", dir)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = writer.Close() }()
+
+	version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(version, qt.Equals, int64(106))
 }
 
 func TestLoadPriorMigrationsMissingDir(t *testing.T) {
@@ -344,71 +396,13 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(files, qt.IsNotNil)
-		c.Assert(files.UpFile, qt.Not(qt.Equals), "")
-		c.Assert(files.DownFile, qt.Not(qt.Equals), "")
-		upSQL, readErr := os.ReadFile(files.UpFile)
+		c.Assert(files.Files, qt.HasLen, 1)
+		c.Assert(files.Files[0].UpFile, qt.Not(qt.Equals), "")
+		c.Assert(files.Files[0].DownFile, qt.Not(qt.Equals), "")
+		upSQL, readErr := os.ReadFile(files.Files[0].UpFile)
 		c.Assert(readErr, qt.IsNil)
 		c.Assert(string(upSQL), qt.Contains, "email")
 	})
-}
-
-func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *testing.T) {
-	c := qt.New(t)
-	ctx := t.Context()
-	dbURL, conn := openShadowTestPostgres(c)
-	defer dbschema.CloseAndWarn(conn)
-	releaseLock := acquireShadowTestLock(c, ctx, conn)
-	defer releaseLock()
-	defer func() {
-		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
-	}()
-
-	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
-	_, err := conn.ExecContext(ctx, `
-		CREATE TABLE users (
-			id SERIAL PRIMARY KEY,
-			name TEXT NOT NULL,
-			email TEXT NOT NULL
-		);
-		INSERT INTO users (name, email) VALUES ('Ada', 'ada@example.com');
-		ANALYZE users;
-	`)
-	c.Assert(err, qt.IsNil)
-
-	dir := t.TempDir()
-	entitiesDir := writeConcurrentIndexEntities(c, dir)
-	migrationsDir := filepath.Join(dir, "migrations")
-	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-
-	files, err := GenerateMigration(ctx, GenerateMigrationOptions{
-		GoEntitiesDir: entitiesDir,
-		DatabaseURL:   dbURL,
-		MigrationName: "add_users_email_index",
-		OutputDir:     migrationsDir,
-	})
-	c.Assert(err, qt.IsNil)
-	c.Assert(files, qt.IsNotNil)
-	c.Assert(files.Files, qt.HasLen, 2)
-	c.Assert(files.Files[0].NoTransaction, qt.IsFalse)
-	c.Assert(files.Files[1].NoTransaction, qt.IsTrue)
-
-	upSQL, err := os.ReadFile(files.Files[1].UpFile)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
-
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
-	c.Assert(err, qt.IsNil)
-	mig := migrator.NewMigrator(conn, provider)
-	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	var valid bool
-	c.Assert(conn.QueryRowContext(ctx, `
-		SELECT index.indisvalid AND index.indisready
-		FROM pg_index AS index
-		JOIN pg_class AS class ON class.oid = index.indexrelid
-		WHERE class.relname = 'idx_users_email'
-	`).Scan(&valid), qt.IsNil)
-	c.Assert(valid, qt.IsTrue)
 }
 
 func shadowTestDatabaseURL() string {
@@ -464,29 +458,6 @@ func dropShadowTestPostgres(c *qt.C, admin *dbschema.DatabaseConnection, databas
 
 func quoteShadowTestPostgresIdentifier(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
-}
-
-func writeConcurrentIndexEntities(c *qt.C, dir string) string {
-	entitiesDir := filepath.Join(dir, "entities")
-	c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
-
-	content := `package entities
-
-//ptah:schema:table name="users"
-type User struct {
-	//ptah:schema:field name="id" type="SERIAL" primary="true"
-	ID int64
-
-	//ptah:schema:field name="name" type="TEXT"
-	Name string
-
-	//ptah:schema:field name="email" type="TEXT"
-	//ptah:schema:index name="idx_users_email" fields="email"
-	Email string
-}
-`
-	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(content), 0600), qt.IsNil)
-	return entitiesDir
 }
 
 func acquireShadowTestLock(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) func() {

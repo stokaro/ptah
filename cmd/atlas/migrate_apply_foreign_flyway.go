@@ -232,7 +232,7 @@ func foreignFlywayRefusal(
 // V1__g1.sql and V3__g3.sql recorded by the other implementation as `1` and `3`
 // with V2__g2.sql added afterwards: the head is V3's 4611686018427551119, and
 // `migrate set 4611686018427551119` reports `(3 set)` — g1, g2 and g3 — so the
-// next `migrate apply` prints `No migration files to execute.` at exit 0 with
+// next `migrate apply` prints `No migration files to execute` at exit 0 with
 // table g2 never created and now unreachable, because its version is recorded.
 // The operator followed the printed instruction and lost a migration; the
 // refusal said nothing about it. That is the shape this clause withdraws on,
@@ -262,6 +262,18 @@ func foreignFlywaySetRoute(
 		}
 	}
 	unrun := foreignFlywayUnrunBelowHead(head, covered, stale, applied)
+	// The operand is the SOURCE version token, because that is what `migrate
+	// set` takes on a converted Flyway directory since stokaro/ptah#1206 — the
+	// ordering key printed in the table above is no longer an accepted
+	// spelling, on this build or on the community binary. A refusal that prints
+	// a command the same binary then rejects is worse than no route at all, and
+	// the tests below run what this prints rather than only matching it.
+	//
+	// The head always has a token: it is the largest `current` among the stale
+	// revisions, and a revision only becomes stale when its token parses as an
+	// int64, so the empty-token fallback is unreachable rather than a silent
+	// blank operand.
+	operand := foreignFlywaySetOperand(head, covered)
 	if len(removed) == 0 && len(unrun) == 0 {
 		// The count of listed migrations is deliberately NOT reported as the
 		// size of what `migrate set` writes: a database that recorded some of
@@ -269,17 +281,18 @@ func foreignFlywaySetRoute(
 		// source tool's has more rows landing in than the refusal listed, and
 		// both kinds have run. What every one of them has in common is having
 		// executed, and that is what the sentence claims.
-		return fmt.Sprintf("  - adopt the versions this build uses: `migrate set %d`, with the same --dir "+
-			"and --url, records every migration up to and including that version as applied under those "+
-			"versions. On this database every migration it would record has already run here, so nothing "+
+		return fmt.Sprintf("  - adopt the versions this build uses: `migrate set %s`, with the same --dir "+
+			"and --url, names the migration by the source version token its file carries and records "+
+			"every migration up to and including it as applied under the versions this build uses. On "+
+			"this database every migration it would record has already run here, so nothing "+
 			"is recorded that did not execute. It is a one-way switch: the revision table then carries "+
 			"both spellings, and the implementation that wrote it refuses a migration added afterwards "+
-			"as out of order.\n", head)
+			"as out of order.\n", operand)
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nadopting the versions this build uses has no safe route here: `migrate set %d` would "+
-		"move the database to exactly that version, and on this database that is not a no-op:\n", head)
+	fmt.Fprintf(&b, "\nadopting the versions this build uses has no safe route here: `migrate set %s` would "+
+		"move the database to exactly that version, and on this database that is not a no-op:\n", operand)
 	if len(unrun) > 0 {
 		labels := make([]string, 0, len(unrun))
 		for _, migration := range unrun {
@@ -298,6 +311,24 @@ func foreignFlywaySetRoute(
 			"really ran\n", strings.Join(labels, ", "))
 	}
 	return b.String()
+}
+
+// foreignFlywaySetOperand spells the head the way `migrate set` takes it: the
+// source version token of the covered migration that converts to it.
+//
+// The decimal fallback is for a head no covered migration produces, which the
+// caller cannot reach — see the comment at the call site — and exists so a
+// future caller cannot get an empty operand printed into a command.
+func foreignFlywaySetOperand(
+	head int64,
+	covered []atlasmigrateimport.FlywayCoveredSourceVersion,
+) string {
+	for _, migration := range covered {
+		if migration.Version == head && migration.Token != "" {
+			return migration.Token
+		}
+	}
+	return strconv.FormatInt(head, 10)
 }
 
 // foreignFlywayUnrunBelowHead reports the covered migrations `migrate set head`

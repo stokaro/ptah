@@ -164,7 +164,7 @@ func (p *parser) parseTrigger(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	table := objectRefName(p.optionalRawExpr(block.Body.Attributes["on"]), "table")
+	table := relationRefName(p.optionalRawExpr(block.Body.Attributes["on"]))
 	if table == "" {
 		return p.blockError(block, "trigger %q requires on", name)
 	}
@@ -367,14 +367,14 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 		return err
 	}
 	grant.WithOption = grantable
-	if table := objectRefName(target, "table"); table != "" {
+	if table := relationRefName(target); table != "" {
 		grant.OnTable = table
 	} else if schema := objectRefName(target, "schema"); schema != "" {
 		grant.OnSchema = schema
 	} else if sequence := objectRefName(target, "sequence"); sequence != "" {
 		grant.OnSequence = sequence
 	} else {
-		return p.blockError(block, "permission requires table, schema, or sequence target")
+		return p.blockError(block, "permission requires table, view, schema, or sequence target")
 	}
 	if grant.Role == "" {
 		return p.blockError(block, "permission requires to")
@@ -667,6 +667,29 @@ func (p *parser) boolAttr(block *hclsyntax.Block, name, label string, fallback b
 		return false, p.blockError(block, "%s attribute %q must be a bool", label, name)
 	}
 	return value.True(), nil
+}
+
+// relationRefName reads the object name out of a reference written from a
+// position that can name any relation -- a `permission` target, a `trigger`'s
+// `on`.
+//
+// A reference in HCL names a block, so the block TYPE is part of the spelling
+// and a grant on a view is `for = view.<name>`: the renderer picks the word
+// from what the document declares, and this reads back every word it can pick.
+// Without that, Ptah could not read its own output for any database carrying a
+// view, which is the failure TestRenderedPermissionRoundTrips exists to catch.
+//
+// The name is the only thing kept. Which relation kind it was is already in the
+// document, in the block that declares it, and goschema keeps a grant's target
+// in Grant.OnTable whatever kind of relation it is -- so this returns a name and
+// not a kind on purpose.
+func relationRefName(raw string) string {
+	for _, kind := range []string{"table", "view", "materialized"} {
+		if name := objectRefName(raw, kind); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func objectRefName(raw, kind string) string {

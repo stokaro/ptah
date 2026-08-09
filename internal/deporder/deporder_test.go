@@ -192,6 +192,111 @@ func TestViewLikesForCreate_MatchesSchemaQualifiedReferences(t *testing.T) {
 	}
 }
 
+// TestReferencesIdentifier_ReadsCodeOnly pins what counts as a reference.
+//
+// The PostgreSQL planner asks this question to work out what
+// DROP VIEW ... CASCADE takes with it, and every "yes" puts a
+// DROP MATERIALIZED VIEW ... CASCADE or a CREATE OR REPLACE VIEW into the plan
+// for the named object. A name spelled inside a string literal or a comment
+// refers to nothing, so answering "yes" there is a destructive statement issued
+// against an object that had no part in the change.
+func TestReferencesIdentifier_ReadsCodeOnly(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "plain reference",
+			body: "SELECT id FROM base_view",
+			want: true,
+		},
+		{
+			name: "quoted reference",
+			body: `SELECT id FROM "base_view"`,
+			want: true,
+		},
+		{
+			name: "string literal only",
+			body: "SELECT 'base_view' AS label, count(*) AS total FROM accounts",
+			want: false,
+		},
+		{
+			name: "string literal with a doubled quote before it",
+			body: "SELECT 'it''s base_view' AS label FROM accounts",
+			want: false,
+		},
+		{
+			name: "escape string literal with a backslash-escaped quote",
+			body: `SELECT E'\'base_view' AS label FROM accounts`,
+			want: false,
+		},
+		{
+			name: "line comment only",
+			body: "SELECT id FROM accounts -- used to read base_view\n",
+			want: false,
+		},
+		{
+			name: "block comment only",
+			body: "SELECT id /* base_view was here */ FROM accounts",
+			want: false,
+		},
+		{
+			name: "nested block comment only",
+			body: "SELECT id /* outer /* base_view */ still comment */ FROM accounts",
+			want: false,
+		},
+		{
+			name: "dollar quoted body only",
+			body: "SELECT fn($tag$ SELECT id FROM base_view $tag$) FROM accounts",
+			want: false,
+		},
+		{
+			name: "code after a closed literal",
+			body: "SELECT 'base_view' AS label FROM base_view",
+			want: true,
+		},
+		{
+			name: "code after a closed line comment",
+			body: "SELECT id -- base_view\nFROM base_view",
+			want: true,
+		},
+		{
+			name: "positional parameter is not a dollar quote",
+			body: "SELECT id FROM base_view WHERE id = $1",
+			want: true,
+		},
+		{
+			name: "comment marker inside a quoted identifier does not start a comment",
+			body: `SELECT id FROM "od--d", base_view`,
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(deporder.ReferencesIdentifier(tc.body, "base_view"), qt.Equals, tc.want,
+				qt.Commentf("body: %s", tc.body))
+		})
+	}
+}
+
+// TestViewLikesForCreate_IgnoresNamesInsideLiteralsAndComments is the ordering
+// half of the same rule: a literal that happens to spell another object's name
+// must not create a dependency edge between them.
+func TestViewLikesForCreate_IgnoresNamesInsideLiteralsAndComments(t *testing.T) {
+	c := qt.New(t)
+
+	objects := deporder.ViewLikesForCreate([]deporder.ViewLike{
+		{Name: "a_report", Body: "SELECT 'z_base' AS label FROM users /* z_base */"},
+		{Name: "z_base", Body: "SELECT id FROM users", Materialized: true},
+	})
+
+	c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"a_report", "z_base"})
+}
+
 func tableNames(tables []goschema.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {

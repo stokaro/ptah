@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // seedSQLiteDBAt creates a SQLite database with the given DDL at path.
@@ -115,7 +116,7 @@ func TestSchemaDiffExternalSchemaSource(t *testing.T) {
 
 func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "")
+	envbooltest.Unset("PTAH_ALLOW_EXTERNAL_SCHEMA")(t)
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	seedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
@@ -133,6 +134,7 @@ func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
 }
 
 func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
@@ -143,8 +145,10 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 		"--url", "sqlite://"+targetPath,
 		"--config", "file://"+configPath,
 		"--env", "dev",
+		// --auto-approve is deliberately absent: the pair is refused, by both
+		// binaries, and a dry run has nothing to approve (stokaro/ptah#1231
+		// case 5).
 		"--dry-run",
-		"--auto-approve",
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -154,6 +158,7 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 }
 
 func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")

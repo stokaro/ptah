@@ -14,9 +14,25 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/tableref"
 )
+
+// primaryKeyImpliesNotNull reports whether the dialect makes a primary key
+// column NOT NULL on its own.
+//
+// SQLite does not decide it from the dialect: on a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias whose `pragma table_info.notnull` is
+// 0 and which accepts an explicit NULL insert, while a STRICT or WITHOUT ROWID
+// table does enforce NOT NULL on its key columns. This predicate answers for the
+// ordinary rowid table, and [renderer.keyColumnIsNotNull] adds the table's shape
+// where the dialect is SQLite. See stokaro/ptah#1235.
+func primaryKeyImpliesNotNull(dialect string) bool {
+	return platform.NormalizeDialect(dialect) != platform.SQLite
+}
 
 // Severity is the diagnostic severity emitted by the exporter.
 type Severity string
@@ -43,6 +59,11 @@ func TriggerDiagnosticPath(table, name string) string {
 type Result struct {
 	Data        []byte
 	Diagnostics []Diagnostic
+	// NotDescribed is what the rendered document does not claim to describe.
+	// It is also written into the document itself, as directive comments in the
+	// header, because the process that reads the document back is not this one;
+	// see [go.5x5.cz/ptah/core/coverage].
+	NotDescribed coverage.Set
 }
 
 // Render renders a finalized Ptah schema IR as deterministic HCL schema text.
@@ -63,31 +84,317 @@ func Render(db *goschema.Database) (Result, error) {
 // their input was HCL, so the raw-SQL marker the parser set is already right and
 // re-deciding it from the type name would second-guess the author.
 func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
+	return render(db, dialect, "", false)
+}
+
+// RenderInspected renders a schema that was read out of a database, declaring
+// defaultSchema as the owner of every object the catalog reported without one.
+//
+// A catalog does not repeat the schema on objects the engine considers
+// implicit, so an inspected IR arrives with no schema anywhere. HCL has no such
+// notion: a file with no `schema` block and no `schema =` on its tables is not
+// an under-specified schema, it is an invalid one. The pinned Atlas community
+// binary v1.3.0 refuses it with
+//
+//	specutil: failed converting to *schema.Realm: cannot extract schema name
+//	for table "t": schemahcl: type "schema" was not found in nil
+//
+// which is what made Ptah's inspect output unreadable to it independently of
+// any type or permission question (stokaro/ptah#1234).
+//
+// The name is a parameter rather than something derived from the dialect
+// because it is not derivable: a PostgreSQL connection's search_path can name
+// any schema, and the caller is the only one that knows which one was read.
+//
+// [RenderForDialect] is deliberately left alone. Its callers parsed HCL to get
+// here, so their IR already carries whatever the author wrote, and synthesizing
+// a schema there would invent one the author did not declare.
+func RenderInspected(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+	return render(db, dialect, strings.TrimSpace(defaultSchema), false)
+}
+
+// RenderInspectedForAtlasCLI renders an inspected schema for the
+// Atlas-compatible surface, leaving out the top-level block types the pinned
+// Atlas community binary v1.3.0 refuses as a feature -- but only where nothing
+// else in the document names the object -- and reporting every decision as a
+// loss diagnostic.
+//
+// It differs from [RenderInspected] in nothing else. The omission is a property
+// of the reader the compatibility binary stands in for, not of the database and
+// not of Ptah, so the native surface keeps describing everything Ptah models;
+// see [atlasRefusedBlockTypes] for the list and the measurement behind it, and
+// [renderer.omitRefusedBlock] for why suppression is reference-aware
+// (stokaro/ptah#1251).
+//
+// The capability is not deleted by the default. Setting
+// [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
+func RenderInspectedForAtlasCLI(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+	return render(db, dialect, strings.TrimSpace(defaultSchema), true)
+}
+
+func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
 	r := renderer{
-		db:      db,
-		dialect: dialect,
+		db:                     db,
+		dialect:                dialect,
+		defaultSchema:          defaultSchema,
+		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 	}
 	r.render()
 	return Result{
-		Data:        []byte(r.builder.String()),
-		Diagnostics: r.diagnostics,
+		Data:         []byte(r.builder.String()),
+		Diagnostics:  r.diagnostics,
+		NotDescribed: r.notDescribed(),
 	}, nil
 }
 
 type renderer struct {
-	db          *goschema.Database
-	dialect     string
+	db      *goschema.Database
+	dialect string
+	// defaultSchema owns every object that arrived without one. Empty means the
+	// IR is taken as written, which is what every parse-and-re-render caller
+	// wants.
+	defaultSchema string
+	// omitAtlasRefusedBlocks marks the render as feeding the Atlas-compatible
+	// surface, which leaves out the block types the pinned binary refuses
+	// unless the document names the object; see [renderer.omitRefusedBlock].
+	omitAtlasRefusedBlocks bool
+	// references caches the identifiers the surviving document names, built
+	// once per render by [collectReferencedNames]. Nil means not yet built,
+	// which is distinguishable from "built and empty" because a document with
+	// no references at all still answers every lookup false.
+	references map[string]bool
+	// requiredExtensions caches the extensions the surviving document's objects
+	// resolve to without naming, built once per render by
+	// [collectRequiredExtensions]. Nil means not yet built, on the same
+	// reasoning as references above.
+	requiredExtensions map[string]bool
+	// tableSchemas caches, per table block label this render will write, the
+	// schema each block carries. Nil means not yet built, which is
+	// distinguishable from "built and empty" because a document with no tables
+	// still answers every lookup. See [renderer.documentResolvesTableRef].
+	tableSchemas map[string][]string
+	// roleBlocks caches the `role` block labels this render will write. Nil
+	// means not yet built, which is distinguishable from "built and empty"
+	// because a document with no roles still answers every lookup. See
+	// [renderer.documentDeclaresRole].
+	roleBlocks map[string]bool
+	// relationBlocks caches, per block label this render will write, every
+	// relation block carrying it. Nil means not yet built, which is
+	// distinguishable from "built and empty" because a document with no
+	// relations still answers every lookup. See [renderer.documentDeclares].
+	relationBlocks map[string][]declaredBlock
+	// schemaRefs collects the name of every `schema.<name>` reference the body
+	// wrote, filled by [renderer.schemaRef] as the body is rendered and read
+	// afterwards by [renderer.referencedSchemas].
+	schemaRefs  map[string]bool
 	builder     strings.Builder
 	diagnostics []Diagnostic
 }
 
+// documentDeclaresRole reports whether this document writes a `role` block
+// labeled with this name.
+//
+// A `role.<name>` traversal names a BLOCK, so without one it is an HCL variable
+// reference with nothing behind it and the pinned Atlas community binary v1.3.0
+// refuses the whole file with `There is no variable named "role"`. Every render
+// writes a block for every role in the IR, so the IR is the list of labels.
+//
+// Matching is exact rather than case-insensitive: [renderer.renderRoles] writes
+// the label as a quoted string, so `role "App"` and `role "app"` are two
+// different blocks and a traversal resolves to neither of the other's.
+func (r *renderer) documentDeclaresRole(name string) bool {
+	if r.roleBlocks == nil {
+		blocks := make(map[string]bool, len(r.db.Roles))
+		for _, role := range r.db.Roles {
+			blocks[role.Name] = true
+		}
+		r.roleBlocks = blocks
+	}
+	return r.roleBlocks[name]
+}
+
+// declaredBlock is one relation block this render writes, described the way a
+// reference to it has to be spelled: the block KIND the traversal names, and
+// the schema the block belongs to.
+type declaredBlock struct {
+	kind   string
+	schema string
+}
+
+// documentDeclares reports the single relation block this document writes under
+// this label, when there is exactly one.
+//
+// A reference in HCL names a BLOCK, and the block TYPE is the first word of the
+// traversal, so `table.v` is "the v attribute of the table object" and resolves
+// to nothing when the document declares `view "v"`. The pinned Atlas community
+// binary v1.3.0 refuses the whole file over it. Measured on PostgreSQL 17
+// against the document `ptah-compat schema inspect` writes for
+//
+//	CREATE TABLE t (id integer PRIMARY KEY);
+//	CREATE VIEW v AS SELECT id FROM t;
+//
+// with one operand varied and nothing else touched:
+//
+//	for = table.v   exit 1  Unsupported attribute; This object does not have
+//	                        an attribute named "v"
+//	for = view.v    exit 0
+//	for = "v"       exit 0
+//
+// PostgreSQL reports the owner's implicit grants on a view exactly as it does
+// on a table, so that is the DEFAULT invocation on any database carrying a
+// view, with no selection involved (stokaro/ptah#1234).
+//
+// The set is what this render WRITES, not what the IR holds: a view with no
+// body is warned about and skipped, and a sequence the Atlas-compatible surface
+// omits is not there to be named either -- both asked through the same
+// predicate the render itself uses, so the answer cannot drift from the
+// document.
+//
+// "Exactly one" is what makes the kind knowable. Relations share one namespace
+// per schema in every engine Ptah renders for, so two blocks under one label
+// are two schemas' worth, and which of them an unqualified reference means is
+// exactly the question [renderer.documentResolvesTableRef] refuses to guess.
+// Saying no here is therefore routine rather than exotic -- two schemas each
+// holding a view named `v` is all it takes, and that is a DEFAULT inspect of a
+// realm-scoped URL -- so what the caller writes instead has to be a spelling
+// the pinned binary reads. For a relation that is a quoted name; see
+// [renderer.relationRef] for the measurement and for why the short form is not
+// it.
+func (r *renderer) documentDeclares(label string) (declaredBlock, bool) {
+	if r.relationBlocks == nil {
+		r.relationBlocks = r.declaredRelationBlocks()
+	}
+	blocks := r.relationBlocks[label]
+	if len(blocks) != 1 {
+		return declaredBlock{}, false
+	}
+	return blocks[0], true
+}
+
+func (r *renderer) declaredRelationBlocks() map[string][]declaredBlock {
+	blocks := make(map[string][]declaredBlock, len(r.db.Tables)+len(r.db.Views)+len(r.db.MaterializedViews))
+	declare := func(kind, label, schema string) {
+		blocks[label] = append(blocks[label], declaredBlock{kind: kind, schema: r.schemaFor(schema)})
+	}
+	for _, table := range r.db.Tables {
+		declare(blockTable, table.Name, table.Schema)
+	}
+	for _, view := range r.db.Views {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockView, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, view := range r.db.MaterializedViews {
+		if view.Body == "" {
+			continue
+		}
+		declare(blockMaterialized, objectNameFromQualified(view.Name), schemaNameFromQualified(view.Name))
+	}
+	for _, sequence := range r.db.Sequences {
+		if r.omitsRefusedBlock(blockSequence, sequence.Name) {
+			continue
+		}
+		// The label [renderer.renderSequences] writes is the canonical name, so
+		// that is the label a reference has to match.
+		sequence.Canonicalize()
+		declare(blockSequence, sequence.Name, sequence.Schema)
+	}
+	return blocks
+}
+
+// documentResolvesTableRef reports whether an unqualified `table.<name>`
+// reference in this document resolves to exactly the table the qualified name
+// meant.
+//
+// It is true only when the document writes ONE table block with that label and
+// that block carries this schema. Both halves are load-bearing:
+//
+//   - One block, because two tables of one name in different schemas are legal.
+//     Measured on the pinned Atlas community binary v1.3.0 with `public.users`
+//     and `other.users` both declared and an unqualified `ref_columns`, it
+//     refuses the document with `specutil: failed converting to *schema.Realm:
+//     multiple reference tables found for "users"`. Ptah's own reader is no
+//     happier: goschema's resolveTableReference gives up on an ambiguous name
+//     and leaves the reference unqualified, so dropping the schema there would
+//     lose it silently -- worse than a refusal.
+//   - That block's schema, because a lone `public.users` does not make
+//     `table.users` mean `other.users`. Without this half a reference to a table
+//     the document does not contain would resolve, quietly, to a different one.
+func (r *renderer) documentResolvesTableRef(schema, name string) bool {
+	if r.tableSchemas == nil {
+		schemas := make(map[string][]string, len(r.db.Tables))
+		for _, table := range r.db.Tables {
+			schemas[table.Name] = append(schemas[table.Name], r.schemaFor(table.Schema))
+		}
+		r.tableSchemas = schemas
+	}
+	blocks := r.tableSchemas[name]
+	return len(blocks) == 1 && blocks[0] == schema
+}
+
+// schemaFor returns the schema name to write for an object, which is the one it
+// carries or, failing that, the schema the whole read belongs to.
+func (r *renderer) schemaFor(schema string) string {
+	if strings.TrimSpace(schema) != "" {
+		return schema
+	}
+	return r.defaultSchema
+}
+
+// referencedSchemas lists, in a stable order, every schema the body of this
+// render actually wrote a `schema.<name>` reference to. It is empty outside an
+// inspected render, because nothing is synthesized there.
+//
+// The set is COLLECTED from the rendered body rather than predicted from the
+// IR, and that is the whole point. Predicting it has now been wrong three
+// times, each time in the same direction and each time reaching the pinned
+// Atlas community binary v1.3.0 as `There is no variable named "schema"`: the
+// first version declared only the default and missed a table outside it, the
+// second missed the enum block's own reference, and the third missed the
+// `permission { for = schema.public }` that every PostgreSQL database has --
+// visible on an EMPTY database, where there is no table to predict from at all
+// (stokaro/ptah#1234). A reference and its declaration cannot disagree when one
+// is derived from the other.
+//
+// Collecting also gets the suppressed blocks right for free. A block the
+// Atlas-compatible surface leaves out never reaches [renderer.schemaRef], so an
+// omitted sequence no longer conjures a schema block declaring nothing.
+func (r *renderer) referencedSchemas() []string {
+	if r.defaultSchema == "" {
+		return nil
+	}
+	return sortedMapKeys(r.schemaRefs)
+}
+
+// render assembles the document in two passes. The body is rendered first and
+// held aside, then the header and the schema blocks that body turned out to
+// reference are written, then the body goes back on the end.
+//
+// Two things force that. Every schema a reference names has to be declared
+// somewhere in the file, and Ptah writes the declarations at the top -- so the
+// only way to declare exactly the set the body references is to have rendered
+// the body before writing them.
 func (r *renderer) render() {
-	r.builder.WriteString("// Code generated by ptah; DO NOT EDIT.\n\n")
+	r.renderBody()
+	body := r.builder.String()
+	r.builder.Reset()
+
+	// The coverage header must be written AFTER the body snapshot is taken and
+	// the builder reset, or it lands inside body and is re-emitted below the
+	// schema blocks instead of at the top of the document.
+	r.builder.WriteString("// Code generated by ptah; DO NOT EDIT.\n")
+	r.renderCoverageHeader()
+	r.builder.WriteString("\n")
 	r.renderSchemas()
+	r.builder.WriteString(body)
+}
+
+func (r *renderer) renderBody() {
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()
@@ -105,6 +412,19 @@ func (r *renderer) render() {
 
 func (r *renderer) renderSchemas() {
 	schemas := append([]goschema.Schema(nil), r.db.Schemas...)
+	// An inspected read reports no schema block at all, so every schema the
+	// file references has to be declared here or the reference resolves to
+	// nothing. A read that DID report one keeps what it reported, comment,
+	// charset and collation included.
+	//
+	// Which schemas those are is answered by the body that was already
+	// rendered, not guessed from the IR; see [renderer.referencedSchemas] for
+	// the three guesses that were wrong.
+	for _, name := range r.referencedSchemas() {
+		if !slices.ContainsFunc(schemas, func(s goschema.Schema) bool { return s.Name == name }) {
+			schemas = append(schemas, goschema.Schema{Name: name})
+		}
+	}
 	sort.Slice(schemas, func(i, j int) bool {
 		return schemas[i].Name < schemas[j].Name
 	})
@@ -121,10 +441,37 @@ func (r *renderer) renderSchemas() {
 func (r *renderer) renderEnums() {
 	enums := append([]goschema.Enum(nil), r.db.Enums...)
 	sort.Slice(enums, func(i, j int) bool {
-		return enums[i].Name < enums[j].Name
+		return enums[i].QualifiedName() < enums[j].QualifiedName()
 	})
 	for _, enum := range enums {
 		r.linef(`enum %s {`, quote(enum.Name))
+		// An enum block with no schema is not under-specified, it is invalid.
+		// The pinned Atlas community binary v1.3.0 refuses the whole file with
+		//
+		//	extract schema name from enum reference: schemahcl: type "schema"
+		//	was not found in nil reference
+		//
+		// and accepts the identical file once `schema = schema.public` is added
+		// -- one operand, measured both ways. That binary's own inspect writes
+		// the attribute too (stokaro/ptah#1251).
+		//
+		// The schema is the ENUM'S, falling back to the render's default only
+		// where the enum names none -- the rule renderTable follows, for the
+		// same reason: a catalog blanks the schema exactly where the engine
+		// treats the read's own schema as implicit.
+		//
+		// It used to be the render's default unconditionally, because
+		// goschema.Enum carried no schema. That is right for every read of one
+		// schema and wrong for every read of more than one: `schema inspect`
+		// against a URL that pins no schema describes the whole realm, so
+		// `extra.mood` was written as `schema = schema.public` -- an enum
+		// attributed to a schema that does not hold it. Applying that document
+		// created the type in `public` and typed `extra.b.feeling` against it,
+		// so the round trip produced a database whose column type pointed at
+		// the wrong schema (stokaro/ptah#1276).
+		if schema := r.schemaFor(enum.Schema); schema != "" {
+			r.rawAttr(1, "schema", r.schemaRef(schema))
+		}
 		r.rawAttr(1, "values", stringList(enum.Values))
 		r.line("}")
 		r.line("")
@@ -169,8 +516,8 @@ func (r *renderer) renderTable(
 	rlsEnabled *goschema.RLSEnabledTable,
 ) {
 	r.linef(`table %s {`, quote(table.Name))
-	if table.Schema != "" {
-		r.rawAttr(1, "schema", schemaRef(table.Schema))
+	if schema := r.schemaFor(table.Schema); schema != "" {
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "engine", table.Engine)
 	r.stringAttr(1, "charset", table.Charset)
@@ -196,7 +543,13 @@ func (r *renderer) renderTable(
 		return fields[i].Name < fields[j].Name
 	})
 	for _, field := range fields {
-		if fieldIsPrimary(table, field) {
+		// A key column is written NOT NULL only where the engine makes it so.
+		// SQLite does not on a rowid table, and writing `null = false` there
+		// made this document disagree with the same schema's `{{ json . }}`,
+		// which reports the catalog's answer. It does on a STRICT or
+		// WITHOUT ROWID table, so the decision needs the table and not only the
+		// dialect. See stokaro/ptah#1235.
+		if fieldIsPrimary(table, field) && r.keyColumnIsNotNull(table, fields, field) {
 			field.Nullable = false
 		}
 		r.renderColumn(field)
@@ -216,7 +569,7 @@ func (r *renderer) renderTable(
 
 func (r *renderer) renderColumn(field goschema.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
-	r.rawAttr(2, "type", columnTypeExpr(field, r.dialect))
+	r.rawAttr(2, "type", r.columnTypeExpr(field))
 	if field.Nullable {
 		r.rawAttr(2, "null", "true")
 	}
@@ -261,6 +614,25 @@ func (r *renderer) renderColumn(field goschema.Field) {
 	r.stringAttr(2, "comment", field.Comment)
 	r.renderPlatformOverrides(2, field.Overrides)
 	r.line("  }")
+}
+
+// keyColumnIsNotNull reports whether the engine writes this key column NOT NULL
+// on its own.
+//
+// For SQLite that is a property of the table rather than of the dialect, so the
+// answer comes from the table's shape; every other dialect answers from the
+// dialect. An empty dialect keeps answering yes, which is what the
+// parse-and-re-render callers of [Render] want: their input was HCL and its
+// nullability is already the author's.
+func (r *renderer) keyColumnIsNotNull(
+	table goschema.Table,
+	fields []goschema.Field,
+	field goschema.Field,
+) bool {
+	if platform.NormalizeDialect(r.dialect) != platform.SQLite {
+		return primaryKeyImpliesNotNull(r.dialect)
+	}
+	return sqlitekey.ImpliesNotNull(table, sqlitekey.KeyColumns(table, fields), field)
 }
 
 func fieldIsPrimary(table goschema.Table, field goschema.Field) bool {
@@ -500,7 +872,7 @@ func atlasPrimaryKeyConstraint(constraint goschema.Constraint) bool {
 func (r *renderer) renderForeignKey(name string, columns []string, foreignTable string, foreignColumns []string, onDelete string, onUpdate string) {
 	r.linef(`  foreign_key %s {`, quote(name))
 	r.rawAttr(2, "columns", columnRefs(columns))
-	r.rawAttr(2, "ref_columns", tableColumnRefs(foreignTable, foreignColumns))
+	r.rawAttr(2, "ref_columns", r.tableColumnRefs(foreignTable, foreignColumns))
 	r.stringAttr(2, "on_delete", onDelete)
 	r.stringAttr(2, "on_update", onUpdate)
 	r.line("  }")
@@ -542,6 +914,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 			if part.Desc {
 				r.rawAttr(3, "desc", "true")
 			}
+			r.renderIndexPartNullsOrder(part.NullsOrder)
 			r.line("    }")
 		}
 	} else {
@@ -714,9 +1087,32 @@ func simplePrimaryKeyParts(parts []goschema.PrimaryKeyPart) bool {
 	return true
 }
 
+// renderIndexPartNullsOrder writes the NULLS ordering of one index key.
+//
+// The rendered value is whatever the part carries. Deciding that an ordering
+// is redundant belongs to whoever produced the part -- the live-database reader
+// records only an ordering that deviates from the direction's default -- and
+// an author who spelled one out gets it back. The two attribute names are the
+// spelling the community binary's own inspect output uses, so a rendered file
+// stays readable by both (issue #1272).
+func (r *renderer) renderIndexPartNullsOrder(order string) {
+	switch strings.ToUpper(strings.TrimSpace(order)) {
+	case goschema.NullsOrderFirst:
+		r.rawAttr(3, "nulls_first", "true")
+	case goschema.NullsOrderLast:
+		r.rawAttr(3, "nulls_last", "true")
+	}
+}
+
+// simpleIndexParts reports whether the parts carry nothing the compact
+// `columns = [...]` spelling would lose. Every field the `on` block can express
+// has to be listed: a part carrying only a NULLS ordering is not simple, and
+// omitting that check is how the ordering used to disappear from rendered HCL
+// even after #1271 taught the reader to preserve it.
 func simpleIndexParts(parts []goschema.IndexPart) bool {
 	for _, part := range parts {
-		if part.Expr != "" || part.Operator != "" || part.Prefix != "" || part.Desc {
+		if part.Expr != "" || part.Operator != "" || part.Prefix != "" ||
+			part.Desc || part.NullsOrder != "" {
 			return false
 		}
 	}
@@ -776,7 +1172,7 @@ func parseForeignReference(value string) (string, []string) {
 // `type = USER_DEFINED` with `Unknown column.type; There is no type named
 // "USER_DEFINED"` and accepts `type = sql("USER_DEFINED")`. Measured on that
 // binary, an HCL file it plans must survive a Ptah round trip still planning.
-func columnTypeExpr(field goschema.Field, dialect string) string {
+func (r *renderer) columnTypeExpr(field goschema.Field) string {
 	if strings.TrimSpace(field.Type) == "" {
 		return typeExpr(field.Type)
 	}
@@ -784,16 +1180,69 @@ func columnTypeExpr(field goschema.Field, dialect string) string {
 	// from a database it remembers nothing, so the dialect's own list of
 	// modeled types decides -- see modeled_types.go for why that list is
 	// trustworthy rather than a copied table.
+	//
+	// The raw-SQL check stays ahead of the enum check on purpose. A sql() call
+	// is the author's own escape hatch, and issue #1106's contract is to write
+	// it back exactly as written rather than re-decide it from the type name; a
+	// name that happens to match an enum block could just as well mean a domain
+	// or composite the author is reaching past Atlas's model for. A database
+	// read never sets the flag -- only the HCL parser does -- so the inspect
+	// path this fixes is not affected by the ordering.
 	if field.TypeRawSQL {
 		return sqlCall(field.Type)
 	}
-	modeled, ok := modeledColumnType(dialect, field.Type)
+	if ref, ok := r.enumTypeRef(field.Type); ok {
+		return ref
+	}
+	modeled, ok := modeledColumnType(r.dialect, field.Type)
 	if !ok {
 		// Wrapped verbatim: an engine type Atlas does not model is only
 		// readable as the text the database itself reports.
 		return sqlCall(field.Type)
 	}
 	return typeExpr(modeled)
+}
+
+// enumTypeRef returns the expression for a column whose type is an enum this
+// same document declares, and reports whether the type is one.
+//
+// The reference is not one spelling among several -- it is the only one that
+// works. Measured on the pinned Atlas community binary v1.3.0, a table with an
+// enum-typed column and the matching `enum` block, one operand varied:
+//
+//	type = enum.status     exit 0
+//	type = sql("status")   exit 1  pq: type "status" does not exist
+//	type = status          exit 1  Unknown column.type; There is no type named "status"
+//	type = "status"        exit 1  set field "type": unexpected type string
+//
+// sql() is the interesting failure and the one Ptah used to emit: the type name
+// is real in the database that was inspected but not in the dev database the
+// file gets replayed into, and only the enum block creates it there. That
+// binary's own inspect writes `type = enum.status` as well.
+//
+// The reference is unqualified because that binary keys enum blocks by name
+// alone: two `enum "status"` blocks in different schemas are refused as
+// `duplicate enum "status"`, and an `enum.status` reference resolves to a block
+// declared in a non-default schema (measured with table and enum both in
+// `reporting`).
+//
+// A name that also names a domain, composite or range is left alone. Those are
+// separate declarations in the same document, and a reference into the enum
+// block would point at the wrong one.
+func (r *renderer) enumTypeRef(typeName string) (string, bool) {
+	name := strings.TrimSpace(typeName)
+	if name == "" {
+		return "", false
+	}
+	if !slices.ContainsFunc(r.db.Enums, func(e goschema.Enum) bool { return e.Name == name }) {
+		return "", false
+	}
+	if slices.ContainsFunc(r.db.Domains, func(d goschema.Domain) bool { return d.Name == name }) ||
+		slices.ContainsFunc(r.db.CompositeTypes, func(ct goschema.CompositeType) bool { return ct.Name == name }) ||
+		slices.ContainsFunc(r.db.Ranges, func(rg goschema.Range) bool { return rg.Name == name }) {
+		return "", false
+	}
+	return "enum" + objectRefPart(name), true
 }
 
 func typeExpr(value string) string {
@@ -809,6 +1258,41 @@ func typeExpr(value string) string {
 		return quote(value)
 	}
 	return value
+}
+
+// userTypeExpr renders the type a user-defined type is built on: a domain's
+// base type, a composite field's type, a range's subtype.
+//
+// These are not column type positions and do not follow the column rules. The
+// pinned Atlas community binary v1.3.0 reads only a sql() call in the first two,
+// measured with everything else held fixed:
+//
+//	domain    type = text          refused, There is no variable named "text"
+//	domain    type = "text"        refused, schemahcl: failed reading spec
+//	domain    type = sql("text")   accepted
+//	composite type = text          refused
+//	composite type = "text"        refused
+//	composite type = sql("text")   accepted
+//
+// A range is the odd one, and it is why this was measured rather than inferred
+// from the other two:
+//
+//	range     subtype = int4          refused
+//	range     subtype = "int4"        ACCEPTED
+//	range     subtype = sql("int4")   accepted
+//
+// It takes the quoted string the other two refuse. sql() is used for all three
+// because it is the one spelling every position accepts, and one rule beats
+// three. Ptah's own parser reads it back to the bare name in each -- text, text,
+// int4 -- so the round trip is unaffected (stokaro/ptah#1260).
+//
+// An empty value keeps typeExpr's behavior rather than becoming sql(""), which
+// would round trip as a type named nothing.
+func userTypeExpr(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return typeExpr(value)
+	}
+	return sqlCall(value)
 }
 
 func sqlCall(value string) string {
@@ -851,12 +1335,25 @@ func columnRef(name string) string {
 	return "column" + objectRefPart(name)
 }
 
-func schemaRef(name string) string {
+// schemaRef renders a reference to a schema block and records that this
+// document now needs one, which is what [renderer.renderSchemas] declares.
+//
+// Every position that writes `schema.<name>` goes through here so that no
+// position can be added without its declaration following. That is the property
+// the previous shape lacked: a reference was written in one place and predicted
+// in another, and the two drifted apart every time a new position was added.
+func (r *renderer) schemaRef(name string) string {
+	if name != "" {
+		if r.schemaRefs == nil {
+			r.schemaRefs = map[string]bool{}
+		}
+		r.schemaRefs[name] = true
+	}
 	return "schema" + objectRefPart(name)
 }
 
-func tableColumnRefs(table string, columns []string) string {
-	tableRef := objectRef("table", table)
+func (r *renderer) tableColumnRefs(table string, columns []string) string {
+	tableRef := r.tableRef(table)
 	refs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if table == "" || column == "" {

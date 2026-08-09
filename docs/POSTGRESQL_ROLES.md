@@ -119,11 +119,65 @@ CREATE ROLE app_user WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NORE
 COMMENT ON ROLE app_user IS 'Application user role';
 ```
 
-PostgreSQL has no `CREATE ROLE IF NOT EXISTS`. Ptah deliberately fails when a
-role already exists instead of suppressing the collision and applying later
-comments or grants to a role whose security attributes Ptah did not create.
-Apply an inspected cluster-role dump to a clean target, or reconcile existing
-roles explicitly before applying it.
+PostgreSQL has no `CREATE ROLE IF NOT EXISTS`. Applying generated SQL to a
+target that already has the role deliberately fails, instead of suppressing the
+collision and applying later comments or grants to a role whose security
+attributes Ptah did not create.
+
+One path is deliberately different, and it is not an apply: evaluating a schema
+file or a migration directory on a `--dev-url` dev database. That database is
+reset before the state is materialized on it, but resetting a database does not
+clear the server's roles, so a role the server already has cannot be created
+there and its `CREATE ROLE` would fail every time. The dev materialization
+leaves such a role exactly as the server has it — it never alters it — and
+names the ones it skipped on standard error. A role the server does not have is
+still created. That is what makes an inspected description replayable into a
+clean sibling database on the same server (issue #1267).
+
+Reading a database no longer produces a cluster-role dump. `ptah db read` and
+`ptah-compat schema inspect` describe only the roles the schemas being read use
+— a role that holds a privilege on a relation in them or on one of the schemas,
+a role that granted one, or a role a row-level security policy names — and
+report on standard error how many managed roles they left out. Comparison is
+unaffected: a role that exists anywhere in the cluster is never planned as a
+`CREATE ROLE`, described or not. Set `PTAH_POSTGRES_INSPECT_ALL_ROLES=1` to
+describe every role Ptah manages on the server, which is what you want when the
+output is meant to reproduce a cluster's roles somewhere else; apply that output
+to a clean target, or reconcile existing roles explicitly before applying it.
+
+### Reserved Role Names
+
+Ptah manages neither the reserved `pg_` roles nor the bootstrap `postgres`
+superuser, in either direction: neither read describes them and neither is ever
+compared. A desired schema declaring one would therefore be compared against
+nothing, read as absent, and planned as a `CREATE ROLE` the server rejects.
+Ptah refuses the declaration instead, before anything is compared or planned,
+on both the compare path and the generate path, naming the role and the rule:
+
+```text
+Error: compare database schema: invalid schema diff: desired schema declares reserved PostgreSQL role "pg_monitor" (PostgreSQL reserves the "pg_" prefix for system roles and refuses CREATE ROLE at SQLSTATE 42939); Ptah manages reserved roles in neither direction, so the declaration is compared against nothing and would be planned as a CREATE ROLE the server refuses; rename the role, or set PTAH_ALLOW_RESERVED_ROLE_NAMES=1 to plan it anyway
+```
+
+Both spellings are covered, and they fail for different reasons: `postgres`
+because the role already exists (SQLSTATE 42710), and any `pg_` name because
+the prefix is reserved (SQLSTATE 42939). The prefix is matched literally, so
+`pgbouncer`, `pgadmin` and `pgpool` are ordinary roles and are planned as
+before, and so is an uppercase `PG_` name, which PostgreSQL also accepts.
+
+Set `PTAH_ALLOW_RESERVED_ROLE_NAMES=1` to plan the declaration anyway, which is
+what Ptah did before the refusal existed. That is not a curiosity: measured on
+PostgreSQL 17.10, a cluster bootstrapped as `admin` rather than `postgres`
+accepts `CREATE ROLE "postgres"` and the role appears in `pg_roles`. The
+variable decides only whether Ptah refuses first or the server does; it changes
+neither read, so a `pg_` name still fails at the server whatever it is set to.
+
+Both variables on this page are booleans and read the same way: leaving one
+unset selects the default described here, a valid boolean is honored, and
+anything else — an exported empty value included — fails the command before it
+reads or compares anything, naming the variable and the value. A malformed value
+is refused even on a run that declares no reserved role at all. The accepted
+spellings are documented once, in
+[Configuration](site/src/content/docs/reference/configuration.md).
 
 ### Role Modifications
 

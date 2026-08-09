@@ -111,9 +111,13 @@ func setSkipChecksEnv(value string) func(t *testing.T) {
 const txtarCheckRefusal = "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied"
 
 // TestMigrateApplySkipChecksEnvEnforcesChecks separates "the variable is set"
-// from "the variable parses as true". An absent variable, an empty one and the
-// two false spellings must all leave checks enforcing, and a value that is not
-// a boolean must be refused outright rather than read as false.
+// from "the variable parses as true". An absent variable and the false
+// spellings leave checks enforcing; a value that is not a boolean -- including
+// an exported empty one, since stokaro/ptah#1334 -- is refused outright rather
+// than read as false.
+//
+// Every row also asserts the column count, so each one is a no-mutation guard:
+// the refusal has to land with the migration unapplied, not after it.
 //
 // Each case builds its own directory and database. A shared fixture would let a
 // case pass on another case's state instead of on its own input.
@@ -126,7 +130,11 @@ func TestMigrateApplySkipChecksEnvEnforcesChecks(t *testing.T) {
 		wantErr string
 	}{
 		{name: "absent enforces checks", setEnv: unsetSkipChecksEnv, wantErr: txtarCheckRefusal},
-		{name: "empty enforces checks", setEnv: setSkipChecksEnv(""), wantErr: txtarCheckRefusal},
+		{
+			name:    "an exported empty value is refused, not read as unset",
+			setEnv:  setSkipChecksEnv(""),
+			wantErr: `invalid boolean value "" for PTAH_SKIP_CHECKS`,
+		},
 		{name: "zero enforces checks", setEnv: setSkipChecksEnv("0"), wantErr: txtarCheckRefusal},
 		{name: "false enforces checks", setEnv: setSkipChecksEnv("false"), wantErr: txtarCheckRefusal},
 		{name: "f enforces checks", setEnv: setSkipChecksEnv("f"), wantErr: txtarCheckRefusal},
@@ -430,5 +438,5 @@ func TestMigrateApplySkipChecksEnvStillRecordsRevisions(t *testing.T) {
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(out, qt.Contains, "No migration files to execute.")
+	c.Assert(out, qt.Contains, "No migration files to execute")
 }

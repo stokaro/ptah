@@ -41,6 +41,7 @@ package capability
 import (
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
@@ -115,11 +116,41 @@ const (
 	// that already decline CREATE INDEX CONCURRENTLY decline this too.
 	DropIndexConcurrently Capability = "drop_index_concurrently"
 
+	// Views marks support for the standalone CREATE VIEW ... AS <query>
+	// object.
+	//
+	// The key exists so that a preset answers for its own target instead of
+	// the question being settled by comparing the dialect name — which is how
+	// the offline converter came to drop a view for three PostgreSQL-family
+	// engines while the live planner emitted one for the same schema
+	// (stokaro/ptah#929).
+	Views Capability = "views"
+
+	// MaterializedViews marks support for CREATE MATERIALIZED VIEW: a view
+	// whose query result is stored rather than recomputed on read. A target
+	// may host plain views and no materialized ones, so this is a separate
+	// key that requires Views.
+	MaterializedViews Capability = "materialized_views"
+
+	// Functions marks support for a user-defined function declared as a
+	// standalone object with a return type, a language and a body — the shape
+	// ast.CreateFunctionNode carries. A target whose routines are declared
+	// differently enough that the node cannot describe one reads as absent
+	// here, the same way ClickHouse's row policies read as absent from
+	// RowLevelSecurity.
+	Functions Capability = "functions"
+
+	// Triggers marks support for the CREATE TRIGGER object itself. Whether
+	// that object can be replaced in a single statement is
+	// CreateOrReplaceTrigger, which requires this one — replace syntax for a
+	// statement the target does not have is a contradiction.
+	Triggers Capability = "triggers"
+
 	// CreateOrReplaceTrigger marks support for replacing triggers in one
 	// statement (PostgreSQL 14+ and MariaDB 10.1.4+ use
 	// CREATE OR REPLACE TRIGGER; SQL Server uses CREATE OR ALTER TRIGGER;
 	// MySQL has no equivalent). Trigger renderers use this to choose between
-	// replace syntax and an explicit drop/create sequence.
+	// replace syntax and an explicit drop/create sequence. Requires Triggers.
 	CreateOrReplaceTrigger Capability = "create_or_replace_trigger"
 
 	// AlterGeneratedColumnExpression marks support for changing a generated
@@ -162,8 +193,16 @@ const (
 	// referenced columns are not declared unique or indexed in the input.
 	ForeignKeysCreateBackingIndex Capability = "foreign_keys_create_backing_index"
 
-	// Sequences marks support for database sequence objects used by
-	// PostgreSQL SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support.
+	// Sequences marks that Ptah generates standalone sequence objects for the
+	// target: PostgreSQL SERIAL/BIGSERIAL backing and explicit CREATE SEQUENCE.
+	//
+	// It describes the generator, not the engine's brochure. A preset that sets
+	// it must have a code path that emits, reads back and plans sequences for
+	// that target, because every reader of this key -- the PostgreSQL renderer's
+	// CREATE/ALTER/DROP SEQUENCE visitors and the PostgreSQL introspection
+	// reader -- assumes all three. MariaDB is the worked example: the engine has
+	// had SEQUENCE since 10.3, this key claimed it, and no code path anywhere
+	// emitted, read or planned one (stokaro/ptah#931 item 8).
 	Sequences Capability = "sequences"
 
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
@@ -219,8 +258,22 @@ var registry = map[Capability]spec{
 	DropIndexConcurrently: {
 		doc: "DROP INDEX CONCURRENTLY (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit CONCURRENTLY)",
 	},
+	Views: {
+		doc: "standalone CREATE VIEW ... AS <query> objects",
+	},
+	MaterializedViews: {
+		doc:      "CREATE MATERIALIZED VIEW: a view whose query result is stored",
+		requires: []Capability{Views},
+	},
+	Functions: {
+		doc: "user-defined functions declared with a return type, a language, and a body",
+	},
+	Triggers: {
+		doc: "CREATE TRIGGER objects",
+	},
 	CreateOrReplaceTrigger: {
-		doc: "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
+		doc:      "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
+		requires: []Capability{Triggers},
 	},
 	AlterGeneratedColumnExpression: {
 		doc: "in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+)",
@@ -375,6 +428,17 @@ func All() []Capability {
 // MySQL84 is the preset for MySQL 8.4 and newer. Notably NO IF EXISTS on
 // constraint or index drops — plans must be exactly-once by construction
 // (see the MySQL planner's constraint-drop ownership rules, issue #207).
+//
+// Object kinds, measured live on MySQL 9.7.1: CREATE VIEW, CREATE FUNCTION
+// and CREATE TRIGGER all succeed. MaterializedViews is off for a reason worth
+// reading, because accepting the statement is the wrong test here —
+// CREATE MATERIALIZED VIEW mv AS SELECT COUNT(*) FROM t is ACCEPTED at exit 0
+// (the nonsense sibling CREATE NONSENSE VIEW is refused at exit 1, so the
+// probe can see a refusal), and information_schema then reports mv with
+// table_type VIEW. Selecting from it before and after an INSERT returns 0 and
+// then 1: the result is recomputed, not stored, so the word MATERIALIZED is
+// parsed and dropped. This key names a view whose result is stored, and
+// MySQL has none.
 func MySQL84() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -386,6 +450,10 @@ func MySQL84() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -427,6 +495,11 @@ func MySQLLegacy() Capabilities {
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
 // 10.11 / 11.x share these): IF EXISTS guards are available on both
 // constraint and index drops.
+//
+// Object kinds, measured live on MariaDB 10.11.18: CREATE VIEW,
+// CREATE FUNCTION and CREATE TRIGGER succeed; CREATE MATERIALIZED VIEW is
+// refused at exit 1, the same exit the nonsense control gets. Unlike MySQL,
+// MariaDB does not quietly accept the keyword.
 func MariaDB1011() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -438,6 +511,10 @@ func MariaDB1011() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -446,9 +523,16 @@ func MariaDB1011() Capabilities {
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,
 		ForeignKeysCreateBackingIndex:      false,
-		Sequences:                          true,
-		XMLType:                            false,
-		AdvisoryLocks:                      false,
+		// MariaDB the engine does have SEQUENCE objects (10.3+, verified live on
+		// 10.11.18: TABLE_TYPE = SEQUENCE). Ptah the generator does not: there is
+		// no MariaDB sequence introspection and no MySQL-family sequence
+		// planning, so `schema render` emitting a CREATE SEQUENCE would produce a
+		// statement `schema apply` never plans and never sees converge. This key
+		// describes the generator, so it is false until those land -- do NOT flip
+		// it back on the engine's behalf (stokaro/ptah#931 item 8).
+		Sequences:     false,
+		XMLType:       false,
+		AdvisoryLocks: false,
 	}
 }
 
@@ -467,6 +551,13 @@ func MariaDBLegacy() Capabilities {
 }
 
 // Postgres16 is the preset for PostgreSQL 14–16.
+//
+// Object kinds, measured live on PostgreSQL 17: all four create at exit 0
+// (with CREATE NONSENSE VIEW refused at exit 1 as the control), and each is
+// reported back by the catalog — pg_views, pg_matviews, pg_proc, pg_trigger.
+// The materialized view is a real one: selecting from it returns the same
+// count before and after an INSERT into its source table, so the result is
+// stored rather than recomputed.
 func Postgres16() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -478,6 +569,10 @@ func Postgres16() Capabilities {
 		EnumCustomType:                     true,
 		CreateIndexConcurrently:            true,
 		DropIndexConcurrently:              true,
+		Views:                              true,
+		MaterializedViews:                  true,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
@@ -507,6 +602,21 @@ func Postgres13() Capabilities {
 // minimal: ClickHouse models constraints and indexes so differently that the
 // shared capability gates mostly do not apply; enums are inline column types
 // (Enum8/Enum16).
+//
+// Object kinds, measured live on ClickHouse 24.8.14: CREATE VIEW and
+// CREATE MATERIALIZED VIEW succeed and system.tables reports engines View and
+// MaterializedView; CREATE TRIGGER is a syntax error, and the server's own
+// error text enumerates what CREATE accepts, with no TRIGGER in the list.
+// Functions is off because ClickHouse's CREATE FUNCTION takes a lambda
+// (CREATE FUNCTION f AS (x) -> x + 1, which succeeds) rather than the return
+// type, language and body this key names — that spelling is a syntax error,
+// the same reason ClickHouse's row policies read as absent from
+// RowLevelSecurity.
+//
+// Ptah's ClickHouse renderer emits neither view kind yet and says so out loud
+// ("CLICKHOUSE does not support CREATE VIEW"). That gap is stokaro/ptah#931
+// item 7; this key records the engine, not the gap, so that closing #931 is a
+// renderer change rather than a second answer to the same question.
 func ClickHouse24() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,
@@ -518,6 +628,10 @@ func ClickHouse24() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  true,
+		Functions:                          false,
+		Triggers:                           false,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -536,6 +650,12 @@ func ClickHouse24() Capabilities {
 // constraints and declarative foreign keys when PRAGMA foreign_keys is enabled
 // per connection, but it has no native enum, schema, sequence, role, RLS, or
 // advisory-lock surface.
+//
+// Object kinds, measured live on SQLite 3.51.0: CREATE VIEW and
+// CREATE TRIGGER succeed and sqlite_master reports both;
+// CREATE MATERIALIZED VIEW and CREATE FUNCTION are syntax errors. A SQLite
+// user-defined function is registered by the host application through
+// sqlite3_create_function, so there is no DDL object for one to plan.
 func SQLite3() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,
@@ -547,6 +667,10 @@ func SQLite3() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          false,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -566,6 +690,13 @@ func SQLite3() Capabilities {
 // constraints, indexes, views, and triggers are available; standalone sequence
 // objects, native enum, PostgreSQL RLS, extension, and advisory-lock surfaces
 // are not.
+//
+// Object kinds, measured live on SQL Server product version 17.0.4065.4 (the
+// image docker-compose.yaml pins): CREATE VIEW, CREATE FUNCTION and
+// CREATE TRIGGER succeed; CREATE MATERIALIZED VIEW is "Incorrect syntax",
+// the same refusal the nonsense control gets. SQL Server's stored-result
+// equivalent is an indexed view — a plain view plus a clustered index rather
+// than its own object kind.
 func SQLServer2022() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              true,
@@ -577,6 +708,10 @@ func SQLServer2022() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		Views:                              true,
+		MaterializedViews:                  false,
+		Functions:                          true,
+		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
@@ -596,6 +731,21 @@ func SQLServer2022() Capabilities {
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
 // also lacks PostgreSQL's SERIAL/sequence surface, XML type, and advisory-lock
 // functions in Ptah's portable subset.
+//
+// Object kinds, measured live on CockroachDB CCL v26.2.5 (the image
+// docker-compose.yaml pins): CREATE VIEW, CREATE MATERIALIZED VIEW,
+// CREATE FUNCTION ... LANGUAGE plpgsql and CREATE TRIGGER all succeed, with
+// CREATE NONSENSE VIEW refused at exit 1 as the control. The materialized
+// view is a real one: after two INSERTs into the source table the plain view
+// reports 2 while the materialized view still reports 0, so the result is
+// stored rather than recomputed.
+//
+// The trigger row is the one worth spelling out, because this preset is named
+// for a line that did not have triggers — CockroachDB added them in v24.3.
+// ForServerVersionResult maps EVERY version string containing "cockroachdb"
+// here, so writing false would retire triggers for every CockroachDB user on
+// a current release. Splitting the key by version is issue #916's job; until
+// then this preset follows the engine that was measured, not its own name.
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
@@ -611,6 +761,12 @@ func CockroachDB23() Capabilities {
 // PostgreSQL for the common DDL subset, but regular CREATE INDEX is already
 // asynchronous in YugabyteDB, so the PostgreSQL CONCURRENTLY keyword is not
 // emitted.
+//
+// Object kinds, measured live on YugabyteDB 2026.1.0.0 (PostgreSQL 15.12-YB,
+// the image docker-compose.yaml pins): all four create at exit 0 with the
+// nonsense control refused at exit 1, and pg_views, pg_matviews, pg_proc and
+// pg_trigger each report their object. The materialized view stores its
+// result — after an INSERT it still reports 0 while the plain view reports 1.
 func YugabyteDB25() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
@@ -624,6 +780,20 @@ func YugabyteDB25() Capabilities {
 // routes the simplest PostgreSQL-family statements through this preset; enums,
 // sequences, RLS, advisory locks, and XML are disabled. Enforced foreign keys,
 // including circular relationships added with ALTER TABLE, are supported.
+//
+// Object kinds: views yes, the other three no, and this is the row that made
+// the four keys necessary. Spanner shares the PostgreSQL planner and renderer,
+// so before them nothing could stop a plpgsql function or a trigger from being
+// planned and rendered for it. Google documents CREATE VIEW and states in the
+// same place that a Spanner view is not a materialized view because it does
+// not store the query result; the PostgreSQL-interface migration guidance
+// states that Spanner does not run user code in the database, so triggers and
+// user-defined stored procedures and functions belong in the application.
+//
+// This row rests on that documentation alone. Ptah has no Spanner container
+// and no live Spanner test (issue #942), so unlike every other preset in this
+// file nothing here was executed against a server. Re-measure these four when
+// #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		With(DropConstraintGeneric, false).
@@ -633,6 +803,9 @@ func SpannerPostgres() Capabilities {
 		With(EnumCustomType, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
+		With(MaterializedViews, false).
+		With(Functions, false).
+		With(Triggers, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
 		With(RoleManagement, false).
@@ -671,6 +844,74 @@ func ForDialect(dialect string) Capabilities {
 	}
 }
 
+// Newest measured major version line per refined dialect.
+//
+// Each ladder in this file ends in an open-topped arm: MySQL sends everything
+// above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
+// PostgreSQL everything at or above 17 to Postgres17. That arm is a stand-in,
+// not a measurement — a server newer than the line below was never observed
+// behaving like the preset it receives. VersionResolution.Saturated is true
+// exactly there, so a caller can tell "inside a measured line" from "past the
+// newest line this package knows".
+//
+// Above these numbers the preset that comes back is byte-identical to
+// ForDialect's, which is the definition of "no version-specific preset could be
+// selected", so VersionSpecific is false there too.
+//
+// Raising one of these numbers is the deliberate act of claiming a newer
+// server line behaves like the preset it lands on. Do it in the change that
+// measures that line, together with the preset it deserves — never as a side
+// effect of bumping a container tag.
+const (
+	// MySQL84 covers 8.4 LTS through the 9.x LTS line, which is the newest
+	// MySQL the integration matrix runs (mysql:9.7).
+	newestMeasuredMySQLMajor = 9
+	// MariaDB1011 covers 10.2 through the 11.x lines; the integration matrix
+	// runs mariadb:10.11.
+	newestMeasuredMariaDBMajor = 11
+	// Postgres17 covers 17 only. The integration matrix already runs
+	// postgres:18, which therefore resolves saturated: Ptah has no measured
+	// PostgreSQL 18 capability line yet.
+	newestMeasuredPostgresMajor = 17
+)
+
+// VersionResolution reports how a server version string was mapped onto a
+// capability preset.
+//
+// Saturated names the case the resolver used to answer wrongly: the version
+// parsed, it selected the newest preset in its dialect's ladder, and it is
+// itself newer than the newest line that ladder was measured against — so the
+// preset is a stand-in and any capability the newer server gained or lost is
+// unmodeled. That is not a version-specific answer, so VersionSpecific is
+// false whenever Saturated is true, and the two fields together say which of
+// the two ways a caller ended up on the dialect default: the version could not
+// be parsed at all, or it parsed and ran off the top of the ladder.
+//
+// Saturation is only defined where this package has a version ladder: MySQL,
+// MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
+// from the banner without consulting a version at all, and ClickHouse, SQLite
+// and SQL Server have no ladder to saturate; all six report Saturated=false
+// and an empty NewestMeasured. Refining those dialects is the remaining scope
+// of issue #916 and is deliberately not answered here.
+type VersionResolution struct {
+	// Capabilities is the resolved preset, never nil for a known dialect.
+	Capabilities Capabilities
+	// VersionSpecific is false when no version-specific preset could be
+	// selected and the dialect default was used instead. It carries exactly
+	// the meaning of ForServerVersionResult's second return value, and it is
+	// false for a saturated version because the preset such a version lands
+	// on is exactly ForDialect's.
+	VersionSpecific bool
+	// Saturated is true when the resolved preset is the top of a version
+	// ladder and the server is newer than the newest line that ladder was
+	// measured against. It is the reason VersionSpecific is false, and is
+	// never true at the same time as VersionSpecific.
+	Saturated bool
+	// NewestMeasured names the newest measured version line for the dialect,
+	// for example "9.x". It is empty for dialects with no version ladder.
+	NewestMeasured string
+}
+
 // ForServerVersion refines ForDialect using a live server version string —
 // typically the result of SELECT version() — so callers can map a concrete
 // server to the closest preset at connect time. Recognized shapes include
@@ -679,54 +920,105 @@ func ForDialect(dialect string) Capabilities {
 // over the MySQL protocol) and "PostgreSQL 16.3 (Debian ...)". When the
 // version cannot be parsed, the dialect's default preset is returned.
 func ForServerVersion(dialect, version string) Capabilities {
-	caps, _ := ForServerVersionResult(dialect, version)
-	return caps
+	return ResolveServerVersion(dialect, version).Capabilities
 }
 
 // ForServerVersionResult is ForServerVersion plus an explicit fallback signal.
 // The boolean is false when no version-specific preset could be selected and
 // the dialect default was used instead. Callers with a live connection can log
 // that degradation while offline callers can keep using ForDialect.
+//
+// A version newer than the newest measured line for its dialect is one of
+// those fallbacks: the ladder's open-topped arm hands back exactly ForDialect's
+// preset, so the boolean is false. ResolveServerVersion separates that case
+// from a version that could not be parsed at all.
 func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
+	resolution := ResolveServerVersion(dialect, version)
+	return resolution.Capabilities, resolution.VersionSpecific
+}
+
+// ResolveServerVersion is ForServerVersionResult with the saturation answer
+// attached. It selects exactly the same preset and reports exactly the same
+// VersionSpecific value; Saturated and NewestMeasured say why a saturated
+// version is not version-specific and which line it was planned as. See
+// VersionResolution for what saturation means and which dialects can report
+// it.
+func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
 	versionLower := strings.ToLower(version)
 
 	switch {
 	case strings.Contains(versionLower, "cockroachdb"):
-		return CockroachDB23(), true
+		return VersionResolution{Capabilities: CockroachDB23(), VersionSpecific: true}
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
-		return YugabyteDB25(), true
+		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true}
 	case strings.Contains(versionLower, "spanner"):
-		return SpannerPostgres(), true
+		return VersionResolution{Capabilities: SpannerPostgres(), VersionSpecific: true}
 	}
 
 	// MariaDB announces itself in the version string even when connected via
 	// the mysql dialect/driver; trust the string over the declared dialect.
 	if strings.Contains(versionLower, "mariadb") {
-		return mariaDBForVersion(version), parseableMariaDBVersion(version)
+		return mariaDBResolution(version)
 	}
 
 	v, ok := parseVersion(version)
 	if !ok {
-		return ForDialect(dialect), false
+		return VersionResolution{Capabilities: ForDialect(dialect)}
 	}
 
 	switch normalized {
 	case platform.MySQL:
-		return mysqlForVersion(v), true
+		return mysqlResolution(v)
 	case platform.MariaDB:
-		return mariaDBForVersion(version), parseableMariaDBVersion(version)
+		return mariaDBResolution(version)
 	case platform.Postgres:
-		if v.major >= 17 {
-			return Postgres17(), true
-		}
-		if v.major >= 14 {
-			return Postgres16(), true
-		}
-		return Postgres13(), true
+		return postgresResolution(v)
 	default:
-		return ForDialect(dialect), false
+		return VersionResolution{Capabilities: ForDialect(dialect)}
 	}
+}
+
+// measuredLine renders a major version number as the version line label
+// reported in VersionResolution.NewestMeasured.
+func measuredLine(major int) string {
+	return strconv.Itoa(major) + ".x"
+}
+
+// ladderResolution assembles the answer for a dialect that has a version
+// ladder. saturated is the single place VersionSpecific and Saturated are tied
+// together: a version past the top of the ladder receives ForDialect's preset,
+// so it is a fallback and not a version-specific selection.
+func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool) VersionResolution {
+	return VersionResolution{
+		Capabilities:    caps,
+		VersionSpecific: !saturated,
+		Saturated:       saturated,
+		NewestMeasured:  measuredLine(newestMeasuredMajor),
+	}
+}
+
+func mysqlResolution(v serverVersion) VersionResolution {
+	return ladderResolution(mysqlForVersion(v), newestMeasuredMySQLMajor, v.major > newestMeasuredMySQLMajor)
+}
+
+func mariaDBResolution(version string) VersionResolution {
+	v, ok := parseVersion(strings.TrimPrefix(version, mariaDBReplicationPrefix))
+	if !ok {
+		return VersionResolution{
+			Capabilities:   mariaDBForVersion(version),
+			NewestMeasured: measuredLine(newestMeasuredMariaDBMajor),
+		}
+	}
+	return ladderResolution(
+		mariaDBForVersion(version),
+		newestMeasuredMariaDBMajor,
+		v.major > newestMeasuredMariaDBMajor,
+	)
+}
+
+func postgresResolution(v serverVersion) VersionResolution {
+	return ladderResolution(postgresForVersion(v), newestMeasuredPostgresMajor, v.major > newestMeasuredPostgresMajor)
 }
 
 func mysqlForVersion(v serverVersion) Capabilities {
@@ -742,6 +1034,21 @@ func mysqlForVersion(v serverVersion) Capabilities {
 	}
 }
 
+func postgresForVersion(v serverVersion) Capabilities {
+	switch {
+	case v.major >= 17:
+		return Postgres17()
+	case v.major >= 14:
+		return Postgres16()
+	default:
+		return Postgres13()
+	}
+}
+
+// mariaDBReplicationPrefix is the fake version prefix MariaDB servers prepend
+// when speaking the MySQL protocol ("5.5.5-10.11.6-MariaDB").
+const mariaDBReplicationPrefix = "5.5.5-"
+
 // mariaDBForVersion picks the MariaDB preset for a server version string.
 // MariaDB servers speaking the MySQL protocol prepend a fake "5.5.5-"
 // replication-compatibility prefix ("5.5.5-10.11.6-MariaDB"); that prefix is
@@ -750,7 +1057,7 @@ func mysqlForVersion(v serverVersion) Capabilities {
 // anything older — or an unparseable string — degrades to MariaDBLegacy /
 // the modern preset respectively.
 func mariaDBForVersion(version string) Capabilities {
-	trimmed := strings.TrimPrefix(version, "5.5.5-")
+	trimmed := strings.TrimPrefix(version, mariaDBReplicationPrefix)
 	v, ok := parseVersion(trimmed)
 	if !ok {
 		return MariaDB1011()
@@ -759,11 +1066,6 @@ func mariaDBForVersion(version string) Capabilities {
 		return MariaDB1011()
 	}
 	return MariaDBLegacy()
-}
-
-func parseableMariaDBVersion(version string) bool {
-	_, ok := parseVersion(strings.TrimPrefix(version, "5.5.5-"))
-	return ok
 }
 
 // serverVersion is a parsed dotted server version.

@@ -721,6 +721,13 @@ func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTab
 // markPrimaryFields marks the field backing a single-column table-level primary
 // key as the column primary key, so it renders inline. Composite keys (len != 1)
 // are left on Table.PrimaryKey and render as a table constraint.
+//
+// Moving the key onto the column does not change what the source said about
+// NULL. Clearing the nullability here turned an HCL or DDL source that declared
+// its key column nullable into a NOT NULL one, which SQLite would then enforce
+// on a table the source never asked to be strict. The dialects that do imply
+// NOT NULL from PRIMARY KEY apply that rule in their own renderer and in the
+// comparator, where it can be applied per dialect. See stokaro/ptah#1235.
 func markPrimaryFields(fields []goschema.Field, columns []string) {
 	if len(columns) != 1 {
 		return
@@ -728,7 +735,6 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 	for i := range fields {
 		if fields[i].Name == columns[0] {
 			fields[i].Primary = true
-			fields[i].Nullable = false
 			return
 		}
 	}

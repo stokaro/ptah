@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -74,10 +75,15 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, fmt.Errorf("--dev-url is required for local schema file diffing")
 	}
 
+	// Both sides are desired states here, so --dev-url is the only URL that can
+	// limit the run to one schema.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:     dialect,
-		DialectFlag: dialectFlag,
-		DevURL:      opts.DevURL,
+		Dialect:         dialect,
+		DialectFlag:     dialectFlag,
+		DevURL:          opts.DevURL,
+		SchemaScope:     schemaScope,
+		SchemaScopeFlag: schemaScopeFlag,
 		// Both sides introspect exactly the schemas --schema asked for. Without
 		// this the read is scoped to the connection default and the scope
 		// projection below filters a universe that never contained the
@@ -103,11 +109,11 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
-	from, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
+	from, fromReport, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
 	if fromErr != nil && !emptySelection(fromErr) {
 		return atlasreport.SchemaDiff{}, fromErr
 	}
-	to, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
+	to, toReport, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
 	if toErr != nil && !emptySelection(toErr) {
 		return atlasreport.SchemaDiff{}, toErr
 	}
@@ -119,12 +125,30 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		reportEmptySelection(opts.Diagnostics, fromErr)
 	}
-	fromDB, err := diffFromDBState(fromState, from, scope)
+	fromDB, fromDBReport, err := diffFromDBState(fromState, from, scope, dialect)
 	if err != nil && !emptySelection(err) {
 		return atlasreport.SchemaDiff{}, err
 	}
+	// A database-backed --from is filtered twice: once as the converted IR and
+	// once as the introspected state the comparison actually consumes. The
+	// second is the one whose report describes what the user's selector met.
+	if fromState.DB != nil {
+		fromReport = fromDBReport
+	}
+	// Same split as the empty --include selection above: diff previews rather
+	// than executes, so it keeps its exit status and says on stderr that a
+	// selector protected nothing.
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport))
 
-	diff := applyDiffPolicy(schemadiff.CompareWithDialect(to, fromDB, dialect), opts.Policy)
+	// The comparison reports what the --from document's coverage record made
+	// undecidable alongside what it decided. The list is empty for every --from
+	// that is a database, because only a document declares limits about itself.
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.Dialect = dialect
+	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromDB, compareOpts)
+	reportUndecidedAdditions(opts.Diagnostics, undecided)
+
+	diff := applyDiffPolicy(compared, opts.Policy)
 	var statements []string
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{
@@ -146,9 +170,10 @@ func diffFromDBState(
 	state atlassource.State,
 	filtered *goschema.Database,
 	scope atlasfilter.Scope,
-) (*types.DBSchema, error) {
+	dialect string,
+) (*types.DBSchema, atlasfilter.ExcludeReport, error) {
 	if state.DB == nil {
-		return schemafile.ToDBSchema(filtered), nil
+		return schemafile.ToDBSchema(filtered, dialect), atlasfilter.ExcludeReport{}, nil
 	}
 	return scopeDatabaseSide(state.DB, scope, "--from schema")
 }

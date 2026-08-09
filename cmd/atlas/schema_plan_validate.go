@@ -155,9 +155,12 @@ func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidate
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.fromURLs[0], "from")
 	desired, err := schemafile.LoadAll(opts.toURLs, schemafile.Options{
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
+		SchemaScope:           schemaScope,
+		SchemaScopeFlag:       schemaScopeFlag,
 		Vars:                  schemaVars,
 	})
 	if err != nil {

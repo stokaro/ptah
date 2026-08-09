@@ -164,7 +164,14 @@ func TestRenderSchemaInspect_HCLSplitRendersTxtar(t *testing.T) {
 	output, err := atlasreport.RenderSchemaInspect(`{{ hcl . | split }}`, report)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output.Text, qt.Contains, "-- tables/users.hcl --")
+	// The file name carries the schema because the table declares one. That
+	// declaration is not cosmetic: without it the rendered HCL is invalid and
+	// the pinned Atlas community binary v1.3.0 refuses the whole document
+	// (stokaro/ptah#1234). Qualifying the name is also what keeps two tables of
+	// the same name in different schemas from colliding on one path, which
+	// validateUniqueSchemaInspectArchivePaths would otherwise reject.
+	c.Assert(output.Text, qt.Contains, "-- schemas/main.hcl --")
+	c.Assert(output.Text, qt.Contains, "-- tables/main_users.hcl --")
 	c.Assert(output.Text, qt.Contains, `table "users"`)
 	c.Assert(output.Text, qt.Contains, `comment = "keeps { braces } in strings"`)
 }
@@ -316,6 +323,96 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 	}
 }
 
+// TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary pins the type
+// spelling the Atlas-compatible JSON inspect surface prints per column class.
+//
+// Every want below was measured on PostgreSQL 17.10 by running
+// `schema inspect --format '{{ json . }}'` on the pinned community binary
+// v1.3.0 and on ptah-compat against the same database. The domain rows are
+// where the two disagreed: information_schema reports a domain column's BASE
+// type in data_type, so Ptah printed "integer" for a column of `positive` and
+// dropped the domain's CHECK with it, while the binary printed the domain.
+//
+// The array row is why this reads DomainName rather than FormattedType, which
+// an array column fills too. There the binary prints the bare category "ARRAY"
+// and Ptah already agreed; preferring FormattedType outright would print
+// "character varying(100)[]" there and trade one disagreement for another.
+// See stokaro/ptah#1242.
+func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		column types.DBColumn
+		want   string
+	}{
+		{
+			name: "domain column names the domain",
+			column: types.DBColumn{
+				Name: "qty", DataType: "integer", UDTName: "int4",
+				FormattedType: "positive", DomainName: "positive", IsNullable: "NO",
+			},
+			want: `{"name":"qty","type":"positive"}`,
+		},
+		{
+			name: "domain outside the search path keeps its qualifier",
+			column: types.DBColumn{
+				Name: "qty", DataType: "integer", UDTName: "int4",
+				FormattedType: "doms.positive", DomainName: "positive", IsNullable: "NO",
+			},
+			want: `{"name":"qty","type":"doms.positive"}`,
+		},
+		{
+			name: "array column stays the bare category",
+			column: types.DBColumn{
+				Name: "tags", DataType: "ARRAY", UDTName: "_varchar",
+				FormattedType: "character varying(100)[]", IsNullable: "NO",
+			},
+			want: `{"name":"tags","type":"ARRAY"}`,
+		},
+		{
+			name:   "plain column is untouched",
+			column: types.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO"},
+			want:   `{"name":"id","type":"integer"}`,
+		},
+		{
+			name: "a dialect that reports its own full spelling keeps it",
+			column: types.DBColumn{
+				Name: "mood", DataType: "enum", ColumnType: "enum('sad','ok')", IsNullable: "NO",
+			},
+			want: `{"name":"mood","type":"enum('sad','ok')"}`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			report := atlasreport.NewSchemaInspectReport(
+				&goschema.Database{},
+				&types.DBSchema{
+					Tables: []types.DBTable{{
+						Name:    "t",
+						Schema:  "public",
+						Columns: []types.DBColumn{test.column},
+					}},
+				},
+				types.DBInfo{Dialect: "postgres", Schema: "public"},
+				nil,
+				false,
+				// The run did not choose its own scope, so the SQL format would
+				// leave the schema row out. This case renders JSON, which
+				// describes it either way; the value is the connected-schema one
+				// the fixture represents.
+				false,
+			)
+
+			output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(output.Text, qt.Contains, test.want)
+		})
+	}
+}
+
 func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
 		&goschema.Database{
@@ -340,5 +437,7 @@ func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 		},
 		types.DBInfo{Dialect: "sqlite", Schema: "main"},
 		nil,
+		false,
+		true,
 	)
 }

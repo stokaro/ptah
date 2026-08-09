@@ -24,11 +24,16 @@ ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 Command examples on the Atlas compatibility pages are written as
 `ptah-compat <command> ...` — the name the binary ships under.
 
-Every Atlas-compatible command has a native `ptah` twin — for example
-`ptah-compat migrate apply` and `ptah migrations up`, or `ptah-compat schema inspect` and
-`ptah schema inspect --db-url ...`. Use the native tree for new Ptah-authored
-work and the compat binary for existing Atlas scripts; the per-verb mapping is
-listed in the [Atlas-compatible commands reference](../../reference/atlas-commands/).
+What the two binaries share is capabilities, not command lines. A generally
+useful capability you reach through `ptah-compat` is reachable through native
+`ptah` as well, under native names and flags: `ptah-compat migrate apply` and
+`ptah migrations up`, or `ptah-compat schema inspect` and `ptah schema inspect`.
+Atlas-specific machinery has no native twin at all. See
+[Capability parity, not interface parity](../comparison/#capability-parity-not-interface-parity).
+
+Use the native tree for new Ptah-authored work and the compat binary for
+existing Atlas scripts; the per-verb mapping is listed in the
+[Atlas-compatible commands reference](../../reference/atlas-commands/).
 
 ### Installing under the name `atlas`
 
@@ -113,6 +118,143 @@ Registry protocol is proprietary and account-bound; the native
 `ptah migrations push` and `ptah schema push` verbs publish to any
 [OCI registry](../../operate/oci-registry/) instead) and the `schema plan`
 registry sub-verbs. The per-command pages name each waiver where it appears.
+
+## Compatibility never costs you a capability
+
+Ptah models things the Atlas community CLI does not. PostgreSQL extensions,
+sequences and row-level security policies are the clearest examples: that CLI
+answers `postgres: extensions are not supported by this version` and refuses a
+schema file that declares any of them, while Ptah reads, diffs and applies all
+three.
+
+Being a drop-in for that CLI never means giving those up.
+
+The compatibility surface **defaults** to what the community CLI accepts, so
+output you hand back to it stays readable. What that default leaves out is
+reported rather than dropped in silence — you are told what was omitted and
+why, so a compatibility-shaped inspect never describes less of your database
+than it found without saying so.
+
+The fuller behavior stays available on the same `ptah-compat` surface through a
+`PTAH_*` environment variable. It is an environment variable rather than a flag
+on purpose: the compatibility binary's flags are held to parity with the pinned
+community CLI, so a flag Atlas does not have would break the very drop-in
+promise it was added to serve. Native `ptah` verbs always emit everything Ptah
+models, with no switch to set.
+
+This matters most if you are coming from Atlas **Pro** rather than CE. The
+compatibility surface is the migration path for Pro scripts and configuration
+too, not only CE ones — a capability you could only reach by rewriting your
+pipeline against native `ptah` verbs would not be a migration path at all.
+
+The rule runs the other way too. A capability built for Atlas compatibility
+does not stay on the compatibility surface: where it is generally useful for
+schemas or migrations, native `ptah` reaches it under native names.
+
+### The variables
+
+Every variable below is a boolean, and they all read the same way: leaving it
+unset selects the default described here, a valid boolean is honored, and
+anything else — including an exported empty value — fails the command before it
+does any work, naming the variable and the value you typed. The accepted
+spellings and the error shape are documented once, in
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
+The value is read on every run of the command that owns it, not only on the runs
+that would have used the enabled behavior, so `PTAH_ATLAS_LINT_ALL_VERSIONS=yes`
+in a CI environment file fails the next run rather than the next run that
+happens to omit `--latest`.
+
+**`PTAH_ATLAS_INSPECT_ALL_BLOCKS`** — by default, `ptah-compat schema inspect`
+leaves an `extension`, `sequence` or `policy` block out of PostgreSQL HCL
+output when nothing else in the document depends on it, and reports each
+omission on standard error. For an extension, "depends on" is measured against
+what the catalog says the extension supplies — `isn` supplies the type `isbn` —
+rather than against its name, and against what the catalog resolved for the
+document's indexes, since a GIN index over an `integer` column needs `btree_gin`
+and prints no word of it. Set it to `1` and every block Ptah models is
+emitted: the output describes the database in full, and the community CLI
+refuses it.
+
+**`PTAH_POSTGRES_INSPECT_ALL_ROLES`** — by default, a PostgreSQL read describes
+only the roles the inspected schemas use, because roles are cluster-wide and a
+description of one database is not a place to list another tenant's roles. Each
+read reports on standard error how many managed roles it left out. Set it to
+`1` and every role Ptah manages on the server is described again, which is what
+you need to reproduce one cluster's roles in another. It widens the description
+only: comparison already treats undescribed roles as present, so the planned
+statements are identical either way. Reserved `pg_` names and the bootstrap
+`postgres` superuser are outside it in both directions.
+
+**`PTAH_ALLOW_RESERVED_ROLE_NAMES`** — by default, a desired schema that
+declares a reserved PostgreSQL role is refused before anything is compared or
+planned, naming the role and the rule, because Ptah manages neither the `pg_`
+roles nor the bootstrap `postgres` superuser in either direction and the
+declaration would otherwise become a `CREATE ROLE` the server rejects at
+SQLSTATE 42939 or 42710. Set it to `1` and the declaration is planned instead,
+as it was before the refusal existed. That is worth having on a cluster
+bootstrapped under a name other than `postgres`, where `CREATE ROLE "postgres"`
+succeeds.
+
+**`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
+`data "external_schema"` is not evaluated, because it runs a
+repository-controlled program. Set it to `1` and the data source is evaluated,
+matching the native `--allow-external-schema` flag.
+
+**`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`** — by default,
+`ptah-compat migrate lint` requires `--dev-url`, because the community CLI marks
+it required and exits 1 without it. Ptah's analyzers read the migration files
+and need no database, so set it to `1` and the run proceeds with no dev database
+and reports what the static analysis finds. Native `ptah migrations lint` needs
+no opt-in.
+
+**`PTAH_STRICT_DIR_QUERY`** — by default, a `--dir` URL query key other than
+`format` is ignored, exactly as the community CLI ignores it, and named on
+standard error so a misspelled `?fromat=goose` does not quietly read the
+directory in the wrong layout. Set it to `1` and such a key is a refusal
+instead, for a pipeline that wants a typo to stop the run. The value is read on
+every run of the eight verbs that accept a `--dir` query — `apply`, `diff`,
+`hash`, `lint`, `new`, `set`, `status` and `validate` — whether or not the URL
+carries a query at all, so `PTAH_STRICT_DIR_QUERY=nope` in a CI environment file
+fails the next run rather than the next typo.
+`migrate checkpoint`, `down`, `edit`, `rebase`, `rm`
+and `test` refuse a `--dir` query outright, so neither the note nor this
+variable applies there.
+
+**`PTAH_ATLAS_LINT_ALL_VERSIONS`** — by default, `ptah-compat migrate lint`
+refuses a run that names no scope, because the community CLI refuses it:
+`--latest`, `--git-base` or an `atlas.hcl` `lint` block supplying one is
+required, and without it the answer is
+`Error: --latest or --git-base is required` at exit 1, before the migration
+directory is read and before `--dev-url` is contacted. Set it to `1` and the
+whole directory is linted instead, which is what Ptah's own linter does. Native
+`ptah migrations lint` needs no scope and ignores the variable.
+
+### One shape has no Atlas-readable form at all
+
+Suppression can only leave out a block nothing else names. A **sequence behind a
+column default** is named, so the block stays and the document is not readable
+by the community CLI:
+
+```sql
+CREATE SEQUENCE order_seq;
+CREATE TABLE orders (id integer NOT NULL DEFAULT nextval('order_seq'::regclass));
+```
+
+This is not a gap Ptah can close. Measured on PostgreSQL 17, the community CLI's
+own inspect of that database emits
+`default = sql("nextval('order_seq'::regclass)")` with no `sequence` block, and
+then cannot read its own output back: `pq: relation "order_seq" does not exist`.
+There is no faithful description of that database the CLI can read — not Ptah's
+and not its own. Ptah keeps the sequence, so the document is at least readable
+by Ptah and true about the database, and says so on standard error. Dropping the
+column's default to make the file readable would describe a database you do not
+have, which is the one outcome worse than a refusal.
+
+So `ptah-compat schema inspect` is not a promise that every PostgreSQL database
+produces community-CLI-readable HCL. It is a promise that the output is always
+self-consistent, that nothing disappears without being reported, and that the
+full description is one environment variable away.
 
 ## Parity expectations
 

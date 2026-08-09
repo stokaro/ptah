@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -49,6 +50,15 @@ type ApplyOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// Diagnostics receives out-of-band notices, such as an --exclude selector
+	// that named no object. Nil discards them.
+	Diagnostics io.Writer
+	// RefuseUnmatchedExclude makes an --exclude selector that named nothing in
+	// either state an error rather than a notice. Only the verb that executes
+	// the plan sets it: `schema apply` refuses because a selector that
+	// protected nothing means the plan is free to change the object the user
+	// wrote it for.
+	RefuseUnmatchedExclude bool
 }
 
 type ApplyPlan struct {
@@ -73,6 +83,8 @@ type ApplyRuntimeOptions struct {
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired].
 	Desired *goschema.Database
+	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
+	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -126,6 +138,11 @@ type applyComputation struct {
 	statements []string
 	current    *types.DBSchema
 	desired    *goschema.Database
+	// readScope is the schema allow-list current was read at, nil when the read
+	// was the connection's own default. A saved plan records no schema scope, so
+	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
+	// current has to know whether the two would be the same read.
+	readScope []string
 }
 
 func computeApplyPlan(
@@ -139,6 +156,20 @@ func computeApplyPlan(
 	if len(opts.ToURLs) == 0 && opts.Desired == nil {
 		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
 	}
+	// Resolved here, before the desired state is loaded and before the target is
+	// read, so a malformed value refuses the run with nothing planned, nothing
+	// executed and nothing written. Resolving it beside the refusal below would
+	// hide the typo on every run whose --exclude selectors all matched -- the
+	// healthy pipeline -- and surface it only on the run it was set to govern.
+	// See stokaro/ptah#1334.
+	allowUnmatched := false
+	if opts.RefuseUnmatchedExclude {
+		allowed, err := atlasfilter.AllowUnmatchedExclude()
+		if err != nil {
+			return applyComputation{}, err
+		}
+		allowUnmatched = allowed
+	}
 
 	scope := atlasfilter.Scope{
 		Schemas:       opts.Schemas,
@@ -146,21 +177,35 @@ func computeApplyPlan(
 		Exclude:       opts.Exclude,
 		DefaultSchema: conn.Info().Schema,
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
-	if err != nil {
-		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
-	}
-	current, currentErr := scopeDatabaseSide(current, scope, "current schema")
-	if currentErr != nil && !emptySelection(currentErr) {
-		return applyComputation{}, currentErr
-	}
 	desired, err := loadDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	desired, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+	readScope := applyReadScope(opts.Schemas, conn.Info().Schema, desired)
+	current, err := dbschema.ReadSchemaWithSchemas(conn, readScope)
+	if err != nil {
+		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
+	}
+	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
+	if currentErr != nil && !emptySelection(currentErr) {
+		return applyComputation{}, currentErr
+	}
+	desired, desiredReport, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
 	if desiredErr != nil && !emptySelection(desiredErr) {
 		return applyComputation{}, desiredErr
+	}
+	// An --exclude selector that named nothing in the database and nothing in
+	// the desired state protected nothing, and apply is the verb that carries
+	// the plan out. Refusing is the safe answer there; the opt-in named in the
+	// message restores the permissive one. Callers that only compute a plan
+	// say so instead.
+	unmatched := atlasfilter.UnmatchedAcrossStates(currentReport, desiredReport)
+	if opts.RefuseUnmatchedExclude && !allowUnmatched {
+		if err := refuseUnmatchedExclude(unmatched); err != nil {
+			return applyComputation{}, err
+		}
+	} else {
+		reportUnmatchedExclude(opts.Diagnostics, unmatched)
 	}
 	// An --include selection that matched neither the database nor the desired
 	// state leaves nothing to apply. Reported as a synced schema it is a verb
@@ -173,7 +218,7 @@ func computeApplyPlan(
 			currentErr)
 	}
 
-	computation := applyComputation{current: current, desired: desired}
+	computation := applyComputation{current: current, desired: desired, readScope: readScope}
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
 	if err != nil {
@@ -195,6 +240,84 @@ func computeApplyPlan(
 	return computation, nil
 }
 
+// applyReadScope resolves the schemas the DATABASE side of an apply is read at.
+//
+// The two sides of a comparison have to be read at the same scope or silence on
+// one of them is mistaken for absence. `schema inspect` on a URL that pins no
+// schema now describes every schema of the realm (stokaro/ptah#1264); applying
+// that description back to the database it came from used to read only the
+// connection's own schema, find no `extra` there, and plan `CREATE SCHEMA
+// extra` and `CREATE TABLE "extra"."b"` for a schema and a table the database
+// already has. Measured on PostgreSQL 17.10: the plan never converged, and
+// executing it failed at SQLSTATE 42P07.
+//
+// The scope is taken from the DESIRED state rather than from the URL, and that
+// choice is the safety property. A URL-derived realm scope would widen the read
+// for every document, including one that describes a single schema of a
+// multi-schema database -- and a schema the database has that the document does
+// not describe is planned for removal. Measured on the same database, a
+// document declaring only `public` read at two-schema scope plans `DROP TABLE
+// IF EXISTS "extra"."b" CASCADE`. Reading exactly the schemas the document
+// names cannot reach an object no document mentions.
+//
+// An explicit `--schema` outranks both: it is the operator naming the scope.
+//
+// nil is returned when the desired state names nothing beyond the schema the
+// connection is already on, so the common case reads exactly what it read
+// before.
+func applyReadScope(requested []string, connectedSchema string, desired *goschema.Database) []string {
+	if names := SplitSchemaNames(requested); len(names) > 0 {
+		return names
+	}
+	connected := strings.TrimSpace(connectedSchema)
+	named := desiredSchemaNames(desired)
+	beyond := slices.DeleteFunc(named, func(name string) bool { return name == connected })
+	if len(beyond) == 0 {
+		return nil
+	}
+	if connected != "" {
+		beyond = append(beyond, connected)
+	}
+	slices.Sort(beyond)
+	return slices.Compact(beyond)
+}
+
+// desiredSchemaNames is every schema a desired state names, over the
+// declarations that carry one. A document may name a schema by declaring a
+// block for it or by qualifying an object with it, and both have to count: an
+// inspected document does the first, a hand-written one often only the second.
+func desiredSchemaNames(desired *goschema.Database) []string {
+	if desired == nil {
+		return nil
+	}
+	var names []string
+	add := func(name string) {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	for _, schema := range desired.Schemas {
+		add(schema.Name)
+	}
+	for _, table := range desired.Tables {
+		add(table.Schema)
+	}
+	for _, sequence := range desired.Sequences {
+		add(sequence.Schema)
+	}
+	for _, domain := range desired.Domains {
+		add(domain.Schema)
+	}
+	for _, composite := range desired.CompositeTypes {
+		add(composite.Schema)
+	}
+	for _, rangeType := range desired.Ranges {
+		add(rangeType.Schema)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
 // loadDesiredApplySchema materializes the desired schema for apply planning.
 // The resolver accepts local schema files (unchanged pre-resolver behavior),
 // database URLs, migration directories replayed on the dev database, and
@@ -207,10 +330,15 @@ func loadDesiredApplySchema(
 	if opts.Desired != nil {
 		return opts.Desired, nil
 	}
+	// Both the dev database and the target can limit an apply to one schema, and
+	// the target's URL is the one this connection was opened from.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			SchemaScope:           schemaScope,
+			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,
 		})
 	}
@@ -222,6 +350,8 @@ func loadDesiredApplySchema(
 		Dialect:               conn.Info().Dialect,
 		DialectFlag:           "--url",
 		DevURL:                opts.DevURL,
+		SchemaScope:           schemaScope,
+		SchemaScopeFlag:       schemaScopeFlag,
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,
 	})
@@ -255,8 +385,10 @@ func PrepareApply(
 		ProjectEnv: opts.ProjectEnv,
 		Desired:    opts.Desired,
 
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
+		Diagnostics:            opts.Diagnostics,
+		RefuseUnmatchedExclude: true,
+		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
+		Vars:                   opts.Vars,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

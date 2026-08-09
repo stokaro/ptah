@@ -240,8 +240,8 @@ func resolveRootDirs(rootDirs []string) ([]string, error) {
 	return absRoots, nil
 }
 
-// loadSchemaFile resolves a single YAML, HCL, or SQL schema file into a
-// finalized schema.
+// loadSchemaFile resolves a single YAML, HCL, or SQL schema file — or a
+// directory of .sql or .hcl schema files — into a finalized schema.
 func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*goschema.Database, error) {
 	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
 		return o.loadOCI(ctx, schemaFile)
@@ -257,10 +257,17 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	// Reject unsupported extensions here so the error is reported without the
 	// generic "error parsing schema file" wrapper, matching the render command's
 	// long-standing message.
-	switch strings.ToLower(filepath.Ext(absPath)) {
-	case ".yaml", ".yml", ".hcl", ".sql":
-	default:
-		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(absPath))
+	//
+	// A directory has no extension to check, and the extension rule used to
+	// refuse it with `unsupported schema file extension ""` — a message about a
+	// file for something that is not one. The loader decides what a directory
+	// of schema files means, so a directory skips this switch and reaches it.
+	if !isSchemaDir(absPath) {
+		switch strings.ToLower(filepath.Ext(absPath)) {
+		case ".yaml", ".yml", ".hcl", ".sql":
+		default:
+			return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(absPath))
+		}
 	}
 
 	o.logf("Reading schema file: %s", absPath)
@@ -270,6 +277,14 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
 	return result, nil
+}
+
+// isSchemaDir reports whether path names an existing directory. A path that
+// cannot be stat'ed is not one: the loader reports a missing path with a better
+// message than the extension switch would.
+func isSchemaDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // envScheme is the desired-state reference scheme that reads an attribute out

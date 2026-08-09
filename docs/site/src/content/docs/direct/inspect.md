@@ -52,12 +52,58 @@ sqlite3 restored.db <schema.sql
 
 On PostgreSQL-family databases, `--schemas` accepts a comma-separated list of
 database schemas to read; when empty, Ptah reads the connection's default
-schema. Cluster-role creation statements in PostgreSQL output are intended for
-a clean target. If a role already exists, applying the SQL
+schema.
+
+PostgreSQL roles are cluster-wide rather than per-database, so a read reports
+only the roles the schemas being read actually use: a role that holds a
+privilege on a relation in them or on one of the schemas, a role that granted
+one, or a role a row-level security policy on a table in them applies to. A
+role that merely exists elsewhere on the server belongs to no schema being read
+and is not described.
+
+Equivalently, a read describes a role exactly when some other statement in the
+same output names it, so the output never refers to a role it does not create.
+Ownership alone is not a reason: Ptah writes no `OWNER TO` and no
+`CREATE SCHEMA ... AUTHORIZATION`, so an owner would be a role the output
+creates and never mentions again. For the same reason a read no longer reports
+the built-in privileges an owner holds on a relation nobody has granted
+anything on -- no `GRANT` produced them, and `CREATE TABLE` re-establishes them
+for the new owner when the output is replayed.
+
+A read that leaves roles out says so on standard error, and the fuller read is
+still available on this same command:
+
+```bash
+PTAH_POSTGRES_INSPECT_ALL_ROLES=1 ptah db read --db-url "$PG_URL"
+```
+
+That describes every role Ptah manages on the server — what a read produced
+before the scoping — which is what you want when the point of the read is to
+reproduce a cluster's roles somewhere else. It changes the description only:
+comparison already treats those roles as present either way. Reserved `pg_`
+names and the bootstrap `postgres` superuser stay out of both. See
+[PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
+
+Leaving the variable unset keeps the scoped read; a valid boolean is honored;
+anything else fails the read before the database is queried, naming the variable
+and the value. See
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
+Role creation statements in PostgreSQL output are intended for
+a clean target. If a role already exists, running the SQL by hand
 fails before its description or grants are changed; this prevents privileges
 from being attached to a role with unverified security attributes. Role
 descriptions are restored with `COMMENT ON ROLE`; schema and table grants are
 still emitted after successful role creation.
+
+Feeding that description back through Ptah is different, because Ptah knows the
+role is already there. `ptah-compat schema apply` plans no `CREATE ROLE` for a
+role the target's server has, and evaluating the document on a `--dev-url` dev
+database does not re-create one either — a dev database is reset before the
+document is materialized on it, and resetting a database does not clear the
+server's roles. Roles the dev database was not given are named on standard
+error and are left exactly as the server has them; a role the server does not
+have is still created there.
 
 ## Turn the schema into Go models
 
@@ -114,6 +160,27 @@ table "users" {
   }
 }
 ```
+
+Native inspection describes every construct Ptah models, including PostgreSQL
+extensions, sequences, and row-level security policies. The Atlas-compatible
+binary leaves those three block types out of its HCL by default, because the
+tool it stands in for refuses a file containing them; that filtering is a
+property of `ptah-compat` alone, never reaches this command, and
+`PTAH_ATLAS_INSPECT_ALL_BLOCKS` has no effect here. See
+[Blocks the compatibility surface leaves out by default](../../atlas/schema-commands/#blocks-the-compatibility-surface-leaves-out-by-default).
+
+Because this command leaves nothing out, its output claims to describe
+everything, and it carries no `ptah:not-described` header. Delete a block from
+it and the plan that follows removes the object, which is what you asked for.
+The compatibility surface, which does leave blocks out, says so in the document;
+see [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
+
+Both commands write a `permission` block by the same three rules: a schema is
+declared whenever anything references one, a grantee is a `role.<name>`
+reference only where the document declares that role block, and a target names
+the kind of block the document declares for it — `view.<name>` for a view,
+`materialized.<name>` for a materialized view. See
+[Three rules a permission block is written by](../../atlas/schema-commands/#three-rules-a-permission-block-is-written-by).
 
 `--format sql` and `--format json` select SQL and JSON output. `--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:

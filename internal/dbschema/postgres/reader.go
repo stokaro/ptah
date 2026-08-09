@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -179,11 +182,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if r.caps.Has(capability.RoleManagement) {
 		// Read roles and grants (PostgreSQL-specific)
-		roles, err := r.readRoles()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read roles: %w", err)
+		if err := r.readRolesInto(schema); err != nil {
+			return nil, err
 		}
-		schema.Roles = roles
 
 		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
 		if err != nil {
@@ -201,12 +202,23 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	return schema, nil
 }
 
+// readSchemas reports the schemas this read covered.
+//
+// It asks schemasToRead(), the same list readTables, readIndexes and every
+// other read below iterate, so the schema list and the objects underneath it
+// are one decision rather than two. It used to answer nothing at all unless an
+// allow-list had been passed, which meant an unscoped read described tables in
+// `public` while denying it had read any schema -- and whatever consumed that
+// silence had to guess. stokaro/ptah#1276.
+//
+// Which schemas an unscoped read covers is a separate question, and this
+// change does not move it: it is still the connected schema. What moves is that
+// the read says so. `schema inspect` resolves its own wider scope from the URL
+// and hands the names in explicitly (stokaro/ptah#1264).
 func (r *Reader) readSchemas() ([]types.DBSchemaInfo, error) {
-	if !r.scoped {
-		return nil, nil
-	}
-	schemas := make([]types.DBSchemaInfo, 0, len(r.schemasToRead()))
-	for _, schemaName := range r.schemasToRead() {
+	names := r.schemasToRead()
+	schemas := make([]types.DBSchemaInfo, 0, len(names))
+	for _, schemaName := range names {
 		schema, err := r.readSchemaInfo(schemaName)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -303,14 +315,51 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			-- information_schema erases an array's element type: data_type is
 			-- the bare category "ARRAY" and character_maximum_length is null,
 			-- so varchar(100)[] cannot be reconstructed from either. Only
-			-- format_type carries it. Read for array columns alone: preferring
-			-- it everywhere would change the type string for every column and
-			-- reach the SERIAL detection and the sized-type branches
-			-- downstream (stokaro/ptah#1138).
-			CASE WHEN data_type = 'ARRAY'
+			-- format_type carries it. Read for array and domain columns alone:
+			-- preferring it everywhere would change the type string for every
+			-- column and reach the SERIAL detection and the sized-type
+			-- branches downstream (stokaro/ptah#1138).
+			--
+			-- It erases a domain the same way. data_type for a column of
+			-- domain positive_int is its base type, "integer", so the column
+			-- was rebuilt without the domain's CHECK and nothing said so;
+			-- domain_name is how information_schema records that the
+			-- declared type was a domain, and format_type spells it the way
+			-- the server does, schema-qualifying it when the search path
+			-- needs that. Measured against the pinned binary v1.3.0, which
+			-- reports "type":"positive_int" here, so this is also the
+			-- compatible answer. See #1242.
+			CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type,
+			-- The same format_type answer means two different things, and only
+			-- this column separates them: for an array it is a TYPE, and for a
+			-- domain it is the IDENTIFIER its author picked. A comparator that
+			-- normalizes the two the same way lets a name decide whether a
+			-- column changed -- a domain named "waypoint" contains "int" and one
+			-- named "context" contains "text". A domain over an array is
+			-- reported with data_type 'ARRAY' just like a plain array column, so
+			-- the distinction cannot be recovered downstream (stokaro/ptah#1138).
+			--
+			-- The Atlas-compatible JSON inspect surface reads the same fact for
+			-- the same reason: measured against the pinned binary v1.3.0, an
+			-- array column prints "type":"ARRAY" while a domain column prints
+			-- "type":"positive", schema-qualified to "doms.positive" when the
+			-- domain is off the search path. Carrying the fact separately is
+			-- what lets each consumer pick, instead of every consumer
+			-- re-deriving it from a coincidence of which other field is empty
+			-- (stokaro/ptah#1242).
+			COALESCE(col.domain_name, '') AS domain_name,
+			-- And the schema that holds it, because the name is only half of a
+			-- domain's identity. public.status and other.status are two types;
+			-- a comparator given "status" for both reports no change for a
+			-- column that must be converted, and the DROP DOMAIN ... CASCADE
+			-- the plan keeps then takes the column. Read raw rather than
+			-- through outputSchema: the domain may live outside the schemas
+			-- being read, and blanking it there is exactly the erasure this
+			-- projection exists to prevent (stokaro/ptah#1138).
+			COALESCE(col.domain_schema, '') AS domain_schema,
 			is_nullable,
 			column_default,
 			character_maximum_length,
@@ -358,6 +407,8 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&col.DataType,
 			&col.UDTName,
 			&col.FormattedType,
+			&col.DomainName,
+			&col.DomainSchema,
 			&col.IsNullable,
 			&col.ColumnDefault,
 			&col.CharacterMaxLength,
@@ -463,7 +514,12 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 	var enums []types.DBEnum
 	for name, values := range enumMap {
 		enums = append(enums, types.DBEnum{
-			Name:   name,
+			Name: name,
+			// Same convention as tables, views and domains: blank for the
+			// connection's own schema, named otherwise. Filters rebuild the
+			// qualified spelling from the connection's default, which is what
+			// makes `--exclude app.color` reach this enum (stokaro/ptah#933).
+			Schema: r.outputSchema(schemaName),
 			Values: values,
 		})
 	}
@@ -495,6 +551,46 @@ func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
 	return nil
 }
 
+// extensionOwnedTypeExclusion is the correlated NOT EXISTS that keeps a type an
+// extension owns out of a description. It is written once and shared by the
+// domain, composite and range reads because the three ask the same question of
+// the same catalog and three copies drift.
+//
+// The predicate correlates on `t`, which every one of those queries spells for
+// its pg_type row.
+//
+// The reasoning is the one [Reader.readFunctionsForSchema] already carries for
+// functions -- an extension's members "cannot be dropped independently and
+// should be managed by the extension" -- and it was never applied to its types.
+// A description that declares both `extension "lo"` and `domain "lo"` cannot be
+// replayed, because CREATE EXTENSION makes the domain and the second
+// declaration collides with it. Measured on PostgreSQL 17.10 (stokaro/ptah#1294):
+//
+//	CREATE EXTENSION lo;
+//	CREATE TABLE docs (id integer PRIMARY KEY, payload lo);
+//
+//	Error: materialize schema on dev database: ... ERROR: type "lo" already
+//	exists (SQLSTATE 42710)  SQL: CREATE DOMAIN "lo" AS oid;
+//
+// classid is part of the predicate rather than left to objid alone: a pg_depend
+// row names its object by (classid, objid), and OIDs are drawn from one counter
+// shared by every catalog, so objid on its own can collide with a row of another
+// class.
+//
+// Ownership is asked of pg_depend rather than of the type's NAME. A user type
+// named close to an extension's -- `lo_own` beside `lo` -- is a user type, and a
+// name filter would have to spell `NOT LIKE` with an ESCAPE clause to avoid
+// treating its underscore as a wildcard, a mistake this reader has already had
+// to correct elsewhere (stokaro/ptah#1291). The catalog edge has no such
+// failure mode.
+const extensionOwnedTypeExclusion = `
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend extdep
+			WHERE extdep.classid = 'pg_type'::regclass
+			  AND extdep.objid = t.oid
+			  AND extdep.deptype = 'e'
+		)`
+
 // readDomains reads PostgreSQL domain types (typtype='d').
 func (r *Reader) readDomains() ([]types.DBDomain, error) {
 	var domains []types.DBDomain
@@ -523,7 +619,8 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 			), '') AS check_expr
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
-		WHERE t.typtype = 'd' AND n.nspname = $1
+		WHERE t.typtype = 'd' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -574,7 +671,8 @@ func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
 		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-		WHERE t.typtype = 'c' AND n.nspname = $1
+		WHERE t.typtype = 'c' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname, a.attnum`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -626,15 +724,27 @@ func (r *Reader) readRanges() ([]types.DBRange, error) {
 }
 
 func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error) {
+	// The four attributes after the subtype are what makes a change to an
+	// existing range type visible at all; without them the comparator had only
+	// names to compare and called a changed range converged (stokaro/ptah#931
+	// item 2). rngcanonical and rngsubdiff are regproc and hold 0 when the range
+	// has no such function, which renders as "-", so they are nulled first.
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
 			t.typname AS range_name,
-			format_type(rng.rngsubtype, NULL) AS subtype
+			format_type(rng.rngsubtype, NULL) AS subtype,
+			COALESCE(opc.opcname, '') AS subtype_opclass,
+			COALESCE(coll.collname, '') AS collation_name,
+			COALESCE(NULLIF(rng.rngcanonical, 0)::regproc::text, '') AS canonical,
+			COALESCE(NULLIF(rng.rngsubdiff, 0)::regproc::text, '') AS subtype_diff
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		JOIN pg_range rng ON rng.rngtypid = t.oid
-		WHERE t.typtype = 'r' AND n.nspname = $1
+		LEFT JOIN pg_opclass opc ON opc.oid = rng.rngsubopc
+		LEFT JOIN pg_collation coll ON coll.oid = rng.rngcollation
+		WHERE t.typtype = 'r' AND n.nspname = $1` +
+		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -647,7 +757,15 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 	for rows.Next() {
 		var rangeType types.DBRange
 		var rawSchema string
-		if err := rows.Scan(&rawSchema, &rangeType.Name, &rangeType.Subtype); err != nil {
+		if err := rows.Scan(
+			&rawSchema,
+			&rangeType.Name,
+			&rangeType.Subtype,
+			&rangeType.SubtypeOpClass,
+			&rangeType.Collation,
+			&rangeType.Canonical,
+			&rangeType.SubtypeDiff,
+		); err != nil {
 			return nil, fmt.Errorf("failed to scan range type for schema %s: %w", schemaName, err)
 		}
 		rangeType.Schema = r.outputSchema(rawSchema)
@@ -672,6 +790,53 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
+// requiredExtensionsProjection builds the correlated sub-select that names the
+// extensions an index resolves to through the catalog rather than through its
+// own text. indclassExpr is the index's pg_index.indclass vector and
+// accessMethodExpr its pg_class.relam.
+//
+// PostgreSQL prints an operator class in a CREATE INDEX or an EXCLUDE clause
+// only when that class is not the default for the key's type on the access
+// method, so the dependency this answers is one no identifier in the rendered
+// document need carry. Measured on PostgreSQL 17.10 with btree_gin installed,
+//
+//	CREATE INDEX t_gin ON t USING gin (n int4_ops);   -- n is integer
+//
+// comes back from the catalog as `CREATE INDEX t_gin ON public.t USING gin (n)`,
+// and the same DDL replayed where btree_gin is absent fails with `data type
+// integer has no default operator class for access method "gin"` (42704).
+// pg_index.indclass holds the class each key resolved to, so the reader can
+// answer "which extension owns it" exactly (stokaro/ptah#1286).
+//
+// Matching the ACCESS METHOD's name would answer it wrongly. `gin` is a pg_am
+// row belonging to no extension, so treating "this index says gin" as evidence
+// would pin btree_gin to every GIN index in the database -- and tsvector, jsonb
+// and array columns all have core GIN operator classes, so most of them do not
+// need it. The access method is read here as an OID resolved against pg_depend,
+// which is a different question: it pins nothing for `gin`, and pins the owner
+// for an access method an extension does supply, such as bloom's `bloom`.
+//
+// Both arms are unconditional on opcdefault, so a printed class is recorded
+// here as well as an unprinted one. A printed class is also matchable by name
+// through [goschema.Extension.Provides] wherever the renderer's reference scan
+// reads the attribute it lands in, and that is the answer preferred when both
+// are available, because a name can be looked up in the document; see
+// [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection
+// does not depend on either: Provides excludes names pg_catalog also supplies,
+// so a class shadowed by a core one would drop out of it.
+func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string {
+	return `COALESCE((
+				SELECT json_agg(DISTINCT e.extname)::text
+				  FROM pg_depend dep
+				  JOIN pg_extension e ON e.oid = dep.refobjid
+				 WHERE dep.deptype = 'e'
+				   AND ((dep.classid = 'pg_opclass'::regclass
+				         AND dep.objid = ANY (` + indclassExpr + `::oid[]))
+				     OR (dep.classid = 'pg_am'::regclass
+				         AND dep.objid = ` + accessMethodExpr + `))
+			), '[]')`
+}
+
 func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error) {
 	indexesQuery := `
 		SELECT
@@ -684,6 +849,60 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_columns,
+			-- pg_index.indkey holds 0 for a key that is an expression rather
+			-- than a column. Without it the key texts above are ambiguous:
+			-- lower(name) and a column literally named "lower(name)" arrive
+			-- identically, and treating the former as an identifier renders
+			-- CREATE INDEX ... ("lower(name)"), which PostgreSQL rejects with
+			-- ERROR: column "lower(name)" does not exist. See #1242.
+			COALESCE((
+				SELECT json_agg(keys.attnum ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_attnums,
+			-- pg_index.indclass names the operator class each key was built
+			-- with. Only a non-default class has to be carried: dropping
+			-- text_pattern_ops leaves an index PostgreSQL will not use for the
+			-- LIKE prefix scans it was created for, and nothing reports it.
+			-- opcdefault separates the two, so a default class reports the
+			-- empty string rather than a name the emitted DDL does not need.
+			COALESCE((
+				SELECT json_agg(
+					CASE WHEN op.opcdefault IS NOT FALSE THEN '' ELSE op.opcname::text END
+					ORDER BY keys.ordinality
+				)::text
+				FROM unnest(ix.indclass) WITH ORDINALITY AS keys(opcoid, ordinality)
+				LEFT JOIN pg_opclass op ON op.oid = keys.opcoid
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_opclasses,
+			-- pg_index.indoption is a per-key bitmask: bit 0 is DESC, bit 1 is
+			-- NULLS FIRST. Measured on PostgreSQL 17.10: (a DESC) reports 3,
+			-- (c DESC NULLS LAST) reports 1, (b NULLS FIRST) reports 2, and a
+			-- plain ascending key reports 0.
+			COALESCE((
+				SELECT json_agg(keys.optionbits ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indoption) WITH ORDINALITY AS keys(optionbits, ordinality)
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_key_options,
+			-- INCLUDE payload columns are the keys past indnkeyatts. They are
+			-- absent from indclass and indoption, which cover key columns
+			-- only, so they are read separately rather than filtered out of
+			-- the key list afterwards.
+			COALESCE((
+				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				WHERE keys.ordinality > ix.indnkeyatts
+			), '[]') as index_include_columns,
+			-- The access method. Losing it is not always the quiet
+			-- degradation to btree it looks like: a gist index on a point
+			-- column does not replay at all without it, because point has no
+			-- default btree operator class. See #1242.
+			am.amname as index_method,
+			-- The extensions this index resolves to, from the resolved operator
+			-- class OIDs and the access method OID rather than from either
+			-- one's name -- including the class the DDL does print, which is
+			-- the non-default one. See requiredExtensionsProjection.
+			` + requiredExtensionsProjection("ix.indclass", "i.relam") + ` as index_required_extensions,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -691,6 +910,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 		JOIN pg_class i ON i.oid = ix.indexrelid
 		JOIN pg_class t ON t.oid = ix.indrelid
 		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN pg_am am ON am.oid = i.relam
 		WHERE n.nspname = $1
 		AND t.relname NOT IN ('schema_migrations')
 		ORDER BY t.relname, i.relname`
@@ -703,34 +923,202 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 
 	var indexes []types.DBIndex
 	for rows.Next() {
-		var schemaName, tableName, indexName, indexDef, indexColumns, predicate string
-		var isPrimary, isUnique bool
-		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &indexColumns, &predicate, &isPrimary, &isUnique)
+		var row postgresIndexRow
+		err := rows.Scan(
+			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
+			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
+			&row.includeColumns, &row.method, &row.requiredExtensions,
+			&row.predicate, &row.isPrimary, &row.isUnique,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
 		}
 
-		// Parse index definition to extract columns and properties
-		index := types.DBIndex{
-			Name:          indexName,
-			TableName:     tableName,
-			Schema:        r.outputSchema(schemaName),
-			Definition:    indexDef,
-			Condition:     predicate,
-			IsUnique:      isUnique,
-			IsPrimary:     isPrimary,
-			NullsDistinct: postgresNullsDistinctFromDefinition(indexDef),
-		}
-
-		index.Columns, err = parsePostgresIndexColumns(indexColumns, indexDef)
+		index, err := buildPostgresIndex(row)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse index columns for %s: %w", indexName, err)
+			return nil, err
 		}
+		index.Schema = r.outputSchema(row.schemaName)
 
 		indexes = append(indexes, index)
 	}
 
 	return indexes, nil
+}
+
+// postgresIndexRow is one row of the index introspection query. Each field
+// names the catalog value it carries, so the mapping below can be read without
+// counting scan positions.
+type postgresIndexRow struct {
+	schemaName string
+	tableName  string
+	indexName  string
+	indexDef   string
+	// keyTexts is the JSON array of per-key texts from pg_get_indexdef.
+	keyTexts string
+	// keyAttnums is the JSON array of pg_index.indkey attribute numbers.
+	keyAttnums string
+	// keyOpclasses is the JSON array of per-key operator class names, empty
+	// where the key uses its type's default class.
+	keyOpclasses string
+	// keyOptions is the JSON array of pg_index.indoption bitmasks.
+	keyOptions string
+	// includeColumns is the JSON array of INCLUDE payload column texts.
+	includeColumns string
+	// method is pg_am.amname.
+	method string
+	// requiredExtensions is the JSON array of extension names the index's
+	// resolved operator classes and access method belong to.
+	requiredExtensions string
+	predicate          string
+	isPrimary          bool
+	isUnique           bool
+}
+
+// buildPostgresIndex maps one introspection row onto the dialect-neutral index
+// model. It does not set Schema, which needs the reader's output-schema policy.
+func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
+	index := types.DBIndex{
+		Name:          row.indexName,
+		TableName:     row.tableName,
+		Definition:    row.indexDef,
+		Condition:     row.predicate,
+		IsUnique:      row.isUnique,
+		IsPrimary:     row.isPrimary,
+		Method:        row.method,
+		NullsDistinct: postgresNullsDistinctFromDefinition(row.indexDef),
+	}
+
+	columns, err := parsePostgresIndexColumns(row.keyTexts, row.indexDef)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index columns for %s: %w", row.indexName, err)
+	}
+	index.Columns = columns
+
+	index.IncludeColumns, err = decodePostgresNameList(row.includeColumns)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
+	}
+
+	index.RequiresExtensions, err = decodePostgresNameList(row.requiredExtensions)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index required extensions for %s: %w", row.indexName, err)
+	}
+	slices.Sort(index.RequiresExtensions)
+
+	index.Parts, err = parsePostgresIndexParts(index.Columns, row.keyAttnums)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index key parts for %s: %w", row.indexName, err)
+	}
+
+	index.Parts, err = applyPostgresIndexOpclasses(index.Parts, row.keyOpclasses)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index operator classes for %s: %w", row.indexName, err)
+	}
+
+	index.Parts, err = applyPostgresIndexOptions(index.Parts, row.keyOptions)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
+	}
+
+	return index, nil
+}
+
+// decodePostgresNameList decodes a JSON array of names fetched alongside an
+// index row -- the INCLUDE payload columns, the extensions the index resolves
+// to -- and reports nil for an absent or empty one. Neither list is expected to
+// be present on most indexes, so empty is not an error.
+func decodePostgresNameList(value string) ([]string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(trimmed), &names); err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	return names, nil
+}
+
+// applyPostgresIndexOpclasses attaches the non-default operator class of each
+// key to its part.
+//
+// A list that does not line up with the parts is dropped rather than applied
+// off by one: an operator class on the wrong key builds a different index than
+// the one being read, which is worse than not carrying it at all.
+func applyPostgresIndexOpclasses(parts []types.DBIndexPart, opclassesJSON string) ([]types.DBIndexPart, error) {
+	opclasses, err := decodePostgresKeyList[string](opclassesJSON, len(parts))
+	if err != nil || opclasses == nil {
+		return parts, err
+	}
+	for position := range parts {
+		parts[position].Operator = opclasses[position]
+	}
+	return parts, nil
+}
+
+// PostgreSQL's per-key index option bits, from pg_index.indoption.
+const (
+	postgresIndexOptionDesc       = 1
+	postgresIndexOptionNullsFirst = 2
+)
+
+// applyPostgresIndexOptions attaches the sort direction and NULLS ordering of
+// each key to its part.
+//
+// Only an ordering that contradicts its direction's default is recorded:
+// PostgreSQL gives NULLS LAST to ASC and NULLS FIRST to DESC, so recording the
+// default would make the renderer emit a clause the pinned binary does not.
+func applyPostgresIndexOptions(parts []types.DBIndexPart, optionsJSON string) ([]types.DBIndexPart, error) {
+	options, err := decodePostgresKeyList[int](optionsJSON, len(parts))
+	if err != nil || options == nil {
+		return parts, err
+	}
+	for position := range parts {
+		parts[position].Desc = options[position]&postgresIndexOptionDesc != 0
+		parts[position].NullsOrder = postgresNullsOrder(options[position])
+	}
+	return parts, nil
+}
+
+// postgresNullsOrder reads the NULLS ordering out of one pg_index.indoption
+// bitmask, or returns the empty string when the ordering is the default for
+// the key's direction and does not have to be spelled out.
+//
+// The two default combinations are the two where the DESC bit and the
+// NULLS FIRST bit agree: bitmask 0 is ASC NULLS LAST and bitmask 3 is
+// DESC NULLS FIRST.
+func postgresNullsOrder(optionBits int) string {
+	descending := optionBits&postgresIndexOptionDesc != 0
+	nullsFirst := optionBits&postgresIndexOptionNullsFirst != 0
+	switch {
+	case descending == nullsFirst:
+		return ""
+	case nullsFirst:
+		return types.NullsOrderFirst
+	default:
+		return types.NullsOrderLast
+	}
+}
+
+// decodePostgresKeyList decodes a per-key JSON array fetched alongside the key
+// texts, returning nil when it is absent or does not have one entry per key.
+func decodePostgresKeyList[T any](value string, keyCount int) ([]T, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var decoded []T
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return nil, err
+	}
+	if len(decoded) != keyCount {
+		return nil, nil
+	}
+	return decoded, nil
 }
 
 func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {
@@ -742,6 +1130,39 @@ func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {
 		return nil, err
 	}
 	return columns, nil
+}
+
+// parsePostgresIndexParts labels each index key as a column reference or as an
+// expression, using the pg_index.indkey attribute numbers fetched alongside the
+// key texts. An attnum of 0 marks an expression key.
+//
+// It returns nil when the attnum list is missing or does not line up with the
+// key texts, which leaves DBIndex.Parts empty and keeps the legacy
+// columns-only representation rather than guessing.
+func parsePostgresIndexParts(columns []string, attnumsJSON string) ([]types.DBIndexPart, error) {
+	trimmed := strings.TrimSpace(attnumsJSON)
+	if trimmed == "" || trimmed == "[]" {
+		return nil, nil
+	}
+	var attnums []int
+	if err := json.Unmarshal([]byte(trimmed), &attnums); err != nil {
+		return nil, err
+	}
+	if len(attnums) != len(columns) {
+		return nil, nil
+	}
+
+	parts := make([]types.DBIndexPart, len(columns))
+	for position, key := range columns {
+		// Attribute number 0 is PostgreSQL's marker for "this key is an
+		// expression"; every real column has a positive attnum.
+		if attnums[position] == 0 {
+			parts[position] = types.DBIndexPart{Expr: key}
+			continue
+		}
+		parts[position] = types.DBIndexPart{Name: key}
+	}
+	return parts, nil
 }
 
 func extractPostgresIndexColumns(indexDef string) []string {
@@ -995,10 +1416,19 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 				c.conname AS constraint_name,
 				cl.relname AS table_name,
 				c.contype AS constraint_type,
-			pg_get_constraintdef(c.oid) AS constraint_definition
+			pg_get_constraintdef(c.oid) AS constraint_definition,
+			-- The extensions the backing index resolves to. An EXCLUDE element
+			-- prints its operator, and its operator class only when that class
+			-- is not the default, so EXCLUDE USING gist (room WITH =, ...) over
+			-- an integer column needs btree_gist and says nothing of it, while
+			-- (txt gist_trgm_ops WITH =) needs pg_trgm and does print the
+			-- class. See requiredExtensionsProjection.
+			` + requiredExtensionsProjection("ix.indclass", "ic.relam") + ` AS required_extensions
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
 		JOIN pg_namespace n ON cl.relnamespace = n.oid
+		LEFT JOIN pg_index ix ON ix.indexrelid = c.conindid
+		LEFT JOIN pg_class ic ON ic.oid = c.conindid
 		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
 		AND n.nspname = $1
 		AND cl.relname NOT IN ('schema_migrations')
@@ -1013,10 +1443,17 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 	var constraints []types.DBConstraint
 	for rows.Next() {
 		var schemaName, constraintName, tableName, constraintType, definition string
-		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition)
+		var requiredExtensions string
+		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition, &requiredExtensions)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
+
+		required, err := decodePostgresNameList(requiredExtensions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse required extensions for constraint %s: %w", constraintName, err)
+		}
+		slices.Sort(required)
 
 		// Convert PostgreSQL constraint type to standard type
 		var stdType string
@@ -1028,10 +1465,11 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 		}
 
 		constraint := types.DBConstraint{
-			Name:      constraintName,
-			TableName: tableName,
-			Schema:    r.outputSchema(schemaName),
-			Type:      stdType,
+			Name:               constraintName,
+			TableName:          tableName,
+			Schema:             r.outputSchema(schemaName),
+			Type:               stdType,
+			RequiresExtensions: required,
 		}
 
 		// Parse constraint definition for EXCLUDE constraints
@@ -1181,8 +1619,205 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 
 		extensions = append(extensions, ext)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate extensions: %w", err)
+	}
+
+	provides, err := r.readExtensionMembers()
+	if err != nil {
+		return nil, err
+	}
+	for i := range extensions {
+		extensions[i].Provides = provides[extensions[i].Name]
+	}
 
 	return extensions, nil
+}
+
+// readExtensionMembers reads, per extension, the catalog names that extension
+// supplies, keyed by extension name.
+//
+// This exists because an extension is almost never referenced by its own name.
+// A document that depends on `isn` says `isbn`; one that depends on `pgcrypto`
+// says `gen_salt`. Asking the catalog is what makes "does anything still need
+// this extension" answerable without a hand-maintained table of well-known
+// extensions, which would be both unbounded and wrong the moment someone
+// installs an extension nobody listed.
+//
+// pg_depend with deptype 'e' is the extension-membership edge, and the member's
+// name lives in a different catalog per object class, hence the union. The five
+// classes covered are the ones whose names can appear as an identifier in a
+// rendered schema document: types (column types, domains), functions (defaults,
+// checks, generated and index expressions, view and trigger bodies), relations
+// (extension-supplied tables, views and sequences), and operator classes and
+// families (index USING clauses).
+//
+// Measured on PostgreSQL 17.10: no pg_namespace row is ever an extension member
+// for an extension installed into an existing schema, so `public` does not enter
+// this set and naming the schema does not pin every extension in the database.
+//
+// Every arm excludes members whose name also resolves in pg_catalog. Contrib
+// extensions overwhelmingly supply OVERLOADS of core functions, so their raw
+// member lists contain ordinary words: measured on PostgreSQL 17.10, `citext`
+// supplies fifteen names pg_catalog also supplies, among them `max`, `min`,
+// `strpos`, `replace`, `split_part` and `translate`, and `pgcrypto` supplies
+// `gen_random_uuid`, which core has had since 13. A name pg_catalog also
+// supplies is no evidence of a dependency, because pg_catalog is always on the
+// search path -- the document resolves it with the extension dropped. Counting
+// such a name as evidence pins the extension to schemas that have no
+// relationship to it (stokaro/ptah#1280).
+//
+// The exclusion cannot cost a genuine dependency. Reaching an extension's
+// overload rather than the core one requires arguments of that extension's own
+// type, and naming that type is what keeps the extension alive through the
+// pg_type arm.
+//
+// The function arm drops one more class of name, and only where dropping it is
+// provably free: a name that is a SQL keyword, when the SAME extension also
+// contributes a type this member list reports and that type appears in the
+// function's own signature. The keyword list comes from the server through
+// pg_get_keywords().
+//
+// The reason to drop such a name at all is that the scan consuming this list
+// splits SQL text into identifier-shaped words with no notion of position.
+// Measured on PostgreSQL 18.4, `hstore` supplies three functions named `delete`
+// and pg_catalog supplies none, so the exclusion above keeps all three, and
+// `DELETE FROM audit` in a plpgsql body then reads exactly like a call to
+// `delete(h, 'k')` and pins hstore to a database that does not use it
+// (stokaro/ptah#1281).
+//
+// The list has to come from the server because no hand-written one is right.
+// `delete`, `each` and `index` are UNRESERVED words: PostgreSQL 18.4 reports 78
+// reserved words against 330 unreserved ones, so filtering the reserved list
+// catches none of the three, and pinning the unreserved list in Go would be 330
+// words that move every release.
+//
+// The type condition is what makes the drop safe, and it is enforced here
+// rather than asserted about the extensions that happen to be installed. An
+// earlier form of this filter dropped every keyword-named function member and
+// justified it with a survey: over the contrib extensions this build ships, the
+// keyword-named function members are hstore's `delete` and `each`, ltree's
+// `index` and cube's `cube`, and every one of them takes or returns a type the
+// same extension supplies, so a genuine call spells that type on a column, in a
+// signature or in a cast and the pg_type arm keeps the extension. That is a
+// property of contrib, not of the query. An extension supplying `merge(text,
+// text)` and no type at all has its only evidence in that name, and dropping it
+// leaves a document whose CHECK calls a function nothing declares -- measured
+// on PostgreSQL 18.4 against a fixture extension of exactly that shape, where
+// the pinned Atlas community binary v1.3.0 answered `create "names" table: pq:
+// function merge(text, text) does not exist`. Requiring the answering type
+// makes the redundancy a precondition instead of a coincidence; on the 46
+// extensions available here it excludes the same four names as the survey did.
+//
+// The answering type must itself survive the pg_type arm, or the redundancy is
+// asserted one level down instead of two: an extension supplying a type named
+// like a pg_catalog type has that name filtered out above, so it can no longer
+// answer for anything.
+//
+// Only this arm is filtered. A type, a relation, an operator class and an
+// operator family are each named by nothing but themselves, so excluding a
+// keyword-shaped one would throw away the only evidence there is. `cube` shows
+// the residue that leaves: its type and its constructor share a name, the type
+// arm keeps supplying it, and a view saying `GROUP BY CUBE(x)` still pins the
+// extension. That is the cheaper of the two errors -- a block kept where it
+// could have been dropped costs this document its compatibility, a block
+// dropped where a column needs it costs a document nobody can read.
+func (r *Reader) readExtensionMembers() (map[string][]string, error) {
+	const membersQuery = `
+		SELECT e.extname AS extension_name, t.typname AS member_name
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_type t ON t.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_type'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_type core
+		         JOIN pg_namespace corens ON corens.oid = core.typnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.typname = t.typname)
+		UNION
+		SELECT e.extname, p.proname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_proc p ON p.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_proc'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_proc core
+		         JOIN pg_namespace corens ON corens.oid = core.pronamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.proname = p.proname)
+		   AND NOT (
+		       EXISTS (
+		           SELECT 1 FROM pg_get_keywords() k WHERE k.word = p.proname)
+		       AND EXISTS (
+		           SELECT 1
+		             FROM pg_depend typedep
+		             JOIN pg_type answering ON answering.oid = typedep.objid
+		            WHERE typedep.deptype = 'e'
+		              AND typedep.classid = 'pg_type'::regclass
+		              AND typedep.refobjid = e.oid
+		              -- Argument position ONLY. The redundancy this gate relies on
+		              -- is that a genuine call spells the answering type, and only
+		              -- an argument obliges the caller to: a return type or an OUT
+		              -- parameter is named by the function, not by the call site.
+		              -- Measured: an extension supplying merge(text, text)
+		              -- RETURNS kwbox had its member dropped while the document
+		              -- kept a CHECK calling merge, which then failed to
+		              -- materialize (stokaro/ptah#1281).
+		              AND answering.oid = ANY (p.proargtypes)
+		              AND NOT EXISTS (
+		                  SELECT 1 FROM pg_type core
+		                    JOIN pg_namespace corens ON corens.oid = core.typnamespace
+		                   WHERE corens.nspname = 'pg_catalog'
+		                     AND core.typname = answering.typname)))
+		UNION
+		SELECT e.extname, c.relname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_class c ON c.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_class'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_class core
+		         JOIN pg_namespace corens ON corens.oid = core.relnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.relname = c.relname)
+		UNION
+		SELECT e.extname, opc.opcname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_opclass opc ON opc.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_opclass'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_opclass core
+		         JOIN pg_namespace corens ON corens.oid = core.opcnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.opcname = opc.opcname)
+		UNION
+		SELECT e.extname, opf.opfname
+		  FROM pg_depend d
+		  JOIN pg_extension e ON e.oid = d.refobjid
+		  JOIN pg_opfamily opf ON opf.oid = d.objid
+		 WHERE d.deptype = 'e' AND d.classid = 'pg_opfamily'::regclass
+		   AND NOT EXISTS (
+		       SELECT 1 FROM pg_opfamily core
+		         JOIN pg_namespace corens ON corens.oid = core.opfnamespace
+		        WHERE corens.nspname = 'pg_catalog' AND core.opfname = opf.opfname)
+		 ORDER BY 1, 2`
+
+	rows, err := r.db.Query(membersQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query extension members: %w", err)
+	}
+	defer rows.Close()
+
+	members := map[string][]string{}
+	for rows.Next() {
+		var extensionName, memberName string
+		if err := rows.Scan(&extensionName, &memberName); err != nil {
+			return nil, fmt.Errorf("failed to scan extension member: %w", err)
+		}
+		members[extensionName] = append(members[extensionName], memberName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate extension members: %w", err)
+	}
+
+	return members, nil
 }
 
 // readSequences reads standalone PostgreSQL sequences.
@@ -1232,6 +1867,18 @@ func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, 
 			CASE
 				WHEN dep.refobjid IS NULL THEN false
 				WHEN dep.deptype = 'i' THEN true
+				-- A sequence a DOMAIN column draws from is not implicit, however
+				-- the catalog edges look. "Implicit" here means "writing the
+				-- owning column back recreates this sequence on its own", and
+				-- only the SERIAL shorthand and an identity column do that.
+				-- Neither is available to a domain column: SERIAL always builds
+				-- an integer column, so the column is written back as its domain
+				-- with an ordinary nextval default, and the sequence that
+				-- default names has to be created too. Calling it implicit
+				-- omitted the CREATE SEQUENCE and the emitted DDL failed on
+				-- replay with ERROR: relation "s" does not exist. See
+				-- stokaro/ptah#1242, and #657 for the rest of this rule.
+				WHEN owner_col_type.typtype = 'd' THEN false
 				ELSE EXISTS (
 					SELECT 1
 					FROM pg_attrdef ad
@@ -1254,6 +1901,7 @@ func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, 
 		LEFT JOIN pg_class owner_tbl ON owner_tbl.oid = dep.refobjid
 		LEFT JOIN pg_namespace owner_ns ON owner_ns.oid = owner_tbl.relnamespace
 		LEFT JOIN pg_attribute owner_col ON owner_col.attrelid = dep.refobjid AND owner_col.attnum = dep.refobjsubid
+		LEFT JOIN pg_type owner_col_type ON owner_col_type.oid = owner_col.atttypid
 		WHERE n.nspname = $1
 		ORDER BY n.nspname, c.relname`
 
@@ -1349,7 +1997,7 @@ func (r *Reader) readSequenceGrantsForSchema(schemaName string, standalone map[s
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE c.relkind = 'S'
 		AND n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
@@ -1666,7 +2314,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		WHERE n.nspname = $1
 		AND p.prokind = 'f'  -- Only functions, not procedures
 		AND l.lanname != 'internal'  -- Exclude internal functions
-		AND p.proname NOT LIKE 'ptah_trigger_%'
+		-- Escaped for the same reason as the role filters above: a bare _
+		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
+		-- functions such as ptahxtriggery (stokaro/ptah#1291).
+		AND p.proname NOT LIKE 'ptah\_trigger\_%' ESCAPE '\'
 		-- Exclude extension-owned functions to prevent migration issues
 		-- Extension functions cannot be dropped independently and should be managed by the extension
 		AND NOT EXISTS (
@@ -1699,6 +2350,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
 
+		// Same convention as tables, views and domains: blank for the
+		// connection's own schema, named otherwise, so `--exclude app.fn_app`
+		// has a qualified candidate to match (stokaro/ptah#933).
+		fn.Schema = r.outputSchema(schemaName)
 		functions = append(functions, fn)
 	}
 
@@ -1777,9 +2432,220 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 	return policies, nil
 }
 
-// readRoles reads all PostgreSQL roles from the database
+// rolesInScopeClauses returns the branches of the role-scoping union, one per
+// reason a role counts as used by the inspected schemas. Each branch reads the
+// catalog column that carries the reason, so the reason a role is reported is
+// always a fact about the inspected scope rather than about the server.
+//
+// The `scope` CTE the branches join against is defined by readRoles.
+func (r *Reader) rolesInScopeClauses() []string {
+	clauses := []string{
+		// Holds a privilege on a relation in scope -- table, view,
+		// materialized view or sequence (pg_class.relacl). An owner appears
+		// here as soon as the relation carries any explicit privilege, which
+		// is also exactly when readTableGrantsForSchema reports the owner's
+		// own grants.
+		`SELECT acl.grantee AS roleoid FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Granted a privilege on a relation in scope (pg_class.relacl).
+		`SELECT acl.grantor FROM pg_class c
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantee FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
+		`SELECT acl.grantor FROM scope s
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+	}
+	if r.caps.Has(capability.RowLevelSecurity) {
+		// Named by a row-level security policy on a table in scope
+		// (pg_policy.polroles), read in the same shape readRLSPolicies uses.
+		clauses = append(clauses, `SELECT policyrole FROM pg_policy pol
+			JOIN pg_class c ON c.oid = pol.polrelid
+			JOIN scope s ON s.oid = c.relnamespace
+			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole`)
+	}
+	return clauses
+}
+
+// readRoles reads the PostgreSQL roles the inspected scope actually uses.
+//
+// Roles are cluster-wide: pg_roles lists every role on the server, including
+// roles that exist only for databases this reader was never pointed at.
+// Reporting all of them describes objects the inspected schema does not
+// contain, cannot be replayed (CREATE ROLE is not idempotent, and creating a
+// fresh database does not clear cluster roles), and on a shared instance
+// discloses every other tenant's role names. See stokaro/ptah#1267.
+//
+// "Uses" is defined here, deliberately, as any of:
+//
+//   - holding a privilege on a relation in a schema in scope, or on one of
+//     those schemas -- or having granted one;
+//   - being named by a row-level security policy on a table in scope.
+//
+// Equivalently: a role is described exactly when some other statement in the
+// same description can name it. Nothing else is reported, and a role that
+// merely exists in the cluster certainly is not.
+//
+// Ownership is deliberately NOT a reason, and this was measured rather than
+// assumed. Ptah describes no ownership -- it emits no OWNER TO and no CREATE
+// SCHEMA ... AUTHORIZATION -- so an owner is a role the description creates
+// and then never refers to. Because the connecting superuser owns every object
+// it creates, treating ownership as a reason made every inspect describe the
+// connecting role, and a diff between a populated database and an empty dev
+// database in the same cluster then planned
+// `CREATE ROLE "..." WITH LOGIN SUPERUSER ...` and failed to apply it at
+// SQLSTATE 42710. An owner that a description does refer to still appears,
+// through the privilege clauses: granting anything on a relation makes its
+// ACL explicit, and an explicit ACL always carries the owner's own privileges.
+//
+// A role that belongs to the inspected schemas is still reported in full, on
+// the native and the compatibility surface alike. What the scoping does cost
+// is naming a role the inspected schemas do not use, which a description could
+// do before -- enough to copy one cluster's roles into another. That capability
+// is not discarded: readRolesInto restores the full read under
+// [rolescope.DescribeAllEnvVar], and what the default leaves out is reported
+// rather than dropped in silence.
+//
+// The privilege clauses read the grantor as well as the grantee because
+// readGrants reports both. That makes this set a superset of every role name
+// the rest of the description can mention, so the description never references
+// a role it does not also define.
 func (r *Reader) readRoles() ([]types.DBRole, error) {
+	return r.queryRoles(rolesUsedByScope)
+}
+
+// readRolesInto performs both role reads and decides which of them the
+// description carries.
+//
+// By default the description is the scoped read and the complement is carried
+// separately, for the comparator alone. Under
+// [rolescope.DescribeAllEnvVar] the description is the union -- every role Ptah
+// manages on the server, which is what a read produced before
+// stokaro/ptah#1267 -- and the complement is then empty because nothing is
+// left out.
+//
+// Both reads happen either way, so the set the comparator takes existence from
+// is byte-for-byte the same set under both settings. That is the property that
+// makes the variable safe: turning it on changes what is described and can
+// never make Ptah plan a CREATE ROLE for a role that is already there.
+//
+// The union is re-sorted by name rather than concatenated, so the fuller
+// description is ordered exactly as the single unscoped query ordered it.
+func (r *Reader) readRolesInto(schema *types.DBSchema) error {
+	// Resolved FIRST, before either query, so a malformed value is refused on
+	// every role read and not only on the runs that would have widened the
+	// description. A server whose scoped and unscoped reads happen to agree
+	// leaves nothing out, and resolving below would let
+	// PTAH_POSTGRES_INSPECT_ALL_ROLES=maybe pass in silence there --
+	// the healthy half of a pipeline, and the only runs a CI environment file
+	// is read on until the schema grows the role that makes the two differ.
+	// See stokaro/ptah#1334.
+	describeAll, err := rolescope.DescribeAll()
+	if err != nil {
+		return err
+	}
+
+	described, err := r.readRoles()
+	if err != nil {
+		return fmt.Errorf("failed to read roles: %w", err)
+	}
+
+	// The roles the description leaves out still exist on the server, and a
+	// comparator that is not told so plans CREATE ROLE for them. Read the
+	// complement so "not described" and "not present" stay different answers.
+	// See stokaro/ptah#1267 and stokaro/ptah#1276.
+	outOfScope, err := r.readRolesOutOfScope()
+	if err != nil {
+		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
+	}
+
+	if describeAll {
+		everyManagedRole := slices.Concat(described, outOfScope)
+		slices.SortFunc(everyManagedRole, func(a, b types.DBRole) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+		schema.Roles = everyManagedRole
+		schema.RolesOutOfScope = nil
+		return nil
+	}
+
+	schema.Roles = described
+	schema.RolesOutOfScope = outOfScope
+	return nil
+}
+
+// readRolesOutOfScope reads the roles the server has that readRoles left out:
+// the exact complement, over the same catalog and the same reserved-name
+// exclusions.
+//
+// Scoping the description (stokaro/ptah#1267) is right for describing a schema
+// and says nothing about what the server has. The comparator asks a different
+// question -- does this role exist -- and answering it from the description
+// alone reads "out of scope" as "absent" and plans CREATE ROLE for a role that
+// is already there, which the server refuses at SQLSTATE 42710. That is
+// requirement 2 of stokaro/ptah#1276: "not described" and "not present" have
+// to be distinguishable in what the comparator consumes.
+//
+// The two reads partition the roles this reader reports at all, so their union
+// is every such role regardless of which scoping rule readRoles applies. A
+// change to the scoping rule moves roles between the two lists and can never
+// make a reported role look absent.
+//
+// The partition is over managed roles, not over pg_roles. queryRoles ends both
+// statements with the exclusion [reservedrole.ExcludeSQL] renders, so the
+// reserved roles and the bootstrap superuser are in neither list -- Ptah
+// manages neither, in either direction. A desired schema that names one is
+// refused before anything is compared or planned, through
+// [reservedrole.ValidateDeclared] over the same definition of "reserved"
+// (stokaro/ptah#1312), rather than being compared against nothing here. Do not
+// restate this as "every role the server has".
+//
+// The escape is load-bearing for both reads at once: an unescaped underscore
+// is a single-character wildcard, so it would drop pgbouncer, pgadmin and
+// pgpool from the description and from this complement alike, leaving them in
+// neither list and back in the CREATE ROLE failure this method prevents
+// (stokaro/ptah#1291).
+//
+// The complement is spelled NOT EXISTS rather than NOT IN because a NOT IN
+// over a subquery yielding a single NULL matches nothing at all, which would
+// silently empty this list and restore the very defect it exists to prevent.
+func (r *Reader) readRolesOutOfScope() ([]types.DBRole, error) {
+	return r.queryRoles(rolesNotUsedByScope)
+}
+
+// Membership predicates for the role query, applied against the `used` set the
+// scope branches build. They are complements of one another, and nothing else
+// in the two queries differs.
+const (
+	rolesUsedByScope    = `EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+	rolesNotUsedByScope = `NOT EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
+)
+
+// queryRoles reads pg_roles restricted by one of the two membership
+// predicates above.
+func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
+	schemas := r.schemasToRead()
+	placeholders := make([]string, 0, len(schemas))
+	args := make([]any, 0, len(schemas))
+	for i, schemaName := range schemas {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, schemaName)
+	}
+
 	rolesQuery := `
+		WITH scope AS (
+			SELECT n.oid, n.nspacl
+			FROM pg_namespace n
+			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
+		),
+		used AS (
+			` + strings.Join(r.rolesInScopeClauses(), `
+			UNION
+			`) + `
+		)
 		SELECT
 			r.rolname AS role_name,
 			r.rolcanlogin AS login,
@@ -1792,11 +2658,18 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 			COALESCE(shobj_description(r.oid, 'pg_authid'), '') AS comment
 		FROM pg_roles r
 		LEFT JOIN pg_authid a ON r.oid = a.oid
-		WHERE r.rolname NOT LIKE 'pg_%'  -- Exclude system roles
-		AND r.rolname != 'postgres'      -- Exclude postgres superuser
+		-- Reserved system roles and the bootstrap superuser, excluded through
+		-- the same definition the desired-schema refusal tests against, so the
+		-- two cannot drift into disagreeing about what "reserved" means
+		-- (stokaro/ptah#1312). The rendered fragment escapes the underscore,
+		-- because LIKE reads a bare _ as a single-character wildcard: an
+		-- unescaped 'pg_%' matches pgbouncer, pgadmin and pgpool, which are
+		-- ordinary user roles (stokaro/ptah#1291).
+		WHERE ` + membership + `
+		AND ` + reservedrole.ExcludeSQL("r.rolname") + `
 		ORDER BY r.rolname`
 
-	rows, err := r.db.Query(rolesQuery)
+	rows, err := r.db.Query(rolesQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query roles: %w", err)
 	}
@@ -1872,10 +2745,25 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 			table_name,
 			is_grantable = 'YES' AS with_option,
 			grantor
-		FROM information_schema.role_table_grants
+		FROM information_schema.role_table_grants g
 		WHERE table_schema = $1
-		AND grantee NOT LIKE 'pg_%'
+		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
 		AND grantee != 'postgres'
+		-- Only relations on which some privilege has actually been granted.
+		-- information_schema reports an owner's built-in privileges as grants
+		-- even for a table whose pg_class.relacl is null, meaning nobody has
+		-- ever run GRANT on it. Describing those as GRANT statements describes
+		-- something no one wrote; CREATE TABLE re-establishes them for the new
+		-- owner on replay anyway. It also made the description name a role it
+		-- did not define once role reporting was scoped (stokaro/ptah#1267),
+		-- and the pinned Atlas community binary refuses such a document.
+		AND EXISTS (
+			SELECT 1 FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = g.table_schema
+			AND c.relname = g.table_name
+			AND c.relacl IS NOT NULL
+		)
 		ORDER BY table_schema, table_name, grantee, privilege_type`
 
 	rows, err := r.db.Query(query, schemaName)
@@ -1912,7 +2800,7 @@ func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, 
 		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 

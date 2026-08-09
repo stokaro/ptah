@@ -49,10 +49,11 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
 	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
 
-	upSQL, err := os.ReadFile(files.UpFile)
+	upSQL, err := os.ReadFile(pair.UpFile)
 	c.Assert(err, qt.IsNil)
-	downSQL, err := os.ReadFile(files.DownFile)
+	downSQL, err := os.ReadFile(pair.DownFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upSQL), qt.Contains, "([status] DESC)")
 	c.Assert(string(downSQL), qt.Contains, "([status])")

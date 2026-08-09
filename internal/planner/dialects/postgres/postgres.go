@@ -10,10 +10,13 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/rlsscope"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -246,14 +249,12 @@ func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
 func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, enumName := range diff.EnumsAdded {
 		for _, enum := range generated.Enums {
-			if enum.Name == enumName {
-				values := make([]string, len(enum.Values))
-				for i, v := range enum.Values {
-					values[i] = "'" + v + "'"
-				}
-
-				enumNode := ast.NewEnum(enum.Name, enum.Values...)
-				result = append(result, enumNode)
+			// The diff names enums by qualified name, so the lookup does too.
+			// Building the node through fromschema.FromEnum keeps the CREATE
+			// TYPE identifier and the column type that references it derived
+			// from one place (stokaro/ptah#1276).
+			if enum.QualifiedName() == enumName {
+				result = append(result, fromschema.FromEnum(enum))
 				break
 			}
 		}
@@ -304,7 +305,7 @@ func postgresEnumValues(generated *goschema.Database, enumName string) ([]string
 		return nil, false
 	}
 	for _, enum := range generated.Enums {
-		if enum.Name == enumName {
+		if enum.QualifiedName() == enumName {
 			return append([]string(nil), enum.Values...), true
 		}
 	}
@@ -320,9 +321,16 @@ func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []p
 		tablesByStruct[table.StructName] = table
 	}
 
+	// A field names its declared type by bare name -- that is what
+	// fromschema.declaredEnum matches on -- while the diff names the enum by
+	// qualified name. Both spellings are accepted so a rebuild of an enum in a
+	// non-default schema still finds the columns it has to convert. Where two
+	// schemas hold an enum of one name the bare spelling cannot separate them;
+	// see the residual note on stokaro/ptah#1276.
+	bareName := postgresBaseName(enumName)
 	usages := make([]postgresEnumColumnUsage, 0)
 	for _, field := range generated.Fields {
-		if field.Type != enumName {
+		if field.Type != enumName && field.Type != bareName {
 			continue
 		}
 		table, ok := tablesByStruct[field.StructName]
@@ -439,8 +447,6 @@ func quotePostgresIdentifier(name string) string {
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	orderedTables := deporder.TablesForCreate(generated, diff.TablesAdded)
 
-	result = p.addSchemaPreconditions(result, orderedTables)
-
 	// Phase 1: Create tables without foreign key constraints
 	result = p.createTablesWithoutForeignKeys(result, generated, orderedTables)
 
@@ -451,10 +457,54 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 	return p.addForeignKeyConstraints(result, generated, deporder.TablesForCreate(generated, diff.TablesAdded))
 }
 
-func (p *Planner) addSchemaPreconditions(result []ast.Node, tables []goschema.Table) []ast.Node {
-	seen := make(map[string]struct{})
-	for _, table := range tables {
-		schema := strings.TrimSpace(table.Schema)
+// addSchemaPreconditions creates every schema this migration is about to put an
+// object into, before it puts anything into any of them.
+//
+// It reads the diff rather than the desired state, so a run that changes nothing
+// emits nothing and an inspect/apply round trip stays the clean no-op it has to
+// be. And it reads EVERY added-object list rather than the tables alone, which
+// is the defect it replaces: the preconditions used to be derived from
+// diff.TablesAdded inside addNewTables, so they were emitted after the types,
+// sequences and functions phases and covered none of them. Measured on
+// PostgreSQL 17.10, applying a `schema inspect` document of a multi-schema
+// database to an empty one:
+//
+//	CREATE SEQUENCE "s_misc"."m_seq" ...
+//	ERROR: schema "s_misc" does not exist (SQLSTATE 3F000)
+//
+// with `CREATE SCHEMA IF NOT EXISTS s_misc` seventeen statements further down.
+// The same shape reaches CREATE DOMAIN, CREATE TYPE and CREATE FUNCTION
+// (stokaro/ptah#1276).
+//
+// The schema is taken from the qualified name each comparison already puts on
+// the diff -- tables, enums, domains, composites, ranges, sequences, functions,
+// views, materialized views and a trigger's target relation are all named that
+// way -- so a kind added later is covered by adding its list here and nothing
+// else. Names that carry no schema contribute none, which is every name on a
+// single-schema migration.
+func (p *Planner) addSchemaPreconditions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	names := make([]string, 0, len(diff.TablesAdded))
+	names = append(names, diff.TablesAdded...)
+	names = append(names, diff.EnumsAdded...)
+	names = append(names, diff.DomainsAdded...)
+	names = append(names, diff.CompositeTypesAdded...)
+	names = append(names, diff.RangesAdded...)
+	names = append(names, diff.SequencesAdded...)
+	names = append(names, diff.FunctionsAdded...)
+	names = append(names, diff.ViewsAdded...)
+	names = append(names, diff.MaterializedViewsAdded...)
+	for _, trigger := range diff.TriggersAdded {
+		names = append(names, trigger.TableName)
+	}
+
+	seen := make(map[string]struct{}, len(names))
+	schemas := make([]string, 0, len(names))
+	for _, name := range names {
+		ref, ok := tableref.Parse(name)
+		if !ok || !ref.Qualified {
+			continue
+		}
+		schema := strings.TrimSpace(ref.Schema)
 		if schema == "" {
 			continue
 		}
@@ -462,6 +512,10 @@ func (p *Planner) addSchemaPreconditions(result []ast.Node, tables []goschema.Ta
 			continue
 		}
 		seen[schema] = struct{}{}
+		schemas = append(schemas, schema)
+	}
+	slices.Sort(schemas)
+	for _, schema := range schemas {
 		result = append(result, ast.NewRawSQL("CREATE SCHEMA IF NOT EXISTS "+schema))
 	}
 	return result
@@ -908,6 +962,7 @@ func (p *Planner) addNewIndexes(
 		diff.IndexRemovals(),
 	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
@@ -915,6 +970,10 @@ func (p *Planner) addNewIndexes(
 			return nil, err
 		}
 		for removal := range indexRemovals.Matches(ref) {
+			if _, ownedByConstraint := constraintBacked[removal]; ownedByConstraint {
+				result = append(result, p.constraintBackedIndexDropNode(removal))
+				continue
+			}
 			dropIndexNode := ast.NewDropIndex(removal.Name).
 				SetTable(removal.TableName)
 			if guardedDrops {
@@ -948,12 +1007,25 @@ func (p *Planner) removeIndexes(
 	// the default preset keeps today's output; a preset without it (or a
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
+	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexAdditions(),
 	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
+			continue
+		}
+		// A removal a UNIQUE constraint addition rebuilds was already emitted
+		// ahead of that addition, which is the only order the server accepts;
+		// dropping it again here would land after the add and delete the index
+		// the constraint now needs.
+		if _, rebuilt := rebuiltAsConstraint[ref]; rebuilt {
+			continue
+		}
+		if _, ownedByConstraint := constraintBacked[ref]; ownedByConstraint {
+			result = append(result, p.constraintBackedIndexDropNode(ref))
 			continue
 		}
 		dropIndexNode := ast.NewDropIndex(ref.Name).
@@ -963,16 +1035,43 @@ func (p *Planner) removeIndexes(
 		}
 		// CONCURRENTLY on a drop is opt-in policy AND capability-gated, exactly
 		// like the build side. A redefinition never reaches here (it is skipped
-		// above as an addition conflict), so a concurrent drop is always a
-		// standalone index removal — never the drop half of a rebuild and never
-		// an index backing a constraint, both of which PostgreSQL refuses to
-		// drop concurrently.
+		// above as an addition conflict), and a constraint's backing index left
+		// through the branch above, so a concurrent drop is always a standalone
+		// index removal — never the drop half of a rebuild and never an index
+		// backing a constraint, both of which PostgreSQL refuses to drop
+		// concurrently.
 		if p.usesConcurrentIndexDrop(ref) && p.capabilities().Has(capability.DropIndexConcurrently) {
 			dropIndexNode.SetConcurrently()
 		}
 		result = append(result, dropIndexNode)
 	}
 	return result
+}
+
+// constraintBackedIndexDropNode removes an index a UNIQUE constraint enforces,
+// through the constraint.
+//
+// PostgreSQL does not accept the index spelling for one: `DROP INDEX
+// "uq_users_email"` comes back as `cannot drop index uq_users_email because
+// constraint uq_users_email on table users requires it (SQLSTATE 2BP01)`,
+// measured on 17.10. Dropping the constraint takes its index with it, which is
+// what the pinned community binary v1.3.0 plans for the same change:
+// `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, followed by the
+// CREATE INDEX that replaces it when there is one. The comparator marks these
+// removals (ConstraintBackedIndexRemovals) because it is the side that read the
+// constraint catalog.
+//
+// IF EXISTS is unconditional, matching removeConstraints: every supported
+// PostgreSQL line accepts it on DROP CONSTRAINT, and the DropIndexIfExists
+// capability speaks for the DROP INDEX spelling only.
+func (p *Planner) constraintBackedIndexDropNode(ref types.IndexRef) ast.Node {
+	return &ast.AlterTableNode{
+		Name: ref.TableName,
+		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+			ConstraintName: ref.Name,
+			IfExists:       true,
+		}},
+	}
 }
 
 // appendSkipComments emits one clearly-marked comment per change omitted by the
@@ -1009,37 +1108,115 @@ func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.N
 	return result
 }
 
+// plannedUserType pairs a user-defined type's dependency identity with the node
+// that creates it, so one ordering covers domains, ranges and composites
+// together.
+type plannedUserType struct {
+	dep  deporder.UserType
+	node ast.Node
+}
+
 // addNewUserTypes emits CREATE DOMAIN / CREATE TYPE for newly added domains,
-// ranges, and composite types (in dependency order). It runs before tables so
-// columns can reference them.
+// ranges, and composite types. It runs before tables so columns can reference
+// them, and orders the three kinds against each other so a type is created
+// before whatever names it.
+//
+// Emitting kind by kind is not enough, because the three kinds name each other
+// in both directions. `CREATE DOMAIN d_comp AS addr` needs the composite `addr`
+// first and `CREATE TYPE addr AS (f d_int)` needs the domain `d_int` first, so
+// no fixed order of kinds can serve both. Emitting domains first sent
+// `CREATE DOMAIN "d_comp" AS addr;` out ahead of `CREATE TYPE "addr" AS (...)`
+// and the script stopped at `ERROR: type "addr" does not exist` -- measured on
+// PostgreSQL 17.10 with psql -v ON_ERROR_STOP=1, exit 3.
+//
+// Enums are not in the set: they carry no reference to another user-defined
+// type and are already emitted before this runs.
 func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	planned := p.plannedUserTypes(diff, generated)
+	byName := make(map[string]ast.Node, len(planned))
+	deps := make([]deporder.UserType, 0, len(planned))
+	for _, userType := range planned {
+		byName[userType.dep.Name] = userType.node
+		deps = append(deps, userType.dep)
+	}
+
+	for _, name := range deporder.UserTypesForCreate(deps) {
+		if node, ok := byName[name]; ok {
+			result = append(result, node)
+		}
+	}
+	return result
+}
+
+// plannedUserTypes collects every domain, range and composite this plan
+// creates, newly added ones first and then the ones recreated in place of a
+// modification, each with the type spellings its definition names.
+func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.Database) []plannedUserType {
+	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
 		if domain := findDomain(generated.Domains, name); domain != nil {
-			result = append(result, fromschema.FromDomain(*domain))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: []string{domain.BaseType}},
+				node: fromschema.FromDomain(*domain),
+			})
 		}
 	}
 	for _, name := range diff.RangesAdded {
 		if rangeType := findRange(generated.Ranges, name); rangeType != nil {
-			result = append(result, fromschema.FromRange(*rangeType))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: []string{rangeType.Subtype}},
+				node: fromschema.FromRange(*rangeType),
+			})
 		}
 	}
 	for _, name := range diff.CompositeTypesAdded {
 		if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
-			result = append(result, fromschema.FromCompositeType(*composite))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: name, References: compositeFieldTypes(*composite)},
+				node: fromschema.FromCompositeType(*composite),
+			})
 		}
 	}
-	// A modification with no in-place ALTER is handled as drop + recreate.
+	// A modification with no in-place ALTER is handled as drop + recreate. The
+	// recreations join the same ordering: a new domain over a recreated
+	// composite has to wait for the recreation, which dropModifiedUserTypes has
+	// already removed by this point.
 	for _, domainDiff := range diff.DomainsModified {
 		if domain := findDomain(generated.Domains, domainDiff.DomainName); domain != nil {
-			result = append(result, fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
+				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+			})
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName); composite != nil {
-			result = append(result, fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)))
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
+				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+			})
 		}
 	}
-	return result
+	// PostgreSQL has no ALTER TYPE ... AS RANGE, so a changed range type takes
+	// the same drop-and-recreate path domains and composites already use
+	// (stokaro/ptah#931 item 2).
+	for _, rangeDiff := range diff.RangesModified {
+		if rangeType := findRange(generated.Ranges, rangeDiff.RangeName); rangeType != nil {
+			planned = append(planned, plannedUserType{
+				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
+				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+			})
+		}
+	}
+	return planned
+}
+
+func compositeFieldTypes(composite goschema.CompositeType) []string {
+	references := make([]string, 0, len(composite.Fields))
+	for _, field := range composite.Fields {
+		references = append(references, field.Type)
+	}
+	return references
 }
 
 // removeUserTypes emits DROP DOMAIN / DROP TYPE for removed and modified
@@ -1069,16 +1246,63 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 // silently dropping dependent columns. Reconciling a modification while the type
 // is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
 // ALTER TYPE for the in-place cases).
+//
+// The order comes from the CURRENT definitions the diff carries, not from the
+// desired ones addNewUserTypes creates in. A DROP executes against the database
+// as it stands, so the only references that can block it are the ones that
+// database holds now: `DROP TYPE cc` fails while `CREATE DOMAIN dd AS cc` is
+// still on disk, whatever the desired schema says either type should become.
+//
+// The two graphs disagree exactly when the modification is what moved the
+// reference, and no single order serves both. That is not a conflict to
+// resolve, because they answer different questions: the create graph is the
+// shape being built, the drop graph is the shape being taken apart.
 func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
+	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	for _, domainDiff := range diff.DomainsModified {
-		result = append(result, ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
-			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use"))
+		byName[domainDiff.DomainName] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
+			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
+		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		result = append(result, ast.NewDropType(compositeDiff.TypeName).SetIfExists().
-			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use"))
+		byName[compositeDiff.TypeName] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
+			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
+		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
+	}
+	for _, rangeDiff := range diff.RangesModified {
+		byName[rangeDiff.RangeName] = ast.NewDropType(rangeDiff.RangeName).SetIfExists().
+			SetComment("Recreate modified range type; drop is non-CASCADE and fails if the type is in use")
+		deps = append(deps, deporder.UserType{Name: rangeDiff.RangeName, References: currentRangeReferences(rangeDiff)})
+	}
+
+	for _, name := range deporder.UserTypesForDrop(deps) {
+		if node, ok := byName[name]; ok {
+			result = append(result, node)
+		}
 	}
 	return result
+}
+
+// currentDomainReferences reports the from-side base type of a modified domain,
+// or nothing when the diff does not carry one. It never reads Changes: that map
+// is a human-readable "old -> new" rendering, and recovering a type name by
+// splitting prose is not a basis for statement ordering.
+func currentDomainReferences(domainDiff types.DomainDiff) []string {
+	if domainDiff.CurrentBaseType == "" {
+		return nil
+	}
+	return []string{domainDiff.CurrentBaseType}
+}
+
+// currentRangeReferences reports the from-side subtype of a modified range, for
+// the same reason and with the same Changes-is-prose caveat as
+// currentDomainReferences.
+func currentRangeReferences(rangeDiff types.RangeDiff) []string {
+	if rangeDiff.CurrentSubtype == "" {
+		return nil
+	}
+	return []string{rangeDiff.CurrentSubtype}
 }
 
 func findDomain(domains []goschema.Domain, name string) *goschema.Domain {
@@ -1193,9 +1417,30 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
+	// One set of identifier rules for the whole plan. Every question of the form
+	// "do these two spellings name the same object" is answered with it, so the
+	// resolvers below and the statements that accompany what they resolve cannot
+	// disagree about which table a reference belongs to.
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	indexes, err := indexscope.NewResolverWithSemantics(
 		p.targetDialect(),
-		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		semantics,
+		diff,
+		generated,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Row-level security references are validated with the indexes, before any
+	// node is emitted, for the reason the index resolver is: a reference the
+	// target schema cannot resolve used to be skipped, so the plan came back
+	// successful with an access-control operation missing from it
+	// (stokaro/ptah#1311). Validating the diff as it arrived, ahead of the skip
+	// policy below, means a malformed reference is refused even when the policy
+	// would have removed it -- the diff is either coherent or it is not.
+	policies, err := rlsscope.NewResolverWithSemantics(
+		p.targetDialect(),
+		semantics,
 		diff,
 		generated,
 	)
@@ -1212,7 +1457,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		result = appendSkipComments(result, skipped)
 	}
 
-	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
+	// 0. Create the schemas this migration adds objects to, before anything is
+	// created in them. Every phase below can name a schema, so this cannot sit
+	// inside one of them.
+	result = p.addSchemaPreconditions(result, diff)
+
+	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
@@ -1277,13 +1527,19 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
 	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.enableRLSOnTables(result, diff, generated)
+		result = p.enableRLSOnTables(result, diff, generated, semantics)
 	}
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.addNewRLSPolicies(result, diff, generated)
-		result = p.modifyExistingRLSPolicies(result, diff, generated)
+		result, err = p.addNewRLSPolicies(result, diff, policies)
+		if err != nil {
+			return nil, err
+		}
+		result, err = p.modifyExistingRLSPolicies(result, diff, policies)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
@@ -1773,13 +2029,187 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 	return result
 }
 
+// modifyExistingViews re-renders each modified view, choosing between
+// CREATE OR REPLACE VIEW and DROP + CREATE per view.
+//
+// Both statements cost something, and the two costs land in different places.
+// PostgreSQL accepts CREATE OR REPLACE VIEW only for appending trailing columns;
+// dropping, renaming or retyping a projected column is refused at execution
+// time, so the replace can render perfectly and fail when it runs. The drop
+// always applies, but it carries CASCADE: it takes dependent views and
+// materialized views with it, along with the privileges granted on the view
+// itself, none of which the replace disturbs.
+//
+// So the choice is made per view from what viewReplaceLegality can prove, and
+// the undecidable case is resolved by the direction being planned:
+//
+//	appends columns    replace, both directions -- PostgreSQL accepts it
+//	moves columns      drop and recreate, both directions -- the replace would
+//	                   be refused, and rendering a statement we know the engine
+//	                   rejects helps nobody
+//	undecidable        replace going forward, drop on a rollback. Forward, a
+//	                   body this parser cannot read is usually a predicate-only
+//	                   edit to a WITH / star / set-operation view, where the
+//	                   column list never moves and the replace is accepted; if
+//	                   it is not, PostgreSQL says so and the migration stops
+//	                   with nothing destroyed. A rollback cannot afford that
+//	                   answer -- it runs while an operator is undoing a
+//	                   migration, and a rollback that fails is discovered during
+//	                   the incident it was meant to end -- so it takes the
+//	                   statement that always applies.
+//
+// Whatever the drop path takes with it, this step puts back: every declared view
+// and materialized view that reads a dropped view, transitively, is recreated
+// after it. Without that the plan silently left the database short of the schema
+// it was generated from, and re-planning did not converge (issue #1287). What
+// CASCADE removes and this cannot rebuild is anything Ptah does not declare -- a
+// hand-made view, a rule, privileges on the view -- which is why the drop is
+// taken only where it buys something.
+//
+// The drop and the create are emitted from inside the modify step, not by
+// pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
+// before removals, so a modification expressed from outside comes out
+// create-then-drop and ends with no view at all.
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	var dropped []string
+	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
-			result = append(result, fromschema.FromView(*view).SetReplace())
+		view := objectlookup.View(generated.Views, viewDiff.ViewName)
+		if view == nil {
+			continue
+		}
+		if viewReplaceKeepsDependents(viewDiff, view.Body) {
+			replaced = append(replaced, deporder.ViewLike{Name: view.Name, Body: view.Body})
+			continue
+		}
+		dropped = append(dropped, view.Name)
+	}
+
+	for _, name := range dropped {
+		result = append(result, ast.NewDropView(name).SetIfExists().SetCascade())
+	}
+
+	// A view on the replace path can also be a dependent of one on the drop
+	// path, in which case it is on both lists and must still be rendered once.
+	recreate := viewLikesLostToCascade(generated, dropped)
+	named := make(map[string]bool, len(recreate))
+	for _, object := range recreate {
+		named[object.Name] = true
+	}
+	for _, object := range replaced {
+		if !named[object.Name] {
+			recreate = append(recreate, object)
 		}
 	}
+
+	for _, object := range deporder.ViewLikesForCreate(recreate) {
+		result = p.appendViewLikeRecreate(result, generated, object, dropped)
+	}
 	return result
+}
+
+// appendViewLikeRecreate renders the CREATE that puts one view-like object back.
+//
+// A view this step dropped itself is created outright. Everything else is
+// re-asserted rather than created blind: a dependent is on the list because its
+// body names a dropped view in code, which is a syntactic test rather than a
+// resolved one, and a CREATE OR REPLACE costs nothing if the object survived
+// after all while a bare CREATE would fail on "already exists". A materialized
+// view has no in-place replace, so it is dropped first for the same reason.
+func (p *Planner) appendViewLikeRecreate(
+	result []ast.Node,
+	generated *goschema.Database,
+	object deporder.ViewLike,
+	dropped []string,
+) []ast.Node {
+	if object.Materialized {
+		view := objectlookup.MaterializedView(generated.MaterializedViews, object.Name)
+		if view == nil {
+			return result
+		}
+		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
+		return append(result, fromschema.FromMaterializedView(*view))
+	}
+
+	view := objectlookup.View(generated.Views, object.Name)
+	if view == nil {
+		return result
+	}
+	if slices.Contains(dropped, object.Name) {
+		return append(result, fromschema.FromView(*view))
+	}
+	return append(result, fromschema.FromView(*view).SetReplace())
+}
+
+// viewReplaceKeepsDependents decides whether one modified view keeps the
+// in-place replace, which is the statement that leaves dependents and grants
+// alone. The table in modifyExistingViews explains the three answers.
+func viewReplaceKeepsDependents(viewDiff types.ViewDiff, targetBody string) bool {
+	switch viewReplaceLegality(viewDiff.PreviousBody, targetBody) {
+	case viewReplaceAppendsColumns:
+		return true
+	case viewReplaceMovesColumns:
+		return false
+	default:
+		return !viewDiff.Rollback
+	}
+}
+
+// viewLikesLostToCascade returns the declared views and materialized views that
+// DROP VIEW ... CASCADE removes when it drops the named views, the dropped views
+// themselves included, so the caller can put every one of them back.
+//
+// Dependency is read off the declared bodies, the same test that orders view
+// creation, and it is applied transitively: dropping a view takes the view that
+// reads it, and the view that reads that one.
+//
+// The test reads the code of those bodies and not their text. A name inside a
+// string literal or a comment reads nothing, and putting it on this list is not
+// a harmless over-approximation: everything on the list is answered with a
+// statement, and for a materialized view that statement is
+// DROP MATERIALIZED VIEW ... CASCADE. On PostgreSQL 17.10 that took a hand-made
+// dependent view, a unique index and a GRANT off an object no part of the
+// migration touched -- none of them declared, so nothing put them back.
+func viewLikesLostToCascade(generated *goschema.Database, dropped []string) []deporder.ViewLike {
+	if len(dropped) == 0 {
+		return nil
+	}
+
+	candidates := make([]deporder.ViewLike, 0, len(generated.Views)+len(generated.MaterializedViews))
+	for _, view := range generated.Views {
+		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
+	}
+	for _, view := range generated.MaterializedViews {
+		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+	}
+
+	lost := make([]deporder.ViewLike, 0, len(dropped))
+	taken := make(map[string]bool, len(dropped))
+	frontier := make([]string, 0, len(dropped))
+	for _, name := range dropped {
+		if taken[name] {
+			continue
+		}
+		taken[name] = true
+		frontier = append(frontier, name)
+		if view := objectlookup.View(generated.Views, name); view != nil {
+			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		}
+	}
+
+	for len(frontier) > 0 {
+		gone := frontier[0]
+		frontier = frontier[1:]
+		for _, candidate := range candidates {
+			if taken[candidate.Name] || !deporder.ReferencesIdentifier(candidate.Body, gone) {
+				continue
+			}
+			taken[candidate.Name] = true
+			frontier = append(frontier, candidate.Name)
+			lost = append(lost, candidate)
+		}
+	}
+	return lost
 }
 
 func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -1836,73 +2266,132 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 }
 
 func findView(views []goschema.View, name string) *goschema.View {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.View(views, name)
 }
 
 func findMaterializedView(views []goschema.MaterializedView, name string) *goschema.MaterializedView {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.MaterializedView(views, name)
 }
 
 func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	for i := range triggers {
-		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
-			return &triggers[i]
-		}
-	}
-	return nil
+	return objectlookup.Trigger(triggers, tableName, triggerName)
 }
 
-func findRLSPolicy(policies []goschema.RLSPolicy, tableName, policyName string) *goschema.RLSPolicy {
-	for i := range policies {
-		if policies[i].Table == tableName && policies[i].Name == policyName {
-			return &policies[i]
+// enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
+//
+// Two sources feed it, and both are needed.
+//
+// RLSEnabledTablesAdded is the comparator's verdict on the desired schema's
+// enablement declarations against pg_class.relrowsecurity. It is the only
+// source that covers an existing table whose row-level security was turned off
+// in the database, and a table that declares enablement without declaring a
+// policy. Until stokaro/ptah#1284 nothing read it, so a database with RLS off
+// and a schema demanding it on produced no statement at all.
+//
+// New tables carrying a policy are the second source. A desired schema may
+// declare a policy without a separate enablement annotation, and CREATE POLICY
+// on a table whose row-level security is off protects nothing, so the
+// enablement is emitted with the table rather than left to the operator.
+//
+// Which table a policy belongs to is decided under the target's identifier
+// semantics, the same rules [addNewRLSPolicies] resolves the policy itself
+// with. `orders` and `public.orders` are one relation and two strings, so
+// asking `slices.Contains(diff.TablesAdded, policy.Table)` answered no whenever
+// the desired table and the policy's declaration were spelled differently: the
+// plan emitted CREATE POLICY and no ENABLE ROW LEVEL SECURITY, applied cleanly,
+// and left a pg_policy row on a relation whose pg_class.relrowsecurity was
+// still false. The policy was inert and the plan reported success. Measured on
+// PostgreSQL 17.10 -- the fourth appearance of one mistake, after
+// stokaro/ptah#1276, stokaro/ptah#1311 and stokaro/ptah#1347.
+//
+// The map is keyed by identity and carries the spelling to render, so a table
+// named by both sources is enabled once. The rendered spelling comes from the
+// diff -- the comparator's own verdict, or the name the plan creates the table
+// under -- rather than from the declaration, so the statement always names an
+// object this plan is known to have produced.
+func (p *Planner) enableRLSOnTables(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
+	tablesNeedingRLS := make(map[string]string)
+	rememberTable := func(tableName string) {
+		key := semantics.QualifiedTableIdentityKey(tableName)
+		if _, seen := tablesNeedingRLS[key]; !seen {
+			tablesNeedingRLS[key] = tableName
 		}
 	}
-	return nil
-}
+	for _, tableName := range diff.RLSEnabledTablesAdded {
+		rememberTable(tableName)
+	}
 
-func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Create a set of tables that need RLS enabled
-	tablesNeedingRLS := make(map[string]bool)
+	addedTables := make(map[string]string, len(diff.TablesAdded))
+	for _, tableName := range diff.TablesAdded {
+		key := semantics.QualifiedTableIdentityKey(tableName)
+		if _, seen := addedTables[key]; !seen {
+			addedTables[key] = tableName
+		}
+	}
 	for _, policy := range generated.RLSPolicies {
-		tablesNeedingRLS[policy.Table] = true
+		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.Table)]
+		if !isNew {
+			continue
+		}
+		rememberTable(addedTable)
 	}
 
-	// Enable RLS on tables that have policies but don't have RLS enabled yet.
 	// Iterate in sorted order so migration output is deterministic (issue #59).
-	for _, tableName := range slices.Sorted(maps.Keys(tablesNeedingRLS)) {
-		// Check if this table is being added or if RLS is being enabled
-		tableIsNew := slices.Contains(diff.TablesAdded, tableName)
-
-		// For new tables with RLS policies, enable RLS
-		if tableIsNew {
-			enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
-				SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
-			result = append(result, enableRLSNode)
-		}
+	for _, tableName := range slices.Sorted(maps.Values(tablesNeedingRLS)) {
+		enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
+			SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
+		result = append(result, enableRLSNode)
 	}
 	return result
 }
 
+// disableRLSOnTables emits ALTER TABLE ... DISABLE ROW LEVEL SECURITY for the
+// tables the comparator recorded in RLSEnabledTablesRemoved, and keeps the
+// advisory comment for a table that merely lost policies.
+//
+// A table that is being dropped is left out: DROP TABLE removes its row-level
+// security with it, and disabling first would emit a statement whose only
+// effect is on an object that no longer exists two statements later.
+//
+// Losing every policy is not the same as losing enablement. The desired schema
+// may keep row-level security on to deny by default, which is what a table with
+// enablement and no policy means, so a table with removed policies that the
+// comparator did not list for disablement keeps its enablement and gets the
+// comment.
 func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	// Track which tables had policies removed to potentially disable RLS
+	droppedTables := make(map[string]bool, len(diff.TablesRemoved))
+	for _, tableName := range diff.TablesRemoved {
+		droppedTables[tableName] = true
+	}
+
+	tablesToDisable := make(map[string]bool)
+	for _, tableName := range diff.RLSEnabledTablesRemoved {
+		if droppedTables[tableName] {
+			continue
+		}
+		tablesToDisable[tableName] = true
+	}
+
+	// Iterate in sorted order so migration output is deterministic (issue #59).
+	for _, tableName := range slices.Sorted(maps.Keys(tablesToDisable)) {
+		disableRLSNode := ast.NewAlterTableDisableRLS(tableName).
+			SetComment(fmt.Sprintf("Disable RLS for %s table", tableName))
+		result = append(result, disableRLSNode)
+	}
+
 	tablesWithRemovedPolicies := make(map[string]bool)
 	for _, policyRef := range diff.RLSPoliciesRemoved {
+		if tablesToDisable[policyRef.TableName] || droppedTables[policyRef.TableName] {
+			continue
+		}
 		tablesWithRemovedPolicies[policyRef.TableName] = true
 	}
 
-	// For each table that had policies removed, add a comment about potentially disabling RLS
-	// Note: We don't automatically disable RLS because there might be other policies on the table
 	for _, tableName := range slices.Sorted(maps.Keys(tablesWithRemovedPolicies)) {
 		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
 		result = append(result, warningComment)
@@ -1910,35 +2399,71 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, policyName := range diff.RLSPoliciesAdded {
-		// Find the policy definition
-		for _, policy := range generated.RLSPolicies {
-			if policy.Name == policyName {
-				policyNode := fromschema.FromRLSPolicy(policy)
-				// Set Replace flag to handle conflicts gracefully during migrations
-				policyNode.Replace = true
-				result = append(result, policyNode)
-				break
-			}
+// addNewRLSPolicies emits one CREATE POLICY per added reference.
+//
+// The reference is resolved through [rlsscope.Resolver], which keys by the
+// owning table under the target's identifier semantics and by the policy's own
+// name. Two things follow, and both are the point of the resolver existing.
+//
+// The name alone does not identify a policy: two tables may each carry a
+// policy called "tenant_isolation", and matching on the name picked whichever
+// was declared first. And the table alone is not a string comparison either:
+// `orders` and `public.orders` are one table, which is exactly the pair the
+// comparator normalizes and a raw-string lookup missed.
+//
+// An unresolved reference is an error rather than a skip. A plan that omits a
+// CREATE POLICY and still reports success leaves the database without the
+// protection the migration was generated to add (stokaro/ptah#1311).
+func (p *Planner) addNewRLSPolicies(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	policies *rlsscope.Resolver,
+) ([]ast.Node, error) {
+	for _, policyRef := range diff.RLSPoliciesAdded {
+		policy, err := policies.Resolve(policyRef)
+		if err != nil {
+			return nil, err
 		}
+		policyNode := fromschema.FromRLSPolicy(policy)
+		// Set Replace flag to handle conflicts gracefully during migrations
+		policyNode.Replace = true
+		result = append(result, policyNode)
 	}
-	return result
+	return result, nil
 }
 
-func (p *Planner) modifyExistingRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+// modifyExistingRLSPolicies re-renders each modified policy from the schema the
+// plan is targeting, through the same resolver [addNewRLSPolicies] uses.
+//
+// The two sides of a modification do not spell the owning table the same way.
+// The comparator normalizes `orders` and `public.orders` to one table and then
+// reports the DESIRED side's spelling, while a rollback plans against the
+// INTROSPECTED schema, whose policy carries the database's spelling. A
+// raw-string lookup therefore found nothing on the down direction and the
+// generated rollback was `-- No rollback operations needed`: a policy body
+// changed on the way up and nothing put it back (stokaro/ptah#1311).
+func (p *Planner) modifyExistingRLSPolicies(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	policies *rlsscope.Resolver,
+) ([]ast.Node, error) {
 	for _, policyDiff := range diff.RLSPoliciesModified {
-		if policy := findRLSPolicy(generated.RLSPolicies, policyDiff.TableName, policyDiff.PolicyName); policy != nil {
-			policyNode := fromschema.FromRLSPolicy(*policy).SetReplace()
-			policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
-				policyDiff.PolicyName,
-				policyDiff.TableName,
-				summarizeRLSChanges(policyDiff),
-			))
-			result = append(result, policyNode)
+		policy, err := policies.Resolve(types.RLSPolicyRef{
+			PolicyName: policyDiff.PolicyName,
+			TableName:  policyDiff.TableName,
+		})
+		if err != nil {
+			return nil, err
 		}
+		policyNode := fromschema.FromRLSPolicy(policy).SetReplace()
+		policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
+			policyDiff.PolicyName,
+			policyDiff.TableName,
+			summarizeRLSChanges(policyDiff),
+		))
+		result = append(result, policyNode)
 	}
-	return result
+	return result, nil
 }
 
 func summarizeRLSChanges(policyDiff types.RLSPolicyDiff) string {
@@ -1992,7 +2517,14 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	state := newConstraintPlanState(diff)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
-	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addCheckAndUniqueConstraintsWithTables(
+		result,
+		diff.ConstraintsAddedWithTables,
+		state.removalByTableName,
+		state.handled,
+		state.droppedForModify,
+		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+	)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
@@ -2205,6 +2737,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
 	handled map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
+	rebuiltIndexes map[types.IndexRef]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := constraintAdditionNode(add)
@@ -2215,6 +2748,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		if _, modified := removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, droppedForModify)
 		}
+		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
@@ -2222,6 +2756,32 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		handled[add.Name] = struct{}{}
 	}
 	return result
+}
+
+// dropIndexRebuiltAsConstraint drops the index this UNIQUE constraint addition
+// is about to rebuild, before the addition rather than after it.
+//
+// ADD CONSTRAINT ... UNIQUE builds an index named after the constraint, so an
+// index of that name on that table has to be gone first: PostgreSQL 17.10
+// answers `relation "uq_users_email" already exists (SQLSTATE 42P07)`
+// otherwise. The pipeline emits constraint additions before index removals, so
+// the drop is emitted here and [Planner.removeIndexes] leaves it alone; see
+// [types.SchemaDiff.IndexRemovalsRebuiltAsUniqueConstraints] for the shape that
+// produces the collision.
+func (p *Planner) dropIndexRebuiltAsConstraint(
+	result []ast.Node,
+	add types.ConstraintAdditionInfo,
+	rebuiltIndexes map[types.IndexRef]struct{},
+) []ast.Node {
+	ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
+	if _, rebuilt := rebuiltIndexes[ref]; !rebuilt {
+		return result
+	}
+	dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
+	if p.capabilities().Has(capability.DropIndexIfExists) {
+		dropIndexNode.SetIfExists()
+	}
+	return append(result, dropIndexNode)
 }
 
 func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {

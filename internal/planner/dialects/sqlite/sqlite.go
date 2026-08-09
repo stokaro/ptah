@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -219,12 +220,20 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.SequencesAdded) > 0 || len(diff.SequencesModified) > 0 || len(diff.SequencesRemoved) > 0 {
 		return unsupportedFeaturef("sequences are not supported")
 	}
-	if len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
-		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
-		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 {
+	if hasUserDefinedTypeChanges(diff) {
 		return unsupportedFeaturef("user-defined types are not supported")
 	}
 	return nil
+}
+
+// hasUserDefinedTypeChanges reports whether the diff touches a domain, composite
+// type or range type. Split out of rejectUnsupportedSchemaObjects so that adding
+// a category -- RangesModified, from stokaro/ptah#931 item 2 -- does not push
+// that function past the cyclomatic-complexity gate.
+func hasUserDefinedTypeChanges(diff *types.SchemaDiff) bool {
+	return len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
+		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
+		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 || len(diff.RangesModified) > 0
 }
 
 func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
@@ -809,12 +818,7 @@ func (p *Planner) removeViews(diff *types.SchemaDiff) []ast.Node {
 }
 
 func findView(views []goschema.View, name string) *goschema.View {
-	for i := range views {
-		if views[i].Name == name {
-			return &views[i]
-		}
-	}
-	return nil
+	return objectlookup.View(views, name)
 }
 
 func (p *Planner) addTriggers(
@@ -862,12 +866,7 @@ func (p *Planner) removeTriggers(diff *types.SchemaDiff) []ast.Node {
 }
 
 func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	for i := range triggers {
-		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
-			return &triggers[i]
-		}
-	}
-	return nil
+	return objectlookup.Trigger(triggers, tableName, triggerName)
 }
 
 func unsupportedFeaturef(format string, args ...any) error {

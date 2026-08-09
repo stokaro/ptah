@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 
@@ -22,13 +23,25 @@ import (
 // that lives inside one verb is a rule the next verb reading the same
 // directories quietly does not have.
 //
-// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and that
-// is the current state of stokaro/ptah#1013 rather than an oversight. Every verb
-// in this file verifies atlas.sum before anything reads the directory; those two
-// run no such gate and they write a migration file and a fresh sum. Routing them
-// through here would let a `?format=` produce a write over a directory nothing
-// verified, which is a worse divergence than the refusal it replaces. The gate
-// is stokaro/ptah#1086, and the relaxation lands with it.
+// The write verbs -- `migrate new` and `migrate diff` -- are NOT here, and the
+// reason has changed twice, so it is worth stating the current one. It used to
+// be the missing atlas.sum gate: those two wrote a migration file and a fresh
+// sum over a directory nothing had verified, so honoring a `?format=` there
+// would have traded one divergence for a worse one. That gate landed in
+// stokaro/ptah#1086, and with it `migrate new` grew its own converted path --
+// it honors `?format=goose` today, exit 0, files in that layout, matching the
+// community binary.
+//
+// `migrate diff` is out for a reason that no longer has anything to do with
+// refusing a layout. It honors `?format=goose` too since stokaro/ptah#1013 --
+// exit 0, files in that layout, atlas.sum over that layout's covered set. What
+// keeps it out of THIS file is that the verbs here READ a directory, and
+// reading one is a conversion in memory; `migrate diff` also WRITES one, so it
+// resolves the same value through [resolveWritingVerbDirFormat] and then
+// carries it into the writer, which converts, names, composes and hashes per
+// layout. Both spellings and both resolvers land on
+// [atlasmigrate.ResolveApplyDirFormat], so the two paths cannot drift on which
+// spelling wins or on which values are accepted.
 
 // resolveAtlasVerbDirFormat resolves the directory layout a compat verb reads,
 // from both spellings that can carry it, and blames the one that did.
@@ -51,17 +64,28 @@ import (
 //
 // An unrecognized query key is dropped rather than refused, inside
 // ResolveApplyDirFormat, so `?nonsense=1` reads the directory exactly as no
-// query at all does (stokaro/ptah#1013 section 2).
+// query at all does (stokaro/ptah#1013 section 2). Dropped is not the same as
+// unsaid: [reportIgnoredDirQuery] names it on out, without changing what the
+// run does.
+//
+// out is where that note goes; pass the command's stderr. A caller validating
+// only --dir-format passes a nil query and nothing is written.
 //
 // The returned error already names the command and the flag, because only this
 // function knows which of the two spellings carried the rejected value.
 func resolveAtlasVerbDirFormat(
+	out io.Writer,
 	verb string,
 	configured string,
 	query url.Values,
 ) (atlasmigrateimport.Format, error) {
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
 	if err == nil {
+		// Inside the accepted branch, so a run refused for `?format=totally-bogus`
+		// prints that refusal alone; see [reportIgnoredDirQuery].
+		if reportErr := reportIgnoredDirQuery(out, verb, query); reportErr != nil {
+			return "", reportErr
+		}
 		return format, nil
 	}
 	// A ?format= query is the only thing that can carry a format value other
@@ -132,6 +156,25 @@ func (c atlasDirCapture) gateFS() fs.FS {
 // exactly the directories those two refuse.
 func (c atlasDirCapture) coveredNames() ([]string, error) {
 	return atlasmigrateimport.SumFileNames(c.gateFS(), c.format)
+}
+
+// versionTokens returns the two-way dictionary between the versions an operator
+// can name and the versions this build executes, for a directory whose layout
+// has a version space of its own. It is empty for every layout but Flyway.
+//
+// It reads the GATE filesystem, which for a foreign layout is the same
+// immutable snapshot [atlasDirCapture.migrationFS] converts, so a token can
+// never belong to a different read of the directory than the migration it
+// names.
+//
+// Call it only after the gate has passed, for the same reason migrationFS says
+// so: it interprets the source layout.
+func (c atlasDirCapture) versionTokens() (flywayVersionTokens, error) {
+	covered, err := atlasmigrateimport.FlywayCoveredSourceVersions(c.gateFS(), c.format)
+	if err != nil {
+		return flywayVersionTokens{}, err
+	}
+	return newFlywayVersionTokens(covered), nil
 }
 
 // migrationFS returns the filesystem the verb interprets as Atlas migrations.

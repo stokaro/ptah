@@ -21,9 +21,10 @@ exactly the one `users` table in a local SQLite database,
 
 ## Compare: the difference as SQL
 
-`ptah schema compare` diffs the desired schema against the live database and
-prints the reconciling statements. In the synced starting state the list is
-empty:
+`ptah schema compare` diffs the desired schema against the live database. It
+reports the difference twice: once as the categories of change the comparison
+found, and once as the SQL that reconciles them. In the synced starting state
+there is neither:
 
 ```bash
 ptah schema compare --root-dir ./models --db-url "sqlite://$PWD/app.db"
@@ -34,7 +35,7 @@ Expected output includes:
 ```text
 === SCHEMA COMPARISON ===
 
-[]
+No schema differences detected.
 ```
 
 Now add a column to the model:
@@ -49,11 +50,26 @@ The comparison shows the change the database is missing:
 ```text
 === SCHEMA COMPARISON ===
 
-[ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP]
+Differences detected (1 category):
+  tables_modified (1): users
+
+Reconciling SQL:
+ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 ```
+
+The category names are the field names of the schema diff, so a category
+carries the same spelling here that it does in machine-readable output. The
+list comes from the comparison result itself rather than from the SQL, which
+is what makes it complete: a difference your database dialect has no statement
+for is still named. When that happens the SQL section reads
+`Reconciling SQL: none.` and standard error names the categories the dialect's
+planner could not turn into statements, so an empty statement list is never
+reported as agreement.
 
 The command exits `0` whether or not differences exist; add `--exit-code` to
 exit `1` on a non-empty diff when a script needs the answer as a status code.
+Every category counts toward that check, including one whose SQL the dialect
+cannot produce.
 
 ## Drift: the difference as a check
 
@@ -104,6 +120,32 @@ Three flags shape the check:
   `--ignore tables=audit_log`.
 - `--format` selects `text`, `json` (the findings plus the full structured
   diff, for tooling), or `github-actions` (workflow annotations).
+
+In the JSON document, a PostgreSQL row-level-security policy is reported by the
+table that owns it together with its name, because a policy name is scoped to
+its table and two tables may each carry one called `tenant_isolation`. Both
+`diff.rls_policies_added` and `diff.rls_policies_removed` hold objects:
+
+```json
+{
+  "diff": {
+    "rls_policies_added": [
+      { "policy_name": "tenant_isolation", "table_name": "zeta_orders" }
+    ]
+  }
+}
+```
+
+`rls_policies_added` held bare policy-name strings in Ptah v0.2.0 and earlier —
+the v0.2.0 tag itself still declares `RLSPoliciesAdded []string`, so the object
+form has not appeared in a release yet. A consumer reading that field reads
+`.policy_name` now; nothing was removed.
+
+The same pair identifies a policy everywhere else it is named: the plan resolves
+`rls_policies_added`, `rls_policies_removed` and `rls_policies_modified` by the
+owning table together with the policy name, and the table is matched under the
+target's identifier rules, so `orders` and `public.orders` are one table. A
+reference the target schema cannot resolve is rejected rather than skipped.
 
 ## Plan-only runs
 

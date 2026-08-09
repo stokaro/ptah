@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/fileplan"
+	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -27,6 +30,16 @@ type InspectOptions struct {
 	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
+	// OmitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
+	// which leaves out the top-level block types the pinned Atlas community
+	// binary refuses as a feature -- unless something else in the document
+	// names the object -- and reports every decision on Diagnostics. Only
+	// `ptah-compat` sets it, and setting
+	// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar]
+	// turns it back off there; the native surface renders every construct Ptah
+	// models. See
+	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	OmitAtlasRefusedBlocks bool
 }
 
 // NormalizeInspectFormat returns and validates the executable Atlas schema
@@ -45,7 +58,7 @@ func NormalizeInspectFormat(format string) (string, error) {
 // Inspect reads a live schema and renders it with Atlas-compatible
 // formatting, applying any split/write file exports the format template
 // planned.
-func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
 	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return "", err
 	}
@@ -56,10 +69,18 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 		return "", err
 	}
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
+	schema, err := readInspectSchema(ctx, conn, opts.Schemas)
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
+	// A description scoped to the roles the inspected schemas use omits roles
+	// that exist on the server, and the rendered document is the only thing
+	// the operator sees. Reported here rather than in renderInspectSchema
+	// because only this path inspects a database the operator named: the
+	// file and migration-directory sources render a dev database they were
+	// told to materialize, whose other cluster roles are not an answer to
+	// anything they asked. See stokaro/ptah#1267.
+	rolescope.ReportUndescribed(opts.Diagnostics, schema)
 	return renderInspectSchema(schema, conn.Info(), opts)
 }
 
@@ -75,7 +96,7 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
-	schema, err = scopeInspectSchema(schema, info, opts)
+	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
 	// Inspection is read-only and its documented answer for an empty selection
 	// is an empty rendering, so it keeps exit 0 and reports the empty selection
 	// on the diagnostics stream instead of failing.
@@ -86,12 +107,17 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
+	// Inspection looks at exactly one state, so its own report is already the
+	// across-states answer.
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport))
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
 		schema,
 		info,
 		opts.Diagnostics,
+		opts.OmitAtlasRefusedBlocks,
+		describesSchemas(info, opts),
 	))
 	if err != nil {
 		return "", err
@@ -113,8 +139,8 @@ func scopeInspectSchema(
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	opts InspectOptions,
-) (*dbschematypes.DBSchema, error) {
-	return atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+) (*dbschematypes.DBSchema, atlasfilter.ExcludeReport, error) {
+	return atlasfilter.ScopeDatabaseReport(schema, atlasfilter.Scope{
 		Include:       opts.Include,
 		Exclude:       opts.Exclude,
 		DefaultSchema: info.Schema,
@@ -137,4 +163,20 @@ func applyInspectFileExports(files []atlasreport.SchemaInspectFile) error {
 // SplitSchemaNames expands repeated and comma-separated Atlas schema filters.
 func SplitSchemaNames(values []string) []string {
 	return schemascope.SplitNames(values)
+}
+
+// describesSchemas reports whether this run chose the schemas it describes,
+// rather than having the connection URL choose for it.
+//
+// It is the same branch inspectSchemaNames takes -- an explicit `--schema`
+// wins, otherwise realm scope decides -- asked a second time because the answer
+// is what the SQL format needs: the pinned community binary v1.3.0 renders a
+// schema it was told about and stays quiet about the one it merely connected
+// to. The measurements are on
+// [go.5x5.cz/ptah/internal/atlasreport.SchemaInspectReport].
+func describesSchemas(info dbschematypes.DBInfo, opts InspectOptions) bool {
+	if len(SplitSchemaNames(opts.Schemas)) > 0 {
+		return true
+	}
+	return schemaselection.Realm(info.Dialect, info.URL, info.Schema)
 }

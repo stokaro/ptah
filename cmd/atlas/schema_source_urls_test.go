@@ -263,6 +263,7 @@ CREATE TABLE env_users (
 }
 
 func TestSchemaApplyEnvSrcSource(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	baseDir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`env "dev" {

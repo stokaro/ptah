@@ -17,6 +17,7 @@ import (
 const schemaApplyLockUnsupportedNote = `note: schema apply locking is not supported for dialect "sqlite"; --lock-timeout is ignored and the apply proceeds without a database lock`
 
 func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "lock-apply.db")
@@ -46,6 +47,7 @@ func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
 }
 
 func TestSchemaApplyWithoutLockTimeoutPrintsNoLockNote(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "no-note.db")
@@ -119,12 +121,14 @@ CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
 
 	err := cmd.Execute()
 
-	// The dev database ends at recreated current state plus the rehearsed
-	// plan, with stale objects gone; the target gets the plan afterwards.
+	// The dev database is borrowed and handed back: the pre-existing litter is
+	// gone, and so is everything the rehearsal created. The target gets the
+	// plan afterwards, which is what proves the rehearsal was not skipped —
+	// planning it required no dev database, but reaching the apply did.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, devPath, "sim_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, devPath, "sim_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, devPath, "sim_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, devPath, "sim_orders"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, devPath, "sim_stale"), qt.Equals, 0)
 	c.Assert(sqliteTableCount(c, dbPath, "sim_orders"), qt.Equals, 1)
 }

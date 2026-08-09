@@ -2,6 +2,8 @@ package migrator_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -112,6 +114,46 @@ func TestDirectionalRepair_ResumeRunsDownBodyAndDeletesRevision(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.DirtyRevision, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+}
+
+func TestDirectionalRepair_RefusesChangedCommittedDownPrefix(t *testing.T) {
+	c := qt.New(t)
+	_, conn := directionalRepairMigrator(c, "changed-down-prefix.db")
+	changed := directionalRepairFixture()
+	changed["000001_setup.down.sql"] = &fstest.MapFile{Data: []byte(
+		"-- +ptah no_transaction\n" +
+			"CREATE TABLE gone (id INTEGER PRIMARY KEY, note TEXT);\n" +
+			"DROP TABLE gone;\n" +
+			"DROP TABLE definitely_missing_table;\n" +
+			"DROP TABLE parent;\n",
+	)}
+	repaired, err := migrator.NewFSMigrator(conn, changed)
+	c.Assert(err, qt.IsNil)
+
+	err = repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4})
+
+	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume the rollback: the already committed statement prefix changed.*`)
+	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsTrue)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+}
+
+func TestDirectionalRepair_AllowsChangedUnappliedDownSuffix(t *testing.T) {
+	c := qt.New(t)
+	_, conn := directionalRepairMigrator(c, "changed-down-suffix.db")
+	fixed := directionalRepairFixture()
+	fixed["000001_setup.down.sql"] = &fstest.MapFile{Data: []byte(
+		"-- +ptah no_transaction\n" +
+			"CREATE TABLE gone (id INTEGER PRIMARY KEY);\n" +
+			"DROP TABLE gone;\n" +
+			"DROP TABLE IF EXISTS definitely_missing_table;\n" +
+			"DROP TABLE parent;\n",
+	)}
+	repaired, err := migrator.NewFSMigrator(conn, fixed)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
+	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 }
 
 // TestDirectionalRepair_ResumeBoundIsDownStatementCount covers the statement
@@ -232,8 +274,15 @@ func TestDirectionalRepair_RefusesUpResumeOverLegacyRollbackRow(t *testing.T) {
 	c := qt.New(t)
 	mig, conn := directionalRepairMigrator(c, "legacy-row.db")
 
-	// Rewrite the row the way a Ptah that did not record directions wrote it.
-	_, err := conn.ExecContext(c.Context(), "UPDATE schema_migrations SET state = 'failed' WHERE version = 1")
+	// Rewrite the row the way a Ptah that did not record directions or
+	// committed-prefix checksums wrote it.
+	legacySum := sha256.Sum256(directionalRepairFixture()["000001_setup.up.sql"].Data)
+	legacyChecksum := hex.EncodeToString(legacySum[:])
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE schema_migrations SET state = 'failed', checksum = ? WHERE version = 1",
+		legacyChecksum,
+	)
 	c.Assert(err, qt.IsNil)
 
 	err = mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3})

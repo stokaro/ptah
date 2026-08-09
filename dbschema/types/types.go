@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -31,6 +32,37 @@ type DBSchema struct {
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
 	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+
+	// RolesOutOfScope lists roles that exist on the server but that this
+	// description deliberately does not define, because nothing in the
+	// schemas being read refers to them.
+	//
+	// PostgreSQL roles belong to the cluster rather than to one database, so
+	// "the reader did not describe this role" and "this role does not exist"
+	// are different facts, and a comparator that cannot tell them apart plans
+	// CREATE ROLE for a role that is already there. Roles and RolesOutOfScope
+	// partition the roles Ptah manages, so their union answers the
+	// comparator's question -- does this role exist -- whatever scoping rule
+	// decided the description. See stokaro/ptah#1267 and stokaro/ptah#1276.
+	//
+	// The partition is over managed roles, not over the whole catalog. A
+	// PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
+	// superuser out of both lists, because Ptah manages neither in either
+	// direction, so the union is not every role the server has and must not be
+	// described as if it were. A desired schema that names one of them is
+	// refused before anything is compared or planned, naming the role and the
+	// rule, rather than compared against nothing. See stokaro/ptah#1312.
+	//
+	// This field is not part of the description: it carries role names from
+	// outside the inspected scope, so it is never serialized and never
+	// rendered. Only Roles reaches output.
+	RolesOutOfScope []DBRole `json:"-"`
+
+	// NotDescribed records what this read did not look at, so a comparator can
+	// tell an object the database does not have from one the reader was never
+	// asked about. The zero value claims the read covered everything; see
+	// [go.5x5.cz/ptah/core/coverage].
+	NotDescribed coverage.Set `json:"not_described,omitzero"`
 }
 
 // DBSchemaInfo represents a database schema/namespace.
@@ -69,6 +101,16 @@ func QualifyTableName(schema, table string) string {
 // GeneratedKind / GeneratedExpression are populated by readers for dialects
 // that expose generated column metadata. Schema comparison matches these fields
 // when the goschema-side model also carries generated column metadata.
+//
+// DomainName and FormattedType are a pair. DataType reports a domain column's
+// BASE type, so it alone cannot say that the declared type was a domain:
+// DomainName carries that fact and FormattedType carries the spelling the
+// server uses for it, schema-qualified where the search path needs that.
+// Everything that answers "what type is this column declared as" -- the
+// desired-state conversion, the Atlas-compatible JSON inspect output, and the
+// comparator's database side -- must consult DomainName rather than infer the
+// answer from DataType, which reports the base type and drops the domain's
+// constraints with it. See stokaro/ptah#1242.
 type DBColumn struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`
@@ -86,6 +128,38 @@ type DBColumn struct {
 	IsAutoIncrement    bool    `json:"is_auto_increment"` // Derived field
 	IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
 	IsUnique           bool    `json:"is_unique"`         // Derived field
+
+	// DomainName names the domain a column is declared with, empty for every
+	// column whose declared type is not a domain (PostgreSQL only today).
+	//
+	// It is a separate fact rather than something read back out of
+	// FormattedType, because FormattedType is filled for arrays as well and the
+	// two shapes want opposite answers: an array's spelling is a TYPE, which may
+	// be compared and normalized like any other, while a domain's spelling is an
+	// IDENTIFIER its author chose and must only ever be compared by identity.
+	// Nothing but the catalog can tell them apart -- a domain over an array is
+	// reported with data_type "ARRAY" exactly like a plain array column
+	// (stokaro/ptah#1138).
+	DomainName string `json:"domain_name,omitempty"`
+
+	// DomainSchema names the schema holding that domain, empty for every column
+	// whose declared type is not a domain.
+	//
+	// A domain's identity is (schema, name), and the name alone is not it:
+	// public.status and other.status are two different types with different
+	// CHECK constraints over possibly different base types. A comparator handed
+	// only "status" for both calls a column that must be converted unchanged,
+	// while the plan still drops the domain the desired schema no longer
+	// declares -- so DROP DOMAIN ... CASCADE takes the column and its data with
+	// nothing having converted it first (stokaro/ptah#1138).
+	//
+	// It is recorded raw, exactly as information_schema.columns.domain_schema
+	// reports it, rather than blanked for the schema being read: the domain a
+	// column is declared with may live in a schema the read never visits, and
+	// blanking it there erases the very distinction this field exists for.
+	// FormattedType cannot stand in, because the server writes a qualifier
+	// there only when the search path forces one.
+	DomainSchema string `json:"domain_schema,omitempty"`
 
 	// GeneratedExpression holds the generated-column expression. Nil for plain
 	// columns.
@@ -105,9 +179,18 @@ type DBColumn struct {
 
 // DBEnum represents a database enum type (PostgreSQL)
 type DBEnum struct {
-	Name   string   `json:"name"`
+	Name string `json:"name"`
+	// Schema owns the enum. Readers blank it for the connection's own schema,
+	// exactly as they do for tables, views and domains, so a filter or a
+	// comparison reconstructs the qualified spelling from the connection's
+	// default. Without it a schema-qualified `--exclude app.color` matched
+	// nothing and silently kept the enum (stokaro/ptah#933).
+	Schema string   `json:"schema,omitempty"`
 	Values []string `json:"values"`
 }
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (e DBEnum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name) }
 
 // DBDomain represents a PostgreSQL domain type read from the database.
 type DBDomain struct {
@@ -139,10 +222,29 @@ type DBComposite struct {
 func (c DBComposite) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
 
 // DBRange represents a PostgreSQL range type read from the database.
+//
+// Everything after Subtype exists so a change to an EXISTING range type can be
+// detected. While the reader returned only the name and subtype, the comparator
+// had nothing to compare and reported a changed range as converged
+// (stokaro/ptah#931 item 2).
 type DBRange struct {
 	Name    string `json:"name"`
 	Schema  string `json:"schema,omitempty"`
 	Subtype string `json:"subtype"`
+	// SubtypeOpClass is the operator class backing the subtype's ordering
+	// (pg_range.rngsubopc). Always populated by the catalog, including when the
+	// author never named one, so the comparator only consults it when the
+	// desired schema declares one.
+	SubtypeOpClass string `json:"subtype_opclass,omitempty"`
+	// Collation is the subtype collation (pg_range.rngcollation), empty for
+	// non-collatable subtypes.
+	Collation string `json:"collation,omitempty"`
+	// Canonical is the canonicalization function (pg_range.rngcanonical), empty
+	// when the range has none.
+	Canonical string `json:"canonical,omitempty"`
+	// SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
+	// empty when the range has none.
+	SubtypeDiff string `json:"subtype_diff,omitempty"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
@@ -151,8 +253,29 @@ func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Na
 // DBIndexPart represents one ordered key column in an introspected index.
 type DBIndexPart struct {
 	Name string `json:"name"`
-	Desc bool   `json:"desc,omitempty"`
+	// Expr is a raw indexed expression, such as lower(name). It is mutually
+	// exclusive with Name: an expression is not an identifier, and a reader
+	// that reports one in Name makes the renderer quote it into a column
+	// reference that does not exist.
+	Expr string `json:"expr,omitempty"`
+	// Operator is the non-default operator class this key was built with, for
+	// example text_pattern_ops. Empty means the key uses its type's default
+	// class, which is the only case where omitting it from emitted DDL
+	// reproduces the index. See #1242.
+	Operator string `json:"operator,omitempty"`
+	Desc     bool   `json:"desc,omitempty"`
+	// NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",
+	// or empty when the key uses the direction's default. PostgreSQL defaults
+	// to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
+	// spelling has to be carried.
+	NullsOrder string `json:"nulls_order,omitempty"`
 }
+
+// Index NULLS ordering spellings for DBIndexPart.NullsOrder.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
 
 // DBIndex represents a database index.
 //
@@ -172,12 +295,69 @@ type DBIndex struct {
 	IsUnique   bool          `json:"is_unique"`
 	IsPrimary  bool          `json:"is_primary"`
 	Definition string        `json:"definition"` // Full index definition
+	// KeyPartsIncomplete reports that the catalog described a key part this
+	// reader cannot name, so Columns (and Parts) list fewer parts than the key
+	// actually has. The MySQL reader sets it for a functional key part --
+	// `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
+	// NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
+	//
+	// A comparison must not read the key columns of such an index as the whole
+	// key: it would plan a rebuild on every run for a key that never changed.
+	// Everything else about the index is reported normally.
+	KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
 	// Condition is the WHERE clause for partial indexes when the dialect
 	// exposes one structurally.
 	Condition string `json:"condition,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+
+	// Method is the index access method as the server spells it -- btree,
+	// gin, gist, brin, hash. It is deliberately not Type: Type is the
+	// ClickHouse data-skipping-index type below, a different concept that
+	// happens to share a slot in the annotation surface, and overloading one
+	// field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
+	// "gin" indistinguishable at this layer. Empty means the reader did not
+	// report an access method.
+	//
+	// A dropped access method is not always a quiet degradation: an index on
+	// a type with no btree operator class, such as point, does not replay at
+	// all without it. See #1242.
+	Method string `json:"method,omitempty"`
+	// IncludeColumns carries PostgreSQL INCLUDE payload columns, the
+	// non-key columns stored in the index for index-only scans.
+	IncludeColumns []string `json:"include_columns,omitempty"`
+
+	// RequiresExtensions names the extensions this index cannot be built
+	// without, as the catalog resolved them rather than as the DDL spells them.
+	//
+	// An index key names an operator class only when that class is not the
+	// default for its type on its access method, so an index whose default
+	// class comes from an extension refers to that extension with no token at
+	// all. Measured on PostgreSQL 17.10: with btree_gin installed,
+	// CREATE INDEX t_gin ON t USING gin (n int4_ops) over an integer column is
+	// stored, and rendered back, as CREATE INDEX t_gin ON public.t USING gin
+	// (n) -- and replaying that on a database without btree_gin fails with
+	// `data type integer has no default operator class for access method
+	// "gin"`. pg_index.indclass holds the class each key actually resolved to,
+	// so the reader answers the question exactly (stokaro/ptah#1286).
+	//
+	// The index's access method is read the same way, from pg_class.relam. An
+	// access method the catalog owns, `gin` or `gist`, belongs to no extension
+	// and pins nothing; one an extension supplies, such as bloom's `bloom`,
+	// resolves to that extension.
+	//
+	// The edge is recorded whether or not the DDL prints the class. It does print
+	// a non-default one -- pg_trgm's gin_trgm_ops arrives as
+	// CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
+	// index resolves to pg_trgm here as well. This field answers "which
+	// extension owns what this index resolved to", not "which dependency the DDL
+	// omitted".
+	//
+	// Empty means the reader found no such edge, which is the ordinary case:
+	// core supplies the default operator class for every core type its access
+	// methods index. Readers with no catalog to ask leave it unset.
+	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 
 	// Type is the ClickHouse data-skipping-index type. One of
 	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
@@ -225,6 +405,22 @@ type DBConstraint struct {
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
 	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+
+	// RequiresExtensions names the extensions the index backing this constraint
+	// cannot be built without, read from that index exactly as
+	// [DBIndex.RequiresExtensions] is.
+	//
+	// It is a separate field rather than a lookup because the backing index is
+	// not part of the entity model: a constraint owns its index, and the
+	// converter drops the index row so the constraint is rendered once. The
+	// dependency is as hard to read off the text here as on a plain index, and
+	// for the same reason. Measured on PostgreSQL 17.10,
+	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+	// needs btree_gist and pg_get_constraintdef prints no token of it, while
+	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
+	// the class, because a class is printed exactly when it is not the default
+	// (stokaro/ptah#1286).
+	RequiresExtensions []string `json:"requires_extensions,omitempty"`
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
@@ -273,6 +469,35 @@ type DBExtension struct {
 	Comment          *string `json:"comment"`           // Extension comment/description
 	DefaultVersion   *string `json:"default_version"`   // Default version available
 	InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
+
+	// Provides lists the catalog names this extension supplies -- its types,
+	// functions, relations, operator classes and operator families -- read from
+	// pg_depend. It answers "what would stop resolving if this extension were
+	// not here", which is a different question from the extension's own name and
+	// usually a disjoint set of words: `isn` supplies the type `isbn`, and
+	// `pgcrypto` supplies the function `gen_salt`.
+	//
+	// Names pg_catalog also supplies are excluded, because a document using one
+	// resolves it with the extension dropped. This matters because contrib
+	// extensions mostly supply overloads of core functions: unfiltered, `citext`
+	// contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
+	// `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
+	// PostgreSQL 13.
+	//
+	// A function name pg_get_keywords() reports as a SQL keyword is excluded too,
+	// because a name read out of SQL text carries no position: `hstore` supplies
+	// three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
+	// is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
+	// conditional on the redundancy that makes it free -- the same extension
+	// must also contribute to this list a type appearing in that function's
+	// signature, so a genuine call spells the type and the type entry answers
+	// for it. An extension supplying `merge(text, text)` and no type has its
+	// only evidence in the name, and the name is kept.
+	//
+	// Empty means not measured rather than "supplies nothing" -- every extension
+	// supplies something, and readers that do not consult a catalog (Go
+	// annotations, YAML) leave this unset.
+	Provides []string `json:"provides,omitempty"`
 }
 
 // DBSequence represents a standalone PostgreSQL sequence read from the database.
@@ -357,7 +582,13 @@ type SchemaTransaction interface {
 
 // DBFunction represents a PostgreSQL custom function read from the database
 type DBFunction struct {
-	Name       string `json:"name"`       // Function name
+	Name string `json:"name"` // Function name
+	// Schema owns the function. Readers blank it for the connection's own
+	// schema, the same convention tables, views and domains follow, so a
+	// filter reconstructs the qualified spelling from the connection's
+	// default. Without it a schema-qualified `--exclude app.fn_app` matched
+	// nothing and silently kept the function (stokaro/ptah#933).
+	Schema     string `json:"schema,omitempty"`
 	Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
 	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
 	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
@@ -366,6 +597,9 @@ type DBFunction struct {
 	Body       string `json:"body"`       // Function body/implementation
 	Comment    string `json:"comment"`    // Function comment/description
 }
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (f DBFunction) QualifiedName() string { return QualifyTableName(f.Schema, f.Name) }
 
 // DBView represents a database view read from the database.
 type DBView struct {

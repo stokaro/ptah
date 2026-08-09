@@ -251,6 +251,7 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 }
 
 func TestSchemaApplyIncludeComposesWithExclude(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -282,6 +283,7 @@ func TestSchemaApplyIncludeComposesWithExclude(t *testing.T) {
 }
 
 func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	// The target already contains an out-of-scope table that the scoped apply
 	// must leave untouched.
@@ -334,6 +336,7 @@ func TestSchemaApplyIncludeValidationRunsBeforeConnecting(t *testing.T) {
 }
 
 func TestSchemaApplyCrossScopeDependencyFails(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -358,6 +361,7 @@ func TestSchemaApplyCrossScopeDependencyFails(t *testing.T) {
 }
 
 func TestSchemaApplySchemaScopeEmptyMatchReportsSynced(t *testing.T) {
+	allowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -378,5 +382,5 @@ func TestSchemaApplySchemaScopeEmptyMatchReportsSynced(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made")
 }

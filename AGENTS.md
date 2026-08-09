@@ -24,6 +24,65 @@ When the two halves pull apart, say so in the commit and in the issue rather
 than picking silently. "We are stricter here, deliberately, and here is the
 measurement" is a complete answer; quietly matching is not.
 
+**Compatibility never removes a capability. Constitute it, do not discard it.**
+Where Ptah models something the community binary does not -- an extension, a
+sequence, a policy, anything the Pro surface covers or that Ptah does better --
+reaching CE compatibility must never mean deleting that capability from the
+compatibility surface. `ptah-compat` is the migration path for Atlas
+**Pro** users' scripts too, not only CE users'; a capability reachable only
+through native `ptah` does not help someone porting a Pro pipeline.
+
+The shape that satisfies both:
+
+- the compatibility surface **defaults** to what the community binary accepts,
+  so drop-in output stays drop-in;
+- the fuller behavior stays reachable on that same surface behind a `PTAH_*`
+  environment variable -- never a new flag, because the conformance
+  `cli-surface` tier asserts flag parity with the pinned binary and an
+  environment variable is invisible to the help surface. Precedent:
+  `PTAH_ALLOW_EXTERNAL_SCHEMA`;
+- what the default leaves out is reported, not dropped in silence, so an
+  operator is never told less than the truth about their database;
+- the capability is written down -- feature matrix row, user documentation, and
+  a test -- so it is a product decision rather than an accident of which branch
+  of an `if` ran.
+
+"CE refuses it, so we stopped emitting it" is an incomplete answer. The complete
+one names where the capability still lives.
+
+### Boolean `PTAH_*` environment variables are strict
+
+Absence selects the documented default; a present value must parse as a boolean
+or the owning command refuses before doing work. **Never convert a boolean
+environment parse error into the default value.**
+
+The four states are distinguishable and stay that way. `os.Getenv` answers the
+empty string for an absent variable and for `PTAH_X=` alike, which is how a typo
+in a CI environment file, a container manifest or a systemd unit became a silent
+default; use `os.LookupEnv`, and treat an exported empty value as the
+configuration error it is.
+
+In practice that means: declare the variable once with
+`envbool.New(name, defaultValue)` in the package that owns it, resolve it through
+`Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a feature
+call site. `internal/envbool` holds the one grammar (exactly
+`strconv.ParseBool`'s spellings, nothing trimmed) and the one error shape
+(`invalid boolean value %q for %s`); `cmd/internal/envboolguard` refuses a new
+tree that reintroduces the pattern.
+
+Resolve the variables a command owns **before** its early returns. A malformed
+value must not stay dormant because this invocation did not reach the branch
+where the value would have mattered -- that branch is the one the operator
+already knows they changed, and the runs that never reach it are the whole of a
+healthy pipeline. Validate on every invocation of the command or subsystem that
+recognizes the variable, and on no others: an invalid PostgreSQL-inspection
+variable must not break an unrelated SQLite command.
+
+Every boolean `PTAH_*` variable today opts IN to the more permissive side, so a
+typo lands on the strict default and fails closed. If one ever defaults to the
+permissive side, a typo on it fails OPEN and this stops being a usability rule.
+Do not add one.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
@@ -94,6 +153,207 @@ Before matching a measured behavior, ask what it costs the user. If the answer
 is "nothing, it is a different spelling of the same outcome", match it -- wording, exit codes,
 flag names and output shape are worth being identical on, because tooling reads
 them. If the answer is "they lose something they asked for", do not match it.
+
+## Native And Compatibility Capability Ownership
+
+`ptah-compat` is an adapter over Ptah capabilities, not an independent product
+implementation.
+
+When implementing behavior for `ptah-compat`, distinguish between:
+
+1. a general semantic capability; and
+2. Atlas-specific interface or compatibility machinery.
+
+A general semantic capability must live in a reusable Ptah package below the
+CLI layer and, where meaningful to a native Ptah user, must be reachable
+through the native Ptah surface as well.
+
+Do not implement general product behavior exclusively inside `cmd/atlas` or
+another compatibility-only package.
+
+The native surface does not need to reproduce Atlas command names, flags,
+configuration syntax, output shape, URI spelling, or other interface
+conventions. This is functional parity, not interface parity.
+
+Compatibility-only adapters, parsers, codecs, persistence bridges,
+diagnostics, and behavioral shims may remain compat-only when they exist
+solely because of an Atlas contract.
+
+Conversely, when native Ptah already implements a capability that has an
+Atlas-compatible spelling, prefer adapting the compatibility surface to the
+existing capability rather than implementing the behavior again.
+
+CLI and compatibility packages should translate inputs and outputs, resolve
+compatibility policy, and delegate semantic work to reusable
+application/core packages.
+
+The intended architecture:
+
+```text
+                         shared Ptah capabilities
+                        /                        \
+                       /                          \
+             native Ptah surface          compatibility surface
+                  `ptah`                    `ptah-compat`
+```
+
+### Which side of the boundary a change is on
+
+These are general capabilities. They mean something without Atlas, so their
+execution semantics belong in shared Ptah code with a native entry point, even
+when the work that produced them was Atlas compatibility work:
+
+```text
+schema plan testing
+migration testing
+drift detection
+schema security analysis
+migration checkpoints
+pre-apply checks
+schema planning
+schema validation
+artifact publishing/fetching
+migration-directory import
+```
+
+These are compatibility machinery. They exist to interpret, reproduce, or
+bridge an Atlas interface or persisted representation, and they imply no native
+user-facing spelling:
+
+```text
+atlas:// -> OCI resolution
+Atlas CLI flag spelling and precedence
+atlas.hcl compatibility parsing/evaluation
+Atlas .plan.hcl codec
+Atlas .test.hcl adapter
+Atlas revision-table representation compatibility
+Atlas checksum encoding compatibility
+Atlas-compatible stdout/stderr rendering
+Atlas exit-code compatibility
+Atlas-specific refusal diagnostics
+```
+
+A codec feeding a shared capability is the intended shape, not a violation of
+the rule:
+
+```text
+Atlas .test.hcl
+      |
+      v
+compatibility parser
+      |
+      v
+shared test model / runner
+      |
+      +--> ptah
+      |
+      +--> ptah-compat
+```
+
+### How this reads against the compatibility policy
+
+The [compatibility policy](#compatibility-policy) and this rule run in opposite
+directions, and neither one relaxes the other.
+
+- The compatibility policy forbids the compatibility surface from losing a
+  capability native Ptah models. A capability reachable only through `ptah` is
+  no migration path for someone porting an Atlas pipeline.
+- This rule forbids the native surface from losing a capability the
+  compatibility surface gained. A capability reachable only through
+  `ptah-compat` turns the compat tree into a second product.
+
+They are one invariant read from two ends: neither binary is where a generally
+useful capability lives, because both are adapters over the package that
+implements it.
+
+Three consequences are worth naming, because getting them backwards satisfies
+this rule while breaking the older one:
+
+- Exposing a capability natively means a **native** verb or flag. The
+  compatibility surface still takes no new flag: the conformance `cli-surface`
+  tier asserts flag parity with the pinned community binary, so the fuller
+  behavior there stays behind a `PTAH_*` environment variable. Precedent:
+  `PTAH_ALLOW_EXTERNAL_SCHEMA`.
+- Reusing an existing native capability means the compatibility surface adapts
+  to it. It never means narrowing the native capability to whatever the Atlas
+  contract can express.
+- One implementation does not force one behavior. Where the two surfaces
+  deliberately diverge -- Atlas revision bookkeeping on one, recoverable
+  failure state on the other -- the divergence belongs in the shared package as
+  a policy the caller selects, not as a second implementation.
+
+### Dependency direction
+
+```text
+cmd/ptah  --------------------\
+                               \
+                                > shared capability/application/core packages
+                               /
+cmd/atlas / ptah-compat ------/
+```
+
+- Native Ptah code must not depend on the compatibility command layer.
+- Shared semantic packages must not depend on `cmd/atlas`.
+- Atlas-specific codecs and adapters may depend on shared domain models and
+  capabilities.
+
+Conceptually:
+
+```text
+Atlas input/output contract
+          |
+          v
+compat adapter / codec
+          |
+          v
+shared Ptah capability
+          ^
+          |
+native Ptah adapter
+```
+
+Today `cmd/ptah-compat/main.go` is the only non-test file outside `cmd/atlas`
+that imports `cmd/atlas`; native command packages reference it from tests only.
+Keep it that way.
+
+### Classify the change in the PR
+
+Every PR that adds or substantially extends behavior under the compatibility
+surface says which of the two it is:
+
+```text
+GENERAL CAPABILITY
+```
+
+or:
+
+```text
+COMPATIBILITY ADAPTER
+```
+
+A general capability answers three questions in the PR description:
+
+1. Where does the semantic implementation live?
+2. How can native Ptah consume it?
+3. If no native surface is added in the same PR, why is that reasonable, and
+   what issue records the exposure gap?
+
+A compatibility adapter names the external Atlas contract that makes it
+compatibility-specific.
+
+No GitHub PR template is required for this; `AGENTS.md` and normal PR
+self-review are enough. The requirement is that the decision is made
+deliberately rather than made for you by where a file happened to be placed.
+
+### Scope of this rule
+
+The rule is prospective. It governs work written from now on. It does not
+require auditing every capability already implemented on either surface, and it
+does not require refactoring packages that predate it. Add no further
+divergence from here; existing architectural debt may remain for now. The
+repository-wide audit belongs in a separate post-parity issue, and no such
+issue is open yet. See
+[`stokaro/ptah#1213`](https://github.com/stokaro/ptah/issues/1213).
 
 ## Language And Spelling
 

@@ -1,6 +1,8 @@
 package migrator_test
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -47,14 +49,26 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
 
 		var applied, total int
-		var failure string
+		var failure, partialHashes string
 		c.Assert(
-			conn.QueryRow("SELECT applied, total, COALESCE(error, '') FROM atlas_schema_revisions WHERE version = '1'").Scan(&applied, &total, &failure),
+			conn.QueryRow(`
+				SELECT applied, total, COALESCE(error, ''), COALESCE(partial_hashes, '')
+				FROM atlas_schema_revisions WHERE version = '1'
+			`).Scan(&applied, &total, &failure, &partialHashes),
 			qt.IsNil,
 		)
 		c.Assert(applied, qt.Equals, 1)
 		c.Assert(total, qt.Equals, 2)
 		c.Assert(failure, qt.Equals, "")
+		// The counter alone cannot be resumed from: a resume verifies the
+		// committed prefix against the digest chain, so the durable checkpoint
+		// has to carry it too. A `null` here would leave the interrupted run
+		// unresumable by anything that checks (#887).
+		c.Assert(
+			partialHashes,
+			qt.Equals,
+			`["h1:`+crashCheckpointDigest("CREATE TABLE users (id INTEGER PRIMARY KEY);")+`"]`,
+		)
 	})
 
 	// The down crash records the same progress numbers as the up crash above --
@@ -176,7 +190,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas down preserves compatibility bookkeeping", func(c *qt.C) {
+	c.Run("Atlas down persists rollback progress", func(c *qt.C) {
 		databasePath := filepath.Join(c.TempDir(), "atlas-down-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "down", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -184,16 +198,34 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
 		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 
-		var failure string
+		var failure, operatorVersion string
 		var applied, total int
 		c.Assert(
-			conn.QueryRow("SELECT applied, total, COALESCE(error, '') FROM atlas_schema_revisions WHERE version = '1'").Scan(&applied, &total, &failure),
+			conn.QueryRow("SELECT applied, total, COALESCE(error, ''), operator_version FROM atlas_schema_revisions WHERE version = '1'").
+				Scan(&applied, &total, &failure, &operatorVersion),
 			qt.IsNil,
 		)
-		c.Assert(applied, qt.Equals, 2)
+		c.Assert(applied, qt.Equals, 1)
 		c.Assert(total, qt.Equals, 2)
 		c.Assert(failure, qt.Equals, "")
+		c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c)).
+			WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+		status, err := mig.GetMigrationStatus(c.Context())
+		c.Assert(err, qt.IsNil)
+		c.Assert(status.DirtyRevision, qt.IsNotNil)
+		c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
 	})
+}
+
+// crashCheckpointDigest is the digest Atlas records for a one-statement
+// committed prefix: base64 of the SHA-256 of that statement's source text.
+// Spelling it out here rather than reusing the production helper keeps the
+// expectation independent of the code that writes the column.
+func crashCheckpointDigest(statement string) string {
+	sum := sha256.Sum256([]byte(statement))
+	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func runNoTransactionCrashHelper(

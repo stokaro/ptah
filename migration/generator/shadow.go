@@ -66,6 +66,15 @@ func newShadowVerificationError(stage, kind, message string, err error) *ShadowV
 	if err != nil {
 		message = fmt.Sprintf("%s: %v", message, err)
 	}
+	return newShadowVerificationErrorWithDisplayMessage(stage, kind, message, err)
+}
+
+func newShadowVerificationErrorWithDisplayMessage(
+	stage,
+	kind,
+	message string,
+	err error,
+) *ShadowVerificationError {
 	return &ShadowVerificationError{
 		Result: ShadowVerificationResult{
 			Stage: stage,
@@ -76,6 +85,68 @@ func newShadowVerificationError(stage, kind, message string, err error) *ShadowV
 		},
 		Err: err,
 	}
+}
+
+func targetConnectionRequiredError(
+	target *dbschema.DatabaseConnection,
+	message string,
+) *ShadowVerificationError {
+	if target != nil {
+		return nil
+	}
+	return newShadowVerificationError(
+		"realm-check",
+		"target_connection_required",
+		message,
+		nil,
+	)
+}
+
+func validateShadowConnection(
+	ctx context.Context,
+	target *dbschema.DatabaseConnection,
+	shadow *dbschema.DatabaseConnection,
+	dialect string,
+	capabilities capability.Capabilities,
+	targetRequiredMessage string,
+) *ShadowVerificationError {
+	if !sameDialect(dialect, shadow.Info().Dialect) {
+		return newShadowVerificationError(
+			"dialect-check",
+			"dialect_mismatch",
+			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", shadow.Info().Dialect, dialect),
+			nil,
+		)
+	}
+	if err := targetConnectionRequiredError(target, targetRequiredMessage); err != nil {
+		return err
+	}
+	sameRealm, err := devlock.SameRealm(ctx, target, shadow)
+	if err != nil {
+		return newShadowVerificationError(
+			"realm-check",
+			"realm_comparison_error",
+			"compare target and shadow database realms",
+			err,
+		)
+	}
+	if sameRealm {
+		return newShadowVerificationError(
+			"realm-check",
+			"target_shadow_same_realm",
+			"shadow database must be distinct from target database",
+			nil,
+		)
+	}
+	if capabilities != nil && !maps.Equal(capabilities, shadow.Info().Capabilities) {
+		return newShadowVerificationError(
+			"capability-check",
+			"capability_mismatch",
+			fmt.Sprintf("shadow database capabilities do not match target %s capabilities", dialect),
+			nil,
+		)
+	}
+	return nil
 }
 
 type shadowMigrationOptions struct {
@@ -106,46 +177,15 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	defer database.CloseAndWarn()
 	conn := database.Connection()
 
-	if !sameDialect(opts.Dialect, conn.Info().Dialect) {
-		return newShadowVerificationError(
-			"dialect-check",
-			"dialect_mismatch",
-			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", conn.Info().Dialect, opts.Dialect),
-			nil,
-		)
-	}
-	if opts.TargetConnection == nil {
-		return newShadowVerificationError(
-			"realm-check",
-			"target_connection_required",
-			"compare target and shadow database realms: target connection is required",
-			nil,
-		)
-	}
-	sameRealm, err := devlock.SameRealm(ctx, opts.TargetConnection, conn)
-	if err != nil {
-		return newShadowVerificationError(
-			"realm-check",
-			"realm_comparison_error",
-			"compare target and shadow database realms",
-			err,
-		)
-	}
-	if sameRealm {
-		return newShadowVerificationError(
-			"realm-check",
-			"target_shadow_same_realm",
-			"shadow database must be distinct from target database",
-			nil,
-		)
-	}
-	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, conn.Info().Capabilities) {
-		return newShadowVerificationError(
-			"capability-check",
-			"capability_mismatch",
-			fmt.Sprintf("shadow database capabilities do not match target %s capabilities", opts.Dialect),
-			nil,
-		)
+	if err := validateShadowConnection(
+		ctx,
+		opts.TargetConnection,
+		conn,
+		opts.Dialect,
+		opts.Capabilities,
+		"compare target and shadow database realms: target connection is required",
+	); err != nil {
+		return err
 	}
 	identifierSemanticsMatch, err := shadowIdentifierSemanticsMatch(
 		ctx,
@@ -299,8 +339,5 @@ func assertShadowSchemaMatches(
 	if !diff.HasChanges() {
 		return nil
 	}
-	return &ShadowVerificationError{Result: ShadowVerificationResult{
-		Stage:      "schema-match",
-		Mismatches: collectShadowMismatches(diff),
-	}}
+	return newShadowSchemaMismatchError(diff)
 }

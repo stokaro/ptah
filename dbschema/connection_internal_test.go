@@ -5,9 +5,11 @@ package dbschema
 // the public connection API alone.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -168,15 +170,99 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {
 	c := qt.New(t)
 
-	got, versionSpecific := resolveDatabaseCapabilities(types.DBInfo{
+	got := resolveDatabaseCapabilities(types.DBInfo{
 		Dialect: "mysql",
 		Version: "8.4.0",
 	})
 
-	c.Assert(versionSpecific, qt.IsTrue)
-	c.Assert(got, qt.DeepEquals, capability.MySQL84())
-	c.Assert(got.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
-	c.Assert(got.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+	c.Assert(got.VersionSpecific, qt.IsTrue)
+	c.Assert(got.Saturated, qt.IsFalse)
+	c.Assert(got.Capabilities, qt.DeepEquals, capability.MySQL84())
+	c.Assert(got.Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
+	c.Assert(got.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
+}
+
+// defaultCLILogLevel is the threshold cmd/internal/cliobs.QuietDefaultLogger
+// installs before any command runs, and therefore the level at which library
+// slog calls reach a user's stderr on a default invocation. It is duplicated
+// rather than imported because cliobs lives under cmd/internal and this
+// package cannot reach it.
+const defaultCLILogLevel = slog.LevelWarn
+
+// captureResolutionReport runs the reporter with a default logger writing to a
+// buffer at the given threshold, and returns everything it wrote.
+func captureResolutionReport(t *testing.T, level slog.Level, info types.DBInfo) string {
+	t.Helper()
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: level})))
+	defer slog.SetDefault(previousLogger)
+	reportCapabilityResolution(info, resolveDatabaseCapabilities(info))
+	return output.String()
+}
+
+// TestReportCapabilityResolution covers the one production caller of the
+// version-aware selector.
+//
+// Every row asserts the same thing first: nothing is written at the level a
+// default command runs at. A saturated resolution is not an incident — the
+// integration matrix runs postgres:18, which is saturated against the
+// PostgreSQL 17 line, so a WARN there fires on every connection to a server
+// Ptah supports. It did, and it broke 25 subtests that assert a clean error
+// stream. cliobs.QuietDefaultLogger's contract is that a clean run emits
+// nothing at WARN or above; a supported server is a clean run.
+//
+// The debug column is the other half: the fact is recorded, not dropped, and
+// `--log-level debug` shows it. The quiet row is the non-interference control
+// — without it, a reporter that said nothing at any level would pass.
+func TestReportCapabilityResolution(t *testing.T) {
+	tests := []struct {
+		name           string
+		info           types.DBInfo
+		wantDebug      []string
+		wantDebugQuiet bool
+	}{
+		{
+			name: "mysql inside the measured line says nothing at all",
+			info: types.DBInfo{Dialect: "mysql", Version: "9.7.1"},
+			// The integration matrix runs mysql:9.7.
+			wantDebugQuiet: true,
+		},
+		{
+			name:      "mysql past the newest measured line is recorded at debug",
+			info:      types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
+			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=26.7.0", "newest_measured=9.x"},
+		},
+		{
+			name:      "mariadb past the newest measured line is recorded at debug",
+			info:      types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
+			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=12.3.0-MariaDB", "newest_measured=11.x"},
+		},
+		{
+			name:      "postgres past the newest measured line is recorded at debug",
+			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
+			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=17.x"},
+		},
+		{
+			name:      "an unparseable version stays a debug-level fallback",
+			info:      types.DBInfo{Dialect: "mysql", Version: "who knows"},
+			wantDebug: []string{"level=DEBUG", "falling back to dialect default capabilities"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			atDefault := captureResolutionReport(t, defaultCLILogLevel, tt.info)
+			c.Assert(atDefault, qt.Equals, "", qt.Commentf("emitted on default stderr: %q", atDefault))
+
+			atDebug := captureResolutionReport(t, slog.LevelDebug, tt.info)
+			c.Assert(atDebug == "", qt.Equals, tt.wantDebugQuiet, qt.Commentf("logged: %q", atDebug))
+			for _, want := range tt.wantDebug {
+				c.Assert(atDebug, qt.Contains, want)
+			}
+		})
+	}
 }
 
 func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testing.T) {

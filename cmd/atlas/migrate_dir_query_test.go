@@ -148,57 +148,21 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDirQuery_FailurePathForeignFormat pins the part of the query
-// that is NOT ignored on the one verb that still refuses a foreign layout.
+// WHERE THE `migrate diff` FOREIGN-FORMAT REFUSAL WENT. A
+// TestCompatMigrateDirQuery_FailurePathForeignFormat used to stand here and pin
+// the one verb that still refused a `?format=goose` outright. It was the guard
+// on the unknown-key relaxation: once an unrecognized key is dropped, nothing
+// else stops a `?format=goose` from being dropped with it and the directory
+// being read as Atlas, which on a writing verb would gate the wrong covered set
+// and then write.
 //
-// The community binary honors `?format=` on every verb. Ptah converts a foreign
-// layout for every verb that READS one — hash and validate since #992, status
-// and set since #1002, lint since #1133 — and, since stokaro/ptah#845, for
-// `migrate new`, which WRITES one. `migrate diff` is the last verb that refuses,
-// because it emits a planned migration and nothing writes SQL in a foreign
-// tool's convention yet; refusing is the strict side of the divergence, and it
-// never exits 0 where the community binary exits 1.
-//
-// The refusal has to survive the relaxation above, which is why it is pinned:
-// once unknown keys are ignored, nothing else stops a `?format=goose` from
-// being ignored too and the directory being silently read as Atlas — which on a
-// writing verb would gate the wrong covered file set and then write.
-//
-// Reverted, this row still passes; it is the guard on the relaxation, not on
-// the #845 change. The `migrate new` half moved to
-// TestCompatMigrateNewConverted_QuerySpellingWritesTheSelectedLayout.
-func TestCompatMigrateDirQuery_FailurePathForeignFormat(t *testing.T) {
-	const want = `atlas migrate \w+ --dir: Atlas accepts \?format=goose, ` +
-		`but Ptah does not implement that directory format for this command yet`
-
-	tests := []struct {
-		name string
-		run  func(c *qt.C, dir string) error
-	}{
-		{
-			name: "diff",
-			run: func(c *qt.C, dir string) error {
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "dd",
-					"--dir", "file://"+dir+"?format=goose",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return err
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			err := tt.run(c, writeQueryFixtureDir(c))
-
-			c.Assert(err, qt.ErrorMatches, want)
-		})
-	}
-}
+// stokaro/ptah#1013 closed that cell — `migrate diff` writes the five external
+// layouts now — so the refusal it pinned no longer exists. The guard it
+// provided did not go with it: TestCompatMigrateDirQuery_RejectsUnknownFormatValue
+// below still fires if the format KEY's value stops being read, and
+// TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout in
+// migrate_diff_foreign_layout_test.go fires if the value stops SELECTING the
+// layout, with a control row that stays red when no layout is named.
 
 // TestCompatMigrateDirQuery_RejectsUnknownFormatValue pins the part of the
 // query that is NOT ignored: the `format` key's value.

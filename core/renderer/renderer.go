@@ -55,6 +55,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/reservedrole"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -758,6 +759,13 @@ func GetOrderedCreateStatementsWithCapabilities(
 		if err != nil {
 			return nil, err
 		}
+		// A node a dialect renders as nothing is not a statement. Keeping it
+		// put a bare `;` in front of the script — SQLite renders no statement
+		// for its `main` namespace, which an introspected database now
+		// describes as a schema (stokaro/ptah#1264).
+		if strings.TrimSpace(sql) == "" {
+			continue
+		}
 		statements = append(statements, sql)
 	}
 
@@ -769,6 +777,18 @@ func prepareDatabaseForRendering(
 	dialect string,
 	caps capability.Capabilities,
 ) (goschema.Database, error) {
+	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
+	// guaranteed to reject, so it is refused here, in the validation phase both
+	// whole-schema rendering and migration planning run before they emit
+	// anything (stokaro/ptah#1312).
+	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+		return goschema.Database{}, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+
 	prepared := *database
 	prepared.Tables = slices.Clone(database.Tables)
 	prepared.Fields = slices.Clone(database.Fields)

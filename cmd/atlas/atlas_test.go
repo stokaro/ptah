@@ -523,6 +523,7 @@ func TestCompatCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + filepath.Join(dir, "schema.db"),
 		"--to", "file://" + schemaPath,
 		"-s", "public",
@@ -534,7 +535,7 @@ func TestCompatCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	// SQLite owns unqualified objects in "main", so a "public" schema scope
 	// selects nothing and the apply reports a synced schema.
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made")
 }
 
 func TestCompatCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
@@ -722,7 +723,11 @@ func TestCompatCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
 			c.Assert(help, qt.Contains, "--config string")
 			c.Assert(help, qt.Contains, "-c, --config")
 			c.Assert(help, qt.Contains, "--env string")
-			c.Assert(help, qt.Contains, "--var stringArray")
+			// `<name>=<value>`, not `stringArray`: the flag is registered with a
+			// value type that refuses an assignment carrying no `=`
+			// (stokaro/ptah#1231 case 7), and the community binary spells the
+			// same row `--var <name>=<value>   input variables (default [])`.
+			c.Assert(help, qt.Contains, "--var <name>=<value>")
 		})
 	}
 }
@@ -766,6 +771,15 @@ func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+			// Run somewhere with no ./migrations. Since stokaro/ptah#1241 item
+			// 2 gave `migrate apply` the Atlas-documented `--dir` default,
+			// omitting the flag no longer stops at `migrations directory is
+			// required`; the run reaches the directory and fails to open it.
+			// The proxy still proves what this test is about — every spelling
+			// of --url got past `database URL is required` — but it now
+			// depends on the working directory, so it is pinned rather than
+			// inherited from the package directory.
+			t.Chdir(t.TempDir())
 			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -774,7 +788,7 @@ func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, "migrations directory is required")
+			c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: open migrations directory: .*`)
 		})
 	}
 }
@@ -936,8 +950,13 @@ env "local" {
 	c.Assert(err, qt.IsNil)
 }
 
+// The opt-in is set because this fixture lints a destructive migration with no
+// dev database on purpose: replaying `ALTER TABLE users DROP COLUMN legacy`
+// against an empty one would fail for a reason that has nothing to do with the
+// `--var` value reaching the native loader, which is what this test measures.
 func TestCompatCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -968,6 +987,7 @@ env "ci" {
 		"--env", "ci",
 		"--var", "dir=migrations",
 		"lint",
+		"--latest", "1",
 		"--format", "{{ json . }}",
 	})
 
@@ -1224,7 +1244,8 @@ func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "users.hcl")
+	// Schema-qualified since the table declares its schema (stokaro/ptah#1234).
+	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "main_users.hcl")
 	c.Assert(usersHCL, qt.Contains, `table "users"`)
 	c.Assert(usersHCL, qt.Contains, `column "email"`)
 }
@@ -1304,7 +1325,15 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "{}")
+	// `mode { tables = false }` drops the tables, not the schema they lived in.
+	// The document still describes `main`, which is what the pinned community
+	// binary v1.3.0 does with the same project file: measured on SQLite, it
+	// renders `schema "main" {}` — in fact it renders the tables too, so it
+	// ignores this mode block entirely on inspect. Rendering `{}` for a
+	// database that has a schema is the defect stokaro/ptah#1264 is about, and
+	// this row is the one place it survived a filter rather than an empty
+	// database.
+	c.Assert(out.String(), qt.Equals, `{"schemas":[{"name":"main"}]}`)
 }
 
 // TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect
@@ -1594,6 +1623,7 @@ func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 		"migrate", "lint",
 		"--dir", "file://" + dir,
 		"--latest", "1",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 		"--format", "{{ len .Files }}|{{ (index .Files 0).Name }}|{{ printf \"%.6s\" (index .Files 0).Text }}",
 	})
 
@@ -1603,8 +1633,13 @@ func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql|CREATE")
 }
 
+// This test analyzes with no dev database, which is Ptah's own capability and
+// is refused by default so the compatibility surface matches the community
+// binary's required --dev-url (stokaro/ptah#1231 case 2). The opt-in keeps the
+// subject of the test -- where the format template comes from -- unchanged.
 func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -1628,6 +1663,7 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "local",
+		"--latest", "1",
 	})
 
 	err := cmd.Execute()
@@ -1636,8 +1672,11 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
 }
 
+// The opt-in is set for the same reason as in the test above: the subject is
+// the config-relative directory, not the dev-database precondition.
 func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
 	otherDir := filepath.Join(dir, "other")
@@ -1666,6 +1705,7 @@ func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t 
 		"--config", "file://" + filepath.Join(projectDir, "atlas.hcl"),
 		"--env", "ci",
 		"lint",
+		"--latest", "1",
 	})
 
 	err := cmd.Execute()
@@ -2266,8 +2306,15 @@ env "local" {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "destructive"`)
-	c.Assert(out.String(), qt.Contains, `Error: atlas variable overrides must use name=value, got "destructive"`)
+	// The wording is the pinned Atlas community binary v1.3.0's own, measured
+	// on 2026-08-08: it refuses the flag's SYNTAX while parsing flags, so the
+	// refusal is pflag's `invalid argument %q for %q flag: %v` wrapper around
+	// its --var value parser rather than anything the project loader says.
+	// Before this it was Ptah's config/projectconfig message, which only fired
+	// once an atlas.hcl had been found -- and a directory with no atlas.hcl got
+	// no refusal at all (stokaro/ptah#1241).
+	c.Assert(err, qt.ErrorMatches, `invalid argument "destructive" for "--var" flag: variables must be format as key=value, got: "destructive"`)
+	c.Assert(out.String(), qt.Contains, `Error: invalid argument "destructive" for "--var" flag: variables must be format as key=value, got: "destructive"`)
 }
 
 func TestCompatCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
@@ -2464,6 +2511,7 @@ CREATE TABLE users (
 	second.SetErr(&secondOut)
 	second.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 	})
@@ -2471,7 +2519,10 @@ CREATE TABLE users (
 	err = second.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made.\n")
+	// No trailing period: this is the byte-exact form the pinned community
+	// binary v1.3.0 writes for `schema apply` (stokaro/ptah#1235 finding 9.4).
+	// Its `schema diff` answer keeps its period and already matched.
+	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made\n")
 }
 
 func TestCompatCommand_SchemaApplyDryRunDoesNotApply(t *testing.T) {
@@ -2491,6 +2542,7 @@ CREATE TABLE users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--dry-run",
@@ -2521,6 +2573,7 @@ CREATE TABLE users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"-f", schemaPath,
 		"--dry-run",
@@ -2551,6 +2604,7 @@ CREATE TABLE tx_mode_users (
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--tx-mode", "none",
@@ -2600,6 +2654,7 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev-940.db"),
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
 		"--dry-run",
@@ -3071,7 +3126,11 @@ func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Not(qt.Contains), "No migration files to execute.")
+	// The text printer terminates its line; the same sentence inside the JSON
+	// document is followed by a quote. Asserting on the newline is what keeps
+	// this row meaningful now that the two spellings are the same string
+	// (stokaro/ptah#1235 finding 9.3 removed the text form's trailing period).
+	c.Assert(out.String(), qt.Not(qt.Contains), "No migration files to execute\n")
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Current, qt.Equals, "1")

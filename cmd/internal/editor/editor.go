@@ -11,11 +11,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
+
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // ErrNoEditor reports that no editor command could be resolved. Callers may
@@ -72,20 +73,18 @@ func RequireInteractive(in io.Reader) error {
 	return fmt.Errorf("%w; set %s=1 when the configured editor edits non-interactively", ErrNotInteractive, AllowNonInteractiveEnvVar)
 }
 
+// allowNonInteractive is the declaration of the variable, made once, in the
+// package that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly
+// empty value is refused here too, which is stokaro/ptah#1334's one change to
+// this reader.
+var allowNonInteractive = envbool.New(AllowNonInteractiveEnvVar, false)
+
 // nonInteractiveAllowed reads the opt-out. An unparsable value is an error
 // rather than a silent false: an operator who believes the gate is lifted must
 // not get a refusal from a typo, and one who believes it is closed must not get
 // an editor launched by one.
 func nonInteractiveAllowed() (bool, error) {
-	value, ok := os.LookupEnv(AllowNonInteractiveEnvVar)
-	if !ok || value == "" {
-		return false, nil
-	}
-	allowed, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("invalid boolean value %q for %s", value, AllowNonInteractiveEnvVar)
-	}
-	return allowed, nil
+	return allowNonInteractive.Resolve()
 }
 
 // isTerminal reports whether in is an open terminal device. A stream that is

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -56,6 +57,21 @@ type Database struct {
 	// EmbeddedSources retains source-only helper declarations needed to
 	// materialize embedded columns again after a schema is merged or finalized.
 	EmbeddedSources EmbeddedSources
+
+	// NotDescribed records what this description does not claim to describe, so
+	// a comparator can tell an object the description says is gone from one it
+	// was never asked about. The zero value claims everything, which is what a
+	// hand-authored schema file is; see [go.5x5.cz/ptah/core/coverage].
+	//
+	// `omitzero` is load-bearing rather than cosmetic. This struct's JSON
+	// encoding IS the desired-state fingerprint (see
+	// [go.5x5.cz/ptah/internal/atlasschema.SchemaFingerprint] and the plan
+	// file's `to` attribute), so a field that serialized unconditionally would
+	// change the fingerprint of every schema anyone has already planned against
+	// -- the one thing "adding coverage changes no existing plan" promises it
+	// does not do. A description that declares no limits must encode exactly as
+	// it did before this field existed.
+	NotDescribed coverage.Set `json:",omitzero"`
 }
 
 // Schema represents a database schema/namespace.
@@ -199,7 +215,20 @@ type IndexPart struct {
 	Operator string // PostgreSQL operator class for this part
 	Prefix   string // MySQL index prefix length
 	Desc     bool   // Whether this part is ordered DESC
+	// NullsOrder is an explicit NULLS ordering for this part: "FIRST",
+	// "LAST", or empty for the direction's default (NULLS LAST for ASC,
+	// NULLS FIRST for DESC on PostgreSQL).
+	NullsOrder string
 }
+
+// Index NULLS ordering spellings for IndexPart.NullsOrder, matching
+// [go.5x5.cz/ptah/core/ast.NullsOrderFirst] and
+// [go.5x5.cz/ptah/dbschema/types.NullsOrderFirst] so the value survives every
+// hop between the three index-part shapes unchanged.
+const (
+	NullsOrderFirst = "FIRST"
+	NullsOrderLast  = "LAST"
+)
 
 // Index represents a database index definition parsed from Go struct annotations.
 // Indexes are used to improve query performance and enforce uniqueness constraints
@@ -296,6 +325,26 @@ type Index struct {
 	// what the renderer falls back to when this field is unset). Ignored by
 	// all non-ClickHouse renderers.
 	Granularity int
+
+	// RequiresExtensions names the extensions this index cannot be built
+	// without, as the catalog resolved them rather than as the index's own DDL
+	// spells them. It is filled in when the schema was read from a live
+	// PostgreSQL catalog.
+	//
+	// An operator class is printed only when it is not the default for its key's
+	// type on the index's access method, so an index resting on a default class
+	// an extension supplies spells no token of that extension: `USING gin (n)`
+	// over an integer column needs btree_gin, and `isbn` at least says a word
+	// [Extension.Provides] can match. The catalog is asked instead of the text
+	// (stokaro/ptah#1286).
+	//
+	// A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
+	// field is the catalog's answer, not "the part the DDL left out", so a reader
+	// of it must not conclude that the document names nothing behind the edge.
+	//
+	// Empty means not measured or nothing to report. Annotation and YAML sources
+	// have no catalog to ask and leave it unset.
+	RequiresExtensions []string
 }
 
 // Constraint represents a table-level constraint definition parsed from Go struct annotations.
@@ -350,6 +399,17 @@ type Constraint struct {
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
 
+	// RequiresExtensions names the extensions the index backing this constraint
+	// cannot be built without, as the catalog resolved them rather than as
+	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
+	// from a live PostgreSQL catalog, where an element prints its operator and
+	// prints its operator class only when that class is not the default:
+	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+	// needs btree_gist and says so nowhere, while
+	// `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
+	// the class (stokaro/ptah#1286). See [Index.RequiresExtensions].
+	RequiresExtensions []string
+
 	Comment string // Constraint comment/description
 }
 
@@ -382,6 +442,32 @@ type Extension struct {
 	IfNotExists bool   // Whether to use IF NOT EXISTS clause
 	Version     string // Specific version requirement (optional)
 	Comment     string // Extension comment/description
+
+	// Provides lists the catalog names this extension supplies -- types,
+	// functions, relations, operator classes and operator families. It is filled
+	// in when the schema was read from a live PostgreSQL catalog and answers
+	// "what stops resolving without this extension", which is almost never the
+	// extension's own name: `isn` supplies the type `isbn`.
+	//
+	// Names the extension supplies that pg_catalog also supplies are excluded,
+	// because those keep resolving with the extension dropped. Contrib
+	// extensions mostly supply overloads of core functions, so the unfiltered
+	// list is full of ordinary words -- `citext` supplies `max`, `strpos` and
+	// `replace` -- and treating those as evidence would tie the extension to
+	// every schema that happens to use them.
+	//
+	// A function name that is a SQL keyword is excluded for the same reason, but
+	// only when this list also carries a type of the same extension that appears
+	// in that function's signature: `hstore` supplies three functions named
+	// `delete`, and a caller reading identifiers out of SQL text cannot tell
+	// `DELETE FROM audit` from `delete(h, 'k')`, while a genuine call needs an
+	// `hstore` value and the type entry is what keeps the extension here. Where
+	// no such type entry exists -- an extension supplying `merge(text, text)`
+	// and no type at all -- the name is the only evidence there is and it stays.
+	//
+	// Empty means not measured. Annotation and YAML sources have no catalog to
+	// ask and leave it unset.
+	Provides []string
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.
@@ -514,8 +600,36 @@ func QualifyTableName(schema, table string) string {
 //	MySQL:
 //	  CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 type Enum struct {
-	Name   string   // The generated enum type name (e.g., "enum_user_status")
+	Name string // The generated enum type name (e.g., "enum_user_status")
+	// Schema owns the enum, empty for the connection's or document's default
+	// schema. It is a field rather than a qualifier folded into Name because
+	// Name is what a column's declared type is matched against, and a domain,
+	// composite and range each keep the two apart for the same reason.
+	//
+	// An enum is a TYPE, so its identity is (schema, name) exactly as a
+	// domain's is: public.mood and extra.mood are two types with different
+	// value sets. Without this field an enum read out of a non-default schema
+	// was described as belonging to the connected one, and applying that
+	// description built the type in the wrong schema and typed the column that
+	// uses it against the wrong type (stokaro/ptah#1276).
+	Schema string
 	Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+//
+// Name is returned VERBATIM when Schema is empty, rather than through
+// QualifyTableName, because Name is not always a bare identifier here. A SQL
+// schema file loaded through internal/convert/toschema parks the qualifier in
+// Name -- `public.e1` -- and an enum may legitimately be named with a literal
+// dot, which QualifyTableName canonicalizes by quoting. Running either through
+// it changes the identifier: `public.e1` becomes the single quoted name
+// "public.e1", and the already-quoted "tenant.data" gains a second layer.
+func (e Enum) QualifiedName() string {
+	if strings.TrimSpace(e.Schema) == "" {
+		return e.Name
+	}
+	return QualifyTableName(e.Schema, e.Name)
 }
 
 // Domain represents a PostgreSQL domain type parsed from Go annotations.

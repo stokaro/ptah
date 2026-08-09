@@ -17,6 +17,13 @@ func describeShadowDiff(diff *types.SchemaDiff) string {
 	return "schema differs"
 }
 
+func newShadowSchemaMismatchError(diff *types.SchemaDiff) *ShadowVerificationError {
+	return &ShadowVerificationError{Result: ShadowVerificationResult{
+		Stage:      "schema-match",
+		Mismatches: collectShadowMismatches(diff),
+	}}
+}
+
 func collectModifiedTableMismatches(table types.TableDiff) []ShadowMismatch {
 	var mismatches []ShadowMismatch
 	for _, columnName := range sortedStrings(table.ColumnsAdded) {
@@ -119,6 +126,13 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesAdded, "missing_range", "missing range")...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesRemoved, "extra_range", "extra range")...)
+	mismatches = append(mismatches, changedObjectMismatches(
+		diff.RangesModified,
+		"range_mismatch",
+		"range type",
+		func(value types.RangeDiff) string { return value.RangeName },
+		func(value types.RangeDiff) map[string]string { return value.Changes },
+	)...)
 	return mismatches
 }
 
@@ -165,7 +179,10 @@ func collectTriggerMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 
 func collectAccessControlMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	var mismatches []ShadowMismatch
-	mismatches = append(mismatches, namedMismatches(diff.RLSPoliciesAdded, "missing_rls_policy", "missing RLS policy")...)
+	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesAdded) {
+		object := qualifiedObject(ref.TableName, ref.PolicyName)
+		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_rls_policy", Table: ref.TableName, Object: object, Message: "missing RLS policy " + object})
+	}
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesRemoved) {
 		object := qualifiedObject(ref.TableName, ref.PolicyName)
 		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_rls_policy", Table: ref.TableName, Object: object, Message: "extra RLS policy " + object})

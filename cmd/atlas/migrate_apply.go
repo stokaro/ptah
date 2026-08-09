@@ -1,12 +1,13 @@
 package atlas
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
@@ -22,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -41,8 +44,28 @@ type atlasMigrateApplyOptions struct {
 	format          string
 }
 
+type atlasMigrateApplyRunOptions struct {
+	amount          uint64
+	baselineVersion int64
+	toVersion       int64
+	lockRequest     atlasLockRequest
+	skipChecks      bool
+}
+
 func newAtlasMigrateApplyCommand() *cobra.Command {
 	opts := atlasMigrateApplyOptions{
+		// `--dir` defaults to the same directory `migrate status` and
+		// `migrate set` already default to (stokaro/ptah#1241 item 2).
+		// Measured on the pinned community binary v1.3.0: in a directory
+		// holding a hashed ./migrations, `migrate apply --url sqlite://local.db`
+		// with no --dir exits 0 and applies, where Ptah exited 1 with
+		// `migrations directory is required`. Its own --help documents
+		// `(default "file://migrations")` for this flag.
+		//
+		// The default is a default, never a fallback: --dir naming a directory
+		// that is not there still fails rather than quietly reading
+		// ./migrations, which is what keeps a typo visible.
+		dir:       atlasDefaultMigrationDirURL,
 		dirFormat: atlasDirFormatDefault,
 		txMode:    string(migrator.MigrationTxModeFile),
 		execOrder: string(migrator.ExecOrderLinear),
@@ -63,7 +86,7 @@ Native Ptah equivalent: ptah migrations up.`,
 
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply migrations to")
-	flags.StringVar(&opts.dir, "dir", "", "Migration directory URL")
+	flags.StringVar(&opts.dir, "dir", opts.dir, "Migration directory URL")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
@@ -93,21 +116,105 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveAtlasMigrateApplyDirFormat resolves the layout this apply reads, and
+// reports the `--dir` query keys it took no meaning from.
+//
+// The format is resolved ONCE for the whole run: the filesystem that gets
+// executed and the format the integrity gate reasons about must be the same
+// decision, not two computations that happen to agree (#970).
+//
+// The report follows the resolution rather than preceding it, so a run refused
+// for `?format=totally-bogus` prints that refusal alone; see
+// [reportIgnoredDirQuery] for the two rules that fix its position.
+func resolveAtlasMigrateApplyDirFormat(
+	cmd *cobra.Command,
+	configured string,
+	query url.Values,
+) (atlasmigrateimport.Format, error) {
+	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
+	if err != nil {
+		return "", fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "apply", query); err != nil {
+		return "", err
+	}
+	return format, nil
+}
+
 func runAtlasMigrateApply(
 	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
-	formatOutput := cmd.Flags().Changed("format")
 	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateApplyConfig(cmd) {
 		mode = reportMissingEnvSelection
 	}
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	projects, loaded, err := openAtlasProjectsForCommand(cmd, mode)
 	if err != nil {
 		return err
 	}
-	defer closeAtlasProject(&project, &runErr)
+	defer closeAtlasProjectSet(&projects, &runErr)
+
+	amount, err := atlasmigrate.ParseApplyAmount(args)
+	if err != nil {
+		return err
+	}
+	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
+	if err != nil {
+		return err
+	}
+	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
+	if err != nil {
+		return err
+	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return err
+	}
+	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
+	if err != nil {
+		return err
+	}
+	runOpts := atlasMigrateApplyRunOptions{
+		amount:          amount,
+		baselineVersion: baselineVersion,
+		toVersion:       toVersion,
+		lockRequest:     lockRequest,
+		skipChecks:      skipChecks,
+	}
+
+	targets := projects.projects
+	if !loaded {
+		targets = []atlasProject{{}}
+	}
+	out := cmd.OutOrStdout()
+	var targetOutput bytes.Buffer
+	cmd.SetOut(io.MultiWriter(out, &targetOutput))
+	defer cmd.SetOut(out)
+	for index, project := range targets {
+		formatted, err := runAtlasMigrateApplyTarget(cmd, project, opts, runOpts)
+		if err != nil {
+			return err
+		}
+		if formatted && index < len(targets)-1 && atlasMigrateApplyOutputNeedsSeparator(targetOutput.Bytes()) {
+			if _, err := fmt.Fprintln(out); err != nil {
+				return fmt.Errorf("write atlas migrate apply report separator: %w", err)
+			}
+		}
+		targetOutput.Reset()
+	}
+	return nil
+}
+
+func runAtlasMigrateApplyTarget(
+	cmd *cobra.Command,
+	project atlasProject,
+	opts atlasMigrateApplyOptions,
+	runOpts atlasMigrateApplyRunOptions,
+) (bool, error) {
+	formatOutput := cmd.Flags().Changed("format")
+	loaded := project.root != nil
 	projectCfg := project.Config
 	if loaded {
 		opts.url = dbcli.EffectiveString(
@@ -155,21 +262,24 @@ func runAtlasMigrateApply(
 		formatOutput = formatOutput || formatValue.Present
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
-		return fmt.Errorf("--format must not be empty")
+		return formatOutput, fmt.Errorf("--format must not be empty")
 	}
 	if formatOutput {
 		if err := atlasreport.ValidateMigrateApplyTemplate(opts.format); err != nil {
-			return err
+			return formatOutput, err
 		}
 	}
 	if opts.url == "" {
-		return fmt.Errorf("database URL is required")
+		return formatOutput, fmt.Errorf("database URL is required")
 	}
 	if opts.dir == "" {
-		return fmt.Errorf("migrations directory is required")
+		return formatOutput, fmt.Errorf("migrations directory is required")
 	}
 
-	var localDir atlasargs.LocalDir
+	var (
+		localDir atlasargs.LocalDir
+		err      error
+	)
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
@@ -178,72 +288,49 @@ func runAtlasMigrateApply(
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	// An atlas.hcl `migration { format = "" }` selects the native Atlas layout
 	// rather than being refused. `migrate apply` registers no --dir-format flag,
 	// so atlas.hcl is the only way to reach an empty configured format here, and
 	// measured against the pinned community binary v1.3.0 a hashed directory
 	// under that config applies cleanly and exits 0 (stokaro/ptah#990 item 1).
-	// ResolveApplyDirFormat below maps the empty value to the Atlas format, the
-	// same as the empty --dir-format the other verbs accept.
+	// [resolveAtlasMigrateApplyDirFormat] below maps the empty value to the
+	// Atlas format, the same as the empty --dir-format the other verbs accept.
 
-	amount, err := atlasmigrate.ParseApplyAmount(args)
-	if err != nil {
-		return err
-	}
-	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
-	if err != nil {
-		return err
-	}
-	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
-	if err != nil {
-		return err
-	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 	execOrder, err := migrator.ParseExecOrder(opts.execOrder)
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
-		return err
-	}
-	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
-	if err != nil {
-		return err
-	}
-	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
-	if err != nil {
-		return err
+		return formatOutput, err
 	}
 
-	// Resolve the directory format once: the filesystem that gets executed and
-	// the format the integrity gate reasons about must be the same decision,
-	// not two computations that happen to agree (#970).
-	resolvedDirFormat, err := atlasmigrate.ResolveApplyDirFormat(opts.dirFormat, localDir.Query)
+	resolvedDirFormat, err := resolveAtlasMigrateApplyDirFormat(cmd, opts.dirFormat, localDir.Query)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, err
 	}
 
 	source, err := project.openLocal(localDir)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	dir := source.Display()
 	captured, err := atlasmigrate.CaptureApplySource(source.FS(), resolvedDirFormat)
 	closeErr := source.Close()
 	if err != nil {
-		return errors.Join(
+		return formatOutput, errors.Join(
 			fmt.Errorf("atlas migrate apply --dir: %w", err),
 			closeErr,
 		)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
 	// Integrity gate (#955, #970, #973): the SOURCE directory must carry an
@@ -260,79 +347,69 @@ func runAtlasMigrateApply(
 	// unhashed directory can execute or create the target database — CE emits
 	// the checksum refusal even when --url is unreachable.
 	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	migrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
 	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
+		return formatOutput, fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	linearity, err := flywayLinearityOperands(captured, resolvedDirFormat)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
-	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
-		Dir:                  dir,
-		FS:                   migrationFS,
-		DryRun:               opts.dryRun,
-		ExecOrder:            execOrder,
-		OutOfOrderExempt:     linearity.outOfOrderExempt,
-		SourceVersions:       linearity.sourceVersions,
-		TxMode:               txMode,
-		RevisionsSchema:      opts.revisionsSchema,
-		MigrationLockTimeout: migrationLockTimeout,
-		MigrationLockName:    lockRequest.Name,
-		SkipMigrationLock:    lockRequest.Skip,
-		Amount:               amount,
-		ToVersion:            toVersion,
-		AllowDirty:           opts.allowDirty,
-		BaselineVersion:      baselineVersion,
-		SkipChecks:           skipChecks,
+	cleanScope, plan, err := inspectThenPrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
+		Dir:                      dir,
+		FS:                       migrationFS,
+		DryRun:                   opts.dryRun,
+		ExecOrder:                execOrder,
+		OutOfOrderExempt:         linearity.outOfOrderExempt,
+		SourceVersions:           linearity.sourceVersions,
+		TxMode:                   txMode,
+		RevisionsSchema:          opts.revisionsSchema,
+		MigrationLockTimeout:     migrationLockTimeout,
+		MigrationLockName:        runOpts.lockRequest.Name,
+		SkipMigrationLock:        runOpts.lockRequest.Skip,
+		Amount:                   runOpts.amount,
+		ToVersion:                runOpts.toVersion,
+		AllowDirty:               opts.allowDirty,
+		DiscardRolledBackFailure: true,
+		BaselineVersion:          runOpts.baselineVersion,
+		SkipChecks:               runOpts.skipChecks,
 	})
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
+	if err := runAtlasMigrateApplyRefusals(cmd.Context(), atlasMigrateApplyRefusalOperands{
+		conn:            conn,
+		plan:            plan,
+		captured:        captured,
+		dirFormat:       resolvedDirFormat,
+		linearity:       linearity,
+		execOrder:       execOrder,
+		revisionsSchema: opts.revisionsSchema,
+		allowDirty:      opts.allowDirty,
+		baselineVersion: runOpts.baselineVersion,
+		cleanScope:      cleanScope,
+	}); err != nil {
+		return formatOutput, err
+	}
+
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
-
-	// #982 changed the Atlas version a Flyway file converts to, which is the
-	// key `atlas_schema_revisions` stores. A database migrated by an older Ptah
-	// build therefore reads as entirely pending here. Refuse before executing
-	// anything rather than re-running migrations that already ran.
-	if err := checkLegacyFlywayRevisions(captured, resolvedDirFormat, plan, opts.revisionsSchema); err != nil {
-		return err
-	}
-
-	// The same question one implementation over: Atlas CE records a converted
-	// Flyway migration under its SOURCE version token, so a revision table it
-	// wrote also matches no file here and reads as entirely pending
-	// (stokaro/ptah#1100). The Ptah-encoding check above runs first because it
-	// is the more specific claim about who wrote the row, and its repair is a
-	// different one.
-	if err := checkForeignFlywayRevisions(captured, resolvedDirFormat, plan); err != nil {
-		return err
-	}
-
-	// The exemption above only stops the linear guard from reading the
-	// baseline's band position as "authored earlier". Whether a baseline may
-	// run against a database that already has history is a separate question,
-	// and one Atlas CE answers three incompatible ways (stokaro/ptah#1003).
-	if err := checkFlywayBaselineHistory(linearity.baseline, execOrder, plan); err != nil {
-		return err
-	}
 
 	out := cmd.OutOrStdout()
 	emitApplyStart := func([]int64) {}
 	if !formatOutput {
 		emitApplyStart = func(selectedVersions []int64) {
-			emitAtlasMigrateApplyStart(out, opts, baselineVersion, selectedVersions)
+			emitAtlasMigrateApplyStart(out, opts, runOpts.baselineVersion, selectedVersions)
 		}
 	}
 	result, err := plan.ExecuteWithPreflight(
@@ -346,28 +423,37 @@ func runAtlasMigrateApply(
 		if formatOutput && result.ApplyError != nil {
 			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 			if writeErr != nil {
-				return fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
+				return formatOutput, fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
+			// The structured report already carries the execution error. Atlas
+			// leaves stderr empty in this mode, so return a coded failure that
+			// bypasses the generic command diagnostic without losing exit status.
+			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
-		return err
+		return formatOutput, err
 	}
 	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, migrationFS, conn, result); handled || err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	if opts.dryRun {
 		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred)
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(result.SelectedVersions))
-		return nil
+		return formatOutput, nil
 	}
 	if formatOutput {
-		return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
-	return nil
+	return formatOutput, nil
+}
+
+func atlasMigrateApplyOutputNeedsSeparator(output []byte) bool {
+	trimmed := bytes.TrimLeft(output, " \t\r")
+	return len(trimmed) > 0 && !bytes.HasSuffix(trimmed, []byte{'\n'})
 }
 
 // noteAtlasMigrateApplyLockUnsupported surfaces the capability decision behind
@@ -439,7 +525,13 @@ func finishAtlasMigrateApplyFreshNoop(
 	if opts.format != "" {
 		return true, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute.")
+	// No trailing period: the pinned community binary v1.3.0 writes
+	// `No migration files to execute\n` on stdout for the same run, 30 bytes,
+	// verified byte for byte with xxd on 2026-08-08 against a directory both
+	// binaries had already applied. Ptah wrote 31 (stokaro/ptah#1235 finding
+	// 9.3). The report model in internal/atlasreport already spells it without
+	// the period, so this line was also the odd one out inside Ptah.
+	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute")
 	return true, nil
 }
 
@@ -547,16 +639,18 @@ const applySkipChecksEnvVar = "PTAH_SKIP_CHECKS"
 // believes they are bypassed; the same choice is already made for the
 // PTAH_<FLAG> fallbacks on `migrate down`.
 func atlasApplySkipChecksFromEnv() (bool, error) {
-	value, ok := os.LookupEnv(applySkipChecksEnvVar)
-	if !ok || value == "" {
-		return false, nil
-	}
-	skip, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("invalid boolean value %q for %s", value, applySkipChecksEnvVar)
-	}
-	return skip, nil
+	return applySkipChecks.Resolve()
 }
+
+// applySkipChecks is the declaration of the variable, made once, on the verb
+// that owns it. See [go.5x5.cz/ptah/internal/envbool].
+//
+// It carries the one change stokaro/ptah#1334 makes to this reader: an
+// explicitly EMPTY value used to read as unset here, which folded a
+// `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
+// enforced" without a word. Absence still selects the default; a present value
+// has to parse.
+var applySkipChecks = envbool.New(applySkipChecksEnvVar, false)
 
 // resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
 //

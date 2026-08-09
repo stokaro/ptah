@@ -20,27 +20,61 @@ type SchemaInspectReport struct {
 	db          *goschema.Database
 	info        dbschematypes.DBInfo
 	diagnostics io.Writer
-	Realm       atlasSchemaInspectJSONRealm `json:"-"`
-	Schema      atlasSchemaInspectJSONRealm `json:"-"`
+	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
+	// which leaves out the block types the pinned Atlas community binary
+	// refuses to read where nothing in the document names them; see
+	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	omitAtlasRefusedBlocks bool
+	// describeSchemas renders the schema itself -- CREATE SCHEMA, its comment,
+	// its charset and collation -- into the SQL format. It is false when the
+	// connection URL chose the scope rather than the run choosing it.
+	//
+	// The distinction is the pinned community binary v1.3.0's, measured on
+	// PostgreSQL 17.10 against a database holding `public` and `extra`, counting
+	// `CREATE SCHEMA` in `--format '{{ sql . }}'`:
+	//
+	//	plain URL                    2
+	//	?search_path=public          0
+	//	--schema public              1
+	//	--schema public --schema extra   2
+	//	MySQL 9.7, connected database    0
+	//
+	// So it is not "realm scope only": naming a schema explicitly renders it.
+	// What that binary leaves out is the schema it was merely connected to. The
+	// JSON format does list that schema (stokaro/ptah#1264), so the two surfaces
+	// genuinely disagree and only the SQL one is gated here.
+	describeSchemas bool
+	Realm           atlasSchemaInspectJSONRealm `json:"-"`
+	Schema          atlasSchemaInspectJSONRealm `json:"-"`
 }
 
 type atlasSchemaInspectJSONRealm struct {
 	Schemas []atlasSchemaInspectJSONSchema `json:"schemas,omitempty"`
 }
 
+// atlasSchemaInspectJSONSchema and atlasSchemaInspectJSONTable both carry their
+// attributes AFTER their children, because that is where the pinned community
+// binary v1.3.0 puts them. Measured on PostgreSQL 17 and MySQL 9.7:
+//
+//	{"name":"public","tables":[…],"comment":"standard public schema"}
+//	{"name":"t","columns":[…],"comment":"table comment"}
+//	{"name":"adv_dev","tables":[…],"charset":"utf8mb4","collate":"utf8mb4_0900_ai_ci"}
+//
+// Go emits object keys in field order, embedded fields included, so the field
+// order here is the byte order of the document a consumer diffs.
 type atlasSchemaInspectJSONSchema struct {
-	Name string `json:"name"`
-	atlasSchemaInspectJSONAttrs
+	Name   string                        `json:"name"`
 	Tables []atlasSchemaInspectJSONTable `json:"tables,omitempty"`
+	atlasSchemaInspectJSONAttrs
 }
 
 type atlasSchemaInspectJSONTable struct {
-	Name string `json:"name"`
-	atlasSchemaInspectJSONAttrs
+	Name        string                             `json:"name"`
 	Columns     []atlasSchemaInspectJSONColumn     `json:"columns,omitempty"`
 	Indexes     []atlasSchemaInspectJSONIndex      `json:"indexes,omitempty"`
 	PrimaryKey  *atlasSchemaInspectJSONIndex       `json:"primary_key,omitempty"`
 	ForeignKeys []atlasSchemaInspectJSONForeignKey `json:"foreign_keys,omitempty"`
+	atlasSchemaInspectJSONAttrs
 }
 
 type atlasSchemaInspectJSONAttrs struct {
@@ -112,19 +146,33 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 	return SchemaInspectOutput{Text: out.String(), Files: files}, nil
 }
 
+// NewSchemaInspectReport builds the report one schema inspect renders from.
+//
+// omitAtlasRefusedBlocks selects the Atlas-compatible HCL rendering, which
+// leaves out the block types the pinned Atlas community binary refuses where
+// nothing else in the document names them, and reports every decision on
+// diagnostics. It is false on the native surface, which describes every
+// construct Ptah models.
+//
+// describeSchemas gates schema DDL out of the SQL format for a run whose scope
+// came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
 	db *goschema.Database,
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diagnostics io.Writer,
+	omitAtlasRefusedBlocks bool,
+	describeSchemas bool,
 ) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
 	return &SchemaInspectReport{
-		db:          db,
-		info:        info,
-		diagnostics: diagnostics,
-		Realm:       realm,
-		Schema:      realm,
+		db:                     db,
+		info:                   info,
+		diagnostics:            diagnostics,
+		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
+		describeSchemas:        describeSchemas,
+		Realm:                  realm,
+		Schema:                 realm,
 	}
 }
 
@@ -188,7 +236,7 @@ func (r *SchemaInspectReport) defaultSchemaName() string {
 }
 
 func (r *SchemaInspectReport) MarshalHCL() (string, error) {
-	rendered, err := atlashclrender.RenderForDialect(r.db, r.info.Dialect)
+	rendered, err := r.renderHCL()
 	if err != nil {
 		return "", fmt.Errorf("render HCL schema: %w", err)
 	}
@@ -200,12 +248,42 @@ func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 	return string(rendered.Data), nil
 }
 
+// renderHCL picks the rendering the surface asked for. Only the HCL output is
+// split this way: what the compatibility surface omits, it omits because the
+// binary it stands in for cannot PARSE the block, and that is a question only
+// the HCL document raises. SQL output is read by a database.
+func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
+	if r.omitAtlasRefusedBlocks {
+		return atlashclrender.RenderInspectedForAtlasCLI(r.db, r.info.Dialect, r.defaultSchemaName())
+	}
+	return atlashclrender.RenderInspected(r.db, r.info.Dialect, r.defaultSchemaName())
+}
+
+// sqlSource is the database the SQL format renders, which is the inspected one
+// minus the schema rows when the run did not choose its own scope.
+//
+// Dropping the rows here rather than never reading them keeps the JSON and HCL
+// formats seeing everything the reader described: the schema row an empty
+// database needs in JSON (stokaro/ptah#1264) is the same row that would put a
+// `CREATE SCHEMA` in front of SQL output the pinned binary emits without one.
+//
+// The copy is shallow on purpose -- only the Schemas slice header is replaced,
+// and nothing downstream writes through it.
+func (r *SchemaInspectReport) sqlSource() *goschema.Database {
+	if r.describeSchemas || r.db == nil || len(r.db.Schemas) == 0 {
+		return r.db
+	}
+	source := *r.db
+	source.Schemas = nil
+	return &source
+}
+
 func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
-		r.db,
+		r.sqlSource(),
 		r.info.Dialect,
 		r.info.Capabilities,
 	)
@@ -246,10 +324,38 @@ func atlasSchemaInspectBase64URL(value any) string {
 	return strings.NewReplacer("+", "-", "/", "_", "=", "").Replace(atlasTemplateString(value))
 }
 
+// atlasSchemaInspectJSON builds the realm document.
+//
+// The schema list comes from the schemas the reader described, NOT from the
+// tables it found. Deriving it from tables made a schema disappear the moment
+// it held none: an empty database rendered as `{}` where the pinned community
+// binary v1.3.0 renders `{"schemas":[{"name":"public","comment":"standard
+// public schema"}]}` — measured on PostgreSQL 17, and the same on SQLite with
+// `main` and on MySQL 9.7 with the connected database (stokaro/ptah#1264).
+//
+// Tables still contribute their schema, so a reader that describes no schemas
+// keeps rendering what it did before rather than losing its tables to a
+// missing row.
+//
+// The connected schema is deliberately NOT seeded here. Seeding it would close
+// the empty-database cell on its own, and it was measured reopening two shapes
+// that already matched: `--schema extra` on a realm PostgreSQL URL gained a
+// second, empty `{"name":"public"}` entry the binary never prints, and
+// `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where that
+// binary answers `{}`. Which schemas exist is the reader's answer, not the
+// connection's; see [go.5x5.cz/ptah/internal/schemaselection].
 func atlasSchemaInspectJSON(schema *dbschematypes.DBSchema, info dbschematypes.DBInfo) atlasSchemaInspectJSONRealm {
 	schemasByName := make(map[string]*atlasSchemaInspectJSONSchema)
 	indexesByTable := atlasSchemaInspectIndexesByTable(schema.Indexes)
 	constraintsByTable := atlasSchemaInspectConstraintsByTable(schema.Constraints)
+	for _, described := range schema.Schemas {
+		jsonSchema := atlasSchemaInspectSchemaForName(schemasByName, described.Name)
+		jsonSchema.atlasSchemaInspectJSONAttrs = atlasSchemaInspectJSONAttrs{
+			Comment: described.Comment,
+			Charset: described.Charset,
+			Collate: described.Collate,
+		}
+	}
 	for _, table := range schema.Tables {
 		schemaName := atlasSchemaInspectSchemaName(table.Schema, info)
 		jsonSchema := atlasSchemaInspectSchemaForName(schemasByName, schemaName)
@@ -298,12 +404,23 @@ func atlasSchemaInspectTable(
 	for _, column := range table.Columns {
 		jsonTable.Columns = append(jsonTable.Columns, atlasSchemaInspectColumn(column))
 	}
+	// A UNIQUE constraint whose backing index the reader already reported is one
+	// index, not two. SQLite reports both: `pragma index_list` names the implicit
+	// `sqlite_autoindex_<table>_<n>` and the constraint carries that same name, so
+	// `CREATE TABLE t (…, a TEXT UNIQUE, b TEXT UNIQUE, …)` printed five indexes
+	// where the pinned community binary v1.3.0 printed three, each autoindex
+	// listed twice (stokaro/ptah#1235 finding 6.2). The constraint branch still
+	// has to run for readers that report a UNIQUE constraint with no index row of
+	// its own, which is why the duplicate is dropped by name here rather than by
+	// deleting the branch.
+	indexNames := make(map[string]struct{}, len(indexesByTable[table.QualifiedName()]))
 	for _, index := range indexesByTable[table.QualifiedName()] {
 		jsonIndex := atlasSchemaInspectIndex(index)
 		if index.IsPrimary {
 			jsonTable.PrimaryKey = atlasSchemaInspectPrimaryKey(jsonIndex.Parts)
 			continue
 		}
+		indexNames[jsonIndex.Name] = struct{}{}
 		jsonTable.Indexes = append(jsonTable.Indexes, jsonIndex)
 	}
 	for _, constraint := range constraintsByTable[table.QualifiedName()] {
@@ -313,7 +430,12 @@ func atlasSchemaInspectTable(
 				jsonTable.PrimaryKey = atlasSchemaInspectPrimaryKey(atlasSchemaInspectConstraintIndexParts(constraint))
 			}
 		case "UNIQUE":
-			jsonTable.Indexes = append(jsonTable.Indexes, atlasSchemaInspectUniqueConstraintIndex(constraint))
+			jsonIndex := atlasSchemaInspectUniqueConstraintIndex(constraint)
+			if _, alreadyReported := indexNames[jsonIndex.Name]; alreadyReported {
+				continue
+			}
+			indexNames[jsonIndex.Name] = struct{}{}
+			jsonTable.Indexes = append(jsonTable.Indexes, jsonIndex)
 		case "FOREIGN KEY":
 			jsonTable.ForeignKeys = append(jsonTable.ForeignKeys, atlasSchemaInspectForeignKey(constraint))
 		}
@@ -322,10 +444,7 @@ func atlasSchemaInspectTable(
 }
 
 func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJSONColumn {
-	columnType := column.ColumnType
-	if columnType == "" {
-		columnType = column.DataType
-	}
+	columnType := atlasSchemaInspectColumnType(column)
 	return atlasSchemaInspectJSONColumn{
 		Name: column.Name,
 		Type: columnType,
@@ -337,11 +456,35 @@ func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJ
 	}
 }
 
-func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSONIndex {
-	parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Columns))
-	for _, column := range index.Columns {
-		parts = append(parts, atlasSchemaInspectIndexPart(column))
+// atlasSchemaInspectColumnType spells a column's type the way the pinned
+// community binary v1.3.0 spells it in `schema inspect --format '{{ json . }}'`.
+//
+// A domain column is the one place where DataType is not that spelling:
+// information_schema reports the domain's BASE type there and puts the domain
+// in domain_name, so a column of `positive` printed as "integer" and lost the
+// domain's CHECK with it. Measured on PostgreSQL 17.10, both against the same
+// database:
+//
+//	column of domain positive   binary: "positive"       Ptah before: "integer"
+//	column of doms.positive     binary: "doms.positive"  Ptah before: "integer"
+//	column of varchar(100)[]    binary: "ARRAY"          Ptah:        "ARRAY"
+//
+// The array row is why this reads DomainName rather than FormattedType, which
+// both kinds of column fill: preferring FormattedType outright would print
+// "character varying(100)[]" where the binary prints "ARRAY" and trade one
+// disagreement for another. See stokaro/ptah#1242.
+func atlasSchemaInspectColumnType(column dbschematypes.DBColumn) string {
+	if column.DomainName != "" && column.FormattedType != "" {
+		return column.FormattedType
 	}
+	if column.ColumnType != "" {
+		return column.ColumnType
+	}
+	return column.DataType
+}
+
+func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSONIndex {
+	parts := atlasSchemaInspectIndexParts(index)
 	if index.Expression != "" && len(parts) == 0 {
 		parts = append(parts, atlasSchemaInspectJSONIndexPart{Expr: index.Expression})
 	}
@@ -350,6 +493,45 @@ func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSON
 		Unique: index.IsUnique,
 		Parts:  parts,
 	}
+}
+
+// atlasSchemaInspectIndexParts prefers the reader's structured key parts over
+// the flat Columns list.
+//
+// Columns is a list of names and cannot say that a key is descending, so this
+// output dropped the direction of every index. Measured against the pinned
+// community binary v1.3.0 on PostgreSQL 17.10, for
+// CREATE INDEX i_desc ON t (a DESC) it prints
+// `{"desc": true, "column": "a"}` where Ptah printed `{"column": "a"}`.
+//
+// Falling back to Columns keeps every reader that supplies only the flat form
+// -- MySQL, MariaDB -- printing exactly what it printed before.
+func atlasSchemaInspectIndexParts(index dbschematypes.DBIndex) []atlasSchemaInspectJSONIndexPart {
+	if len(index.Parts) == 0 {
+		parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Columns))
+		for _, column := range index.Columns {
+			parts = append(parts, atlasSchemaInspectIndexPart(column))
+		}
+		return parts
+	}
+	parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		parts = append(parts, atlasSchemaInspectStructuredIndexPart(part))
+	}
+	return parts
+}
+
+// atlasSchemaInspectStructuredIndexPart maps one structured key part. Unlike
+// the string form below it never has to guess whether a key is an expression:
+// the reader already established that from pg_index.indkey, so a column
+// literally named "lower(name)" stays a column here.
+func atlasSchemaInspectStructuredIndexPart(
+	part dbschematypes.DBIndexPart,
+) atlasSchemaInspectJSONIndexPart {
+	if part.Expr != "" {
+		return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Expr: part.Expr}
+	}
+	return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Column: part.Name}
 }
 
 func atlasSchemaInspectUniqueConstraintIndex(constraint dbschematypes.DBConstraint) atlasSchemaInspectJSONIndex {

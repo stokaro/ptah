@@ -54,6 +54,26 @@ table "users" {
 }
 ```
 
+### How many `schema` blocks a document may declare
+
+A document may declare as many schemas as the run can reach. A run whose URL
+names one schema — any SQLite URL, a PostgreSQL-family URL carrying
+`search_path=<one name>`, a MySQL-family URL naming a database — reaches one,
+and a document declaring more than one top-level `schema` block is refused
+there rather than narrowed. The count is of blocks: repeating
+`schema "main" {}` in two files of a schema directory is two.
+
+This holds on the native commands, not only the compatibility binary:
+`ptah schema inspect --schema-file two-schemas.hcl --dev-url sqlite://dv?mode=memory`
+refuses, because narrowing a desired state to the scope and reporting success
+is a wrong answer wherever it happens. Give the run a realm-scoped URL to
+describe every schema the document declares. A desired state with no URL to be
+scoped by — Go annotation roots, `ptah schema test` — is unaffected.
+
+See
+[the Atlas-compatible schema commands](../../atlas/schema-commands/#a-schema-limited-run-refuses-a-multi-schema-hcl-desired-state)
+for the message and the flag it names.
+
 ## Supported object subset
 
 | Object | Supported shape |
@@ -62,11 +82,12 @@ table "users" {
 | `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, and `platform` extensions. |
 | `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum` and `platform` extensions. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
-| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
+| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |
+| `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
 | `extension` | PostgreSQL `if_not_exists`, `version`, and comments. |
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
@@ -226,6 +247,11 @@ require dialect-specific parsers. Go-annotation export writes function, view,
 materialized-view, and trigger bodies as opaque HCL strings and reports a
 warning for each body. Because cleanup is destructive, any such warning prevents
 `--cleanup-go-annotations` from publishing HCL or removing annotations.
+
+Cleanup also refuses any recognized standalone Go directive that is attached at
+an unsupported scope or did not produce a parsed schema object. The diagnostic
+names the source file and line, and the operation leaves both the output and Go
+sources unchanged. Near-prefix comments are not directives and are preserved.
 
 ## Unsupported constructs
 

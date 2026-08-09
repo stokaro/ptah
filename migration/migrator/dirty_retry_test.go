@@ -2,6 +2,9 @@ package migrator_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -128,6 +131,151 @@ func TestMigrateUp_AllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.T) {
 	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
 }
 
+func TestMigrateUp_DiscardRolledBackFailureRefusesExistingZeroProgressDirty(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "zero-progress-retry.db")
+
+	_, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	conn, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
+	revisions, err := retried.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 2)
+	c.Assert(revisions[1].Dirty, qt.IsTrue)
+	c.Assert(revisions[1].Applied, qt.Equals, 0)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 0)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureDiscardsCurrentFailure(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "zero-progress-discard.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	err := initial.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+	c.Assert(err, qt.IsNotNil)
+
+	revisions, err := initial.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(1))
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 0)
+
+	_, fixed := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	c.Assert(fixed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true}), qt.IsNil)
+
+	revisions, err = fixed.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 2)
+	c.Assert(revisions[1].Version, qt.Equals, int64(2))
+	c.Assert(revisions[1].Dirty, qt.IsFalse)
+	c.Assert(revisions[1].Applied, qt.Equals, 2)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureDiscardsCurrentBatchFailure(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "zero-progress-batch-discard.db")
+
+	_, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeAll, migrator.RevisionTableFormatAtlas)
+	err := initial.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+	c.Assert(err, qt.IsNotNil)
+
+	revisions, err := initial.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 0)
+
+	conn, fixed := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeAll, migrator.RevisionTableFormatAtlas)
+	c.Assert(fixed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true}), qt.IsNil)
+
+	revisions, err = fixed.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 2)
+	c.Assert(revisions[0].Version, qt.Equals, int64(1))
+	c.Assert(revisions[1].Version, qt.Equals, int64(2))
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureTargetsCurrentVersion(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "target-current-failure.db")
+
+	_, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeAll, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+	retried, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"0000000001_users.up.sql":   &fstest.MapFile{Data: []byte(dirtyRetryFirstUp)},
+		"0000000001_users.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+		"0000000002_seed.up.sql":    &fstest.MapFile{Data: []byte(dirtyRetryFixedUp)},
+		"0000000002_seed.down.sql":  &fstest.MapFile{Data: []byte("DROP TABLE pets;\n")},
+		"0000000003_fail.up.sql": &fstest.MapFile{Data: []byte(`CREATE TABLE toys (id INTEGER PRIMARY KEY);
+THIS IS A FAILING STATEMENT;
+`)},
+		"0000000003_fail.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE toys;\n")},
+	})
+	c.Assert(err, qt.IsNil)
+	retried = retried.WithTransactionMode(migrator.MigrationTxModeAll).
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{
+		AllowDirty:               true,
+		DiscardRolledBackFailure: true,
+	})
+	c.Assert(err, qt.IsNotNil)
+
+	revisions, err := retried.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(2))
+	c.Assert(revisions[0].Dirty, qt.IsTrue)
+	c.Assert(revisions[0].Applied, qt.Equals, 0)
+	c.Assert(dirtyRetryTableExists(c, conn, "users"), qt.IsFalse)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+	c.Assert(dirtyRetryTableExists(c, conn, "toys"), qt.IsFalse)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureRefusesCommittedProgress(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "committed-progress-retry.db")
+
+	_, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	conn, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureDoesNotChangeNativePolicy(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "native-zero-progress.db")
+
+	_, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	conn, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 0)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+}
+
 // TestMigrateUp_AllowDirtyRetryResumesAfterCommittedStatements covers the
 // no-transaction case, where the earlier attempt's first statement is already
 // committed when the retry starts.
@@ -164,6 +312,79 @@ func TestMigrateUp_AllowDirtyRetryResumesAfterCommittedStatements(t *testing.T) 
 	c.Assert(after, qt.HasLen, 2)
 	c.Assert(after[1].Dirty, qt.IsFalse)
 	c.Assert(after[1].Applied, qt.Equals, 2)
+}
+
+func TestMigrateUp_AllowDirtyRefusesTemporarySessionStateResume(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "temporary-session-state.db")
+	fsys := fstest.MapFS{
+		"000001_temporary.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TEMP TABLE recovery_work (id INTEGER PRIMARY KEY);\n" +
+				"INSERT INTO definitely_missing_table (id) VALUES (1);\n",
+		)},
+		"000001_temporary.down.sql": {Data: []byte("DROP TABLE recovery_work;\n")},
+	}
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	mig, err := migrator.NewFSMigrator(conn, fsys)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithTransactionMode(migrator.MigrationTxModeNone)
+
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
+	err = mig.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot reconstruct session state after committed statement 1 because .* may depend on session-local state that cannot be restored safely.*`)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.State, qt.Equals, "failed")
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.Error, qt.Contains, "no such table: definitely_missing_table")
+}
+
+func TestRepairMigration_CompletedDirtyRevisionVerifiesCommittedPrefix(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "completed-prefix.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	fsys := fstest.MapFS{
+		"000001_users.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
+				"INSERT INTO users (id) VALUES (1);\n",
+		)},
+		"000001_users.down.sql": {Data: []byte("DROP TABLE users;\n")},
+	}
+	observationResults := []error{nil, errors.New("final observation failed")}
+	observer := migrator.StatementObserverFunc(func(_ context.Context, event migrator.StatementEvent) error {
+		return observationResults[event.Index-1]
+	})
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithStatementObserver(observer))
+	c.Assert(err, qt.IsNil)
+	mig := migrator.NewMigrator(conn, provider)
+
+	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches, `(?s).*final observation failed.*`)
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 2)
+	c.Assert(status.DirtyRevision.Total, qt.Equals, 2)
+
+	modified, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"000001_users.up.sql": {Data: []byte(
+			"-- +ptah no_transaction\n" +
+				"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n" +
+				"INSERT INTO users (id) VALUES (1);\n",
+		)},
+		"000001_users.down.sql": {Data: []byte("DROP TABLE users;\n")},
+	})
+	c.Assert(err, qt.IsNil)
+
+	err = modified.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1})
+	c.Assert(err, qt.ErrorMatches, `migration 1 cannot finalize the migration: the already committed statement prefix changed.*`)
 }
 
 // TestMigrateUp_AtlasFormatAllowDirtyRetryReusesTheDirtyRevisionRow is the same
@@ -232,6 +453,318 @@ CREATE TABLE pets (id INTEGER PRIMARY KEY);
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
 }
 
+func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name   string
+		format migrator.RevisionTableFormat
+	}{
+		{name: "Ptah revisions", format: migrator.RevisionTableFormatPtah},
+		{name: "Atlas revisions", format: migrator.RevisionTableFormatAtlas},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "changed-prefix.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+			changedPrefix := `INSERT INTO users (id) VALUES (2);
+CREATE TABLE pets (id INTEGER PRIMARY KEY);
+`
+			_, retried := newDirtyRetryMigrator(c, dbPath, changedPrefix, migrator.MigrationTxModeNone, test.format)
+			err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+			c.Assert(err, qt.ErrorMatches, `migration 2 cannot resume automatically: the already committed statement prefix changed.*`)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+		})
+	}
+}
+
+func TestMigrateUp_LegacyNativeDirtyRowUsesUnchangedFullChecksum(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "legacy-full-checksum.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	sum := sha256.Sum256([]byte(dirtyRetryFailingUp))
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE schema_migrations SET checksum = ? WHERE version = 2",
+		hex.EncodeToString(sum[:]),
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "THIS IS A FAILING STATEMENT")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "cannot resume automatically")
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_LegacyAtlasDirtyRowUsesUnchangedFullChecksum(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "legacy-atlas-full-checksum.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = NULL WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "THIS IS A FAILING STATEMENT")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "cannot resume automatically")
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AtlasDirtyMalformedPartialHashesRefused(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "malformed-atlas-prefix.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = '{}' WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, `.*failed to decode Atlas revision 2 partial_hashes: invalid Atlas partial_hashes:.*`)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AtlasDirtyContradictoryPartialHashesRefused(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "contradictory-atlas-prefix.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	const twoDigests = `["h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]`
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = ? WHERE version = '2'",
+		twoDigests,
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, `migration 2 cannot resume automatically: Atlas partial_hashes contains 2 entries for 1 committed statements.*`)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		format    migrator.RevisionTableFormat
+		updateSQL string
+		want      string
+	}{
+		{
+			name:      "Ptah negative applied",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET applied = -1 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=2;.*`,
+		},
+		{
+			name:      "Ptah negative total",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET total = -1 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=1 total=-1;.*`,
+		},
+		{
+			name:      "Ptah applied exceeds total",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET applied = 3, total = 2 WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=3 total=2;.*`,
+		},
+		{
+			name:      "Atlas negative applied",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = -1 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=2;.*`,
+		},
+		{
+			name:      "Atlas negative total",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET total = -1 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=1 total=-1;.*`,
+		},
+		{
+			name:      "Atlas applied exceeds total",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = 3, total = 2 WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=3 total=2;.*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "invalid-progress.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+			_, err := conn.ExecContext(c.Context(), test.updateSQL)
+			c.Assert(err, qt.IsNil)
+
+			_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
+			err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+		})
+	}
+}
+
+func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		stored    string
+		state     string
+		direction migrator.MigrationDirection
+		dirty     bool
+	}{
+		{name: "applied", stored: "applied", state: "applied", direction: migrator.MigrationDirectionUp, dirty: false},
+		{name: "pending up", stored: "pending", state: "pending", direction: migrator.MigrationDirectionUp, dirty: true},
+		{name: "failed up", stored: "failed", state: "failed", direction: migrator.MigrationDirectionUp, dirty: true},
+		{name: "pending down", stored: "pending:down", state: "pending", direction: migrator.MigrationDirectionDown, dirty: true},
+		{name: "failed down", stored: "failed:down", state: "failed", direction: migrator.MigrationDirectionDown, dirty: true},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "canonical-native-state.db")
+			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			_, err := conn.ExecContext(c.Context(), "UPDATE schema_migrations SET state = ? WHERE version = 2", test.stored)
+			c.Assert(err, qt.IsNil)
+
+			revisions, err := m.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(revisions, qt.HasLen, 2)
+			c.Assert(revisions[1].State, qt.Equals, test.state)
+			c.Assert(revisions[1].Direction, qt.Equals, test.direction)
+			c.Assert(revisions[1].Dirty, qt.Equals, test.dirty)
+		})
+	}
+}
+
+func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		format    migrator.RevisionTableFormat
+		updateSQL string
+		want      string
+	}{
+		{
+			name:      "Ptah applied state with equal negative counters",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied', applied = -1, total = -1, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=-1;.*`,
+		},
+		{
+			name:      "Ptah applied state with incomplete progress",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied', applied = 1, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records state=applied with applied=1 total=2;.*`,
+		},
+		{
+			name:      "Ptah applied state with down direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied:down', applied = 2, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="applied:down";.*`,
+		},
+		{
+			name:      "Ptah applied state with up direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'applied:up', applied = 2, total = 2, error = NULL WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="applied:up";.*`,
+		},
+		{
+			name:      "Ptah failed state with unknown direction suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'failed:sideways' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="failed:sideways";.*`,
+		},
+		{
+			name:      "Ptah failed state with redundant up suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'failed:up' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="failed:up";.*`,
+		},
+		{
+			name:      "Ptah pending state with redundant up suffix",
+			format:    migrator.RevisionTableFormatPtah,
+			updateSQL: "UPDATE schema_migrations SET state = 'pending:up' WHERE version = 2",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records non-canonical state="pending:up";.*`,
+		},
+		{
+			name:      "Atlas clean state with equal negative counters",
+			format:    migrator.RevisionTableFormatAtlas,
+			updateSQL: "UPDATE atlas_schema_revisions SET applied = -1, total = -1, error = '', operator_version = 'ptah' WHERE version = '2'",
+			want:      `.*migration 2 cannot read revision metadata: revision metadata records invalid progress applied=-1 total=-1;.*`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "invalid-revision-metadata.db")
+			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
+			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+			_, err := conn.ExecContext(c.Context(), test.updateSQL)
+			c.Assert(err, qt.IsNil)
+
+			_, err = m.GetRevisions(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetAppliedRevisions(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetAppliedMigrations(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetCurrentVersion(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = m.GetMigrationStatus(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			err = m.MigrateUp(c.Context())
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+		})
+	}
+}
+
+func TestGetRevisions_AtlasCleanLegacyObjectPartialHashesIgnored(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "clean-atlas-object.db")
+
+	conn, applied := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	c.Assert(applied.MigrateUp(c.Context()), qt.IsNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET partial_hashes = '{}' WHERE version = '2'",
+	)
+	c.Assert(err, qt.IsNil)
+
+	revisions, err := applied.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 2)
+	c.Assert(revisions[1].Dirty, qt.IsFalse)
+}
+
 // TestMigrateUp_AllowDirtyRefusesToResumeAnUnknownStatementOutcome covers the
 // interrupted-process row, where the recorded error says the last statement's
 // fate is unknown. RepairMigration already refuses --resume-from on such a row;
@@ -261,6 +794,27 @@ func TestMigrateUp_AllowDirtyRefusesToResumeAnUnknownStatementOutcome(t *testing
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "migration 2 cannot resume automatically")
 	c.Assert(err.Error(), qt.Contains, "the outcome of statement 2 is unknown")
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+}
+
+func TestMigrateUp_DiscardRolledBackFailureRefusesExistingAtlasUnknownOutcome(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "unknown-zero-progress.db")
+
+	conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+	_, err := conn.ExecContext(
+		c.Context(),
+		"UPDATE atlas_schema_revisions SET error = ? WHERE version = '2'",
+		"statement execution outcome is unknown after process interruption",
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, retried := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeFile, migrator.RevisionTableFormatAtlas)
+	err = retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
 }
 
@@ -299,6 +853,39 @@ func TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.
 	c.Assert(after[1].Applied, qt.Equals, 2)
 	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
 	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+}
+
+func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		mode migrator.MigrationTxMode
+	}{
+		{name: "file", mode: migrator.MigrationTxModeFile},
+		{name: "all", mode: migrator.MigrationTxModeAll},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			dbPath := filepath.Join(c.TempDir(), "applied-floor.db")
+			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+			_, failedRetry := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, test.mode, migrator.RevisionTableFormatPtah)
+			c.Assert(failedRetry.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNotNil)
+
+			revisions, err := failedRetry.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(revisions, qt.HasLen, 2)
+			c.Assert(revisions[1].Applied, qt.Equals, 1)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+
+			_, completed := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
+			c.Assert(completed.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+			c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+			c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+		})
+	}
 }
 
 // newRegisteredDirtyRetryMigrator builds a migrator over programmatically
@@ -392,4 +979,117 @@ func TestMigrateUp_DirtyGuardStillRefusesWithoutAllowDirty(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
+}
+
+func TestMigrateUp_AllowDirtyRefusesInterruptedRollback(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "down-direction.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"direction guard",
+		"CREATE TABLE parent (id INTEGER PRIMARY KEY);\nCREATE TABLE child (id INTEGER PRIMARY KEY);\n",
+		"-- +ptah no_transaction\nDROP TABLE child;\nDROP TABLE definitely_missing;\n",
+	)
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(m.MigrateDownTo(c.Context(), 0), qt.IsNotNil)
+
+	before, err := m.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.DirtyRevision, qt.IsNotNil)
+	c.Assert(before.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(before.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "parent"), qt.IsTrue)
+	c.Assert(dirtyRetryTableExists(c, conn, "child"), qt.IsFalse)
+
+	err = m.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true})
+
+	c.Assert(err, qt.ErrorMatches, "migration 1 is dirty from an interrupted rollback; repair the rollback before migrating up")
+	after, err := m.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(after.DirtyRevision, qt.IsNotNil)
+	c.Assert(after.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(after.DirtyRevision.Applied, qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "parent"), qt.IsTrue)
+	c.Assert(dirtyRetryTableExists(c, conn, "child"), qt.IsFalse)
+}
+
+func TestMigrateUp_AllowDirtyResumeSkipsObsoletePreMigrationChecks(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "resume-check.db")
+
+	failing := `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users"
+-- +ptah no_transaction
+INSERT INTO users (id) VALUES (1);
+INSERT INTO definitely_missing (id) VALUES (1);
+`
+	conn, m := newDirtyRetryMigrator(c, dbPath, failing, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	c.Assert(m.MigrateUp(c.Context()), qt.IsNotNil)
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+
+	fixed := `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users"
+-- +ptah no_transaction
+INSERT INTO users (id) VALUES (1);
+CREATE TABLE pets (id INTEGER PRIMARY KEY);
+`
+	_, retried := newDirtyRetryMigrator(c, dbPath, fixed, migrator.MigrationTxModeFile, migrator.RevisionTableFormatPtah)
+	c.Assert(retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+
+	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+	c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsTrue)
+	status, err := retried.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+}
+
+func TestRepairMigration_UpResumePersistsAbsoluteProgress(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "manual-resume.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+
+	initial := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nINSERT INTO missing_one (id) VALUES (1);\nCREATE TABLE third (id INTEGER PRIMARY KEY);\n",
+		"DROP TABLE third;\nDROP TABLE first;\n",
+	)
+	c.Assert(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(initial)).MigrateUp(c.Context()), qt.IsNotNil)
+
+	secondFailure := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nCREATE TABLE second (id INTEGER PRIMARY KEY);\nINSERT INTO missing_two (id) VALUES (1);\n",
+		"DROP TABLE second;\nDROP TABLE first;\n",
+	)
+	secondAttempt := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(secondFailure))
+	err = secondAttempt.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2})
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to resume migration 1: failed to execute SQL statement: .*missing_two.*`)
+
+	revisions, err := secondAttempt.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Direction, qt.Equals, migrator.MigrationDirectionUp)
+	c.Assert(revisions[0].Applied, qt.Equals, 2)
+	c.Assert(revisions[0].Total, qt.Equals, 3)
+	c.Assert(revisions[0].ErrorStatement, qt.Contains, "missing_two")
+	c.Assert(dirtyRetryTableExists(c, conn, "second"), qt.IsTrue)
+
+	completed := migrator.CreateMigrationFromSQL(
+		1,
+		"manual resume",
+		"-- +ptah no_transaction\nCREATE TABLE first (id INTEGER PRIMARY KEY);\nCREATE TABLE second (id INTEGER PRIMARY KEY);\nCREATE TABLE third (id INTEGER PRIMARY KEY);\n",
+		"DROP TABLE third;\nDROP TABLE second;\nDROP TABLE first;\n",
+	)
+	finalAttempt := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(completed))
+	c.Assert(finalAttempt.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
+
+	status, err := finalAttempt.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(dirtyRetryTableExists(c, conn, "third"), qt.IsTrue)
 }

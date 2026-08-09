@@ -103,6 +103,13 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
+	// Resolved from the same verified snapshot the conversion above reads, and
+	// after it, so a directory this build refuses to convert never gets as far
+	// as being addressed by token.
+	tokens, err := captured.versionTokens()
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -118,7 +125,7 @@ func runAtlasMigrateSet(
 	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
 		return err
 	}
-	version, err := parseAtlasMigrateSetVersion(args[0])
+	version, err := resolveAtlasMigrateSetVersion(tokens, args[0])
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
@@ -131,7 +138,7 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
-	if err := writeAtlasMigrateSetResult(cmd, result); err != nil {
+	if err := writeAtlasMigrateSetResult(cmd, tokens, result); err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	return nil
@@ -194,7 +201,7 @@ func prepareAtlasMigrateSet(
 	// when only the Atlas layout was accepted, so an invocation carrying two bad
 	// values keeps printing the same one of them. The query spelling lives in
 	// --dir and joins the resolution below.
-	if _, err := resolveAtlasVerbDirFormat("set", opts.dirFormat, nil); err != nil {
+	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "set", opts.dirFormat, nil); err != nil {
 		return prepared, err
 	}
 
@@ -209,7 +216,7 @@ func prepareAtlasMigrateSet(
 	if err != nil {
 		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)
 	}
-	format, err := resolveAtlasVerbDirFormat("set", opts.dirFormat, localDir.Query)
+	format, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "set", opts.dirFormat, localDir.Query)
 	if err != nil {
 		return prepared, err
 	}
@@ -229,7 +236,44 @@ func prepareAtlasMigrateSet(
 	return prepared, nil
 }
 
-func parseAtlasMigrateSetVersion(value string) (int64, error) {
+// resolveAtlasMigrateSetVersion turns the positional operand into the version
+// the migrator addresses migrations by.
+//
+// On a directory with a version space of its own — today only a converted
+// Flyway directory — the operand is the SOURCE version token, matched byte for
+// byte, and the ordering key it projects to stops being an accepted spelling.
+// That is the decision stokaro/ptah#1206 asks to be made explicitly rather than
+// left to fall out of the implementation, and both halves of it are measured
+// against the pinned community binary v1.3.0 on `V1.sql` + `V2__ok.sql`:
+//
+//	migrate set 1                    community exit 0    here, before: exit 1
+//	migrate set 4611686018427469511  community exit 1    here, before: exit 0
+//
+// The second row is the reason this is not merely a convenience. Accepting a
+// version the binary being mirrored refuses is the one direction parity never
+// allows, and the ordering key was the ONLY spelling that worked here.
+//
+// The not-found message quotes the operand as typed, which is also measured:
+// the community binary answers `migration with version "abc" not found` and
+// `migration with version "0" not found` on that directory, so a token that is
+// not an int64 and a token that is out of range are the same answer as a token
+// that simply names no file. Ptah reported `--version "abc" is not a valid
+// migration version: strconv.ParseInt ...` and `--version must be greater than
+// zero`, which are diagnostics about int64 parsing on a directory that has no
+// int64 versions to parse.
+//
+// A native Atlas directory, and every plain-numeric-prefix converted layout,
+// keeps the int64 parsing it had: their file names ARE the versions, so there is
+// no second spelling to translate, and the golang-migrate control in
+// stokaro/ptah#1206 stays green by construction.
+func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, value string) (int64, error) {
+	if tokens.translates() {
+		version, ok := tokens.resolve(value)
+		if !ok {
+			return 0, fmt.Errorf("migration with version %q not found", value)
+		}
+		return version, nil
+	}
 	version, err := atlasmigrate.ParseMigrationVersionFlag("version", value)
 	if err != nil {
 		return 0, err
@@ -240,7 +284,16 @@ func parseAtlasMigrateSetVersion(value string) (int64, error) {
 	return version, nil
 }
 
-func writeAtlasMigrateSetResult(cmd *cobra.Command, result migrator.AtlasRevisionSetResult) error {
+// writeAtlasMigrateSetResult renders the summary in the version spelling the
+// operand was given in, so a directory addressed by its Flyway tokens is
+// reported back in them: `Current version is 1.5 (2 set)` with `+ 1 (a)` and
+// `+ 1.5 (b)`, measured on the pinned community binary v1.3.0. On every other
+// layout render is the decimal form of the version and the output is unchanged.
+func writeAtlasMigrateSetResult(
+	cmd *cobra.Command,
+	tokens flywayVersionTokens,
+	result migrator.AtlasRevisionSetResult,
+) error {
 	if len(result.Set) == 0 && len(result.Removed) == 0 {
 		return nil
 	}
@@ -255,19 +308,19 @@ func writeAtlasMigrateSetResult(cmd *cobra.Command, result migrator.AtlasRevisio
 	out := cmd.OutOrStdout()
 	if _, err := fmt.Fprintf(
 		out,
-		"Current version is %d (%s):\n\n",
-		result.CurrentVersion,
+		"Current version is %s (%s):\n\n",
+		tokens.render(result.CurrentVersion),
 		strings.Join(changes, ", "),
 	); err != nil {
 		return fmt.Errorf("write migrate set summary: %w", err)
 	}
 	for _, revision := range result.Set {
-		if err := writeAtlasMigrateSetRevision(out, "+", revision); err != nil {
+		if err := writeAtlasMigrateSetRevision(out, tokens, "+", revision); err != nil {
 			return err
 		}
 	}
 	for _, revision := range result.Removed {
-		if err := writeAtlasMigrateSetRevision(out, "-", revision); err != nil {
+		if err := writeAtlasMigrateSetRevision(out, tokens, "-", revision); err != nil {
 			return err
 		}
 	}
@@ -279,16 +332,18 @@ func writeAtlasMigrateSetResult(cmd *cobra.Command, result migrator.AtlasRevisio
 
 func writeAtlasMigrateSetRevision(
 	out io.Writer,
+	tokens flywayVersionTokens,
 	action string,
 	revision migrator.AtlasRevisionChange,
 ) error {
+	version := tokens.render(revision.Version)
 	if revision.Description == "" {
-		if _, err := fmt.Fprintf(out, "  %s %d\n", action, revision.Version); err != nil {
+		if _, err := fmt.Fprintf(out, "  %s %s\n", action, version); err != nil {
 			return fmt.Errorf("write migrate set revision: %w", err)
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintf(out, "  %s %d (%s)\n", action, revision.Version, revision.Description); err != nil {
+	if _, err := fmt.Fprintf(out, "  %s %s (%s)\n", action, version, revision.Description); err != nil {
 		return fmt.Errorf("write migrate set revision: %w", err)
 	}
 	return nil

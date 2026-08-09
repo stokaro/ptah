@@ -117,6 +117,11 @@ type Options struct {
 	// RuleConfigs carries per-rule severity and path-scoping overrides,
 	// normally loaded from .ptah-lint.yaml.
 	RuleConfigs map[string]RuleConfig
+	// Baseline carries the schema state each analyzed version starts from,
+	// normally read from the dev database after replaying the migrations that
+	// precede that version. Empty analyzes SQL text alone, which is what every
+	// run without a dev database does. See [BaselineColumn].
+	Baseline []BaselineColumn
 }
 
 func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
@@ -285,7 +290,6 @@ func fileFindingSuppressed(file *File, finding Finding) bool {
 }
 
 func pathGlobMatches(pattern, value string) bool {
-	pattern = path.Clean(strings.TrimSpace(pattern))
 	value = path.Clean(value)
 	if pattern == "." || value == "." {
 		return false

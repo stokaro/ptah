@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -128,6 +130,22 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 	result, err := validate(cmd.Context(), dir, dirFormatValue, devURL)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
+		empty, emptyErr := DirectoryHoldsNoSQLFiles(dir)
+		if emptyErr != nil {
+			return cmdutil.Fail(cmd, emptyErr)
+		}
+		if empty {
+			// An existing directory holding no migration files has nothing for
+			// an integrity file to cover, so its absence is not drift. The
+			// pinned community binary v1.3.0 exits 0 with no output here, and
+			// its own `migrate apply` on the same directory says "No migration
+			// files to execute" rather than refusing (stokaro/ptah#1241 item 7).
+			//
+			// The refusal stays for a directory that DOES hold migration files
+			// and carries no integrity file: measured on that binary, exit 1
+			// with this same byte-identical guidance block.
+			return nil
+		}
 		return FailAtlasChecksumFileNotFound(cmd)
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
 		// A malformed sum file has no entry-level mismatch to point at.
@@ -146,6 +164,33 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 	}
 
 	return nil
+}
+
+// DirectoryHoldsNoSQLFiles reports whether dir holds no `.sql` file at its top
+// level, which is the shape an integrity file has nothing to cover.
+//
+// It deliberately asks about `.sql` rather than about the covered set of one
+// directory format: every format Ptah reads names its migrations with that
+// extension, so a directory holding any of them is one where a missing
+// integrity file is still a refusal. Nested directories are ignored because no
+// format reads them.
+//
+// It is exported so the Atlas-compatible `migrate validate` reaches the same
+// answer on a converted directory as the forwarding path does on a native one.
+func DirectoryHoldsNoSQLFiles(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("read migrations directory %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.EqualFold(filepath.Ext(entry.Name()), ".sql") {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func validate(

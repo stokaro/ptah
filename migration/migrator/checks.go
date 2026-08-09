@@ -539,6 +539,9 @@ func firstCheckToken(source, dialect string) (lexer.Token, bool) {
 }
 
 func containsIdentifierSequence(source, dialect string, sequence ...string) bool {
+	if len(sequence) == 0 {
+		return false
+	}
 	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
 	matched := 0
 	for {
@@ -549,7 +552,7 @@ func containsIdentifierSequence(source, dialect string, sequence ...string) bool
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			continue
 		case lexer.TokenIdentifier:
-			if strings.EqualFold(tok.Value, sequence[matched]) {
+			if matched < len(sequence) && strings.EqualFold(tok.Value, sequence[matched]) {
 				matched++
 				if matched == len(sequence) {
 					return true

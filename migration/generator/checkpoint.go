@@ -140,9 +140,17 @@ const AtlasCheckpointDirective = "-- atlas:checkpoint"
 // 20060102150405 layout, bumped past the newest migration at the TOP LEVEL of
 // outputDir.
 //
-// This mirrors the version policy Atlas itself was measured to use and the one
-// `migrate new --dir-format atlas` already applies, rather than the ptah
-// format's "newest + 1" counter.
+// The timestamp is the version policy Atlas itself was measured to use. The
+// bump on top of it is this function's own, and is what separates a checkpoint
+// from an ordinary migration: `migrate new --dir-format atlas` deliberately
+// does NOT bump (stokaro/ptah#938), because a new migration may sort below a
+// future-dated neighbor, while a checkpoint may not sort below the history it
+// squashes.
+//
+// It returns 0 when no version outranks the directory -- a directory whose
+// newest migration already sits at the largest value an Atlas file name can
+// carry. Callers take the maximum of this and their own recursive bound anyway,
+// so 0 loses that comparison and the caller reports the exhaustion.
 //
 // The scan is deliberately shallow, matching Atlas's own reader, which does not
 // recurse. Ptah's reader and its checkpoint replay DO recurse, so this value
@@ -212,7 +220,7 @@ func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQ
 // `migrate new` uses. The contents are the measured Atlas layout: the
 // directive on the first line, a blank separator line, then the SQL.
 func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string) {
-	stem := atlasEmptyMigrationName(description)
+	stem := atlasCheckpointNameStem(description)
 	if stem == "" {
 		stem = "checkpoint"
 	}

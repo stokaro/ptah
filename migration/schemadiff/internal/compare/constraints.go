@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -64,12 +65,40 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	if opts != nil {
 		dialect = opts.Dialect
 	}
+	ConstraintsWithSemantics(generated, database, diff, opts, identifier.ForDialect(dialect))
+}
+
+// ConstraintsWithSemantics is [Constraints] told which identifier rules the
+// target actually has, rather than the offline defaults its dialect name
+// implies. Table and index comparison already take the resolved rules; this
+// entry point exists so constraint comparison stops being the one side that
+// rebuilds them from the dialect string.
+//
+// The difference is not cosmetic on MySQL and MariaDB. A schema there is a
+// database, so [identifier.ForDialect] cannot name the one that owns an
+// unqualified table and returns an empty DefaultSchema; only a connection can
+// supply it. Re-deriving the offline rules here discarded that value, the
+// normalization in [tableMemberKey] became a no-op, and every constraint the
+// database had was reported as removed -- the exact failure #1232 fixed on
+// PostgreSQL and SQLite, still live on MySQL because it could never see a
+// default schema (stokaro/ptah#1244).
+func ConstraintsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	opts *config.CompareOptions,
+	semantics identifier.Semantics,
+) {
+	dialect := ""
+	if opts != nil {
+		dialect = opts.Dialect
+	}
 
 	// Create maps for detailed constraint comparison
 	genConstraints := make(map[tableMemberKey]goschema.Constraint)
 	for _, constraint := range generated.Constraints {
 		constraint.Table = generatedConstraintTableName(constraint, generated.Tables)
-		key := tableMemberKey{table: constraint.Table, member: constraint.Name}
+		key := newTableMemberKey(constraint.Table, constraint.Name, semantics)
 		genConstraints[key] = constraint
 	}
 
@@ -80,8 +109,8 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
-	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database) {
-		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
+	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database, semantics) {
+		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -89,8 +118,8 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 	}
 
-	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect) {
-		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
+	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect, semantics) {
+		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -111,8 +140,8 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	// through to the comparison instead of filtering it out — otherwise
 	// foreignKeyConstraintChanged would never run for field-level FKs.
 	synthesizedFKKeys := make(map[tableMemberKey]struct{})
-	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database) {
-		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
+	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database, semantics) {
+		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
 		synthesizedFKKeys[key] = struct{}{}
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
@@ -121,17 +150,14 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 	}
 
-	// Create map of existing database constraints, filtering out field-level constraints
-	dbConstraints := make(map[tableMemberKey]types.DBConstraint)
-	for _, constraint := range database.Constraints {
-		// Skip field-level constraints that are represented in field definitions
-		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys) {
-			continue
-		}
-
-		key := tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}
-		dbConstraints[key] = constraint
-	}
+	dbConstraints := collectDatabaseConstraints(
+		generated,
+		database,
+		genConstraints,
+		synthesizedFKKeys,
+		dialect,
+		semantics,
+	)
 
 	// Find added constraints (constraints in generated schema but not in database)
 	for constraintKey, genConstraint := range genConstraints {
@@ -182,6 +208,47 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 		return a.Name < b.Name
 	})
+}
+
+// collectDatabaseConstraints keys the database's constraints by table and name,
+// leaving out the ones another representation of the same object already owns.
+//
+// Two exclusions, and they are different in kind. A field-level constraint is
+// carried by the column it belongs to, so the column's lifecycle creates and
+// drops it. A UNIQUE constraint the desired state names as an *index* is the
+// same catalog object as that index, so index comparison creates and drops it;
+// see [uniqueConstraintOwnedByDeclaredIndex]. A desired state that names the
+// object as a constraint keeps it here, which is why the hand-off asks about
+// genConstraints first: a schema that declares both spellings of one name has
+// its constraint honored rather than being handed to a pool that would then
+// plan an ADD CONSTRAINT on top of the existing index.
+func collectDatabaseConstraints(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	genConstraints map[tableMemberKey]goschema.Constraint,
+	synthesizedFKKeys map[tableMemberKey]struct{},
+	dialect string,
+	semantics identifier.Semantics,
+) map[tableMemberKey]types.DBConstraint {
+	declaredIndexes := generatedIndexIdentities(generated, semantics)
+	dbConstraints := make(map[tableMemberKey]types.DBConstraint, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys, semantics) {
+			continue
+		}
+		key := newTableMemberKey(constraint.QualifiedTableName(), constraint.Name, semantics)
+		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
+			uniqueConstraintOwnedByDeclaredIndex(
+				constraint,
+				dialect,
+				declaredIndexes,
+				semantics,
+			) {
+			continue
+		}
+		dbConstraints[key] = constraint
+	}
+	return dbConstraints
 }
 
 // appendConstraintRemoval records the table-qualified removal info for a

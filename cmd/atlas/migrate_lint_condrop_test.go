@@ -126,6 +126,12 @@ func TestCompatCommand_MigrateLintCondropSeverity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+			// This fixture drops a foreign key that no dev database could
+			// replay, and the analysis under test is the static one. The
+			// compatibility surface requires --dev-url by default
+			// (stokaro/ptah#1231 case 2); the opt-in keeps the subject of these
+			// four rows -- which lint policy owns CD101 -- unchanged.
+			t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 			dir := t.TempDir()
 			writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql",
 				"CREATE TABLE pets (id int PRIMARY KEY);\n")
@@ -174,6 +180,9 @@ const atlasDropSchemaProjectConfig = `env "skip_drop_schema" {
 // before any analysis happens, so the report assertion below never renders.
 func TestCompatCommand_MigrateLintRunsWithDropSchemaConfigured(t *testing.T) {
 	c := qt.New(t)
+	// The env supplies lint.latest but no dev database, and the analysis this
+	// asserts needs none. See the condrop test above for why the opt-in is set.
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")
@@ -218,6 +227,7 @@ const atlasSchemaRepoProjectConfig = `env "repo" {
 // the report asserted below.
 func TestCompatCommand_MigrateLintRunsWithSchemaRepoConfigured(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")

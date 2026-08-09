@@ -16,7 +16,7 @@ plus the flag translation rules are on the
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah-compat migrate apply` | Atlas-format apply path equivalent to `ptah migrations up`; executes every Atlas OSS directory format and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
-| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and Atlas revision bookkeeping by default; `--dev-url` verifies the rollback plan first. |
+| `ptah-compat migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags and the Atlas revision-table layout by default; `--dev-url` verifies the rollback plan first. Failed rollbacks retain Ptah's recoverable dirty state. |
 | `ptah-compat migrate status` | Atlas-format migration status with Atlas revision-table metadata; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate hash` | Forwards to `ptah migrations hash`; writes `atlas.sum` by default. |
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
@@ -34,6 +34,37 @@ plus the flag translation rules are on the
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
+
+### The `--dir` default
+
+Every `migrate` verb that registers `--dir` defaults it to
+`file://migrations`, so `ptah-compat migrate apply --url "$DATABASE_URL"` run
+from a project root reads `./migrations` with no flag at all. That is
+`apply`, `new`, `diff`, `status`, `set`, `lint`, `hash` and `validate` — the
+same eight verbs Atlas documents the default on, and the same value
+([#1241](https://github.com/stokaro/ptah/issues/1241)). `migrate apply` and
+`migrate new` used to refuse a run with no `--dir`, and `migrate hash` and
+`migrate validate` used the directory without printing the default in `--help`.
+
+The default is a default, not a fallback. Every layer that names a directory
+outranks it — `--dir`, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR`, and `atlas.hcl`
+`migration.dir` — and a `--dir` naming a directory that is not there fails
+rather than quietly reading `./migrations`:
+
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrtions
+# Error: atlas migrate apply --dir: open migrations directory: openat migrtions: no such file or directory
+```
+
+The default also does not skip anything. A defaulted directory reaches the
+`atlas.sum` gate exactly as an explicit one does, so an unhashed or drifted
+`./migrations` is still refused with `Error: checksum file not found` or
+`Error: checksum mismatch`.
+
+The writing verbs create the directory they are pointed at, including missing
+parents: `ptah-compat migrate new add_users --dir file://db/migrations` creates
+`db` and `db/migrations`. A path component that already exists and is not a
+directory is still refused, and nothing is written.
 
 ## Worked example: an Atlas-format directory
 
@@ -128,9 +159,65 @@ surfaces are allowed to differ and only the compatibility one is a contract.
 
 ## Recovering from a migration body that failed part-way
 
-Unlike Atlas, Ptah records a revision row for a migration whose body failed, so
-the failure survives the run that caused it. `migrate status` reports that row
-as a half-applied file, because `Current Version` counts it:
+When a transactional body fails and `Rollback` succeeds, `ptah-compat` removes
+the zero-progress revision row. The next apply retries the whole file without
+`--allow-dirty`, matching Atlas. Native `ptah migrations up` keeps its durable
+failure record instead.
+
+On MySQL and MariaDB a `file` rollback does not always reach zero progress: the
+server may commit around DDL. `ptah-compat` does not guess the boundary from SQL
+keywords. The Atlas revision row is an InnoDB witness updated on the same
+physical transaction before and after each statement. An implicit server commit
+makes the matching `applied` count and `partial_hashes` durable with the body;
+an ordinary rollback removes both the user DML and its witness. A plain-DML body
+that rolls back leaves no committed prefix and is retried whole. A witnessed
+DDL/DML prefix stays dirty because retrying it would repeat committed SQL.
+
+This recovery mode requires InnoDB for the Atlas revision table, the session's
+default storage engine, and every existing base table in the selected database.
+An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
+before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
+new table inherits an engine that the session default does not prove.
+
+The migration account must also hold `TRIGGER` at database or global scope.
+MySQL and MariaDB hide trigger metadata from an account without it while those
+triggers still fire during ordinary DML, so without the privilege `ptah-compat`
+cannot prove a target table has no hidden indirect writer and refuses `file`
+mode. A privilege on a database whose name contains an underscore escapes it,
+so a grant covering `ptah_test` is stored and printed as `ptah\_test`, and
+`ptah-compat` reads that database the way the server does.
+
+MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
+the InnoDB witness:
+
+- Transaction controls such as `BEGIN`, `COMMIT`, and `SET autocommit`.
+- Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
+  and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `USE` and qualified references to another database. The connection URL must
+  name the database whose engines Ptah validates.
+- Executable comments, nested or dynamic SQL, and table locks.
+- Definitions of indirect database objects, references to existing views or
+  trigger-bearing tables, and stored-routine calls.
+- Custom migration functions, whose inner statements are opaque to Ptah.
+- Statement interceptors, which can replace inspected SQL with another
+  execution path.
+
+The first five entries are statement-level: the error names the statement number
+and its safety class. Custom migration functions and statement interceptors have
+no statement to point at, so those two are refused for the whole migration and
+the error names the direction instead. None of these errors repeats the SQL, so
+a credential inside a refused statement stays out of the message.
+
+MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
+remain valid. Ptah runs the body on one pinned session, discards it afterward,
+and replays safe settings such as `SET SESSION sql_mode` from a verified
+committed prefix before an automatic retry. A durable unknown-outcome witness
+blocks automatic retry until the database is inspected and the revision is
+repaired.
+
+When a statement committed under `--tx-mode none`, or its outcome is unknown,
+`ptah-compat` preserves the revision row. `migrate status` reports that row as
+a half-applied file, because `Current Version` counts it:
 
 ```text
 Migration Status: PENDING
@@ -147,15 +234,21 @@ Last migration attempt had errors:
 Fix the migration, rerun `ptah-compat migrate hash`, and rerun the apply with
 `--allow-dirty`. The retry reuses the dirty row instead of recording a second
 one and skips the statements the earlier attempt committed — under
-`--tx-mode none` above, statement 1 — so it resumes rather than repeating SQL.
-Atlas needs no flag here; `--allow-dirty` stays required so a half-applied
-migration is never resumed by accident.
+`--tx-mode none` above, statement 1 — only after proving that committed source
+prefix is unchanged. Atlas-format rows use the cumulative `partial_hashes`
+entry at `applied`. Editing the unapplied suffix is allowed, and a later retry
+failure cannot lower `applied` below that committed prefix even when the
+transaction mode changed. Atlas needs no flag here; `--allow-dirty` stays
+required so a half-applied migration is never resumed by accident.
 
-Two cases refuse to resume automatically and say so, naming
-`ptah migrations repair --version <v>`: a run interrupted mid-statement, whose
-last statement's outcome was never observed, and an edit that changed the
-migration's statement count, after which the recorded progress no longer indexes
-into the file.
+Automatic resume refuses and names `ptah migrations repair --version <v>` when
+a run was interrupted mid-statement, the statement count changed, the committed
+source prefix changed, or `partial_hashes` is malformed or disagrees with
+`applied`. It also refuses negative `applied` or `total` values and
+`applied > total`. Legacy Atlas rows without `partial_hashes` may resume only
+while the stored full-file hash still matches. Revision listing, status, and
+version operations reject the same invalid counters instead of classifying an
+equal negative pair as clean.
 
 ## Rolling back
 
@@ -185,6 +278,24 @@ Ptah validates every selected down body before rollback starts. If one is
 missing, the command leaves both the schema and Atlas revision rows unchanged.
 Dry runs use the same dirty-state, checksum, checkpoint, and down-body
 validation path as real rollbacks, while suppressing schema and revision writes.
+
+If a rollback fails after execution starts, the Atlas-format revision row stays
+dirty and records `Ptah/down` in `operator_version`. Resume through the native
+repair command because the drop-in surface intentionally has no repair verb:
+
+```bash
+ptah migrations repair \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --dir-format atlas \
+  --revision-format atlas \
+  --version 2 \
+  --resume-from 2
+```
+
+Use the failed version and next down-statement number reported by status. If
+the compat command used `--revisions-schema`, pass that value as
+`--migrations-schema` here.
 
 Add `--dev-url` to reset a disposable dev database, replay the migration
 directory to the target's current version, and verify the rollback there before
@@ -250,6 +361,74 @@ measured Atlas checkpoint semantics — a fresh database applies only the
 latest checkpoint plus later migrations, and a database that already applied
 pre-checkpoint history skips the checkpoint silently.
 
+### Adopting a database that already has objects
+
+`migrate apply` refuses to adopt a database that already holds objects no
+migration recorded, matching Atlas. What counts as such an object depends on
+what the URL pinned, and the two answers are different.
+
+**A URL that pins a schema** — `?search_path=public` on PostgreSQL, or a
+database on a MySQL URL — puts the run in schema scope. The refusal names a
+table in that one schema:
+
+```text
+Error: sql/migrate: connected database is not clean: found table "legacy_stuff" in schema "public". baseline version or allow-dirty is required
+```
+
+On SQLite the same refusal reports a count instead of a name:
+`found multiple tables: 2`. Views, sequences, and tables in other schemas are
+not tables in the connected schema and do not trigger it, and neither does the
+revision table itself.
+
+**A plain PostgreSQL URL that pins no `search_path`** puts the run in realm
+scope, where the whole database is under review and the operand is schemas
+rather than tables. An empty extra schema is enough:
+
+```text
+Error: sql/migrate: connected database is not clean: found schema "extra". baseline version or allow-dirty is required
+```
+
+At that scope only two things are tolerated: an empty `public`, and the schema
+holding this run's revision table. Anything else — another schema, empty or
+not, or a table in `public` — refuses, and the refusal names the first offender
+by name. A `public` holding a table is reported as `found schema "public"`, not
+as a table. A revisions schema holding more than the revision table reports a
+count: `found 2 tables in schema "atlas_schema_revisions"`.
+
+Only the `search_path` query parameter selects schema scope. A search path set
+through libpq's `options=-c search_path=…` moves the session but leaves the run
+at realm scope, which is what Atlas does.
+
+The check is an adoption gate, not a standing drift check. It runs only while
+the revision table holds no rows, so it fires on the first apply against a
+database somebody else's tooling owns and never again — a managed database that
+later grows an unmanaged table applies its next migration normally. The refusal
+also fires under `--dry-run` and on a directory with nothing pending, because
+the question it answers is about the database rather than about the work.
+
+Two flags opt in, and they cannot be combined:
+
+- `--allow-dirty` applies every pending migration against the existing schema.
+- `--baseline <version>` records history as starting at that version and applies
+  only what comes after it.
+
+Passing both exits `1` with
+`Error: sql/migrate: baseline and allow-dirty are mutually exclusive` before
+anything is recorded.
+
+The gate is enforced on PostgreSQL, MySQL, MariaDB, and SQLite. Other dialects
+are not gated, because the behavior to match has not been measured on them.
+Realm scope is enforced on PostgreSQL only: a MySQL URL that names no database
+is refused by the connection before the gate is reached, so that combination
+never applies anything either. Native
+[`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
+[#1231](https://github.com/stokaro/ptah/issues/1231).
+
+At realm scope this implementation keeps its own revision table in `public`
+while Atlas keeps its in a schema named `atlas_schema_revisions`. Both databases
+are adopted at exit `0`; the difference is where the bookkeeping lands, and it
+is tracked in [#1257](https://github.com/stokaro/ptah/issues/1257).
+
 ```bash
 ptah-compat migrate apply 2 \
   --url "$DATABASE_URL" \
@@ -258,8 +437,14 @@ ptah-compat migrate apply 2 \
 
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`,
-`--lock-name`, `--skip-lock`, and `--format`. `--format` executes a Go template
-against a Ptah apply result that mirrors Atlas's public apply-template fields:
+`--to-version`, `--lock-name`, `--skip-lock`, and `--format`. The pinned
+community binary registers every one of those except `--to-version`,
+`--lock-name`, and `--skip-lock`, which are documented on the wider Atlas
+distribution's `migrate apply` and adopted here under
+[#951](https://github.com/stokaro/ptah/issues/951).
+
+`--format` executes a Go template against a Ptah apply result that mirrors
+Atlas's public apply-template fields:
 `Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
 `Dir`; `{{ json . }}` emits the same result as JSON with database credentials
 redacted. With `--env`, Ptah can read `env.url`, `migration`, and
@@ -267,6 +452,26 @@ redacted. With `--env`, Ptah can read `env.url`, `migration`, and
 revision rows and include only migrations that a real apply would select. They
 also run the same dirty-state, checksum, execution-order, and transaction-mode
 validations as a real apply.
+
+An env `for_each` can select several database targets. `migrate apply` runs
+them sequentially in stable expansion order and stops at the first failure.
+Formatted output contains one document per attempted target with one newline
+between adjacent documents. A structured execution failure stays in that
+target's report; stderr remains empty and the process exits `1`.
+
+`--to-version` bounds the run at a migration version: every pending migration up
+to and including that version runs, and nothing above it does. A version the
+directory does not carry is refused before any migration executes, and the bound
+cannot be combined with the positional `amount`, because the two select
+different prefixes and neither outranks the other. Under `--dry-run` the bound
+narrows the reported plan the same way.
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 20240101000002
+```
 
 `--lock-name` replaces the name of the session advisory lock that serializes
 migration runs (`ptah_migrate` by default). Two runs serialize only when they
@@ -277,10 +482,13 @@ executes. An empty value is refused rather than falling back to the default
 name.
 
 `--skip-lock` acquires no lock at all: no wait, no timeout, and no
-serialization against another runner. It cannot be combined with `--lock-name`,
-because there is no lock to name. On dialects with no advisory-lock semantics —
-SQLite, ClickHouse, CockroachDB, and Spanner — an explicit `--lock-name` prints
-a note on stderr naming the lock that was not acquired.
+serialization against another runner. The lock is taken before the pending set
+is computed, so a run with nothing left to apply still waits on a held lock,
+and exits `0` under `--skip-lock` in the same state. It cannot be combined with
+`--lock-name`, because there is no lock to name. On dialects with no
+advisory-lock semantics — SQLite, ClickHouse, CockroachDB, and Spanner — an
+explicit `--lock-name` prints a note on stderr naming the lock that was not
+acquired.
 
 Atlas migration files may override global `file` or `none` with a leading
 header followed by a blank line:
@@ -308,22 +516,23 @@ one plain SQL stream. Atlas CE `v1.3.0` instead ignores section-local modes and
 can classify that malformed outer-header shape as plain SQL, so this contour is
 an intentional safety difference rather than a parity claim.
 
-A successful `ptah-compat migrate apply` writes nothing to stderr, matching
-Atlas CE: there is no progress narration, in a dry run or otherwise, so
-`--format` output survives the usual CI idiom of folding both streams together.
+A clean successful `ptah-compat migrate apply` writes nothing to stderr,
+matching Atlas CE: there is no progress narration, in a dry run or otherwise,
+so `--format` output survives the usual CI idiom of folding both streams
+together.
 
 ```bash
 ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations \
   --dry-run --format '{{ json . }}' 2>&1 | jq
 ```
 
-Two things still reach stderr, by design. A command that fails prints its
-`Error: …` diagnostic there and exits `1`. And a Warn-level diagnostic that
+Three things still reach stderr, by design. A command that fails prints its
+`Error: …` diagnostic there and exits `1`. A Warn-level runtime diagnostic that
 exists on no other channel — such as function ordering or a dev database that
-would not close — is still reported, because dropping it would let an apply
-claim success while quietly degrading. Valid circular foreign keys are rendered
-in two phases and do not produce a warning. Neither diagnostic appears on a
-clean run.
+would not close — is still reported. An `atlas.hcl` name that Atlas CE accepts
+without acting on also produces a location-aware warning that the construct has
+no effect. Valid circular foreign keys are rendered in two phases and do not
+produce a warning. None of these diagnostics appears on a clean run.
 
 `ptah-compat migrate down` holds the same contract, with or without `--format`.
 Without `--format` it forwards to the native `ptah migrations down`, which
@@ -477,9 +686,10 @@ that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
 names (`-- +goose Frobnicate`) stay comments, as they do in Atlas.
-Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
-`--lock-name`; Ptah follows that surface and rejects those flags on
-`migrate apply`.
+The pinned community binary does not register `migrate apply --dir-format`, and
+Ptah rejects it on `migrate apply` too; the directory format is selected there
+by the `?format=` query on `--dir`, as
+[Apply a migration directory](#apply-a-migration-directory) describes.
 
 The direct `migrate down --format` path uses the same snapshot for rollback
 planning, optional `--dev-url` shadow verification, target execution, and the
@@ -722,9 +932,24 @@ missing, the command prints the same recovery guidance and writes
 migration files, the stdout guidance includes the first mismatched `atlas.sum`
 line, file name, and reason.
 
+An **empty** migration directory is the one shape where a missing `atlas.sum`
+is not drift: there is nothing for it to cover, so `ptah-compat migrate validate`
+exits `0` with no output, matching the pinned Atlas community binary v1.3.0 and
+matching what `ptah-compat migrate apply` already does on the same directory
+(`No migration files to execute`). The moment the directory holds a migration
+file the refusal returns, byte-identically. `ptah-compat migrate lint --latest`
+follows the same rule: an empty directory selects nothing and exits `0`, which
+is what a repository linting its migrations in CI does before the first
+migration exists. The scope selector is what makes that `0` legitimate — an
+empty directory exits `0` only when `--latest` or `--git-base` was given. With
+neither, the run is refused before the directory is read (see
+[Lint migrations](#lint-migrations) below).
+
 This compatibility behavior is scoped to the `ptah-compat` binary.
 Native `ptah migrations validate` keeps Ptah's success banner and native error
-output; missing or malformed sum files remain exit-`2` usage failures.
+output; missing or malformed sum files remain exit-`2` usage failures, and
+native `ptah migrations lint` still refuses an empty directory with
+`no *.sql migration files found`.
 
 ```bash
 ptah-compat migrate validate \
@@ -741,6 +966,43 @@ ptah-compat migrate lint \
   --dev-url "sqlite://dev.db" \
   --latest 1
 ```
+
+Both flags in that example are required, and they are **two separate
+requirements** with two separate refusals, each matching the pinned Atlas
+community binary v1.3.0 byte for byte:
+
+| invocation | exit | message |
+| --- | --- | --- |
+| no `--dev-url` | 1 | `required flag(s) "dev-url" not set` |
+| no `--latest` and no `--git-base` | 1 | `--latest or --git-base is required` |
+
+An argv missing both answers the `--dev-url` sentence, because that is the one
+the pinned binary answers on the same argv.
+
+A **scope** may come from the selected `atlas.hcl` environment instead of the
+command line: a `lint { latest = 1 }` or a `lint { git { base = … } }` satisfies
+the requirement with nothing spelled on the command line. `--latest N` with an N
+larger than the directory analyzes every migration. The scope refusal comes
+before the migration directory is read and before `--dev-url` is contacted,
+which is the part that matters: `--dev-url` is scratch space and the run
+**cleans** it, so an unscoped invocation that answered would drop tables in a
+database the pinned binary never connects to.
+
+Two environment variables relax these requirements. They relax **different**
+ones, and neither implies the other:
+
+- `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` drops the dev-database requirement.
+  Ptah's analyzers reach a verdict from the migration files alone; the run still
+  needs a scope.
+- `PTAH_ATLAS_LINT_ALL_VERSIONS=1` drops the scope requirement and lints the
+  whole directory. The run still needs a dev database unless the variable above
+  is also set.
+
+Both default to off so a pipeline written against the community CLI gets the
+same refusal here that it gets there, and both are environment variables rather
+than flags because the conformance `cli-surface` tier asserts flag parity with
+the pinned binary. Native `ptah migrations lint` needs neither a dev database
+nor a scope and is unaffected by both.
 
 `migrate lint --dev-url` treats the dev database as scratch space: it drops user
 tables, replays the migration directory, and then runs static lint
@@ -787,19 +1049,85 @@ objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
   review, and so does a reference written out with the reviewed schema's own
   name;
 - one statement is measured per object: `DROP TABLE users, other.audit_log;`
-  under `search_path=public` reports `users` and counts one schema change.
+  under `search_path=public` reports `users` and counts one schema change;
+- an index is measured by the schema of the table it is on whenever the
+  statement names a table, because the index name is bare there:
+  `CREATE INDEX idx ON app.users (id);` under `search_path=public` counts no
+  schema change and raises no diagnostic, while the same statement on a
+  `public` table counts one and raises `PG101`. `DROP INDEX idx ON app.t;` —
+  MySQL's, MariaDB's and SQL Server's spelling — is measured the same way;
+- a `DROP INDEX` that names no table is measured by the qualifier on the index
+  itself, which is the only one the statement has: `DROP INDEX app.idx;` under
+  `search_path=public` counts no schema change and raises no diagnostic, while
+  `DROP INDEX public.idx;` and the unqualified `DROP INDEX idx;` each count one
+  and raise `PG106`.
 
 A `--dev-url` that names no schema puts the whole connected database under
 review and filters nothing, which is also what every non-PostgreSQL dev URL
 does. A `search_path` naming more than one schema is not a scope: it is read as
 a single schema name, so it scopes nothing and every object stays under review.
 
-An `ALTER TABLE` belongs to its table's schema, never to the column or
-constraint it names, and a `CREATE SCHEMA` is measured against the reviewed
-schema by its own name. A diagnostic that names no object at all — the rules
-that report a statement rather than the objects in it — is always reported,
-since there is nothing to measure a scope against and a hazard must not be
-silenced on an unestablished boundary.
+An `ALTER TABLE`'s schema changes belong to its table's schema, never to the
+column or constraint it names, and a `CREATE SCHEMA` is measured against the
+reviewed schema by its own name.
+
+The scope decision is made once per statement and drives both outputs, so a
+statement the scope removed contributes neither a schema change nor a
+diagnostic, and one it kept can contribute either. A diagnostic that names no
+object at all — the rules that report a statement rather than the objects in
+it — follows the decision already taken for the statement it belongs to: dropped
+when the scope removed that statement, and otherwise reported, since there is
+nothing to measure a scope against and a hazard must not be silenced on an
+unestablished boundary. `ALTER TABLE app.users ADD CONSTRAINT …` under
+`search_path=public` therefore reports nothing, where it used to raise `PG105`
+about a change it had already counted as zero.
+
+A statement is removed only when **every** table it names is out of review, not
+only the one it alters. `ALTER TABLE app.child ADD CONSTRAINT c FOREIGN KEY
+(pid) REFERENCES public.parent (id);` under `search_path=public` names two, and
+validating that key holds a `SHARE ROW EXCLUSIVE` lock on `public.parent` for
+the duration, so `PG306` is reported: the hazard lands on a table the run is
+responsible for. The same statement referencing `app.parent` reports nothing.
+This is one place the two outputs deliberately describe different statements —
+the constraint lands on `app.child`, so the reviewed schema still counts zero
+changes for it. A count of zero is not a statement of safety.
+
+Silence is not exclusion. A statement outside Ptah's SQL grammar is left under
+review whatever schema it names, because a boundary that could not be read must
+not be able to drop a diagnostic. That grammar boundary is why
+`TRUNCATE app.users;` and `DROP FUNCTION app.recalc();` are reported under
+`search_path=public` while counting no schema change.
+
+`DROP INDEX` used to be the largest example of it and no longer is: the parser
+models the statement, so `DROP INDEX public.idx;` counts one schema change,
+matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
+scoped out whole — no schema change and no `PG106`, which is also what the
+community binary reports. Ptah raised `PG106` for the `app` form before
+[`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296); nothing
+about the reviewed schema became quieter, since the `public` form still raises
+it.
+
+Two `DROP INDEX` forms are still outside the grammar. Both are refused by the
+parser rather than half-recorded, so each counts no schema change and keeps its
+diagnostics under every scope:
+
+- PostgreSQL's multi-index `DROP INDEX a, b;`, which one `DROP INDEX` node
+  cannot hold;
+- SQL Server's backward-compatible `DROP INDEX t.idx;`, where the qualifier
+  names the table rather than a schema. Reading it the way every other dialect
+  spells the same text would scope the drop to a schema nobody wrote. Ptah
+  renders SQL Server index drops as `DROP INDEX idx ON t`, which is read
+  exactly.
+
+Three constructs are still measured by a name that carries no schema, because
+Ptah's parser records none for them. Measured on PostgreSQL 17.10 under
+`search_path=public`, `CREATE SEQUENCE app.s;` counts one schema change,
+`CREATE TRIGGER trg … ON app.t;` counts one and raises `PG308`, and
+`CREATE POLICY p ON app.t;` counts one — where the pinned community binary
+v1.3.0 counts no schema change and raises no diagnostic for all three. They
+over-report rather than under-report, and each is a warning at exit 0, so a
+scoped run is never told less than the truth about its database. They are listed
+here rather than left to be discovered.
 
 The boundary applies to `ptah-compat migrate lint` only. Native
 `ptah migrations lint` keeps every object under review, whatever the dev URL
@@ -853,18 +1181,34 @@ incompatible` does not.
 Index, key and constraint renames are not reported at all: deployed application
 code does not name them.
 
-What a rename does **not** report on either surface is the column it
-introduces. Renaming a `NOT NULL` column draws the destructive diagnostic for
-the retired name from Ptah and from the CE binary alike, but the binary adds a
-second one — `MF103`, "adding a non-nullable column will fail in case the table
-is not empty" — for the new name, and Ptah does not. Ptah's analyzers read the
-migration's SQL text, and a `RENAME COLUMN` statement carries neither the
-column's type nor its nullability: both come from an earlier file or from the
-base schema, and the binary's message spells the type as the database canonicalizes
-it. Reaching that needs the replayed dev schema rather than the statement, which
-is [#1074](https://github.com/stokaro/ptah/issues/1074). Until then a rename is
-reported as destructive on both surfaces and as a data-dependent addition on
-neither, so it is one diagnostic short rather than differently classified.
+On the compatibility surface a rename also reports the column it **introduces**.
+Renaming a `NOT NULL` column with no `DEFAULT` produces a second diagnostic —
+`MF103`, "adding a non-nullable column will fail in case the table is not
+empty" — naming the new column and the retired column's type. A `RENAME COLUMN`
+statement carries neither that type nor its nullability, so this one is not read
+from the migration text: `ptah-compat migrate lint` reads the schema state the
+version starts from off the `--dev-url` database during the replay it already
+performs, before the version runs and while the retired column still exists. A
+run without `--dev-url` reports the retirement alone.
+
+Three consequences follow from where the facts come from:
+
+- The type is spelled the way the database canonicalizes it, not the way the
+  migration writes it: `int` reports as `integer` and `varchar(20)` as
+  `character varying(20)`.
+- A retired column that is nullable, or that carries a `DEFAULT`, has no such
+  diagnostic — the introduced column cannot fail on existing rows.
+- A type whose diagnostic spelling Ptah has not measured keeps the diagnostic but
+  prints Ptah's own labeled wording for it rather than a guess at the other
+  tool's.
+
+The two halves belong to different analyzers, so `-- atlas:nolint destructive`
+silences the retirement and leaves the addition, and `-- atlas:nolint
+data_depend` does the reverse.
+
+Native `ptah migrations lint` reports no addition. It models a rename as a
+rename, and a rename does not fail on a populated table, so `BC101` stays its
+single finding.
 
 The report is written to stdout even when findings fail, and error-severity
 findings still exit with code 1. The native `ptah migrations lint` output is
@@ -958,6 +1302,16 @@ does. Values are matched verbatim on every one of those verbs: `--dir-format
 ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
 empty value selects the Atlas layout.
 
+`format` is the only `--dir` query key that selects anything. On the eight verbs
+that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`,
+`status` and `validate` — any other key is ignored, as Atlas ignores it, and
+named on standard error so a misspelled `?fromat=goose` does not quietly read
+the directory in the Atlas layout. The exit code and standard output are
+unchanged. Set `PTAH_STRICT_DIR_QUERY=1` to refuse an unrecognized key instead.
+`migrate checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir`
+as well and refuse any query on it, so the note never appears there; see
+[the compat command reference](../../reference/atlas-commands/) for that split.
+
 `migrate new` writes the selected layout rather than only reading it. The
 created file names and their contents follow the source tool's own convention,
 and `atlas.sum` is rewritten over the set that layout covers:
@@ -975,6 +1329,59 @@ Two inputs are refused on a non-`atlas` layout. A migration name is required,
 because a file named by the version alone is one Ptah's own `migrate apply`
 cannot read back on four of the five layouts. `--edit` is refused, which is what
 Atlas does for a non-Atlas directory as well.
+
+The `<version>` in every row of that table is the UTC `yyyyMMddHHmmss` second the
+command ran in, on every layout, and it is the same value `migrate diff` stamps.
+`migrate new` and `migrate diff` step forward only to get past a version the
+directory already holds — never to get past the newest one. A directory whose
+newest migration is dated in the future therefore receives today's version,
+sorting below that migration, which is what Atlas was measured to do and what
+both of those verbs now do
+([#938](https://github.com/stokaro/ptah/issues/938)). `migrate new` used to bump
+to newest + 1 instead, so the same directory could hold both shapes.
+
+Two verbs bump past the newest migration instead, and each has a reason it must.
+`migrate checkpoint`'s version has to outrank every migration it squashes, or a
+fresh database bootstraps from the checkpoint and then applies a migration whose
+SQL that checkpoint body already contains. `migrate rebase` moves a migration to
+the END of history, so a version sorting below the newest one would not move it
+at all. Into a directory holding `20200101000000_users.sql` and
+`29991231235959_archived.sql`, checkpoint wrote `30000101000000_squash.sql`;
+`migrate apply` against an empty database then reported `1 pending migrations`
+and produced both tables; and `migrate new` into that same directory took today's
+second, sorting below the 2999 migration. One binary, two rules, on the one
+directory shape that separates them.
+
+Whichever rule applies, the step lands on a second that exists. `29991231235959`
+plus one as an integer is `29991231235960` — sixty seconds past the minute,
+which `time.Parse` refuses under the very layout the rest of the name uses — and
+that is what the bump used to write, `29991231235961` on the run after it. Every
+Atlas-layout version `migrate new`, `migrate diff`, `migrate checkpoint` and
+`migrate rebase` write now reads back as the UTC second it looks like, so the
+bump beside a `29991231235959` neighbor lands on `30000101000000` and then on
+`30000101000001`, and two migrations created inside the same `:59` second land on
+the next minute rather than on a sixtieth one.
+
+`migrate rebase` was the last of those four to stamp that shape. It took a Unix
+epoch for every layout, so moving a migration to the end of an Atlas directory
+numbered `1_init.sql`, `2_second.sql` wrote a ten-digit `1786268355_init.sql`
+beside fourteen-digit neighbors, and beside a `29991231235959` migration it wrote
+`29991231235960` and then `29991231235961`. It now reads the same UTC clock the
+other three do for an Atlas directory, and keeps the epoch for the paired ptah
+layout described next, whose names cannot carry a fourteen-digit version at all.
+`atlas migrate rebase --help` on the community binary prints `'atlas migrate
+rebase' is not supported by the community version.` and exits 0, so there is no
+measured stamping behavior to match here — the same position `migrate
+checkpoint` is in.
+
+Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
+rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads
+that layout, so no compatibility argument moves it, and a version that only goes
+forwards is the safer of the two. Its versions are ten digits, so they never
+look like a timestamp and the calendar rule above does not apply to them. What
+it will not do is walk past `9999999999`, the largest version its fixed-width
+`NNNNNNNNNN` name can hold. It refuses instead, because the eleven-digit name it
+used to write was one the reader silently skipped.
 
 `migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
 planned SQL, and nothing writes a migration body in a foreign tool's convention
@@ -1021,6 +1428,28 @@ looser than Atlas and are tracked in
 [#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
 `PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
 native `--migrations-dir` under its environment name, still takes a plain path.
+
+### A migration name cannot contain a path separator
+
+The name becomes part of the file name, so a `/` in it selects a directory that
+is not there. Both writing verbs refuse it and write nothing
+([#1231](https://github.com/stokaro/ptah/issues/1231)):
+
+```bash
+ptah-compat migrate new "sub/dir_name" --dir file://migrations
+# Error: atlas migrate new "sub/dir_name": migration name must be a single file
+# name element, without a path separator
+```
+
+The community CLI refuses the same input, with the raw `open …: no such file or
+directory` of the write it did not expect to fail; Ptah names the rule instead,
+in the same words the foreign-layout path has always used. Nothing else about a
+name is refused on an Atlas-layout directory: a space, a backslash and `..` are
+all accepted, because they are accepted there.
+
+The refusal lands where the file would be written, which matters on
+`migrate diff`: a diff that finds no changes writes nothing and never reaches
+the name, so it still exits 0 — the same as the community CLI.
 
 `lint` deliberately does not enforce it, but only for a *missing* integrity
 file: linting a directory that has never been hashed is how you inspect one

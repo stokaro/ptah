@@ -64,8 +64,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "public"."accounts" ("
 ```
 
 `--schema-file` is accepted wherever Ptah needs a desired schema:
-`ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
-migration commands (`ptah migrations plan` / `ptah migrations generate`).
+`ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
+migration commands (`ptah migrations plan` / `ptah migrations generate`), and
+the API targets of [`ptah schema export`](../export/#sources).
 
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
@@ -90,10 +91,11 @@ the [Atlas project config subset](../../atlas/project-config/).
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for
 the supported subset and adds documented Ptah extensions for Go annotation
 parity. Export reports opaque SQL bodies and any byte-level
-normalization before automatic cleanup. Ptah is not affiliated with or endorsed
-by Ariga or Atlas. If a construct is not implemented, the command fails with an
-explicit error; treat that as a compatibility gap and check the conformance
-reports.
+normalization before automatic cleanup. Cleanup also verifies that every
+removable directive produced parsed schema intent. Ptah is not affiliated with
+or endorsed by Ariga or Atlas. If a construct is not implemented, the command
+fails with an explicit error; treat that as a compatibility gap and check the
+conformance reports.
 :::
 
 ## Next steps

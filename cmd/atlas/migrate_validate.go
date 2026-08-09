@@ -34,7 +34,11 @@ func atlasMigrateValidateVerb() atlasVerb {
 		factory: migratevalidate.NewAtlasMigrateValidateCommand,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+			// Same as `migrate hash`: the directory was already defaulted by
+			// the native command, and only the help line failed to say so.
+			atlasargs.NativeLocalDirDefault(
+				"dir", "", "Migration directory", "dir", atlasDefaultMigrationDirURL,
+			),
 			atlasMigrateDirFormatFlag("dir-format"),
 		},
 	}
@@ -74,6 +78,13 @@ func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) erro
 		return migratevalidate.FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
 		return cmdutil.Fail(cmd, err)
+	case !hashed && len(names) == 0:
+		// Nothing for an integrity file to cover, so its absence is not drift.
+		// The covered set is the authority here rather than a directory listing:
+		// a foreign layout covers only the files its own tool reads, and a
+		// directory holding none of them is empty as far as this verb is
+		// concerned (stokaro/ptah#1241 item 7).
+		return nil
 	case !hashed:
 		return migratevalidate.FailAtlasChecksumFileNotFound(cmd)
 	case !result.OK():

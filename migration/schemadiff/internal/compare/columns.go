@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	"go.5x5.cz/ptah/migration/internal/typechange"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
@@ -135,15 +136,19 @@ func tableColumnsWithSemantics(
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
 	// Create maps for quick lookup
+	genFields := generatedschema.FieldsForTable(generated, genTable)
 	genColumns := make(map[string]goschema.Field)
-	for _, field := range generatedschema.FieldsForTable(generated, genTable) {
+	for _, field := range genFields {
 		genColumns[semantics.ColumnIdentityKey(field.Name)] = field
 	}
+	keyColumns := sqlitekey.KeyColumns(genTable, genFields)
 
 	dbColumns := make(map[string]types.DBColumn)
 	for _, col := range dbTable.Columns {
 		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
 	}
+
+	desiredDomains := desiredDomainIdentities(generated, semantics)
 
 	// Find added and removed columns
 	for identity, column := range genColumns {
@@ -162,7 +167,10 @@ func tableColumnsWithSemantics(
 	for identity, genCol := range genColumns {
 		if dbCol, exists := dbColumns[identity]; exists {
 			if columnInTablePrimaryKey(genTable, genCol.Name) {
-				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
+				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol, dialect)
+			}
+			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
+				genCol.Nullable = false
 			}
 			columnKey := columnIdentity{
 				table:  newTableIdentity(genTable.Schema, genTable.Name, semantics),
@@ -172,7 +180,7 @@ func tableColumnsWithSemantics(
 				genCol.Unique = false
 				dbCol.IsUnique = false
 			}
-			colDiff := ColumnsWithDialect(genCol, dbCol, dialect)
+			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains)
 			if len(colDiff.Changes) > 0 {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
@@ -278,7 +286,21 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 
 // ColumnsWithDialect compares two columns using dialect-specific expression
 // normalization where catalog readback rewrites equivalent SQL.
+//
+// It knows nothing about which type names the desired schema declares as
+// domains, so it decides a domain from the DATABASE column alone. Every
+// comparison that has a desired schema to consult goes through
+// tableColumnsWithSemantics, which passes that set down.
 func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect string) difftypes.ColumnDiff {
+	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil)
+}
+
+func columnsWithDesiredDomains(
+	genCol goschema.Field,
+	dbCol types.DBColumn,
+	dialect string,
+	desiredDomains map[string]domainIdentity,
+) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName: genCol.Name,
 		Changes:    make(map[string]string),
@@ -292,18 +314,39 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 	}
 
 	dbRawType := rawDBColumnType(dbCol)
+
+	// The default comparison below asks what CATEGORY each side's type is, so it
+	// keeps using the normalizer even where the type comparison above does not:
+	// a default is normalized as a boolean or a number.
+	//
+	// For a domain column both sides receive the DOMAIN NAME, not the domain's
+	// base type, because rawDBColumnType answers with the domain and the desired
+	// side spells the column as the domain too. So `d_bool` reaches the
+	// normalizer, which folds by substring and lands on "boolean" by luck, while
+	// `positive` folds to nothing and the boolean/decimal/temporal branches of
+	// normalize.DefaultValue are skipped for that column.
+	//
+	// Passing the base type on the database side alone would be worse, not
+	// better: the desired side is a goschema.Field carrying only a type name and
+	// has no base type to reach for, so the two sides would land in different
+	// categories and a database would stop being in sync with itself -- the
+	// asymmetry stokaro/ptah#1242 is about. Both sides receiving the same
+	// category, right or wrong, is what keeps a self-diff quiet, and no live
+	// churn from the folding has been measured. Fixing it properly means giving
+	// the desired side a base type to answer with.
 	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
-	if genType != dbType {
-		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbType, genType)
-	} else if shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect) {
-		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {
+		colDiff.Changes["type"] = change
 	}
 
-	// Compare nullable (primary keys are always NOT NULL regardless of the field definition)
+	// Compare nullable. On the engines that enforce it, a primary key column is
+	// NOT NULL whatever the field says, and the reader reports it that way, so
+	// the generated side is normalized to match or every primary key would show
+	// a permanent diff.
 	genNullable := genCol.Nullable
-	if genCol.Primary {
-		genNullable = false // Primary keys are always NOT NULL
+	if genCol.Primary && primaryKeyImpliesNotNull(dialect) {
+		genNullable = false
 	}
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
@@ -366,6 +409,277 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 	return colDiff
 }
 
+// primaryKeyImpliesNotNull reports whether the dialect makes a primary key
+// column NOT NULL on its own, so the comparator may normalize the generated
+// side to the reader's answer.
+//
+// SQLite does not decide this from the dialect at all. On a rowid table
+// `id INTEGER PRIMARY KEY` is a rowid alias: `pragma table_info.notnull` is 0,
+// an explicit NULL insert is accepted, and a rowid is assigned for it.
+// Normalizing anyway made a schema whose key column SQLite reports as nullable
+// diff forever against the very DDL that created it (stokaro/ptah#1235).
+//
+// SQLite's answer depends on the table's shape, which this predicate cannot see,
+// so it answers with the shape that has no NOT NULL to normalize -- the ordinary
+// rowid table. [sqliteKeyColumnImpliesNotNull] carries the STRICT and
+// WITHOUT ROWID halves, where SQLite does enforce NOT NULL on a key column, and
+// the caller applies both.
+func primaryKeyImpliesNotNull(dialect string) bool {
+	return platform.NormalizeDialect(dialect) != platform.SQLite
+}
+
+// sqliteKeyColumnImpliesNotNull reports whether SQLite -- not SQL in general --
+// enforces NOT NULL on this key column because of the table's shape.
+//
+// A STRICT or WITHOUT ROWID table makes its key columns NOT NULL, and the reader
+// reports them that way from `pragma table_info`, so the generated side has to
+// be normalized to match or the table drifts against the DDL that created it and
+// every plan is another full table rebuild. The rowid alias of a STRICT table
+// stays nullable; see [sqlitekey] for the measured shape table.
+func sqliteKeyColumnImpliesNotNull(
+	dialect string,
+	table goschema.Table,
+	keyColumns []string,
+	field goschema.Field,
+) bool {
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return false
+	}
+	return sqlitekey.ImpliesNotNull(table, keyColumns, field)
+}
+
+// columnTypeChange returns the "database -> desired" row for a column's type,
+// or "" when the two sides describe the same type.
+//
+// A column whose declared type is a DOMAIN is decided by identity and never by
+// normalize.Type. That matcher works by substring -- anything containing "int"
+// is "integer" and anything containing "text" is "text" -- which is safe for
+// type names and wrong for a name a schema author picked. Measured on
+// PostgreSQL 17.10:
+//
+//	CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+//	CREATE DOMAIN context  AS integer;
+//	CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+//
+// "waypoint" contains "int" and "context" contains "text", so against a desired
+// `a bigint, b text` both columns compared EQUAL and neither
+// ALTER COLUMN ... TYPE was planned -- while the plan kept its
+// DROP DOMAIN ... CASCADE. Applying it exited 0, said "Schema apply completed
+// successfully", and left the table with only its id column: the CASCADE took
+// the two columns and their data because nothing had converted them first
+// (stokaro/ptah#1138).
+//
+// A domain therefore agrees only with a desired type that names the SAME
+// domain. Anything else -- a base type, a different domain, a plain type that
+// happens to share a substring with the name -- is a change and is reported.
+//
+// The rule holds when only the DESIRED side names a domain, too. A plain
+// integer column against a desired schema that declares `waypoint` and types
+// the column with it is a change the pinned Atlas community binary v1.3.0 also
+// plans, measured on the same two databases:
+//
+//	ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;
+//
+// where both sides of this comparator's normalization say "integer" and Ptah
+// reported the schemas synced.
+//
+// A domain's identity is (schema, name), and the name alone is not it. Measured
+// on the same server, one database holding public.status and one holding
+// other.status, with a row in the table:
+//
+//	ptah-compat schema diff --from <public.status> --to <other.status>
+//	  DROP DOMAIN IF EXISTS "status" CASCADE;      <- and no ALTER
+//
+// so `schema apply --auto-approve` exited 0, said "Schema apply completed
+// successfully", and left the table with only its id column. Comparing the two
+// halves of the identity is what makes that a reported change.
+func columnTypeChange(
+	genCol goschema.Field,
+	dbCol types.DBColumn,
+	dbRawType, dialect string,
+	desiredDomains map[string]domainIdentity,
+) string {
+	dbDomain, dbIsDomain := dbColumnDomainIdentity(dbCol)
+	desiredDomain, desiredIsDomain := desiredColumnDomainIdentity(genCol.Type, desiredDomains)
+	if dbIsDomain || desiredIsDomain {
+		if dbIsDomain && domainIdentitiesMatch(dbDomain, desiredDomain) {
+			return ""
+		}
+		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
+	}
+
+	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
+	switch {
+	case genType != dbType:
+		return fmt.Sprintf("%s -> %s", dbType, genType)
+	case shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect):
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	}
+	return ""
+}
+
+// domainIdentity is what a domain IS: the schema that holds it and its own
+// name, both case-folded. An empty schema means "not said, and nothing here can
+// resolve it" -- never "the default schema", which is a value this type carries
+// spelled out.
+type domainIdentity struct {
+	schema string
+	name   string
+}
+
+// foldDomainPart canonicalizes one half of an identity. PostgreSQL folds an
+// unquoted identifier to lower case on the way in, so the catalog spelling and
+// the spelling a schema author typed differ in case and name one domain.
+func foldDomainPart(value string) string {
+	return strings.ToLower(unquoteIdentifier(value))
+}
+
+// dbColumnDomainIdentity returns the identity of the DOMAIN a database column
+// is declared with, and false when its declared type is not a domain.
+//
+// DomainName/DomainSchema are the fact: information_schema records them for
+// exactly the columns whose declared type is a domain, and nothing else in a
+// column's catalog row separates a domain from a plain column of the same base
+// type. They are read together, because half an identity is not one: a
+// comparator holding only "status" for a column of public.status calls it equal
+// to a desired other.status, reports no change, and lets the plan's
+// DROP DOMAIN ... CASCADE take the column (stokaro/ptah#1138).
+//
+// FormattedType is the server's own format_type of the same domain. It is
+// consulted for the schema qualifier the server writes when the search path
+// forces one, and it still counts on its own, because a caller may carry it
+// without the catalog columns and because the failure it guards is destructive
+// while its cost is not: reading a spelling as an identity can only ever REPORT
+// a change that normalization would have folded away, never hide one. The one
+// shape it must not claim is an array, whose spelling is a type rather than an
+// identifier -- and format_type spells every array with a trailing "[]",
+// including an array of a domain, while a column whose declared type IS a
+// domain is spelled with the domain's own name.
+func dbColumnDomainIdentity(dbCol types.DBColumn) (domainIdentity, bool) {
+	qualifier, spelled := domainColumnSpelling(dbCol)
+	if name := foldDomainPart(dbCol.DomainName); name != "" {
+		schema := foldDomainPart(dbCol.DomainSchema)
+		if schema == "" {
+			schema = foldDomainPart(qualifier)
+		}
+		return domainIdentity{schema: schema, name: name}, true
+	}
+	if name := foldDomainPart(spelled); name != "" {
+		return domainIdentity{schema: foldDomainPart(qualifier), name: name}, true
+	}
+	return domainIdentity{}, false
+}
+
+// domainColumnSpelling splits the server's own spelling of a domain column's
+// declared type, and returns an empty name for every column that has none --
+// including an array, whose spelling is a type.
+func domainColumnSpelling(dbCol types.DBColumn) (schema, name string) {
+	formatted := strings.TrimSpace(dbCol.FormattedType)
+	if formatted == "" || strings.HasSuffix(formatted, "[]") {
+		return "", ""
+	}
+	return splitQualifiedTypeName(formatted)
+}
+
+// desiredDomainIdentities indexes, by folded bare name, the domains the desired
+// schema declares. It is what lets the comparator see a domain on the side
+// where a type is only a string: goschema.Field carries a type name and nothing
+// that says the name belongs to a domain.
+//
+// The index is by BARE name because that is how a column references a domain
+// declared in the same schema, and its value carries the declared schema so an
+// unqualified reference resolves to the domain it actually names rather than to
+// any domain of that name. A name two declarations share is left unresolved:
+// which one an unqualified reference means is a search-path question this
+// comparator has no answer for, and guessing one would be the miss again.
+//
+// semantics.DefaultSchema is the explicit default rule. A domain declared with
+// no schema of its own lives in the schema the connection reads, which is the
+// same schema the database side reports for it.
+func desiredDomainIdentities(
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) map[string]domainIdentity {
+	if generated == nil {
+		return nil
+	}
+	identities := make(map[string]domainIdentity, len(generated.Domains))
+	ambiguous := make(map[string]struct{})
+	for _, domain := range generated.Domains {
+		name := foldDomainPart(domain.Name)
+		if name == "" {
+			continue
+		}
+		schema := foldDomainPart(domain.Schema)
+		if schema == "" {
+			schema = foldDomainPart(semantics.DefaultSchema)
+		}
+		if declared, seen := identities[name]; seen && declared.schema != schema {
+			ambiguous[name] = struct{}{}
+		}
+		identities[name] = domainIdentity{schema: schema, name: name}
+	}
+	for name := range ambiguous {
+		identities[name] = domainIdentity{name: name}
+	}
+	return identities
+}
+
+// desiredColumnDomainIdentity returns the identity a desired column type names,
+// and whether the desired schema declares that name as a domain.
+//
+// A qualified spelling says its own schema. An unqualified one is resolved
+// through the declaration when there is exactly one, and otherwise left with an
+// empty schema -- the search path decides it, and this comparator does not read
+// the search path.
+func desiredColumnDomainIdentity(
+	genType string,
+	desiredDomains map[string]domainIdentity,
+) (domainIdentity, bool) {
+	schema, bare := splitQualifiedTypeName(strings.TrimSpace(genType))
+	identity := domainIdentity{schema: foldDomainPart(schema), name: foldDomainPart(bare)}
+	if identity.name == "" {
+		return identity, false
+	}
+	declared, isDomain := desiredDomains[identity.name]
+	if isDomain && identity.schema == "" {
+		identity.schema = declared.schema
+	}
+	return identity, isDomain
+}
+
+// domainIdentitiesMatch reports whether two identities name one domain.
+//
+// Both halves must agree when both are known. An empty schema on either side is
+// a spelling that did not say and that nothing resolved, which the search path
+// decides at the server; it is matched by name so that a database compared
+// against itself stays synced. Two DIFFERENT schemas name two different
+// domains and never agree -- that is the half whose absence lost a column.
+func domainIdentitiesMatch(dbDomain, desiredDomain domainIdentity) bool {
+	if dbDomain.name == "" || desiredDomain.name == "" {
+		return false
+	}
+	if dbDomain.name != desiredDomain.name {
+		return false
+	}
+	return dbDomain.schema == "" || desiredDomain.schema == "" ||
+		dbDomain.schema == desiredDomain.schema
+}
+
+// splitQualifiedTypeName splits schema.name and drops the quotes PostgreSQL
+// writes around an identifier that needs them.
+func splitQualifiedTypeName(name string) (schema, bare string) {
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		schema = unquoteIdentifier(name[:dot])
+		name = name[dot+1:]
+	}
+	return schema, unquoteIdentifier(name)
+}
+
+func unquoteIdentifier(name string) string {
+	return strings.Trim(strings.TrimSpace(name), `"`)
+}
+
 func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
@@ -414,8 +728,10 @@ func sqliteRenderedColumnType(rawType string) string {
 	}
 }
 
-func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn) goschema.Field {
-	genCol.Nullable = false
+func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn, dialect string) goschema.Field {
+	if primaryKeyImpliesNotNull(dialect) {
+		genCol.Nullable = false
+	}
 	genCol.Primary = dbCol.IsPrimaryKey
 	return genCol
 }

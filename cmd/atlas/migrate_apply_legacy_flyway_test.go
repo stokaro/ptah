@@ -136,7 +136,7 @@ func TestCompatMigrateApply_LegacyFlywayRefusalPrintsWorkingRecovery(t *testing.
 	stdout, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "No migration files to execute.")
+	c.Assert(stdout, qt.Contains, "No migration files to execute")
 	// The seed did not run a second time.
 	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 1)
 
@@ -739,7 +739,7 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 			// quiet no-op rather than the same refusal a second time.
 			stdout, stderr, err := compatApplyConverted(run.dir, "flyway", run.dbPath)
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "No migration files to execute.")
+			c.Assert(stdout, qt.Contains, "No migration files to execute")
 		},
 	}, {
 		// The prefix control: identical token, identical database, only B -> V.

@@ -189,9 +189,10 @@ func TestSchemaApplyDevSimulationRunsBeforeTarget(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
-	// The dev database rehearsed the plan: the recreated current schema plus
-	// the planned changes.
-	c.Assert(listSQLiteTables(c, devPath), qt.DeepEquals, []string{"orders", "users"})
+	// The dev database rehearsed the plan and was then handed back with
+	// nothing in it, the way the pinned community binary leaves its own dev
+	// database. A dev URL stays reusable by the next command.
+	c.Assert(listSQLiteTables(c, devPath), qt.HasLen, 0)
 }
 
 func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {

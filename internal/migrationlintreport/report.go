@@ -20,7 +20,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -58,6 +60,13 @@ type Report struct {
 	Error            string         `json:"error,omitempty"`
 	Versions         []int64        `json:"-"`
 	Analysis         lint.Analysis  `json:"-"`
+	// SchemaCurrent and SchemaDesired are the HCL rendering of the dev database
+	// before the first analyzed version and after the last one. They are empty
+	// unless Options.CaptureSchema asked for them, and empty when the run never
+	// reached a dev database. Excluded from the native JSON report, which has
+	// its own documented shape.
+	SchemaCurrent string `json:"-"`
+	SchemaDesired string `json:"-"`
 }
 
 // Options are the migration lint inputs shared by native and Atlas-compatible
@@ -79,6 +88,12 @@ type Options struct {
 	Changed    ChangedOptions
 	// Compatibility selects native or command-surface-specific lint semantics.
 	Compatibility lint.CompatibilityProfile
+	// CaptureSchema asks the replay to also read the dev database before the
+	// first analyzed version and after the last one, and to report the pair as
+	// HCL in [Report.SchemaCurrent] and [Report.SchemaDesired]. Only a caller
+	// that renders those values sets it; the two introspections are not paid by
+	// a run with no reader for them.
+	CaptureSchema bool
 }
 
 // ChangedOptions records which CLI values were explicitly provided. This lets
@@ -190,7 +205,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.Disabled...)
-	analysis, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
+	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
 		Disabled:      disabled,
@@ -226,6 +241,8 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Findings:         findings,
 		Versions:         versions,
 		Analysis:         analysis,
+		SchemaCurrent:    schemas.current,
+		SchemaDesired:    schemas.desired,
 	}
 	if err != nil {
 		report.Error = err.Error()
@@ -280,9 +297,11 @@ func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, e
 	if err := ValidateFailOn(opts.FailOn); err != nil {
 		return Options{}, err
 	}
-	if err := validateDialect(opts.Dialect); err != nil {
+	dialect, err := canonicalDialect(opts.Dialect)
+	if err != nil {
 		return Options{}, err
 	}
+	opts.Dialect = dialect
 	if len(opts.Positional) > 0 {
 		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.Positional)
 		return Options{}, errors.New(msg)
@@ -353,10 +372,15 @@ func loadEffectiveConfig(
 		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
-	if !isValidDialect(cfg.Dialect) {
-		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
+	// The policy file was canonicalized when it parsed, but a dialect taken
+	// from ptah.yaml above never passed through that reader, so it is resolved
+	// here. Both spellings reach the same exact-comparison engine.
+	canonical, ok := lintdialect.Canonical(cfg.Dialect)
+	if !ok {
+		msg := fmt.Sprintf("invalid dialect %q in lint config: expected %s", cfg.Dialect, lintdialect.Expected)
 		return nil, errors.New(msg)
 	}
+	cfg.Dialect = canonical
 	return cfg, nil
 }
 
@@ -374,37 +398,174 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 	return dialect, nil
 }
 
+// lintDirectory analyzes the captured migration directory and replays it on the
+// dev database.
+//
+// The replay does double duty. It has always validated that the SQL runs, and it
+// now also reads the schema state the versions the analysis asked about start
+// from, because some diagnostics cannot be reached from SQL text alone -- see
+// [lint.BaselineColumn]. When it read anything, the analysis runs a second time
+// with those facts in hand.
+//
+// The analysis stays first so error precedence does not move: a directory that
+// fails to analyze reports that, not a replay error it would also have hit. The
+// second pass is skipped whenever the first one asked for nothing, which is
+// every run with no renames to resolve and every run without a dev database.
 func lintDirectory(
 	ctx context.Context,
 	opts Options,
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	lintOptions lint.Options,
-) (lint.Analysis, error) {
+) (lint.Analysis, replayedSchemas, error) {
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
 	if err != nil {
-		return lint.Analysis{}, err
+		return lint.Analysis{}, replayedSchemas{}, err
 	}
+	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
+	capture := newReplaySchemaCapture(opts, analysis)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
 		DirFormat:         dirFormat,
 		DevURL:            opts.DevURL,
 		FS:                analysis.SnapshotFS(),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		ObserveVersion:    replayVersionObserver(baseline, capture),
+		ObserveReplayed:   capture.replayedObserver(ctx),
 	}); err != nil {
-		return analysis, fmt.Errorf("error validating migration SQL on dev database: %w", err)
+		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
-	return analysis, nil
+	schemas := capture.result()
+	if len(baseline.columns) == 0 {
+		return analysis, schemas, nil
+	}
+	lintOptions.Baseline = baseline.columns
+	// The second pass re-reads the same files with the baseline facts in hand;
+	// it does not replay, so the schema pair the replay captured is still the
+	// one that belongs to this analysis.
+	reanalyzed, err := lint.AnalyzeFS(fsys, lintOptions)
+	return reanalyzed, schemas, err
 }
 
-func validateDevURLDialect(dialect, devDialect string) error {
-	if dialect == "" || devDialect == "" {
+// replayedSchemas is the before/after HCL pair a run captured, empty when it
+// captured none.
+type replayedSchemas struct {
+	current string
+	desired string
+}
+
+// newReplaySchemaCapture returns the capture the run asked for, or nil when it
+// asked for none. A nil capture installs no hooks, so a run that does not
+// render `.Schema` replays exactly as it did before this existed.
+func newReplaySchemaCapture(opts Options, analysis lint.Analysis) *schemaCapture {
+	if !opts.CaptureSchema {
 		return nil
 	}
-	if dialect != devDialect {
-		return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
+	return newSchemaCapture(analysis, opts.DevURL)
+}
+
+func (c *schemaCapture) result() replayedSchemas {
+	if c == nil {
+		return replayedSchemas{}
 	}
+	return replayedSchemas{current: c.current, desired: c.desired}
+}
+
+// replayedObserver closes over the run's context, because the hook the replay
+// takes carries none and the read behind it is a database round trip that has
+// to be cancelable with the rest of the run. It is the shape
+// [go.5x5.cz/ptah/internal/atlasschema] uses for the same callback.
+func (c *schemaCapture) replayedObserver(ctx context.Context) func(*dbschema.DatabaseConnection) error {
+	if c == nil {
+		return nil
+	}
+	return func(conn *dbschema.DatabaseConnection) error {
+		return c.observeReplayed(ctx, conn)
+	}
+}
+
+// replayVersionObserver combines the two per-version readers into the single
+// hook the replay takes. Either may be absent, and when both are the replay
+// gets nil and pays no introspection at all.
+func replayVersionObserver(
+	baseline *baselineCollector,
+	capture *schemaCapture,
+) func(context.Context, int64, *dbschema.DatabaseConnection) error {
+	observeBaseline := baseline.observer()
+	if capture == nil {
+		return observeBaseline
+	}
+	return func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error {
+		if observeBaseline != nil {
+			if err := observeBaseline(ctx, version, conn); err != nil {
+				return err
+			}
+		}
+		return capture.observeVersion(ctx, version, conn)
+	}
+}
+
+// baselineCollector reads the dev database once per version the analysis asked
+// about, while the replay is standing on that version's starting state.
+//
+// A nil observer is handed to the replay when nothing was asked for, so a
+// directory with no renames pays no introspection at all.
+type baselineCollector struct {
+	wanted  map[int64]bool
+	schemas []string
+	columns []lint.BaselineColumn
+}
+
+func newBaselineCollector(versions []int64, devURL string) *baselineCollector {
+	collector := &baselineCollector{wanted: make(map[int64]bool, len(versions))}
+	for _, version := range versions {
+		collector.wanted[version] = true
+	}
+	if scope := schemaselection.FromURL(devURL).Scope; scope != "" {
+		collector.schemas = []string{scope}
+	}
+	return collector
+}
+
+// observer returns the replay hook, or nil when the analysis asked for nothing
+// so the replay runs exactly as it did before this existed.
+func (c *baselineCollector) observer() func(context.Context, int64, *dbschema.DatabaseConnection) error {
+	if len(c.wanted) == 0 {
+		return nil
+	}
+	return c.observe
+}
+
+func (c *baselineCollector) observe(
+	_ context.Context,
+	version int64,
+	conn *dbschema.DatabaseConnection,
+) error {
+	if c == nil || !c.wanted[version] {
+		return nil
+	}
+	columns, err := readBaselineColumns(conn, version, c.schemas)
+	if err != nil {
+		return err
+	}
+	c.columns = append(c.columns, columns...)
 	return nil
+}
+
+// validateDevURLDialect refuses a lint dialect that contradicts the dev
+// database the directory will be replayed on.
+//
+// The predicate is lintdialect.Compatible, the same one the apply-time gate in
+// internal/migrationlintgate applies to the connected database. Sharing it is
+// the point rather than an economy: when these two commands answered the same
+// question with two comparisons, `ptah migrations lint` accepted policy files
+// that `ptah migrations up` then refused, which is the inconsistency
+// stokaro/ptah#270 asked to remove.
+func validateDevURLDialect(dialect, devDialect string) error {
+	if lintdialect.Compatible(dialect, devDialect) {
+		return nil
+	}
+	return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
 }
 
 // loadConfig reads the explicit --config file, or the conventional
@@ -522,16 +683,28 @@ type effectiveGitOptions struct {
 	ok   bool
 }
 
+// effectiveGitBase merges the command-line --git-base with the project value,
+// without judging it. Keeping the merge in one place is what stops "a selector
+// was named" and "the selector is usable" from becoming two different
+// definitions of --git-base.
+func effectiveGitBase(
+	opts Options,
+	cfg projectconfig.Config,
+	projectSelectors projectLintSelectorUse,
+) string {
+	configGitBase := cfg.StringValue(projectconfig.StringLintGitBase)
+	if !opts.Changed.GitBase && projectSelectors.git && configGitBase.Present {
+		return configGitBase.Value
+	}
+	return opts.GitBase
+}
+
 func effectiveGit(
 	opts Options,
 	cfg projectconfig.Config,
 	projectSelectors projectLintSelectorUse,
 ) (effectiveGitOptions, error) {
-	gitBase := opts.GitBase
-	configGitBase := cfg.StringValue(projectconfig.StringLintGitBase)
-	if !opts.Changed.GitBase && projectSelectors.git && configGitBase.Present {
-		gitBase = configGitBase.Value
-	}
+	gitBase := effectiveGitBase(opts, cfg, projectSelectors)
 	gitDir := opts.GitDir
 	configGitDir := cfg.StringValue(projectconfig.StringLintGitDir)
 	if !opts.Changed.GitDir && projectSelectors.git && configGitDir.Present {
@@ -686,6 +859,19 @@ func latestMigrationVersions(fsys fs.FS, latest uint, dirFormat migrator.Migrati
 			continue
 		}
 		seen[file.Version] = struct{}{}
+	}
+	if len(seen) == 0 && len(files) == 0 {
+		// An empty migration directory selects no versions rather than failing.
+		// The pinned Atlas community binary v1.3.0 exits 0 with no output for
+		// `migrate lint --latest 1` on one, which is the shape a repository
+		// linting its migrations in CI has before the first migration exists
+		// (stokaro/ptah#1241, adjacent to item 7).
+		//
+		// The refusal is kept when the directory DOES hold migration files that
+		// carry no version, because then --latest was asked to select from a
+		// set it cannot order, and dropping the diagnostic would silently lint
+		// nothing.
+		return nil, nil
 	}
 	if len(seen) == 0 {
 		return nil, fmt.Errorf("no versioned migration files found for --latest")
@@ -996,20 +1182,17 @@ func ValidateFailOn(failOn string) error {
 	}
 }
 
-func validateDialect(dialect string) error {
-	if isValidDialect(dialect) {
-		return nil
+// canonicalDialect resolves an accepted --dialect spelling to the name the lint
+// engine compares against. Returning the resolved value rather than validating
+// in place is deliberate: lint matches Rule.Dialects and picks its lexer by
+// exact comparison, so `--dialect pgx` left as written would run every check
+// except the PostgreSQL ones and still exit 0.
+func canonicalDialect(dialect string) (string, error) {
+	canonical, ok := lintdialect.Canonical(dialect)
+	if !ok {
+		return "", fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
 	}
-	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", dialect)
-}
-
-func isValidDialect(dialect string) bool {
-	switch dialect {
-	case "", "postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner":
-		return true
-	default:
-		return false
-	}
+	return canonical, nil
 }
 
 func validateDir(dir string) error {

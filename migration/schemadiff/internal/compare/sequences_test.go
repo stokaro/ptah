@@ -57,7 +57,7 @@ func TestSequences_AddRemove(t *testing.T) {
 			database := &types.DBSchema{Sequences: tt.database}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.Sequences(generated, database, diff)
+			compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
 
 			c.Assert(diff.SequencesAdded, qt.DeepEquals, tt.expectedAdded)
 			c.Assert(diff.SequencesRemoved, qt.DeepEquals, tt.expectedRemoved)
@@ -80,7 +80,7 @@ func TestSequences_ModifiedOnlyComparesDeclaredOptions(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Sequences(generated, database, diff)
+	compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.SequencesAdded, qt.IsNil)
 	c.Assert(diff.SequencesRemoved, qt.IsNil)
@@ -148,7 +148,7 @@ func TestSequences_UnchangedProducesNoDiff(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Sequences(generated, database, diff)
+	compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
 
 	c.Assert(diff.SequencesAdded, qt.IsNil)
 	c.Assert(diff.SequencesRemoved, qt.IsNil)

@@ -54,14 +54,83 @@ materialized on it (schema files executed, migration directories replayed),
 and the result is introspected. Inspecting a file without `--dev-url` fails
 with Atlas's `--dev-url cannot be empty` message.
 
+One kind of object is not materialized: a role the dev database's **server**
+already has. The reset empties the dev database, and a role is not in it —
+PostgreSQL roles belong to the server — so `CREATE ROLE` for one of them fails
+at SQLSTATE 42710 no matter how clean the database is. Ptah leaves such a role
+exactly as the server has it, never altering it, and names the skipped roles on
+standard error. A role the server does not have is still created, so the same
+document still materializes on a server that has never seen it. This is what
+lets an inspected description be fed straight back in against a clean sibling
+database on the same server.
+
 ```bash
 ptah-compat schema inspect \
   --url file://schema.sql \
   --dev-url "$DEV_DATABASE_URL" > schema.hcl
 ```
 
+### What a URL puts under inspection
+
+A PostgreSQL-family URL that pins no `search_path` describes the whole
+database — every non-system schema, with its tables — and one that pins a
+schema describes exactly that schema. An empty database still describes the
+schema it has rather than rendering an empty document, so a consumer walking
+`.schemas` does not break on a database that is merely empty.
+
+```bash
+# Every schema of the database, `public` and `extra` alike.
+ptah-compat schema inspect --url "postgres://…/app?sslmode=disable"
+
+# Only `public`.
+ptah-compat schema inspect --url "postgres://…/app?sslmode=disable&search_path=public"
+```
+
+Every object in the document names the schema that owns it, not the one the
+connection happens to be on. That applies to the non-table kinds as much as to
+tables: an `enum` block carries `schema = schema.<name>`, a `function`, `view`,
+`materialized`, `domain`, `composite`, `range` and `sequence` block each carry
+the attribute wherever the object is outside the document's default schema, and
+a column declared against a type in another schema is written against that
+schema's type. Applying such a document therefore rebuilds each object where it
+was, and applying it back to the database it describes plans nothing.
+
+#### A schema-limited run refuses a multi-schema HCL desired state
+
+An HCL desired state that declares more than one top-level `schema` block is
+refused when the run is limited to a single schema, and the message names the
+file and every block it counted:
+
+```text
+cannot use HCL with more than 1 schema when dev-url is limited to schema "main":
+2 top-level schema blocks are declared: "main" at schema.hcl:1, "other" at schema.hcl:4
+```
+
+A run is limited when the URL that decides its scope names one schema: any
+SQLite URL, a PostgreSQL-family URL carrying `search_path=<one name>`, or a
+MySQL-family URL naming a database. `--dev-url` is checked first and the target
+`--url` second, so the message names the flag that limited the run. A
+PostgreSQL-family URL with no `search_path` limits nothing, and the same
+document loads there with both schemas described.
+
+The refusal covers `schema inspect`, `schema apply`, `schema diff`,
+`schema plan validate` and `migrate diff`, because a desired state the run
+cannot reach in full is a desired state no plan can honor. Without it the extra
+schemas were dropped and the run reported success:
+`schema diff --from one.hcl --to two-schemas.hcl` answered
+`Schemas are synced, no changes to be made`, and `migrate diff` wrote a
+migration file covering half the document.
+
+The count is of BLOCKS, not of distinct names. A document that opens
+`schema "main"` twice — which is what a directory of per-table HCL files looks
+like when every file repeats the schema block — is two blocks, and is refused
+on a SQLite dev database for that reason. Declare the schema once, or give the
+run a realm-scoped URL.
+
 `--schema` / `-s` narrows inspection when the underlying database reader supports
-schema scoping. `--format`
+schema scoping, and outranks the URL's scope: naming a schema that does not
+exist renders an empty document rather than falling back to the connection's
+own schema. `--format`
 accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
 `base64url`, `mermaid`, `split`, and `write`. Split-write exports are
 supported for HCL and SQL output with the documented Atlas split strategies:
@@ -95,14 +164,24 @@ follows the documented Atlas behavior.
 
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors, and removes matching resources from HCL,
-SQL, JSON, and custom-template output. Field-level exclude selector support
-includes the Atlas-documented `*[type=extension].version` form.
+SQL, JSON, and custom-template output. Exporter blocks remain an explicit gap.
 
-Other field-level selectors, and type selectors on non-final pattern segments,
-fail explicitly before any database is contacted. Schema-qualified function
-and enum filters remain limited by Ptah's current introspection model, which
-does not retain schema names for those resource types yet. Exporter blocks
-remain an explicit gap.
+A type selector sits on the final pattern segment, and `[type=schema]` may sit
+on the leading one: `*[type=schema].*[type=table]` names every table in every
+schema, and `app[type=schema].*[type=table]` narrows that to one schema. A type
+selector on any other segment is refused before a database is contacted.
+
+A **field selector** — the `.field` suffix behind a type selector — names a
+field to subtract while the object it belongs to stays. Ptah honors:
+
+- `[type=extension].version`
+- `.comment` on `table`, `view` and `materialized_view`
+- `.*`, which names every field the selected types support
+
+Any other field is refused, by name, before a database is contacted. See
+[the comparison](../comparison/#exclude-field-selectors) for why Ptah refuses
+these rather than accepting and ignoring them the way the pinned community
+binary does.
 
 A pattern matches an object under either spelling: its bare name, or its name
 qualified by the schema that owns it. Introspection reports an object in the
@@ -111,6 +190,106 @@ supplies the qualified spelling — `--exclude public.users` and
 `--exclude users` remove the same table on a PostgreSQL database URL, and both
 subtract it from every side of a comparison, so an excluded object is neither
 created nor dropped.
+
+That rule covers every top-level object kind: tables, views, materialized
+views, extensions, enums, functions, sequences, domains, composite types and
+range types. Each carries the schema that owns it, so `--exclude public.mood`,
+`--exclude app.fn_app` and `--exclude public.positive_int` remove exactly the
+object they name — including from the DROP list a `schema diff` or
+`schema apply` plans.
+
+Two kinds have no owning schema and so match by bare name only. Roles are
+cluster-scoped. Schemas are the top of the tree themselves, and a selector
+naming one removes it together with everything in it — see
+[Excluding a schema](#excluding-a-schema).
+
+The kinds an `--exclude` subtracts are the same kinds an `--include` selects.
+Sequences, domains, composite types and range types used to be selectable by
+`--include` and invisible to `--exclude`, so `--exclude positive_int` left the
+domain in the plan and `DROP DOMAIN` ran on an object the selector was written
+to protect.
+
+### Excluding a schema
+
+A one-part selector also names a **schema**, and a schema that matches takes
+its contents with it:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" -s public -s app --exclude app
+schema "public" {
+  comment = "standard public schema"
+}
+...
+```
+
+`schema "app"` and every object in it — tables, enums, sequences, views, the
+grants that ride them — leave together. That is what the pinned Atlas community
+binary v1.3.0 does for the same selector in the same scope: with `--exclude app`
+it plans drops for `public` only, and removing the selector from that run adds
+exactly one line, `DROP SCHEMA "app" CASCADE;`. `--exclude app[type=schema]`
+names the same schema explicitly.
+
+The two-part spelling keeps meaning what it always meant. `--exclude 'app.*'`
+removes the objects in `app` and **keeps** the schema itself, because `app` is
+not a match for the glob `app.*`. Use the one-part form to protect the schema,
+the two-part form to protect only its contents.
+
+Schemas were the last kind that was read and rendered but never offered to the
+patterns, which made `--exclude app` fail in both directions at once: `schema
+apply` refused it as a selector that matched nothing, and with the permissive
+opt-in set the plan still dropped `app`'s tables and enums.
+
+## An `--exclude` selector that matches nothing
+
+A selector that names no object protects no object, and the output cannot say
+whether that was the schema or the selector. Ptah always says which:
+
+- `schema inspect` and `schema diff` keep their exit status and write
+  `Warning: the --exclude selection matched no objects: "<selector>".` to
+  stderr. Neither verb changes anything, and stdout stays byte-identical so the
+  CI idiom "does this selection differ?" keeps working.
+- `schema apply` refuses with exit 1. It is the verb that carries the plan out,
+  and a selector written to keep an object out of the plan that named nothing
+  leaves the plan free to change it.
+
+A selector counts as matched when it names an object in **any** state the
+command filtered. Naming an object that exists on only one side of a comparison
+is ordinary — that is what a CREATE or a DROP looks like — so only a selector
+empty on every side is reported.
+
+A selector is only ever called empty by a filter that asked it. That is why
+this diagnostic is tied to the coverage above: an object kind that is read but
+never offered to the patterns would make every selector naming one of its
+objects look empty, and the refusal would then be a hard failure asserting
+something false. The same rule covers children of a parent another selector
+already removed — `--exclude users --exclude users.id` names two objects that
+both exist, so it is accepted even though the column leaves with its table.
+
+This is a deliberate divergence. The pinned Atlas community binary v1.3.0 exits
+0 and prints no diagnostic for `--exclude nosuchobject`; matching is the floor
+rather than the ceiling, and a silent scope failure is the one answer Ptah
+declines to reproduce.
+
+Reusing one exclude list across environments where some of the objects are
+absent is a real workflow, so the permissive behavior stays reachable on this
+same surface:
+
+```console
+$ PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 ptah-compat schema apply --url "$PG_URL" \
+    --to file://schema.hcl --exclude nosuchobject
+Warning: the --exclude selection matched no objects: "nosuchobject".
+```
+
+It is an environment variable and not a flag because the conformance
+`cli-surface` tier asserts that `ptah-compat` registers exactly the flags the
+pinned binary registers.
+
+It reads like every other boolean `PTAH_*` variable: unset keeps the refusal, a
+valid boolean is honored, and anything else fails `schema apply` before it reads
+the database — including on a run whose selectors all match, so a typo in a
+shared environment file stops the next run rather than the next unmatched
+selector. See
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
 
 Accepting both spellings is looser than the pinned Atlas community binary,
 deliberately. That binary reads a pattern relative to the URL scope: on a
@@ -135,12 +314,496 @@ Error: too many parts in pattern: "public.public.users.name"
 The refusal is a usage error rather than a no-op on purpose. A pattern that
 deep is almost always an attempt to name a table, and matching it against
 columns would answer a question that was not asked by removing a column from a
-table the user was trying to keep whole. Parts are counted on the pattern as
-written, selector text included, so `*[type=extension].version` is accepted and
-`public.*[type=extension].version` is refused — the same arithmetic the
-community binary applies on a schema-bound URL. A pattern too deep for any
-scope, such as `*.*.*.*`, is refused before a database is contacted, so its
-message carries no schema prefix.
+table the user was trying to keep whole. A pattern too deep for any scope, such
+as `*.*.*.*`, is refused before a database is contacted, so its message carries
+no schema prefix.
+
+Parts are counted on the pattern as written, selector text and field suffix
+included:
+
+- `*[type=extension].version` and `*[type=table].comment` are accepted.
+- `public.*[type=extension].version` and `public.*[type=table].comment` are
+  refused — the same arithmetic the community binary applies on a schema-bound
+  URL, where it answers
+  `too many parts in pattern: "public.public.*[type=table].comment"`.
+- `*[type=schema].*[type=table]` is accepted in every scope: a leading
+  `[type=schema]` segment fills the schema slot itself, so the connection's
+  schema is not counted a second time.
+
+Counting the resource glob instead would accept the refused spellings, and since
+Ptah applies one depth rule to every scope that would mean exiting 0 where the
+community binary exits 1.
+
+### How an inspected column type is written
+
+A column read out of a database carries no record of how anyone spelled it, so
+inspection decides. A type the Atlas HCL schema models is written bare and
+lower case, and every other type is written as a `sql("...")` call carrying the
+server's own spelling:
+
+```hcl
+column "price"   { type = numeric(10,2) }
+column "prices"  { type = sql("numeric(10,2)[]") }
+column "kind"    { type = sql("cube") }
+```
+
+The split is not cosmetic. The pinned Atlas community binary refuses a type it
+does not model in every spelling except the call — `type = USER_DEFINED` comes
+back as `Unknown column.type`, and `type = "numeric(10,2)[]"` as
+`set field "type": unexpected type string` — so a bare or quoted unmodeled type
+produces a document that binary cannot read at all. Which names are modeled is
+measured against it per dialect by the Atlas CE Oracle job rather than copied
+from a table, and the list errs short: wrapping a type that did not need it
+round-trips, while leaving one bare that did need it does not.
+
+**Arrays always take the call.** No array is one HCL type expression, whatever
+its element type is, so `text[]`, `numeric(10,2)[]` and
+`timestamp(3) with time zone[]` are all written as `sql(...)`. PostgreSQL drops
+an array's declared dimensions itself — `varchar(100)[10][]` is stored and
+reported as `character varying(100)[]` — so the inspected spelling is the
+server's, not the author's.
+
+**A domain is named, not resolved.** A column typed by a domain is written with
+the domain's own name, including when the domain is built on a type Atlas does
+not model:
+
+```sql
+CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
+CREATE TABLE scalars (c_point3d point3d NOT NULL);
+```
+
+inspects as `type = sql("point3d")`. Writing the base type there would apply
+back as a bare `cube` column and take the domain's `CHECK` with it, so the
+domain name is what survives the round trip (stokaro/ptah#1138).
+
+### Blocks the compatibility surface leaves out by default
+
+`ptah-compat schema inspect` omits three top-level HCL block types on
+PostgreSQL — `extension`, `sequence`, and `policy` — **when nothing else in the
+document names the object**. The pinned Atlas community binary refuses an entire
+schema file that declares any one of them, answering
+`postgres: extensions are not supported by this version` and the equivalent for
+the other two. Output a drop-in replacement writes has to be output the tool it
+replaces can read back, and one such block costs the whole document.
+
+Nothing is dropped quietly. Every omitted object is reported on standard error,
+one line each, alongside the other loss diagnostics inspection already writes,
+and the message names the variable that brings it back:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
+warning: extensions.pgcrypto: omitted from Atlas-compatible schema inspect output: ... set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models
+warning: sequences.order_seq: omitted from ...
+warning: rls_policies.accounts_all: omitted from ...
+```
+
+The omission is scoped as narrowly as the measurement is. It applies to HCL
+output on PostgreSQL only: `--format sql` still writes the extension, the
+sequence, and the policy, because SQL output is read by a database rather than
+by that binary. On SQLite the same three blocks are accepted, so nothing is
+omitted there. Every other block Ptah renders — `role`, `function`, `view`,
+`materialized`, `trigger`, `permission` — is kept, because that binary drops a
+block type it does not model and reads the file anyway.
+
+Native `ptah schema inspect` omits nothing on this account; see
+[Inspect a database](../../direct/inspect/). Which block types that binary
+refuses is re-measured by the Atlas CE Oracle job rather than frozen, so a
+construct a later build starts modeling stops being withheld.
+
+One other thing is left out of a PostgreSQL description, and it is not a
+compatibility trade: a read defines only the roles the inspected schemas
+actually use, on **both** binaries, because roles are cluster-wide and a
+description of one database is not the place to list another tenant's roles.
+That omission is reported on the same stream — `note: N roles Ptah manages on
+this server are not described …` — and
+`PTAH_POSTGRES_INSPECT_ALL_ROLES=1` describes every role Ptah manages again.
+Comparison is unaffected either way. See
+[PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
+
+#### The document says what it does not describe
+
+An omission is a presentation decision, and a presentation decision must not
+become deletion intent. Before this was written down, inspecting a database and
+applying the result back to that same database planned to remove what inspection
+had left out:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
+$ ptah-compat schema apply --url "$PG_URL" --to file://schema.hcl --dev-url "$DEV_URL" --dry-run
+DROP POLICY IF EXISTS "p" ON "guarded";
+DROP SEQUENCE IF EXISTS "order_seq";
+DROP EXTENSION IF EXISTS "pgcrypto";
+```
+
+The standard-error warnings could not prevent that: `schema apply` is a separate
+process, and it reads the file rather than the terminal. So the document now
+carries the fact itself, in its header:
+
+```hcl
+// Code generated by ptah; DO NOT EDIT.
+// ptah:not-described extension
+// ptah:not-described policy
+// ptah:not-described sequence
+```
+
+A comparator reading that document has three states for an object instead of
+two: present, absent, and **not described**. Only the middle one is a removal.
+The four commands that consume a desired-state document — `schema diff`,
+`schema apply`, `migrate diff`, and `migrate diff` writing its migration file —
+each resolve that document separately, and all four now report the database
+above as synced.
+
+The lines are HCL comments, so they change nothing for any other reader: the
+pinned Atlas community binary v1.3.0 reads a document carrying them at exit 0
+and prints byte-identical output to the same document without them.
+
+Split exports carry the header too, into **every** member. `write` puts the
+members on a filesystem and whatever reads one of them next is handed that one
+file by path, so a record living in a sibling would not be there when it
+matters:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" \
+    --format '{{ hcl . | split "schema" | write "out" }}'
+$ head -3 out/public.hcl
+// ptah:not-described extension
+// ptah:not-described policy
+// ptah:not-described sequence
+$ ptah-compat schema apply --url "$PG_URL" --to file://out/public.hcl --dev-url "$DEV_URL" --dry-run
+Schema is synced, no changes to be made
+```
+
+All three split strategies do this — per object (the default), `split "schema"`,
+and `split "type"` — because each of their members is an independently
+consumable desired state. Loading several members together is fine: the loader
+unions their records rather than intersecting them.
+
+The claim is about the rule this surface applies, not about what one database
+happened to contain, so an inspect of a database with no extension at all still
+writes the `extension` line. A document that named only what it left out would
+be asserting that the absence of every *other* extension is authoritative, which
+is false the moment the document is applied somewhere else — and that assertion
+is the destructive direction.
+
+**Removing an object is still something you can ask for.** A schema file you
+wrote yourself has no header and is fully authoritative, so a `DROP EXTENSION`
+it implies is planned. To mean the omission in a document `ptah-compat` produced,
+delete the line that says otherwise:
+
+```console
+$ grep -v 'ptah:not-described' schema.hcl > desired.hcl
+$ ptah-compat schema apply --url "$PG_URL" --to file://desired.hcl --dev-url "$DEV_URL" --dry-run
+DROP POLICY IF EXISTS "p" ON "guarded";
+DROP SEQUENCE IF EXISTS "order_seq";
+DROP EXTENSION IF EXISTS "pgcrypto";
+```
+
+`PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` writes no header either, because a document
+that omits nothing describes everything. Native `ptah schema inspect` never
+writes one for the same reason. The same directive grammar is read out of the
+leading comments of a `.sql` desired state, spelled `-- ptah:not-described ...`;
+no Ptah surface writes one there, because only the HCL rendering omits blocks.
+
+A directive naming an object kind the build does not know is an error rather
+than a line to skip past: a record nothing understands reads as no record at
+all, and the absence it was protecting would become a removal.
+
+##### When such a document is the *current* state
+
+`schema diff --from file://schema.hcl` puts a document on the other side of the
+comparison, where its header means something different: not "do not remove
+these" but "this side never looked". That is a reason to distrust the conclusion
+"the object is missing" — it is not a reason to discard what `--to` explicitly
+asked for.
+
+So the record withholds a creation only when the creation would need that
+conclusion to be true. A statement Ptah renders with `IF NOT EXISTS` is correct
+either way and is planned:
+
+```console
+$ ptah-compat schema diff --from file://schema.hcl --to file://desired.hcl --dev-url "$DEV_URL"
+CREATE EXTENSION IF NOT EXISTS "citext";
+```
+
+A statement with no guard — `CREATE SEQUENCE` for a sequence declared without
+`if_not_exists`, `CREATE ROLE`, `CREATE DOMAIN`, `CREATE TABLE` — would fail the
+migration if the object were already there, so it is not planned. It is named on
+standard error rather than dropped in silence:
+
+```console
+Warning: sequence "public.order_seq" is declared by --to but no change was
+planned for it: --from records `ptah:not-described sequence`, so this comparison
+cannot tell it apart from one that already exists, and the creation Ptah renders
+for it has no IF NOT EXISTS guard.
+```
+
+Adding `if_not_exists = true` to the declaration is how you ask for it anyway.
+Deleting the directive line from `--from` is how you assert that side really did
+look.
+
+#### A referenced block is kept, and the document says so
+
+Suppression never leaves a reference behind. If anything else in the document
+still depends on the object — a column default calling `nextval` on a sequence, a
+view body selecting from it, a `permission` block targeting it, a column whose
+type an extension supplies — the block stays, and the reason is reported:
+
+```console
+warning: sequences.order_seq: kept in Atlas-compatible schema inspect output because another object in this document depends on it: ...
+```
+
+Such a document **is not readable by the community binary**, and that is not a
+defect Ptah can fix. Measured on PostgreSQL 17 for
+
+```sql
+CREATE SEQUENCE order_seq;
+CREATE TABLE orders (id integer NOT NULL DEFAULT nextval('order_seq'::regclass));
+```
+
+that binary's own inspect emits `default = sql("nextval('order_seq'::regclass)")`
+with no `sequence` block, and then refuses that output when it is fed back:
+`pq: relation "order_seq" does not exist`. There is no faithful description of a
+sequence-backed column default the community binary can read, including the one
+it writes itself. Ptah keeps the sequence so the document stays true and stays
+readable by Ptah; dropping the column's default instead would describe a
+database that does not exist.
+
+For an extension the question asked is **what it supplies**, not what it is
+called, because the two are usually different words. The `isn` extension
+supplies the type `isbn`; `pgcrypto` supplies the function `gen_salt`. Neither
+name appears in a document that depends on it, so a test against the extension's
+own label would omit the block and leave the column behind. Ptah reads the
+member list from the catalog (`pg_depend` against `pg_extension`) during
+inspection and keeps the extension when the document uses any of its types,
+functions, relations, operator classes, or operator families.
+
+Two kinds of member name are left out of that list, because neither one is
+evidence of anything. A name `pg_catalog` also supplies keeps resolving with the
+extension dropped: `citext` supplies fifteen of those, among them `max`,
+`strpos` and `replace`, and `pgcrypto` supplies a `gen_random_uuid` that
+PostgreSQL 13 and later supply from core. A function whose name is a SQL keyword
+cannot be told from the statement that shares the word: `hstore` supplies three
+functions named `delete`, and a `plpgsql` body doing `DELETE FROM audit` calls
+none of them. Either name would pin the extension to a schema that has no
+relationship to it, and the community binary refuses any file declaring an
+extension block, so a keep that did not have to happen does not shrink the
+compatibility win — it removes it.
+
+Neither exclusion can cost a dependency the document really has, and the keyword
+one carries the condition that makes that true. Reaching an extension's overload
+instead of the core function takes arguments of that extension's own type, so a
+genuine call to `delete` takes an `hstore` value and the type is named on a
+column, in a function signature or in a cast. A keyword-named function is
+therefore dropped only when the same extension also puts a type in this list
+that appears in that function's signature — the entry that will keep the
+extension in its place. An extension supplying `merge(text, text)` and no type
+at all has its only evidence in that name, so the name stays and the block
+with it.
+
+Only function names are tested against the keyword list, which the server itself
+supplies through `pg_get_keywords()`. A type, a relation and an operator class
+are each named by nothing but themselves, so dropping a keyword-shaped one would
+throw away the only evidence there is. The `cube` extension shows what that
+leaves behind — its type and its constructor are both called `cube`, so a view
+saying `GROUP BY CUBE(x)` still keeps it.
+
+#### An extension the document may not name
+
+Some dependencies have no name to match. PostgreSQL prints an operator class in
+a `CREATE INDEX` only when that class is not the default for the key's type on
+the index's access method, so with `btree_gin` installed
+
+```sql
+CREATE EXTENSION btree_gin;
+CREATE TABLE t (id integer PRIMARY KEY, n integer NOT NULL);
+CREATE INDEX t_gin ON t USING gin (n int4_ops);
+```
+
+is stored, and rendered back, as `CREATE INDEX t_gin ON public.t USING gin (n)`.
+The document holds no token of `btree_gin` — not its label, and not one of the
+support functions its member list holds, none of which anything ever writes. The
+extension was omitted at exit 0 and the community binary then refused the
+result: `create index "t_gin" to table: "t": pq: data type integer has no
+default operator class for access method "gin"`. Ptah's own apply of the same
+document failed the same way.
+
+Ptah asks the catalog instead of the text. `pg_index.indclass` holds the
+operator class each index key actually resolved to, so inspection resolves those
+classes — and the index's access method — against `pg_depend` and records which
+extension owns them. The same edge is read for an exclusion constraint, whose
+elements print their operators and print an operator class under the same
+not-the-default rule: `EXCLUDE USING gist (room WITH =, during WITH &&)` over an
+`integer` column needs `btree_gist` and says nothing of it. The keep is reported
+like any other, and says which question answered it:
+
+```console
+warning: extensions.btree_gin: kept in Atlas-compatible schema inspect output because the catalog resolved an index or constraint in this document to an operator class or access method it supplies: ...
+```
+
+The same rule read the other way says when the class **is** in the document: a
+class is printed exactly when it is not the default, so `pg_trgm`'s
+`gin_trgm_ops` on a `text` column comes back as
+`CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops)` and is rendered as
+`ops = "gin_trgm_ops"`, or as `elements = "txt gist_trgm_ops WITH ="` on an
+exclusion constraint. That extension is kept as well — omitted, the document
+failed to apply with `operator class "gin_trgm_ops" does not exist for access
+method "gin"` — but it is kept because the document names something it supplies,
+and the report says so:
+
+```console
+warning: extensions.pg_trgm: kept in Atlas-compatible schema inspect output because another object in this document depends on it: ...
+```
+
+The name question is asked first for that reason. A keep you can find by
+searching the document is never reported as one you cannot.
+
+Reading `USING gin` as a reference to `btree_gin` would answer the same question
+wrongly. `gin` is a core access method that belongs to no extension, and
+`tsvector`, `jsonb` and array columns all have core GIN operator classes, so
+that rule would pin the extension to indexes that do not need it and cost each
+of those documents its compatibility. The catalog separates them exactly: a GIN
+index over `jsonb` resolves to nothing an extension supplies, and its document
+still comes out with no `extension` block.
+
+Only an index or constraint the document actually carries counts. Inspection
+drops one whose table it does not export, reports it, and writes nothing for
+it — a materialized view's index is the ordinary case, because PostgreSQL
+resolves its operator classes in `pg_index` like any other index while a
+`materialized` block carries none:
+
+```console
+warning: index mv_gin: index cannot be rendered because the target table is absent from the exported schema
+```
+
+Keeping the extension for that index would spend the whole document on
+something the file does not contain. The community binary refuses any
+PostgreSQL file declaring an `extension` block, and the document applies with
+or without it, so the block costs the compatibility and buys nothing.
+
+An extension nothing depends on is still omitted, and the community binary
+reads that document at exit 0. Set `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` when the
+output has to carry every block regardless.
+
+Two implicit resolutions are **not** covered, and both were measured rather than
+assumed. An extension-supplied implicit cast leaves no catalog handle on the
+object that uses it: across the 45 extensions in the `postgres:17` image, every
+such cast has its own extension's type on one side (`citext`, `isbn` and its
+siblings), so naming that type is what keeps the extension, and a cast between
+two core types would be a gap. No extension in that image supplies a collation
+at all. A primary key or a single-column unique constraint is backed by an index
+too, but its operator class is the default for the column's own type: the
+extension-supplied default classes on core types in that image are all `gin`,
+`gist` or `bloom` classes and none is `btree`, so no such constraint can rest on
+one without naming the type that carries it.
+
+#### Get the full description back
+
+```console
+$ PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 ptah-compat schema inspect --url "$PG_URL"
+```
+
+Every block Ptah models is emitted and nothing is reported as omitted. The
+result describes the database in full and the community binary refuses it, which
+is the trade the variable exists to let you make. It is an environment variable
+rather than a flag because `ptah-compat`'s flag surface is held to parity with
+the pinned binary; see
+[Compatibility never costs you a capability](../overview/#compatibility-never-costs-you-a-capability).
+
+### Three rules a `permission` block is written by
+
+Each of these is a rule about one position, measured against the pinned Atlas
+community binary on the document `ptah-compat schema inspect` writes. They are
+not a promise that every reference in every document resolves — a sequence block
+is still refused whatever the reference naming it says, and
+[the blocks left out by default](#blocks-the-compatibility-surface-leaves-out-by-default)
+names the shapes that binary cannot read at all.
+
+A schema is declared whenever anything in the document references one. That
+includes a document with no tables at all: every PostgreSQL database carries
+`GRANT USAGE ON SCHEMA public TO PUBLIC`, so inspecting an empty database
+renders a `permission` block saying `for = schema.public` and the matching
+`schema "public" {}` beside it. A document that references no schema declares
+none.
+
+A grantee is written as a `role.<name>` reference only where the same document
+declares that `role` block, and as a quoted name otherwise. Grants are children
+of the object granted on rather than of the grantee, so excluding roles keeps
+every grant to them:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --exclude '*[type=role]'
+permission {
+  to = "app_user"
+  for = table.users
+  privileges = ["SELECT"]
+}
+```
+
+The name is preserved either way — Ptah reads both spellings back to the same
+grant, and applying that document issues `GRANT SELECT ON TABLE "public"."users"
+TO "app_user"` — so nothing is lost by the quoted form, while a reference to a
+block the document does not contain would cost the whole file: the pinned Atlas
+community binary refuses it with `There is no variable named "role"`.
+
+A target names the kind of block the document declares for it. PostgreSQL
+reports the owner's implicit privileges on a view exactly as it does on a table,
+so a database with a view in it produces `permission` blocks for the view too,
+and those say `for = view.<name>`:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL"
+view "v" {
+  as = " SELECT id\n   FROM t;"
+}
+
+permission {
+  to = role.app_user
+  for = view.v
+  privileges = ["SELECT"]
+}
+```
+
+A reference in HCL names a block, and the block type is the first word of it, so
+`table.v` reads as "the `v` attribute of the table object" and the community
+binary refuses the file with `This object does not have an attribute named "v"`.
+A materialized view is `materialized.<name>` for the same reason. The same rule
+applies to a `trigger`'s `on`, which reaches a view whenever the database has an
+`INSTEAD OF` trigger.
+
+Where the document declares no single block to name, the target is written as a
+quoted name instead — `for = "v"`, or `for = "other.v"` with the schema kept.
+Two cases reach it, and neither is exotic. One is a target the document does not
+contain, which a selection leaves behind. The other is a label the document
+declares TWICE: relations share one namespace per schema, so a realm-scoped
+inspect of a database with a view named `v` in two schemas declares `view "v"`
+twice, and no reference names one of them in particular.
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL" --schema public --schema other
+view "v" {
+  schema = schema.other
+  as = " SELECT id\n   FROM other.t;"
+}
+
+view "v" {
+  as = " SELECT id\n   FROM t;"
+}
+
+permission {
+  to = role.app_user
+  for = "other.v"
+  privileges = ["SELECT"]
+}
+```
+
+A block is named by its labels, so there is no traversal left that both resolves
+and carries the schema: the community binary refuses `for = table.other.v` and
+`for = view.other.v` alike with `This object does not have an attribute named
+"other"`, and reads `for = "other.v"` at exit 0. The short `for = view.v` does
+evaluate there and is still wrong — it means neither of the two blocks, and
+reading it back would drop the schema for good. Ptah reads the quoted form back
+to the same target, so applying that document issues `GRANT SELECT ON TABLE
+"other"."v"`.
 
 ### Select what is inspected with `--include`
 
@@ -184,7 +847,8 @@ Ptah's in two measured ways, both documented in
 ## Apply a desired schema
 
 `ptah-compat schema apply` accepts a live database `--url` and a `--to`
-desired state: one or more local schema file URLs, one directly connectable
+desired state: one or more local schema file URLs, a `file://` directory of
+`.sql` or `.hcl` schema files read in filename order, one directly connectable
 database URL whose live schema becomes the desired state, one migration
 directory (a `file://` directory containing `atlas.sum`) replayed on the
 required `--dev-url` dev database, or one `env://<attribute>` reference
@@ -193,6 +857,20 @@ evaluated `atlas.hcl` env.
 
 All `--to` values must be one source kind, and unsupported schemes such as
 `atlas://` fail before the target database is contacted.
+
+A schema directory is an **ordered script**, not a set of declarations: Atlas
+reads one by executing every file in filename order against the dev database.
+A file that declares an object an earlier file already declared is therefore an
+error rather than a merge, and Ptah refuses it the same way:
+
+```text
+Error: load --to schema: read state from "2_b.sql": table "users" already exists
+```
+
+A declaration that carries its own `IF NOT EXISTS` (or `OR REPLACE`) is
+admitted, because the engine accepts it against an object that is already
+there. A later file that only `ALTER`s what an earlier file created declares
+nothing and neither refuses nor contributes.
 
 With `--env`, Ptah can read `env.url`, `env.src`, `env.schema.src`, `env.dev`,
 `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff`
@@ -205,6 +883,16 @@ Ptah reads the current database schema, diffs it against the desired local
 schema files, prints the planned SQL, and applies it after interactive
 confirmation. Use `--dry-run` to print the plan without applying it, or
 `--auto-approve` to skip the prompt explicitly.
+
+### Which schemas the current side is read at
+
+The database is read at the scope the desired state names, so both sides of the
+diff cover the same schemas. A desired state that names schemas beyond the one
+the connection is on — as an inspected document of a multi-schema database does
+— is compared against those schemas too, which is what makes inspecting a
+database and applying its own output back a no-op. A desired state that names
+only the connected schema reads only that one, so a schema the document never
+mentions is never planned for removal. `--schema` outranks both.
 
 Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
 transaction, or `--tx-mode=none` to execute statements without transaction
@@ -263,16 +951,36 @@ env "local" {
 ptah-compat schema apply --env local --dry-run
 ```
 
-`--dev-url` must match the target database dialect. For migration-directory
-`--to` sources it names the dev database the directory is replayed on and is
-required.
+`--dev-url` must match the target database dialect, and it is required
+whenever `--to` is not already a live database — a schema file, a schema
+directory, a migration directory, or an `env://` reference to one of those. A
+missing dev database fails with Atlas's `--dev-url cannot be empty` message,
+the same rule `schema inspect` and `schema diff` already apply. A database
+`--to` needs none. `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1` restores planning a
+file desired state with no dev database, which Atlas refuses; native `ptah
+schema apply` never had the requirement.
 
-Before a non-dry-run apply touches the target, the generated plan is rehearsed
+Before the apply touches the target, the generated plan is rehearsed
 on the dev database: Ptah resets the dev database, recreates the target's
-introspected current schema on it, and executes the exact ordered plan
-statements — including SQL edited through `--edit` — under the same
-transaction mode as the target apply. A failed rehearsal refuses the apply and
-leaves the target unchanged.
+introspected current schema on it, and executes the ordered plan statements —
+including SQL edited through `--edit` — under the same transaction mode as the
+target apply. A failed rehearsal refuses the apply and leaves the target
+unchanged. The rehearsal runs under `--dry-run` too, so a dry run cannot report
+a plan the real apply would refuse.
+
+On MySQL, MariaDB, and ClickHouse a schema *is* a database, so a plan
+qualified with the target's schema name would modify the target whichever
+connection issued it. Ptah re-scopes those statements onto the dev database
+before rehearsing them, so the rehearsal runs entirely inside `--dev-url`. A
+statement naming a third database — one that is neither the target nor the dev
+database — cannot be re-scoped and is refused rather than executed somewhere
+nobody asked for. On the PostgreSQL family, SQLite, and SQL Server a schema is
+a namespace inside the connected database, so the plan is rehearsed exactly as
+planned.
+
+The dev database is handed back with nothing the rehearsal put in it, on both
+the success and the failure path, so the same `--dev-url` stays usable by the
+next command.
 
 The dev database must not be the target itself or a database-URL `--to`
 desired state (it is reset destructively), must be directly connectable (no
@@ -327,6 +1035,64 @@ for `DROP INDEX CONCURRENTLY`. PostgreSQL rejects either inside a transaction
 block. `diff.skip.drop_schema` is
 accepted and type-checked, but changes no plan: Ptah's schema diff has no
 removed-schema list, so there is no `DROP SCHEMA` for the suppression to omit.
+
+### How a column type is compared
+
+Type spellings are compared after normalization, so a difference that is only
+cosmetic — `INT` against `integer`, `VARCHAR(255)` against
+`character varying(255)` — plans nothing, while a change in width, length, or
+precision is reported in both directions.
+
+**A domain is compared by identity, never by its name's spelling.** A column
+whose declared type is a PostgreSQL domain agrees only with a desired type that
+names the same domain; a base type, a different domain, or any other spelling
+is a change and is planned as one.
+
+A domain's identity is its schema and its name together, and the name alone is
+not it: `public.status` and `other.status` are two types, with two `CHECK`
+constraints over possibly different base types. Both halves are read from
+`information_schema.columns` — `domain_name` and `domain_schema` — and both are
+compared. A desired type that qualifies its schema is held to that schema
+exactly. A desired type that does not is resolved through the domain the desired
+schema declares by that name, and when nothing declares it the name alone
+decides, because which domain an unqualified name reaches is a search-path
+question Ptah does not answer for the server. That is why `alt.alt_dom` and a
+bare `alt_dom` that no `CREATE DOMAIN` accounts for still name one domain, while
+`other.alt_dom` never does.
+
+Two declarations that share a bare name in different schemas leave an
+unqualified reference to the name as well: a change between them is reported
+only when one side spells its schema. That is a known gap rather than a claim —
+nothing is dropped in that shape, so the cost is drift and not data loss.
+
+The rule exists because normalization matches by substring, and a domain's name
+belongs to whoever wrote the schema rather than to any type vocabulary:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+`waypoint` contains `int` and `context` contains `text`. Compared by spelling,
+a column of either would match a desired `bigint` and `text` respectively and
+no `ALTER COLUMN ... TYPE` would be planned — while the plan still carries the
+`DROP DOMAIN ... CASCADE` that removing the domain requires, so applying it
+would drop the columns and their data instead of converting them
+(stokaro/ptah#1138). The same rule is what `ptah schema compare` reports on the
+native surface.
+
+The rule holds in the other direction too. A plain `integer` column against a
+desired schema that declares `waypoint` and types the column with it is planned
+as `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint`, which is what the pinned
+Atlas community binary v1.3.0 plans for the same pair. The desired side must
+declare the domain for this: a bare type name that no `CREATE DOMAIN` in the
+desired schema introduces is an ordinary type name, and every schema source
+Ptah reads carries the declaration alongside the column.
+
+An array is not a domain: its spelling is a type, and it keeps normalizing like
+one. `format_type` writes every array with a trailing `[]`, including an array
+of a domain, so the two are told apart by the catalog rather than by the name.
 
 ### Scope the comparison with `--schema` and `--include`
 
@@ -603,11 +1369,13 @@ error: pre-planned migration does not converge to the desired state: replaying t
 ## Diff schema files
 
 `ptah-compat schema diff` accepts a desired-state source on each side: one or
-more local `--from`/`--to` schema file URLs, one directly connectable database
-URL whose live schema is introspected, one migration directory (a `file://`
-directory containing `atlas.sum`) replayed on the required `--dev-url` dev
-database, or one `env://<attribute>` reference (`src`, `schema.src`, `url`,
-`dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env.
+more local `--from`/`--to` schema file URLs, a `file://` directory of `.sql` or
+`.hcl` schema files read in filename order as an ordered script, one directly
+connectable database URL whose live schema is introspected, one migration
+directory (a `file://` directory containing `atlas.sum`) replayed on the
+required `--dev-url` dev database, or one `env://<attribute>` reference (`src`,
+`schema.src`, `url`, `dev`, `migration.dir`) resolved through the evaluated
+`atlas.hcl` env.
 
 All URLs of one flag must be one source kind. The SQL dialect is pinned by
 `--dev-url` first, then by `--from` and `--to` database URLs; local schema

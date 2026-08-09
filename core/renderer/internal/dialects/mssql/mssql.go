@@ -295,19 +295,30 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+// VisitCreateMaterializedView refuses: SQL Server has no materialized view
+// object (an indexed view is a different construct with different rules).
+//
+// This used to render a comment. A comment makes `schema render` exit 0 on a
+// model the planner refuses at `schema apply` time, so the surface a user is
+// told to validate with disagreed with the surface that executes.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
+// VisitDropMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
+// VisitRefreshMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
+}
+
+func materializedViewsUnsupported(statement, name string) error {
+	return unsupportedFeaturef("%s %s: materialized views are not supported by SQL Server; remove matview definitions for this target", statement, name)
 }
 
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
@@ -322,15 +333,19 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	if body == "" {
 		return unsupportedFeaturef("CREATE TRIGGER requires a body")
 	}
+	event, err := renderTriggerEvent(node)
+	if err != nil {
+		return err
+	}
 	if !strings.HasPrefix(strings.ToUpper(body), "AS") {
 		body = "AS " + body
 	}
-	r.w.WriteLinef("%s %s ON %s %s %s;",
+	r.w.WriteLinef("%s %s ON %s %s %s",
 		create,
 		escapeQualifiedIdentifier(node.Name),
 		escapeQualifiedIdentifier(node.Table),
-		renderTriggerEvent(node),
-		body,
+		event,
+		terminateStatement(body),
 	)
 	return nil
 }
@@ -445,12 +460,23 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	return strings.Join(parts, " "), nil
 }
 
+// renderColumnForAlter renders the column body of `ALTER TABLE ... ALTER COLUMN`.
+//
+// SQL Server makes a primary key column NOT NULL and will not let it go: an
+// ALTER COLUMN that respells a key column as NULL is refused because the
+// primary key constraint depends on it. ast.ColumnNode.Nullable no longer
+// carries "a key column is NOT NULL" for the AST, because SQLite does not have
+// that rule (stokaro/ptah#1235), so this renderer applies it where the dialect
+// is known -- the same branch renderColumn takes on the CREATE TABLE path.
+// Measured live on PostgreSQL, whose ALTER path had the identical hole and
+// planned an unappliable `DROP NOT NULL`; this dialect is guarded by
+// inspection, with no live SQL Server to measure against.
 func renderColumnForAlter(column *ast.ColumnNode) (string, error) {
 	if column == nil {
 		return "", fmt.Errorf("nil column")
 	}
 	parts := []string{escapeIdentifier(column.Name), mapColumnType(column.Type)}
-	if !column.Nullable {
+	if !column.Nullable || column.Primary {
 		parts = append(parts, "NOT NULL")
 	} else {
 		parts = append(parts, "NULL")
@@ -621,19 +647,37 @@ func renderIndexParts(parts []ast.IndexPart) []string {
 	return rendered
 }
 
-func renderTriggerEvent(node *ast.CreateTriggerNode) string {
+// renderTriggerEvent builds the timing/event clause of a T-SQL trigger.
+//
+// SQL Server DML triggers are AFTER or INSTEAD OF; there is no BEFORE. A BEFORE
+// trigger is refused rather than rewritten to AFTER, because the rewrite moves
+// the body from running ahead of the write to running behind it — the two see
+// different table state, and a BEFORE trigger that adjusts the row being
+// written cannot do so at all once it is AFTER.
+func renderTriggerEvent(node *ast.CreateTriggerNode) (string, error) {
 	timing := strings.ToUpper(strings.TrimSpace(node.Timing))
-	if timing == "BEFORE" {
-		timing = "AFTER"
-	}
 	if timing == "" {
 		timing = "AFTER"
+	}
+	if timing == "BEFORE" {
+		return "", unsupportedFeaturef("BEFORE triggers are not supported; SQL Server offers AFTER and INSTEAD OF")
 	}
 	event := strings.ToUpper(strings.TrimSpace(node.Event))
 	if event == "" {
 		event = "INSERT"
 	}
-	return timing + " " + event
+	return timing + " " + event, nil
+}
+
+// terminateStatement returns body with exactly one trailing semicolon. A body
+// annotation is naturally spelled as a complete SQL statement ending in ";",
+// and appending another one unconditionally produced ";;".
+func terminateStatement(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if strings.HasSuffix(trimmed, ";") {
+		return trimmed
+	}
+	return trimmed + ";"
 }
 
 func escapeStringLiteral(s string) string {
@@ -684,21 +728,37 @@ func unquoteIdentifier(identifier string) string {
 	return identifier
 }
 
+// splitQualifiedIdentifier splits on the dots that separate name parts while
+// leaving dots inside a bracketed, double-quoted or backtick-quoted part alone.
+// A doubled closing bracket is SQL Server's escape for a literal bracket and
+// does not end the bracketed part.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// delimiters this scan recognizes are ASCII, and UTF-8 is self synchronizing --
+// no byte of a multi-byte sequence is ever below 0x80 -- so a byte scan can
+// find them without decoding, and slicing hands every other byte back exactly
+// as it arrived. The previous form accumulated `string(character)` from a byte,
+// which re-encodes each byte as its own code point: `Ä` (C3 84) came back out
+// as `Ã` plus U+0084, renaming every non-ASCII object. See stokaro/ptah#1352.
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
 func splitQualifiedIdentifier(identifier string) []string {
-	parts := []string{""}
+	var parts []string
+	start := 0
 	inBrackets := false
 	inQuotes := false
 	inBackticks := false
 	for i := 0; i < len(identifier); i++ {
-		character := identifier[i]
-		switch character {
+		switch identifier[i] {
 		case '[':
 			if !inQuotes && !inBackticks {
 				inBrackets = true
 			}
 		case ']':
 			if inBrackets && i+1 < len(identifier) && identifier[i+1] == ']' {
-				parts[len(parts)-1] += "]]"
 				i++
 				continue
 			}
@@ -713,13 +773,12 @@ func splitQualifiedIdentifier(identifier string) []string {
 			}
 		case '.':
 			if !inBrackets && !inQuotes && !inBackticks {
-				parts = append(parts, "")
-				continue
+				parts = append(parts, identifier[start:i])
+				start = i + 1
 			}
 		}
-		parts[len(parts)-1] += string(character)
 	}
-	return parts
+	return append(parts, identifier[start:])
 }
 
 func unsupportedFeaturef(format string, args ...any) error {

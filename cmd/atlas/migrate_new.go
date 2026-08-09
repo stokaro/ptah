@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
@@ -45,6 +46,9 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 			return err
 		}
 		if !atlasmigrate.ReadsNativeAtlasDir(source.format) {
+			if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
+				return err
+			}
 			return runAtlasMigrateNewConverted(cmd, verb, source)
 		}
 		if source.dir == "" {
@@ -54,12 +58,37 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 			// verify here would change that message and verify nothing.
 			return forward(cmd, source.forwardArgs)
 		}
-		if err := verifyAtlasWriteDirChecksum(cmd, source.project, source.localDir); err != nil {
+		if err := verifyAtlasWriteDirChecksum(cmd, source.project, source.localDir, source.format); err != nil {
+			return err
+		}
+		if err := checkAtlasMigrateNewName(cmd, verb, source.projectArgs); err != nil {
 			return err
 		}
 		return forward(cmd, source.forwardArgs)
 	}
 	return cmd
+}
+
+// checkAtlasMigrateNewName refuses a migration name that cannot become a file,
+// after the atlas.sum gate and before anything is written.
+//
+// The order is measured: `migrate new "sub/x"` on an UNHASHED directory answers
+// `checksum file not found` on the pinned community binary v1.3.0, not the name
+// failure, so the integrity refusal keeps winning.
+//
+// The positional is split out rather than parsed, because on this branch it is
+// the forwarded native command that owes the diagnostics for an unknown flag
+// and for a second positional. A run carrying more than one positional is left
+// to it untouched.
+func checkAtlasMigrateNewName(cmd *cobra.Command, verb atlasVerb, args []string) error {
+	_, positionals := splitAtlasPositionals(verb.flags, args)
+	if len(positionals) != 1 {
+		return nil
+	}
+	if err := checkAtlasMigrationName(verb.use, positionals[0]); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	return nil
 }
 
 func atlasMigrateNewVerb() atlasVerb {
@@ -71,7 +100,22 @@ func atlasMigrateNewVerb() atlasVerb {
 		writesDir:  true,
 		factory:    migrate.NewMigrateCreateCommand,
 		flags: []atlasargs.Flag{
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+			// `ptah migrations create` registers no default for its own
+			// --migrations-dir, so before this default was declared here the
+			// compat verb refused every invocation that did not spell --dir --
+			// exit 1 with `migrations directory is required` where the pinned
+			// community binary v1.3.0 created ./migrations and a file in it,
+			// and where its own --help already promised
+			// `(default "file://migrations")` (stokaro/ptah#1241 item 3).
+			//
+			// Declared on the Atlas flag rather than on the native one: the
+			// native command is also reachable as `ptah migrations create`,
+			// where no Atlas default is owed, and atlas.hcl `migration.dir`
+			// and PTAH_MIGRATIONS_DIR both still win because
+			// atlasargs.appendDefaultArgs only fills an absent flag.
+			atlasargs.NativeLocalDirDefault(
+				"dir", "", "Migration directory", "migrations-dir", atlasDefaultMigrationDirURL,
+			),
 			atlasMigrateDirFormatFlag("dir-format"),
 			atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
 		},

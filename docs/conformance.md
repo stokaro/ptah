@@ -35,6 +35,10 @@ is recorded as a deliberate divergence, with the measurement that establishes
 which behavior is the defective one, and the report says which of the two rules
 it falls under.
 
+An unknown name that the community binary itself accepts without acting on is
+not a refused construct under rule 1. Ptah can accept the same no-op for
+compatibility, but reports its source location so the behavior is not silent.
+
 The distinction is not academic. `-- atlas:txmode none` written directly above
 its statement, with no blank line between them, is silently dropped by the
 community binary; the statement then runs inside the transaction it asked to
@@ -92,7 +96,7 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 **Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched.
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), with the native `--revision-format ptah` pass-through as the escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`, like `migrate set`) but deliberately retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale.
 
 **Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features.
 
@@ -167,6 +171,888 @@ Not every difference is deliberate. Goose files carrying no directives at all ar
 matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
+
+### A schema directory whose files declare the same object twice
+
+A `file://` directory of schema files is an **ordered script**. Atlas CE reads
+one by executing every file in filename order against the dev database, so a
+file that declares an object an earlier file already declared is an engine
+error rather than a merge, and Ptah refuses it for the same reason.
+
+Measured 2026-08-08 against the pinned Atlas CE v1.3.0 binary, SQLite fixtures
+on both sides, on `schema diff` and `schema apply` alike.
+
+| Input | Atlas CE v1.3.0 | Ptah | Why |
+| --- | --- | --- | --- |
+| SQL directory, `1_a.sql` and `2_b.sql` both spelling `CREATE TABLE users` | Exits 1: `read state from "2_b.sql": executing statement: "CREATE TABLE users (...)": table users already exists`, and no target file is created. | Exits 1: `read state from "2_b.sql": table "users" already exists`. | Matched. Merging the two definitions instead produced a `users` carrying the union of both — a table that appears in neither file — and exited 0 on `schema apply` having really written it. |
+| The same directory with `IF NOT EXISTS` on both statements | Exits 0, keeping the first definition. | Exits 0. | Matched on the exit code. Which definition survives the merge still differs and is recorded under residual risk in [`stokaro/ptah#940`](https://github.com/stokaro/ptah/issues/940). |
+| HCL directory whose two files both declare `table "users"` | `schema diff` exits 0, rendering two `CREATE TABLE users` statements; `schema apply` then exits 1 executing that same plan: ``create "users" table: table `users` already exists``. | Refused at read time on both verbs: `read state from "b.hcl": table "main.users" already exists`. | Stricter, deliberately. The plan Atlas CE prints at exit 0 is the plan it cannot apply, so rendering it copies a defect; refusing can never accept a source it rejects. |
+| HCL directory whose files each open with `schema "main" {}` | Exits 0 against a realm-scoped dev database. | Exits 0. | Matched. HCL files are one document rather than a script, so a repeated `schema` block is an ordinary layout and is not read as a redeclaration. `CREATE SCHEMA` twice in a SQL directory is, because that one executes. |
+
+### A trailing positional argument
+
+`migrate status`, `migrate validate`, `migrate hash`, `migrate lint` and
+`schema inspect` take no positional argument. Atlas CE accepts one anyway and
+discards it; `ptah-compat` exits 1 and names it.
+
+Measured on the pinned Atlas CE v1.3.0 binary, 2026-08-08, on SQLite and on
+PostgreSQL 17, with `./migrations` and a second hashed directory `mig2` both
+present:
+
+```text
+atlas migrate status --url "sqlite://app.db" file://mig2
+  exit 0
+  Migration Status: PENDING
+    -- Pending Files:   1      <- the ONE file in ./migrations, not the two in mig2
+```
+
+The operator named `mig2` and was answered about `./migrations`. With no
+`./migrations` at all the same argv exits 1 with
+`sql/migrate: stat migrations: no such file or directory`, which is the same
+argument being discarded, reported by accident. `atlas migrate status --help`
+prints `Usage: atlas migrate status [flags]` and documents no positional, so
+the tolerance is Cobra's default arity rather than a contract.
+
+Silently answering about a directory the caller did not name is the defect this
+project does not copy. The refusal names the rejected token and the flag that
+takes a value there instead.
+
+### Dirty retry proves the committed prefix
+
+Atlas CE resumes a dirty non-transactional revision at `applied + 1` using only
+the recorded statement count. Ptah deliberately requires stronger evidence
+before it skips SQL: native dirty rows carry a cumulative `partial:h1:` prefix
+checksum, and Atlas-format rows use `partial_hashes`. Changed source, malformed
+metadata, or a hash count that disagrees with `applied` fails closed. Legacy
+rows without prefix metadata resume only while their full-file hash still
+matches.
+
+The stricter gate still permits edits to the unapplied suffix. It also preserves
+the earlier applied floor when a retry changes transaction mode and preserves
+the unknown-outcome marker when cancellation or a deadline interrupts
+`ExecContext`. These are intentional safe-direction divergences: Ptah may exit
+non-zero where Atlas CE would resume by integer offset, but it does not report
+success after replaying or skipping unverifiable SQL.
+
+### An edited migration that has already been applied
+
+A migration file whose bytes changed after it ran, with `atlas.sum` re-hashed
+so the directory itself verifies, is a no-op on Atlas CE and a refusal here.
+
+Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying two migrations,
+editing the first, re-hashing, and applying again:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate validate` after the edit | 0 | 0 |
+| `migrate apply` after the edit | 0, `No migration files to execute` | 1, `migration <version> checksum mismatch` |
+
+Both binaries record a hash per revision; only Ptah compares it. The database
+was built from SQL that is no longer in the repository, and every later
+computation that replays the directory — `migrate lint`, `migrate diff`'s
+desired state, a rollback's down file — assumes it was not. Reporting nothing
+there is reporting a history that is not the one that ran.
+
+The escape hatch is `ptah migrations repair --version <version> --force`, which
+rewrites the recorded revision to match the file as it now stands. Run it for
+the edited version **and for every version applied after it**: an `atlas.sum`
+entry is a running hash over the preceding files, so editing one file changes
+the recorded hash of every file below it. Measured on the two-migration fixture
+above, repairing only the edited version moved the refusal to the next one, and
+repairing both returned `migrate apply` to exit 0 with
+`No migration files to execute`
+
+The refusal is exit 1 in the direction the rules allow, and it is stricter than
+Atlas CE, never looser. See
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) items 6
+and 13.
+
+### The same running hash makes the gate fire on files nobody edited
+
+The property above has a second consequence, and there Ptah is the one that is
+wrong. `migration/migrator` treats the stored `atlas.sum` entry as a content
+hash of one file; it is not. Inserting a migration ahead of applied ones
+rewrites the entry of every later file, and the gate then refuses citing a file
+whose bytes never changed.
+
+Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying `one` and `three`
+and then adding `two` between them:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate apply` (default `--exec-order linear`) | 1, `migration file …_two.sql was added out of order` | 1, `migration …_three checksum mismatch` |
+| `migrate apply --exec-order non-linear` | **0**, applies `two` | **1**, same checksum mismatch |
+
+`…_three.sql` is byte-identical in both directories; only its position in the
+sum chain moved. Both binaries stored the same value, so this is Ptah reading
+its own recorded data under the wrong contract, and the second row is a
+`ptah-compat exits 1 where Atlas CE exits 0` cell. It is open and tracked as
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5; the
+repair above is the operator's route through it in the meantime.
+
+### `migrate lint` does not require `--dev-url`
+
+Found while measuring the scope selector, and left open rather than widened into
+that change. Atlas CE marks `--dev-url` required on `migrate lint`;
+`ptah-compat` registers it as an ordinary flag and lints without it.
+
+Measured 2026-08-08 in a directory holding a hashed `./migrations`, exit status
+read on its own line after a redirect:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate lint --dir file://migrations --latest 1`, no `--dev-url` | 1, `required flag(s) "dev-url" not set` | **0**, lints and reports |
+
+This is a `ptah-compat exits 0 where Atlas CE exits 1` cell, and it predates the
+scope selector: the same two answers come back on the commit before it. It is
+recorded here rather than fixed in the same change, because the flag's
+requiredness is a separate decision from what a run's scope is — Ptah's linter
+can analyze SQL text with no dev database, so making the flag required deletes a
+capability and needs the `PTAH_*` treatment of its own.
+
+### A relative `--to file://../schema.sql` is refused, the same file absolutely is not
+
+Measured 2026-08-09 on SQLite, run from a `work/` subdirectory whose parent
+holds `schema.sql`, exit status read on its own line after a redirect:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from file://empty.sql --to file://../schema.sql --dev-url …` | 0, prints the `CREATE TABLE` | 1, `resolve schema file path: "…/schema.sql" is outside allowed root "…/work"` |
+| the same file named by absolute path, `--to file:///…/schema.sql` | 0 | **0**, prints the `CREATE TABLE` |
+
+The second row is the finding, not the first. `pathguard.ResolveCLIPath`
+confines a **relative** CLI path to the working directory and leaves an
+absolute one unbounded, so the refusal filters a spelling rather than an escape:
+the operator who rewrites the argument reads exactly the same bytes at exit 0. A
+rule any caller can satisfy by respelling the argument is not a boundary, and
+recording this cell as deliberate strictness would record something the second
+row refutes.
+
+It is **not** the confinement this project does defend. That one is `file()`
+inside an `atlas.hcl` — a config-derived path, held by a different mechanism
+(`LocalDir.AllowedRoot`), where matching Atlas CE would turn config authorship
+into an arbitrary-file read on the machine running the migration. That
+mechanism is untouched, and the worked example in `AGENTS.md` still describes
+it exactly.
+
+Left open rather than changed here: `ResolveCLIPath` has twenty call sites
+across native verbs as well as the compatibility surface, so relaxing it changes
+what every one of them accepts and needs its own change with its own controls.
+Tracked as [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241)
+item 11.
+
+### `migrate import --dir-format liquibase` refuses a changelog whose name has no leading number
+
+Measured 2026-08-09, one Liquibase formatted-SQL changelog carrying two
+`--changeset` markers, each cell in its own directory:
+
+| source | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `src/changelog.sql` | 0, writes `dst/changelog.sql` and `atlas.sum` | 1, `no importable migration files found in src for format "liquibase"` |
+| `src/1_changelog.sql` | 0 | **0**, and the written directory is byte-identical to Atlas CE's, `atlas.sum` included |
+
+The second row is the root cause. The converter is not missing — it runs, and
+agrees to the byte. `loadDirectiveSectionEntries` selects source files with
+`^[0-9]+_.+\.sql$`, and a Liquibase changelog is conventionally named
+`changelog.sql`.
+
+Removing that filter is not on its own the fix, because the name Atlas CE writes
+carries no version. Measured on Atlas CE's **own** import output:
+
+| | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate apply --dir file://dst` over `changelog.sql` | 0, `migrating version changelog` | 1, `no migration files matched format "atlas"; unrecognized SQL files: changelog.sql` |
+
+Ptah models a migration version as an `int64`, so matching that import writes a
+directory this tool then refuses to apply — trading a refusal at import time for
+one at apply time, after the files have been written.
+
+Ptah's own importer already reads the same changelog and produces one migration
+per `--changeset`, carrying the author and id into the name, which keeps the two
+changeset identities that Atlas CE's single-file collapse loses. Choosing
+between "match the bytes, and teach the migrator non-numeric versions" and
+"import the layout Ptah's way, and diverge on output shape" is a design decision
+rather than a parity fix. Tracked as
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 8.
+
+## PostgreSQL Introspection: Index and Domain Attributes
+
+Reading a live PostgreSQL database once lost six attributes that the pinned
+Atlas CE v1.3.0 binary preserves. All six are now read. Measured on PostgreSQL
+17.10 by diffing an empty database against a source database with each binary,
+replaying the emitted SQL into a fresh database with
+`psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
+the replayed database against the source with the pinned binary as a neutral
+observer. These affected the live-database read path only; an HCL source
+carrying the same attributes always rendered correctly.
+
+| Attribute | Read from | Before | Tracked in |
+| --- | --- | --- | --- |
+| Access method (`USING gin` / `gist` / `brin` / `hash`) | `pg_am.amname` | Every index collapsed to the btree default. **Not always silent** -- see below | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Operator class, for example `text_pattern_ops` | `pg_index.indclass`, non-default classes only | Dropped: psql exited 0 and left an index that no longer served the queries it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Sort order (`DESC`, `NULLS FIRST`, `NULLS LAST`) | `pg_index.indoption` | Dropped: psql exited 0 and left an ascending index | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| `INCLUDE` payload columns | `pg_index.indkey` past `indnkeyatts` | Dropped: psql exited 0 and left an index that cannot serve the index-only scans it was built for | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Expression index, for example `lower(name)` | `pg_index.indkey`, attnum 0 | Emitted as a quoted column identifier, which psql rejected at exit 3 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| Domain used as a column type | `information_schema.columns.domain_name` and `domain_schema` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+
+### The access-method loss was not silent in general
+
+An earlier version of this table said the access-method loss "replays at exit 0
+and leaves a btree index". That is fixture-dependent and false in general. It
+holds only when the indexed column's type has a default btree operator class.
+
+Measured, a `gist` index on a `point` column:
+
+```text
+emitted:  CREATE INDEX IF NOT EXISTS "i_gist" ON "t" ("p");
+replay:   psql exits 3
+          ERROR: data type point has no default operator class for access method "btree"
+```
+
+The `int4range` fixture the original claim was generalized from does have a
+btree operator class, so there the same loss degraded quietly. The loss is loud
+for `point`, `box`, `tsvector` and every other type with no btree class, and
+quiet otherwise. A green replay never proved the access method survived; it only
+proved the column type tolerated losing it.
+
+### Domains are where Atlas CE is wrong in the opposite direction
+
+CE keeps the column's declared type but never emits the `CREATE DOMAIN`, so its
+own `schema diff` output fails to replay with
+`ERROR: type "positive_int" does not exist` — measured, psql exit 3. Ptah emits
+both the `CREATE DOMAIN` and the domain-typed column, so closing this gap meant
+keeping both halves rather than matching CE. Ptah's output replays at psql exit
+0 where CE's does not. The same divergence reaches `schema apply`: applying this
+source database to an empty target, CE exits 1 with
+`create "t" table: pq: type "positive" does not exist` and Ptah exits 0 with the
+domain created first.
+
+### A domain column has to survive the comparator too, and the JSON surface
+
+Rendering a domain and reconciling one are separate claims, the same way they
+are for indexes below. Reading the domain fixed what `schema inspect` writes as
+HCL and left two other surfaces on the base type. Measured on PostgreSQL 17.10
+against one database holding `CREATE DOMAIN positive AS integer CHECK (VALUE >
+0)` and a column of it:
+
+| Surface | Atlas CE v1.3.0 | Ptah before | Ptah now |
+| --- | --- | --- | --- |
+| `schema inspect`, HCL | `type = sql("positive")` | `type = sql("positive")` | `type = sql("positive")` |
+| `schema inspect --format json` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
+| `schema inspect --format json`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive;` | Schemas are synced |
+| `schema apply` run twice against the same target | — | plans and executes the same `ALTER` on every run, exit 0 each time | second run reports the schema synced |
+
+The diff row is the one that made the rendered domain worth nothing: the desired
+side answered `positive` and the database side answered `integer`, so a database
+was never in sync with itself and `schema apply` executed an `ALTER COLUMN` on
+every run while reporting success.
+
+Two details decided whether any of this was visible:
+
+- **The name of the domain.** The type comparison folded a spelling into a
+  category by substring, so any domain whose name contains `int` — the issue's
+  own `positive_int` fixture — compared equal to `integer` by accident and the
+  churn did not appear. A domain is compared as the identifier it is instead,
+  which is the subject of *A domain column is reconciled by identity* below.
+- **The array column next to it.** An array column and a domain column both make
+  the reader ask the server for its own spelling of the type, and the two want
+  opposite answers on the JSON surface: CE prints the bare category `ARRAY` for
+  an array and the domain name for a domain. The read carries which one it was,
+  rather than letting each consumer guess from which field happens to be empty.
+
+A domain column that also draws from an owned sequence is not a `SERIAL`
+column. PostgreSQL's `SERIAL` shorthand only ever builds a column of an integer
+type, so writing such a column back as `SERIAL` rebuilds it without the domain.
+The domain wins, the sequence default is written out beside it instead of being
+folded into the shorthand, and the sequence itself is reported rather than
+treated as the column's implicit backing sequence — without it the emitted DDL
+names a sequence nothing creates, which is measured as psql exit 3.
+
+### A domain over a user-defined base type is a different catalog shape
+
+`CREATE DOMAIN positive AS integer` and `CREATE DOMAIN d_enum AS color` do not
+read back the same way, and the difference decides which code answers the
+question "what type is this column declared as". Measured on PostgreSQL 17.10:
+
+| Column | `data_type` | `udt_name` | `domain_name` | `format_type` |
+| --- | --- | --- | --- | --- |
+| `qty positive`, `positive AS integer` | `integer` | `int4` | `positive` | `positive` |
+| `c d_enum`, `d_enum AS color` | `USER-DEFINED` | `color` | `d_enum` | `d_enum` |
+| `plain color`, no domain | `USER-DEFINED` | `color` | *(null)* | *(not read)* |
+
+For a domain over a built-in base type `data_type` is the base type, so a
+consumer that falls through to `format_type` reaches the domain by accident. For
+a domain over a user-defined base type — an enum, a composite or a range —
+`data_type` is the bare category `USER-DEFINED` and `udt_name` names the BASE
+type, identically to the plain column on the last row. A consumer that answers
+from `udt_name` there flattens `c` to `color` and drops the domain's `CHECK`
+with it, and only `domain_name` separates row two from row three.
+
+The split is not a synthetic one. Two domains arrive with PostgreSQL's own
+contrib modules and land on opposite sides of it: `lo`, from the `lo` module, is
+a domain over the built-in `oid`, and `earth`, from `earthdistance`, is a domain
+over `cube`, a base type the `cube` module supplies. Measured on PostgreSQL
+17.10 against one table holding a column of each, with a plain `cube` column
+beside them as the control:
+
+| Column | Atlas CE v1.3.0 | Answering from `udt_name` | Ptah |
+| --- | --- | --- | --- |
+| `l lo` | `type = sql("lo")` | `type = sql("lo")` | `type = sql("lo")` |
+| `w earth` | `type = sql("earth")` | `type = sql("cube")` | `type = sql("earth")` |
+| `cu cube`, no domain | `type = sql("cube")` | `type = sql("cube")` | `type = sql("cube")` |
+
+The middle column is this same code with the `domain_name` gate taken back out,
+and it is the reason the gate is not optional: two domains a user never wrote
+disagree with each other about whether a domain survives introspection, decided
+by nothing but whether the base type happens to be built-in.
+
+Measured with `ptah-compat` against one database holding rows two and three, and
+against the composite and range shapes beside them:
+
+| Probe | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `schema diff --from X --to X`, one database against itself | Schemas are synced | Schemas are synced |
+| `schema apply` of a byte-identical twin | — | Schema is synced, no changes to be made |
+| `schema inspect --format json` | `"type":"d_enum"` | `"type":"d_enum"` |
+| `schema inspect`, HCL | `type = sql("d_enum")` | `type = sql("d_enum")` |
+| `schema inspect`, HCL, plain enum column beside it | `type = enum.color` | `type = enum.color` |
+| `schema diff` from empty, replayed with psql, then compared to the source by CE | — | psql exit 0, Schemas are synced |
+
+The last row is the round trip, and CE is the neutral observer in it: Ptah emits
+`CREATE TYPE`, `CREATE DOMAIN` and a `d_enum` column, the replay runs at psql
+exit 0, and CE then reports the replayed database in sync with the one it was
+described from. A description that spells the column `color` replays at exit 0
+too and CE reports `ALTER TABLE "t" ALTER COLUMN "c" TYPE d_enum;` — the replay
+lost the domain and the exit code did not say so.
+
+That row carries a second claim, and it is the emitted script's ORDER. Naming a
+domain in a column is worth nothing if the statement that creates the domain
+runs before the statement that creates its base type, and PostgreSQL has no
+forward declaration for a type. The emitter ran kind by kind — every domain,
+then every range, then every composite — so a database holding
+`CREATE DOMAIN d_comp AS addr` was described as `CREATE DOMAIN "d_comp" AS addr;`
+four statements ahead of `CREATE TYPE "addr" AS ("street" text, "city" text);`
+and the replay stopped where it had to. Measured on PostgreSQL 17.10 with the
+enum, composite and range shapes in one database:
+
+| Emitted script | `psql -v ON_ERROR_STOP=1` | CE compares the replay to the source |
+| --- | --- | --- |
+| every domain first | `ERROR: type "addr" does not exist`, exit 3 | not reached |
+| dependency ordered | exit 0 | Schemas are synced |
+
+No fixed order of kinds fixes this, because the three kinds share one namespace
+and name each other in both directions: `CREATE DOMAIN d_comp AS addr` needs the
+composite first and `CREATE TYPE addr AS (f d_int)` needs the domain first.
+Domains, composites and ranges are ordered against each other by what their
+definitions name. Enums stay ahead of all three: an enum names no other
+user-defined type, so it has nothing to wait for.
+
+The drops a modification emits are ordered by a different graph, and reversing
+the creation order is not a substitute for it. A `DROP` executes against the
+database as it stands, so only the references that database holds now can block
+it. Measured on PostgreSQL 17.10, one database holding
+`CREATE TYPE cc AS (f integer)` and `CREATE DOMAIN dd AS cc`, reconciled against
+a target of `CREATE DOMAIN dd AS integer` and `CREATE TYPE cc AS (f dd)`:
+
+| Drops ordered by | Emitted order | `schema apply --auto-approve` |
+| --- | --- | --- |
+| the target definitions | `DROP TYPE cc`, `DROP DOMAIN dd` | exit 1, `cannot drop type cc because other objects depend on it` / `DETAIL: type dd depends on type cc` (SQLSTATE 2BP01) |
+| the current definitions | `DROP DOMAIN dd`, `DROP TYPE cc` | exit 0 |
+
+The same root cause shows without a flip in it. A database holding
+`CREATE DOMAIN qty AS integer CHECK (VALUE > 0)` and
+`CREATE TYPE meas AS (q qty, label text)`, reconciled against a target that
+widens `qty` to bigint and gives `meas` a plain bigint field, has no edge at all
+on the target side: `DROP DOMAIN "qty"` came out first and the server answered
+`column q of composite type meas depends on type qty`. The current side still
+has the edge, and dropping `meas` first exits 0.
+
+### Reading an attribute and reconciling it are different claims
+
+The table above records what introspection preserves. It does not say what
+`schema diff` does with an index that already exists, and until
+[#1272](https://github.com/stokaro/ptah/issues/1272) the answer was: nothing.
+The PostgreSQL branch of the index comparator compared the partial predicate
+and `NULLS DISTINCT` and returned before reaching anything else, so every
+attribute the reader had learned to preserve was discarded at reconciliation
+time. Each pair below reported
+`Schemas are synced, no changes to be made.` while the pinned Atlas CE v1.3.0
+binary planned `DROP INDEX` + `CREATE INDEX`. Measured on PostgreSQL 17.10 by
+loading each side into its own database and diffing one against the other.
+
+| Current index | Desired index | Now planned |
+| --- | --- | --- |
+| `USING btree (value)` | `USING hash (value)` | Rebuild |
+| `USING gin (tsv)` | `USING gist (tsv)` | Rebuild |
+| `(value)` | `(value text_pattern_ops)`, and the reverse | Rebuild |
+| `(value NULLS FIRST)` | `(value DESC)` | Rebuild |
+| `(value)` | `(value NULLS FIRST)` | Rebuild |
+| `(value DESC)` | `(value DESC NULLS LAST)` | Rebuild |
+| `(a) INCLUDE (b)` | `(a) INCLUDE (c)`, added, removed, reordered | Rebuild |
+| `(a)` | `(lower(a))`, and the reverse | Rebuild |
+| `(lower(a))` | `(upper(a))` | Rebuild |
+| `(value)` | `UNIQUE (value)` | Rebuild |
+| `(a)` | `(b)` | Rebuild |
+
+PostgreSQL cannot alter any of these in place, so the transition is a rebuild
+rather than an `ALTER INDEX`. Every plan above was executed against the current
+database with `psql -v ON_ERROR_STOP=1` at exit 0, and both Ptah and the pinned
+binary reported the databases synced afterwards.
+
+Equivalent spellings still compare equal, so nothing is rebuilt for the sake of
+it: `btree` and `BTREE`; an omitted access method and `USING btree`; `ASC` and
+`ASC NULLS LAST`; `DESC` and `DESC NULLS FIRST`; an index-level `ops` and the
+same class written on each key.
+
+Two consequences worth naming:
+
+- The HCL surface now reads and writes `nulls_first` / `nulls_last` on an
+  `index` `on` block. These are the attribute names Atlas CE's own
+  `schema inspect` emits. `ptah-compat` previously dropped them under its
+  unknown-attribute tolerance, so a file CE produced reached Ptah with the
+  ordering gone; the native parser refused the file outright.
+- An operator class is compared as written, case-insensitively. Ptah does not
+  resolve a column type's *default* operator class, so a hand-written source
+  that spells the default out — `ops = text_ops` on a `text` column — plans a
+  rebuild on every run where CE reports the schemas synced. The catalog reports
+  only non-default classes, so neither binary's `schema inspect` produces that
+  input and no round trip reaches it. Omit a default class, which is how both
+  binaries write one.
+
+MySQL and MariaDB now compare uniqueness and the key columns, and nothing else.
+That branch was added with the ownership rule below, which is what made a
+database unique index reachable by the comparison at all; see
+[#1245](https://github.com/stokaro/ptah/issues/1245) for what it deliberately
+leaves out and why. SQLite, ClickHouse, CockroachDB, YugabyteDB and Spanner keep
+the comparison they had, because what makes two indexes the same index is a
+per-dialect question and those dialects were not measured.
+
+A key those two engines compare has to be read whole first, and one is read one
+part at a time for that reason. `information_schema.STATISTICS` describes a key
+as one row per part; joining the names in SQL and splitting them again in Go
+lost a key two ways, both of which a schema is free to hit:
+
+| Fixture on MySQL 9.7.1 | Read as | Applying a database's own `schema inspect` output |
+| --- | --- | --- |
+| `` KEY idx_weird (`a,b`) `` | two columns, `a` and `b` | exit 1, `Error 1072 (42000): Key column 'a' doesn't exist in table` |
+| a 16-part key of 64-character names, 1039 bytes past `group_concat_max_len` | the last name cut at 1024 bytes | exit 1, same error naming the truncated column |
+| `KEY idx_expr ((b + 1))` | nothing — the read failed | exit 1, `converting NULL to string is unsupported` |
+
+The pinned Atlas CE v1.3.0 binary reported all three synced, and so does Ptah
+now. A comma is a legal character in a MySQL identifier and
+`group_concat_max_len` defaults to 1024 bytes on MySQL 9.7 (1048576 on MariaDB
+11.8, which is why only the comma reaches it there). A functional key part has a
+`NULL` `COLUMN_NAME` and an `EXPRESSION` column MariaDB does not have, so the
+reader still cannot name it — it now reports the part as one it could not read
+instead of failing, and the key-column comparison reads what was read rather than
+treating it as the whole key, which would plan a rebuild of a key that never
+changed on every run.
+
+A partly-read key is compared as far as it was read. `KEY idx_mixed (b, (b + 1))`
+arrives as the one named column `b` plus the record of a part that could not be
+named, so a desired `idx_mixed (c, (c + 1))` is a different key by the only part
+either side can name, and the difference is reported. Proof runs one way only: a
+desired `idx_mixed (b, (c + 1))` names the same column and differs solely in the
+expression, and that pair is still reported synced. Closing it means reading
+`information_schema.STATISTICS.EXPRESSION`, which MariaDB does not have, so
+comparing a MySQL expression key remains unsupported — as does rebuilding one,
+because the down direction would recreate the key without its expression.
+
+### A unique constraint and its index are one object, and the schema says which
+
+PostgreSQL, MySQL and MariaDB enforce a `UNIQUE` constraint with an index of the
+constraint's own name on the constraint's own table. Introspection reports that
+one object twice — once in the index catalog, once in the constraint catalog —
+and MySQL and MariaDB do not even have a separate notion to report:
+`ADD CONSTRAINT c UNIQUE (a)` and `CREATE UNIQUE INDEX c ON t (a)` leave the
+identical catalog row, which is why `schema inspect` writes MySQL uniqueness
+back out as `index { unique = true }` on both binaries and never as a
+constraint.
+
+The other two engines Ptah supports do not share the name, so nothing brings the
+two representations into collision there. SQL Server keeps a `UNIQUE` constraint
+and a unique index as separate objects. SQLite backs one with an index it names
+itself: `CREATE TABLE t (a TEXT, CONSTRAINT uq_t_a UNIQUE(a))` leaves
+`sqlite_master` holding `sqlite_autoindex_t_1`, and no statement can name that
+object or the constraint that owns it.
+
+The two representations used to be compared in two pools, and the database index
+was filtered out of its pool unconditionally. The desired side is never
+filtered, so a desired state that spells the object as an index had nothing to
+match: index comparison reported it **added** and constraint comparison, finding
+no `UNIQUE` constraint on the desired side, reported the same name **removed**,
+in the same plan. Measured by replaying a database's own `schema inspect` output
+against the database it came from, where the pinned Atlas CE v1.3.0 binary
+reported the schema synced:
+
+| Target | Fixture | Ptah before | Result of applying it |
+| --- | --- | --- | --- |
+| MySQL 9.7.1 | `UNIQUE KEY uq_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX` | exit 1, `Error 1061 (42000): Duplicate key name` |
+| MySQL 9.7.1 | `UNIQUE KEY uk_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX` | exit 1, same error |
+| MariaDB 11.8.8 | `UNIQUE KEY uq_users_email (email)` | `CREATE UNIQUE INDEX` + `DROP INDEX IF EXISTS` | exit 1, same error |
+| PostgreSQL 17.10 | `CONSTRAINT uq_users_email UNIQUE (email)` against a desired `index { unique = true }` | `CREATE UNIQUE INDEX IF NOT EXISTS` + `DROP CONSTRAINT IF EXISTS` | **exit 0**, and the table left with no unique index at all |
+
+The spurious pair rode along with real work. Adding one column to the MySQL
+table above planned `ADD COLUMN`, then the same `CREATE UNIQUE INDEX` and
+`DROP INDEX`; the apply added the column, failed on the create, and exited 1
+with the migration half applied.
+
+The PostgreSQL row is the one to read twice. The `IF NOT EXISTS` guard skipped
+the create, the drop took the constraint and its index with it, and the command
+reported success while deleting the uniqueness the desired state asked for.
+
+Ownership now follows the desired state's spelling. An identity the desired
+state declares as an index reaches index comparison, whichever filter would
+otherwise have claimed it, and constraint comparison leaves that object alone; a
+desired state that spells uniqueness as a constraint, or does not mention the
+object at all, is unchanged — the constraint pool still owns it, and an
+undeclared unique key is still reported removed. The rule never drops an object
+the desired state did not ask to change: an identity only survives the filters
+when the desired state names it, and a named identity is either matched, or
+replaced by the definition the desired state gives it — an addition paired with
+the drop of what it replaces, never a drop on its own.
+
+Two objects that merely share a name stay two: index identity carries the owning
+table, and a desired plain `index "uq_users_email"` against a database
+`UNIQUE KEY uq_users_email` is reported as a replacement rather than being
+collapsed into agreement.
+
+**The drop half of that replacement is spelled per engine, because the object
+is.** On MySQL and MariaDB the unique key and its constraint are one catalog row
+and `DROP INDEX` removes it. On PostgreSQL the constraint is an object of its
+own that owns the index, and the server refuses the index spelling. Both cells
+below are the pinned binary's own plan, matched by Ptah:
+
+| Target | Database | Desired | Plan |
+| --- | --- | --- | --- |
+| MySQL 9.7.1 | `UNIQUE KEY uq_users_email (email)` | `index "uq_users_email"` | `ALTER TABLE users DROP INDEX uq_users_email` then `ADD INDEX` |
+| PostgreSQL 17.10 | `CONSTRAINT uq_users_email UNIQUE (email)` | `index "uq_users_email"` | `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"` then `CREATE INDEX` |
+
+Dropping the PostgreSQL one as an index answers `cannot drop index
+uq_users_email because constraint uq_users_email on table users requires it
+(SQLSTATE 2BP01)`. The comparator therefore records **what the object is** — a
+UNIQUE constraint's — for every engine that reports it under the constraint's
+name, and each planner spells its own statement: the PostgreSQL-family planner
+drops the constraint, the MySQL and MariaDB planner keeps `DROP INDEX` and their
+plans are unchanged. SQL Server never reaches the rule, and SQLite names the
+backing index itself, so neither records anything.
+
+**The rollback restores a constraint, on every engine.** What the up direction
+dropped was a UNIQUE constraint, so `ALTER TABLE … ADD CONSTRAINT … UNIQUE` is
+what puts it back — on MySQL and MariaDB that lands the same catalog row
+`CREATE UNIQUE INDEX` would, and on PostgreSQL nothing else restores the
+`pg_constraint` row.
+
+Reversing the removal into an index addition instead restored the wrong object
+where it worked at all. Three facts govern the down direction:
+
+- The down target is the introspected schema, which omits a constraint-backed
+  index because the index is the constraint's. The index addition therefore had
+  nothing to resolve, and generation failed outright with `invalid schema diff:
+  added index users.uq_users_email at position 0 is missing or ambiguous in the
+  target schema` — measured live on PostgreSQL 17.10 and MySQL 9.7.1, where no
+  migration could be produced at all.
+- Where it did resolve, it would rebuild a plain unique index in place of the
+  constraint, leaving a catalog the migration never started from.
+- `ADD CONSTRAINT … UNIQUE` builds an index of the constraint's name, so the
+  plain index the up direction created is dropped first. Otherwise PostgreSQL
+  answers `relation "uq_users_email" already exists` (SQLSTATE 42P07) and MySQL
+  `Error 1061 (42000): Duplicate key name 'uq_users_email'`.
+
+Applied end to end against a live `CONSTRAINT uq_users_email UNIQUE (email)`, the
+up leaves a plain index and no constraint row, the down restores both, and a
+second comparison against the post-up database reports synced:
+
+| Target | up | catalog after up | down | catalog after down |
+| --- | --- | --- | --- | --- |
+| PostgreSQL 17.10 | exit 0 | `uq_users_email` a plain index, no `pg_constraint` row | exit 0 | `UNIQUE (email)` and its unique index, as before the up |
+| MySQL 9.7.1 | exit 0 | `NON_UNIQUE=1`, no `TABLE_CONSTRAINTS` row | exit 0 | `NON_UNIQUE=0` and the `UNIQUE` row, as before the up |
+
+**Losing the uniqueness is a destructive change, whichever statement says so.**
+Replacing a unique key with a plain index deletes a data guarantee, and it was
+classified only as `indexes_removed` — a warning, which passed
+`--check-destructive` and every drift threshold keyed on destructive findings, on
+all three engines. The diff now reports it as `unique_protections_removed`, and
+on MySQL and MariaDB — where the removal is spelled `DROP INDEX`, exactly like
+dropping an access path — the statement itself is classified destructive.
+
+## SQLite: A Primary Key Is Not A NOT NULL
+
+Ptah applied "a primary key column is NOT NULL" as if it were a rule of SQL. It
+is a rule of most engines. In SQLite it is a rule of the **table**, and on the
+ordinary rowid table it does not hold: `id INTEGER PRIMARY KEY` is an alias for
+the rowid, `pragma table_info.notnull` reports 0, an explicit
+`INSERT INTO t (id) VALUES (NULL)` is accepted, and a rowid is assigned for it.
+Ptah folded the two together in six places — the AST node, the HCL reader, the
+HCL writer, the SQL-DDL parser's shared node, the comparator, and the SQLite
+renderer — so the assumption survived being fixed anywhere less than all of
+them.
+
+Two things followed, both at exit 0, measured on 2026-08-08 against the pinned
+Atlas CE v1.3.0 binary with each binary in its own directory
+([`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235), findings
+5.1 and 6.3):
+
+| Command | Before | Pinned Atlas CE v1.3.0 |
+| --- | --- | --- |
+| `schema apply --to file://users.hcl --auto-approve`, key column `null = false` | wrote `"id" integer PRIMARY KEY`, dropping the declared NOT NULL. Asked whether that database matched the file it came from, the pinned binary planned a **full table rebuild** | wrote `` `id` integer NOT NULL ``, and answered `Schemas are synced, no changes to be made.` |
+| `schema inspect --format '{{ json . }}'` over `id INTEGER PRIMARY KEY` | `"null"` omitted, meaning NOT NULL — the only column in the fixture whose flag the two binaries disagreed about | `"null": true` |
+
+Both directions are now the source's answer on a rowid table, and both are
+pinned: a declared NOT NULL survives onto the key column, and a key column
+declared `null = true` does not acquire one. (On a `STRICT` or `WITHOUT ROWID`
+table SQLite itself supplies the NOT NULL, whatever the document said; see
+[the table's shape decides](#the-tables-shape-decides-not-the-dialect) below.)
+After the fix the pinned binary answers
+`Schemas are synced, no changes to be made.` at exit 0 for either document
+against the database `ptah-compat schema apply` built from it.
+
+The dialects that do imply NOT NULL from PRIMARY KEY keep doing so, but the rule
+moved rather than vanished: it now lives in each renderer and in the comparator,
+where the dialect is known. Their CREATE TABLE renderers had always applied it
+themselves. Their **MODIFY COLUMN** renderers had not — PostgreSQL and SQL
+Server read the flag — so a first version of this change made any modification
+of a single-column key column plan `ALTER COLUMN "id" DROP NOT NULL`, which
+PostgreSQL refuses outright with `column "id" is in a primary key`
+(SQLSTATE 42P16). Both renderers take the primary-key branch now, and every
+dialect in `renderer.SupportedDialects()` is pinned in both directions by
+`TestModifyColumn_KeyColumnNeverRendersNullable` and
+`TestModifyColumn_OrdinaryColumnStillRendersNullable`.
+
+What that cost each engine, measured rather than reasoned about:
+
+| Dialect | How it was established | Result |
+| --- | --- | --- |
+| PostgreSQL 17.10 | live: `ptah-compat schema apply` from SQL and from HCL, `ptah schema apply` from Go annotations, and `ptah-compat migrate apply` over a key column widened `integer` → `bigint`, with the catalog read back afterwards | plan byte-identical to before the change; applies at exit 0 |
+| MySQL 9.7.1 | live: the same Go-model fixture through `ptah schema compare` | rendered SQL byte-identical to before the change |
+| SQL Server | inspection only — no live server was available here | guarded in `renderColumnForAlter`; pinned by a renderer test, not by an engine |
+| ClickHouse | inspection only | unaffected: its type renderer already excluded a key column from `Nullable()` wrapping on both paths |
+| CockroachDB, YugabyteDB, Spanner | inspection only; they share the PostgreSQL renderer | inherit the PostgreSQL guard |
+
+Two adjacent defects were found while measuring this and are **not** fixed here,
+because both predate the change and reproduce identically without it:
+
+- A composite PRIMARY KEY whose columns are not spelled NOT NULL in the source
+  plans `ALTER COLUMN ... DROP NOT NULL` for each key column on PostgreSQL, and
+  is refused the same way. Only a single-column key reaches the flag this
+  section is about.
+- MySQL plans `ALTER TABLE users MODIFY COLUMN id BIGINT PRIMARY KEY` for a key
+  column type change, which MySQL rejects with `Multiple primary key defined`
+  when the key already exists.
+
+### The table's shape decides, not the dialect
+
+"SQLite key columns are nullable" is the rowid table's answer, and reading it as
+SQLite's answer is the same mistake in the other direction. A `STRICT` or
+`WITHOUT ROWID` table does enforce NOT NULL on its key columns, and the catalog
+reports them that way. Measured with `pragma table_info` on SQLite 3.51.0, and
+confirmed against the pinned Atlas CE v1.3.0 binary, which models the same
+nullability for each shape when it reads the same DDL through a dev database:
+
+| Table | `notnull` on the key column(s) | Pinned Atlas CE v1.3.0 `{{ json . }}` |
+| --- | --- | --- |
+| `id TEXT PRIMARY KEY` | 0 | `"null": true` |
+| `id INTEGER PRIMARY KEY` | 0 | `"null": true` |
+| `PRIMARY KEY (team, member)` | 0, 0 | `"null": true` |
+| `id TEXT PRIMARY KEY` + `WITHOUT ROWID` | 1 | `"null": false` |
+| `id INTEGER PRIMARY KEY` + `WITHOUT ROWID` | 1 | `"null": false` |
+| `PRIMARY KEY (team, member)` + `WITHOUT ROWID` | 1, 1 | `"null": false` |
+| `id TEXT PRIMARY KEY` + `STRICT` | 1 | `"null": false` |
+| `id INT PRIMARY KEY` + `STRICT` | 1 | `"null": false` |
+| `PRIMARY KEY (team, member)` + `STRICT` | 1, 1 | `"null": false` |
+| `id INTEGER PRIMARY KEY` + `STRICT` | 0 | `"null": true` |
+
+The last row is not an exception to the rule but an instance of it: a `STRICT`
+table still has a rowid, `id INTEGER PRIMARY KEY` is still its alias, and only
+that exact declared type is — `INT` in the same position reports 1. A blanket
+"`STRICT` or `WITHOUT ROWID` implies NOT NULL" would be wrong there, and
+measurably so: it turns `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT
+NOT NULL) STRICT` back into a permanent rebuild, which is this section's own
+defect wearing a `STRICT` table.
+
+The rule lives in `internal/sqlitekey`, and the comparator and the HCL writer
+ask it rather than the dialect. Before they did, measured on 2026-08-08 at exit
+0 with each binary in its own directory:
+
+| Command | Table | Before | After |
+| --- | --- | --- | --- |
+| `schema apply --to file://schema.sql --auto-approve`, run twice | `WITHOUT ROWID` | second run planned a full table rebuild, and so would every run after it | `Schema is synced, no changes to be made` |
+| the same | `STRICT` | second run planned a full table rebuild | `Schema is synced, no changes to be made` |
+| the same | rowid | `Schema is synced, no changes to be made` | unchanged |
+| `migrate diff <name> --to file://schema.sql`, run twice | `WITHOUT ROWID` | wrote a second migration file containing that rebuild | `The migration directory is synced with the desired state, no changes to be made` |
+
+The pinned binary answered `Schemas are synced, no changes to be made.` against
+those databases throughout: the disagreement was Ptah's with itself, between the
+database it had built and the model it built that database from.
+
+### The uniqueness half
+
+The same fold applied to uniqueness, and there it invented a constraint rather
+than dropping one. `reconcileColumnUniqueness` marked a column UNIQUE from *any*
+single-column unique index, including one an author had created by name, while
+leaving that index in the schema. Rendering the result emitted both.
+
+Measured on the same day, `schema inspect --format '{{ sql . }}'` over
+
+```sql
+CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT UNIQUE, b TEXT UNIQUE, c TEXT);
+CREATE UNIQUE INDEX ux_t_c ON t(c);
+```
+
+replayed into a fresh database with **four** indexes where the source had three.
+The extra one, `sqlite_autoindex_t_3`, was a phantom unique index on `c` backing
+a constraint the author never wrote — a dump-and-restore that silently tightened
+the schema. SQLite distinguishes the two cases itself: `pragma index_list`
+reports `origin` `u` for the implicit index behind a declared UNIQUE constraint
+and `c` for a standalone `CREATE UNIQUE INDEX`. Only the first is part of the
+column's declaration, and only the first is folded now. A declared column
+`UNIQUE` still round-trips through its own implicit index.
+
+### A domain column is reconciled by identity
+
+The same split applies to the domain row of the table above. Reading a column's
+domain is one claim; comparing it is another, and the comparison must not go
+through type normalization. Normalization matches by substring — anything
+containing `int` is an integer and anything containing `text` is text — which
+is right for type names and wrong for a name a schema author picked. Measured
+on PostgreSQL 17.10, two domains over `integer` with ordinary names:
+
+```sql
+CREATE DOMAIN waypoint AS integer CHECK (VALUE > 0);
+CREATE DOMAIN context  AS integer;
+CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
+```
+
+against a desired `a bigint, b text`, `waypoint` matched `bigint` and `context`
+matched `text`, so neither `ALTER COLUMN ... TYPE` was planned while the
+`DROP DOMAIN ... CASCADE` both columns depend on stayed. `schema apply
+--auto-approve` exited 0, printed `Schema apply completed successfully`, and
+left the table with only its `id` column and the row's other two values gone
+([#1138](https://github.com/stokaro/ptah/issues/1138)).
+
+A domain column now agrees only with a desired type that names the same domain,
+in `ptah-compat schema diff`, `ptah-compat schema apply` and native
+`ptah schema compare` alike. `information_schema.columns.domain_name` is what
+separates a domain from a plain column of the same base type, and it is read
+for that reason: a domain over an array is reported with `data_type` `ARRAY`
+exactly like a plain array column, and an array's spelling is a type that must
+keep normalizing like one.
+
+`domain_schema` is read beside it, because a domain's identity is both halves.
+Measured on the same server, one database holding `public.status` and one
+holding `other.status`, over a table with one row:
+
+| | plan for the column | outcome of `schema apply --auto-approve` |
+| --- | --- | --- |
+| name alone | none; only `DROP DOMAIN IF EXISTS "status" CASCADE` | exit 0, `Schema apply completed successfully`, table left with `id` only |
+| identity | `ALTER TABLE "t" ALTER COLUMN "s" TYPE other.status` ahead of the drop | the column and its row survive |
+
+A desired type that names its schema is held to that schema exactly. One that
+does not is resolved through the domain the desired schema declares by that
+name; with nothing declaring it, the bare name decides on its own, since which
+domain an unqualified reference reaches is a search-path question and Ptah does
+not answer that for the server.
+
+One case is still open and is stated rather than claimed closed: when the desired
+schema declares the same bare name in two schemas, an unqualified reference to it
+stays undecided, and a column that should move between those two domains is
+reported only if one side spells its schema. Measured on PostgreSQL 17.10 with
+`public.status` and `other.status` both declared and both schemas selected, a
+column of `other.status` against a desired `public.status` reported
+`Schemas are synced`. Nothing is dropped in that shape, so the cost is drift
+rather than data loss. Deciding it needs the desired column to carry its domain's
+schema instead of a type string.
+
+The reverse pair was missed as well, and there the pinned binary was right where
+Ptah was silent. A plain `integer` column against a desired schema that declares
+`waypoint` and types the column with it:
+
+| | plan |
+| --- | --- |
+| Atlas CE v1.3.0 | `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint;` |
+| Ptah, before | `Schemas are synced, no changes to be made.` |
+| Ptah, now | the same `ALTER`, executed at exit 0 with the row intact |
+
+A desired type names a domain when the desired schema declares one by that
+name, which is how every source Ptah reads carries it. A bare name with no
+declaration behind it stays an ordinary type name.
+
+## Output Shape: Three Cells From The #1235 Register
+
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
+places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
+exit code and disagree on the bytes. Three of them are closed here. Every row was
+measured with each binary in its own directory, every exit code read from an
+unpiped invocation.
+
+| Finding | Command | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- | --- |
+| 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
+| 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
+| 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
+
+**6.2 is not SQLite-specific, though the register is.** It reproduces on
+PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
+twice. A UNIQUE constraint and the index that backs it are one entry in
+`indexes`, deduplicated by index name — the constraint branch still runs for a
+reader that reports a UNIQUE constraint with no index row of its own.
+
+**6.1 — an empty schema is still a schema — is closed elsewhere and stays
+closed.** The same divergence is
+[`stokaro/ptah#1264`](https://github.com/stokaro/ptah/issues/1264), and the
+realm document has named the schemas its READER described since that landed, so
+an empty database answers `{"schemas":[{"name":"main"}]}` on SQLite and
+`{"schemas":[{"name":"public","comment":"standard public schema"}]}` on
+PostgreSQL 17, byte-identically to the pinned binary. Seeding the CONNECTED
+schema instead would close the same cell one line earlier and reopen two shapes
+that already matched — measured live on PostgreSQL 17, `--schema extra` on a
+realm URL gained a second, empty `{"name":"public"}` entry that binary never
+prints, and `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where
+it answers `{}`. Which schemas exist is the reader's answer, not the
+connection's.
+
+**9.4 changes one verb only.** The pinned binary's `schema diff` answer,
+`Schemas are synced, no changes to be made.`, does carry a period and already
+matched; only the `apply` spelling grew one. The native `ptah schema apply`
+sentence is untouched: no parity is owed on that surface.
+
+### `migrate new` writes the name it was given
+
+Findings 8.6 and 8.7 of the same register: the Atlas-layout file name is
+`<version>_<name>.sql` composed from the name verbatim on that binary, and Ptah
+mapped spaces to hyphens and dropped every character outside `[-_0-9A-Za-z]`.
+The name is covered by `atlas.sum`, so a rewritten name is also a different
+checksum for the same command. Measured, each binary in its own directory:
+
+| `migrate new …` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `"add users table"` | `<version>_add users table.sql` | `<version>_add-users-table.sql` | matches |
+| `"add_users.sql"` | `<version>_add_users.sql.sql` | `<version>_add_userssql.sql` | matches |
+
+That binary reads a directory Ptah writes this way at exit 0, and Ptah reads its
+own back at exit 0.
+
+Two rules survive, and both are deliberate:
+
+- Leading and trailing whitespace is still trimmed. That binary keeps it —
+  `migrate new "  padded  "` writes `<version>_  padded  .sql` — but a file name
+  with trailing spaces does not survive every filesystem this tool writes into,
+  and no finding in the register asks for one.
+- A name whose composed file name Ptah's own reader would classify as something
+  other than a new up migration is refused before anything is written. Exactly
+  one suffix does that today: `migrator.ParseAtlasMigrationFileName` reads
+  `<version>_x.down.sql` as the down half of a pair, because Atlas importers emit
+  that spelling for golang-migrate directories.
+
+That second rule is stricter than the pinned binary, which writes
+`<version>_x.down.sql` at exit 0 and reads it back as a pending migration at exit
+0. Refusing to write it does **not** close the reader gap: measured on
+2026-08-08, a directory that binary wrote that way makes `ptah-compat migrate
+status` exit 1 with `Atlas migration version <version> has down migration but no
+up migration`, where it exits 0. That divergence is in the
+"Ptah exits 1, the binary exits 0" direction the register lists as unfiled, and
+it is reported here rather than closed.
 
 ## Reports
 

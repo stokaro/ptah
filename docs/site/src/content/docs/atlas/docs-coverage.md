@@ -235,11 +235,21 @@ The native OCI source is available to `schema compare` and `drift` through `--sc
 
 **Implementation status.** Partial.
 
-Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff.skip.drop_table` and `diff.concurrent_index.create` policy, supported migration-lint analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx`, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`) with `sensitive` support, string/list variable overrides through repeated `--var name=value` with conversion to the declared type, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors such as `lint.latest` and `lint.git`, and rejects unsupported constructs.
+Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, output formats, supported diff and lint policy, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`, `map(string)`) with `sensitive` support, string/list `--var` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `toset`, `atlas.env`, `each.key`, `each.value`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors. Atlas-compatible `migrate apply` expands labeled or unlabeled env `for_each` collections into ordered database targets.
+
+Whole-document structural validation classifies every environment before one is
+selected. Unsupported shapes fail in selected and unselected environments.
+Names that Atlas CE accepts without acting on are preserved in project config
+and reported once per source location; only the selected environment's
+expressions are evaluated.
 
 Cloud, registry, data sources beyond the local subset, variable `validation` blocks, other variable type constraints such as `object(...)`, Atlas check-level lint policy, custom lint rules, unsupported lint analyzer options, unsupported format blocks, unsupported diff policy fields, and remote directory behavior are not implemented.
 
-**Conformance status.** Partially measured with parser, direct command, compatibility-wrapper, and live SQLite command tests for the supported local subset.
+**Conformance status.** The committed companion reports do not yet measure
+dynamic env expansion. Main-repository parser, adapter, command, and live SQLite
+tests cover the supported local subset, whole-document structural decisions,
+selected-environment evaluation, multi-target apply with partial failure and
+retry, and ignored-name warnings.
 
 **Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#583`](https://github.com/stokaro/ptah/issues/583), [`stokaro/ptah#581`](https://github.com/stokaro/ptah/issues/581), [`stokaro/ptah#619`](https://github.com/stokaro/ptah/issues/619).
 
@@ -278,13 +288,21 @@ Cloud, registry, data sources beyond the local subset, variable `validation` blo
 
 **Implementation status.** Partial. `ptah migrations up` remains the native Ptah path.
 
-`ptah-compat migrate apply` executes Atlas-format migration directories with Atlas revision-table metadata by default, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`, and supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, and Go-template `--format` output over a Ptah apply result that mirrors Atlas's public apply-template fields.
+`ptah-compat migrate apply` executes Atlas-format migration directories with Atlas revision-table metadata by default, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`, and supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`, `--skip-lock`, `--to-version`, `--dry-run`, and Go-template `--format` output over a Ptah apply result that mirrors Atlas's public apply-template fields.
 
 External Atlas OSS directory formats (`golang-migrate`, `goose`, `flyway`, `liquibase`, `dbmate`) are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import`; unknown formats and Flyway repeatable migrations still fail before the target database is opened.
 
-Directory URL `?format=` overrides `migration.format` whether the URL comes from project config or CLI. The pinned Atlas CE flag surface does not register `migrate apply --to-version` or `--lock-name`, so Ptah rejects them as unknown.
+Directory URL `?format=` overrides `migration.format` whether the URL comes from project config or CLI.
 
-**Conformance status.** Measured for selected migration-directory and live SQLite amount, baseline, `LINEAR_SKIP` state semantics, dry-run baseline, JSON format, custom template, config-driven format, per-format up-only external-format execution (goose, dbmate, liquibase, golang-migrate, flyway), CLI and project URL-format precedence, unknown-format pre-connect rejection, no-op format, invalid-template preflight, redacted URL, failed-apply format cases, and CLI-surface rejection of non-CE flags.
+Three of those flags come from the wider Atlas distribution's documented flag surface rather than from the pinned community binary's. That binary answers `unknown flag: --to-version`, `unknown flag: --lock-name`, and `unknown flag: --skip-lock`, word for word the answer it gives a misspelled flag, so it does not register them at all. Ptah implements all three anyway, tracked as adopted compatibility spellings under [`stokaro/ptah#951`](https://github.com/stokaro/ptah/issues/951). That is a statement about three flags, not a parity claim about any non-community Atlas distribution.
+
+Behavior below was executed against a `ptah-compat` build from this repository, on PostgreSQL 17.10 unless a line says otherwise:
+
+- `--to-version` bounds the run inclusively. Pointed at the second of three pending migrations, it applies the first two, leaves the third unapplied, and stamps two revision rows. A version the directory does not carry is refused with `target version ... was not found in the migration provider` before any migration executes, and the bound cannot be combined with the positional `amount`.
+- `--lock-name` renames the session advisory lock, `ptah_migrate` by default. With `ptah_migrate` held by another session, a default run fails with `timed out acquiring migration lock "ptah_migrate"` and applies nothing, while the same run under `--lock-name deploy_lock_1354` proceeds: two runs serialize only when they name the same lock. An empty value is refused rather than falling back to the default.
+- `--skip-lock` acquires no lock. With `ptah_migrate` still held elsewhere, a run with nothing pending still times out under the default lock, and exits `0` under `--skip-lock` in the same state. It cannot be combined with `--lock-name`, and on SQLite an explicit `--lock-name` prints a stderr note naming the lock that was not acquired.
+
+**Conformance status.** Measured for selected migration-directory and live SQLite amount, baseline, `LINEAR_SKIP` state semantics, dry-run baseline, JSON format, custom template, config-driven format, per-format up-only external-format execution (goose, dbmate, liquibase, golang-migrate, flyway), CLI and project URL-format precedence, unknown-format pre-connect rejection, no-op format, invalid-template preflight, redacted URL, failed-apply format cases, and the CLI-surface tier, which projects out the three adopted flags through its closed per-command allowlist and rejects any other flag the pinned binary does not register.
 
 **Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640), [`stokaro/ptah#741`](https://github.com/stokaro/ptah/issues/741), [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 

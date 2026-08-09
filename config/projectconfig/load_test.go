@@ -2,6 +2,7 @@ package projectconfig_test
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -40,4 +41,29 @@ func TestLoadPtahFileMissingRemainsOptional(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "")
 	c.Assert(cfg.OnlineDDL, qt.DeepEquals, projectconfig.OnlineDDLConfig{})
+}
+
+func TestLoadPreservesIgnoredAtlasConstructsAfterMerge(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	ptahPath := filepath.Join(dir, projectconfig.PtahFileName)
+	atlasPath := filepath.Join(dir, projectconfig.AtlasFileName)
+	c.Assert(os.WriteFile(ptahPath, []byte("url: sqlite://ptah.db\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(atlasPath, []byte(`env "local" {
+  url     = "sqlite://atlas.db"
+  project = "ignored"
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.Load(projectconfig.LoadOptions{
+		PtahPath:  ptahPath,
+		AtlasPath: atlasPath,
+		EnvName:   "local",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://atlas.db")
+	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
+		{Name: "project", Kind: "attribute", Filename: atlasPath, Line: 3},
+	})
 }

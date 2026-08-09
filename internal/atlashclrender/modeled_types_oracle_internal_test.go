@@ -181,6 +181,71 @@ func TestOracleAcceptsTheWrapItFallsBackTo(t *testing.T) {
 			expr:     `sql("character varying(100)[]")`,
 			wantZero: true,
 		},
+		// The array rows below are the measurement isArrayColumnType rests on:
+		// an array is unreadable to that binary in every spelling but the call,
+		// whether or not its element type is one the HCL schema models.
+		//
+		// The quoted rows are not decoration. They are the exact text Ptah
+		// emitted for these four columns before stokaro/ptah#1138, reached
+		// through typeExpr's quoted fallback, and each is asserted to be
+		// REFUSED -- so a change that puts an array back on the modeled path
+		// reddens here rather than in a user's file.
+		{
+			name:     "postgres wraps a sized array whose element name is modeled",
+			dialect:  platform.Postgres,
+			expr:     `sql("numeric(10,2)[]")`,
+			wantZero: true,
+		},
+		{
+			name:     "postgres refuses that same array quoted",
+			dialect:  platform.Postgres,
+			expr:     `"numeric(10,2)[]"`,
+			wantZero: false,
+		},
+		{
+			name:     "postgres wraps a bit array",
+			dialect:  platform.Postgres,
+			expr:     `sql("bit(8)[]")`,
+			wantZero: true,
+		},
+		{
+			name:     "postgres refuses a bit array quoted",
+			dialect:  platform.Postgres,
+			expr:     `"bit(8)[]"`,
+			wantZero: false,
+		},
+		{
+			name:     "postgres wraps a character array",
+			dialect:  platform.Postgres,
+			expr:     `sql("character(5)[]")`,
+			wantZero: true,
+		},
+		{
+			name:     "postgres refuses a character array quoted",
+			dialect:  platform.Postgres,
+			expr:     `"character(5)[]"`,
+			wantZero: false,
+		},
+		{
+			name:     "postgres wraps a sized multi-word array",
+			dialect:  platform.Postgres,
+			expr:     `sql("timestamp(3) with time zone[]")`,
+			wantZero: true,
+		},
+		{
+			name:     "postgres refuses a sized multi-word array quoted",
+			dialect:  platform.Postgres,
+			expr:     `"timestamp(3) with time zone[]"`,
+			wantZero: false,
+		},
+		{
+			// The remaining spelling, and the reason the fallback cannot be
+			// "leave it bare": an array is not one HCL expression at all.
+			name:     "postgres refuses an array written bare",
+			dialect:  platform.Postgres,
+			expr:     `text[]`,
+			wantZero: false,
+		},
 		{
 			name:     "postgres wrapping a modeled type is still readable",
 			dialect:  platform.Postgres,

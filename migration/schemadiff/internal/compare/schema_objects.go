@@ -87,24 +87,43 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 		generatedFunctionMap[fn.Name] = fn
 	}
 
-	databaseFunctionMap := make(map[string]types.DBFunction)
+	// A generated function's name may be schema-qualified -- the HCL parser
+	// writes `extra.f` from a `function` block's schema attribute, and so does
+	// a database read -- while the reader reports the two parts separately. The
+	// two sides are matched the way views are, by qualified name where the
+	// generated side carries one and by bare name where it does not, so that a
+	// document describing `extra.f` is not compared against `public.f` and a
+	// round trip does not plan a redundant CREATE OR REPLACE (stokaro/ptah#1276).
+	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
+	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
 	for _, fn := range database.Functions {
-		databaseFunctionMap[fn.Name] = fn
+		databaseFunctionsByName[fn.Name] = append(databaseFunctionsByName[fn.Name], fn)
+		databaseFunctionsByQualifiedName[fn.QualifiedName()] = fn
 	}
 
-	// Use generic comparison helper for add/remove detection
-	addedFunctions, removedFunctions := compareNamedItems(generatedFunctionMap, databaseFunctionMap)
-	diff.FunctionsAdded = append(diff.FunctionsAdded, addedFunctions...)
-	diff.FunctionsRemoved = append(diff.FunctionsRemoved, removedFunctions...)
-
-	// Detect function definition modifications
+	matchedDatabaseFunctions := make(map[string]struct{}, len(database.Functions))
 	for functionName, generatedFunction := range generatedFunctionMap {
-		if databaseFunction, functionExists := databaseFunctionMap[functionName]; functionExists {
-			functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
-			if len(functionComparison.Changes) > 0 {
-				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
-			}
+		databaseFunction, exists := findDatabaseFunction(
+			functionName,
+			databaseFunctionsByName,
+			databaseFunctionsByQualifiedName,
+		)
+		if !exists {
+			diff.FunctionsAdded = append(diff.FunctionsAdded, functionName)
+			continue
 		}
+		matchedDatabaseFunctions[databaseFunction.QualifiedName()] = struct{}{}
+		functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
+		if len(functionComparison.Changes) > 0 {
+			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+		}
+	}
+
+	for _, fn := range database.Functions {
+		if _, ok := matchedDatabaseFunctions[fn.QualifiedName()]; ok {
+			continue
+		}
+		diff.FunctionsRemoved = append(diff.FunctionsRemoved, fn.QualifiedName())
 	}
 
 	// Ensure consistent ordering of results
@@ -113,6 +132,35 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
+}
+
+// findDatabaseFunction resolves one generated function name against the read.
+//
+// A qualified name is matched only against the same (schema, name); a bare one
+// is matched against a uniquely named function, and against nothing when two
+// schemas hold that name -- guessing there is what would attribute a function to
+// a schema it does not belong to. It is the shape
+// [findDatabaseViewForGeneratedView] uses, and deliberately so: both answer the
+// same question about an object whose generated name may or may not carry its
+// schema.
+func findDatabaseFunction(
+	name string,
+	byName map[string][]types.DBFunction,
+	byQualifiedName map[string]types.DBFunction,
+) (types.DBFunction, bool) {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return types.DBFunction{}, false
+	}
+	if ref.Qualified {
+		fn, ok := byQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
+		return fn, ok
+	}
+	candidates := byName[ref.Name]
+	if len(candidates) != 1 {
+		return types.DBFunction{}, false
+	}
+	return candidates[0], true
 }
 
 // Views compares view definitions between generated and database schemas.
@@ -339,6 +387,10 @@ func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dial
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
+		// The database body is what the view has before this diff is applied.
+		// The planner needs it to decide whether CREATE OR REPLACE VIEW is legal
+		// for the change, which is not derivable from the target body alone.
+		PreviousBody: strings.TrimSpace(dbView.Body),
 	}
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {

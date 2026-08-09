@@ -38,7 +38,21 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
+// defaultSchema is the namespace every unqualified SQLite object already
+// belongs to. It is not a schema anybody creates.
+const defaultSchema = "main"
+
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	if node.Name == defaultSchema {
+		// `main` is where the connection already is, so there is nothing to
+		// create and nothing to refuse. An introspected SQLite database
+		// describes it as a schema — the pinned Atlas community binary v1.3.0
+		// renders `schema "main" {}` in HCL and no statement at all in SQL —
+		// and turning that into a "not supported" comment would put a refusal
+		// in the output for something the author never asked for
+		// (stokaro/ptah#1264).
+		return nil
+	}
 	r.notSupported("schemas", node.Name)
 	return nil
 }
@@ -155,14 +169,29 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	indexName, _ := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"DROP INDEX"}
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, indexName)
+	parts = append(parts, sqliteDropIndexTarget(node.Name, node.Table))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// sqliteDropIndexTarget renders the index a DROP INDEX names.
+//
+// It is [sqliteIndexTarget]'s index half plus the case CREATE INDEX never has:
+// a drop with no owning table recorded, where the index name is the only place
+// a schema qualifier can live and `DROP INDEX app.idx` puts one there. Escaping
+// it whole would emit "app.idx" as a single identifier and name an index nobody
+// created. See [ast.DropIndexNode.Name].
+func sqliteDropIndexTarget(indexName, tableName string) string {
+	tableParts := splitQualifiedIdentifier(tableName)
+	if len(tableParts) < 2 {
+		return escapeQualifiedIdentifier(indexName)
+	}
+	schema := strings.Join(tableParts[:len(tableParts)-1], ".")
+	return escapeQualifiedIdentifier(schema) + "." + escapeIdentifier(indexName)
 }
 
 func sqliteIndexTarget(indexName, tableName string) (renderedIndexName, renderedTableName string) {
@@ -285,19 +314,30 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+// VisitCreateMaterializedView refuses: SQLite has no materialized view object.
+//
+// This used to render a comment. A comment makes `schema render` exit 0 on a
+// model the planner refuses at `schema apply` time, so the surface a user is
+// told to validate with disagreed with the surface that executes. The SQLite
+// planner already answers "materialized views are not supported".
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("CREATE MATERIALIZED VIEW", node.Name)
 }
 
+// VisitDropMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("DROP MATERIALIZED VIEW", node.Name)
 }
 
+// VisitRefreshMaterializedView refuses for the same reason as
+// VisitCreateMaterializedView.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
-	return nil
+	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
+}
+
+func materializedViewsUnsupported(statement, name string) error {
+	return unsupportedFeaturef("%s %s: materialized views are not supported", statement, name)
 }
 
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
@@ -419,10 +459,22 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	if column.AutoInc && !column.Primary {
 		return "", unsupportedFeaturef("AUTOINCREMENT requires an INTEGER PRIMARY KEY column")
 	}
+	// NOT NULL is written even when the column is the primary key. SQLite does
+	// not derive one from the other: `id integer PRIMARY KEY` is a rowid alias
+	// whose `pragma table_info.notnull` is 0 and which accepts an explicit NULL
+	// insert, so folding an author's NOT NULL into PRIMARY KEY drops a
+	// constraint the source declared. Measured against the pinned Atlas
+	// community v1.3.0 binary: applying an HCL table with `null = false` on the
+	// key column and then asking that binary whether the result matches the
+	// same file answered `Schemas are synced, no changes to be made.` only once
+	// the NOT NULL survived; without it the binary planned a full table rebuild
+	// against a database Ptah had just applied from that file. See
+	// stokaro/ptah#1235 group 5.
+	if !column.Nullable {
+		parts = append(parts, "NOT NULL")
+	}
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
-	} else if !column.Nullable {
-		parts = append(parts, "NOT NULL")
 	}
 	if column.AutoInc {
 		parts = append(parts, "AUTOINCREMENT")
@@ -608,26 +660,41 @@ func unquoteIdentifier(identifier string) string {
 	return identifier
 }
 
+// splitQualifiedIdentifier splits on the dots that separate name parts while
+// leaving dots inside a double-quoted or backtick-quoted part alone.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// three delimiters this scan recognizes are ASCII, and UTF-8 is self
+// synchronizing -- no byte of a multi-byte sequence is ever below 0x80 -- so a
+// byte scan can find them without decoding, and slicing hands every other byte
+// back exactly as it arrived. The previous form accumulated `string(character)`
+// from a byte, which re-encodes each byte as its own code point: `Ä` (C3 84)
+// came back out as `Ã` plus U+0084, renaming every non-ASCII object. See
+// stokaro/ptah#1352.
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
 func splitQualifiedIdentifier(identifier string) []string {
-	parts := []string{""}
+	var parts []string
+	start := 0
 	inQuotes := false
 	inBackticks := false
 	for i := range len(identifier) {
-		character := identifier[i]
-		switch character {
+		switch identifier[i] {
 		case '"':
 			inQuotes = !inQuotes
 		case '`':
 			inBackticks = !inBackticks
 		case '.':
 			if !inQuotes && !inBackticks {
-				parts = append(parts, "")
-				continue
+				parts = append(parts, identifier[start:i])
+				start = i + 1
 			}
 		}
-		parts[len(parts)-1] += string(character)
 	}
-	return parts
+	return append(parts, identifier[start:])
 }
 
 func unsupportedFeaturef(format string, args ...any) error {

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,13 +39,23 @@ type MigrationPlanSpecForTest struct {
 }
 
 // NewMigrationPlanForTest creates a plan without database-dependent planning.
+// allowedOutputRoot is the confinement root the publication must stay inside,
+// or empty for the direct-CLI shape.
+//
+// It binds and holds the migration directory exactly as PlanMigration does,
+// because that binding is what the plan is: a test plan built any other way
+// would be measuring a shape the product never produces.
 func NewMigrationPlanForTest(
-	outputDir, reportFormat string,
+	outputDir, allowedOutputRoot, reportFormat string,
 	specs []MigrationPlanSpecForTest,
 ) (*MigrationPlan, error) {
-	outputState, err := captureMigrationDirectoryState(outputDir)
+	writer, err := bindPlannedMigrationDir(allowedOutputRoot, outputDir)
 	if err != nil {
 		return nil, err
+	}
+	plannedContents, err := captureMigrationDirectoryContents(writer)
+	if err != nil {
+		return nil, errors.Join(err, writer.Close())
 	}
 	generatedSpecs := make([]generatedMigrationSpec, len(specs))
 	for index, spec := range specs {
@@ -58,10 +69,11 @@ func NewMigrationPlanForTest(
 		}
 	}
 	return &MigrationPlan{
-		outputDir:    outputDir,
-		outputState:  outputState,
-		reportFormat: reportFormat,
-		specs:        generatedSpecs,
+		outputDir:       outputDir,
+		dir:             writer,
+		plannedContents: plannedContents,
+		reportFormat:    reportFormat,
+		specs:           generatedSpecs,
 	}, nil
 }
 

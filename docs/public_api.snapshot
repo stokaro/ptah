@@ -149,10 +149,14 @@ type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
     func Load(opts LoadOptions) (Config, error)
     func LoadAtlasFile(path, envName string) (Config, error)
+    func LoadAtlasFileCollectionWithOptions(path string, opts AtlasLoadOptions) ([]Config, error)
     func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error)
+    func LoadCollection(opts LoadOptions) ([]Config, error)
     func LoadPtahFile(path, envName string) (Config, error)
     func Merge(base, override Config) Config
     func ParseAtlas(data []byte, filename, envName string) (Config, error)
+    func ParseAtlasCollectionWithOptions(data []byte, filename string, opts AtlasLoadOptions) ([]Config, error)
+    func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) ([]Config, error)
     func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
     func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
     func ParsePtah(data []byte, filename, envName string) (Config, error)
@@ -196,11 +200,9 @@ type Config struct {
     // IgnoredConstructs lists the atlas.hcl names that were accepted and not
     // acted on, under Atlas CE's unknown-name policy.
     //
-    // It exists so a caller can say something. CE reports nothing at all, and
-    // that silence is a footgun: a typo'd block name does nothing and looks
-    // fine. Everything the conformance tiers measure -- exit code, stdout, the
-    // text of every error -- is unchanged whether or not a caller reports
-    // these, so drop-in fidelity does not depend on it.
+    // Atlas CE reports nothing for these names. Ptah records them so callers can
+    // make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+    // command's stdout and exit code.
     IgnoredConstructs []IgnoredAtlasConstruct
     // EnvName is the selected project env name, when the source had one.
     EnvName string
@@ -238,10 +240,14 @@ type Config struct {
 
 func Load(opts LoadOptions) (Config, error)
 func LoadAtlasFile(path, envName string) (Config, error)
+func LoadAtlasFileCollectionWithOptions(path string, opts AtlasLoadOptions) ([]Config, error)
 func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error)
+func LoadCollection(opts LoadOptions) ([]Config, error)
 func LoadPtahFile(path, envName string) (Config, error)
 func Merge(base, override Config) Config
 func ParseAtlas(data []byte, filename, envName string) (Config, error)
+func ParseAtlasCollectionWithOptions(data []byte, filename string, opts AtlasLoadOptions) ([]Config, error)
+func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) ([]Config, error)
 func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
@@ -375,11 +381,9 @@ type IgnoredAtlasConstruct struct {
     IgnoredAtlasConstruct is an atlas.hcl name that was accepted and not acted
     on, matching what Atlas CE does with a name it does not recognize.
 
-    CE reports nothing at all. Ptah records them so the caller can say one line
-    per construct on stderr: CE's silence is a footgun -- a typo'd block name
-    does nothing and looks fine -- and stdout, the exit code, and every error
-    diagnostic stay byte-identical, so nothing that reads those can tell the
-    difference.
+    Atlas CE reports nothing for these names. Ptah records them so callers can
+    make the no-op visible; the Ptah CLIs warn on stderr while preserving the
+    command's stdout and exit code.
 
 
 ### go.5x5.cz/ptah/config/projectconfig.LintConfig
@@ -575,6 +579,7 @@ type Value[T any] struct {
 
 ## go.5x5.cz/ptah/core/ast
 
+const NullsOrderFirst = "FIRST" ...
 type AddColumnOperation struct{ ... }
 type AddConstraintOperation struct{ ... }
 type AddEnumValueOperation struct{ ... }
@@ -1080,6 +1085,20 @@ type ColumnNode struct {
     // the call back instead of a bare identifier the Atlas community binary
     // refuses.
     TypeRawSQL bool
+    // EnumType records that the column's declared type names an enum the schema
+    // declares, rather than a built-in type.
+    //
+    // PostgreSQL needs this to attach `USING <column>::<type>` when an existing
+    // column changes type into an enum: without the cast the server refuses the
+    // migration with `column ... cannot be cast automatically` (SQLSTATE 42804).
+    // Identity comes from the declaration and never from the type's spelling --
+    // an enum called "status_kind" is exactly as much an enum as one called
+    // "enum_status" (stokaro/ptah#931 item 1).
+    //
+    // Dialects that model enums on the column instead of as a standalone type
+    // rewrite Type to their inline form (MySQL `ENUM(...)`, SQLite `TEXT` plus a
+    // CHECK), and this flag still reports what the author declared.
+    EnumType bool
     // Nullable indicates whether the column allows NULL values (default: true)
     Nullable bool
     // Primary indicates whether this column is part of the primary key
@@ -1867,11 +1886,25 @@ func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode
 package ast // import "go.5x5.cz/ptah/core/ast"
 
 type DropIndexNode struct {
-    // Name is the raw, unqualified index identifier. Dialect renderers derive
-    // its namespace from Table.
+    // Name is the index identifier the statement names, and it is the only
+    // place a schema qualifier can live when the statement names no table.
+    //
+    // A planned drop names the index bare and carries the namespace on Table,
+    // which is where every renderer reads it from. A drop recovered from SQL
+    // text may have no table to record: PostgreSQL and SQLite spell the
+    // statement `DROP INDEX app.idx`, putting a schema on the index and naming
+    // no table at all, where MySQL, MariaDB, SQL Server and CockroachDB name
+    // the table and leave the index bare. Name therefore carries whatever
+    // qualifier the source spelled on the index, and nothing more.
+    //
+    // Anything that has to answer "which schema is this index in" reads Table
+    // first and falls back to Name, never the other way round: a bare Name is
+    // unqualified and belongs to its table's schema, so reading it first would
+    // place `DROP INDEX app.idx` inside every schema (stokaro/ptah#1296).
     Name string
     // Table is the qualified owning table. It is required for every planned
-    // index drop even when the target SQL names the index by schema.
+    // index drop even when the target SQL names the index by schema, and it is
+    // empty for a drop parsed from a statement that names no table -- see Name.
     Table string
     // IfExists indicates whether to use IF EXISTS clause
     IfExists bool
@@ -1883,6 +1916,23 @@ type DropIndexNode struct {
     // planners set it only for standalone index drops the caller routes into a
     // no_transaction migration.
     Concurrently bool
+    // Cascade requests DROP INDEX ... CASCADE, which also drops the objects
+    // that depend on the index. Only PostgreSQL's grammar has the clause;
+    // every other renderer ignores the flag. RESTRICT, the opposite spelling,
+    // is the default everywhere and is therefore not modeled: a node with
+    // Cascade unset already means it.
+    Cascade bool
+    // EnforcesUniqueConstraint reports that the index being dropped is the one
+    // a UNIQUE constraint of the same name enforces, so the statement removes a
+    // uniqueness protection and not only an access path.
+    //
+    // It carries no SQL: on MySQL and MariaDB, the engines that reach it, a
+    // unique key and its constraint are one catalog row and DROP INDEX is the
+    // statement that removes it. It exists so risk classification can tell the
+    // two apart, because the spelling cannot: dropping `uq_users_email` and
+    // dropping `idx_users_email` are the same statement shape and a very
+    // different change to the data's guarantees.
+    EnforcesUniqueConstraint bool
     // Comment is an optional comment for the drop operation
     Comment string
 }
@@ -1894,8 +1944,10 @@ type DropIndexNode struct {
 
 func NewDropIndex(name string) *DropIndexNode
 func (n *DropIndexNode) Accept(visitor Visitor) error
+func (n *DropIndexNode) SetCascade() *DropIndexNode
 func (n *DropIndexNode) SetComment(comment string) *DropIndexNode
 func (n *DropIndexNode) SetConcurrently() *DropIndexNode
+func (n *DropIndexNode) SetEnforcesUniqueConstraint() *DropIndexNode
 func (n *DropIndexNode) SetIfExists() *DropIndexNode
 func (n *DropIndexNode) SetTable(table string) *DropIndexNode
 
@@ -2363,6 +2415,11 @@ type IndexPart struct {
     Prefix string
     // Desc indicates DESC ordering for this index part.
     Desc bool
+    // NullsOrder carries an explicit NULLS ordering: "FIRST", "LAST", or
+    // empty when the part uses the direction's default. PostgreSQL's defaults
+    // are NULLS LAST for ASC and NULLS FIRST for DESC, so an empty value
+    // renders no clause and reproduces the index either way.
+    NullsOrder string
 }
     IndexPart represents one column or expression inside a CREATE INDEX column
     list.
@@ -3474,8 +3531,82 @@ type Visitor interface {
     their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
 
 
+## go.5x5.cz/ptah/core/coverage
+
+const DirectiveMarker = "ptah:not-described"
+type Kind string
+    const Composite Kind = "composite" ...
+    func ParseKind(token string) (Kind, error)
+type Object struct{ ... }
+type Set struct{ ... }
+    func DecodeHeader(document string) (Set, error)
+
+### go.5x5.cz/ptah/core/coverage.Kind
+
+package coverage // import "go.5x5.cz/ptah/core/coverage"
+
+type Kind string
+    Kind names one class of schema object a description can decline to describe.
+
+    The list is closed. An unknown kind in a serialized directive is refused
+    rather than ignored, because ignoring it is the exact failure this package
+    exists to prevent: a directive nothing understands reads as no directive at
+    all, and the absence it was protecting becomes a removal.
+
+const Composite Kind = "composite" ...
+func ParseKind(token string) (Kind, error)
+
+### go.5x5.cz/ptah/core/coverage.Object
+
+package coverage // import "go.5x5.cz/ptah/core/coverage"
+
+type Object struct {
+    Kind Kind
+    Name string
+}
+    Object is one object a description does not describe. Name is spelled
+    the way the description would have spelled it; both the qualified and the
+    unqualified spelling of the same object are accepted by Set.Describes,
+    because the two sides of a comparison do not always agree on which one they
+    carry.
+
+
+### go.5x5.cz/ptah/core/coverage.Set
+
+package coverage // import "go.5x5.cz/ptah/core/coverage"
+
+type Set struct {
+    // Kinds names object kinds whose absence from the description carries no
+    // information.
+    Kinds []Kind
+    // Objects names individual objects whose absence from the description
+    // carries no information.
+    Objects []Object
+}
+    Set is what a description does NOT claim to describe. Its zero value claims
+    everything.
+
+    Both members record the same thing at different resolutions, and per-object
+    records are preferred wherever the reader can enumerate what it left out.
+    A whole-kind record is the honest answer only when the reader cannot:
+    a projection whose rule is "omit this block type unless something names
+    it" gives no information about the block types it omits, no matter what the
+    database it ran against happened to contain.
+
+func DecodeHeader(document string) (Set, error)
+func (s Set) Describes(kind Kind, names ...string) bool
+func (s Set) DescribesIn(kind Kind, schema string, names ...string) bool
+func (s Set) DescribesSchema(schema string) bool
+func (s Set) Directives() []string
+func (s Set) IsZero() bool
+func (s Set) Merge(other Set) Set
+func (s Set) Normalize() Set
+func (s Set) WithKind(kinds ...Kind) Set
+func (s Set) WithObject(kind Kind, name string) Set
+
 ## go.5x5.cz/ptah/core/goschema
 
+const NullsOrderFirst = "FIRST" ...
 func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string
@@ -3590,6 +3721,17 @@ type Constraint struct {
     OnDelete       string   // ON DELETE action
     OnUpdate       string   // ON UPDATE action
 
+    // RequiresExtensions names the extensions the index backing this constraint
+    // cannot be built without, as the catalog resolved them rather than as
+    // ExcludeElements spells them. It is filled in for EXCLUDE constraints read
+    // from a live PostgreSQL catalog, where an element prints its operator and
+    // prints its operator class only when that class is not the default:
+    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+    // needs btree_gist and says so nowhere, while
+    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and does name
+    // the class (stokaro/ptah#1286). See [Index.RequiresExtensions].
+    RequiresExtensions []string
+
     Comment string // Constraint comment/description
 }
     Constraint represents a table-level constraint definition parsed from Go
@@ -3651,6 +3793,21 @@ type Database struct {
     // EmbeddedSources retains source-only helper declarations needed to
     // materialize embedded columns again after a schema is merged or finalized.
     EmbeddedSources EmbeddedSources
+
+    // NotDescribed records what this description does not claim to describe, so
+    // a comparator can tell an object the description says is gone from one it
+    // was never asked about. The zero value claims everything, which is what a
+    // hand-authored schema file is; see [go.5x5.cz/ptah/core/coverage].
+    //
+    // `omitzero` is load-bearing rather than cosmetic. This struct's JSON
+    // encoding IS the desired-state fingerprint (see
+    // [go.5x5.cz/ptah/internal/atlasschema.SchemaFingerprint] and the plan
+    // file's `to` attribute), so a field that serialized unconditionally would
+    // change the fingerprint of every schema anyone has already planned against
+    // -- the one thing "adding coverage changes no existing plan" promises it
+    // does not do. A description that declares no limits must encode exactly as
+    // it did before this field existed.
+    NotDescribed coverage.Set `json:",omitzero"`
 }
     Database represents the complete database schema derived from Go struct
     annotations.
@@ -3773,7 +3930,19 @@ type EmbeddedSources struct {
 package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Enum struct {
-    Name   string   // The generated enum type name (e.g., "enum_user_status")
+    Name string // The generated enum type name (e.g., "enum_user_status")
+    // Schema owns the enum, empty for the connection's or document's default
+    // schema. It is a field rather than a qualifier folded into Name because
+    // Name is what a column's declared type is matched against, and a domain,
+    // composite and range each keep the two apart for the same reason.
+    //
+    // An enum is a TYPE, so its identity is (schema, name) exactly as a
+    // domain's is: public.mood and extra.mood are two types with different
+    // value sets. Without this field an enum read out of a non-default schema
+    // was described as belonging to the connected one, and applying that
+    // description built the type in the wrong schema and typed the column that
+    // uses it against the wrong type (stokaro/ptah#1276).
+    Schema string
     Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
 }
     Enum represents a global enumeration type definition that can be shared
@@ -3820,6 +3989,7 @@ type Enum struct {
         MySQL:
           CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 
+func (e Enum) QualifiedName() string
 
 ### go.5x5.cz/ptah/core/goschema.Extension
 
@@ -3830,6 +4000,32 @@ type Extension struct {
     IfNotExists bool   // Whether to use IF NOT EXISTS clause
     Version     string // Specific version requirement (optional)
     Comment     string // Extension comment/description
+
+    // Provides lists the catalog names this extension supplies -- types,
+    // functions, relations, operator classes and operator families. It is filled
+    // in when the schema was read from a live PostgreSQL catalog and answers
+    // "what stops resolving without this extension", which is almost never the
+    // extension's own name: `isn` supplies the type `isbn`.
+    //
+    // Names the extension supplies that pg_catalog also supplies are excluded,
+    // because those keep resolving with the extension dropped. Contrib
+    // extensions mostly supply overloads of core functions, so the unfiltered
+    // list is full of ordinary words -- `citext` supplies `max`, `strpos` and
+    // `replace` -- and treating those as evidence would tie the extension to
+    // every schema that happens to use them.
+    //
+    // A function name that is a SQL keyword is excluded for the same reason, but
+    // only when this list also carries a type of the same extension that appears
+    // in that function's signature: `hstore` supplies three functions named
+    // `delete`, and a caller reading identifiers out of SQL text cannot tell
+    // `DELETE FROM audit` from `delete(h, 'k')`, while a genuine call needs an
+    // `hstore` value and the type entry is what keeps the extension here. Where
+    // no such type entry exists -- an extension supplying `merge(text, text)`
+    // and no type at all -- the name is the only evidence there is and it stays.
+    //
+    // Empty means not measured. Annotation and YAML sources have no catalog to
+    // ask and leave it unset.
+    Provides []string
 }
     Extension represents a PostgreSQL extension definition parsed from Go struct
     annotations. Extensions enable additional functionality in PostgreSQL
@@ -4054,6 +4250,26 @@ type Index struct {
     // what the renderer falls back to when this field is unset). Ignored by
     // all non-ClickHouse renderers.
     Granularity int
+
+    // RequiresExtensions names the extensions this index cannot be built
+    // without, as the catalog resolved them rather than as the index's own DDL
+    // spells them. It is filled in when the schema was read from a live
+    // PostgreSQL catalog.
+    //
+    // An operator class is printed only when it is not the default for its key's
+    // type on the index's access method, so an index resting on a default class
+    // an extension supplies spells no token of that extension: `USING gin (n)`
+    // over an integer column needs btree_gin, and `isbn` at least says a word
+    // [Extension.Provides] can match. The catalog is asked instead of the text
+    // (stokaro/ptah#1286).
+    //
+    // A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
+    // field is the catalog's answer, not "the part the DDL left out", so a reader
+    // of it must not conclude that the document names nothing behind the edge.
+    //
+    // Empty means not measured or nothing to report. Annotation and YAML sources
+    // have no catalog to ask and leave it unset.
+    RequiresExtensions []string
 }
     Index represents a database index definition parsed from Go struct
     annotations. Indexes are used to improve query performance and enforce
@@ -4124,6 +4340,10 @@ type IndexPart struct {
     Operator string // PostgreSQL operator class for this part
     Prefix   string // MySQL index prefix length
     Desc     bool   // Whether this part is ordered DESC
+    // NullsOrder is an explicit NULLS ordering for this part: "FIRST",
+    // "LAST", or empty for the direction's default (NULLS LAST for ASC,
+    // NULLS FIRST for DESC on PostgreSQL).
+    NullsOrder string
 }
     IndexPart represents one column or expression inside an index definition.
 
@@ -4642,6 +4862,8 @@ type Capabilities map[Capability]bool
 type Capability string
     const DropConstraintGeneric Capability = "drop_constraint_generic" ...
     func All() []Capability
+type VersionResolution struct{ ... }
+    func ResolveServerVersion(dialect, version string) VersionResolution
 
 ### go.5x5.cz/ptah/core/platform/capability.Capabilities
 
@@ -4685,6 +4907,49 @@ type Capability string
 
 const DropConstraintGeneric Capability = "drop_constraint_generic" ...
 func All() []Capability
+
+### go.5x5.cz/ptah/core/platform/capability.VersionResolution
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type VersionResolution struct {
+    // Capabilities is the resolved preset, never nil for a known dialect.
+    Capabilities Capabilities
+    // VersionSpecific is false when no version-specific preset could be
+    // selected and the dialect default was used instead. It carries exactly
+    // the meaning of ForServerVersionResult's second return value, and it is
+    // false for a saturated version because the preset such a version lands
+    // on is exactly ForDialect's.
+    VersionSpecific bool
+    // Saturated is true when the resolved preset is the top of a version
+    // ladder and the server is newer than the newest line that ladder was
+    // measured against. It is the reason VersionSpecific is false, and is
+    // never true at the same time as VersionSpecific.
+    Saturated bool
+    // NewestMeasured names the newest measured version line for the dialect,
+    // for example "9.x". It is empty for dialects with no version ladder.
+    NewestMeasured string
+}
+    VersionResolution reports how a server version string was mapped onto a
+    capability preset.
+
+    Saturated names the case the resolver used to answer wrongly: the version
+    parsed, it selected the newest preset in its dialect's ladder, and it is
+    itself newer than the newest line that ladder was measured against — so the
+    preset is a stand-in and any capability the newer server gained or lost
+    is unmodeled. That is not a version-specific answer, so VersionSpecific is
+    false whenever Saturated is true, and the two fields together say which of
+    the two ways a caller ended up on the dialect default: the version could not
+    be parsed at all, or it parsed and ran off the top of the ladder.
+
+    Saturation is only defined where this package has a version ladder: MySQL,
+    MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
+    from the banner without consulting a version at all, and ClickHouse, SQLite
+    and SQL Server have no ladder to saturate; all six report Saturated=false
+    and an empty NewestMeasured. Refining those dialects is the remaining scope
+    of issue #916 and is deliberately not answered here.
+
+func ResolveServerVersion(dialect, version string) VersionResolution
 
 ## go.5x5.cz/ptah/core/platform/identifier
 
@@ -5180,6 +5445,7 @@ type IsolatedQueryer interface {
 
 ## go.5x5.cz/ptah/dbschema/types
 
+const NullsOrderFirst = "FIRST" ...
 func QualifyTableName(schema, table string) string
 type DBColumn struct{ ... }
 type DBComposite struct{ ... }
@@ -5230,6 +5496,38 @@ type DBColumn struct {
     IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
     IsUnique           bool    `json:"is_unique"`         // Derived field
 
+    // DomainName names the domain a column is declared with, empty for every
+    // column whose declared type is not a domain (PostgreSQL only today).
+    //
+    // It is a separate fact rather than something read back out of
+    // FormattedType, because FormattedType is filled for arrays as well and the
+    // two shapes want opposite answers: an array's spelling is a TYPE, which may
+    // be compared and normalized like any other, while a domain's spelling is an
+    // IDENTIFIER its author chose and must only ever be compared by identity.
+    // Nothing but the catalog can tell them apart -- a domain over an array is
+    // reported with data_type "ARRAY" exactly like a plain array column
+    // (stokaro/ptah#1138).
+    DomainName string `json:"domain_name,omitempty"`
+
+    // DomainSchema names the schema holding that domain, empty for every column
+    // whose declared type is not a domain.
+    //
+    // A domain's identity is (schema, name), and the name alone is not it:
+    // public.status and other.status are two different types with different
+    // CHECK constraints over possibly different base types. A comparator handed
+    // only "status" for both calls a column that must be converted unchanged,
+    // while the plan still drops the domain the desired schema no longer
+    // declares -- so DROP DOMAIN ... CASCADE takes the column and its data with
+    // nothing having converted it first (stokaro/ptah#1138).
+    //
+    // It is recorded raw, exactly as information_schema.columns.domain_schema
+    // reports it, rather than blanked for the schema being read: the domain a
+    // column is declared with may live in a schema the read never visits, and
+    // blanking it there erases the very distinction this field exists for.
+    // FormattedType cannot stand in, because the server writes a qualifier
+    // there only when the search path forces one.
+    DomainSchema string `json:"domain_schema,omitempty"`
+
     // GeneratedExpression holds the generated-column expression. Nil for plain
     // columns.
     GeneratedExpression *string `json:"generated_expression,omitempty"`
@@ -5250,6 +5548,16 @@ type DBColumn struct {
     GeneratedKind / GeneratedExpression are populated by readers for dialects
     that expose generated column metadata. Schema comparison matches these
     fields when the goschema-side model also carries generated column metadata.
+
+    DomainName and FormattedType are a pair. DataType reports a domain column's
+    BASE type, so it alone cannot say that the declared type was a domain:
+    DomainName carries that fact and FormattedType carries the spelling the
+    server uses for it, schema-qualified where the search path needs that.
+    Everything that answers "what type is this column declared as" -- the
+    desired-state conversion, the Atlas-compatible JSON inspect output, and the
+    comparator's database side -- must consult DomainName rather than infer the
+    answer from DataType, which reports the base type and drops the domain's
+    constraints with it. See stokaro/ptah#1242.
 
 
 ### go.5x5.cz/ptah/dbschema/types.DBComposite
@@ -5305,6 +5613,22 @@ type DBConstraint struct {
     UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
     ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
     WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+
+    // RequiresExtensions names the extensions the index backing this constraint
+    // cannot be built without, read from that index exactly as
+    // [DBIndex.RequiresExtensions] is.
+    //
+    // It is a separate field rather than a lookup because the backing index is
+    // not part of the entity model: a constraint owns its index, and the
+    // converter drops the index row so the constraint is rendered once. The
+    // dependency is as hard to read off the text here as on a plain index, and
+    // for the same reason. Measured on PostgreSQL 17.10,
+    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+    // needs btree_gist and pg_get_constraintdef prints no token of it, while
+    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
+    // the class, because a class is printed exactly when it is not the default
+    // (stokaro/ptah#1286).
+    RequiresExtensions []string `json:"requires_extensions,omitempty"`
 }
     DBConstraint represents a database constraint
 
@@ -5334,11 +5658,18 @@ func (d DBDomain) QualifiedName() string
 package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBEnum struct {
-    Name   string   `json:"name"`
+    Name string `json:"name"`
+    // Schema owns the enum. Readers blank it for the connection's own schema,
+    // exactly as they do for tables, views and domains, so a filter or a
+    // comparison reconstructs the qualified spelling from the connection's
+    // default. Without it a schema-qualified `--exclude app.color` matched
+    // nothing and silently kept the enum (stokaro/ptah#933).
+    Schema string   `json:"schema,omitempty"`
     Values []string `json:"values"`
 }
     DBEnum represents a database enum type (PostgreSQL)
 
+func (e DBEnum) QualifiedName() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBExtension
 
@@ -5352,6 +5683,35 @@ type DBExtension struct {
     Comment          *string `json:"comment"`           // Extension comment/description
     DefaultVersion   *string `json:"default_version"`   // Default version available
     InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
+
+    // Provides lists the catalog names this extension supplies -- its types,
+    // functions, relations, operator classes and operator families -- read from
+    // pg_depend. It answers "what would stop resolving if this extension were
+    // not here", which is a different question from the extension's own name and
+    // usually a disjoint set of words: `isn` supplies the type `isbn`, and
+    // `pgcrypto` supplies the function `gen_salt`.
+    //
+    // Names pg_catalog also supplies are excluded, because a document using one
+    // resolves it with the extension dropped. This matters because contrib
+    // extensions mostly supply overloads of core functions: unfiltered, `citext`
+    // contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
+    // `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
+    // PostgreSQL 13.
+    //
+    // A function name pg_get_keywords() reports as a SQL keyword is excluded too,
+    // because a name read out of SQL text carries no position: `hstore` supplies
+    // three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
+    // is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
+    // conditional on the redundancy that makes it free -- the same extension
+    // must also contribute to this list a type appearing in that function's
+    // signature, so a genuine call spells the type and the type entry answers
+    // for it. An extension supplying `merge(text, text)` and no type has its
+    // only evidence in the name, and the name is kept.
+    //
+    // Empty means not measured rather than "supplies nothing" -- every extension
+    // supplies something, and readers that do not consult a catalog (Go
+    // annotations, YAML) leave this unset.
+    Provides []string `json:"provides,omitempty"`
 }
     DBExtension represents a PostgreSQL extension installed in the database
 
@@ -5361,7 +5721,13 @@ type DBExtension struct {
 package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBFunction struct {
-    Name       string `json:"name"`       // Function name
+    Name string `json:"name"` // Function name
+    // Schema owns the function. Readers blank it for the connection's own
+    // schema, the same convention tables, views and domains follow, so a
+    // filter reconstructs the qualified spelling from the connection's
+    // default. Without it a schema-qualified `--exclude app.fn_app` matched
+    // nothing and silently kept the function (stokaro/ptah#933).
+    Schema     string `json:"schema,omitempty"`
     Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
     Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
     Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
@@ -5372,6 +5738,7 @@ type DBFunction struct {
 }
     DBFunction represents a PostgreSQL custom function read from the database
 
+func (f DBFunction) QualifiedName() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBGrant
 
@@ -5405,12 +5772,69 @@ type DBIndex struct {
     IsUnique   bool          `json:"is_unique"`
     IsPrimary  bool          `json:"is_primary"`
     Definition string        `json:"definition"` // Full index definition
+    // KeyPartsIncomplete reports that the catalog described a key part this
+    // reader cannot name, so Columns (and Parts) list fewer parts than the key
+    // actually has. The MySQL reader sets it for a functional key part --
+    // `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
+    // NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
+    //
+    // A comparison must not read the key columns of such an index as the whole
+    // key: it would plan a rebuild on every run for a key that never changed.
+    // Everything else about the index is reported normally.
+    KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
     // Condition is the WHERE clause for partial indexes when the dialect
     // exposes one structurally.
     Condition string `json:"condition,omitempty"`
     // NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
     // state. Nil means the clause was not present in the definition.
     NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+
+    // Method is the index access method as the server spells it -- btree,
+    // gin, gist, brin, hash. It is deliberately not Type: Type is the
+    // ClickHouse data-skipping-index type below, a different concept that
+    // happens to share a slot in the annotation surface, and overloading one
+    // field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
+    // "gin" indistinguishable at this layer. Empty means the reader did not
+    // report an access method.
+    //
+    // A dropped access method is not always a quiet degradation: an index on
+    // a type with no btree operator class, such as point, does not replay at
+    // all without it. See #1242.
+    Method string `json:"method,omitempty"`
+    // IncludeColumns carries PostgreSQL INCLUDE payload columns, the
+    // non-key columns stored in the index for index-only scans.
+    IncludeColumns []string `json:"include_columns,omitempty"`
+
+    // RequiresExtensions names the extensions this index cannot be built
+    // without, as the catalog resolved them rather than as the DDL spells them.
+    //
+    // An index key names an operator class only when that class is not the
+    // default for its type on its access method, so an index whose default
+    // class comes from an extension refers to that extension with no token at
+    // all. Measured on PostgreSQL 17.10: with btree_gin installed,
+    // CREATE INDEX t_gin ON t USING gin (n int4_ops) over an integer column is
+    // stored, and rendered back, as CREATE INDEX t_gin ON public.t USING gin
+    // (n) -- and replaying that on a database without btree_gin fails with
+    // `data type integer has no default operator class for access method
+    // "gin"`. pg_index.indclass holds the class each key actually resolved to,
+    // so the reader answers the question exactly (stokaro/ptah#1286).
+    //
+    // The index's access method is read the same way, from pg_class.relam. An
+    // access method the catalog owns, `gin` or `gist`, belongs to no extension
+    // and pins nothing; one an extension supplies, such as bloom's `bloom`,
+    // resolves to that extension.
+    //
+    // The edge is recorded whether or not the DDL prints the class. It does print
+    // a non-default one -- pg_trgm's gin_trgm_ops arrives as
+    // CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
+    // index resolves to pg_trgm here as well. This field answers "which
+    // extension owns what this index resolved to", not "which dependency the DDL
+    // omitted".
+    //
+    // Empty means the reader found no such edge, which is the ordinary case:
+    // core supplies the default operator class for every core type its access
+    // methods index. Readers with no catalog to ask leave it unset.
+    RequiresExtensions []string `json:"requires_extensions,omitempty"`
 
     // Type is the ClickHouse data-skipping-index type. One of
     // "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
@@ -5442,7 +5866,22 @@ package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBIndexPart struct {
     Name string `json:"name"`
-    Desc bool   `json:"desc,omitempty"`
+    // Expr is a raw indexed expression, such as lower(name). It is mutually
+    // exclusive with Name: an expression is not an identifier, and a reader
+    // that reports one in Name makes the renderer quote it into a column
+    // reference that does not exist.
+    Expr string `json:"expr,omitempty"`
+    // Operator is the non-default operator class this key was built with, for
+    // example text_pattern_ops. Empty means the key uses its type's default
+    // class, which is the only case where omitting it from emitted DDL
+    // reproduces the index. See #1242.
+    Operator string `json:"operator,omitempty"`
+    Desc     bool   `json:"desc,omitempty"`
+    // NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",
+    // or empty when the key uses the direction's default. PostgreSQL defaults
+    // to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
+    // spelling has to be carried.
+    NullsOrder string `json:"nulls_order,omitempty"`
 }
     DBIndexPart represents one ordered key column in an introspected index.
 
@@ -5501,8 +5940,27 @@ type DBRange struct {
     Name    string `json:"name"`
     Schema  string `json:"schema,omitempty"`
     Subtype string `json:"subtype"`
+    // SubtypeOpClass is the operator class backing the subtype's ordering
+    // (pg_range.rngsubopc). Always populated by the catalog, including when the
+    // author never named one, so the comparator only consults it when the
+    // desired schema declares one.
+    SubtypeOpClass string `json:"subtype_opclass,omitempty"`
+    // Collation is the subtype collation (pg_range.rngcollation), empty for
+    // non-collatable subtypes.
+    Collation string `json:"collation,omitempty"`
+    // Canonical is the canonicalization function (pg_range.rngcanonical), empty
+    // when the range has none.
+    Canonical string `json:"canonical,omitempty"`
+    // SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
+    // empty when the range has none.
+    SubtypeDiff string `json:"subtype_diff,omitempty"`
 }
     DBRange represents a PostgreSQL range type read from the database.
+
+    Everything after Subtype exists so a change to an EXISTING range type
+    can be detected. While the reader returned only the name and subtype, the
+    comparator had nothing to compare and reported a changed range as converged
+    (stokaro/ptah#931 item 2).
 
 func (r DBRange) QualifiedName() string
 
@@ -5546,6 +6004,37 @@ type DBSchema struct {
     RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
     Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
     Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+
+    // RolesOutOfScope lists roles that exist on the server but that this
+    // description deliberately does not define, because nothing in the
+    // schemas being read refers to them.
+    //
+    // PostgreSQL roles belong to the cluster rather than to one database, so
+    // "the reader did not describe this role" and "this role does not exist"
+    // are different facts, and a comparator that cannot tell them apart plans
+    // CREATE ROLE for a role that is already there. Roles and RolesOutOfScope
+    // partition the roles Ptah manages, so their union answers the
+    // comparator's question -- does this role exist -- whatever scoping rule
+    // decided the description. See stokaro/ptah#1267 and stokaro/ptah#1276.
+    //
+    // The partition is over managed roles, not over the whole catalog. A
+    // PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
+    // superuser out of both lists, because Ptah manages neither in either
+    // direction, so the union is not every role the server has and must not be
+    // described as if it were. A desired schema that names one of them is
+    // refused before anything is compared or planned, naming the role and the
+    // rule, rather than compared against nothing. See stokaro/ptah#1312.
+    //
+    // This field is not part of the description: it carries role names from
+    // outside the inspected scope, so it is never serialized and never
+    // rendered. Only Roles reaches output.
+    RolesOutOfScope []DBRole `json:"-"`
+
+    // NotDescribed records what this read did not look at, so a comparator can
+    // tell an object the database does not have from one the reader was never
+    // asked about. The zero value claims the read covered everything; see
+    // [go.5x5.cz/ptah/core/coverage].
+    NotDescribed coverage.Set `json:"not_described,omitzero"`
 }
     DBSchema represents the complete schema read from a database
 
@@ -6059,6 +6548,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
+func ReverseSchemaDiff(diff *types.SchemaDiff, desired *goschema.Database, ...) *types.SchemaDiff
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error)
@@ -6256,13 +6746,10 @@ type MigrationFilePair struct {
 package generator // import "go.5x5.cz/ptah/migration/generator"
 
 type MigrationFiles struct {
-    UpFile     string              // Path to the first up migration file
-    DownFile   string              // Path to the first down migration file
-    ReportFile string              // Path to the first safety report file, when requested
-    Version    int64               // First migration version (timestamp)
-    Files      []MigrationFilePair // All generated migration file pairs, in apply order
+    Files []MigrationFilePair // All generated migration file pairs, in apply order
 }
-    MigrationFiles represents the generated migration files.
+    MigrationFiles represents the generated migration files. Files is the
+    authoritative ordered list of migration pairs and their published paths.
 
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
@@ -6439,12 +6926,14 @@ func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 const ConfigFileName = ".ptah-lint.yaml"
 func Describe(f Finding) string
 func Register(rule Rule) error
+func ValidateOptions(opts Options) error
 type Analysis struct{ ... }
     func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error)
+type BaselineColumn struct{ ... }
 type CompatibilityProfile string
     const CompatibilityProfileNative CompatibilityProfile = "" ...
 type Config struct{ ... }
-    func LoadConfig(path string) (*Config, error)
+    func LoadConfig(configPath string) (*Config, error)
     func LoadConfigFS(fsys fs.FS, name string) (*Config, error)
 type File struct{ ... }
 type Finding struct{ ... }
@@ -6478,10 +6967,50 @@ type Analysis struct {
     snapshot.
 
 func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error)
+func (a Analysis) BaselineVersions() []int64
 func (a Analysis) Files() []File
 func (a Analysis) Findings() []Finding
 func (a Analysis) SelectedFiles() []File
 func (a Analysis) SnapshotFS() fs.FS
+
+### go.5x5.cz/ptah/migration/lint.BaselineColumn
+
+package lint // import "go.5x5.cz/ptah/migration/lint"
+
+type BaselineColumn struct {
+    // Version is the migration version whose starting state this column belongs
+    // to: the state read BEFORE that version is applied, not after.
+    Version int64
+    // Schema is the schema of the owning table, as the server spells it.
+    Schema string
+    // Table is the owning table, as the server spells it.
+    Table string
+    // Name is the column name, as the server spells it.
+    Name string
+    // DataType is the column type spelled the way the compatibility surface
+    // prints it. Empty when the caller could not establish that spelling, which
+    // leaves the diagnostic reported under Ptah's own wording rather than
+    // inventing an Atlas sentence for a type nobody measured.
+    DataType string
+    // NotNull reports whether the column rejects NULL.
+    NotNull bool
+    // HasDefault reports whether the column carries a DEFAULT expression.
+    HasDefault bool
+}
+    BaselineColumn is one column of the schema state a migration version starts
+    from, as read from the dev database the run validates against.
+
+    Reading SQL text is enough to see that `ALTER TABLE users RENAME COLUMN id
+    TO oid` retires the name `id`. It is not enough to see what the new name
+    introduces: the retired column's type, nullability and default live in an
+    earlier migration file or in the base schema, never in the rename statement.
+    A caller that replays the directory on a dev database can read them there
+    and hand them over here, and only then can the add side of a rename be
+    reported.
+
+    Callers ask Analysis.BaselineVersions which versions are worth reading,
+    so a directory with no renames costs no introspection at all.
+
 
 ### go.5x5.cz/ptah/migration/lint.CompatibilityProfile
 
@@ -6520,7 +7049,7 @@ type Config struct {
             exclude:
               - legacy/**
 
-func LoadConfig(path string) (*Config, error)
+func LoadConfig(configPath string) (*Config, error)
 func LoadConfigFS(fsys fs.FS, name string) (*Config, error)
 
 ### go.5x5.cz/ptah/migration/lint.File
@@ -6665,6 +7194,11 @@ type Options struct {
     // RuleConfigs carries per-rule severity and path-scoping overrides,
     // normally loaded from .ptah-lint.yaml.
     RuleConfigs map[string]RuleConfig
+    // Baseline carries the schema state each analyzed version starts from,
+    // normally read from the dev database after replaying the migrations that
+    // precede that version. Empty analyzes SQL text alone, which is what every
+    // run without a dev database does. See [BaselineColumn].
+    Baseline []BaselineColumn
 }
     Options configures a lint run.
 
@@ -7194,9 +7728,15 @@ type MigrateUpOptions struct {
     // Amount limits the run to the first N pending migrations after exec-order
     // and target-version filtering. Zero means all selected migrations.
     Amount uint64
-    // AllowDirty skips the default dirty revision guard. Callers should expose
-    // this only as an explicit recovery escape hatch.
+    // AllowDirty skips the default dirty revision guard and requests recovery of
+    // a pending dirty migration. It does not bypass committed-prefix verification;
+    // callers should expose it only as an explicit recovery action.
     AllowDirty bool
+    // DiscardRolledBackFailure removes the Atlas revision row written for a
+    // failed up migration only when this invocation observed a successful
+    // transaction rollback. Existing dirty revisions and uncertain commit or
+    // rollback outcomes remain recorded and block automatic retry.
+    DiscardRolledBackFailure bool
     // AssumedAppliedVersions are treated as applied for plan selection without
     // reading or writing revision metadata. This is intended for dry-run paths
     // that need to model metadata-only operations such as baseline.
@@ -7425,20 +7965,26 @@ type MigrationRevision struct {
     // Direction is the direction that recorded this row. A row left behind by
     // a rollback that stopped halfway reads MigrationDirectionDown, which is
     // what routes `migrations repair --resume-from` to the down body instead of
-    // the up body. Rows written before Ptah recorded the direction, and every
-    // row in the Atlas layout, read MigrationDirectionUp.
-    Direction       MigrationDirection `json:"direction,omitempty"`
-    AtlasType       AtlasRevisionType  `json:"atlas_type,omitempty"`
-    Applied         int                `json:"applied"`
-    Total           int                `json:"total"`
-    Error           string             `json:"error,omitempty"`
-    ErrorStatement  string             `json:"error_stmt,omitempty"`
-    ExecutionTime   time.Duration      `json:"execution_time"`
-    Checksum        string             `json:"checksum,omitempty"`
-    AppliedAt       time.Time          `json:"applied_at"`
-    OperatorVersion string             `json:"operator_version,omitempty"`
-    Dirty           bool               `json:"dirty"`
-    ChecksumCurrent string             `json:"checksum_current,omitempty"`
+    // the up body. Rows written before Ptah recorded the direction read
+    // MigrationDirectionUp. Atlas-layout rows written by Ptah carry the down
+    // marker in operator_version because that schema has no direction column.
+    Direction      MigrationDirection `json:"direction,omitempty"`
+    AtlasType      AtlasRevisionType  `json:"atlas_type,omitempty"`
+    Applied        int                `json:"applied"`
+    Total          int                `json:"total"`
+    Error          string             `json:"error,omitempty"`
+    ErrorStatement string             `json:"error_stmt,omitempty"`
+    ExecutionTime  time.Duration      `json:"execution_time"`
+    // Checksum is the canonical full migration checksum on a clean native row.
+    // A dirty native row with committed progress uses a partial:h1: cumulative
+    // source-prefix digest so a resume can prove which statements it may skip.
+    // Atlas-format rows keep the Atlas hash here and use partial_hashes internally.
+    Checksum        string    `json:"checksum,omitempty"`
+    AppliedAt       time.Time `json:"applied_at"`
+    OperatorVersion string    `json:"operator_version,omitempty"`
+    Dirty           bool      `json:"dirty"`
+    ChecksumCurrent string    `json:"checksum_current,omitempty"`
+    // Has unexported fields.
 }
     MigrationRevision records one row from the migration metadata table.
 
@@ -7756,9 +8302,8 @@ type StatementObserver interface {
     StatementObserver receives successfully executed migration statements.
     It is called after either an interceptor or the normal migrator path
     executes the statement. When a Migrator executes SQL in no-transaction mode,
-    the observer normally runs after Ptah durably checkpoints that statement's
-    progress. Atlas-format down execution preserves Atlas bookkeeping and is not
-    checkpointed. Returning an error aborts the migration.
+    the observer runs after Ptah durably checkpoints that statement's progress.
+    Returning an error aborts the migration.
 
 
 ### go.5x5.cz/ptah/migration/migrator.StatementObserverFunc
@@ -8007,6 +8552,7 @@ func AssessSQL(statement string) StatementAssessment
 ## go.5x5.cz/ptah/migration/schemadiff
 
 func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff
+func CompareReportingUndecidedAdditions(generated *goschema.Database, database *types.DBSchema, ...) (*difftypes.SchemaDiff, []coverage.Object)
 func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSchema, info types.DBInfo, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
@@ -8026,6 +8572,7 @@ type IndexRef struct{ ... }
 type MaterializedViewDiff struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
+type RangeDiff struct{ ... }
 type RoleDiff struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceDiff struct{ ... }
@@ -8080,8 +8627,21 @@ package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 type CompositeTypeDiff struct {
     TypeName string            `json:"type_name"`
     Changes  map[string]string `json:"changes"`
+
+    // CurrentFieldTypes are the field types the composite has in the database
+    // being compared against, in that catalog's own spellings and in field
+    // order. They order the non-CASCADE DROP the recreate path emits, which
+    // runs against the current shape rather than the desired one.
+    //
+    // Empty when the caller built the diff by hand or the type's from-side is
+    // unknown; the drop ordering then falls back to declaration order.
+    CurrentFieldTypes []string `json:"current_field_types,omitempty"`
 }
     CompositeTypeDiff represents changes to a PostgreSQL composite type.
+
+    Changes is the human-readable "old -> new" payload. CurrentFieldTypes is
+    the from-side of the same comparison kept as type spellings, for the reason
+    given on DomainDiff.CurrentBaseType.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.ConstraintAdditionInfo
@@ -8171,8 +8731,27 @@ package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 type DomainDiff struct {
     DomainName string            `json:"domain_name"`
     Changes    map[string]string `json:"changes"`
+
+    // CurrentBaseType is the base type the domain has in the database being
+    // compared against, in that catalog's own spelling -- the from-side of the
+    // "type" entry in Changes, structurally rather than as prose.
+    //
+    // A modification is reconciled as a non-CASCADE DROP followed by a CREATE.
+    // The CREATE belongs to the desired definitions, but the DROP executes
+    // against the database as it stands, so only the references it holds now
+    // can block it, and those are the ones recorded here. The two sides
+    // disagree exactly when the modification is what moved a reference.
+    //
+    // Empty when the caller built the diff by hand or the domain's from-side is
+    // unknown; the drop ordering then falls back to declaration order.
+    CurrentBaseType string `json:"current_base_type,omitempty"`
 }
     DomainDiff represents changes to a PostgreSQL domain type.
+
+    Changes is the human-readable "old -> new" payload. CurrentBaseType is the
+    from-side of the same comparison kept as a type spelling rather than prose,
+    because a plan that drops this domain has to be ordered by the shape the
+    database holds now. See the comment on CurrentBaseType.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.EnumDiff
@@ -8362,10 +8941,11 @@ type RLSPolicyRef struct {
     RLSPolicyRef represents a reference to an RLS policy with its table
     information.
 
-    This structure is used to identify RLS policies that need to be dropped,
-    providing both the policy name and the table it belongs to. This is
-    necessary because PostgreSQL requires both pieces of information for DROP
-    POLICY statements.
+    This structure identifies an RLS policy on both sides of a diff -- policies
+    added as well as policies dropped. The table is not decoration: a PostgreSQL
+    policy name is scoped to its table, so two tables in one schema may each
+    carry a policy called "tenant_isolation", and both CREATE POLICY and DROP
+    POLICY need the table to say which one is meant.
 
     # Example Usage
 
@@ -8373,6 +8953,27 @@ type RLSPolicyRef struct {
             PolicyName: "user_tenant_isolation",
             TableName: "users",
         }
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.RangeDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type RangeDiff struct {
+    RangeName string            `json:"range_name"`
+    Changes   map[string]string `json:"changes"`
+
+    // CurrentSubtype is the subtype the range has in the database being compared
+    // against, in that catalog's own spelling. It is the from-side used to order
+    // the non-CASCADE DROP, for the same reason DomainDiff.CurrentBaseType is:
+    // the DROP runs against the database as it stands, so only the references
+    // that database holds now can block it.
+    //
+    // Empty when the caller built the diff by hand; the drop ordering then falls
+    // back to declaration order.
+    CurrentSubtype string `json:"current_subtype,omitempty"`
+}
+    RangeDiff represents changes to an existing PostgreSQL range type.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.RoleDiff
@@ -8461,6 +9062,25 @@ type SchemaDiff struct {
     // plans or uniqueness protections.
     IndexesRemoved []IndexRef `json:"indexes_removed"`
 
+    // ConstraintBackedIndexRemovals is the subset of IndexesRemoved whose
+    // object is enforced by a UNIQUE constraint of the same name on the same
+    // table. It records what the object is; each planner spells the statement
+    // its engine accepts.
+    //
+    // PostgreSQL refuses the index spelling for one:
+    // `cannot drop index uq_users_email because constraint uq_users_email on
+    // table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
+    // planner drops the constraint instead. MySQL and MariaDB are the opposite
+    // case -- a unique key and its index are one catalog row that `DROP INDEX`
+    // drops, which is what the pinned community binary v1.3.0 plans there -- so
+    // their planners ignore the list and their plans are unchanged by it.
+    //
+    // The list is not PostgreSQL-only, because the down direction needs it on
+    // every engine: what was dropped was a UNIQUE constraint, and a rollback
+    // that reverses it into an index addition restores the wrong object (see
+    // the generator's reverseIndexRemovals).
+    ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty"`
+
     // ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
     // but not in the current database schema
     ExtensionsAdded []string `json:"extensions_added"`
@@ -8503,10 +9123,18 @@ type SchemaDiff struct {
     CompositeTypesRemoved  []string            `json:"composite_types_removed"`
     CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
 
-    // RangesAdded/Removed track PostgreSQL range types. Ranges have no in-place
-    // alter, so there is no Modified category (a change is drop + recreate).
-    RangesAdded   []string `json:"ranges_added"`
-    RangesRemoved []string `json:"ranges_removed"`
+    // RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
+    // no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE
+    // DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
+    // types already use.
+    //
+    // Modified used to be absent, and the comparator built name sets only, so
+    // changing the subtype of an existing range type produced an empty plan and
+    // `schema apply` reported "Schema is synced" while the database still held
+    // the old definition (stokaro/ptah#931 item 2).
+    RangesAdded    []string    `json:"ranges_added"`
+    RangesRemoved  []string    `json:"ranges_removed"`
+    RangesModified []RangeDiff `json:"ranges_modified"`
 
     // ViewsAdded contains names of views that exist in the target schema
     // but not in the current database schema.
@@ -8541,9 +9169,14 @@ type SchemaDiff struct {
     // TriggersModified contains detailed information about changed triggers.
     TriggersModified []TriggerDiff `json:"triggers_modified"`
 
-    // RLSPoliciesAdded contains names of RLS policies that exist in the target schema
-    // but not in the current database schema
-    RLSPoliciesAdded []string `json:"rls_policies_added"`
+    // RLSPoliciesAdded contains RLS policies that exist in the target schema
+    // but not in the current database schema.
+    //
+    // A policy name is scoped to its table, not to the schema, so the name on
+    // its own does not identify a policy: two tables may each carry one called
+    // "tenant_isolation". The table travels with the name for the same reason
+    // it does in TriggersAdded.
+    RLSPoliciesAdded []RLSPolicyRef `json:"rls_policies_added"`
 
     // RLSPoliciesRemoved contains RLS policies that exist in the current database
     // but not in the target schema (may remove an access-control protection)
@@ -8649,10 +9282,13 @@ type SchemaDiff struct {
             fmt.Printf("Found %d new tables\n", len(diff.TablesAdded))
         }
 
+func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{}
 func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Semantics
 func (d *SchemaDiff) HasChanges() bool
 func (d *SchemaDiff) IndexAdditions() []IndexRef
 func (d *SchemaDiff) IndexRemovals() []IndexRef
+func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{}
+func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef)
 func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef)
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef)
 
@@ -8747,6 +9383,43 @@ package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 type ViewDiff struct {
     ViewName string            `json:"view_name"`
     Changes  map[string]string `json:"changes"`
+
+    // PreviousBody is the view body that is in force before this diff is
+    // applied: the database side of a forward comparison, and the post-up side
+    // of a reversed one. It is what makes the modification path decidable.
+    //
+    // PostgreSQL accepts CREATE OR REPLACE VIEW only when the new query yields
+    // the old column list with columns appended to the end -- same names, same
+    // types, same order. Dropping, renaming or retyping a column is refused at
+    // execution time, and a down migration built with CREATE OR REPLACE is
+    // therefore un-appliable for every view modification except the one shape
+    // the up migration is least likely to have made. A planner that cannot see
+    // the prior body cannot tell the legal case from the refused one, so it has
+    // to choose between an un-appliable statement and always dropping the view
+    // with CASCADE, which takes dependents with it.
+    //
+    // An empty value means "not known". It does not on its own select a plan:
+    // what a planner cannot decide is settled by Rollback below, so a forward
+    // plan still attempts the replace -- the engine refuses it if it is illegal,
+    // and refusing costs nothing -- while a rollback takes the drop and
+    // recreate that always applies.
+    PreviousBody string `json:"previous_body,omitempty"`
+
+    // Rollback reports that this entry is being planned in the DOWN direction:
+    // the statement rendered for it runs while an operator is undoing a
+    // migration.
+    //
+    // It decides nothing on its own. It settles the cases where a planner cannot
+    // prove whether the engine accepts an in-place replace, and the two
+    // directions want opposite answers there. Going forward, the replace is
+    // worth attempting: it keeps dependent objects and the privileges granted on
+    // the view, and if the engine refuses it the migration stops with nothing
+    // destroyed. A rollback cannot be stopped that way -- it is already running
+    // during the incident -- so it takes the drop-and-recreate that always
+    // applies, and pays for it by rebuilding what CASCADE removes.
+    //
+    // Reverse plan builders set it; a forward comparison leaves it false.
+    Rollback bool `json:"rollback,omitempty"`
 }
     ViewDiff represents changes to a view definition.
 

@@ -47,9 +47,21 @@ commands, including regular-expression case selection through `FilterCases`.
 See [Test migrations and schemas](../../testing/migrations-and-schema/) for
 its case model and [Database test commands](../../reference/test-cases/) for CLI behavior.
 
+`migration/lint.ValidateOptions` checks rule definitions, configured selectors,
+severity and path overrides, compatibility mode, and migration-directory format
+without reading migration files. Host applications that can skip analysis on a
+no-work or explicit-override path should validate first so policy errors cannot
+bypass the gate.
+
 `projectconfig.ParseAtlasFSWithOptions` evaluates `atlas.hcl` against a
 caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
+Use the collection-valued parse or load functions for an env `for_each` that
+selects several configs; singular functions reject that cardinality.
+`projectconfig.Config.IgnoredConstructs` carries every Atlas CE-compatible
+no-op name with its kind and source location, and `projectconfig.Merge`
+preserves the collection. Ptah's CLI reports each entry; embedders decide how
+to expose the same metadata.
 
 `renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
 a complete `goschema.Database` without rendering SQL. They use the same
@@ -92,9 +104,47 @@ the callback failed.
 For SQL-backed `no_transaction` migrations, Ptah writes a durable progress
 checkpoint before invoking the observer. Before each statement, it first marks
 that statement's outcome as unknown; after success, it advances the completed
-count and clears the marker. Atlas-format down execution is excluded because it
-preserves Atlas's unchanged-row bookkeeping. A custom `MigrationFunc` is opaque
-to the migrator and does not receive statement-level checkpointing.
+count and clears the marker. Process exit, context cancellation, or deadline
+while execution is in flight preserves the unknown-outcome marker. This
+includes Atlas-format down execution. A custom `MigrationFunc` is opaque to the
+migrator and does not receive statement-level checkpointing.
+
+Dirty SQL-backed resumes verify the already committed source prefix before
+skipping it. Native rows use the `partial:h1:` value in `Checksum`; Atlas rows
+use cumulative `partial_hashes`. A failure after changing transaction mode
+cannot reduce the recorded applied count below that verified prefix.
+
+Negative `applied` or `total` values and `applied > total` are rejected whenever
+a revision is read, including through `GetRevisions`, `GetAppliedRevisions`,
+`GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. Native
+rows accept only `applied`, `pending`, `failed`, `pending:down`, and
+`failed:down`. An applied row cannot claim that state until `applied == total`;
+other spellings, explicit `:up` suffixes, and direction-suffixed applied states
+are invalid because a completed rollback deletes its revision row.
+
+`RepairMigration` holds the session advisory lock across revision inspection,
+resumed SQL, safety checks, and the final metadata write.
+
+SQL-backed `MigrationTxModeNone` attempts pin their migration SQL to one
+physical database session. Server-database revision metadata remains on the
+original connection; SQLite uses the pinned session with a `main`-qualified
+table to support its single-connection in-memory mode. Resume replays recognized
+session controls from the verified committed prefix on a fresh session and
+refuses prefixes whose session-local state cannot be reconstructed safely.
+Top-level transaction-control statements are rejected before session pinning or
+revision mutation because their commit boundary would conflict with Ptah's
+durable per-statement checkpoints.
+
+On PostgreSQL, an up migration may clean invalid index residue with a matching
+`DROP INDEX` that executes before the create in the current attempt. The
+migrator resolves unqualified drops and target tables through `search_path`,
+rejects any other relation that owns the schema-level index name, and rechecks
+transaction-local catalog state before writing a clean revision. It records the
+resolved schema and target at each conditional create, rather than resolving a
+deduplicated raw name under the final `search_path`. Repair without an explicit
+replayable path checks every same-named target in PostgreSQL user schemas. A drop skipped
+by resume does not satisfy the preflight. `RepairMigration` performs the same
+positive index-state check, including when `Force` is set.
 
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
@@ -120,6 +170,13 @@ migration lock before transaction-mode validation, including an empty plan. It
 captures metadata but cannot abort execution. Use the abort-capable `Preflight`
 hook for work that must run after static validation and before any schema or
 revision change.
+
+`MigrateUpOptions.DiscardRolledBackFailure` applies only to the Atlas
+revision-table format; it has no effect with native Ptah metadata. It removes
+only the failed revision written by the current invocation, and only after
+transaction rollback succeeds. Existing dirty revisions and commit, rollback,
+partial-progress, and unknown-outcome failures remain recorded and block
+automatic retry.
 
 ## Pinned database sessions
 
@@ -177,6 +234,17 @@ table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
 
+Row-level security policies use the same shape. `RLSPoliciesAdded` and
+`RLSPoliciesRemoved` are `[]RLSPolicyRef`, `RLSPoliciesModified` is
+`[]RLSPolicyDiff`, and every entry names the owning table next to the policy
+name. That pair is the policy's identity: a PostgreSQL policy name is scoped to
+its table, so two tables in one schema may each carry `tenant_isolation`. The
+table half is compared under the diff's identifier semantics, not as a raw
+string, so the desired spelling `public.orders` and the introspected spelling
+`orders` resolve to one table in both the forward and the reverse direction.
+A reference the target schema cannot resolve is rejected with
+`ptaherr.ErrInvalidSchemaDiff`; it is never dropped from the plan.
+
 Use `migration/generator.GenerateCheckpointWithDatabase` for a SQL Server
 schema whose live catalog semantics must survive checkpoint planning.
 `GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
@@ -192,7 +260,9 @@ Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with
 `generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only
 checked planning; malformed references, unresolved additions, and target
-index-namespace conflicts fail before SQL is returned.
+index-namespace conflicts fail before SQL is returned. The returned
+`generator.MigrationFiles.Files` slice is the authoritative list of generated
+pairs and published paths, in apply order.
 
 ## Safety reports and shadow errors
 
@@ -203,8 +273,9 @@ API when an embedder needs the same machine-readable contract as
 `generator.GenerateMigrationOptions.ReportFormat` to `json` instead publishes
 one `.safety.json` artifact beside each generated migration pair.
 
-When candidate shadow verification fails, `generator.PlanMigration` and
-`generator.GenerateMigration` preserve a typed
+When candidate or baseline shadow verification fails,
+`generator.PlanMigration`, `generator.GenerateMigration`, and
+`generator.VerifyBaselineShadow` preserve a typed
 `*generator.ShadowVerificationError`. Inspect it with `errors.As` instead of
 parsing `Error()`:
 
@@ -217,10 +288,17 @@ if errors.As(err, &shadowErr) {
 }
 ```
 
-`Result.Stage` identifies the failed boundary, such as `connect`, `replay`,
-`schema-match`, `round-trip-down`, or `round-trip-up`. A schema-match result
-contains every mismatch in deterministic category and object order, not only
-the first.
+`Result.Stage` identifies the failed boundary, such as `connect`, `replay`, or
+`schema-match`. Candidate and baseline verification use the same names at
+shared boundaries. Baseline verification can additionally report
+`target-introspect`, `reset-schemas`, and `drop-metadata`; candidate-only
+`round-trip-down` and `round-trip-up` stages do not occur during baseline
+verification.
+
+Baseline display text keeps the
+`baseline shadow check failed:` prefix expected by CLI users. A schema-match
+result contains every mismatch in deterministic category and object order, not
+only the first.
 Each `ShadowMismatch` has a stable `Kind`, a human-readable `Message`, and the
 available object, table, column, constraint, or changed-property fields.
 Operational failures also preserve their underlying error through `Unwrap`;
@@ -239,7 +317,7 @@ the error:
   `ptaherr.ErrUnsupportedDialect`;
 - invalid schema diffs rejected during planning should support `errors.Is` with
   `ptaherr.ErrInvalidSchemaDiff`;
-- shadow candidate verification should support `errors.As` with
+- shadow candidate and baseline verification should support `errors.As` with
   `*generator.ShadowVerificationError`;
 - command wrappers should preserve typed errors instead of replacing them with
   string-only errors.

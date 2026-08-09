@@ -81,10 +81,12 @@ This matters most on `ptah-compat migrate apply`, which registers no
 until [`stokaro/ptah#1134`](https://github.com/stokaro/ptah/pull/1134) that flag
 could not clear a dirty row — the retry died on the revision re-insert with
 `UNIQUE constraint failed`. The retry now rewrites the existing row and restarts
-the body at the first unapplied statement, so a recorded check failure would
+the body at the first unapplied statement only after validating the recorded
+statement count and committed source prefix, so a recorded check failure would
 have a working in-band recovery. Recording nothing in the first place is still
-better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency override, not that
-recovery path: correcting the guarded data is, and it needs no bypass at all.
+better: it needs no flag at all. The `PTAH_SKIP_CHECKS` bypass is an emergency
+override, not that recovery path: correcting the guarded data is, and it needs
+no bypass at all.
 
 ## Assertion result shape
 
@@ -189,18 +191,25 @@ PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 The name is not a second convention. Ptah binds every native flag to a
 `PTAH_<FLAG>` environment twin, so `ptah migrations up --skip-checks` already
 answers to `PTAH_SKIP_CHECKS`; `ptah-compat migrate apply` reads the same
-variable. Values are parsed as booleans (`1`, `true`, `t`, and their negations),
-and an unset or empty value enforces checks. A run with the bypass active prints
-a warning on stderr, because unlike a flag it leaves no trace in the command
-line.
+variable. A run with the bypass active prints a warning on stderr, because
+unlike a flag it leaves no trace in the command line.
 
-The two binaries agree on the name and on every valid boolean. They differ on an
-**invalid** one: `ptah-compat migrate apply` refuses it outright, before opening
-the database, so a typo in a CI environment file cannot read as a bypass that
-silently was not one, while native `ptah migrations up` discards the parse error
-and enforces checks. Both fail safe — a value neither of them understands never
-bypasses anything — but only the compat surface says so. Values with surrounding
-whitespace (`" 1"`) are not booleans and follow the same split.
+The two binaries agree on the name, on every valid boolean, and on every invalid
+one. An unset variable enforces checks and so does a valid false spelling; any
+other value — a typo, surrounding whitespace as in `" 1"`, or an exported empty
+value — is a configuration error that stops the run before the database is
+opened, on both binaries:
+
+```console
+$ PTAH_SKIP_CHECKS=notabool ptah migrations up --db-url "$DB" --migrations-dir migrations
+error: invalid boolean value "notabool" for PTAH_SKIP_CHECKS
+$ PTAH_SKIP_CHECKS=notabool ptah-compat migrate apply --url "$DB" --dir file://migrations
+Error: invalid boolean value "notabool" for PTAH_SKIP_CHECKS
+```
+
+A typo in a CI environment file therefore cannot read as a bypass that silently
+was not one. See
+[Boolean environment variables](site/src/content/docs/reference/configuration.md).
 
 It is an environment variable rather than a flag because Atlas registers no
 `--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas

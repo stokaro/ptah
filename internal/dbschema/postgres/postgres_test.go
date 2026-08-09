@@ -202,8 +202,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		tableName := fmt.Sprintf("table_%02d", i)
 		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "integer", "int4", "", "NO", nil, nil, nil, nil, int64(1), "", "", "", ""},
-			[]driver.Value{tableName, "name", "character varying", "varchar", "", "NO", nil, int64(255), nil, nil, int64(2), "", "", "", ""},
+			[]driver.Value{tableName, "id", "integer", "int4", "", "", "", "NO", nil, nil, nil, nil, int64(1), "", "", "", ""},
+			[]driver.Value{tableName, "name", "character varying", "varchar", "", "", "", "NO", nil, int64(255), nil, nil, int64(2), "", "", "", ""},
 		)
 	}
 
@@ -217,6 +217,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 					"data_type",
 					"udt_name",
 					"formatted_type",
+					"domain_name",
+					"domain_schema",
 					"is_nullable",
 					"column_default",
 					"character_maximum_length",
@@ -257,32 +259,6 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables[0].Columns, qt.HasLen, 2)
 	c.Assert(tables[0].Columns[1].CharacterMaxLength, qt.IsNotNil)
 	c.Assert(*tables[0].Columns[1].CharacterMaxLength, qt.Equals, 255)
-}
-
-func TestPostgreSQLReaderReadSchemasSkipsMissingScopedSchema(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.Open(t, func(_ string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		return dbtest.QueryResult{
-			Columns: []string{"nspname", "schema_comment"},
-		}, nil
-	})
-	reader := NewPostgreSQLReader(db.SQL, "public")
-	reader.SetSchemas([]string{"missing"})
-
-	schemas, err := reader.readSchemas()
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(schemas, qt.HasLen, 0)
-}
-
-func TestPostgreSQLReaderReadSchemasUnscopedDoesNotQuery(t *testing.T) {
-	c := qt.New(t)
-	reader := NewPostgreSQLReader(nil, "public")
-
-	schemas, err := reader.readSchemas()
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(schemas, qt.IsNil)
 }
 
 func TestPostgreSQLReader_ExtensionFunctionFiltering(t *testing.T) {

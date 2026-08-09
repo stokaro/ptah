@@ -5,6 +5,7 @@ import (
 	"unicode"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
 func normalizeSQLIdentifier(value string) string {
@@ -30,6 +31,57 @@ func normalizeSQLTableIdentifier(value string) (schema, name string) {
 func normalizeSQLTableReference(value string) string {
 	schema, name := normalizeSQLTableIdentifier(value)
 	return goschema.QualifyTableName(schema, name)
+}
+
+// catalogPostgresTableReference answers which relation a PostgreSQL statement
+// names, one identifier component at a time.
+//
+// The two spellings `ORDERS` and `"ORDERS"` reach this package as different
+// strings, and PostgreSQL reads them as different relations: the unquoted one
+// is folded to `orders` on its way into the catalog, the quoted one keeps its
+// case. Measured on PostgreSQL 17.10 against a database holding only `orders`,
+// `CREATE POLICY p ON ORDERS` exits 0 with a pg_policy row on `public.orders`
+// while `CREATE POLICY p ON "ORDERS"` exits 1 with `relation "ORDERS" does not
+// exist`.
+//
+// [normalizeSQLTableReference] unquotes every component and therefore erases
+// that difference, which is why the reference has to be folded HERE, at the one
+// point in the pipeline that still holds the quoting. Everything downstream
+// sees the relation, so nothing downstream has to guess -- and a guess is what
+// relocated an access-control declaration onto a relation the author did not
+// name (stokaro/ptah#1311).
+//
+// The fold is per component because the components are independent:
+// `"App".ORDERS` names the relation `orders` inside the schema `App`, and
+// PostgreSQL 17.10 resolves it against a table created as `"App".orders`
+// with exit 0.
+//
+// This is deliberately not applied to identifiers in general. Only PostgreSQL
+// folds unquoted identifiers down, and only the RLS statements this package
+// routes here are PostgreSQL-only syntax; the MySQL, MariaDB and SQL Server
+// frontends share the reader and must keep their own case rules.
+func catalogPostgresTableReference(value string) string {
+	parts := splitSQLIdentifier(value)
+	for index, part := range parts {
+		parts[index] = catalogPostgresIdentifierPart(strings.TrimSpace(part))
+	}
+	if len(parts) == 1 {
+		return goschema.QualifyTableName("", parts[0])
+	}
+	return goschema.QualifyTableName(
+		strings.Join(parts[:len(parts)-1], "."),
+		parts[len(parts)-1],
+	)
+}
+
+// catalogPostgresIdentifierPart folds one component the way PostgreSQL does:
+// an unquoted component loses its ASCII case, a quoted one keeps every
+// character it was written with.
+func catalogPostgresIdentifierPart(part string) string {
+	if isQuotedSQLIdentifierPart(part) {
+		return unquoteSQLIdentifierPart(part)
+	}
+	return identifier.ComparisonASCIIInsensitive.IdentityKey(part)
 }
 
 func tableStructName(value string) string {

@@ -1,9 +1,14 @@
 # API schema export (OpenAPI / GraphQL)
 
-Ptah exports the schema it parses from Go annotations to API-facing formats:
-OpenAPI 3.0 component schemas, GraphQL SDL, and Protobuf definitions. The parsed
+Ptah exports a desired schema to API-facing formats: OpenAPI 3.0 component
+schemas, GraphQL SDL, and Protobuf definitions. The parsed
 `goschema.Database` already carries types, nullability, enums and foreign keys,
 so each format is a direct projection of that intermediate representation.
+That intermediate representation is also what makes the source format
+interchangeable: `--root-dir` reads Go annotations and `--schema-file` reads a
+YAML, HCL, or SQL schema file through `cmd/internal/schemaload`, the resolver
+behind `ptah schema render`, and the two produce the same artifact for the same
+tables.
 This is contract generation, not database publication: Ptah emits no runtime
 server, data access, authentication, or authorization.
 
@@ -37,13 +42,17 @@ ptah schema export --to graphql --root-dir ./models --out schema.graphql
 
 # Omit --out to write the schema to stdout for piping into a validator
 ptah schema export --to graphql --root-dir ./models > schema.graphql
+
+# Read the desired schema from a YAML, HCL, or SQL file instead
+ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 ```
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--from` | all | Source format. Only `go` is supported. |
+| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, or `sql`. Checked against the file extension; unset takes the format from the extension. `db` is refused — run `ptah introspect` first. |
 | `--to` | all | Target format: `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](./site/src/content/docs/schema/protobuf.md). The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
+| `--schema-file` | `openapi-v3`, `graphql`, `protobuf` | YAML, HCL, or SQL schema file to export instead of Go annotations. Repeatable; merged with `--root-dir` when both are given. Refused for `hcl`, whose export rewrites the Go files it reads. |
 | `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](./site/src/content/docs/schema/protobuf.md), where it is also the compatibility state read back on the next run. |
 | `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |

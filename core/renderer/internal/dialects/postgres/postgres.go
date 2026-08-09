@@ -48,6 +48,10 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 
 	parts = append(parts, r.dropIndexTarget(node))
 
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
 	sql := strings.Join(parts, " ") + ";"
 
 	// Add comment if provided
@@ -65,7 +69,11 @@ func (r *Renderer) dropIndexTarget(node *ast.DropIndexNode) string {
 	}
 	tableParts := splitQualifiedIdentifier(node.Table)
 	if len(tableParts) < 2 {
-		return r.escapeIdentifier(node.Name)
+		// No table namespace to borrow, so the index name is the only place a
+		// qualifier can be, and `DROP INDEX app.idx` puts one there. Escaping
+		// it whole would emit "app.idx" as a single identifier and name an
+		// index nobody created. See [ast.DropIndexNode.Name].
+		return r.escapeQualifiedIdentifier(node.Name)
 	}
 	schemaParts := tableParts[:len(tableParts)-1]
 	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(node.Name)
@@ -325,26 +333,39 @@ func unquoteIdentifier(identifier string) string {
 	return identifier
 }
 
+// splitQualifiedIdentifier splits on the dots that separate name parts while
+// leaving dots inside a double-quoted part alone. A doubled quote is SQL's
+// escape for a literal quote and does not end the quoted part.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// two delimiters this scan recognizes are ASCII, and UTF-8 is self
+// synchronizing -- no byte of a multi-byte sequence is ever below 0x80 -- so a
+// byte scan can find them without decoding, and slicing hands every other byte
+// back exactly as it arrived. The previous form accumulated `string(character)`
+// from a byte, which re-encodes each byte as its own code point: `Ä` (C3 84)
+// came back out as `Ã` plus U+0084, renaming every non-ASCII object. See
+// stokaro/ptah#1352.
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
 func splitQualifiedIdentifier(identifier string) []string {
-	parts := []string{""}
+	var parts []string
+	start := 0
 	inQuotes := false
 	for i := 0; i < len(identifier); i++ {
-		character := identifier[i]
-		if character == '"' {
-			if inQuotes && i+1 < len(identifier) && identifier[i+1] == '"' {
-				parts[len(parts)-1] += `""`
-				i++
-				continue
-			}
+		switch {
+		case identifier[i] == '"' && inQuotes && i+1 < len(identifier) && identifier[i+1] == '"':
+			i++
+		case identifier[i] == '"':
 			inQuotes = !inQuotes
+		case identifier[i] == '.' && !inQuotes:
+			parts = append(parts, identifier[start:i])
+			start = i + 1
 		}
-		if character == '.' && !inQuotes {
-			parts = append(parts, "")
-			continue
-		}
-		parts[len(parts)-1] += string(character)
 	}
-	return parts
+	return append(parts, identifier[start:])
 }
 
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
@@ -639,8 +660,15 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, "ON")
 	parts = append(parts, r.escapeQualifiedIdentifier(node.Table))
 
-	// Add index type (USING clause) for PostgreSQL
-	if node.Type != "" && node.Type != "BTREE" {
+	// Add index type (USING clause) for PostgreSQL.
+	//
+	// The btree comparison is case-insensitive because the access method now
+	// has two sources with different conventions: an annotation or HCL source
+	// spells it BTREE/GIN, while the live-database reader reports pg_am.amname
+	// verbatim, which PostgreSQL spells btree/gin. Both mean the default
+	// method, and emitting "USING btree" for every introspected index would be
+	// a gratuitous divergence from the pinned binary's output.
+	if node.Type != "" && !strings.EqualFold(node.Type, "BTREE") {
 		parts = append(parts, "USING")
 		parts = append(parts, node.Type)
 	}
@@ -657,6 +685,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		if part.Desc {
 			columnSpec += " DESC"
 		}
+		columnSpec += renderIndexPartNullsOrder(part)
 		columnSpecs = append(columnSpecs, columnSpec)
 	}
 	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
@@ -686,6 +715,25 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	return nil
+}
+
+// renderIndexPartNullsOrder renders the NULLS clause for one index part.
+//
+// It renders whatever the part carries rather than second-guessing it. Deciding
+// that a clause is redundant belongs to whoever produced the part: PostgreSQL's
+// defaults are NULLS LAST for ASC and NULLS FIRST for DESC, and the live-
+// database reader already declines to record an ordering that matches its
+// direction's default, so nothing introspected reaches here with a redundant
+// value. A source that spelled one out explicitly gets it back.
+func renderIndexPartNullsOrder(part ast.IndexPart) string {
+	switch strings.ToUpper(part.NullsOrder) {
+	case ast.NullsOrderFirst:
+		return " NULLS FIRST"
+	case ast.NullsOrderLast:
+		return " NULLS LAST"
+	default:
+		return ""
+	}
 }
 
 func (r *Renderer) renderIndexStorageParams(params map[string]string) (string, error) {
@@ -757,7 +805,7 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 // VisitEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
 func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
 	if !r.capabilities().Has(capability.EnumCustomType) {
-		r.w.WriteLinef("-- %s: enum type %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("enum type", node.Name)
 		return nil
 	}
 
@@ -1104,28 +1152,42 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		return
 	}
 
-	// Change column type (with USING clause for complex conversions if needed)
+	// Change the column type. An enum target needs an explicit USING cast:
+	// PostgreSQL has no assignment cast from varchar (or anything else) to an
+	// enum, so a bare `ALTER COLUMN ... TYPE <enum>` aborts the migration with
+	// `column "s" cannot be cast automatically to type ...` (SQLSTATE 42804).
+	//
+	// Whether the target is an enum comes from the schema declaration carried on
+	// the node, not from the type name: this used to test
+	// strings.HasPrefix(type, "enum_"), so an enum named "status_kind" got no
+	// cast and its migration died at execution while an otherwise identical one
+	// named "enum_status" applied cleanly (stokaro/ptah#931 item 1).
+	targetType := column.Type
 	if columnType != column.Type {
 		// Type was transformed (e.g., enum handling), use the processed type
-		// For enum types, add USING clause to handle potential casting issues
-		if strings.HasPrefix(columnType, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
-				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType, r.escapeIdentifier(column.Name), columnType)
-		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType)
-		}
+		targetType = columnType
+	}
+	if column.EnumType {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType, r.escapeIdentifier(column.Name), targetType)
 	} else {
-		// For enum types, add USING clause to handle potential casting issues
-		if strings.HasPrefix(column.Type, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
-				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type, r.escapeIdentifier(column.Name), column.Type)
-		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type)
-		}
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)
 	}
 
-	// Change nullability
-	if column.Nullable {
+	// Change nullability.
+	//
+	// A primary key column is NOT NULL on every engine this renderer serves --
+	// PostgreSQL, CockroachDB, YugabyteDB and Spanner -- and PostgreSQL refuses
+	// to take that away: `ALTER TABLE "users" ALTER COLUMN "id" DROP NOT NULL`
+	// on a key column fails with `column "id" is in a primary key`
+	// (SQLSTATE 42P16), so emitting it makes the whole plan unappliable rather
+	// than merely verbose. ast.ColumnNode.Nullable no longer carries the rule
+	// for the AST, because SQLite does not have it (stokaro/ptah#1235), so the
+	// dialects that do have it apply it where the dialect is known. The
+	// CREATE TABLE path above writes PRIMARY KEY and NOT NULL together for the
+	// same reason.
+	if column.Nullable && !column.Primary {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
 		r.updateNullValuesBeforeNotNull(tableName, column)
@@ -1221,6 +1283,11 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	if !r.capabilities().Has(capability.Functions) {
+		r.writeObjectSkipped("function", node.Name)
+		return nil
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1347,6 +1414,11 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 // VisitDropFunction renders a DROP FUNCTION statement
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	if !r.capabilities().Has(capability.Functions) {
+		r.writeObjectSkipped("function", node.Name)
+		return nil
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1420,10 +1492,22 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 	return parts
 }
 
+// writeObjectSkipped records that a schema object the desired schema declares
+// is not emitted for this target, naming both the object kind and the object.
+//
+// One renderer serves the whole PostgreSQL family, and both the offline
+// converter and the migration planner hand their nodes to it, so writing the
+// omission here is what makes `schema render` and `schema apply` say the same
+// thing about the same object instead of one of them dropping it in silence
+// (stokaro/ptah#929).
+func (r *Renderer) writeObjectSkipped(kind, name string) {
+	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.", r.dialectUpper, kind, name)
+}
+
 // VisitCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1455,7 +1539,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 // the set options are emitted; a node with no set options renders nothing.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1477,7 +1561,7 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 // VisitDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 	if !r.capabilities().Has(capability.Sequences) {
-		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		r.writeObjectSkipped("sequence", node.Name)
 		return nil
 	}
 
@@ -1499,6 +1583,11 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 
 // VisitCreateView renders a CREATE VIEW statement.
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	if !r.capabilities().Has(capability.Views) {
+		r.writeObjectSkipped("view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1518,6 +1607,11 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 
 // VisitDropView renders a DROP VIEW statement.
 func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	if !r.capabilities().Has(capability.Views) {
+		r.writeObjectSkipped("view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1536,6 +1630,11 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 
 // VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1548,6 +1647,11 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 
 // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1566,6 +1670,11 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 
 // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.writeObjectSkipped("materialized view", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1582,6 +1691,14 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 // VisitCreateTrigger renders PostgreSQL trigger creation plus its linked
 // trigger function.
 func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	// The linked trigger function below is part of the trigger rather than a
+	// function the schema declared, so one key answers for the pair and one
+	// comment names the object the author actually wrote.
+	if !r.capabilities().Has(capability.Triggers) {
+		r.writeObjectSkipped("trigger", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1636,6 +1753,11 @@ func renderPostgreSQLTriggerFunctionBody(body string) string {
 // VisitDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
 // trigger function when its deterministic name is known.
 func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	if !r.capabilities().Has(capability.Triggers) {
+		r.writeObjectSkipped("trigger", node.Name)
+		return nil
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}

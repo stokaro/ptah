@@ -30,6 +30,16 @@ type Options struct {
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
 	AtlasTemplateData any
+	// ObserveVersion, when set, runs before each migration is replayed, with the
+	// connection bound to the schema state that migration starts from. It is how
+	// a caller reads the before-state of one version without replaying the
+	// directory once per version. An error from it aborts the replay.
+	ObserveVersion func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error
+	// ObserveReplayed, when set, runs once after every migration has been
+	// replayed and before the dev database realm is cleaned. It is the
+	// after-state counterpart of ObserveVersion. An error from it aborts the
+	// replay.
+	ObserveReplayed func(conn *dbschema.DatabaseConnection) error
 }
 
 // Replay connects to the configured dev database and replays the migration
@@ -57,7 +67,14 @@ func Replay(ctx context.Context, opts Options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	return replayOnConnection(ctx, conn, snapshot, opts.DirFormat, opts.AtlasTemplateData, nil)
+	return replayOnConnection(
+		ctx,
+		conn,
+		snapshot,
+		opts.DirFormat,
+		opts.AtlasTemplateData,
+		replayHooks{observeVersion: opts.ObserveVersion, consume: opts.ObserveReplayed},
+	)
 }
 
 // ReplayOnConnection replays the migration directory on an already-open dev
@@ -104,7 +121,7 @@ func ReplaySnapshotOnConnection(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil)
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{})
 }
 
 // WithReplayedSnapshot replays one immutable migration filesystem, invokes
@@ -124,7 +141,7 @@ func WithReplayedSnapshot(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, consume)
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
 }
 
 // WithReplayedSnapshotLocked performs the same replay as
@@ -144,7 +161,17 @@ func WithReplayedSnapshotLocked(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, consume)
+	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
+}
+
+// replayHooks are the optional callbacks a replay runs alongside the
+// migrations. The zero value replays and observes nothing.
+type replayHooks struct {
+	// observeVersion runs before each migration, with the connection bound to
+	// the state that migration starts from.
+	observeVersion func(context.Context, int64, *dbschema.DatabaseConnection) error
+	// consume runs once after every migration, before the realm is cleaned.
+	consume func(*dbschema.DatabaseConnection) error
 }
 
 func replayOnConnection(
@@ -153,7 +180,7 @@ func replayOnConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
-	consume func(*dbschema.DatabaseConnection) error,
+	hooks replayHooks,
 ) (resultErr error) {
 	if conn == nil {
 		return fmt.Errorf("replay migrations: nil database connection")
@@ -165,7 +192,7 @@ func replayOnConnection(
 	defer func() {
 		resultErr = errors.Join(resultErr, lock.Release())
 	}()
-	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, consume)
+	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, hooks)
 }
 
 func replayOnLockedConnection(
@@ -174,7 +201,7 @@ func replayOnLockedConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
-	consume func(*dbschema.DatabaseConnection) error,
+	hooks replayHooks,
 ) error {
 	if conn == nil {
 		return fmt.Errorf("replay migrations: nil database connection")
@@ -203,7 +230,7 @@ func replayOnLockedConnection(
 			ctx,
 			replayConn,
 			migrations,
-			consume,
+			hooks,
 		)
 	})
 }
@@ -212,7 +239,7 @@ func replayMigrations(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migrations []*migrator.Migration,
-	consume func(*dbschema.DatabaseConnection) error,
+	hooks replayHooks,
 ) (resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -233,12 +260,17 @@ func replayMigrations(
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	for _, migration := range migrations {
+		if hooks.observeVersion != nil {
+			if err := hooks.observeVersion(ctx, migration.Version, conn); err != nil {
+				return fmt.Errorf("observe dev database before migration %d: %w", migration.Version, err)
+			}
+		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
 			return fmt.Errorf("replay migration %d on dev database: %w", migration.Version, err)
 		}
 	}
-	if consume != nil {
-		if err := consume(conn); err != nil {
+	if hooks.consume != nil {
+		if err := hooks.consume(conn); err != nil {
 			return err
 		}
 	}

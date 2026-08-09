@@ -27,9 +27,24 @@ func modelWithFunctionBody(c *qt.C, body string) string {
 	source := `package models
 
 //ptah:schema:function name="greet" params="" returns="text" language="sql" body="SELECT '` + body + `'"
-const _ = 0
+type GreetingFunction struct{}
 
 //ptah:schema:table name="items"
+type Item struct {
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
+	ID int64
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
+	return dir
+}
+
+func modelWithTableName(c *qt.C, name string) string {
+	c.Helper()
+	dir := c.TempDir()
+	source := `package models
+
+//ptah:schema:table name="` + name + `"
 type Item struct {
 	//ptah:schema:field name="id" type="BIGINT" primary="true"
 	ID int64
@@ -120,7 +135,7 @@ type Item struct {
 func TestExportRefusesDestructiveCleanupOnNonNFCValue(t *testing.T) {
 	c := qt.New(t)
 
-	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
+	dir := modelWithTableName(c, "caf"+decomposedAccent+"_items")
 	source := filepath.Join(dir, "models.go")
 	before, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -183,7 +198,7 @@ func TestExportAcceptsComposedAndASCIIValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			dir := modelWithFunctionBody(c, tt.body)
+			dir := modelWithTableName(c, tt.body+"_items")
 			out := filepath.Join(c.TempDir(), "schema.hcl")
 
 			result, err := goannotationexport.Export(exportOptions(dir, out, true))

@@ -65,12 +65,43 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-`ptah-compat migrate apply`, `migrate status`, and `migrate set` enforce the
-same gate on `atlas.sum` directories with Atlas's own checksum output, matching
-official Atlas behavior. Reporting is not exempt: on a hashed directory whose
-only migration was deleted, an ungated `migrate status` announced
-"Database is up to date"
+`ptah-compat migrate validate`, `apply`, `status`, `set`, `new` and `diff`
+enforce the same gate on `atlas.sum` directories with Atlas's own checksum
+output, matching official Atlas behavior. Reporting is not exempt: on a hashed
+directory whose only migration was deleted, an ungated `migrate status`
+announced "Database is up to date"
 ([#974](https://github.com/stokaro/ptah/issues/974)).
+
+The verbs that **write** are on that list for a reason of their own. A gate that
+fired only on the reading verbs would still let `migrate new` append a file to a
+tampered directory and re-hash it on the way out, so the tampering would end up
+inside a directory that verifies clean — the laundering shape recorded for
+`migrate import` in [#1095](https://github.com/stokaro/ptah/issues/1095). All
+six verbs refuse before anything is written, which is what the pinned Atlas
+community binary v1.3.0 does on the same directory.
+
+### The sum file has to agree with itself, too
+
+Verification asks two questions, not one, and the second was missing until
+[#1231](https://github.com/stokaro/ptah/issues/1231): the entries must match the
+directory, **and** the directory-hash line on top must be the hash of the entry
+lines below it, in the order they are written. Both hash schemes bind that
+order, so moving a whole entry line — name and hash together — leaves a file
+that no longer hashes to the line it still carries.
+
+That is what a reordered `atlas.sum` is, and it used to verify clean: every file
+was found with the hash the sum recorded, and the hash recomputed over the
+*directory* still matched the stale line on top. `migrate validate` printed
+nothing and exited 0 while the community CLI exited 1; `migrate apply` ran every
+migration.
+
+The two tampered shapes are distinguishable and are reported differently, which
+is also what that CLI does:
+
+| `atlas.sum` | reported as |
+| --- | --- |
+| entries reordered, top line untouched | `checksum mismatch`, with no entry named — the file contradicts itself, so no entry can be blamed |
+| entries reordered, top line recomputed | `checksum mismatch` with `L2: <file> was added` — the file agrees with itself and disagrees with the directory |
 
 Recovery is a decision, not a command: if the change is intentional, review
 it and re-run `ptah migrations hash`; if it is not, restore the file from
@@ -436,7 +467,7 @@ it, run or not:
   *ran*, and the covered migrations below it need not all be among them.
   Measured on `V1__g1.sql` and `V3__g3.sql` recorded as `1` and `3` with
   `V2__g2.sql` added afterwards: `migrate set 4611686018427551119` reports
-  `(3 set)`, the next apply prints `No migration files to execute.` at exit 0,
+  `(3 set)`, the next apply prints `No migration files to execute` at exit 0,
   and table `g2` is absent with its version recorded — it can never run again.
   The refusal names that file and the version the command would assert, so
   nothing is lost by following the printed instruction.
@@ -524,8 +555,14 @@ Useful controls, all designed for CI:
   scanners and PR annotations. The SARIF output is a SARIF 2.1.0 document
   that GitHub code scanning ingests — [CI](../../testing/ci/) shows the
   upload step.
-- `--dialect` gates dialect-specific rules; `--dev-url` infers the dialect
-  and additionally replays the directory on the dev database.
+- `--dialect` gates dialect-specific rules; accepted values are `postgres`,
+  `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
+  `yugabytedb`, and `spanner`. Every documented alias of those names is
+  accepted too and resolves to the canonical one, so `--dialect pgx`,
+  `--dialect postgresql` and `--dialect postgres` are the same request — see
+  [Dialects and capabilities](../../concepts/dialects-and-capabilities/) for
+  the full spelling table. `--dev-url` infers the dialect and additionally
+  replays the directory on the dev database.
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
@@ -555,7 +592,9 @@ rules:
       - legacy/**
 ```
 
-- `dialect` sets the default lint dialect; `--dialect` overrides it.
+- `dialect` sets the default lint dialect; `--dialect` overrides it. It takes
+  the same spellings as `--dialect`, aliases included, and is stored
+  canonicalized — `dialect: pgx` and `dialect: postgres` select the same rules.
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
   skip entirely; entries merge with `--disable` flags. Selectors and custom
   rule codes use uppercase ASCII letters and digits and start with a letter.
@@ -570,12 +609,18 @@ rules:
   directory, such as `legacy/**`; these match regardless of how `--dir` was
   spelled. A directory-prefixed pattern such as `migrations/legacy/**`
   matches only when the command path has that prefix, for example
-  `--dir migrations`, and need not match an absolute `--dir` path.
+  `--dir migrations`, and need not match an absolute `--dir` path. Patterns
+  must already be normalized: repeated separators, `.` or `..` segments, and
+  trailing separators are configuration errors rather than being rewritten
+  into a broader match. Empty patterns and malformed glob syntax are also
+  errors; Ptah reports the rule and pattern instead of silently weakening the
+  policy.
 
 Configuration decoding is strict. Unknown keys, misspelled keys such as
-`severty`, lowercase or whitespace-padded selectors, selectors that match no registered rule,
-unsupported severities, and multiple YAML documents fail before linting or
-migration execution instead of silently weakening policy.
+`severty`, lowercase or whitespace-padded selectors, selectors that match no
+registered rule, unsupported dialects or severities, empty or malformed
+or non-normalized exclusion globs, and multiple YAML documents fail before
+linting or migration execution instead of silently weakening policy.
 
 Precedence: a rule listed in `disabled-rules` never runs, regardless of its
 `rules` entry; then `exclude` skips the matching files; then `severity`
@@ -637,22 +682,54 @@ error: error running migrations: pending migrations contain destructive statemen
 Use `--allow-destructive` only after the plan has been reviewed and the
 rollback path is understood.
 
-The apply-time gate always loads the conventional
-`<migrations-dir>/.ptah-lint.yaml` and blocks on error-severity `DS`
-data-safety findings. The `--config` flag on `ptah migrations up` selects
-`ptah.yaml`; it does not select a lint policy. This distinction prevents a
-project configuration path from silently replacing the policy shipped with
-the migration directory.
+`ptah migrations up` always loads and validates the conventional
+`<migrations-dir>/.ptah-lint.yaml`; when the apply-time gate is active, it
+blocks on error-severity `DS` data-safety findings. What the gate lints is
+always the dialect the connection reports, never the policy's — a policy
+`dialect` is a statement about the directory, not a scanner selector.
 
-The gate otherwise uses the same rule configuration and path matching as
-`ptah migrations lint`. That makes the escape hatch proportional: a rule downgraded with
+A nonempty policy `dialect` must name the **same engine family** as the
+connected database, and a cross-family mismatch fails before migration analysis
+or execution. The families are the ones on
+[Dialects and capabilities](../../concepts/dialects-and-capabilities/):
+
+| Policy `dialect` | Connected database | Verdict |
+| --- | --- | --- |
+| `postgres`, or any alias such as `pgx` | PostgreSQL | matches |
+| `postgres` | CockroachDB, YugabyteDB, Spanner | matches — they ride the PostgreSQL family |
+| `mysql` | MariaDB | matches — one family |
+| `mariadb` | MySQL | matches — one family |
+| `mysql` or `mariadb` | PostgreSQL | **does not match** |
+| `postgres` | MySQL or MariaDB | **does not match** |
+| `sqlite`, `sqlserver`, `clickhouse` | anything else | **does not match** — each stands alone |
+
+Naming a family member rather than the exact engine is accepted because it
+does not change the analysis: every built-in MySQL-family rule applies to both
+`mysql` and `mariadb`, and the scanner treats them identically. Note the one
+asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
+PostgreSQL only, so a CockroachDB, YugabyteDB or Spanner database runs the
+dialect-independent families alone — whether or not a policy file exists, and
+regardless of what it declares.
+
+On the standalone lint command, an explicit `--dialect` still overrides the
+policy, and `--dev-url` is checked against the policy by exactly the same
+family rule, so `ptah migrations lint` and `ptah migrations up` accept the same
+policy files. The `--config` flag on `ptah migrations up` selects `ptah.yaml`;
+it does not select a lint policy. This distinction prevents a project
+configuration path from silently replacing the policy shipped with the
+migration directory.
+
+The gate otherwise uses the same dialect selection, rule configuration, and
+path matching as `ptah migrations lint`. That makes the escape hatch
+proportional: a rule downgraded with
 `severity: warning`, listed under `disabled-rules`, or excluded for a path
 stops blocking exactly that reviewed pattern — a widening
 `ALTER COLUMN ... TYPE` under `rules: {DS103: {severity: warning}}` applies
 without `--allow-destructive` — while a `DROP TABLE` in another pending
 file of the same batch still aborts the apply. `--allow-destructive`
 remains the all-or-nothing per-run override rather than the only way past
-a single warning-grade finding.
+a single warning-grade finding. `--allow-destructive` bypasses the findings
+gate, but it does not bypass loading or validating the lint policy.
 
 Lint-policy severities are `warning` and `error`. Generated safety reports use
 the operational vocabulary `safe`, `warning`, and `destructive`; an `error`

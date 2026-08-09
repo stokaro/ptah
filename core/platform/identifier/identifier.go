@@ -278,10 +278,9 @@ func (c Comparison) ConflictKey(value string) string {
 
 const unresolvedCatalogKey = "\x00ptah:unresolved-catalog-identifier"
 
-func (s Semantics) identityKey(comparison Comparison, value string) string {
-	if comparison != ComparisonCatalogResolved {
-		return comparison.IdentityKey(value)
-	}
+// resolvedKey returns the target's equivalence key for a name and whether the
+// catalog resolved it at all.
+func (s Semantics) resolvedKey(value string) (string, bool) {
 	position, found := slices.BinarySearchFunc(
 		s.ResolvedNames,
 		value,
@@ -290,16 +289,52 @@ func (s Semantics) identityKey(comparison Comparison, value string) string {
 		},
 	)
 	if !found {
-		return unresolvedCatalogKey
+		return "", false
 	}
-	return s.ResolvedNames[position].Key
+	return s.ResolvedNames[position].Key, true
 }
 
-func (s Semantics) conflictKey(comparison Comparison, value string) string {
-	if comparison == ComparisonCatalogResolved {
-		return s.identityKey(comparison, value)
+// identityKey answers "are these two names the same object".
+//
+// A name the catalog did not resolve has no equivalence class, so it falls back
+// to what [ComparisonCatalogUnknown] already does for identity: it keeps its
+// spelling. Returning one shared constant instead made every unresolved name
+// equal to every other, and a map keyed by identity then kept exactly one of
+// them -- two grants declared on two tables that do not exist yet became one
+// grant, silently (stokaro/ptah#1290).
+//
+// The names that reach here unresolved are the desired schema's, because the
+// database side is read from the catalog and therefore always resolves. A
+// desired name the target does not have is a name it does not have, so keeping
+// such names distinct is also the answer that describes the target truthfully.
+func (s Semantics) identityKey(comparison Comparison, value string) string {
+	if comparison != ComparisonCatalogResolved {
+		return comparison.IdentityKey(value)
 	}
-	return comparison.ConflictKey(value)
+	if key, ok := s.resolvedKey(value); ok {
+		return key
+	}
+	return ComparisonCatalogUnknown.IdentityKey(value)
+}
+
+// conflictKey answers "could these two names collide in the target", which is
+// the conservative question and keeps the shared key for anything unresolved.
+//
+// The split from [Semantics.identityKey] is the point. Two unresolved names
+// differing only in case are distinct objects as far as identity goes, and may
+// still collide once the target's collation has its say -- so identity
+// distinguishes them and conflict detection warns about them. That is exactly
+// what [ComparisonCatalogUnknown] documents, and an unresolved name under
+// [ComparisonCatalogResolved] is in the same position: nothing is known about
+// its equivalence class.
+func (s Semantics) conflictKey(comparison Comparison, value string) string {
+	if comparison != ComparisonCatalogResolved {
+		return comparison.ConflictKey(value)
+	}
+	if key, ok := s.resolvedKey(value); ok {
+		return key
+	}
+	return unresolvedCatalogKey
 }
 
 func (s Semantics) qualifiedTableKey(

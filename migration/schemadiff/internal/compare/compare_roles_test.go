@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -18,7 +19,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &types.DBSchema{Roles: []types.DBRole{}}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -36,7 +37,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &types.DBSchema{Roles: []types.DBRole{}}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 2)
 		c.Assert(diff.RolesAdded, qt.Contains, "app_user")
@@ -56,7 +57,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		// Roles should not be automatically removed for safety
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
@@ -78,7 +79,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -107,7 +108,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 1)
 		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
@@ -138,7 +139,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff)
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
 
 		// Check added roles are sorted
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
@@ -150,6 +151,219 @@ func TestRolesComparison(t *testing.T) {
 		c.Assert(diff.RolesModified, qt.HasLen, 1)
 		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "m_role")
 	})
+}
+
+func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
+	// PostgreSQL roles are cluster-wide, so a reader scoped to one schema
+	// leaves out roles that exist on the server (stokaro/ptah#1267). Reading
+	// that silence as absence plans CREATE ROLE for a role that is already
+	// there, and the server refuses it at SQLSTATE 42710 -- the failure that
+	// took stokaro/ptah#1273's integration job red three times. Existence has
+	// to come from both lists.
+
+	t.Run("plans no create for a role the description leaves out", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		}
+		database := &types.DBSchema{
+			Roles: []types.DBRole{},
+			RolesOutOfScope: []types.DBRole{
+				{Name: "admin_user", Login: true, Superuser: true},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+	})
+
+	t.Run("still plans a create for a role that exists nowhere", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{
+				{Name: "admin_user", Login: true},
+				{Name: "brand_new_user", Login: true},
+			},
+		}
+		database := &types.DBSchema{
+			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: true}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"brand_new_user"})
+	})
+
+	t.Run("still alters a role the description leaves out", func(t *testing.T) {
+		c := qt.New(t)
+		// Scoping the description must not cost the capability of correcting
+		// a role's attributes: the annotations name this role, so the user
+		// asked about it.
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		}
+		database := &types.DBSchema{
+			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: false, Superuser: false}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 1)
+		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "admin_user")
+		c.Assert(diff.RolesModified[0].Changes["login"], qt.Equals, "false -> true")
+		c.Assert(diff.RolesModified[0].Changes["superuser"], qt.Equals, "false -> true")
+	})
+
+	t.Run("a described role is compared, and an unrelated out-of-scope name changes nothing", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_user", Login: true}},
+		}
+		database := &types.DBSchema{
+			Roles:           []types.DBRole{{Name: "app_user", Login: true}},
+			RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+	})
+
+	t.Run("a described role wins over the same name out of scope", func(t *testing.T) {
+		c := qt.New(t)
+		// The same NAME in both lists, which is the only shape that can show
+		// which one the comparison reads. A PostgreSQL reader's two lists are
+		// disjoint, so this decides nothing there; it decides for every other
+		// producer of a DBSchema, and the attributes have to come from the
+		// description rather than from whichever loop happens to run last.
+		// The out-of-scope copy is stale on every attribute, so reading it
+		// would plan an ALTER ROLE that changes nothing back.
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_user", Login: true, CreateDB: true}},
+		}
+		database := &types.DBSchema{
+			Roles:           []types.DBRole{{Name: "app_user", Login: true, CreateDB: true}},
+			RolesOutOfScope: []types.DBRole{{Name: "app_user", Login: false, CreateDB: false}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+	})
+}
+
+func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
+	c := qt.New(t)
+
+	// The opt-in that puts the removed capability back
+	// ([go.5x5.cz/ptah/internal/rolescope.DescribeAllEnvVar]) changes which
+	// list a role arrives in: with it set, the PostgreSQL reader describes
+	// every role it manages and RolesOutOfScope is empty. That must not change
+	// a single planned statement, and this is where the property is decided.
+	//
+	// So the two shapes below carry the SAME roles and differ only in the list
+	// they arrived in, and the comparison is asserted to be identical. Without
+	// it, an operator who turned the variable on to copy a cluster's roles
+	// could get a different migration plan for the same two databases, which
+	// would make the escape hatch a second behavior rather than a fuller read.
+	generated := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "app_user", Login: true},
+			{Name: "scoped_out", Login: true, CreateDB: true},
+			{Name: "nowhere_at_all", Login: true},
+		},
+	}
+	scoped := &types.DBSchema{
+		Roles: []types.DBRole{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []types.DBRole{
+			{Name: "scoped_out", Login: true},
+			{Name: "other_tenant_user", Login: true},
+		},
+	}
+	described := &types.DBSchema{
+		Roles: []types.DBRole{
+			{Name: "app_user", Login: true},
+			{Name: "other_tenant_user", Login: true},
+			{Name: "scoped_out", Login: true},
+		},
+	}
+
+	scopedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, scoped, scopedDiff, compare.CoverageOf(generated, scoped))
+	describedDiff := &difftypes.SchemaDiff{}
+	compare.Roles(generated, described, describedDiff, compare.CoverageOf(generated, described))
+
+	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
+	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
+	c.Assert(scopedDiff.RolesModified[0].RoleName, qt.Equals, "scoped_out")
+	c.Assert(describedDiff, qt.DeepEquals, scopedDiff,
+		qt.Commentf("describing a role instead of carrying it out of scope changed the plan"))
+}
+
+func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
+	c := qt.New(t)
+
+	// This is what TestRolesReservedNameIsNotComparedAgainstAnything pinned as
+	// a known gap, rewritten now that stokaro/ptah#1312 closed it. The behavior
+	// asserted below is UNCHANGED, and deliberately so: the gap was never in
+	// this function, and moving the refusal into it would give the comparator
+	// an error return every caller would have to plumb.
+	//
+	// Roles and RolesOutOfScope partition the roles Ptah MANAGES, not the
+	// cluster's role set: a PostgreSQL reader excludes the reserved pg_ roles
+	// and the bootstrap superuser from both reads, in either direction. So a
+	// reserved name reaching this comparison is compared against nothing and
+	// reads as absent, which is exactly why the declaration has to be refused
+	// before it gets here rather than repaired once it has.
+	//
+	// The refusal lives at the two surfaces that accept a desired schema and
+	// can return an error -- schemadiff.CompareWithDatabaseInfo on the compare
+	// path, and the renderer validation phase migration/planner runs before it
+	// emits any node on the generate path. See
+	// schemadiff.TestCompareWithDatabaseInfoRefusesAReservedRole and
+	// renderer.TestGetOrderedCreateStatementsRefusesAReservedRole.
+	//
+	// The second assertion is what keeps this from becoming decorative: every
+	// name this comparison would read as absent is a name reservedrole.Is
+	// recognizes, so there is no reserved spelling that slips past the refusal
+	// and lands here.
+	generated := &goschema.Database{
+		Roles: []goschema.Role{
+			{Name: "postgres", Login: true, Superuser: true},
+			{Name: "pg_monitor"},
+			{Name: "app_user", Login: true},
+		},
+	}
+	database := &types.DBSchema{
+		Roles:           []types.DBRole{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+
+	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
+		qt.Commentf("reserved names are in neither database list, so they read as absent"))
+	c.Assert(diff.RolesModified, qt.HasLen, 0)
+	for _, roleName := range diff.RolesAdded {
+		c.Assert(reservedrole.Is(roleName), qt.IsTrue,
+			qt.Commentf("%q read as absent but the refusal would not have caught it", roleName))
+	}
+	c.Assert(reservedrole.ValidateDeclared("postgres", generated.Roles), qt.IsNotNil,
+		qt.Commentf("the desired schema this comparison received should never have reached it"))
 }
 
 func TestRoleDefinitionsComparison(t *testing.T) {

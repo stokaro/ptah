@@ -110,9 +110,8 @@ type StatementEvent struct {
 // StatementObserver receives successfully executed migration statements. It is
 // called after either an interceptor or the normal migrator path executes the
 // statement. When a Migrator executes SQL in no-transaction mode, the observer
-// normally runs after Ptah durably checkpoints that statement's progress.
-// Atlas-format down execution preserves Atlas bookkeeping and is not
-// checkpointed. Returning an error aborts the migration.
+// runs after Ptah durably checkpoints that statement's progress. Returning an
+// error aborts the migration.
 type StatementObserver interface {
 	ObserveStatement(ctx context.Context, event StatementEvent) error
 }
@@ -143,6 +142,10 @@ type statementProgressHooks struct {
 
 type statementProgressRecorderContextKey struct{}
 
+type internalStatementObserver func(context.Context, StatementEvent) error
+
+type internalStatementObserverContextKey struct{}
+
 type migrationResumeContextKey struct{}
 
 // withMigrationResume declares that statements before resumeFrom (1-based) were
@@ -168,6 +171,15 @@ func withMigrationResume(ctx context.Context, resumeFrom int) context.Context {
 func migrationStatementAlreadyApplied(ctx context.Context, index int) bool {
 	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
 	return index < resumeFrom
+}
+
+func migrationAppliedFloor(ctx context.Context) int {
+	return migrationResumeFrom(ctx) - 1
+}
+
+func migrationResumeFrom(ctx context.Context) int {
+	resumeFrom, _ := ctx.Value(migrationResumeContextKey{}).(int)
+	return max(resumeFrom, 1)
 }
 
 type statementProgressError struct {
@@ -228,6 +240,31 @@ func recordStatementProgressAfter(ctx context.Context, event StatementEvent) err
 	return nil
 }
 
+func withInternalStatementObserver(ctx context.Context, observer internalStatementObserver) context.Context {
+	if observer == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, internalStatementObserverContextKey{}, observer)
+}
+
+func observeExecutedStatement(ctx context.Context, event StatementEvent) error {
+	observer, _ := ctx.Value(internalStatementObserverContextKey{}).(internalStatementObserver)
+	if observer == nil {
+		return nil
+	}
+	if err := observer(ctx, event); err != nil {
+		return &StatementObservationError{Err: err, Event: event}
+	}
+	return nil
+}
+
+func recordAndObserveExecutedStatement(ctx context.Context, event StatementEvent) error {
+	if err := recordStatementProgressAfter(ctx, event); err != nil {
+		return err
+	}
+	return observeExecutedStatement(ctx, event)
+}
+
 type migrationExecutionMode int
 
 const (
@@ -238,13 +275,14 @@ const (
 type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrationExecutionMode) error
 
 type sqlMigrationFile struct {
-	fn           sqlMigrationFunc
-	sql          string
-	sourcePath   string
-	timeouts     MigrationTimeouts
-	txMode       MigrationFileTxMode
-	txModeSource migrationFileTxModeSource
-	txModeErr    error
+	fn                   sqlMigrationFunc
+	sql                  string
+	sourcePath           string
+	timeouts             MigrationTimeouts
+	txMode               MigrationFileTxMode
+	txModeSource         migrationFileTxModeSource
+	txModeErr            error
+	statementIntercepted bool
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []atlasTxtarCheckFile
@@ -464,12 +502,13 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 			return executeMigrationFileSQL(ctx, conn, filename, sql, hooks, mode)
 		},
-		sql:          sql,
-		sourcePath:   filename,
-		timeouts:     timeouts,
-		txMode:       txMode.mode,
-		txModeSource: txMode.source,
-		txModeErr:    txMode.err,
+		sql:                  sql,
+		sourcePath:           filename,
+		timeouts:             timeouts,
+		txMode:               txMode.mode,
+		txModeSource:         txMode.source,
+		txModeErr:            txMode.err,
+		statementIntercepted: hooks.interceptor != nil,
 	}, nil
 }
 
@@ -663,15 +702,17 @@ type Migration struct {
 	UpTxMode MigrationFileTxMode
 	// DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
 	// global transaction-mode flag, so the zero value behaves like file.
-	DownTxMode       MigrationFileTxMode
-	upTxModeSource   migrationFileTxModeSource
-	downTxModeSource migrationFileTxModeSource
-	upTxModeErr      error
-	downTxModeErr    error
-	upSourcePath     string
-	downSourcePath   string
-	upSQLFunc        sqlMigrationFunc
-	downSQLFunc      sqlMigrationFunc
+	DownTxMode                  MigrationFileTxMode
+	upTxModeSource              migrationFileTxModeSource
+	downTxModeSource            migrationFileTxModeSource
+	upTxModeErr                 error
+	downTxModeErr               error
+	upSourcePath                string
+	downSourcePath              string
+	upSQLFunc                   sqlMigrationFunc
+	downSQLFunc                 sqlMigrationFunc
+	upHasStatementInterceptor   bool
+	downHasStatementInterceptor bool
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.
@@ -826,7 +867,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 				Total:          len(statements),
 			}
 		}
-		if err := recordStatementProgressAfter(ctx, event); err != nil {
+		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
 			return err
 		}
 	}
@@ -904,7 +945,7 @@ func executeMigrationFileSQL(
 				}
 			}
 		}
-		if err := recordStatementProgressAfter(ctx, event); err != nil {
+		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
 			return err
 		}
 		if hooks.observer != nil {
