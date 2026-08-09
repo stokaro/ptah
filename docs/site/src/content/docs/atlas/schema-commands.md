@@ -284,6 +284,13 @@ It is an environment variable and not a flag because the conformance
 `cli-surface` tier asserts that `ptah-compat` registers exactly the flags the
 pinned binary registers.
 
+It reads like every other boolean `PTAH_*` variable: unset keeps the refusal, a
+valid boolean is honored, and anything else fails `schema apply` before it reads
+the database — including on a run whose selectors all match, so a typo in a
+shared environment file stops the next run rather than the next unmatched
+selector. See
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
 Accepting both spellings is looser than the pinned Atlas community binary,
 deliberately. That binary reads a pattern relative to the URL scope: on a
 database URL only `public.users` matches, and on a schema-bound URL

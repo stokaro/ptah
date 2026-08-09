@@ -8,10 +8,9 @@ package rolescope
 import (
 	"fmt"
 	"io"
-	"os"
-	"strconv"
 
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // DescribeAllEnvVar restores the pre-scoping read: every role Ptah manages on
@@ -40,13 +39,18 @@ import (
 // this on can never make Ptah plan a CREATE ROLE it would otherwise skip.
 const DescribeAllEnvVar = "PTAH_POSTGRES_INSPECT_ALL_ROLES"
 
-// DescribeAll reports whether the opt-in variable is set to a true boolean
-// value. Unset, empty, false and unparsable values all keep the default,
-// mirroring how [go.5x5.cz/ptah/internal/atlassource] and
-// [go.5x5.cz/ptah/internal/atlashclrender] read their own opt-ins.
-func DescribeAll() bool {
-	all, err := strconv.ParseBool(os.Getenv(DescribeAllEnvVar))
-	return err == nil && all
+// describeAll is the declaration of the variable, made once, in the package
+// that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var describeAll = envbool.New(DescribeAllEnvVar, false)
+
+// DescribeAll reports whether the opt-in restores the full cluster read.
+//
+// Unset keeps the default and a valid false spelling keeps it too; an empty or
+// unparsable value is a configuration error, because a description that
+// silently stayed scoped after an operator believed they widened it is the one
+// answer this must never give (stokaro/ptah#1334).
+func DescribeAll() (bool, error) {
+	return describeAll.Resolve()
 }
 
 // ReportUndescribed writes a note naming how many roles the description left

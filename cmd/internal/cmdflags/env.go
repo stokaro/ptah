@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 const (
@@ -127,7 +129,15 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		}
 		envName := EnvName(prefix, flag.Name)
 		value, ok := os.LookupEnv(envName)
-		if !ok || value == "" {
+		if !ok {
+			return
+		}
+		// An empty value keeps meaning "unset" for every flag type EXCEPT bool,
+		// where stokaro/ptah#1334 makes it a configuration error: for a string or
+		// a uint an empty environment value is a plausible way to spell "no
+		// value", while `PTAH_DRY_RUN=` is a boolean with nothing in it and there
+		// is no reading of it that is not a mistake.
+		if value == "" && flag.Value.Type() != "bool" {
 			return
 		}
 		applyErr = setEnvValue(flags, flag, envName, value)
@@ -138,8 +148,11 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) error {
 	switch flag.Value.Type() {
 	case "bool":
-		if _, err := strconv.ParseBool(value); err != nil {
-			return fmt.Errorf("invalid boolean value %q for %s", value, envName)
+		// One grammar and one error shape for every boolean PTAH_* variable,
+		// whether it reaches a feature through a flag or is read directly by the
+		// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+		if _, err := envbool.Parse(envName, value); err != nil {
+			return err
 		}
 	case "uint", "uint64":
 		if _, err := strconv.ParseUint(value, 0, 64); err != nil {

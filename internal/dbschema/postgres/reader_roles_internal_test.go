@@ -43,6 +43,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/rolescope"
 )
 
@@ -945,7 +946,7 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	// The default: the description is the scoped read, and the roles it leaves
 	// out are carried separately for the comparator alone. This is the shape
 	// every surface produces unless an operator asks for the other one.
-	c.Setenv(rolescope.DescribeAllEnvVar, "")
+	envbooltest.Unset(rolescope.DescribeAllEnvVar)(c)
 	reader := newRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
 	schema := &types.DBSchema{}
 
@@ -957,6 +958,63 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{
 		"app_schema_grantee", "pgbouncer", "someone_elses", "third_party", "unrelated_tenant",
 	})
+}
+
+// TestReadRolesIntoRefusesAMalformedOptIn pins the state split stokaro/ptah#1334
+// introduced, and pins it on the run that used to hide it.
+//
+// The `--schemas empty` row is the discriminating one: the scoped read and the
+// complement partition the same cluster either way, so on a schema nothing uses
+// the opt-in changes which list the roles land in but never which roles exist.
+// A read resolved beside the branch would pass there in silence. Resolving it
+// before the two queries makes the typo answer on every read.
+//
+// The schema is asserted untouched in both rows: a refusal that had already
+// written half a description would be a worse answer than the silence it
+// replaces.
+func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name        string
+		env         func(testing.TB)
+		schemas     []string
+		wantMessage string
+	}{
+		{
+			name:        "an unparsable value",
+			env:         envbooltest.Set(rolescope.DescribeAllEnvVar, "all of them"),
+			schemas:     []string{"public"},
+			wantMessage: `invalid boolean value "all of them" for PTAH_POSTGRES_INSPECT_ALL_ROLES`,
+		},
+		{
+			name:        "an exported empty value",
+			env:         envbooltest.Set(rolescope.DescribeAllEnvVar, ""),
+			schemas:     []string{"public"},
+			wantMessage: `invalid boolean value "" for PTAH_POSTGRES_INSPECT_ALL_ROLES`,
+		},
+		{
+			name:        "a scope where the opt-in would change nothing",
+			env:         envbooltest.Set(rolescope.DescribeAllEnvVar, "maybe"),
+			schemas:     []string{"empty"},
+			wantMessage: `invalid boolean value "maybe" for PTAH_POSTGRES_INSPECT_ALL_ROLES`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			test.env(c)
+			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			schema := &types.DBSchema{}
+
+			err := reader.readRolesInto(schema)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.wantMessage)
+			c.Assert(schema.Roles, qt.HasLen, 0)
+			c.Assert(schema.RolesOutOfScope, qt.HasLen, 0)
+		})
+	}
 }
 
 func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
@@ -999,18 +1057,34 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 	// already there, which is the failure stokaro/ptah#1276 is about.
 	tests := []struct {
 		name    string
-		optIn   string
+		env     func(testing.TB)
 		schemas []string
 	}{
-		{name: "default, public", optIn: "", schemas: []string{"public"}},
-		{name: "opt-in, public", optIn: "1", schemas: []string{"public"}},
-		{name: "default, a schema nothing uses", optIn: "", schemas: []string{"empty"}},
-		{name: "opt-in, a schema nothing uses", optIn: "1", schemas: []string{"empty"}},
+		{
+			name:    "default, public",
+			env:     envbooltest.Unset(rolescope.DescribeAllEnvVar),
+			schemas: []string{"public"},
+		},
+		{
+			name:    "opt-in, public",
+			env:     envbooltest.Set(rolescope.DescribeAllEnvVar, "1"),
+			schemas: []string{"public"},
+		},
+		{
+			name:    "default, a schema nothing uses",
+			env:     envbooltest.Unset(rolescope.DescribeAllEnvVar),
+			schemas: []string{"empty"},
+		},
+		{
+			name:    "opt-in, a schema nothing uses",
+			env:     envbooltest.Set(rolescope.DescribeAllEnvVar, "1"),
+			schemas: []string{"empty"},
+		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			c.Setenv(rolescope.DescribeAllEnvVar, test.optIn)
+			test.env(c)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 func TestEnvNameNormalizesFlagName(t *testing.T) {
@@ -68,6 +69,69 @@ func TestInitializeEnvIgnoresEmptyEnvironmentValues(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dbURL, qt.Equals, "postgres://default")
+}
+
+// TestInitializeEnvSplitsEmptyByFlagType is where the boolean rule departs from
+// the general one, and the two halves are asserted together so neither can be
+// changed without meeting the other.
+//
+// An empty value keeps meaning "unset" for a string or a uint: those are types
+// where "no value" is a thing an operator can plausibly want to spell. For a
+// boolean it is a configuration error (stokaro/ptah#1334) -- `PTAH_DRY_RUN=` is
+// a boolean with nothing in it, and reading it as `false` is how a broken shell
+// expansion turned into a silent default.
+func TestInitializeEnvSplitsEmptyByFlagType(t *testing.T) {
+	tests := []struct {
+		name        string
+		envName     string
+		register    func(*cobra.Command)
+		wantMessage string
+	}{
+		{
+			name:    "a string flag keeps ignoring an empty value",
+			envName: "PTAH_DB_URL",
+			register: func(cmd *cobra.Command) {
+				cmd.Flags().String("db-url", "", "Database URL")
+			},
+		},
+		{
+			name:    "a uint flag keeps ignoring an empty value",
+			envName: "PTAH_LATEST",
+			register: func(cmd *cobra.Command) {
+				cmd.Flags().Uint("latest", 0, "Latest versions")
+			},
+		},
+		{
+			name:    "a bool flag refuses an empty value",
+			envName: "PTAH_DRY_RUN",
+			register: func(cmd *cobra.Command) {
+				cmd.Flags().Bool("dry-run", false, "Preview changes")
+			},
+			wantMessage: `invalid boolean value "" for PTAH_DRY_RUN`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(test.envName, "")
+			cmd := &cobra.Command{Use: "ptah"}
+			test.register(cmd)
+
+			err := cmdflags.InitializeEnv("PTAH", cmd)
+
+			c.Assert(errMessage(err), qt.Equals, test.wantMessage)
+		})
+	}
+}
+
+// errMessage renders an error for comparison against a table row without a
+// branch in the test body.
+func errMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func TestInitializeEnvSkipsDisabledEnvironmentBinding(t *testing.T) {
@@ -284,7 +348,7 @@ func TestSetOnCommandLineForgetsAPreviousExecution(t *testing.T) {
 	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "dry-run"), qt.IsFalse)
 
-	t.Setenv("PTAH_DRY_RUN", "")
+	envbooltest.Unset("PTAH_DRY_RUN")(t)
 	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 
 	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "dry-run"), qt.IsTrue)

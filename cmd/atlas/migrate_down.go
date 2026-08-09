@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -308,18 +309,24 @@ func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 			return
 		}
 		value, ok := os.LookupEnv(atlasFlagEnvName(flag.Name))
-		if !ok || value == "" {
+		if !ok {
 			return
 		}
 		if flag.Value.Type() == "bool" {
-			parsed, err := strconv.ParseBool(value)
+			// One grammar and one error for every boolean PTAH_* variable, and an
+			// explicitly empty one is a configuration error rather than a silent
+			// "unset". See [go.5x5.cz/ptah/internal/envbool] and
+			// stokaro/ptah#1334.
+			parsed, err := envbool.Parse(atlasFlagEnvName(flag.Name), value)
 			if err != nil {
-				envErr = fmt.Errorf("atlas migrate down: invalid boolean value %q for %s", value, atlasFlagEnvName(flag.Name))
+				envErr = fmt.Errorf("atlas migrate down: %w", err)
 				return
 			}
 			if !parsed {
 				return
 			}
+		} else if value == "" {
+			return
 		}
 		if err := flag.Value.Set(value); err != nil {
 			envErr = fmt.Errorf("atlas migrate down: invalid value %q for %s: %w", value, atlasFlagEnvName(flag.Name), err)

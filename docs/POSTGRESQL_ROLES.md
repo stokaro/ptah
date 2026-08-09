@@ -171,6 +171,14 @@ accepts `CREATE ROLE "postgres"` and the role appears in `pg_roles`. The
 variable decides only whether Ptah refuses first or the server does; it changes
 neither read, so a `pg_` name still fails at the server whatever it is set to.
 
+Both variables on this page are booleans and read the same way: leaving one
+unset selects the default described here, a valid boolean is honored, and
+anything else — an exported empty value included — fails the command before it
+reads or compares anything, naming the variable and the value. A malformed value
+is refused even on a run that declares no reserved role at all. The accepted
+spellings are documented once, in
+[Configuration](site/src/content/docs/reference/configuration.md).
+
 ### Role Modifications
 
 When role attributes change between migrations, Ptah generates ALTER ROLE statements:

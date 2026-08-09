@@ -97,19 +97,19 @@ func reportUnmatchedExclude(diagnostics io.Writer, selectors []string) {
 }
 
 // refuseUnmatchedExclude turns unmatched --exclude selectors into the error
-// `schema apply` fails with, or into nil when the caller opted back into the
-// permissive behavior.
+// `schema apply` fails with.
+//
+// Whether the run refuses at all is the caller's decision, resolved from
+// [atlasfilter.AllowUnmatchedExcludeEnvVar] before any state is read; a caller
+// that opted back into the permissive behavior calls
+// [reportUnmatchedExclude] instead.
 //
 // Apply is the verb that executes, so it is the one that refuses: a user
 // writes --exclude to keep an object out of the plan, and a selector that
 // named nothing means the plan is free to change it. Diff and inspect warn
 // instead, which is the split #1113 recorded for the --include side.
-func refuseUnmatchedExclude(diagnostics io.Writer, selectors []string) error {
+func refuseUnmatchedExclude(selectors []string) error {
 	if len(selectors) == 0 {
-		return nil
-	}
-	if atlasfilter.AllowUnmatchedExclude() {
-		reportUnmatchedExclude(diagnostics, selectors)
 		return nil
 	}
 	return fmt.Errorf(

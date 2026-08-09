@@ -84,6 +84,11 @@ comparison already treats those roles as present either way. Reserved `pg_`
 names and the bootstrap `postgres` superuser stay out of both. See
 [PostgreSQL roles and grants](../../databases/postgresql/#roles-and-grants).
 
+Leaving the variable unset keeps the scoped read; a valid boolean is honored;
+anything else fails the read before the database is queried, naming the variable
+and the value. See
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
 Role creation statements in PostgreSQL output are intended for
 a clean target. If a role already exists, running the SQL by hand
 fails before its description or grants are changed; this prevents privileges

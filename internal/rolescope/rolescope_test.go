@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/rolescope"
 )
 
@@ -14,31 +15,75 @@ import (
 //
 // The rows mirror [go.5x5.cz/ptah/internal/atlashclrender]'s and
 // [go.5x5.cz/ptah/internal/atlassource]'s opt-ins, so an operator who learned
-// one spelling is not surprised by this one: unset, empty, false and
-// unparsable all keep the scoped default.
+// one spelling is not surprised by this one: absence keeps the scoped default, a
+// valid false keeps it too, and anything else is refused by name and by value
+// (stokaro/ptah#1334).
 func TestDescribeAllReadsTheOptIn(t *testing.T) {
 	tests := []struct {
-		name  string
-		value string
-		want  bool
+		name        string
+		env         func(testing.TB)
+		want        bool
+		wantMessage string
 	}{
-		{name: "unset keeps the scoped description", value: "", want: false},
-		{name: "1 restores the full cluster read", value: "1", want: true},
-		{name: "true restores the full cluster read", value: "true", want: true},
-		{name: "TRUE restores the full cluster read", value: "TRUE", want: true},
-		{name: "0 keeps the scoped description", value: "0", want: false},
-		{name: "false keeps the scoped description", value: "false", want: false},
-		{name: "an unparsable value keeps the scoped description", value: "all of them", want: false},
+		{
+			name: "unset keeps the scoped description",
+			env:  envbooltest.Unset(rolescope.DescribeAllEnvVar),
+		},
+		{
+			name: "1 restores the full cluster read",
+			env:  envbooltest.Set(rolescope.DescribeAllEnvVar, "1"),
+			want: true,
+		},
+		{
+			name: "true restores the full cluster read",
+			env:  envbooltest.Set(rolescope.DescribeAllEnvVar, "true"),
+			want: true,
+		},
+		{
+			name: "TRUE restores the full cluster read",
+			env:  envbooltest.Set(rolescope.DescribeAllEnvVar, "TRUE"),
+			want: true,
+		},
+		{
+			name: "0 keeps the scoped description",
+			env:  envbooltest.Set(rolescope.DescribeAllEnvVar, "0"),
+		},
+		{
+			name: "false keeps the scoped description",
+			env:  envbooltest.Set(rolescope.DescribeAllEnvVar, "false"),
+		},
+		{
+			name:        "an unparsable value is refused",
+			env:         envbooltest.Set(rolescope.DescribeAllEnvVar, "all of them"),
+			wantMessage: `invalid boolean value "all of them" for PTAH_POSTGRES_INSPECT_ALL_ROLES`,
+		},
+		{
+			name:        "an exported empty value is refused",
+			env:         envbooltest.Set(rolescope.DescribeAllEnvVar, ""),
+			wantMessage: `invalid boolean value "" for PTAH_POSTGRES_INSPECT_ALL_ROLES`,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv(rolescope.DescribeAllEnvVar, test.value)
+			test.env(t)
 
-			c.Assert(rolescope.DescribeAll(), qt.Equals, test.want)
+			got, err := rolescope.DescribeAll()
+
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(errMessage(err), qt.Equals, test.wantMessage)
 		})
 	}
+}
+
+// errMessage renders an error for comparison against a table row without a
+// branch in the test body.
+func errMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // TestDescribeAllEnvVarIsSpelledLikeTheDocumentationQuotesIt pins the name the

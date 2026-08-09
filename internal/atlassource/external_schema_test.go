@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // externalHelperModes maps a mode name to the behavior the re-executed test
@@ -99,29 +100,89 @@ func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
-		name  string
-		value string
+		name    string
+		env     func(testing.TB)
+		wantErr string
 	}{
-		{name: "empty", value: ""},
-		{name: "zero", value: "0"},
-		{name: "false", value: "false"},
-		{name: "garbage", value: "yes-please"},
+		{
+			name: "unset",
+			env:  envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar),
+			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
+				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
+		},
+		{
+			name: "zero",
+			env:  envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "0"),
+			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
+				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
+		},
+		{
+			name: "false",
+			env:  envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "false"),
+			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
+				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
+		},
+		{
+			// The refusal changes shape here since stokaro/ptah#1334: a value
+			// that is not a boolean is a configuration error, not a denial, and
+			// telling the operator "disabled by default" when they had in fact
+			// enabled it sends them looking in the wrong place.
+			name:    "garbage",
+			env:     envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please"),
+			wantErr: `--to "env://src": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`,
+		},
+		{
+			name:    "an exported empty value",
+			env:     envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, ""),
+			wantErr: `--to "env://src": invalid boolean value "" for PTAH_ALLOW_EXTERNAL_SCHEMA`,
+		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			t.Setenv(atlassource.AllowExternalSchemaEnvVar, test.value)
+			test.env(c)
 
 			_, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))
 
-			c.Assert(err, qt.ErrorMatches, `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
 
+// TestClassifySetExternalSchemaGateRefusesAMalformedValueWithNoProgram is the
+// discriminating case: the selected env declares ordinary schema sources, so
+// nothing on this run could ever execute a program. Resolving the opt-in only
+// inside the external-schema branch left the typo dormant on every such
+// configuration, which is most of them.
+func TestClassifySetExternalSchemaGateRefusesAMalformedValueWithNoProgram(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please")(t)
+	env := externalSchemaProjectEnv("sql")
+	env.Config.SchemaSources = []string{"file://schema.hcl"}
+
+	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env)
+
+	c.Assert(err, qt.ErrorMatches, `--to "env://src": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
+}
+
+// TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute widens the same
+// point one step: `env://url` expands a database URL and has no relationship to
+// external schema programs at all, and it still refuses. Env expansion is the
+// subsystem that owns the variable, so every expansion reads it.
+func TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please")(t)
+	env := externalSchemaProjectEnv("sql")
+	env.Config.DatabaseURL = "sqlite://target.db"
+
+	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env)
+
+	c.Assert(err, qt.ErrorMatches, `--to "env://url": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
+}
+
 func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "")
+	envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar)(t)
 	dir := t.TempDir()
 	sentinel := filepath.Join(dir, "executed.sentinel")
 	script := filepath.Join(dir, "gen.sh")
