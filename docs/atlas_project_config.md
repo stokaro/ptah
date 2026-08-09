@@ -242,6 +242,11 @@ build avoided. A non-dry-run PostgreSQL `schema apply` plan that emits
 `DROP INDEX CONCURRENTLY` requires `--tx-mode none` for the same reason the
 create side does.
 
+Either setting fails `migrate diff` before it writes anything when the index it
+names belongs to a PostgreSQL declaratively partitioned parent: PostgreSQL has
+no concurrent form of either statement for `relkind = 'p'` and answers with
+SQLSTATE `0A000` at execution time. The error names the index and the table.
+
 `lint.latest` and `lint.git` configure the migration changeset selected by
 `migrations lint` and `ptah-compat migrate lint`. These selectors are mutually
 exclusive. `lint.git.dir` matches Atlas's working-directory option for Git

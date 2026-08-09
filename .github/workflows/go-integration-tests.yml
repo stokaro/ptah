@@ -260,6 +260,37 @@ jobs:
           sh scripts/require-tests-ran.sh --package ./migration/generator --tags integration \
             --pattern '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' --timeout 5m
 
+      # The third ./migration/generator live-test step, alongside the two above.
+      # Every test in it decides something only a server can answer -- whether
+      # PostgreSQL refuses a concurrent index on a partitioned parent, which
+      # index a partition's copy makes undroppable, and whether a
+      # never-analyzed relation is empty or merely unmeasured. All six skip
+      # themselves when no DSN is set, and a skip reads as a pass, so two guards
+      # run and they fail on different things. The -list lines fail the step
+      # when a rename leaves the -run pattern matching nothing; the --- PASS
+      # greps over the captured log fail it when the tests were reached and
+      # skipped themselves. Neither alone is enough: -list answers from the
+      # source whether or not anything ran, and a PASS grep cannot tell a
+      # renamed test from one that never existed.
+      - name: Run partitioned and row-statistics concurrent-index tests
+        env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go test ./migration/generator -list '^TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgres$' | grep -q '^TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgres$'
+          go test ./migration/generator -list '^TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres$' | grep -q '^TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres$'
+          go test ./migration/generator -list '^TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres$' | grep -q '^TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres$'
+          go test ./migration/generator -list '^TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres$' | grep -q '^TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres$'
+          go test ./migration/generator -list '^TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres$' | grep -q '^TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres$'
+          go test ./migration/generator -list '^TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres$' | grep -q '^TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres$'
+          go test -v -count=1 ./migration/generator -run '^(TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgres|TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres|TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres|TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres|TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres|TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres)$' -timeout 10m > partitioned-index.log || { cat partitioned-index.log; exit 1; }
+          cat partitioned-index.log
+          grep -q -- '--- PASS: TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgres' partitioned-index.log
+          grep -q -- '--- PASS: TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres' partitioned-index.log
+          grep -q -- '--- PASS: TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres' partitioned-index.log
+          grep -q -- '--- PASS: TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres' partitioned-index.log
+          grep -q -- '--- PASS: TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres' partitioned-index.log
+          grep -q -- '--- PASS: TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres' partitioned-index.log
+
       - name: Run database-realm cleanup and replay tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

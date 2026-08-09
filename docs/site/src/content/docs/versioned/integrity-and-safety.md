@@ -544,6 +544,24 @@ migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently 
 
 A clean run prints `No lint findings.` and exits `0`.
 
+### Which direction each rule reads
+
+Most rules describe a forward schema change, so they read the `.up.sql` half
+only: a down file dropping what its up created is the expected shape, not a
+hazard.
+
+Rules whose subject is the **cost or the executability** of a statement read
+both halves, because PostgreSQL charges the same lock and enforces the same
+transaction restriction whichever direction asked for it:
+
+- `PG106` — `DROP INDEX` without `CONCURRENTLY` blocks writes. This is the
+  statement a rollback file is normally made of, including the one Ptah
+  generates whenever the forward statement was not a concurrent build.
+- `PG103` — a `CONCURRENTLY` statement in a file with no `no_transaction`
+  marker cannot execute at all. A rollback that cannot run is only discovered
+  when someone needs it.
+- `TX101` — a file mixing autocommit-only statements with transactional DDL.
+
 Useful controls, all designed for CI:
 
 - `--latest N` lints only the newest N versions — the changeset of a pull

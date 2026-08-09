@@ -170,6 +170,15 @@ type File struct {
 	// IsUp reports whether statement rules treat this as an up migration:
 	// the migrator parses it as up, or its name carries the .up.sql suffix.
 	IsUp bool
+	// IsDown reports whether this is the rollback half of a migration: the
+	// migrator parses it as down, or its name carries the .down.sql suffix.
+	//
+	// A down file is executed against a production database exactly like an up
+	// file, so a hazard in one is a hazard in the other. Rules stay up-only by
+	// default because most of them describe a forward change, and the ones that
+	// describe a statement's cost or its executability opt in with
+	// [Rule.AppliesToDown].
+	IsDown bool
 	// HasPair reports whether the matching counterpart file (down for up,
 	// up for down) exists in the same directory.
 	HasPair bool
@@ -181,8 +190,9 @@ type File struct {
 	// NoTransaction reports whether file-scoped directives opt this migration
 	// out of the migrator's transaction wrapper.
 	NoTransaction bool
-	// Statements holds the parsed statements of up migrations. Empty for
-	// down migrations (statement rules do not run there).
+	// Statements holds the parsed statements of up and down migrations. Empty
+	// for any other file. A rule that reads them without checking direction
+	// gets both, which is why every direction-sensitive rule tests IsUp.
 	Statements []Statement
 	// Changes holds the semantic schema changes this up migration expresses,
 	// recovered from Ptah's dialect-aware SQL parser. Empty for down migrations
@@ -565,6 +575,7 @@ func prepareFile(
 		// lint must follow it; the suffix check keeps hazard scanning for
 		// .up.sql files whose version prefix is malformed.
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
+		IsDown:         direction == "down" || strings.HasSuffix(base, ".down.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
 		baseline:       baseline[version],
@@ -589,8 +600,11 @@ func prepareFile(
 		_, file.HasPair = present[strings.TrimSuffix(name, ".down.sql")+".up.sql"]
 	}
 
-	// Statement rules apply to up migrations only.
-	if file.IsUp {
+	// Both halves of a migration are executed against the database, so both are
+	// parsed into statements. Which rules read them is decided per rule; see
+	// [Rule.AppliesToDown]. Schema changes stay up-only: a change set is the
+	// forward delta this version applies, and the rollback is not a second one.
+	if file.IsUp || file.IsDown {
 		sql := raw
 		if atlasFormat && migrator.LooksAtlasTemplateSQL(sql) {
 			rendered, _, err := migrator.RenderAtlasTemplateSQL(snapshot, name, atlasTemplateData)
@@ -617,7 +631,9 @@ func prepareFile(
 				suppressedRules: rawStmt.suppressedRules,
 			})
 		}
-		file.Changes, file.scopeExcluded = extractSchemaChanges(&file, dialect, scope)
+		if file.IsUp {
+			file.Changes, file.scopeExcluded = extractSchemaChanges(&file, dialect, scope)
+		}
 	}
 	return file, nil
 }

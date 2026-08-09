@@ -927,8 +927,14 @@ func planGeneratedMigrationSpecs(
 		diff, skipped = diffpolicy.ApplyForDialect(diff, skipSet, info.Dialect)
 	}
 
-	concurrentIndexRefs := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
-	concurrentIndexDropRefs := concurrentIndexDropRefsForPolicy(diff, info, policy)
+	concurrentIndexRefs, err := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	concurrentIndexDropRefs, err := concurrentIndexDropRefsForPolicy(diff, dbSchema, info, policy)
+	if err != nil {
+		return nil, nil, err
+	}
 	plannerOpts := planner.Options{
 		Capabilities:            info.Capabilities,
 		ConcurrentIndexRefs:     concurrentIndexRefs,
@@ -1190,19 +1196,87 @@ func isConcurrentIndexNode(node ast.Node) bool {
 // concurrently. When the diff policy requests it, every newly added index is
 // concurrent (still gated on dialect and the CreateIndexConcurrently
 // capability); otherwise the populated-table heuristic applies.
+//
+// A partitioned parent is refused rather than published: PostgreSQL rejects
+// CREATE INDEX CONCURRENTLY on relkind 'p' with SQLSTATE 0A000, so the request
+// cannot be honored and silently downgrading it would give a project that asked
+// for a non-blocking build a blocking one without saying so. The heuristic path
+// downgrades instead -- see [concurrentIndexRefsForPopulatedTables].
 func concurrentIndexRefsForPolicy(
 	diff *types.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) []types.IndexRef {
+) ([]types.IndexRef, error) {
 	if !policy.ConcurrentIndex {
-		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info)
+		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info), nil
 	}
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+		return nil, nil
+	}
+	refs := diff.IndexAdditions()
+	if err := refusePartitionedConcurrentIndexRefs(refs, dbSchema, concurrentIndexCreatePolicy); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+// concurrentIndexPolicyKind names the half of the concurrent-index policy a
+// refusal came from, so the diagnostic can quote the configuration key the
+// operator would change.
+type concurrentIndexPolicyKind struct {
+	statement string
+	configKey string
+}
+
+var (
+	concurrentIndexCreatePolicy = concurrentIndexPolicyKind{
+		statement: "CREATE INDEX CONCURRENTLY",
+		configKey: "diff.concurrent_index.create",
+	}
+	concurrentIndexDropPolicy = concurrentIndexPolicyKind{
+		statement: "DROP INDEX CONCURRENTLY",
+		configKey: "diff.concurrent_index.drop",
+	}
+)
+
+// refusePartitionedConcurrentIndexRefs fails generation before any migration
+// file is written when an explicitly requested concurrent index statement names
+// a PostgreSQL partitioned parent.
+//
+// PostgreSQL answers both statements with SQLSTATE 0A000 on relkind 'p'
+// ("cannot create index on partitioned table ... concurrently", "cannot drop
+// partitioned index ... concurrently"), and it answers at execution time -- so
+// without this the plan is written, hashed, and committed, and the failure
+// arrives against a production database instead of against the developer who
+// generated it.
+func refusePartitionedConcurrentIndexRefs(
+	refs []types.IndexRef,
+	dbSchema *dbschematypes.DBSchema,
+	kind concurrentIndexPolicyKind,
+) error {
+	tables := indexTableFacts(dbSchema)
+	var offending []string
+	for _, ref := range refs {
+		facts, known := tables.lookup(ref.TableName)
+		if !known || !facts.partitioned {
+			continue
+		}
+		offending = append(offending, fmt.Sprintf("%q on %q", ref.Name, ref.TableName))
+	}
+	if len(offending) == 0 {
 		return nil
 	}
-	return diff.IndexAdditions()
+	return fmt.Errorf(
+		"%s requested by %s cannot be generated for partitioned table(s): %s; "+
+			"PostgreSQL refuses a concurrent index statement on a partitioned parent (SQLSTATE 0A000). "+
+			"Unset %s to generate the plain, transactional statement, or manage the index per partition "+
+			"(CREATE INDEX ... ON ONLY the parent, CREATE INDEX CONCURRENTLY on each partition, then ALTER INDEX ... ATTACH PARTITION)",
+		kind.statement,
+		kind.configKey,
+		strings.Join(offending, ", "),
+		kind.configKey,
+	)
 }
 
 // concurrentIndexDropRefsForPolicy resolves which index removals are dropped
@@ -1221,14 +1295,15 @@ func concurrentIndexRefsForPolicy(
 // marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
 	diff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) []types.IndexRef {
+) ([]types.IndexRef, error) {
 	if !policy.ConcurrentIndexDrop {
-		return nil
+		return nil, nil
 	}
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.DropIndexConcurrently) {
-		return nil
+		return nil, nil
 	}
 	// Match the planner's own redefinition test (indexscope conflict semantics),
 	// not plain struct equality: two refs differing only in identifier case are
@@ -1249,9 +1324,21 @@ func concurrentIndexDropRefsForPolicy(
 		}
 		refs = append(refs, ref)
 	}
-	return refs
+	if err := refusePartitionedConcurrentIndexRefs(refs, dbSchema, concurrentIndexDropPolicy); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
+// concurrentIndexRefsForPopulatedTables is the default heuristic: build an
+// index concurrently when the table it targets already holds rows.
+//
+// A partitioned parent is excluded rather than refused. Nothing asked for a
+// concurrent build here, PostgreSQL supports no concurrent form for relkind
+// 'p', and the plain CREATE INDEX the exclusion selects is legal SQL that says
+// what it does -- lint reports it as PG101 exactly like any other blocking
+// build. Refusing instead would leave a project with a partitioned table unable
+// to generate an index migration at all.
 func concurrentIndexRefsForPopulatedTables(
 	diff *types.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
@@ -1260,31 +1347,111 @@ func concurrentIndexRefsForPopulatedTables(
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
-	populatedTables := populatedTableSet(dbSchema)
+	tables := indexTableFacts(dbSchema)
 	var refs []types.IndexRef
 	for _, ref := range diff.IndexAdditions() {
-		if _, ok := populatedTables[ref.TableName]; ok {
-			refs = append(refs, ref)
+		facts, known := tables.lookup(ref.TableName)
+		if !known || facts.partitioned || !facts.populated {
+			continue
 		}
+		refs = append(refs, ref)
 	}
 	return refs
 }
 
-func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
-	out := make(map[string]struct{})
+// tableConcurrencyFacts is what the concurrent-index decision needs to know
+// about the table an index ref names.
+//
+// populated is true for a table that holds rows, and for one whose row
+// statistics the database could not compute. PostgreSQL reports a relation
+// whose cumulative counters were reset as n_live_tup = 0, which floors to the
+// same 0 an empty table reports; reading that 0 as "empty" is how a table
+// holding millions of rows earned a blocking CREATE INDEX immediately after a
+// restored dump or a crash-recovery restart. Choosing the concurrent build when
+// nothing is known costs a non-transactional migration file on a table that may
+// turn out to be empty; choosing the blocking build costs writes for the length
+// of the scan. Only the first is recoverable, so the unknown resolves toward it.
+type tableConcurrencyFacts struct {
+	partitioned bool
+	populated   bool
+}
+
+// tableFactsIndex answers, for the table spelling an index ref carries, what
+// the catalog reported about the table that spelling names.
+//
+// Two spellings reach this lookup because the two sides of a diff qualify a
+// table differently: the PostgreSQL reader blanks the schema of the
+// connection's own schema, so a database-side ref is bare, while a Go entity
+// declared with an explicit schema produces "schema.table". A bare spelling
+// therefore has to be able to reach a schema-qualified table -- but only when
+// no table answers to it exactly, and never by pooling every schema's tables
+// into one set.
+//
+// That pooling is the wrong implementation this type exists to prevent. One
+// flat set keyed under both spellings makes a partitioned "app"."events" and an
+// ordinary "public"."events" indistinguishable, so a bare ref is answered by
+// whichever fact any table with that name carries: the ordinary table loses its
+// concurrent build, and an explicit diff.concurrent_index request is refused
+// with a diagnostic naming a table that is not partitioned. The two facts also
+// have to aggregate in opposite directions when the bare spelling really is
+// ambiguous -- partitioned only when every candidate is partitioned, populated
+// when any candidate is -- because both refusing and downgrading on a guess
+// costs a capability, while the concurrent build is the recoverable side of
+// each choice.
+type tableFactsIndex struct {
+	qualified map[string]tableConcurrencyFacts
+	bare      map[string]tableConcurrencyFacts
+}
+
+// lookup resolves an index ref's table spelling. The second result is false
+// when no table in the schema answers to it at all -- the migration is creating
+// that table, so it starts empty and stays transactional.
+func (idx tableFactsIndex) lookup(tableName string) (tableConcurrencyFacts, bool) {
+	if facts, ok := idx.qualified[tableName]; ok {
+		return facts, true
+	}
+	facts, ok := idx.bare[tableName]
+	return facts, ok
+}
+
+// indexTableFacts indexes a read schema by both spellings an index ref can use.
+func indexTableFacts(dbSchema *dbschematypes.DBSchema) tableFactsIndex {
+	index := tableFactsIndex{
+		qualified: make(map[string]tableConcurrencyFacts),
+		bare:      make(map[string]tableConcurrencyFacts),
+	}
 	if dbSchema == nil {
-		return out
+		return index
 	}
 	for _, table := range dbSchema.Tables {
-		if table.EstimatedRows <= 0 {
-			continue
+		facts := tableConcurrencyFacts{
+			partitioned: table.Partitioned,
+			populated:   table.RowStatsUnknown || table.EstimatedRows > 0,
 		}
-		out[table.QualifiedName()] = struct{}{}
+		mergeTableConcurrencyFacts(index.qualified, table.QualifiedName(), facts)
 		if table.Schema != "" {
-			out[table.Name] = struct{}{}
+			mergeTableConcurrencyFacts(index.bare, table.Name, facts)
 		}
 	}
-	return out
+	return index
+}
+
+// mergeTableConcurrencyFacts folds one more candidate into a spelling that
+// several tables answer to.
+func mergeTableConcurrencyFacts(
+	into map[string]tableConcurrencyFacts,
+	key string,
+	facts tableConcurrencyFacts,
+) {
+	previous, seen := into[key]
+	if !seen {
+		into[key] = facts
+		return
+	}
+	into[key] = tableConcurrencyFacts{
+		partitioned: previous.partitioned && facts.partitioned,
+		populated:   previous.populated || facts.populated,
+	}
 }
 
 type splitSchemaDiffs struct {

@@ -200,7 +200,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows := make([][]driver.Value, 0, 100)
 	for i := range 50 {
 		tableName := fmt.Sprintf("table_%02d", i)
-		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
+		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false, false, false})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "integer", "int4", "", "", "", "NO", nil, nil, nil, nil, int64(1), "", "", "", ""},
 			[]driver.Value{tableName, "name", "character varying", "varchar", "", "", "", "NO", nil, int64(255), nil, nil, int64(2), "", "", "", ""},
@@ -209,6 +209,11 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
+		case strings.Contains(query, "p.proname = 'pg_relation_size'"):
+			return dbtest.QueryResult{
+				Columns: []string{"exists"},
+				Rows:    [][]driver.Value{{true}},
+			}, nil
 		case strings.Contains(query, "FROM information_schema.columns"):
 			return dbtest.QueryResult{
 				Columns: []string{
@@ -240,6 +245,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 					"table_type",
 					"table_comment",
 					"estimated_rows",
+					"row_stats_unknown",
+					"partitioned",
 					"rls_enabled",
 				},
 				Rows: tableRows,
@@ -253,7 +260,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	tables, err := reader.readTablesForSchema("public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.QueryCount(), qt.Equals, 2)
+	c.Assert(db.QueryCount(), qt.Equals, 3)
 	c.Assert(tables, qt.HasLen, 50)
 	c.Assert(tables[0].Name, qt.Equals, "table_00")
 	c.Assert(tables[0].Columns, qt.HasLen, 2)
