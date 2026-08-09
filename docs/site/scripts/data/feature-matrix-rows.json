@@ -86,8 +86,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Whole-document structural validation rejects unsupported shapes in every env. Names Atlas CE accepts as no-ops are preserved and warned once per source location.",
-    "evidence": "config/projectconfig/atlas_structure.go (open/closed body contract), config/projectconfig/atlas.go (selected-env evaluation and IgnoredConstructs), config/projectconfig/atlas_structure_test.go, cmd/atlas/project_config_ignored_test.go"
+    "note": "Validates every env. `migrate apply` expands labeled or unlabeled env `for_each` in stable order; typed list/map are Ptah extensions. Other commands require one instance.",
+    "evidence": "config/projectconfig/atlas.go and atlas_dynamic_env_test.go (collection expansion, selection, ordering, rooted evaluation); cmd/atlas/migrate_apply_dynamic_env_test.go (sequential live SQLite apply, partial failure, retry, and exact revision state)"
   },
   {
     "area": "Project config",
@@ -104,8 +104,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "file, fileset, format, getenv, and jsonencode evaluate. Variables support string, number, bool, list(string), and sensitive; validation blocks fail. `for_each` is accepted and warned.",
-    "evidence": "config/projectconfig/atlas.go newAtlasParser, parseVariableBlock, convertAtlasVariableOverride, tolerateUnknownAttr; config/projectconfig/atlas_structure_test.go selected-only evaluation cases"
+    "note": "file, fileset, format, getenv, jsonencode, and toset evaluate. Variables add map(string). Env `for_each` exposes atlas.env, each.key, and each.value.",
+    "evidence": "config/projectconfig/atlas.go newAtlasParser, parseVariableBlock, appendSensitiveStrings, and parseAtlasEnvInstances; config/projectconfig/atlas_dynamic_env_test.go ordering, collection-sensitive redaction, and selection cases"
   },
   {
     "area": "Project config",

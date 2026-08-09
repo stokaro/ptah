@@ -56,6 +56,8 @@ bypass the gate.
 `projectconfig.ParseAtlasFSWithOptions` evaluates `atlas.hcl` against a
 caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
+Use the collection-valued parse or load functions for an env `for_each` that
+selects several configs; singular functions reject that cardinality.
 `projectconfig.Config.IgnoredConstructs` carries every Atlas CE-compatible
 no-op name with its kind and source location, and `projectconfig.Merge`
 preserves the collection. Ptah's CLI reports each entry; embedders decide how
@@ -168,6 +170,13 @@ migration lock before transaction-mode validation, including an empty plan. It
 captures metadata but cannot abort execution. Use the abort-capable `Preflight`
 hook for work that must run after static validation and before any schema or
 revision change.
+
+`MigrateUpOptions.DiscardRolledBackFailure` applies only to the Atlas
+revision-table format; it has no effect with native Ptah metadata. It removes
+only the failed revision written by the current invocation, and only after
+transaction rollback succeeds. Existing dirty revisions and commit, rollback,
+partial-progress, and unknown-outcome failures remain recorded and block
+automatic retry.
 
 ## Pinned database sessions
 

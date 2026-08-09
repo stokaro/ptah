@@ -947,6 +947,34 @@ func (m *Migrator) failIfDirty(ctx context.Context) error {
 	return nil
 }
 
+func isZeroProgressUpFailure(revision MigrationRevision) bool {
+	return revision.Direction == MigrationDirectionUp &&
+		revision.Applied == 0 &&
+		revision.Total > 0 &&
+		revision.Error != unknownStatementOutcomeError
+}
+
+func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) error {
+	version, confirmed := migrationTransactionRollbackVersion(failure)
+	if !m.revisionTableFormat.isAtlas() || !confirmed {
+		return nil
+	}
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	revision, err := m.getRevision(recordCtx, version)
+	if err != nil {
+		return fmt.Errorf("inspect rolled-back migration failure %d: %w", version, err)
+	}
+	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
+		return nil
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
+	if err := executeSQLOutsideTransaction(recordCtx, m.conn, query, m.revisionVersionArg(version)); err != nil {
+		return fmt.Errorf("discard rolled-back migration failure %d: %w", version, err)
+	}
+	return nil
+}
+
 // upRetryPlan says how an up attempt relates to an earlier attempt at the same
 // version. The zero value is not usable: build it with [Migrator.planUpRetry],
 // which always sets resumeFrom to at least 1.

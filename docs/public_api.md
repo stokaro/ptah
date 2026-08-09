@@ -51,7 +51,11 @@ online-DDL policy is parsed, merged, validated, and then passed to migration
 execution without a second configuration-file read.
 `ParseAtlasFSWithOptions` lets embedders evaluate `atlas.hcl` against an
 already anchored or immutable `fs.FS`; `file()` and `fileset()` resolve only
-through that filesystem. `Config.IgnoredConstructs` identifies names that
+through that filesystem. Use `ParseAtlasFSCollectionWithOptions`,
+`ParseAtlasCollectionWithOptions`, or `LoadCollection` when an env `for_each`
+can select several independent configs. The singular functions require exactly
+one selected instance and return an error rather than discarding the others.
+`Config.IgnoredConstructs` identifies names that
 Atlas CE accepts without acting on, with kind and source location. `Merge`
 preserves this diagnostic metadata from both inputs. Ptah's command layer warns
 for each entry; embedders can choose their own reporting policy.
@@ -163,6 +167,14 @@ migration lock before transaction-mode validation, including empty plans. It
 is a metadata-only observer and cannot abort execution. `Preflight` remains the
 abort-capable hook after validation, so user-facing start output is not emitted
 for a statically invalid migration.
+
+`MigrateUpOptions.DiscardRolledBackFailure` models the Atlas revision-table
+compatibility surface, which treats a confirmed transactional rollback as no
+recorded attempt. It has no effect with the native Ptah revision-table format.
+With the Atlas format, it removes only the failed revision written by the
+current invocation and only after `Rollback` succeeds. Existing dirty rows,
+partial progress, rollback failure, commit failure, and unknown statement
+outcomes remain dirty and block automatic retry.
 
 `migration/migrator.WithStatementValidator` installs a pre-execution safety
 gate on a filesystem provider. Ptah splits and validates every statement in one

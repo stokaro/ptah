@@ -313,6 +313,9 @@ config workflows:
 - `getenv("NAME")` for environment-provided URLs and settings.
 - `file("path")` for local file contents, relative to the `atlas.hcl` file.
 - `fileset("glob")` for local file lists, relative to the `atlas.hcl` file.
+- `toset(value)` for deterministic environment-instance expansion.
+- `atlas.env`, plus `each.key` and `each.value` inside an env expanded with
+  `for_each`.
 - `data "hcl_schema" "name"` blocks with either `path` or `paths`, exposed as
   `data.hcl_schema.<name>.url`.
 - `format(format_string, values...)` and `jsonencode(value)` for Atlas-style
@@ -445,17 +448,18 @@ migration directory, no migration file and no `atlas.sum`, and
 
 A `variable` block without a `default` is valid when the invocation provides a
 matching `--var name=value`. Variable blocks accept the `type` constraints
-`string`, `number`, `bool`, and `list(string)` — the attribute the official
-Atlas binary requires:
+`string`, `number`, `bool`, `list(string)`, and `map(string)`:
 
 - `--var` overrides convert to the declared type: `--var latest=3` becomes a
   number and `--var concurrent=true` becomes a bool. Bool conversion follows
   cty's rules: `1` and `0` convert, while `True` and `yes` fail with the
   wrong-shape error. Repeated `--var name=value` flags build a `list(string)`
   value.
+- `map(string)` is available to defaults and HCL expressions. The string/list
+  `--var` flag syntax does not encode map values.
 - A `default` that does not convert to the declared type, an override of the
   wrong shape, and any other type constraint (for example `object(...)`,
-  `map(...)`, or `tuple(...)`) fail with named errors.
+  `set(...)`, or `tuple(...)`) fail with named errors.
 - `sensitive = true` is accepted. Parse-time conversion errors print
   `(sensitive value)` instead of the variable's value; a sensitive value
   interpolated into a URL or path can still appear in downstream errors that
@@ -476,6 +480,39 @@ values are required and multiple envs remain ambiguous, Ptah returns:
 ```text
 atlas.hcl contains multiple env blocks; pass --env
 ```
+
+An env block can expand into several instances with `for_each`. Labeled and
+unlabeled blocks both support the meta-attributes:
+
+```hcl
+env {
+  for_each = toset([
+    "sqlite://bar.db?_fk=1",
+    "sqlite://foo.db?_fk=1",
+  ])
+  name = atlas.env
+  url  = each.value
+
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+For an unlabeled block selected with `--env`, `name` must depend on `atlas.env`;
+a static name or a name based only on `each.key` does not define that selected
+environment. Labeled blocks use their label as the initial candidate. Every
+expanded instance of an admitted block is evaluated before its resulting name
+is filtered, so an invalid nonmatching instance still fails the command. Tuple
+and list instances keep source order; object, map, and set instances use stable
+key order. As a Ptah extension, typed list and map values are accepted for env
+`for_each` in addition to tuple, object, and set values.
+
+`ptah-compat migrate apply --env local` runs every selected instance in that
+order and stops at the first failure. With `--format '{{ json . }}'`, each
+attempt writes one JSON document and adjacent documents are separated by one
+newline. Other commands and the singular project-config Go APIs reject a
+selection that produces more than one instance instead of choosing one.
 
 ## Precedence
 

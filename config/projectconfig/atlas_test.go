@@ -1689,15 +1689,15 @@ env "local" {
   type = object({ url = string })
 }
 `,
-			err: `atlas\.hcl variable "conn" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+			err: `atlas\.hcl variable "conn" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, list\(string\), and map\(string\)`,
 		},
 		{
-			name: "variable map type is unsupported",
+			name: "variable map element type is unsupported",
 			raw: `variable "labels" {
-  type = map(string)
+  type = map(number)
 }
 `,
-			err: `atlas\.hcl variable "labels" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+			err: `atlas\.hcl variable "labels" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, list\(string\), and map\(string\)`,
 		},
 		{
 			name: "variable tuple type is unsupported",
@@ -1705,7 +1705,7 @@ env "local" {
   type = tuple([string, number])
 }
 `,
-			err: `atlas\.hcl variable "pair" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+			err: `atlas\.hcl variable "pair" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, list\(string\), and map\(string\)`,
 		},
 		{
 			name: "variable list of number type is unsupported",
@@ -1713,7 +1713,7 @@ env "local" {
   type = list(number)
 }
 `,
-			err: `atlas\.hcl variable "ports" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, and list\(string\)`,
+			err: `atlas\.hcl variable "ports" type at atlas\.hcl:2 is not supported: supported types are string, number, bool, list\(string\), and map\(string\)`,
 		},
 		{
 			name: "variable default does not match type",
