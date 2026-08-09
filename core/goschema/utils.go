@@ -1079,7 +1079,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Tables: Deduplicated by table name
 //   - Fields: Deduplicated by struct name + field name combination
 //   - Indexes: Deduplicated by resolved table + index name combination
-//   - Enums: Deduplicated by enum name
+//   - Enums: Deduplicated by schema-qualified enum name
 //   - Embedded Fields: Deduplicated by struct name + embedded type name combination
 //   - Views and materialized views: Deduplicated by name
 //   - Triggers: Deduplicated by table name + trigger name combination
@@ -1140,8 +1140,15 @@ func deduplicateDatabase(
 	})
 	r.Fields = deduplicateFields(r.Fields, resolver, resolveScope)
 	r.Indexes = deduplicateIndexes(r.Indexes, r.Tables)
+	// Qualified, not bare. A PostgreSQL enum lives in a schema, and public.mood
+	// and other.mood are two types: the bare key folded them into one and the
+	// second disappeared with no diagnostic, so `schema inspect` of a realm
+	// holding both described a database that does not exist (stokaro/ptah#1360).
+	// An enum with no schema still keys on its bare name, which is every enum
+	// the Go-annotation path declares, so nothing that path folds today stops
+	// folding.
 	r.Enums = deduplicateNamedDefinitions(r.Enums, func(enum Enum) string {
-		return enum.Name
+		return enum.QualifiedName()
 	})
 	r.EmbeddedFields = deduplicateEmbeddedFields(r.EmbeddedFields, resolver, resolveScope)
 	r.Extensions = deduplicateExtensions(r.Extensions)

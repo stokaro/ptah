@@ -463,7 +463,7 @@ func (r *renderer) renderEnums() {
 		return enums[i].QualifiedName() < enums[j].QualifiedName()
 	})
 	for _, enum := range enums {
-		r.linef(`enum %s {`, quote(enum.Name))
+		r.linef(`enum %s {`, r.enumLabels(enum))
 		// An enum block with no schema is not under-specified, it is invalid.
 		// The pinned Atlas community binary v1.3.0 refuses the whole file with
 		//
@@ -495,6 +495,50 @@ func (r *renderer) renderEnums() {
 		r.line("}")
 		r.line("")
 	}
+}
+
+// enumLabels writes an enum block's label list: `"mood"` normally, and
+// `"other" "mood"` when the bare name is ambiguous in this document.
+//
+// Two objects must not be written with one label. Before this, a realm holding
+// public.mood and other.mood was described by two blocks both headed
+// `enum "mood"`, and reading that document back produced ONE enum -- Ptah's own
+// inspect output described a database that does not exist, and no reader,
+// including Ptah, could recover the second type from it (stokaro/ptah#1360).
+//
+// The two-label spelling is the pinned Atlas community binary v1.3.0's own.
+// Measured on PostgreSQL 17.10, `schema inspect` of a database holding both
+// emits `enum "other" "mood"` and `enum "public" "mood"`, and for a database
+// holding one enum it emits the one-label `enum "mood"` -- so qualifying only
+// when the name is ambiguous is that binary's rule, not a Ptah convention. Its
+// loader then refuses the two-block document it just wrote (`duplicate enum
+// "mood"`, exit 1, measured on its own output); Ptah's reads it under
+// [go.5x5.cz/ptah/internal/atlashcl.SchemaScopedEnumsEnvVar], which is the
+// round trip that binary does not have.
+func (r *renderer) enumLabels(enum goschema.Enum) string {
+	schema := r.schemaFor(enum.Schema)
+	if schema == "" || !r.enumNameIsAmbiguous(enum.Name) {
+		return quote(enum.Name)
+	}
+	return quote(schema) + " " + quote(enum.Name)
+}
+
+// enumNameIsAmbiguous reports whether more than one enum in this document
+// carries the given bare name.
+//
+// It counts DISTINCT qualified names rather than blocks, so a document that
+// somehow holds the same enum twice is still written with one label: this
+// function decides how to spell an identity, and inventing a schema label for a
+// repeat would hide the repeat behind two different-looking blocks.
+func (r *renderer) enumNameIsAmbiguous(name string) bool {
+	qualified := make(map[string]struct{}, 2)
+	for _, enum := range r.db.Enums {
+		if enum.Name != name {
+			continue
+		}
+		qualified[r.schemaFor(enum.Schema)+"."+enum.Name] = struct{}{}
+	}
+	return len(qualified) > 1
 }
 
 func (r *renderer) renderTables() {
@@ -1248,11 +1292,15 @@ func (r *renderer) columnTypeExpr(field goschema.Field) string {
 // file gets replayed into, and only the enum block creates it there. That
 // binary's own inspect writes `type = enum.status` as well.
 //
-// The reference is unqualified because that binary keys enum blocks by name
-// alone: two `enum "status"` blocks in different schemas are refused as
-// `duplicate enum "status"`, and an `enum.status` reference resolves to a block
-// declared in a non-default schema (measured with table and enum both in
-// `reporting`).
+// The reference is unqualified while the name is unambiguous, because that
+// binary keys enum blocks by name alone: an `enum.status` reference resolves to
+// a block declared in a non-default schema (measured with table and enum both in
+// `reporting`). It gains the schema exactly where the BLOCK gains it, so the
+// reference and the label it points at always have the same number of parts --
+// see [renderer.enumLabels]. That is also the pinned binary's own rule:
+// measured on PostgreSQL 17.10, its inspect of a realm holding public.mood and
+// other.mood writes `type = enum.public.mood` and `type = enum.other.mood`
+// beside the two two-label blocks.
 //
 // A name that also names a domain, composite or range is left alone. Those are
 // separate declarations in the same document, and a reference into the enum
@@ -1262,15 +1310,40 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	if !slices.ContainsFunc(r.db.Enums, func(e goschema.Enum) bool { return e.Name == name }) {
+	enum, found := r.referencedEnum(name)
+	if !found {
 		return "", false
 	}
-	if slices.ContainsFunc(r.db.Domains, func(d goschema.Domain) bool { return d.Name == name }) ||
-		slices.ContainsFunc(r.db.CompositeTypes, func(ct goschema.CompositeType) bool { return ct.Name == name }) ||
-		slices.ContainsFunc(r.db.Ranges, func(rg goschema.Range) bool { return rg.Name == name }) {
+	if slices.ContainsFunc(r.db.Domains, func(d goschema.Domain) bool { return d.Name == enum.Name }) ||
+		slices.ContainsFunc(r.db.CompositeTypes, func(ct goschema.CompositeType) bool { return ct.Name == enum.Name }) ||
+		slices.ContainsFunc(r.db.Ranges, func(rg goschema.Range) bool { return rg.Name == enum.Name }) {
 		return "", false
 	}
-	return "enum" + objectRefPart(name), true
+	if schema := r.schemaFor(enum.Schema); schema != "" && r.enumNameIsAmbiguous(enum.Name) {
+		return "enum" + objectRefPart(schema) + objectRefPart(enum.Name), true
+	}
+	return "enum" + objectRefPart(enum.Name), true
+}
+
+// referencedEnum finds the enum a column's type names.
+//
+// A catalog read reports an ambiguous enum type qualified (`other.mood`) and an
+// unambiguous one bare (`mood`), and a hand-written document can spell either,
+// so both are looked up. The qualified match is tried first: a bare match would
+// otherwise pick whichever same-named enum came first in the slice, which is the
+// silent wrong-schema attribution stokaro/ptah#1276 is about.
+func (r *renderer) referencedEnum(name string) (goschema.Enum, bool) {
+	for _, enum := range r.db.Enums {
+		if enum.QualifiedName() == name {
+			return enum, true
+		}
+	}
+	for _, enum := range r.db.Enums {
+		if enum.Name == name && !r.enumNameIsAmbiguous(name) {
+			return enum, true
+		}
+	}
+	return goschema.Enum{}, false
 }
 
 func typeExpr(value string) string {

@@ -230,6 +230,46 @@ directory is read and before `--dev-url` is contacted. Set it to `1` and the
 whole directory is linted instead, which is what Ptah's own linter does. Native
 `ptah migrations lint` needs no scope and ignores the variable.
 
+**`PTAH_HCL_MERGE_REDECLARATIONS`** — by default, an HCL schema document that
+declares one object twice is refused, naming the kind and the object. Before the
+refusal existed the second declaration was folded into the first and the run
+reported success, so a file declaring `table "users"` twice was read as one
+table while the community CLI exits 1 on it with
+`pq: relation "users" already exists`. Set the variable to `1` and the merge
+comes back, on both the compatibility surface and native `ptah` verbs.
+
+Which kinds refuse is measured rather than chosen: a repeat is refused where the
+community CLI refuses the same document.
+
+- Refused: `table`, `column`, `index`, a named `check` or `constraint`,
+  `foreign_key`, `enum`, `sequence`, `domain`, `composite`, `range`,
+  `extension`, `trigger`, `policy`.
+- Exempt under every setting: `schema`, because a directory of HCL files is one
+  document and its files each open with the same block; `function`, because two
+  blocks sharing a name can be two legal overloads; `permission`, which renders
+  a GRANT the engine accepts twice; and `data`, which declares no database
+  object.
+
+**`PTAH_HCL_STRICT_REDECLARATIONS`** — by default, a repeated `view`,
+`materialized`, `role` or `unique` block is read at exit 0, because the
+community CLI reads it at exit 0: it drops the first three unread and merges two
+`unique` blocks sharing a label into one. Refusing them is above the drop-in
+floor rather than on it, so it is opt-in. Set the variable to `1` and each of
+the four is refused within one document, which is the rule an HCL schema
+*directory* already applies across its files. The kinds refused by default are
+still refused with it set; the four exceptions above are still exempt.
+
+**`PTAH_HCL_SCHEMA_SCOPED_ENUMS`** — by default, two `enum` blocks sharing a bare
+name are one object however they are spelled, because the community CLI keys
+enums by their bare name and answers `duplicate enum "mood"` at exit 1 for
+`enum "mood"` in two schemas and for the two-label `enum "public" "mood"` /
+`enum "other" "mood"` alike. Set the variable to `1` and they are keyed by their
+qualified name, which is what `public.mood` and `other.mood` are. This is the
+setting under which `ptah-compat schema inspect` of a database holding one enum
+name in two schemas can be applied again: the document names both, and reading
+it back re-renders it byte for byte. The community CLI has no such setting and
+refuses the document its own inspect writes for that database.
+
 ### One shape has no Atlas-readable form at all
 
 Suppression can only leave out a block nothing else names. A **sequence behind a
