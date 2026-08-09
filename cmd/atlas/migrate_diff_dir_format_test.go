@@ -162,8 +162,17 @@ func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
 // green result would also be produced by "any query at all disables
 // --dir-format", which is a different and wrong rule: an unrecognized key
 // selects no layout, so the flag still decides and its refusal stands.
+//
+// The REASON those two exit 1 changed with stokaro/ptah#1013, while the exit
+// code did not. `--dir-format golang-migrate` used to be refused as a layout
+// this verb could not write; it is now honored, and the refusal comes from the
+// gate instead — read as golang-migrate this hashed Atlas directory covers no
+// file, so its atlas.sum entry reads as removed. Measured on the pinned
+// community binary v1.3.0 on 2026-08-08, that binary answers the same two rows
+// with `checksum mismatch` and `L2: …_init.sql was removed`, which is the
+// message below.
 func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
-	const refused = `atlas migrate diff currently writes Atlas-format migration directories only`
+	const refused = `checksum mismatch`
 
 	tests := []struct {
 		name      string
@@ -214,58 +223,70 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDiff_ForeignQueryFormatStaysRefusedOnEveryLayout pins the one
-// cell of stokaro/ptah#1013 that is still open, across the whole format axis
-// rather than on the single layout the issue names.
+// TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead pins what `?format=`
+// does to a NATIVE Atlas directory on this verb, across the whole format axis.
 //
-// Measured on the pinned community binary v1.3.0 on 2026-08-07, running
-// `migrate diff` into an empty directory once per layout, the binary exits 0 and
-// writes REVERSE SQL as well as forward SQL in every one of them — a second file
-// for golang-migrate (`.down.sql`) and flyway (`U…__….sql`), a directive section
-// in the same file for goose (`-- +goose Down`) and dbmate (`-- migrate:down`),
-// and one `--rollback:` line per forward statement for liquibase. Ptah's
-// `migrate diff` plans forward statements only, so honoring the query would
-// write a directory whose rollback half is missing or empty. Refusing is the
-// strict side and never exits 0 where the community binary exits 1.
+// It used to pin the opposite — every foreign value refused with one message —
+// and that refusal is what stokaro/ptah#1013 closed. What replaces it is not
+// "all six accepted": the layout decides how the existing directory is READ, so
+// on a directory whose files are Atlas-shaped the answer differs per layout, and
+// each row below was measured on the pinned community binary v1.3.0 on
+// 2026-08-08 against a PostgreSQL dev database, on this fixture's shape.
 //
-// All five rows are here because the layouts do not close together: the paired
-// ones are the cheap half, and a change that taught this verb golang-migrate
-// alone would leave the other four silently refusing while a single-layout test
-// stayed green. The `?format=atlas` control is what shows the refusal turns on
-// the layout and not on the query's presence.
-func TestCompatMigrateDiff_ForeignQueryFormatStaysRefusedOnEveryLayout(t *testing.T) {
+//	?format=          community        ptah-compat
+//	golang-migrate    1, mismatch      1, mismatch      covered set is *.up.sql: none, so atlas.sum's entry is "removed"
+//	flyway            1, mismatch      1, mismatch      same, for V…__… names
+//	goose             0, WROTE         0, WROTE         covered set is *.sql, and the file parses as one Goose migration
+//	liquibase         0, WROTE         0, WROTE         same, as one Liquibase changelog
+//	dbmate            0, WROTE         1, refused       see below — the one deliberate divergence
+//	atlas             0, WROTE         0, WROTE         the control
+//
+// The dbmate row is the strict direction and is deliberate. The community
+// binary reads a file carrying no `-- migrate:up` as a migration with NO up
+// SQL: measured, it then plans BOTH tables — the one the existing migration
+// already creates and the new one — so the migration in the directory is
+// silently dropped from the replay. Ptah's dbmate reader refuses that rather
+// than record a migration that can never be re-run, which is older than this
+// change and shared with `migrate apply`, `lint` and `new`. Reproducing it here
+// would be reproducing a defect on the verb that WRITES the file.
+//
+// The `?format=atlas` control is what shows the per-layout answers turn on the
+// layout and not on the query's presence.
+func TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
 		check  func(c *qt.C, err error, wrote bool)
 	}{
 		{
-			name:   "golang-migrate",
+			name:   "golang-migrate covers no file here",
 			format: "golang-migrate",
-			check:  refusedWithoutWriting(compatDiffForeignFormatRefusal("golang-migrate")),
+			check:  refusedWithoutWriting(`checksum mismatch`),
 		},
 		{
-			name:   "goose",
-			format: "goose",
-			check:  refusedWithoutWriting(compatDiffForeignFormatRefusal("goose")),
-		},
-		{
-			name:   "flyway",
+			name:   "flyway covers no file here",
 			format: "flyway",
-			check:  refusedWithoutWriting(compatDiffForeignFormatRefusal("flyway")),
+			check:  refusedWithoutWriting(`checksum mismatch`),
 		},
 		{
-			name:   "liquibase",
+			name:   "goose reads the file and writes",
+			format: "goose",
+			check:  acceptedAndWrote,
+		},
+		{
+			name:   "liquibase reads the file and writes",
 			format: "liquibase",
-			check:  refusedWithoutWriting(compatDiffForeignFormatRefusal("liquibase")),
+			check:  acceptedAndWrote,
 		},
 		{
-			name:   "dbmate",
+			name:   "dbmate refuses a file its directives do not cover",
 			format: "dbmate",
-			check:  refusedWithoutWriting(compatDiffForeignFormatRefusal("dbmate")),
+			check: refusedWithoutWriting(
+				`read migration directory as dbmate: migration file [^ ]+ carries no "-- migrate:up" directive.*`,
+			),
 		},
 		{
-			name:   "atlas is not refused",
+			name:   "atlas",
 			format: "atlas",
 			check:  acceptedAndWrote,
 		},
@@ -280,11 +301,6 @@ func TestCompatMigrateDiff_ForeignQueryFormatStaysRefusedOnEveryLayout(t *testin
 			tt.check(c, err, wrote)
 		})
 	}
-}
-
-func compatDiffForeignFormatRefusal(format string) string {
-	return `atlas migrate diff --dir: Atlas accepts \?format=` + format +
-		`, but Ptah does not implement that directory format for this command yet`
 }
 
 // refusedWithoutWriting builds the assertion for a row the compat surface must

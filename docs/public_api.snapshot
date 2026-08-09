@@ -6548,6 +6548,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
+func ReverseSchemaDiff(diff *types.SchemaDiff, desired *goschema.Database, ...) *types.SchemaDiff
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error)

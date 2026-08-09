@@ -12,9 +12,11 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
@@ -48,11 +50,40 @@ type DiffOptions struct {
 	SourceConnectTimeout time.Duration
 	Name                 string
 	Format               string
-	Schemas              []string
-	LockTimeout          time.Duration
-	Policy               atlasschema.DiffPolicy
-	Qualifier            Qualifier
-	DryRun               bool
+	// DirFormat names the directory convention this run reads the existing
+	// migrations in and writes the new ones in. The empty value is the native
+	// Atlas layout, which is what every caller outside the Atlas-compatible
+	// `migrate diff` wants.
+	//
+	// A foreign layout changes four things and only four: the existing
+	// directory is converted before it is replayed, the next version is chosen
+	// from that converted view, the files are named and composed in that
+	// layout, and atlas.sum is computed over that layout's covered set.
+	DirFormat atlasmigrateimport.Format
+	// PlanReverse computes the diff that undoes a forward diff, so the layouts
+	// carrying a rollback half can be given one.
+	//
+	// It is a hook rather than a call because of an import edge:
+	// [go.5x5.cz/ptah/migration/generator] — which owns the reverse rule and
+	// has since long before this verb existed — imports THIS package in ten
+	// places, so this package cannot import it back. The compatibility surface
+	// imports both and supplies
+	// [go.5x5.cz/ptah/migration/generator.ReverseSchemaDiff] here, the same way
+	// it already supplies VerifyDir and PreparePublication.
+	//
+	// Leaving it nil plans no reverse. Every rollback half is then empty, which
+	// is exactly right for the native Atlas layout: its migration files carry
+	// no rollback half at all.
+	PlanReverse func(
+		diff *difftypes.SchemaDiff,
+		desired *goschema.Database,
+		current *dbschematypes.DBSchema,
+	) *difftypes.SchemaDiff
+	Schemas     []string
+	LockTimeout time.Duration
+	Policy      atlasschema.DiffPolicy
+	Qualifier   Qualifier
+	DryRun      bool
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -187,18 +218,31 @@ func generateDiff(
 		desiredDefaultSchema = devDefaultSchema
 	}
 	desired := schemascope.FilterGeneratedWithDefaultSchema(desiredState.Schema, schemas, desiredDefaultSchema)
-	var diff *difftypes.SchemaDiff
+	// The directory is replayed as native Atlas in every case, but a foreign
+	// layout is CONVERTED into that shape first rather than parsed as if it
+	// already were one. The conversion is the same one every reading verb runs
+	// (`migrate apply`, `hash`, `validate`, `lint`), so the state this run
+	// diffs against is the state those verbs report.
+	replaySource, err := diffReplaySource(migrationSnapshot, opts)
+	if err != nil {
+		return DiffResult{}, err
+	}
+	var (
+		diff    *difftypes.SchemaDiff
+		current *dbschematypes.DBSchema
+	)
 	if err := runtime.withReplayedSnapshot(
 		ctx,
 		conn,
-		migrationSnapshot,
+		replaySource,
 		migrator.MigrationDirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			current, err := runtime.readDevSchema(replayConn, schemas, devDefaultSchema)
+			replayed, err := runtime.readDevSchema(replayConn, schemas, devDefaultSchema)
 			if err != nil {
 				return err
 			}
-			diff, err = schemadiff.CompareWithDatabase(ctx, replayConn, desired, current, nil)
+			current = replayed
+			diff, err = schemadiff.CompareWithDatabase(ctx, replayConn, desired, replayed, nil)
 			if err != nil {
 				return fmt.Errorf("compare dev database schema: %w", err)
 			}
@@ -215,7 +259,7 @@ func generateDiff(
 		return DiffResult{Synced: true}, nil
 	}
 
-	contents, err := planDiffFileContents(diff, desired, info, format, opts)
+	contents, err := planDiffFileContents(diff, desired, current, info, format, opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -240,7 +284,43 @@ func generateDiff(
 		contents,
 		migrationSnapshot,
 		opts.PreparePublication,
+		diffWriteLayout{format: opts.dirFormat(), versionFS: replaySource},
 	)
+}
+
+// dirFormat is the layout this run reads and writes, with the zero value
+// resolved to the native Atlas one.
+func (o DiffOptions) dirFormat() atlasmigrateimport.Format {
+	if o.DirFormat == "" {
+		return atlasmigrateimport.FormatAtlas
+	}
+	return o.DirFormat
+}
+
+// diffReplaySource returns the Atlas-shaped view of the migration directory
+// this run replays and picks its next version from.
+//
+// A native Atlas directory is already that view. A foreign one is converted
+// through the shared reader, which is deliberately the same conversion
+// `migrate apply` and `migrate lint` run: a directory whose replayed state
+// differed between "what apply would do" and "what diff planned against" would
+// generate a migration for changes that are not there.
+//
+// Integrity is NOT re-checked here. The compatibility surface gates the
+// directory over the selected layout's covered set before this package is
+// entered, and [DiffOptions.VerifyDir] re-checks the locked snapshot with that
+// same predicate; converting first and gating after is the ordering
+// stokaro/ptah#973 forbids.
+func diffReplaySource(snapshot fsnapshot.Snapshot, opts DiffOptions) (fs.FS, error) {
+	format := opts.dirFormat()
+	if ReadsNativeAtlasDir(format) {
+		return snapshot, nil
+	}
+	loaded, err := atlasmigrateimport.LoadFS(snapshot, opts.Dir, format)
+	if err != nil {
+		return nil, fmt.Errorf("read migration directory as %s: %w", format, err)
+	}
+	return loaded.FS(), nil
 }
 
 // openVerifiedMigrationDir binds the migration directory once and returns it
@@ -341,10 +421,11 @@ func resolveDesiredState(
 }
 
 // planDiffFileContents plans the migration AST, applies the typed qualifier,
-// and renders the Atlas migration file contents for one diff run.
+// and renders the migration file contents for one diff run — both directions.
 func planDiffFileContents(
 	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
+	current *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	format string,
 	opts DiffOptions,
@@ -360,7 +441,52 @@ func planDiffFileContents(
 	if err := opts.Qualifier.ApplyToPlan(info.Dialect, desired, upNodes); err != nil {
 		return nil, err
 	}
-	return BuildMigrationFileContents(info.Dialect, info.Capabilities, format, upNodes)
+	contents, err := BuildMigrationFileContents(info.Dialect, info.Capabilities, format, upNodes)
+	if err != nil {
+		return nil, err
+	}
+	reverse, err := planDiffReverseStatements(diff, desired, current, info, opts)
+	if err != nil {
+		return nil, err
+	}
+	return attachReversePlan(contents, reverse, format)
+}
+
+// planDiffReverseStatements renders the statements that undo this run, or none
+// when the caller supplied no reverse rule.
+//
+// The reverse is planned against the PRE-CHANGE state — the replayed database
+// converted back to a schema — and not against the desired one, because that is
+// the state a rollback restores. Planning it against `desired` would describe
+// the world the up file creates and produce a rollback that undoes nothing.
+func planDiffReverseStatements(
+	diff *difftypes.SchemaDiff,
+	desired *goschema.Database,
+	current *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	opts DiffOptions,
+) ([]string, error) {
+	if opts.PlanReverse == nil || current == nil {
+		return nil, nil
+	}
+	reverseDiff := opts.PlanReverse(diff, desired, current)
+	if reverseDiff == nil {
+		return nil, nil
+	}
+	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(current)
+	downNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+		reverseDiff,
+		priorSchema,
+		info.Dialect,
+		planner.Options{Capabilities: info.Capabilities},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("generate rollback SQL: %w", err)
+	}
+	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, downNodes); err != nil {
+		return nil, err
+	}
+	return renderMigrationStatements(info.Dialect, info.Capabilities, downNodes)
 }
 
 func joinFileContentSQL(contents []MigrationFileContent) string {

@@ -237,10 +237,37 @@ with `migrate apply`, so relaxing one widens what the integrity gate accepts.
 directory read through `?format=` over the same per-layout file set `hash`
 writes, so what `migrate hash` writes is what `migrate apply` verifies.
 
-`migrate new` writes the selected layout, gating the directory over that
-layout's covered file set first. `migrate diff` is the one verb that still
-refuses a non-`atlas` layout under both spellings: it emits planned migration
-SQL, and nothing writes a migration body in a foreign tool's convention yet.
+`migrate new` and `migrate diff` both write the selected layout, gating the
+directory over that layout's covered file set first. `migrate diff` composes
+each layout's own files: a forward and a rollback file for `golang-migrate`
+(`.up.sql` / `.down.sql`) and `flyway` (`V…` / `U…`), both halves under
+directives in one file for `goose` and `dbmate`, and a changeset carrying
+`--rollback:` lines for `liquibase`. `atlas.sum` is written over that layout's
+covered file set, so the community binary's own `migrate validate` reads back
+what Ptah wrote.
+
+The generated SQL is Ptah's renderer's, on every layout including `atlas` — the
+layout is what these follow, not the DDL text. On `liquibase`, Ptah writes ONE
+changeset carrying the whole migration and all of its `--rollback:` lines, where
+the community binary writes one changeset per statement; rolling the migration
+back is exact either way, but Ptah does not offer per-statement rollback there,
+because pairing each forward statement with a reverse statement would be a guess
+about a reverse plan that is computed for the run as a whole.
+
+The rollback half is planned against the state the migration starts from, not
+the state it produces, so a forward migration that DROPS a table rolls back into
+the CREATE TABLE that puts it back. That re-created table carries its own
+primary key and its single-column foreign keys, and the rollback does not repeat
+them; a rollback that did is refused by the server outright. A CHECK constraint
+is not in the table body at all, so it is restored by its own statement.
+
+Two differences survive that round trip, on this verb and on
+`ptah migrations generate` alike. The restored primary key takes the server's
+default name rather than the name it had, because the table body has nowhere to
+put one. A column that was UNIQUE comes back both from the table body and from
+the named constraint, so the restored table holds two unique constraints where
+it held one. Neither stops the rollback from applying; both mean a
+`schema diff` immediately after a rollback can report work to do.
 
 ### `ptah-compat migrate lint`
 

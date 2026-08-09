@@ -17,14 +17,40 @@ import (
 // migrator and Atlas's migrate apply both honor this form.
 const AtlasTxModeNoneDirective = "-- atlas:txmode none"
 
-// MigrationFileContent is one planned Atlas-format migration file produced by
-// a single migrate diff run.
+// MigrationFileContent is one planned migration produced by a single migrate
+// diff run.
+//
+// It is named for a FILE because the native Atlas layout writes one, but a
+// planned migration is not a file on every layout this verb can be pointed at:
+// golang-migrate and flyway split it into a forward file and a rollback file,
+// goose and dbmate keep both halves under directives in one file, and liquibase
+// wraps them in a changeset. [composeMigrationArtifacts] is what turns this
+// into the files of a given layout; everything below is what those five
+// compositions need, rendered once here rather than five times there.
 type MigrationFileContent struct {
 	// NameSuffix is appended to the operator-chosen migration name when the
 	// plan splits into several files ("" for a single-file plan).
 	NameSuffix string
-	// SQL is the complete file content, including any Atlas file directives.
+	// SQL is the complete forward file content, including any Atlas file
+	// directives.
 	SQL string
+	// DownSQL is the complete rollback file content, rendered exactly as SQL
+	// is. It is empty when the run planned no reverse — which is every run on
+	// the native Atlas layout, whose migration files carry no rollback half at
+	// all, and any run whose caller supplied no
+	// [DiffOptions.PlanReverse].
+	DownSQL string
+	// Statements are the forward statements SQL renders, in apply order, each
+	// carrying whatever leading comment the planner emitted for it.
+	//
+	// It exists for liquibase, the one layout that cannot take the rendered
+	// body: its rollback is attached to a changeset rather than appended as a
+	// block, so that layout composes the file from the statements instead of
+	// from SQL (see [composeLiquibaseArtifact]).
+	Statements []string
+	// ReverseStatements are the statements that undo Statements, in the order
+	// they must run. Empty exactly when DownSQL is.
+	ReverseStatements []string
 	// NoTransaction reports whether the file carries the
 	// `-- atlas:txmode none` directive.
 	NoTransaction bool
@@ -107,7 +133,38 @@ func renderMigrationFileContent(
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
-	return MigrationFileContent{SQL: sql}, nil
+	return MigrationFileContent{SQL: sql, Statements: statements}, nil
+}
+
+// attachReversePlan records the reverse of the whole plan on the LAST file of
+// it, and renders that reverse the same way the forward half was rendered.
+//
+// The last file, and not each file, because a rollback runs newest-first: the
+// files of one diff run are staged at consecutive versions, so the last one is
+// the first to be undone and undoing it has to undo the whole run. Splitting
+// the reverse across the files of a plan would require knowing which forward
+// statement each reverse statement answers, which the planner does not report —
+// it plans the reverse of the run, in reverse dependency order, as one set.
+//
+// A plan that produced no reverse leaves every file's DownSQL empty, which is
+// what the native Atlas layout wants in every case: its migration files carry
+// no rollback half.
+func attachReversePlan(
+	contents []MigrationFileContent,
+	reverse []string,
+	format string,
+) ([]MigrationFileContent, error) {
+	if len(contents) == 0 || len(reverse) == 0 {
+		return contents, nil
+	}
+	sql, err := renderMigrationDiffSQL(reverse, format)
+	if err != nil {
+		return nil, err
+	}
+	last := len(contents) - 1
+	contents[last].DownSQL = sql
+	contents[last].ReverseStatements = reverse
+	return contents, nil
 }
 
 // withTxModeNoneDirective tags one planned file with the Atlas

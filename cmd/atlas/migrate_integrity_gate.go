@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -178,7 +179,18 @@ func checkCoveredAtlasEntriesReadable(cmd *cobra.Command, fsys fs.FS, names []st
 // nothing to verify and says so by returning nil. The remaining exemptions —
 // an empty directory, one holding no top-level *.sql — belong to
 // [failUnhashedAtlasDir] and are shared with every other verb.
-func verifyAtlasWriteDirChecksum(cmd *cobra.Command, project atlasProject, dir atlasargs.LocalDir) error {
+// The format parameter is the layout the run SELECTED, and the gate runs over
+// that layout's covered set rather than the Atlas one. `migrate diff` can be
+// pointed at a foreign layout since stokaro/ptah#1013; verifying a
+// golang-migrate directory as if it were an Atlas one would refuse the pair it
+// legitimately holds — atlas.sum covers the `.up.sql` halves alone there — and
+// then rewrite the sum over the wrong set.
+func verifyAtlasWriteDirChecksum(
+	cmd *cobra.Command,
+	project atlasProject,
+	dir atlasargs.LocalDir,
+	format atlasmigrateimport.Format,
+) error {
 	source, err := project.captureLocal(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -186,7 +198,27 @@ func verifyAtlasWriteDirChecksum(cmd *cobra.Command, project atlasProject, dir a
 	if err != nil {
 		return err
 	}
-	return verifyNativeAtlasDirChecksum(cmd, source.FileSystem)
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return verifyNativeAtlasDirChecksum(cmd, source.FileSystem)
+	}
+	return verifyCoveredAtlasDirChecksum(cmd, source.FileSystem, format, requireAtlasSum)
+}
+
+// checkAtlasWriteDirChecksum is the refusal half of the writing gate for an
+// already-captured filesystem, dispatched on the selected layout.
+//
+// It is what a writing verb re-checks the LOCKED snapshot with, so the
+// predicate that refused before the lock and the predicate that refuses under
+// it are one definition rather than two that have to agree.
+func checkAtlasWriteDirChecksum(
+	cmd *cobra.Command,
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+) error {
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return checkNativeAtlasDirChecksum(cmd, fsys)
+	}
+	return verifyCoveredAtlasDirChecksum(cmd, fsys, format, requireAtlasSum)
 }
 
 // verifyNativeAtlasDirChecksum enforces the atlas.sum integrity gate on a
