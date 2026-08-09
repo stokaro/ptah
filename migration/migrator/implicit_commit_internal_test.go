@@ -21,7 +21,21 @@ func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
 		{name: "create table", statement: "CREATE TABLE jobs (id BIGINT) ENGINE=MyISAM", want: "MyISAM"},
 		{name: "alter table", statement: "ALTER TABLE jobs ENGINE = InnoDB", want: "InnoDB"},
 		{name: "alter table without equals", statement: "ALTER TABLE jobs ENGINE MyISAM", want: "MyISAM"},
+		{name: "MariaDB alter table storage engine", statement: "ALTER TABLE jobs STORAGE ENGINE=MyISAM", want: "MyISAM"},
+		{name: "MariaDB alter table default storage engine", statement: "ALTER TABLE jobs STORAGE ENGINE=DEFAULT", want: "DEFAULT"},
 		{name: "qualified create table", statement: "CREATE TABLE archive.jobs (id BIGINT) ENGINE=MyISAM", want: "MyISAM"},
+		{name: "ANSI quoted create table", statement: `CREATE TABLE "jobs" (id BIGINT) ENGINE=MyISAM`, want: "MyISAM"},
+		{name: "ANSI quoted alter table", statement: `ALTER TABLE "jobs" ENGINE=MyISAM`, want: "MyISAM"},
+		{
+			name:      "ANSI quoted qualified create table",
+			statement: `CREATE TABLE "archive"."jobs" (id BIGINT) ENGINE=MyISAM`,
+			want:      "MyISAM",
+		},
+		{
+			name:      "ANSI quoted escaped table name",
+			statement: `CREATE TABLE "jobs""audit" (id BIGINT) ENGINE=MyISAM`,
+			want:      "MyISAM",
+		},
 		{name: "MariaDB replace table", statement: "CREATE OR REPLACE TABLE jobs (id BIGINT) ENGINE=MyISAM", want: "MyISAM"},
 		{name: "session default", statement: "SET SESSION default_storage_engine = 'MyISAM'", want: "MyISAM"},
 		{name: "qualified session default", statement: "SET @@SESSION.default_storage_engine = MyISAM", want: "MyISAM"},
@@ -83,6 +97,128 @@ func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
 	for _, statement := range statements {
 		c.Run(statement, func(c *qt.C) {
 			got := mysqlUnwitnessedStateChange(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
+func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET SESSION `sql_mode` = 'NO_BACKSLASH_ESCAPES'",
+		"SET SESSION sql_mode = 'ANSI_QUOTES'",
+		"SET @@SESSION.sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES'",
+		"SET @@SESSION.sql_mode = 'STRICT_TRANS_TABLES,ANSI_QUOTES'",
+		"SET sql_mode = ''",
+		"SET sql_mode = DEFAULT",
+		"SET sql_mode = @@GLOBAL.sql_mode",
+		"SET sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')",
+		`SET sql_mode = "ANSI_QUOTES"`,
+		"SET time_zone = '+00:00', sql_mode = DEFAULT",
+		"SET time_zone = '+00:00', sql_mode = 'ANSI_QUOTES'",
+		`SET sql_mode = 'N\O_BACKSLASH_ESCAPES'`,
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
+		"SET @sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET @`sql_mode` = 'NO_BACKSLASH_ESCAPES'",
+		"INSERT INTO jobs (sql_mode) VALUES ('NO_BACKSLASH_ESCAPES')",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
+func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		sqlMode string
+		want    string
+	}{
+		{name: "ANSI quotes", sqlMode: "STRICT_TRANS_TABLES,ANSI_QUOTES", want: "ANSI_QUOTES"},
+		{name: "MSSQL", sqlMode: "MSSQL,PIPES_AS_CONCAT", want: "MSSQL"},
+		{name: "no backslash escapes", sqlMode: "NO_BACKSLASH_ESCAPES", want: "NO_BACKSLASH_ESCAPES"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, found := mysqlParserChangingSQLMode(test.sqlMode)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		sqlMode string
+	}{
+		{name: "empty"},
+		{name: "strict", sqlMode: "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"},
+		{name: "query semantics", sqlMode: "ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, found := mysqlParserChangingSQLMode(test.sqlMode)
+			c.Assert(found, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"SELECT id INTO OUTFILE '/tmp/jobs.csv' FROM jobs",
+		"SELECT payload INTO DUMPFILE '/tmp/job.bin' FROM jobs LIMIT 1",
+		"TABLE jobs INTO OUTFILE '/tmp/jobs.csv'",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnwitnessedFilesystemWrite(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"INSERT INTO outfile VALUES (1)",
+		"SELECT 'INTO OUTFILE /tmp/jobs.csv'",
+		"SELECT id INTO @job_id FROM jobs",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnwitnessedFilesystemWrite(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
 	}
@@ -168,6 +304,7 @@ func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
 		"CREATE VIEW active_jobs AS SELECT * FROM jobs",
 		"CREATE TRIGGER jobs_audit AFTER INSERT ON jobs FOR EACH ROW INSERT INTO audit VALUES (NEW.id)",
 		"CREATE DEFINER = app PROCEDURE apply_jobs() INSERT INTO jobs VALUES (1)",
+		"CREATE DEFINER = CURRENT_USER() EVENT cleanup_jobs ON SCHEDULE AT CURRENT_TIMESTAMP DO DELETE FROM jobs",
 		"ALTER FUNCTION next_job_id COMMENT 'changed'",
 		"CREATE EVENT cleanup_jobs DO DELETE FROM jobs",
 	}
@@ -214,12 +351,154 @@ func TestMySQLReferencedExternalSchema(t *testing.T) {
 	c.Assert(referenced, qt.IsTrue)
 	c.Assert(routine, qt.Equals, "archive")
 
+	createIndex, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("CREATE INDEX jobs_created_at ON archive.jobs (created_at)", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(createIndex, qt.Equals, "archive")
+
+	dropIndex, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("DROP INDEX jobs_created_at ON archive.jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(dropIndex, qt.Equals, "archive")
+
+	renameTarget, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("RENAME TABLE ptahtest.jobs TO archive.jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(renameTarget, qt.Equals, "archive")
+
+	renameListSource, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens(
+			"RENAME TABLE ptahtest.jobs TO ptahtest.old_jobs, archive.pending_jobs TO ptahtest.jobs",
+			"mysql",
+		),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(renameListSource, qt.Equals, "archive")
+
+	alterRenameTarget, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("ALTER TABLE ptahtest.jobs RENAME TO archive.jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(alterRenameTarget, qt.Equals, "archive")
+
+	dropView, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("DROP VIEW ptahtest.active_jobs, archive.active_jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(dropView, qt.Equals, "archive")
+
+	dropFunction, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("DROP FUNCTION IF EXISTS archive.next_job_id", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(dropFunction, qt.Equals, "archive")
+
+	foreignKey, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens(
+			"CREATE TABLE child (parent_id BIGINT, FOREIGN KEY (parent_id) REFERENCES archive.parent (id))",
+			"mysql",
+		),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(foreignKey, qt.Equals, "archive")
+
+	grantTable, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("GRANT SELECT ON archive.jobs TO app", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(grantTable, qt.Equals, "archive")
+
+	grantDatabase, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("GRANT TRIGGER ON archive.* TO app", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(grantDatabase, qt.Equals, "archive")
+
+	quoted, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens(`INSERT INTO "archive"."jobs" VALUES (1)`, "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(quoted, qt.Equals, "archive")
+
+	createIfNotExists, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("CREATE TABLE IF NOT EXISTS archive.jobs (id BIGINT)", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(createIfNotExists, qt.Equals, "archive")
+
+	dropIfExists, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("DROP TABLE IF EXISTS archive.jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(dropIfExists, qt.Equals, "archive")
+
+	truncate, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("TRUNCATE archive.jobs", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(truncate, qt.Equals, "archive")
+
+	grantFunction, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("GRANT EXECUTE ON FUNCTION archive.next_job_id TO app", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(grantFunction, qt.Equals, "archive")
+
+	grantProcedure, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("GRANT EXECUTE ON PROCEDURE archive.apply_jobs TO app", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(grantProcedure, qt.Equals, "archive")
+
 	selected, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("INSERT INTO ptahtest.jobs VALUES (1)", "mysql"),
 		"ptahtest",
 	)
 	c.Assert(referenced, qt.IsFalse)
 	c.Assert(selected, qt.Equals, "")
+
+	selectedQuoted, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens(`INSERT INTO "ptahtest"."jobs" VALUES (1)`, "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsFalse)
+	c.Assert(selectedQuoted, qt.Equals, "")
+
+	selectedForeignKey, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens(
+			"CREATE TABLE child (parent_id BIGINT, FOREIGN KEY (parent_id) REFERENCES ptahtest.parent (id))",
+			"mysql",
+		),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsFalse)
+	c.Assert(selectedForeignKey, qt.Equals, "")
+
+	selectedGrant, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("GRANT TRIGGER ON ptahtest.* TO app", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsFalse)
+	c.Assert(selectedGrant, qt.Equals, "")
 
 	caseVariant, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("INSERT INTO PTAHTEST.jobs VALUES (1)", "mysql"),
@@ -249,28 +528,43 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		grants []string
+		schema string
 	}{
 		{
 			name:   "database trigger",
 			grants: []string{"GRANT SELECT, INSERT, TRIGGER ON `ptahtest`.* TO `ptah`@`%`"},
+			schema: "ptahtest",
+		},
+		{
+			name:   "escaped wildcard in database name",
+			grants: []string{"GRANT ALL PRIVILEGES ON `ptah\\\\_test`.* TO `ptah`@`%`"},
+			schema: "ptah_test",
 		},
 		{
 			name:   "global all privileges",
 			grants: []string{"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`"},
+			schema: "ptahtest",
 		},
 		{
 			name:   "active role expanded by server",
 			grants: []string{"GRANT TRIGGER ON `ptahtest`.* TO `ptah_trigger_role`"},
+			schema: "ptahtest",
 		},
 		{
 			name:   "ANSI quotes session",
 			grants: []string{`GRANT ALL PRIVILEGES ON "ptahtest".* TO "ptah"@"%"`},
+			schema: "ptahtest",
+		},
+		{
+			name:   "ANSI quotes escaped wildcard in database name",
+			grants: []string{`GRANT ALL PRIVILEGES ON "ptah\\_test".* TO "ptah"@"%"`},
+			schema: "ptah_test",
 		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, "ptahtest", "mysql")
+			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, test.schema, "mysql")
 			c.Assert(visible, qt.IsTrue)
 		})
 	}
@@ -310,16 +604,43 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 			c.Assert(visible, qt.IsFalse)
 		})
 	}
+
+	c.Run("unknown grant escape fails closed", func(c *qt.C) {
+		visible := mysqlGrantsProvideTriggerCatalogVisibility(
+			[]string{"GRANT TRIGGER ON `ptah\\qtest`.* TO `ptah`@`%`"},
+			"ptahqtest",
+			"mysql",
+		)
+		c.Assert(visible, qt.IsFalse)
+	})
+
+	c.Run("database wildcard grant fails closed", func(c *qt.C) {
+		visible := mysqlGrantsProvideTriggerCatalogVisibility(
+			[]string{"GRANT TRIGGER ON `ptah%`.* TO `ptah`@`%`"},
+			"ptahtest",
+			"mysql",
+		)
+		c.Assert(visible, qt.IsFalse)
+	})
+
+	c.Run("escaped database revoke overrides global grant", func(c *qt.C) {
+		visible := mysqlGrantsProvideTriggerCatalogVisibility(
+			[]string{
+				"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`",
+				"REVOKE TRIGGER ON `ptah\\\\_test`.* FROM `ptah`@`%`",
+			},
+			"ptah_test",
+			"mysql",
+		)
+		c.Assert(visible, qt.IsFalse)
+	})
 }
 
-// TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern pins the
-// database of a schema-level privilege as the pattern the server stores rather
-// than as a name. Every schema here contains an underscore, which the cases
-// above never do, and that is the whole point: `SHOW GRANTS` prints the
-// escaped `ptah\_test` for the privilege the official MySQL and MariaDB images
-// create for MYSQL_USER on `ptah_test`, and a name comparison both refuses a
-// user who holds TRIGGER and misses the REVOKE that took it away.
-func TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern(t *testing.T) {
+// TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema verifies the
+// behavior that remains safe under both values of MySQL's partial_revokes: an
+// escaped literal name is decoded, but an unescaped wildcard is not inferred to
+// cover the selected database.
+func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -341,16 +662,16 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern(t *testing.T) 
 			want:   true,
 		},
 		{
-			name:   "trailing wildcard covers the database",
+			name:   "trailing wildcard fails closed",
 			schema: "ptah_test",
 			grants: []string{"GRANT TRIGGER ON `ptah%`.* TO `ptah`@`%`"},
-			want:   true,
+			want:   false,
 		},
 		{
-			name:   "unescaped underscore matches any single character",
+			name:   "unescaped underscore wildcard fails closed",
 			schema: "ptahXtest",
 			grants: []string{"GRANT TRIGGER ON `ptah_test`.* TO `ptah`@`%`"},
-			want:   true,
+			want:   false,
 		},
 		{
 			name:   "escaped percent is not a wildcard",
@@ -389,6 +710,7 @@ func TestMySQLReferencedCatalogName(t *testing.T) {
 
 	statements := []string{
 		"INSERT INTO active_jobs VALUES (1)",
+		`INSERT INTO "active_jobs" VALUES (1)`,
 		"INSERT LOW_PRIORITY active_jobs VALUES (1)",
 		"UPDATE IGNORE active_jobs SET id = 1",
 		"WITH pending AS (SELECT 1) UPDATE IGNORE active_jobs SET id = 1",
@@ -435,6 +757,13 @@ func TestMySQLInvokedRoutine(t *testing.T) {
 	)
 	c.Assert(found, qt.IsTrue)
 	c.Assert(invoked, qt.Equals, "next_job_id")
+
+	quoted, found := mysqlInvokedRoutine(
+		significantSQLTokens(`INSERT INTO jobs VALUES ("next_job_id"())`, "mysql"),
+		routines,
+	)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(quoted, qt.Equals, "next_job_id")
 
 	identifier, found := mysqlInvokedRoutine(
 		significantSQLTokens("SELECT next_job_id FROM jobs", "mysql"),

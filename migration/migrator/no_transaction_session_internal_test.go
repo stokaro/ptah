@@ -104,6 +104,35 @@ func TestIsTransactionControlStatement(t *testing.T) {
 	}
 }
 
+func TestIsTransactionControlStatement_MySQLFamily(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		statement string
+		dialect   string
+	}{
+		{name: "MySQL start transaction", statement: "START TRANSACTION", dialect: "mysql"},
+		{name: "MySQL begin", statement: "BEGIN", dialect: "mysql"},
+		{name: "MySQL commit and chain", statement: "COMMIT AND CHAIN", dialect: "mysql"},
+		{name: "MySQL rollback and chain", statement: "ROLLBACK AND CHAIN", dialect: "mysql"},
+		{name: "MySQL savepoint", statement: "SAVEPOINT ptah", dialect: "mysql"},
+		{name: "MySQL release savepoint", statement: "RELEASE SAVEPOINT ptah", dialect: "mysql"},
+		{name: "MariaDB start transaction", statement: "START TRANSACTION", dialect: "mariadb"},
+		{name: "MariaDB begin", statement: "BEGIN", dialect: "mariadb"},
+		{name: "MariaDB commit and chain", statement: "COMMIT AND CHAIN", dialect: "mariadb"},
+		{name: "MariaDB rollback and chain", statement: "ROLLBACK AND CHAIN", dialect: "mariadb"},
+		{name: "MariaDB savepoint", statement: "SAVEPOINT ptah", dialect: "mariadb"},
+		{name: "MariaDB release savepoint", statement: "RELEASE SAVEPOINT ptah", dialect: "mariadb"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got := isTransactionControlStatement(test.statement, test.dialect)
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
 func TestPostgresSearchPathReplayState(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {

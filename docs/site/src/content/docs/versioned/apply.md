@@ -208,12 +208,29 @@ people and pipelines share a directory:
   Ptah owns that file transaction, and changing `autocommit` inside the body
   would make a post-DDL checkpoint ambiguous. Their revision metadata, default
   storage engine, and every existing base table in the selected database must
-  use InnoDB. A migration that explicitly selects another storage engine or
-  inherits one through `CREATE TABLE ... LIKE` is refused before its first
-  statement. Durable server-state operations such as `SET GLOBAL`, `SET
-  PERSIST`, `RESET`, and `CREATE`, `ALTER`, or `DROP DATABASE` are refused for
-  the same reason: their effects do not share the InnoDB transaction containing
-  the witness. The equivalent `SCHEMA` statements and `USE` are rejected as
+  use InnoDB. A migration that explicitly selects another storage engine,
+  resets an engine setting to `DEFAULT`, or inherits one through
+  `CREATE TABLE ... LIKE` is refused before its first statement. `DEFAULT` can
+  resolve differently from the session default that preflight verified. On
+  MySQL, the migration account must hold `TRIGGER` at database or
+  global scope so Ptah can see a complete trigger catalog. MariaDB exposes each
+  trigger's identity and target table without `TRIGGER`, so it does not require
+  that privilege for this catalog check. Ptah refuses MySQL `file` mode when it
+  cannot prove complete visibility. The MySQL grant must be global or must name
+  the selected database exactly in `SHOW GRANTS`. Ptah decodes escaped literal
+  wildcard characters in the database name, but deliberately does not infer
+  coverage from an unescaped `%` or `_` pattern because MySQL's
+  `partial_revokes` setting changes that pattern's meaning. Every `sql_mode`
+  assignment is also refused because changing grammar or quoting rules after
+  preflight can make the server execute SQL that Ptah did not inspect. A session
+  that already enables parser-changing `ANSI_QUOTES`, `MSSQL`, or
+  `NO_BACKSLASH_ESCAPES` behavior through the connection DSN or server default
+  is refused for the same reason. Durable server-state operations such as
+  `SET GLOBAL`, `SET PERSIST`, `RESET`, and `CREATE`,
+  `ALTER`, or `DROP DATABASE` are refused for the same reason: their effects do
+  not share the InnoDB transaction containing the witness. `SELECT` or `TABLE`
+  with `INTO OUTFILE` or `INTO DUMPFILE` is also refused because it writes
+  outside that transaction. The equivalent `SCHEMA` statements and `USE` are rejected as
   well; select the target database in `--db-url` so Ptah can validate the
   database it will modify. References to another database are rejected even
   when qualified directly. Ptah also refuses executable comments, `CALL`,
@@ -223,14 +240,14 @@ people and pipelines share a directory:
   the witness transaction. A custom `MigrationFunc` is opaque for the same
   reason and must use `none`; a `StatementInterceptor` is also opaque because
   it can replace the inspected statement with different SQL. MySQL-family
-  `file` mode accepts directly executed SQL-backed migrations only. The
-  migration account must hold `TRIGGER` at database or global scope, because
-  MySQL and MariaDB hide trigger metadata from an account without it while
-  those triggers still fire during ordinary DML. A refused statement is
-  reported by its number and safety class; a `MigrationFunc` or
-  `StatementInterceptor` is refused for the whole migration and reported by
-  direction, because neither has a statement to point at. Neither form repeats
-  the SQL, which may contain credentials.
+  `file` mode accepts directly executed SQL-backed migrations only.
+  Statement-level rejection diagnostics identify the statement number and
+  safety class without echoing the SQL, which may contain credentials.
+  Migration-function and interceptor refusals identify the affected direction
+  instead because their inner statements are opaque.
+  The migration advisory lock serializes Ptah clients that use the same lock
+  name. It cannot freeze DDL from a client that ignores that lock. Do not run
+  out-of-band DDL from the safety preflight until the migration finishes.
   Pre-migration checks are not rerun after committed progress because they
   describe the original pre-migration state. Automatic continuation is
   up-direction only: a row left dirty by an interrupted rollback is refused so

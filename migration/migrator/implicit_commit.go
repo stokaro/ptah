@@ -60,6 +60,15 @@ func (m *Migrator) validateTransactionalProgressSQL(
 				i+1,
 			)
 		}
+		if mysqlUnsafeSQLModeChange(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because changing sql_mode can make "+
+					"the MySQL-family server disagree with Ptah's prevalidated statement boundaries; "+
+					"configure a stable session mode before migration or use tx-mode none",
+				migration.Version,
+				i+1,
+			)
+		}
 		if len(tokens) > 0 && tokens[0].MatchIdentifierValue("USE") {
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it changes the target database; "+
@@ -72,6 +81,14 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it changes state outside "+
 					"Ptah's migration transaction; use a session-scoped setting or tx-mode none",
+				migration.Version,
+				i+1,
+			)
+		}
+		if mysqlUnwitnessedFilesystemWrite(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because it writes a file outside "+
+					"Ptah's migration transaction; use tx-mode none",
 				migration.Version,
 				i+1,
 			)
@@ -109,8 +126,16 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			)
 		}
 		engine, selected := mysqlStorageEngineSelection(statement, m.connectionDialect())
-		if !selected || strings.EqualFold(engine, "InnoDB") || strings.EqualFold(engine, "DEFAULT") {
+		if !selected || strings.EqualFold(engine, "InnoDB") {
 			continue
+		}
+		if strings.EqualFold(engine, "DEFAULT") {
+			return fmt.Errorf(
+				"migration %d statement %d selects storage engine DEFAULT, whose effective engine can differ "+
+					"from the verified session default; select InnoDB explicitly or use tx-mode none",
+				migration.Version,
+				i+1,
+			)
 		}
 		return fmt.Errorf(
 			"migration %d statement %d selects non-transactional storage engine %s; "+
@@ -121,6 +146,64 @@ func (m *Migrator) validateTransactionalProgressSQL(
 		)
 	}
 	return nil
+}
+
+// mysqlUnsafeSQLModeChange rejects assignments that can make later statements
+// use grammar or quoting rules different from those that established Ptah's
+// statement boundaries. File mode validates the complete body before executing
+// it, so changing the parser contract part-way through is never safe.
+func mysqlUnsafeSQLModeChange(tokens []lexer.Token) bool {
+	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("SET") {
+		return false
+	}
+	assignmentStart := 1
+	for assignmentStart < len(tokens) {
+		assignmentEnd := len(tokens)
+		for i := assignmentStart; i < len(tokens); i++ {
+			if tokens[i].Value == "," {
+				assignmentEnd = i
+				break
+			}
+		}
+		if mysqlUnsafeSQLModeAssignment(tokens[assignmentStart:assignmentEnd]) {
+			return true
+		}
+		assignmentStart = assignmentEnd + 1
+	}
+	return false
+}
+
+func mysqlUnsafeSQLModeAssignment(tokens []lexer.Token) bool {
+	atSigns := 0
+	for _, token := range tokens {
+		if token.Value == "=" {
+			return false
+		}
+		atSigns += strings.Count(token.Value, "@")
+		identifier, isIdentifier := mysqlMigrationIdentifierValue(token)
+		if isIdentifier && strings.EqualFold(identifier, "SQL_MODE") {
+			return atSigns != 1
+		}
+	}
+	return false
+}
+
+func mysqlParserChangingSQLMode(sqlMode string) (string, bool) {
+	parserMode := ""
+	for mode := range strings.SplitSeq(sqlMode, ",") {
+		normalized := strings.ToUpper(strings.TrimSpace(mode))
+		switch normalized {
+		case "MSSQL":
+			return normalized, true
+		case "ANSI_QUOTES":
+			parserMode = normalized
+		case "NO_BACKSLASH_ESCAPES":
+			if parserMode == "" {
+				parserMode = normalized
+			}
+		}
+	}
+	return parserMode, parserMode != ""
 }
 
 func (m *Migration) hasSQLExecutor(direction MigrationDirection) bool {
@@ -162,11 +245,24 @@ func mysqlDefinesIndirectWriter(tokens []lexer.Token) bool {
 		return false
 	}
 	for _, token := range tokens[1:] {
-		if token.Value == "(" {
-			return false
-		}
 		if matchesAnyKeyword(token, "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION", "EVENT") {
 			return true
+		}
+		if matchesAnyKeyword(
+			token,
+			"TABLE",
+			"INDEX",
+			"DATABASE",
+			"SCHEMA",
+			"USER",
+			"ROLE",
+			"SERVER",
+			"TABLESPACE",
+			"LOGFILE",
+			"RESOURCE",
+			"SPATIAL",
+		) {
+			return false
 		}
 	}
 	return false
@@ -229,6 +325,18 @@ func mysqlDatabaseCatalogChange(tokens []lexer.Token) bool {
 			continue
 		}
 		return matchesAnyKeyword(token, "DATABASE", "SCHEMA")
+	}
+	return false
+}
+
+func mysqlUnwitnessedFilesystemWrite(tokens []lexer.Token) bool {
+	for i, token := range tokens {
+		if !token.MatchIdentifierValue("INTO") || i+2 >= len(tokens) {
+			continue
+		}
+		if matchesAnyKeyword(tokens[i+1], "OUTFILE", "DUMPFILE") && tokens[i+2].Type == lexer.TokenString {
+			return true
+		}
 	}
 	return false
 }
@@ -377,6 +485,11 @@ func mysqlAlterTableStorageEngine(tokens []lexer.Token) (string, bool) {
 		if token.MatchIdentifierValue("ENGINE") {
 			return mysqlStorageEngineValue(tokens, i+1)
 		}
+		if token.MatchIdentifierValue("STORAGE") &&
+			i+1 < len(tokens) &&
+			tokens[i+1].MatchIdentifierValue("ENGINE") {
+			return mysqlStorageEngineValue(tokens, i+2)
+		}
 		atOptionStart = false
 	}
 	return "", false
@@ -395,12 +508,17 @@ func mysqlTableNameEnd(tokens []lexer.Token, start int) int {
 	for start < len(tokens) && matchesAnyKeyword(tokens[start], "IF", "NOT", "EXISTS") {
 		start++
 	}
-	if start >= len(tokens) || tokens[start].Type != lexer.TokenIdentifier {
+	if start >= len(tokens) {
+		return -1
+	}
+	if _, identifier := mysqlMigrationIdentifierValue(tokens[start]); !identifier {
 		return -1
 	}
 	start++
-	if start+1 < len(tokens) && tokens[start].Value == "." && tokens[start+1].Type == lexer.TokenIdentifier {
-		start += 2
+	if start+1 < len(tokens) && tokens[start].Value == "." {
+		if _, identifier := mysqlMigrationIdentifierValue(tokens[start+1]); identifier {
+			start += 2
+		}
 	}
 	return start
 }

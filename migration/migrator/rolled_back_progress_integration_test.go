@@ -87,16 +87,6 @@ func TestRolledBackProgress_MariaDBNativeRevisionKeepsTheWholeDurablePrefix(t *t
 	runRolledBackDDLThenDML(t, dbURL, "mariadb_native", migrator.RevisionTableFormatPtah)
 }
 
-func TestRolledBackProgress_MySQLRejectsAutocommitControl(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRejectsAutocommitControl(t, dbURL, "mysql")
-}
-
-func TestRolledBackProgress_MariaDBRejectsAutocommitControl(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRejectsAutocommitControl(t, dbURL, "mariadb")
-}
-
 func TestRolledBackProgress_MySQLRejectsTransactionControl(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsTransactionControl(t, dbURL, "mysql")
@@ -187,6 +177,88 @@ func TestRolledBackProgress_MariaDBRejectsCreatingNonTransactionalTargetTable(t 
 	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mariadb_create_myisam")
 }
 
+func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMariaDBAlterStorageEngine(
+		t,
+		dbURL,
+		"mariadb_stg_myisam",
+		"MyISAM",
+		`.*migration 1 statement 1 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases`,
+	)
+}
+
+func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineDefault(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMariaDBAlterStorageEngine(
+		t,
+		dbURL,
+		"mariadb_stg_default",
+		"DEFAULT",
+		`.*migration 1 statement 1 selects storage engine DEFAULT, whose effective engine can differ from the verified session default; select InnoDB explicitly or use tx-mode none`,
+	)
+}
+
+func TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsDefaultStorageEngineReset(t, dbURL, "mysql_default_engine")
+}
+
+func TestRolledBackProgress_MariaDBRejectsDefaultStorageEngineReset(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsDefaultStorageEngineReset(t, dbURL, "mariadb_default_engine")
+}
+
+func TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnsafeSQLModeChange(t, dbURL, "mysql_unsafe_sql_mode")
+}
+
+func TestRolledBackProgress_MariaDBRejectsUnsafeSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnsafeSQLModeChange(t, dbURL, "mariadb_unsafe_sql_mode")
+}
+
+func TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnsafeInitialSQLMode(t, dbURL, "mysql_initial_sql_mode")
+}
+
+func TestRolledBackProgress_MariaDBRejectsUnsafeInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnsafeInitialSQLMode(t, dbURL, "mariadb_initial_sql_mode")
+}
+
+func TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mysql_ansi_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsANSIQuotesSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mariadb_ansi_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsMSSQLSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMSSQLSQLModeChange(t, dbURL, "mariadb_mssql_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsANSIQuotesInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mysql_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
+}
+
+func TestRolledBackProgress_MariaDBRejectsANSIQuotesInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
+}
+
+func TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_mssql", "%27MSSQL%27", "MSSQL")
+}
+
 func TestRolledBackProgress_MySQLRejectsInheritedStorageEngine(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsInheritedStorageEngine(t, dbURL, "mysql_create_like")
@@ -209,6 +281,31 @@ func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *test
 	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, adminURL, "mariadb")
 }
 
+func TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLWithoutTriggerPrivilegeFailsClosed(t, adminURL)
+}
+
+func TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "MARIADB_TEST_URL", "MARIADB_URL")
+	runMariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t, adminURL)
+}
+
+func TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t, adminURL)
+}
+
+func TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, adminURL)
+}
+
+func TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLEscapedDatabaseGrantIsAccepted(t, adminURL)
+}
+
 func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 
@@ -217,7 +314,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_exec_comment")
 		cleanupIssue887(t, conn, names)
@@ -244,7 +341,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_opaque_up")
 		cleanupIssue887(t, conn, names)
@@ -271,7 +368,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_opaque_down")
 		cleanupIssue887(t, conn, names)
@@ -308,7 +405,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_interceptor")
 		cleanupIssue887(t, conn, names)
@@ -342,9 +439,9 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
-		names := issue887Names(dialect + "_interceptor_down")
+		names := issue887Names(dialect + "_dint")
 		cleanupIssue887(t, conn, names)
 		defer cleanupIssue887(t, conn, names)
 		upSQL := fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable)
@@ -378,7 +475,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_call")
 		cleanupIssue887(t, conn, names)
@@ -390,15 +487,406 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 	})
 
+	t.Run("DEFINER function before indirect writer", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_definer")
+		cleanupIssue887(t, adminConn, names)
+		defer cleanupIssue887(t, adminConn, names)
+		eventName := fmt.Sprintf("ptah887event%d", time.Now().UnixNano())
+		defer issue887DropEvent(t, adminConn, eventName)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"DEFINER function before indirect writer",
+			fmt.Sprintf(
+				"CREATE DEFINER=CURRENT_USER() EVENT %s ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR DO SELECT 1",
+				eventName,
+			),
+			"SELECT 1",
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*defines an indirect database writer that Ptah cannot validate before execution.*`)
+		c.Assert(issue887EventCount(t, adminConn, eventName), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("filesystem writes", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+
+		names := issue887Names(dialect + "_filesystem")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		cases := []struct {
+			name      string
+			statement string
+		}{
+			{
+				name:      "OUTFILE",
+				statement: fmt.Sprintf("SELECT 'blocked' INTO OUTFILE '/tmp/%s.txt'", names.createdTable),
+			},
+			{
+				name:      "DUMPFILE",
+				statement: fmt.Sprintf("SELECT 'blocked' INTO DUMPFILE '/tmp/%s.bin'", names.createdTable),
+			},
+		}
+
+		for _, test := range cases {
+			c.Run(test.name, func(c *qt.C) {
+				migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
+
+				err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+				c.Assert(err, qt.ErrorMatches, `.*writes a file outside Ptah's migration transaction.*`)
+				c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+			})
+		}
+	})
+
+	t.Run("cross-database CREATE INDEX", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xidxc")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database CREATE INDEX",
+			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (id)", indexName, externalDatabase),
+			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database DROP INDEX", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xidxd")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY, note VARCHAR(64))", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database DROP INDEX",
+			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
+			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database foreign key", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xref")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.parents (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database foreign key",
+			fmt.Sprintf(
+				"CREATE TABLE %s (id INTEGER PRIMARY KEY, parent_id INTEGER, "+
+					"FOREIGN KEY (parent_id) REFERENCES %s.parents (id))",
+				names.createdTable,
+				externalDatabase,
+			),
+			fmt.Sprintf("DROP TABLE %s", names.createdTable),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887TableCount(t, adminConn, names.createdTable), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database privilege target", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xgrant")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		username, _ := issue887CreateUser(t, adminConn)
+		defer issue887DropUser(t, adminConn, username)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database privilege target",
+			fmt.Sprintf("GRANT TRIGGER ON %s.* TO '%s'@'%%'", externalDatabase, username),
+			fmt.Sprintf("REVOKE TRIGGER ON %s.* FROM '%s'@'%%'", externalDatabase, username),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(
+			issue887SchemaPrivilegeCount(t, adminConn, externalDatabase, username, "TRIGGER"),
+			qt.Equals,
+			int64(0),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database CREATE TABLE IF NOT EXISTS", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xcreate")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database CREATE TABLE IF NOT EXISTS",
+			fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
+			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database DROP TABLE IF EXISTS", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xdrop")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database DROP TABLE IF EXISTS",
+			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
+			fmt.Sprintf("CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database TRUNCATE", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xtrunc")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY) ENGINE=MyISAM", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.external_jobs VALUES (1)", externalDatabase))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database TRUNCATE",
+			fmt.Sprintf("TRUNCATE %s.external_jobs", externalDatabase),
+			"SELECT 1",
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(
+			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
+			qt.Equals,
+			int64(1),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database routine privilege target", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xrgrant")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE FUNCTION %s.next_job_id() RETURNS INT DETERMINISTIC RETURN 7", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		username, _ := issue887CreateUser(t, adminConn)
+		defer issue887DropUser(t, adminConn, username)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database routine privilege target",
+			fmt.Sprintf("GRANT EXECUTE ON FUNCTION %s.next_job_id TO '%s'@'%%'", externalDatabase, username),
+			fmt.Sprintf("REVOKE EXECUTE ON FUNCTION %s.next_job_id FROM '%s'@'%%'", externalDatabase, username),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(
+			issue887RoutinePrivilegeCount(t, adminConn, externalDatabase, "next_job_id", username, "EXECUTE"),
+			qt.Equals,
+			int64(0),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database RENAME TABLE", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_cross_db_rename")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database RENAME TABLE",
+			fmt.Sprintf("RENAME TABLE %s TO %s.external_jobs", names.createdTable, externalDatabase),
+			fmt.Sprintf("RENAME TABLE %s.external_jobs TO %s", externalDatabase, names.createdTable),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
 	t.Run("cross-database table", func(t *testing.T) {
 		c := qt.New(t)
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = adminConn.Close() }()
+		defer issue887CloseConnection(t, adminConn)
 
 		names := issue887Names(dialect + "_cross_db")
 		cleanupIssue887(t, conn, names)
@@ -406,9 +894,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
 		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
 		c.Assert(err, qt.IsNil)
-		defer func() {
-			_, _ = adminConn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+externalDatabase)
-		}()
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
 		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
 			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY) ENGINE=MyISAM", externalDatabase,
 		))
@@ -420,14 +906,14 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 			fmt.Sprintf("DELETE FROM %s.external_jobs", externalDatabase),
 		)
 
-		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
 		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
 		c.Assert(
 			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
 			qt.Equals,
 			int64(0),
 		)
-		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
 	})
 
 	t.Run("database creation", func(t *testing.T) {
@@ -435,13 +921,16 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
 
 		names := issue887Names(dialect + "_create_db")
 		cleanupIssue887(t, conn, names)
 		defer cleanupIssue887(t, conn, names)
 		databaseName := fmt.Sprintf("ptah887created%d", time.Now().UnixNano())
-		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+databaseName) }()
+		defer issue887DropDatabase(t, adminConn, databaseName)
 		migration := migrator.CreateMigrationFromSQL(
 			1,
 			"database creation",
@@ -454,7 +943,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(
 			issue887ScalarCount(
 				t,
-				conn,
+				adminConn,
 				fmt.Sprintf("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '%s'", databaseName),
 			),
 			qt.Equals,
@@ -468,10 +957,10 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = adminConn.Close() }()
+		defer issue887CloseConnection(t, adminConn)
 
 		names := issue887Names(dialect + "_trigger")
 		cleanupIssue887(t, conn, names)
@@ -492,9 +981,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 			names.blockerTable,
 		))
 		c.Assert(err, qt.IsNil)
-		defer func() {
-			_, _ = adminConn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName)
-		}()
+		defer issue887DropTrigger(t, adminConn, triggerName)
 		migration := migrator.CreateMigrationFromSQL(
 			1,
 			"triggered relation",
@@ -509,73 +996,15 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 	})
 
-	t.Run("hidden trigger catalog", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer func() { _ = adminConn.Close() }()
-
-		username := fmt.Sprintf("p887_%d", time.Now().UnixNano())
-		password := username + "_password"
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password,
-		))
-		c.Assert(err, qt.IsNil)
-		defer func() {
-			_, _ = adminConn.ExecContext(context.Background(), fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", username))
-		}()
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON %s.* TO '%s'@'%%'",
-			sqlident.Quote(dialect, adminConn.Info().Schema),
-			username,
-		))
-		c.Assert(err, qt.IsNil)
-
-		limitedURL := issue887ReplaceMySQLCredentials(t, adminURL, username, password)
-		conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
-		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
-
-		names := issue887Names(dialect + "_hidden_trigger")
-		cleanupIssue887(t, adminConn, names)
-		defer cleanupIssue887(t, adminConn, names)
-		triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
-		))
-		c.Assert(err, qt.IsNil)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW SET NEW.note = 'triggered'",
-			triggerName,
-			names.ledgerTable,
-		))
-		c.Assert(err, qt.IsNil)
-		defer func() {
-			_, _ = adminConn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName)
-		}()
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"hidden trigger catalog",
-			fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
-			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
-		)
-
-		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*tx-mode file requires the TRIGGER privilege at database or global scope.*`)
-		c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
 	t.Run("stored function", func(t *testing.T) {
 		c := qt.New(t)
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = adminConn.Close() }()
+		defer issue887CloseConnection(t, adminConn)
 
 		names := issue887Names(dialect + "_routine")
 		cleanupIssue887(t, conn, names)
@@ -589,9 +1018,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 			"CREATE FUNCTION %s() RETURNS INT DETERMINISTIC RETURN 7", routineName,
 		))
 		c.Assert(err, qt.IsNil)
-		defer func() {
-			_, _ = adminConn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS "+routineName)
-		}()
+		defer issue887DropFunction(t, adminConn, routineName)
 		migration := migrator.CreateMigrationFromSQL(
 			1,
 			"stored function",
@@ -610,7 +1037,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
-		defer func() { _ = conn.Close() }()
+		defer issue887CloseConnection(t, conn)
 
 		names := issue887Names(dialect + "_secret")
 		cleanupIssue887(t, conn, names)
@@ -630,6 +1057,265 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 	})
 }
 
+func runMySQLWithoutTriggerPrivilegeFailsClosed(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, adminConn)
+
+	username, password := issue887CreateUser(t, adminConn)
+	defer issue887DropUser(t, adminConn, username)
+	issue887GrantBasePrivileges(t, adminConn, "mysql", username)
+
+	limitedURL := issue887ReplaceMySQLCredentials(t, adminURL, username, password)
+	conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_hidden_trigger")
+	cleanupIssue887(t, adminConn, names)
+	defer cleanupIssue887(t, adminConn, names)
+	triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW SET NEW.note = 'triggered'",
+		triggerName,
+		names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	defer issue887DropTrigger(t, adminConn, triggerName)
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"hidden trigger catalog",
+		fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*tx-mode file requires the TRIGGER privilege at database or global scope.*`)
+	c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+}
+
+func runMariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, adminConn)
+
+	username, password := issue887CreateUser(t, adminConn)
+	defer issue887DropUser(t, adminConn, username)
+	issue887GrantBasePrivileges(t, adminConn, "mariadb", username)
+
+	limitedURL := issue887ReplaceMySQLCredentials(t, adminURL, username, password)
+	conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mariadb_hidden_trigger")
+	cleanupIssue887(t, adminConn, names)
+	defer cleanupIssue887(t, adminConn, names)
+	triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW SET NEW.note = 'triggered'",
+		triggerName,
+		names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	defer issue887DropTrigger(t, adminConn, triggerName)
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"visible trigger catalog",
+		fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*relation .* has indirect behavior that Ptah cannot tie to the transaction witness.*`)
+	c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+}
+
+func runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, adminConn)
+
+	username, password := issue887CreateUser(t, adminConn)
+	defer issue887DropUser(t, adminConn, username)
+	issue887GrantBasePrivileges(t, adminConn, "mysql", username)
+	roleName := fmt.Sprintf("r887_%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf("CREATE ROLE '%s'@'%%'", roleName))
+	c.Assert(err, qt.IsNil)
+	defer issue887DropRole(t, adminConn, roleName)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"GRANT TRIGGER ON %s.* TO '%s'@'%%'",
+		sqlident.Quote("mysql", adminConn.Info().Schema),
+		roleName,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"GRANT '%s'@'%%' TO '%s'@'%%'", roleName, username,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"SET DEFAULT ROLE '%s'@'%%' TO '%s'@'%%'", roleName, username,
+	))
+	c.Assert(err, qt.IsNil)
+
+	limitedURL := issue887ReplaceMySQLCredentials(t, adminURL, username, password)
+	conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_default_role")
+	cleanupIssue887(t, adminConn, names)
+	defer cleanupIssue887(t, adminConn, names)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW SET NEW.note = 'triggered'",
+		triggerName,
+		names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	defer issue887DropTrigger(t, adminConn, triggerName)
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"default role trigger privilege",
+		fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*relation .* has indirect behavior that Ptah cannot tie to the transaction witness.*`)
+	c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+}
+
+func runMySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_files")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable))
+	c.Assert(err, qt.IsNil)
+
+	var secureFileDir string
+	err = conn.QueryRowContext(ctx, "SELECT @@secure_file_priv").Scan(&secureFileDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(secureFileDir, qt.Not(qt.Equals), "")
+	filePrefix := strings.TrimRight(secureFileDir, "/") + "/" + names.createdTable
+	tests := []struct {
+		name      string
+		statement string
+		path      string
+	}{
+		{
+			name:      "SELECT OUTFILE",
+			statement: fmt.Sprintf("SELECT 'blocked' INTO OUTFILE '%s.txt'", filePrefix),
+			path:      filePrefix + ".txt",
+		},
+		{
+			name:      "SELECT DUMPFILE",
+			statement: fmt.Sprintf("SELECT 'blocked' INTO DUMPFILE '%s.bin'", filePrefix),
+			path:      filePrefix + ".bin",
+		},
+		{
+			name:      "TABLE OUTFILE",
+			statement: fmt.Sprintf("TABLE %s INTO OUTFILE '%s.tbl'", names.ledgerTable, filePrefix),
+			path:      filePrefix + ".tbl",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
+
+			err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+			c.Assert(err, qt.ErrorMatches, `.*writes a file outside Ptah's migration transaction.*`)
+			c.Assert(issue887FileMissing(t, conn, test.path), qt.IsTrue)
+			c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+		})
+	}
+}
+
+func runMySQLEscapedDatabaseGrantIsAccepted(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, adminConn)
+
+	database := fmt.Sprintf("p887_test_%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+database)
+	c.Assert(err, qt.IsNil)
+	defer issue887DropDatabase(t, adminConn, database)
+	username, password := issue887CreateUser(t, adminConn)
+	defer issue887DropUser(t, adminConn, username)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'",
+		sqlident.Quote("mysql", database),
+		username,
+	))
+	c.Assert(err, qt.IsNil)
+
+	limitedURL := issue887ReplaceMySQLDatabase(
+		t,
+		issue887ReplaceMySQLCredentials(t, adminURL, username, password),
+		database,
+	)
+	conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_escaped_grant")
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"escaped database grant",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+}
+
 func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
 	t.Helper()
 
@@ -638,7 +1324,7 @@ func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(dialect + "_dml")
 	cleanupIssue887(t, conn, names)
@@ -691,7 +1377,7 @@ func runRolledBackCommittedDDLPrefix(t *testing.T, dbURL, dialect string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(dialect + "_ddl")
 	cleanupIssue887(t, conn, names)
@@ -752,7 +1438,7 @@ func runRolledBackDDLThenDML(
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(dialect + "_ddl_dml")
 	cleanupIssue887(t, conn, names)
@@ -791,42 +1477,6 @@ func runRolledBackDDLThenDML(
 	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.blockerTable)), qt.Equals, int64(1))
 }
 
-func runRejectsAutocommitControl(t *testing.T, dbURL, dialect string) {
-	t.Helper()
-
-	c := qt.New(t)
-	ctx := context.Background()
-
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
-
-	names := issue887Names(dialect + "_autocommit_zero")
-	cleanupIssue887(t, conn, names)
-	defer cleanupIssue887(t, conn, names)
-
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
-	))
-	c.Assert(err, qt.IsNil)
-
-	body := fmt.Sprintf(
-		"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
-			"SET autocommit = 0;\n"+
-			"INSERT INTO %[2]s (id, note) VALUES (1, 'one');\n",
-		names.createdTable, names.ledgerTable,
-	)
-	migration := migrator.CreateMigrationFromSQL(1, "autocommit zero", body,
-		fmt.Sprintf("DROP TABLE %s", names.createdTable))
-
-	mig := issue887Migrator(conn, names, migration)
-	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because it controls transaction state; remove the transaction control and let Ptah manage the file transaction`)
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
-	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
-	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
-}
-
 // runRejectsTransactionControl drives the primary transaction-control arm of
 // the tx-mode file preflight through MigrateUp on a live server.
 //
@@ -848,6 +1498,8 @@ func runRejectsTransactionControl(t *testing.T, dbURL, dialect string) {
 		name    string
 		control string
 	}{
+		{name: "autocommit", control: "SET autocommit = 0"},
+		{name: "begin", control: "BEGIN"},
 		{name: "commit", control: "COMMIT"},
 		{name: "rollback", control: "ROLLBACK"},
 		{name: "commit and chain", control: "COMMIT AND CHAIN"},
@@ -863,7 +1515,7 @@ func runRejectsTransactionControl(t *testing.T, dbURL, dialect string) {
 			ctx := context.Background()
 			conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 			c.Assert(err, qt.IsNil)
-			defer func() { _ = conn.Close() }()
+			defer issue887CloseConnection(t, conn)
 
 			names := issue887Names(fmt.Sprintf("%s_txcontrol%d", dialect, index))
 			cleanupIssue887(t, conn, names)
@@ -902,7 +1554,7 @@ func runRejectsChangingTargetDatabase(t *testing.T, dbURL, dialect string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(dialect + "_use")
 	cleanupIssue887(t, conn, names)
@@ -931,17 +1583,17 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(dialect + "_session_replay")
 	cleanupIssue887(t, conn, names)
 	defer cleanupIssue887(t, conn, names)
 
 	body := fmt.Sprintf(
-		"SET SESSION sql_mode = 'ANSI_QUOTES';\n"+
-			"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
-			"INSERT INTO \"%[1]s\" (id) VALUES (1);\n"+
-			"INSERT INTO \"%[2]s\" (id) VALUES (7);\n",
+		"SET SESSION time_zone = '+02:00';\n"+
+			"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY, observed_epoch BIGINT NOT NULL);\n"+
+			"INSERT INTO %[1]s (id, observed_epoch) VALUES (1, UNIX_TIMESTAMP('2000-01-01 02:00:00'));\n"+
+			"INSERT INTO %[2]s (id, observed_epoch) VALUES (7, UNIX_TIMESTAMP('2000-01-01 02:00:00'));\n",
 		names.createdTable, names.blockerTable,
 	)
 	migration := migrator.CreateMigrationFromSQL(1, "session replay", body,
@@ -953,7 +1605,7 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(3))
 
 	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, observed_epoch BIGINT NOT NULL)", names.blockerTable,
 	))
 	c.Assert(err, qt.IsNil)
 
@@ -961,6 +1613,11 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.createdTable)), qt.Equals, int64(1))
+	c.Assert(
+		issue887ScalarCount(t, conn, fmt.Sprintf("SELECT observed_epoch FROM %s WHERE id = 7", names.blockerTable)),
+		qt.Equals,
+		int64(946684800),
+	)
 }
 
 func runRolledBackDownProgress(
@@ -976,7 +1633,7 @@ func runRolledBackDownProgress(
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1018,7 +1675,7 @@ func runRejectsNonTransactionalMetadata(t *testing.T, dbURL, prefix string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1047,7 +1704,7 @@ func runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T, dbURL, 
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1081,7 +1738,7 @@ func runRejectsNonTransactionalTargetTable(t *testing.T, dbURL, prefix string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1113,7 +1770,7 @@ func runRejectsCreatingNonTransactionalTargetTable(t *testing.T, dbURL, prefix s
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1132,6 +1789,178 @@ func runRejectsCreatingNonTransactionalTargetTable(t *testing.T, dbURL, prefix s
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
 
+func runRejectsMariaDBAlterStorageEngine(t *testing.T, dbURL, prefix, engine, wantErr string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB",
+		names.createdTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"alter storage engine",
+		fmt.Sprintf("ALTER TABLE %s STORAGE ENGINE=%s", names.createdTable, engine),
+		fmt.Sprintf("ALTER TABLE %s ENGINE=InnoDB", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, wantErr)
+	c.Assert(issue887TableEngine(t, conn, names.createdTable), qt.Equals, "InnoDB")
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsDefaultStorageEngineReset(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"reset target engine",
+		fmt.Sprintf(
+			"SET SESSION default_storage_engine = DEFAULT; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 statement 1 selects storage engine DEFAULT, whose effective engine can differ from the verified session default; select InnoDB explicitly or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsUnsafeSQLModeChange(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?multiStatements=true")
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"unsafe sql mode",
+		fmt.Sprintf(
+			"SET SESSION `sql_mode` = 'NO_BACKSLASH_ESCAPES'; SELECT 'safe\\'; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsUnsafeInitialSQLMode(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+	runRejectsInitialSQLMode(t, dbURL, prefix, "%27NO_BACKSLASH_ESCAPES%27", "NO_BACKSLASH_ESCAPES")
+}
+
+func runRejectsInitialSQLMode(t *testing.T, dbURL, prefix, encodedSQLMode, wantMode string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?sql_mode="+encodedSQLMode)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"unsafe initial sql mode",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains parser-changing mode `+wantMode+`; use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsANSIQuotesSQLModeChange(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"create ANSI-quoted target engine",
+		fmt.Sprintf(
+			`SET SESSION sql_mode = 'ANSI_QUOTES'; CREATE TABLE "%s" (id INTEGER PRIMARY KEY) ENGINE=MyISAM`,
+			names.createdTable,
+		),
+		fmt.Sprintf(`DROP TABLE "%s"`, names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsMSSQLSQLModeChange(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?multiStatements=true")
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"MSSQL-quoted target engine",
+		fmt.Sprintf(
+			"SET SESSION sql_mode = 'MSSQL'; CREATE TABLE [%s] (id INTEGER PRIMARY KEY) ENGINE=MyISAM",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE [%s]", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
 func runRejectsInheritedStorageEngine(t *testing.T, dbURL, prefix string) {
 	t.Helper()
 
@@ -1140,7 +1969,7 @@ func runRejectsInheritedStorageEngine(t *testing.T, dbURL, prefix string) {
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+	defer issue887CloseConnection(t, conn)
 
 	names := issue887Names(prefix)
 	cleanupIssue887(t, conn, names)
@@ -1184,6 +2013,14 @@ func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password st
 	_, endpoint, found := strings.Cut(remainder, "@")
 	qt.Assert(t, found, qt.IsTrue)
 	return fmt.Sprintf("%s://%s:%s@%s", scheme, username, password, endpoint)
+}
+
+func issue887ReplaceMySQLDatabase(t *testing.T, rawURL, database string) string {
+	t.Helper()
+
+	slash := strings.LastIndex(rawURL, "/")
+	qt.Assert(t, slash, qt.Not(qt.Equals), -1)
+	return rawURL[:slash+1] + database
 }
 
 func issue887Migrator(
@@ -1241,13 +2078,18 @@ func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, name
 
 func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
 	t.Helper()
+	return issue887TableEngine(t, conn, names.revisionsTable)
+}
+
+func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table string) string {
+	t.Helper()
 
 	var engine string
 	err := conn.QueryRowContext(
 		context.Background(),
 		"SELECT engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
 		conn.Info().Schema,
-		names.revisionsTable,
+		table,
 	).Scan(&engine)
 	qt.Assert(t, err, qt.IsNil)
 	return engine
@@ -1305,7 +2147,7 @@ func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names 
 		fmt.Sprintf("SELECT note FROM %s ORDER BY note", names.ledgerTable),
 	)
 	qt.Assert(t, err, qt.IsNil)
-	defer func() { _ = rows.Close() }()
+	defer func() { qt.Check(t, rows.Close(), qt.IsNil) }()
 
 	notes := []string{}
 	for rows.Next() {
@@ -1317,10 +2159,192 @@ func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names 
 	return notes
 }
 
+func issue887CreateUser(t *testing.T, conn *dbschema.DatabaseConnection) (username, password string) {
+	t.Helper()
+
+	username = fmt.Sprintf("p887_%d", time.Now().UnixNano())
+	password = username + "_password"
+	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
+		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password,
+	))
+	qt.Assert(t, err, qt.IsNil)
+	return username, password
+}
+
+func issue887GrantBasePrivileges(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	dialect,
+	username string,
+) {
+	t.Helper()
+
+	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
+		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON %s.* TO '%s'@'%%'",
+		sqlident.Quote(dialect, conn.Info().Schema),
+		username,
+	))
+	qt.Assert(t, err, qt.IsNil)
+}
+
+func issue887IndexCount(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	schema,
+	table,
+	index string,
+) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.statistics
+WHERE table_schema = ? AND table_name = ? AND index_name = ?`,
+		schema,
+		table,
+		index,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event string) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.events WHERE event_schema = ? AND event_name = ?`,
+		conn.Info().Schema,
+		event,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887FileMissing(t *testing.T, conn *dbschema.DatabaseConnection, path string) bool {
+	t.Helper()
+
+	var missing bool
+	err := conn.QueryRowContext(context.Background(), "SELECT LOAD_FILE(?) IS NULL", path).Scan(&missing)
+	qt.Assert(t, err, qt.IsNil)
+	return missing
+}
+
+func issue887TableCountInSchema(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	schema,
+	table string,
+) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?`,
+		schema,
+		table,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887SchemaPrivilegeCount(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	schema,
+	username,
+	privilege string,
+) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.schema_privileges
+WHERE table_schema = ? AND grantee = ? AND privilege_type = ?`,
+		schema,
+		fmt.Sprintf("'%s'@'%%'", username),
+		privilege,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887RoutinePrivilegeCount(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	schema,
+	routine,
+	username,
+	privilege string,
+) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM mysql.procs_priv
+WHERE Db = ? AND Routine_name = ? AND User = ? AND FIND_IN_SET(?, Proc_priv) > 0`,
+		schema,
+		routine,
+		username,
+		privilege,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887CloseConnection(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+	qt.Check(t, conn.Close(), qt.IsNil)
+}
+
+func issue887DropDatabase(t *testing.T, conn *dbschema.DatabaseConnection, database string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, "DROP DATABASE IF EXISTS "+database)
+}
+
+func issue887DropTrigger(t *testing.T, conn *dbschema.DatabaseConnection, trigger string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, "DROP TRIGGER IF EXISTS "+trigger)
+}
+
+func issue887DropFunction(t *testing.T, conn *dbschema.DatabaseConnection, function string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, "DROP FUNCTION IF EXISTS "+function)
+}
+
+func issue887DropEvent(t *testing.T, conn *dbschema.DatabaseConnection, event string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, "DROP EVENT IF EXISTS "+event)
+}
+
+func issue887DropUser(t *testing.T, conn *dbschema.DatabaseConnection, username string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", username))
+}
+
+func issue887DropRole(t *testing.T, conn *dbschema.DatabaseConnection, role string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, fmt.Sprintf("DROP ROLE IF EXISTS '%s'@'%%'", role))
+}
+
+func issue887CleanupSQL(t *testing.T, conn *dbschema.DatabaseConnection, query string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := conn.ExecContext(ctx, query)
+	qt.Check(t, err, qt.IsNil, qt.Commentf("cleanup query: %s", query))
+}
+
 func cleanupIssue887(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) {
 	t.Helper()
 
 	for _, table := range []string{names.revisionsTable, names.blockerTable, names.createdTable, names.ledgerTable} {
-		_, _ = conn.ExecContext(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+		issue887CleanupSQL(t, conn, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
 	}
 }
