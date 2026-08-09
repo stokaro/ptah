@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/yamlschema"
 )
@@ -55,6 +56,129 @@ type Options struct {
 	// Other schema file formats ignore it: YAML and SQL have no variables, and
 	// silently accepting a value for one there would suggest they do.
 	Vars []string
+
+	// SchemaScope names the one schema this run is limited to. Empty means the
+	// run is realm-scoped and every schema the source declares is reachable.
+	//
+	// When it is set, an HCL desired state declaring more than one top-level
+	// `schema` block is REFUSED. Ptah otherwise loaded such a document, narrowed
+	// it to the scope and reported success, so `schema diff --from one.hcl --to
+	// two-schemas.hcl` answered "Schemas are synced" and `migrate diff` wrote a
+	// migration covering half the document -- silently, at exit 0. The pinned
+	// Atlas community binary v1.3.0 refuses the same run with `cannot use HCL
+	// with more than 1 schema when <flag> is limited to schema %q`.
+	//
+	// Like [Options.IgnoreUnknownHCLNames] the split is by COMMAND TREE: it is
+	// set only by cmd/atlas and the Atlas-compatible packages beneath it, where
+	// the behavior was measured against that binary. The native `ptah schema`
+	// commands leave it empty and keep narrowing, which is a separate defect
+	// with its own issue rather than something this loader may decide for them.
+	//
+	// Use [ScopeFromURLs] to derive it, so every caller picks the same flag.
+	SchemaScope string
+
+	// SchemaScopeFlag names the flag that limited the run, spelled the way the
+	// community binary's own message spells it -- `dev-url`, `url`, with no
+	// leading dashes -- so the leading sentence stays byte-identical to the one
+	// a script may be matching on. Ignored when SchemaScope is empty.
+	SchemaScopeFlag string
+
+	// collect gathers the top-level `schema` blocks of every HCL file one load
+	// reached, so the [Options.SchemaScope] gate counts the whole desired state
+	// -- a directory of HCL files, or several --to files -- rather than one file
+	// at a time. It is unexported because only the entry points below may own
+	// it: a caller-supplied collector would make the gate run twice for a
+	// directory, once per entry and once for the whole.
+	collect *schemaBlockCollector
+}
+
+// schemaBlockCollector accumulates the top-level `schema` blocks of one load.
+type schemaBlockCollector struct {
+	blocks []atlashcl.SchemaBlock
+}
+
+func (c *schemaBlockCollector) record(block atlashcl.SchemaBlock) {
+	c.blocks = append(c.blocks, block)
+}
+
+// recordSchemaBlock is the recorder handed to the HCL parser, nil when no entry
+// point owns a collector (which is every caller that left SchemaScope empty as
+// well as the nested loads of a directory's entries).
+func (o Options) recordSchemaBlock() func(atlashcl.SchemaBlock) {
+	if o.collect == nil {
+		return nil
+	}
+	return o.collect.record
+}
+
+// ScopeFromURLs picks the schema an Atlas-compatible run is limited to, and
+// names the flag that limited it.
+//
+// The dev URL is consulted before the target because that is the order the
+// pinned Atlas community binary v1.3.0 reports. Measured on PostgreSQL 17.10
+// with a two-schema HCL desired state, one throwaway database per side:
+//
+//	--url realm  --dev-url ?search_path=public  ->  "…when dev-url is limited to schema \"public\""
+//	--url ?search_path=public  --dev-url realm  ->  "…when url is limited to schema \"public\""
+//
+// so a run with both limited reports dev-url, which is what `schema apply` on
+// two SQLite URLs prints.
+//
+// An empty targetURL is the shape `schema inspect` and `migrate diff` have:
+// there is no second URL to consult. targetFlag is the flag that URL came from,
+// spelled without leading dashes to match the binary's message, so
+// `schema plan validate` reports `from` rather than a flag it does not have.
+func ScopeFromURLs(devURL, targetURL, targetFlag string) (scope, flag string) {
+	if selected, limited := schemaselection.URLScope(devURL); limited {
+		return selected, "dev-url"
+	}
+	if selected, limited := schemaselection.URLScope(targetURL); limited {
+		return selected, targetFlag
+	}
+	return "", ""
+}
+
+// gateSchemaScope runs one load with a collector attached and applies the
+// [Options.SchemaScope] gate to everything it reached.
+//
+// A nested load -- a directory entry, or one of several --to files -- finds the
+// collector already set and just contributes to it, so the count is the desired
+// state's and the refusal is reported once.
+func gateSchemaScope(opts Options, load func(Options) (*goschema.Database, error)) (*goschema.Database, error) {
+	if opts.collect != nil {
+		return load(opts)
+	}
+	inner := opts
+	inner.collect = &schemaBlockCollector{}
+	db, err := load(inner)
+	if err != nil {
+		return nil, err
+	}
+	if err := opts.checkSchemaScope(inner.collect.blocks); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// checkSchemaScope refuses a desired state that declares more schemas than the
+// run can reach.
+//
+// The leading sentence is the community binary's, kept so a script matching on
+// it keeps working. What follows is Ptah going past it: that binary names
+// neither the file nor the blocks, which leaves an operator holding a generated
+// document with nothing to grep for.
+func (o Options) checkSchemaScope(blocks []atlashcl.SchemaBlock) error {
+	if o.SchemaScope == "" || len(blocks) <= 1 {
+		return nil
+	}
+	declared := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		declared = append(declared, fmt.Sprintf("%q at %s:%d", block.Name, block.Filename, block.Line))
+	}
+	return fmt.Errorf(
+		"cannot use HCL with more than 1 schema when %s is limited to schema %q: %d top-level schema blocks are declared: %s",
+		o.SchemaScopeFlag, o.SchemaScope, len(blocks), strings.Join(declared, ", "),
+	)
 }
 
 // Load reads one local schema file from either a plain path or file:// URL.
@@ -69,14 +193,16 @@ func Load(rawURL string, opts Options) (*goschema.Database, error) {
 // LoadPath reads one local schema source from a resolved filesystem path: a
 // single schema file, or a directory of schema files (see [loadSchemaDir]).
 func LoadPath(path string, opts Options) (*goschema.Database, error) {
-	resolved, isDir, err := statSchemaPath(path)
-	if err != nil {
-		return nil, err
-	}
-	if isDir {
-		return loadSchemaDir(resolved, opts)
-	}
-	return loadSchemaFile(resolved, opts)
+	return gateSchemaScope(opts, func(opts Options) (*goschema.Database, error) {
+		resolved, isDir, err := statSchemaPath(path)
+		if err != nil {
+			return nil, err
+		}
+		if isDir {
+			return loadSchemaDir(resolved, opts)
+		}
+		return loadSchemaFile(resolved, opts)
+	})
 }
 
 // loadSchemaDirEntry reads one entry of a schema directory, together with the
@@ -131,6 +257,7 @@ func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
+			RecordSchemaBlock:  opts.recordSchemaBlock(),
 			Vars:               opts.Vars,
 		})
 	case ".yaml", ".yml":
@@ -254,16 +381,18 @@ func LoadAll(rawURLs []string, opts Options) (*goschema.Database, error) {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
 
-	merged := &goschema.Database{}
-	for _, rawURL := range rawURLs {
-		db, err := Load(rawURL, opts)
-		if err != nil {
-			return nil, err
+	return gateSchemaScope(opts, func(opts Options) (*goschema.Database, error) {
+		merged := &goschema.Database{}
+		for _, rawURL := range rawURLs {
+			db, err := Load(rawURL, opts)
+			if err != nil {
+				return nil, err
+			}
+			appendDatabase(merged, db)
 		}
-		appendDatabase(merged, db)
-	}
-	goschema.Finalize(merged)
-	return merged, nil
+		goschema.Finalize(merged)
+		return merged, nil
+	})
 }
 
 // ToDBSchema converts Ptah's desired-schema IR into the DB schema shape used by

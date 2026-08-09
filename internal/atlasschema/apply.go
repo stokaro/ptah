@@ -316,10 +316,15 @@ func loadDesiredApplySchema(
 	if opts.Desired != nil {
 		return opts.Desired, nil
 	}
+	// Both the dev database and the target can limit an apply to one schema, and
+	// the target's URL is the one this connection was opened from.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			SchemaScope:           schemaScope,
+			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,
 		})
 	}
@@ -331,6 +336,8 @@ func loadDesiredApplySchema(
 		Dialect:               conn.Info().Dialect,
 		DialectFlag:           "--url",
 		DevURL:                opts.DevURL,
+		SchemaScope:           schemaScope,
+		SchemaScopeFlag:       schemaScopeFlag,
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,
 	})

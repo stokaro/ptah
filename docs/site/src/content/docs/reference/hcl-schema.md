@@ -54,6 +54,19 @@ table "users" {
 }
 ```
 
+### How many `schema` blocks a document may declare
+
+A document may declare as many schemas as the run can reach. A run whose URL
+names one schema — any SQLite URL, a PostgreSQL-family URL carrying
+`search_path=<one name>`, a MySQL-family URL naming a database — reaches one,
+and a document declaring more than one top-level `schema` block is refused
+there rather than narrowed. The count is of blocks: repeating
+`schema "main" {}` in two files of a schema directory is two.
+
+See
+[the Atlas-compatible schema commands](../../atlas/schema-commands/#a-schema-limited-run-refuses-a-multi-schema-hcl-desired-state)
+for the message and the flag it names.
+
 ## Supported object subset
 
 | Object | Supported shape |

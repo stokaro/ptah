@@ -133,9 +133,14 @@ func inspectOnDev(
 	var desired *goschema.Database
 	switch set.Kind {
 	case atlassource.KindLocalFile:
+		// The source URL is the file itself, so --dev-url is the only URL that
+		// can limit this run to a schema.
+		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 		desired, err = schemafile.LoadAll(sourceRawURLs(set), schemafile.Options{
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			SchemaScope:           schemaScope,
+			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,
 		})
 		if err != nil {

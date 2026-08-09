@@ -470,9 +470,12 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	}
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
+		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.url, "url")
 		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: true,
+			SchemaScope:           schemaScope,
+			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  schemaVars,
 		})
 		if err != nil {
