@@ -384,11 +384,15 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 // The StructName is set to match the table name for proper association.
 func ToIndex(index *ast.IndexNode) goschema.Index {
 	tableSchema, tableName := normalizeSQLTableIdentifier(index.Table)
+	// The parts decide the field names rather than being derived alongside
+	// them. A key that carried a suffix is named by its column, not by the
+	// element text the suffix is part of.
+	parts := indexParts(index)
 	return goschema.Index{
 		Name:       normalizeSQLIdentifier(index.Name),
 		StructName: tableName,
-		Fields:     indexFieldNames(index),
-		Parts:      indexParts(index),
+		Fields:     indexFieldNames(index, parts),
+		Parts:      parts,
 		Unique:     index.Unique,
 		Comment:    index.Comment,
 		// PostgreSQL-specific features
@@ -406,6 +410,13 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 func indexParts(index *ast.IndexNode) []goschema.IndexPart {
 	if len(index.Parts) > 0 {
 		return toSchemaIndexParts(index.Parts)
+	}
+	// A key list element the SQL frontend kept as one string can still carry an
+	// operator class, a direction and a NULLS ordering. Reading them is what
+	// keeps a `.sql` document Ptah wrote from planning a rebuild of the index it
+	// describes; see index_key.go.
+	if decomposed := decomposeIndexKeyList(index.Columns); decomposed != nil {
+		return decomposed
 	}
 	parts := make([]goschema.IndexPart, 0, len(index.Columns))
 	hasExpression := false
@@ -425,17 +436,17 @@ func indexParts(index *ast.IndexNode) []goschema.IndexPart {
 	return parts
 }
 
-func indexFieldNames(index *ast.IndexNode) []string {
-	if len(index.Parts) == 0 {
+func indexFieldNames(index *ast.IndexNode, parts []goschema.IndexPart) []string {
+	if len(parts) == 0 {
 		return normalizeSQLIdentifierReferences(index.Columns)
 	}
-	fields := make([]string, 0, len(index.Parts))
-	for _, part := range index.Parts {
+	fields := make([]string, 0, len(parts))
+	for _, part := range parts {
 		if part.Expr != "" {
 			fields = append(fields, part.Expr)
 			continue
 		}
-		fields = append(fields, normalizeSQLIdentifier(part.Name))
+		fields = append(fields, part.Name)
 	}
 	return fields
 }
