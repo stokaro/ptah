@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -297,6 +298,116 @@ func TestMigrateCheckpointCommand_AtlasAcceptsVersionAbovePtahMaximum(t *testing
 
 	_, err = os.Stat(filepath.Join(dir, "20260801100335_checkpoint.sql"))
 	c.Assert(err, qt.IsNil)
+}
+
+// TestMigrateCheckpointCommand_DefaultVersionKeepsTenDigitCeiling pins the half
+// of the ceiling the explicit --version guard next door never covered
+// (stokaro/ptah#938). Without --version the resolver returned newest+1 with no
+// bound at all, so a directory whose newest migration is 9999999999 got a
+// checkpoint at 10000000000: an eleven-digit name ParseMigrationFileName
+// refuses. Measured on master, that exited 0, printed "Wrote checkpoint version
+// 10000000000", and a fresh database then replayed the history instead of
+// bootstrapping from the checkpoint -- the one thing a checkpoint exists to
+// prevent.
+//
+// The cheaper wrong implementation is `return latest + 1, nil`, which is what
+// the branch said before.
+func TestMigrateCheckpointCommand_DefaultVersionKeepsTenDigitCeiling(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "9999999999_seed.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "9999999999_seed.down.sql"), []byte("DROP TABLE users;\n"), 0o600,
+	), qt.IsNil)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "9999999999")
+
+	written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+// TestMigrateCheckpointCommand_AtlasDefaultVersionIsAnInstantThatExists pins
+// the `...235960` half of stokaro/ptah#938 on the verb that still bumps.
+//
+// `migrate checkpoint` cannot stamp the bare clock the way `migrate new` and
+// `migrate diff` do: its version has to outrank every migration it squashes, or
+// a fresh database bootstraps from it and then applies a migration whose SQL the
+// checkpoint body already contains. So beside a future-dated neighbor it steps
+// past it -- and stepping by ONE produced the version the issue names. Measured
+// on this branch's parent, `ptah-compat migrate checkpoint` into a directory
+// holding one `29991231235959_future.sql` wrote `29991231235960_cp1.sql` at exit
+// 0, and a second checkpoint then wrote `29991231235961_cp2.sql` on top of it.
+// Sixty and sixty-one seconds past the minute: neither is an instant, and
+// time.Parse refuses both under the layout the rest of the file names use.
+//
+// The assertion is the round trip, not the literal 30000101000000, so the row
+// states the property rather than one arithmetic answer.
+//
+// The cheaper wrong implementation is not deleting the step. It is
+// `migrationversion.Next` in place of `migrationversion.Advance` here --
+// integer arithmetic, bounded but not calendar-aware, which is exactly what the
+// branch said before and what every reviewer would write first.
+func TestMigrateCheckpointCommand_AtlasDefaultVersionIsAnInstantThatExists(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "29991231235959_future.sql"),
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	written, globErr := filepath.Glob(filepath.Join(dir, "*_checkpoint.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 1)
+
+	version, _, found := strings.Cut(filepath.Base(written[0]), "_")
+	c.Assert(found, qt.IsTrue)
+
+	// It outranks the neighbor, which is why the bump exists at all.
+	c.Assert(version > "29991231235959", qt.IsTrue, qt.Commentf("version %s", version))
+
+	// And it is an instant. `29991231235960` satisfies the line above and fails
+	// this one, which is the whole point of the row.
+	at, parseErr := time.Parse("20060102150405", version)
+	c.Assert(parseErr, qt.IsNil, qt.Commentf("version %s", version))
+	c.Assert(at.UTC().Format("20060102150405"), qt.Equals, version)
+}
+
+// TestMigrateCheckpointCommand_AtlasOrdinaryDirectoryStillTakesTheClock is the
+// non-interference control for the row above. Reverting Advance to Next must
+// NOT redden it: a directory whose newest migration is in the past is where
+// every real project lives, and there the checkpoint keeps taking the clock
+// untouched rather than stepping anywhere.
+func TestMigrateCheckpointCommand_AtlasOrdinaryDirectoryStillTakesTheClock(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	before := time.Now().UTC().Format("20060102150405")
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas")
+	after := time.Now().UTC().Format("20060102150405")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+	written, globErr := filepath.Glob(filepath.Join(dir, "*_checkpoint.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 1)
+
+	version, _, found := strings.Cut(filepath.Base(written[0]), "_")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(version >= before, qt.IsTrue, qt.Commentf("version %s predates the call", version))
+	c.Assert(version <= after, qt.IsTrue, qt.Commentf("version %s postdates the call", version))
 }
 
 func TestMigrateCheckpointCommand_PtahKeepsTenDigitCeiling(t *testing.T) {

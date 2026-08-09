@@ -9,7 +9,9 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // WriteSkeletonMigration writes one foreign layout's empty migration into dir
@@ -29,8 +31,12 @@ import (
 // not confined to a project root.
 //
 // The version is the UTC stamp both binaries write. A name that already exists
-// advances it by a second and retries the whole set, rather than failing the
-// command for a directory that merely already holds this second's migration.
+// advances it to the next SECOND and retries the whole set, rather than failing
+// the command for a directory that merely already holds this second's
+// migration. The advance goes through [migrationversion.Writable] because a
+// plain increment off a name written at :59 produces `...235960`, sixty seconds
+// past the minute, a version no reader parses back as the time it looks like
+// (stokaro/ptah#938).
 func WriteSkeletonMigration(
 	root *pathguard.OpenedDirectory,
 	dir string,
@@ -46,13 +52,20 @@ func WriteSkeletonMigration(
 		afterSkeletonDirBound()
 	}
 
-	for version := MigrationVersion(); ; version++ {
+	version := MigrationVersion()
+	for {
+		writable, err := migrationversion.Writable(version, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return nil, err
+		}
+		version = writable
 		files, err := atlasmigrateimport.SkeletonFiles(format, version, name)
 		if err != nil {
 			return nil, err
 		}
 		written, err := createSkeletonFiles(w, files)
 		if errors.Is(err, fs.ErrExist) {
+			version++
 			continue
 		}
 		if err != nil {

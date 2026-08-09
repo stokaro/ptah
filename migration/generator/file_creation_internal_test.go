@@ -45,7 +45,9 @@ func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testin
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			c.Assert(nextAvailablePtahVersion(test.names, 42, name), qt.Equals, test.want)
+			version, err := nextAvailablePtahVersion(test.names, 42, name)
+			c.Assert(err, qt.IsNil)
+			c.Assert(version, qt.Equals, test.want)
 		})
 	}
 }

@@ -761,8 +761,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "New versions are a Unix epoch in an empty dir and latest+1 otherwise, not the UTC YYYYMMDDHHMMSS stamp migrate new and Atlas dirs carry.",
-    "evidence": "Executed: `ptah-compat migrate diff --dir file://migrations --dev-url sqlite://... --to file://desired.sql first` into an empty dir wrote 1785514646_first.sql; into a dir whose latest was 20240101000000 it wrote 20240101000001_add_posts.sql; `ptah-compat migrate new ... hello` wrote 20260731161705_hello.sql. Code: migration/generator/generator.go:414 seeds from migrator.GetNextMigrationVersion (migration/migrator/util.go:302, time.Now().Unix()) while generator.go:228 uses \"20060102150405\". Atlas fixture versions are 14-digit (20220318104614_initial.sql, gaps.md)."
+    "note": "diff and new stamp the UTC YYYYMMDDHHMMSS second, stepping only past a version already taken, as CE does; checkpoint and rebase bump past the newest. Every step parses back as a second.",
+    "evidence": "Executed on SQLite, into a directory holding 29991231235959_future.sql: `ptah-compat migrate diff --dir file://s_diff --dev-url sqlite://dv1.db --to file://desired.sql adddiff` wrote 20260809095041_adddiff.sql at clock 20260809095041; `ptah-compat migrate new --dir file://s_new hello` wrote 20260809095034_hello.sql at clock 20260809095034 — both sort BELOW the 2999 migration. `ptah-compat migrate checkpoint` wrote 30000101000000_cp1.sql and then 30000101000001_cp2.sql; `ptah-compat migrate rebase` wrote 30000101000000_users.sql and then 30000101000001_future.sql. Before stokaro/ptah#938 the bump computed 29991231235959+1 = 29991231235960, which time.Parse refuses under \"20060102150405\"."
   },
   {
     "area": "Versioned migrations — directory",
@@ -770,7 +770,7 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and rejects `R__`. Liquibase XML/YAML/JSON not parsed.",
+    "note": "Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and orders `R__` last. Liquibase XML/YAML/JSON not parsed.",
     "evidence": "Executed: `ptah-compat migrate import --from https://example.com/m` and `--from atlas://myrepo` both fail \"only local file:// migration directories are supported\"; `--dir-format liquibase` on a changelog.xml fails \"liquibase XML/YAML/JSON changelogs are not yet supported\". golang-migrate, goose and dbmate dirs import to single up-only Atlas files (down bodies dropped). Conformance PARITY.md:147 records Liquibase XML/YAML/JSON as a follow-up.; ptah migrations import --help (--from golang-migrate, goose, flyway, liquibase, dbmate); conformance cli-surface.md (atlas migrate import, class oss); do"
   },
   {
