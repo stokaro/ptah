@@ -49,6 +49,7 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
+		prefix  string
 		forEach string
 		want    []dynamicEnvSummary
 	}{
@@ -61,8 +62,37 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 			},
 		},
 		{
+			name: "typed list keeps source order",
+			prefix: `variable "targets" {
+  type    = list(string)
+  default = ["second", "first"]
+}
+`,
+			forEach: `var.targets`,
+			want: []dynamicEnvSummary{
+				{Name: "local", URL: "second", Key: "0"},
+				{Name: "local", URL: "first", Key: "1"},
+			},
+		},
+		{
 			name:    "object sorts keys",
 			forEach: `{ z = "last", a = "first" }`,
+			want: []dynamicEnvSummary{
+				{Name: "local", URL: "first", Key: `"a"`},
+				{Name: "local", URL: "last", Key: `"z"`},
+			},
+		},
+		{
+			name: "typed map sorts keys",
+			prefix: `variable "targets" {
+  type = map(string)
+  default = {
+    z = "last"
+    a = "first"
+  }
+}
+`,
+			forEach: `var.targets`,
 			want: []dynamicEnvSummary{
 				{Name: "local", URL: "first", Key: `"a"`},
 				{Name: "local", URL: "last", Key: `"z"`},
@@ -80,7 +110,7 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			raw := []byte(`env {
+			raw := []byte(test.prefix + `env {
   for_each = ` + test.forEach + `
   name     = atlas.env
   url      = each.value
@@ -321,40 +351,17 @@ func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
-		prefix  string
 		value   string
 		wantErr string
 	}{
 		{name: "number", value: `42`, wantErr: `schemahcl: for_each does not support number type`},
 		{name: "string", value: `"target"`, wantErr: `schemahcl: for_each does not support string type`},
 		{name: "null", value: `null`, wantErr: `schemahcl: for_each cannot be null`},
-		{
-			name: "typed list",
-			prefix: `variable "targets" {
-  type    = list(string)
-  default = ["first", "second"]
-}
-`,
-			value:   `var.targets`,
-			wantErr: `schemahcl: for_each does not support list of string type`,
-		},
-		{
-			name: "typed map",
-			prefix: `variable "targets" {
-  type = map(string)
-  default = {
-    first = "one"
-  }
-}
-`,
-			value:   `var.targets`,
-			wantErr: `schemahcl: for_each does not support map of string type`,
-		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			raw := []byte(test.prefix + `env {
+			raw := []byte(`env {
   for_each = ` + test.value + `
   name     = atlas.env
   url      = each.value

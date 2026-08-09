@@ -86,7 +86,7 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Whole-document validation covers every env. `migrate apply` expands labeled or unlabeled env `for_each` instances in stable order; other commands still require one selected instance.",
+    "note": "Validates every env. `migrate apply` expands labeled or unlabeled env `for_each` in stable order; typed list/map are Ptah extensions. Other commands require one instance.",
     "evidence": "config/projectconfig/atlas.go and atlas_dynamic_env_test.go (collection expansion, selection, ordering, rooted evaluation); cmd/atlas/migrate_apply_dynamic_env_test.go (sequential live SQLite apply, partial failure, retry, and exact revision state)"
   },
   {

@@ -243,7 +243,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | `--var` does not require an `atlas.hcl` | ✅ | ✅ | ✅ | `-c` and `--env` select a project file and still require one. `--var` only supplies values to one, on every verb. Its syntax is still checked with no `atlas.hcl` present. |
 | A malformed `--var` is refused wherever it is spelled | ✅ | ✅ | ✅ | CE parses `--var` while parsing flags, so a value with no `=` is refused before any project file is sought. Ptah checks it on every command under `schema` and `migrate`, even ones that never read it. |
-| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Whole-document validation covers every env. `migrate apply` expands labeled or unlabeled env `for_each` instances in stable order; other commands still require one selected instance. |
+| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Validates every env. `migrate apply` expands labeled or unlabeled env `for_each` in stable order; typed list/map are Ptah extensions. Other commands require one instance. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. |
 | data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct. |
