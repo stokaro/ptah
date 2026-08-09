@@ -20,6 +20,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -227,6 +228,7 @@ func TestStageMigrationBatch_FallsBackToExclusiveCopy(t *testing.T) {
 		"copy",
 		1,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+		atlasmigrateimport.FormatAtlas,
 		func(d *pathguard.OpenedDirectory, stagedName string) (publicationMode, error) {
 			return detectPublicationModeWithLink(
 				d,
@@ -266,6 +268,7 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
 		nil,
+		diffWriteLayout{},
 	)
 
 	c.Assert(err, qt.ErrorMatches, `write atlas\.sum: .*`)
@@ -659,6 +662,7 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
 		nil,
+		diffWriteLayout{},
 		func(w *migrationWriterDir, sum *migratesum.SumFile) (string, error) {
 			path, writeErr := publishDirSum(w, sum)
 			c.Assert(writeErr, qt.IsNil)
@@ -713,6 +717,7 @@ func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 		baseSnapshot,
 		nil,
+		diffWriteLayout{},
 	)
 
 	c.Assert(err, qt.ErrorMatches, `migration directory changed during migrate diff planning`)
@@ -738,7 +743,7 @@ func beginTestPublication(
 	c.Assert(err, qt.IsNil)
 	baseSnapshot, err := migrationsnapshot.CaptureStable(fsys)
 	c.Assert(err, qt.IsNil)
-	_, sum, err := preparePublicationSnapshot(baseSnapshot, batch, contents)
+	_, sum, err := preparePublicationSnapshot(baseSnapshot, batch, contents, atlasmigrateimport.FormatAtlas)
 	c.Assert(err, qt.IsNil)
 	journal, err := beginPublication(writer, batch, sum.Bytes())
 	c.Assert(err, qt.IsNil)

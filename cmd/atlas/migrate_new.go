@@ -58,7 +58,7 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 			// verify here would change that message and verify nothing.
 			return forward(cmd, source.forwardArgs)
 		}
-		if err := verifyAtlasWriteDirChecksum(cmd, source.project, source.localDir); err != nil {
+		if err := verifyAtlasWriteDirChecksum(cmd, source.project, source.localDir, source.format); err != nil {
 			return err
 		}
 		if err := checkAtlasMigrateNewName(cmd, verb, source.projectArgs); err != nil {

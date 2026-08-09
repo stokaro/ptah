@@ -32,15 +32,16 @@ import (
 // it honors `?format=goose` today, exit 0, files in that layout, matching the
 // community binary.
 //
-// What keeps `migrate diff` out is narrower and is what remains of
-// stokaro/ptah#1013: the verbs in this file READ a foreign layout, and reading
-// one is a conversion in memory. `migrate diff` WRITES one, and measured on the
-// pinned community binary v1.3.0 every foreign layout it writes carries reverse
-// SQL -- a second file for golang-migrate and flyway, a directive section for
-// goose and dbmate, and one `--rollback:` line per forward statement for
-// liquibase. Ptah's diff plans forward statements only, so routing it through
-// here would write a directory whose rollback half is missing. Refusing is the
-// strict side; see [checkWritingVerbDirQuery].
+// `migrate diff` is out for a reason that no longer has anything to do with
+// refusing a layout. It honors `?format=goose` too since stokaro/ptah#1013 --
+// exit 0, files in that layout, atlas.sum over that layout's covered set. What
+// keeps it out of THIS file is that the verbs here READ a directory, and
+// reading one is a conversion in memory; `migrate diff` also WRITES one, so it
+// resolves the same value through [resolveWritingVerbDirFormat] and then
+// carries it into the writer, which converts, names, composes and hashes per
+// layout. Both spellings and both resolvers land on
+// [atlasmigrate.ResolveApplyDirFormat], so the two paths cannot drift on which
+// spelling wins or on which values are accepted.
 
 // resolveAtlasVerbDirFormat resolves the directory layout a compat verb reads,
 // from both spellings that can carry it, and blames the one that did.
