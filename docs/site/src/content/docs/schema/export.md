@@ -18,7 +18,8 @@ or database access. The generated schema is a contract candidate that you must
 review before publishing.
 
 The generated OpenAPI passes `redocly lint`; the generated GraphQL parses and
-builds with `graphql-js`.
+builds with `graphql-js`, for the types-only default and for every operation
+profile.
 
 This page covers the OpenAPI and GraphQL targets, which are stateless. The
 Protobuf target is stateful — field numbers are persistent wire identifiers, so
@@ -31,8 +32,12 @@ its generated file is committed compatibility state — and has its own page:
 # OpenAPI 3.0 — components.schemas keyed by table name
 ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
 
-# GraphQL SDL — an object, input, and Relay connection per table
+# GraphQL SDL — one object type per table, and no operations
 ptah schema export --to graphql --root-dir ./models --out schema.graphql
+
+# Add operation shapes by name
+ptah schema export --to graphql --root-dir ./models \
+  --graphql-operations list,by-id,create-input --out schema.graphql
 
 # Omit --out to write the schema to stdout (for piping into a validator)
 ptah schema export --to graphql --root-dir ./models > schema.graphql
@@ -51,6 +56,7 @@ ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 | `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
 | `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |
+| `--graphql-operations` | `graphql` | Comma-separated operation shapes: `none` (default), `list`, `by-id`, `create-input`, `update-input`. |
 
 Export warnings (for example an enum whose values cannot be resolved) are written
 to stderr, so a schema piped from stdout is never corrupted.
@@ -136,10 +142,9 @@ from, or merged into, a hand-authored specification.
 
 ## GraphQL
 
-Each table becomes an object type, a create `input`, and a Relay-style
-`Connection`/`Edge` pair. Enum columns become enum types, foreign keys become
-object relations alongside the scalar id column, and a `Query` root exposes a
-by-id lookup and a paginated list per table.
+Each table becomes an object type. Enum columns become enum types, and foreign
+keys become object relations alongside the scalar id column. That is the whole
+default export: no `Query`, no inputs, no connections.
 
 ```graphql
 scalar DateTime
@@ -157,23 +162,68 @@ type Product {
   category_id: Int!
   category: Category!
 }
+```
 
-input ProductInput {
-  name: String!
-  price: Float!
-  status: ProductStatus!
-  category_id: Int!
-}
+A foreign key whose target table is filtered out is dropped and reported as a
+warning rather than producing a dangling reference.
 
+The document declares no root operation type, so `graphql-js` builds it and
+`validateSchema` reports the absent `Query`. That is the correct shape for a
+type-system document meant to be composed into a schema you design.
+
+### Operation shapes
+
+`--graphql-operations` adds operation-shaped definitions by name. Each value is
+selected independently.
+
+| Value | What it adds |
+| --- | --- |
+| `none` | Nothing; this is the default written out. |
+| `list` | A `Connection`/`Edge` pair per table, a shared `PageInfo`, and a `Query` field `<tables>(first: Int, after: String)`. |
+| `by-id` | A `Query` field `<table>(<key>: <KeyType>!)` per table with a single-column primary key. |
+| `create-input` | A `<Type>CreateInput` per table. |
+| `update-input` | A `<Type>UpdateInput` per table, without the primary key and with every field optional. |
+
+```graphql
 type Query {
   products(first: Int, after: String): ProductConnection
   product(id: ID!): Product
 }
+
+input ProductCreateInput {
+  name: String!
+  price: Float!
+  status: ProductStatus
+  category_id: Int!
+}
+
+input ProductUpdateInput {
+  name: String
+  price: Float
+  status: ProductStatus
+  category_id: Int
+}
 ```
 
-The `input` type omits server-generated columns (serial / auto-increment). A
-foreign key whose target table is filtered out is dropped and reported as a
-warning rather than producing a dangling reference.
+Inputs come from the **write projection**: the columns a caller may assign.
+Auto-increment and `SERIAL` columns, `GENERATED ALWAYS AS IDENTITY` columns,
+generated/computed columns, and columns with a MySQL `ON UPDATE` expression are
+excluded, because the database produces their values. A column with a plain
+`DEFAULT` stays but becomes optional on create — `status` above.
+
+An operation Ptah cannot complete is omitted and reported, never emitted broken:
+a composite or absent primary key gets no `by-id` field, a key column that the
+object type did not publish gets none either, and an empty projection produces
+no input type. Selecting only input shapes leaves the document without a `Query`;
+selecting a query shape always produces a legal, non-empty one.
+
+:::caution[Generated operations are declarations, not an API]
+Ptah generates no resolvers, data access, authorization, tenant isolation,
+filtering, ordering, pagination behavior, or transactions. A `Connection`/`Edge`
+pair names the Relay shape without implementing cursors, and `first`/`after` are
+argument declarations rather than a pagination guarantee. The generated file
+says so in a comment when operation shapes are present.
+:::
 
 ## Type mapping
 
@@ -210,9 +260,10 @@ The generated contract is not a complete translation of database behavior:
   representations can lose decimal precision.
 - GraphQL declares `DateTime` and `JSON` scalar names but does not provide their
   parsing, serialization, or validation behavior.
-- A GraphQL create input omits serial and auto-increment columns. Other
-  server-managed or database-defaulted columns are not recognized
-  automatically and can still appear in the input.
+- The GraphQL write projection recognizes auto-increment, `SERIAL`,
+  `GENERATED ALWAYS AS IDENTITY`, generated/computed, and MySQL `ON UPDATE`
+  columns as server-owned. It cannot see a value supplied by a trigger or by an
+  application layer, so review every generated input field.
 - Foreign-key relation fields describe a possible object shape. They do not
   define loading, batching, tenant checks, or authorization.
 
@@ -243,7 +294,7 @@ The generated surface differs by target:
 | Target | Ptah emits | Ptah does not emit |
 | --- | --- | --- |
 | OpenAPI | Component schemas under `components.schemas` | Paths, operations, handlers, or authorization |
-| GraphQL | Object and input types, connections, and a `Query` root | Resolvers, a server, data access, or authorization |
+| GraphQL | Object and enum types; input, connection, and `Query` shapes when `--graphql-operations` asks for them | Resolvers, a server, data access, or authorization |
 | Protobuf | Messages and enums | Services, remote procedure calls (RPCs), handlers, or authorization |
 
 Publishing any generated schema reveals the selected entity and field names,
@@ -262,8 +313,9 @@ column name and its exported API name. A storage rename can therefore become a
 contract rename.
 
 GraphQL operation-shaped definitions do not grant access by themselves, but
-they can be wired unsafely. In particular, do not pass generated input objects
-directly to persistence code without an explicit assignment allowlist.
+they can be wired unsafely. They are opt-in for that reason: request the shapes
+you have decided to implement, and do not pass generated input objects directly
+to persistence code without an explicit assignment allowlist.
 
 ## Review before publishing
 
@@ -283,8 +335,10 @@ Before publishing or generating runtime code from an export:
    publishing the artifact.
 
 For OpenAPI, merge selected components into a hand-authored specification when
-the public contract differs from storage. For GraphQL, treat the generated
-`Query` and input types as syntax, not as an authorization or resolver design.
+the public contract differs from storage. For GraphQL, start from the types-only
+default and add an operation shape only once you have decided how it will be
+resolved and authorized; the generated `Query` and input types are syntax, not
+an authorization or resolver design.
 For Protobuf, use generated messages behind separately designed services or
 wrapper messages when the public model must differ.
 

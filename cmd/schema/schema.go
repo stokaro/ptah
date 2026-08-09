@@ -34,6 +34,7 @@ const (
 	exportIncludeTablesFlag  = "include-tables"
 	exportExcludeTablesFlag  = "exclude-tables"
 	exportTitleFlag          = "title"
+	graphqlOperationsFlag    = "graphql-operations"
 	cleanupGoAnnotationsFlag = "cleanup-go-annotations"
 	cleanupDryRunFlag        = "cleanup-dry-run"
 	cleanupDiffFlag          = "cleanup-diff"
@@ -160,6 +161,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var includeTables []string
 	var excludeTables []string
 	var title string
+	var graphqlOperations []string
 	var cleanupAnnotations bool
 	var cleanupDryRun bool
 	var cleanupDiff bool
@@ -201,6 +203,16 @@ For openapi-v3 and graphql, --out is optional; the schema is written to stdout
 when omitted. Use --include-tables / --exclude-tables to select which tables are
 exported.
 
+The graphql target emits data types only. Operation shapes are opt-in through
+--graphql-operations, which takes any combination of list, by-id, create-input
+and update-input (or none, the default):
+
+  ptah schema export --to graphql --root-dir ./models \
+    --graphql-operations list,by-id
+
+Ptah generates no resolvers, data access, or authorization, so a generated
+operation shape is a type declaration and nothing more.
+
 The protobuf target is stateful: field numbers are persistent wire identifiers,
 so --out is required and the previously generated file is read back as the
 source of every number it already pins. Commit that file; deleting it starts a
@@ -223,6 +235,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				includeTables:             includeTables,
 				excludeTables:             excludeTables,
 				title:                     title,
+				graphqlOperations:         graphqlOperations,
 				cleanupAnnotations:        cleanupAnnotations,
 				cleanupDryRun:             cleanupDryRun,
 				cleanupDiff:               cleanupDiff,
@@ -250,6 +263,9 @@ part of the compatibility state, so all of them must be committed together.`,
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringVar(&title, exportTitleFlag, "", "OpenAPI info.title (openapi-v3 only)")
+	flags.StringSliceVar(&graphqlOperations, graphqlOperationsFlag, nil,
+		"Operation shapes to generate (comma-separated): none, list, by-id, create-input, "+
+			"or update-input; the default is a types-only schema (graphql only)")
 	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations after a lossless HCL export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
@@ -288,6 +304,7 @@ type exportOptions struct {
 	includeTables      []string
 	excludeTables      []string
 	title              string
+	graphqlOperations  []string
 	cleanupAnnotations bool
 	cleanupDryRun      bool
 	cleanupDiff        bool
@@ -347,9 +364,14 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	case exportFormatGraphQL:
+		operations, err := graphqlrender.ParseOperations(opts.graphqlOperations)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("--%s: %w", graphqlOperationsFlag, err))
+		}
 		rendered, err := graphqlrender.Render(db, graphqlrender.Options{
 			IncludeTables: opts.includeTables,
 			ExcludeTables: opts.excludeTables,
+			Operations:    operations,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
@@ -474,6 +496,17 @@ func validateExportOptions(opts exportOptions) error {
 		}
 	} else if err := rejectProtobufOnlyFlags(opts); err != nil {
 		return err
+	}
+	// The operation selector is resolved here as well as at render time, so an
+	// invalid or misplaced value is refused before the schema is loaded rather
+	// than after.
+	if opts.to == exportFormatGraphQL {
+		if _, err := graphqlrender.ParseOperations(opts.graphqlOperations); err != nil {
+			return fmt.Errorf("--%s: %w", graphqlOperationsFlag, err)
+		}
+	} else if len(opts.graphqlOperations) > 0 {
+		return fmt.Errorf("--%s is only supported with --%s %s",
+			graphqlOperationsFlag, exportToFlag, exportFormatGraphQL)
 	}
 	if (opts.cleanupDryRun || opts.cleanupDiff) && !opts.cleanupAnnotations {
 		return fmt.Errorf("--cleanup-dry-run and --cleanup-diff require --cleanup-go-annotations")
