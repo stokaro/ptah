@@ -270,9 +270,15 @@ func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
 // nothing above it, and `migrate import --dir-format flyway` puts a repeatable
 // migration exactly there. Before stokaro/ptah#938 that computed
 // math.MinInt64 and wrote it.
+//
+// The bump asks [migrationversion.Advance] rather than adding one, so it steps
+// to the next real second instead of the next integer. Beside a
+// `29991231235959_future.sql` the raw increment wrote a checkpoint at
+// 29991231235960 -- sixty seconds past the minute, an instant time.Parse
+// refuses -- and a second checkpoint then wrote 29991231235961 on top of it.
 func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 	if latest := latestAtlasVersionIn(names); latest >= version {
-		next, err := migrationversion.Next(latest, migrator.MigrationDirFormatAtlas)
+		next, err := migrationversion.Advance(latest, migrator.MigrationDirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}
@@ -280,7 +286,7 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 	}
 	taken := nameSet(names)
 	for taken[atlasEmptyMigrationFileName(version, "")] {
-		next, err := migrationversion.Next(version, migrator.MigrationDirFormatAtlas)
+		next, err := migrationversion.Advance(version, migrator.MigrationDirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}
@@ -303,12 +309,18 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 // different shape: on that directory it wrote `29991231235960`, a version that
 // is not a time anyone can parse back, while `migrate diff` a second later
 // wrote the ordinary UTC stamp (stokaro/ptah#938).
+//
+// The collision step asks [migrationversion.Writable] rather than testing the
+// bounds itself, so two migrations created inside the same second at :59 land
+// on the next real second instead of on a sixtieth one.
 func firstFreeAtlasVersion(names []string, version int64) (int64, error) {
 	taken := atlasVersionsIn(names)
 	for {
-		if err := migrationversion.Check(version, migrator.MigrationDirFormatAtlas); err != nil {
+		free, err := migrationversion.Writable(version, migrator.MigrationDirFormatAtlas)
+		if err != nil {
 			return 0, err
 		}
+		version = free
 		if _, ok := taken[version]; !ok {
 			return version, nil
 		}

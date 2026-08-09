@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -1483,12 +1484,17 @@ func stageRootedFile(
 // yields an unparseable stamp degrades to a usable version rather than an
 // error from a function with nothing to report.
 func MigrationVersion() int64 {
-	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	version, err := strconv.ParseInt(migrationVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
 		return migrator.GetNextMigrationVersion()
 	}
 	return version
 }
+
+// migrationVersionClock reads the wall clock [MigrationVersion] stamps from. It
+// is a variable so a test can freeze the second and then state the exact version
+// a scan must choose; production never assigns it.
+var migrationVersionClock = func() time.Time { return time.Now().UTC() }
 
 // nextMigrationVersionFS returns the first version at which count consecutive
 // migration versions are all free.
@@ -1498,6 +1504,12 @@ func MigrationVersion() int64 {
 // empty directory it started from `time.Now().Unix()`, a ten-digit epoch rather
 // than a timestamp, and on a directory whose newest version ended in `59`
 // seconds it produced `...235960`, which is not a time anyone can parse back.
+//
+// Collisions alone can still reach `...235960`, which is why the step asks
+// [migrationversion.WritableRun] rather than adding one: two diffs inside the
+// same second at :59, or a single plan whose concurrent-index half is staged at
+// version+1 (see BuildMigrationFileContents), both land there otherwise
+// (stokaro/ptah#938).
 func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
 	if err != nil {
@@ -1507,11 +1519,24 @@ func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 	for _, file := range files {
 		taken[file.Version] = struct{}{}
 	}
-	version := MigrationVersion()
-	for collidesWithTakenVersions(taken, version, count) {
+	return firstFreeMigrationVersionRun(taken, MigrationVersion(), count)
+}
+
+// firstFreeMigrationVersionRun is the version scan with the clock and the
+// directory already read, so it can be stated as a value rather than raced
+// against a real second.
+func firstFreeMigrationVersionRun(taken map[int64]struct{}, version int64, count int) (int64, error) {
+	for {
+		base, err := migrationversion.WritableRun(version, count, migrator.MigrationDirFormatAtlas)
+		if err != nil {
+			return 0, err
+		}
+		version = base
+		if !collidesWithTakenVersions(taken, version, count) {
+			return version, nil
+		}
 		version++
 	}
-	return version, nil
 }
 
 // collidesWithTakenVersions reports whether any of the count consecutive

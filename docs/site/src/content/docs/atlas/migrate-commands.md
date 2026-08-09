@@ -1256,24 +1256,41 @@ cannot read back on four of the five layouts. `--edit` is refused, which is what
 Atlas does for a non-Atlas directory as well.
 
 The `<version>` in every row of that table is the UTC `yyyyMMddHHmmss` second the
-command ran in, on every layout, and it is the same value `migrate diff` and
-`migrate checkpoint` stamp. It steps forward only to get past a version the
-directory already holds — never to get past the newest one. A directory whose
-newest migration is dated in the future therefore receives today's version,
-sorting below that migration, which is what Atlas was measured to do and is now
-what every verb in this binary does
+command ran in, on every layout, and it is the same value `migrate diff` stamps.
+It steps forward only to get past a version the directory already holds — never
+to get past the newest one. A directory whose newest migration is dated in the
+future therefore receives today's version, sorting below that migration, which is
+what Atlas was measured to do and what both of those verbs now do
 ([#938](https://github.com/stokaro/ptah/issues/938)). `migrate new` used to bump
-to newest + 1 instead, so the same directory could hold both shapes, and beside
-a `29991231235959_future.sql` the bump produced `29991231235960` — sixty seconds,
-a version no reader can parse back as a time.
+to newest + 1 instead, so the same directory could hold both shapes.
+
+`migrate checkpoint` is the exception, and it is one on purpose: its version has
+to outrank every migration it squashes, or a fresh database bootstraps from the
+checkpoint and then applies a migration whose SQL that checkpoint body already
+contains. So it keeps bumping. Into a directory holding
+`20200101000000_users.sql` and `29991231235959_archived.sql` it wrote
+`30000101000000_squash.sql`; `migrate apply` against an empty database then
+reported `1 pending migrations` and produced both tables; and `migrate new` into
+that same directory took today's second, sorting below the 2999 migration. One
+binary, two rules, on the one directory shape that separates them.
+
+Whichever rule applies, the step lands on a second that exists. `29991231235959`
+plus one as an integer is `29991231235960` — sixty seconds past the minute,
+which `time.Parse` refuses under the very layout the rest of the name uses — and
+that is what the bump used to write, `29991231235961` on the checkpoint after
+it. Every version this binary stamps now round-trips through `yyyyMMddHHmmss`,
+so the bump beside a `29991231235959` neighbor lands on `30000101000000`, and
+two migrations created inside the same `:59` second land on the next minute
+rather than on a sixtieth second.
 
 Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
 rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads
 that layout, so no compatibility argument moves it, and a version that only goes
-forwards is the safer of the two. What it will not do is walk past
-`9999999999`, the largest version its fixed-width `NNNNNNNNNN` name can hold. It
-refuses instead, because the eleven-digit name it used to write was one the
-reader silently skipped.
+forwards is the safer of the two. Its versions are ten digits, so they never
+look like a timestamp and the calendar rule above does not apply to them. What
+it will not do is walk past `9999999999`, the largest version its fixed-width
+`NNNNNNNNNN` name can hold. It refuses instead, because the eleven-digit name it
+used to write was one the reader silently skipped.
 
 `migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
 planned SQL, and nothing writes a migration body in a foreign tool's convention

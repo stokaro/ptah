@@ -422,9 +422,9 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 			if version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {
 				return version, nil
 			}
-			return migrationversion.Next(latest, migrator.MigrationDirFormatAtlas)
+			return migrationversion.Advance(latest, migrator.MigrationDirFormatAtlas)
 		}
-		return migrationversion.Next(latest, migrator.MigrationDirFormatPtah)
+		return migrationversion.Advance(latest, migrator.MigrationDirFormatPtah)
 	}
 
 	version, err := strconv.ParseInt(explicit, 10, 64)

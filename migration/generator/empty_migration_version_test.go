@@ -97,7 +97,7 @@ func TestGenerateEmptyMigration_AtlasStampsTheClockBesideAFutureMigration(t *tes
 	c.Assert(files.Files, qt.HasLen, 1)
 	version := files.Files[0].Version
 
-	// The clock, not the neighbour. 29991231235960 is what newest+1 wrote.
+	// The clock, not the neighbor. 29991231235960 is what newest+1 wrote.
 	c.Assert(version >= before, qt.IsTrue, qt.Commentf("version %d predates the call", version))
 	c.Assert(version <= after, qt.IsTrue, qt.Commentf("version %d postdates the call", version))
 	c.Assert(version, qt.Not(qt.Equals), int64(29991231235960))
@@ -109,10 +109,10 @@ func TestGenerateEmptyMigration_AtlasStampsTheClockBesideAFutureMigration(t *tes
 	c.Assert(roundTrip.UTC().Format("20060102150405"), qt.Equals, strconv.FormatInt(version, 10))
 }
 
-// TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbour is the overflow
+// TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbor is the overflow
 // half. The fixture is the directory `migrate import --dir-format flyway`
 // writes: the repeatable migration is stamped math.MaxInt64 so it sorts last.
-func TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbour(t *testing.T) {
+func TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbor(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	repeatable := strconv.FormatInt(math.MaxInt64, 10) + "_active_users.sql"

@@ -144,7 +144,7 @@ const AtlasCheckpointDirective = "-- atlas:checkpoint"
 // bump on top of it is this function's own, and is what separates a checkpoint
 // from an ordinary migration: `migrate new --dir-format atlas` deliberately
 // does NOT bump (stokaro/ptah#938), because a new migration may sort below a
-// future-dated neighbour, while a checkpoint may not sort below the history it
+// future-dated neighbor, while a checkpoint may not sort below the history it
 // squashes.
 //
 // It returns 0 when no version outranks the directory -- a directory whose
