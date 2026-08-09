@@ -21,6 +21,8 @@ func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
 		{name: "create table", statement: "CREATE TABLE jobs (id BIGINT) ENGINE=MyISAM", want: "MyISAM"},
 		{name: "alter table", statement: "ALTER TABLE jobs ENGINE = InnoDB", want: "InnoDB"},
 		{name: "alter table without equals", statement: "ALTER TABLE jobs ENGINE MyISAM", want: "MyISAM"},
+		{name: "MariaDB alter table storage engine", statement: "ALTER TABLE jobs STORAGE ENGINE=MyISAM", want: "MyISAM"},
+		{name: "MariaDB alter table default storage engine", statement: "ALTER TABLE jobs STORAGE ENGINE=DEFAULT", want: "DEFAULT"},
 		{name: "qualified create table", statement: "CREATE TABLE archive.jobs (id BIGINT) ENGINE=MyISAM", want: "MyISAM"},
 		{name: "ANSI quoted create table", statement: `CREATE TABLE "jobs" (id BIGINT) ENGINE=MyISAM`, want: "MyISAM"},
 		{name: "ANSI quoted alter table", statement: `ALTER TABLE "jobs" ENGINE=MyISAM`, want: "MyISAM"},
@@ -105,12 +107,17 @@ func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
 
 	statements := []string{
 		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET SESSION sql_mode = 'ANSI_QUOTES'",
 		"SET @@SESSION.sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES'",
+		"SET @@SESSION.sql_mode = 'STRICT_TRANS_TABLES,ANSI_QUOTES'",
+		"SET sql_mode = ''",
 		"SET sql_mode = DEFAULT",
 		"SET sql_mode = @@GLOBAL.sql_mode",
 		"SET sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')",
 		`SET sql_mode = "ANSI_QUOTES"`,
 		"SET time_zone = '+00:00', sql_mode = DEFAULT",
+		"SET time_zone = '+00:00', sql_mode = 'ANSI_QUOTES'",
+		`SET sql_mode = 'N\O_BACKSLASH_ESCAPES'`,
 	}
 
 	for _, statement := range statements {
@@ -125,11 +132,8 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 	c := qt.New(t)
 
 	statements := []string{
-		"SET SESSION sql_mode = 'ANSI_QUOTES'",
-		"SET @@SESSION.sql_mode = 'STRICT_TRANS_TABLES,ANSI_QUOTES'",
-		"SET sql_mode = ''",
-		"SET time_zone = '+00:00', sql_mode = 'ANSI_QUOTES'",
 		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
+		"SET @sql_mode = 'NO_BACKSLASH_ESCAPES'",
 		"INSERT INTO jobs (sql_mode) VALUES ('NO_BACKSLASH_ESCAPES')",
 	}
 
@@ -137,6 +141,49 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 		c.Run(statement, func(c *qt.C) {
 			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
+func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		sqlMode string
+		want    string
+	}{
+		{name: "ANSI quotes", sqlMode: "STRICT_TRANS_TABLES,ANSI_QUOTES", want: "ANSI_QUOTES"},
+		{name: "MSSQL", sqlMode: "MSSQL,PIPES_AS_CONCAT", want: "MSSQL"},
+		{name: "no backslash escapes", sqlMode: "NO_BACKSLASH_ESCAPES", want: "NO_BACKSLASH_ESCAPES"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, found := mysqlParserChangingSQLMode(test.sqlMode)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		sqlMode string
+	}{
+		{name: "empty"},
+		{name: "strict", sqlMode: "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"},
+		{name: "query semantics", sqlMode: "ONLY_FULL_GROUP_BY,ERROR_FOR_DIVISION_BY_ZERO"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, found := mysqlParserChangingSQLMode(test.sqlMode)
+			c.Assert(found, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
 		})
 	}
 }

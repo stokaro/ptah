@@ -343,8 +343,11 @@ jobs:
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$' | grep -q '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted$' | grep -q '^TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset$' | grep -q '^TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM$' | grep -q '^TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange$' | grep -q '^TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode$' | grep -q '^TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode$'
           go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 5m
 
       - name: Run no-transaction and shadow generator integration tests

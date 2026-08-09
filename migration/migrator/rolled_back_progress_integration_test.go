@@ -177,6 +177,28 @@ func TestRolledBackProgress_MariaDBRejectsCreatingNonTransactionalTargetTable(t 
 	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mariadb_create_myisam")
 }
 
+func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMariaDBAlterStorageEngine(
+		t,
+		dbURL,
+		"mariadb_stg_myisam",
+		"MyISAM",
+		`.*migration 1 statement 1 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases`,
+	)
+}
+
+func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineDefault(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMariaDBAlterStorageEngine(
+		t,
+		dbURL,
+		"mariadb_stg_default",
+		"DEFAULT",
+		`.*migration 1 statement 1 selects storage engine DEFAULT, whose effective engine can differ from the verified session default; select InnoDB explicitly or use tx-mode none`,
+	)
+}
+
 func TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsDefaultStorageEngineReset(t, dbURL, "mysql_default_engine")
@@ -207,14 +229,34 @@ func TestRolledBackProgress_MariaDBRejectsUnsafeInitialSQLMode(t *testing.T) {
 	runRejectsUnsafeInitialSQLMode(t, dbURL, "mariadb_initial_sql_mode")
 }
 
-func TestRolledBackProgress_MySQLRejectsANSIQuotedNonTransactionalTargetTable(t *testing.T) {
+func TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRejectsANSIQuotedNonTransactionalTargetTable(t, dbURL, "mysql_ansi_myisam")
+	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mysql_ansi_myisam")
 }
 
-func TestRolledBackProgress_MariaDBRejectsANSIQuotedNonTransactionalTargetTable(t *testing.T) {
+func TestRolledBackProgress_MariaDBRejectsANSIQuotesSQLModeChange(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRejectsANSIQuotedNonTransactionalTargetTable(t, dbURL, "mariadb_ansi_myisam")
+	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mariadb_ansi_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsMSSQLSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsMSSQLSQLModeChange(t, dbURL, "mariadb_mssql_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsANSIQuotesInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mysql_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
+}
+
+func TestRolledBackProgress_MariaDBRejectsANSIQuotesInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
+}
+
+func TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_mssql", "%27MSSQL%27", "MSSQL")
 }
 
 func TestRolledBackProgress_MySQLRejectsInheritedStorageEngine(t *testing.T) {
@@ -651,47 +693,6 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
 		c.Assert(
 			issue887SchemaPrivilegeCount(t, adminConn, externalDatabase, username, "TRIGGER"),
-			qt.Equals,
-			int64(0),
-		)
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("ANSI_QUOTES cross-database relation", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xansi")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY) ENGINE=MyISAM", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"ANSI_QUOTES cross-database relation",
-			fmt.Sprintf(
-				`SET SESSION sql_mode='ANSI_QUOTES'; INSERT INTO "%s"."external_jobs" VALUES (1)`,
-				externalDatabase,
-			),
-			fmt.Sprintf(`DELETE FROM "%s"."external_jobs"`, externalDatabase),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(
-			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
 			qt.Equals,
 			int64(0),
 		)
@@ -1589,10 +1590,10 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 	defer cleanupIssue887(t, conn, names)
 
 	body := fmt.Sprintf(
-		"SET SESSION sql_mode = 'ANSI_QUOTES';\n"+
-			"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
-			"INSERT INTO \"%[1]s\" (id) VALUES (1);\n"+
-			"INSERT INTO \"%[2]s\" (id) VALUES (7);\n",
+		"SET SESSION time_zone = '+02:00';\n"+
+			"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY, observed_epoch BIGINT NOT NULL);\n"+
+			"INSERT INTO %[1]s (id, observed_epoch) VALUES (1, UNIX_TIMESTAMP('2000-01-01 02:00:00'));\n"+
+			"INSERT INTO %[2]s (id, observed_epoch) VALUES (7, UNIX_TIMESTAMP('2000-01-01 02:00:00'));\n",
 		names.createdTable, names.blockerTable,
 	)
 	migration := migrator.CreateMigrationFromSQL(1, "session replay", body,
@@ -1604,7 +1605,7 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(3))
 
 	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, observed_epoch BIGINT NOT NULL)", names.blockerTable,
 	))
 	c.Assert(err, qt.IsNil)
 
@@ -1612,6 +1613,11 @@ func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
 	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.createdTable)), qt.Equals, int64(1))
+	c.Assert(
+		issue887ScalarCount(t, conn, fmt.Sprintf("SELECT observed_epoch FROM %s WHERE id = 7", names.blockerTable)),
+		qt.Equals,
+		int64(946684800),
+	)
 }
 
 func runRolledBackDownProgress(
@@ -1783,6 +1789,36 @@ func runRejectsCreatingNonTransactionalTargetTable(t *testing.T, dbURL, prefix s
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
 
+func runRejectsMariaDBAlterStorageEngine(t *testing.T, dbURL, prefix, engine, wantErr string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB",
+		names.createdTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"alter storage engine",
+		fmt.Sprintf("ALTER TABLE %s STORAGE ENGINE=%s", names.createdTable, engine),
+		fmt.Sprintf("ALTER TABLE %s ENGINE=InnoDB", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, wantErr)
+	c.Assert(issue887TableEngine(t, conn, names.createdTable), qt.Equals, "InnoDB")
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
 func runRejectsDefaultStorageEngineReset(t *testing.T, dbURL, prefix string) {
 	t.Helper()
 
@@ -1834,17 +1870,22 @@ func runRejectsUnsafeSQLModeChange(t *testing.T, dbURL, prefix string) {
 		fmt.Sprintf("DROP TABLE %s", names.createdTable),
 	)
 	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because its sql_mode assignment can change how MySQL-family statement boundaries are parsed; use a static mode without NO_BACKSLASH_ESCAPES or tx-mode none`)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
 
 func runRejectsUnsafeInitialSQLMode(t *testing.T, dbURL, prefix string) {
 	t.Helper()
+	runRejectsInitialSQLMode(t, dbURL, prefix, "%27NO_BACKSLASH_ESCAPES%27", "NO_BACKSLASH_ESCAPES")
+}
+
+func runRejectsInitialSQLMode(t *testing.T, dbURL, prefix, encodedSQLMode, wantMode string) {
+	t.Helper()
 
 	c := qt.New(t)
 	ctx := context.Background()
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?sql_mode="+encodedSQLMode)
 	c.Assert(err, qt.IsNil)
 	defer issue887CloseConnection(t, conn)
 
@@ -1859,12 +1900,12 @@ func runRejectsUnsafeInitialSQLMode(t *testing.T, dbURL, prefix string) {
 		fmt.Sprintf("DROP TABLE %s", names.createdTable),
 	)
 	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains NO_BACKSLASH_ESCAPES; use tx-mode none`)
+	c.Assert(err, qt.ErrorMatches, `.*tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains parser-changing mode `+wantMode+`; use tx-mode none`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
 
-func runRejectsANSIQuotedNonTransactionalTargetTable(t *testing.T, dbURL, prefix string) {
+func runRejectsANSIQuotesSQLModeChange(t *testing.T, dbURL, prefix string) {
 	t.Helper()
 
 	c := qt.New(t)
@@ -1887,7 +1928,35 @@ func runRejectsANSIQuotedNonTransactionalTargetTable(t *testing.T, dbURL, prefix
 		fmt.Sprintf(`DROP TABLE "%s"`, names.createdTable),
 	)
 	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*migration 1 statement 2 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases`)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsMSSQLSQLModeChange(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?multiStatements=true")
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"MSSQL-quoted target engine",
+		fmt.Sprintf(
+			"SET SESSION sql_mode = 'MSSQL'; CREATE TABLE [%s] (id INTEGER PRIMARY KEY) ENGINE=MyISAM",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE [%s]", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because changing sql_mode can make the MySQL-family server disagree with Ptah's prevalidated statement boundaries; configure a stable session mode before migration or use tx-mode none`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
@@ -2009,13 +2078,18 @@ func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, name
 
 func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
 	t.Helper()
+	return issue887TableEngine(t, conn, names.revisionsTable)
+}
+
+func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table string) string {
+	t.Helper()
 
 	var engine string
 	err := conn.QueryRowContext(
 		context.Background(),
 		"SELECT engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
 		conn.Info().Schema,
-		names.revisionsTable,
+		table,
 	).Scan(&engine)
 	qt.Assert(t, err, qt.IsNil)
 	return engine

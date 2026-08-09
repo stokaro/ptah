@@ -699,9 +699,9 @@ from the outer statement:
 - Top-level transaction controls, including `SET autocommit`.
 - Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
   and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
-- Dynamic `sql_mode` assignments and static mode lists that enable
-  `NO_BACKSLASH_ESCAPES`. They can make the server disagree with Ptah about
-  statement boundaries after preflight.
+- Any `sql_mode` assignment. Changing grammar or quoting rules after Ptah has
+  established statement boundaries can make the server execute SQL that
+  preflight did not inspect.
 - `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
   outside the InnoDB transaction.
 - `USE` and qualified references to another database. The connection URL,
@@ -713,12 +713,9 @@ from the outer statement:
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
 
-Preflight also refuses a session that already has `NO_BACKSLASH_ESCAPES`
-enabled, including through the connection DSN or a server default.
-
-Safety preflight treats double-quoted names in relation and routine positions
-as identifiers even before `SET SESSION sql_mode = 'ANSI_QUOTES'` executes.
-Use single quotes for string literals in those positions.
+Preflight also refuses a session that already enables parser-changing
+`ANSI_QUOTES`, `MSSQL`, or `NO_BACKSLASH_ESCAPES` behavior, including through
+the connection DSN or a server default.
 
 The migration advisory lock serializes Ptah clients that use the same lock
 name. It cannot freeze DDL from a client that ignores that lock. Do not run

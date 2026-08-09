@@ -220,12 +220,12 @@ people and pipelines share a directory:
   the selected database exactly in `SHOW GRANTS`. Ptah decodes escaped literal
   wildcard characters in the database name, but deliberately does not infer
   coverage from an unescaped `%` or `_` pattern because MySQL's
-  `partial_revokes` setting changes that pattern's meaning. Dynamic `sql_mode`
-  assignments and static mode lists containing `NO_BACKSLASH_ESCAPES` are also
-  refused because they can make the server and Ptah disagree about statement
-  boundaries after preflight. A session that already has
-  `NO_BACKSLASH_ESCAPES` enabled through the connection DSN or server default is
-  refused for the same reason. Durable server-state operations such as
+  `partial_revokes` setting changes that pattern's meaning. Every `sql_mode`
+  assignment is also refused because changing grammar or quoting rules after
+  preflight can make the server execute SQL that Ptah did not inspect. A session
+  that already enables parser-changing `ANSI_QUOTES`, `MSSQL`, or
+  `NO_BACKSLASH_ESCAPES` behavior through the connection DSN or server default
+  is refused for the same reason. Durable server-state operations such as
   `SET GLOBAL`, `SET PERSIST`, `RESET`, and `CREATE`,
   `ALTER`, or `DROP DATABASE` are refused for the same reason: their effects do
   not share the InnoDB transaction containing the witness. `SELECT` or `TABLE`
@@ -233,10 +233,7 @@ people and pipelines share a directory:
   outside that transaction. The equivalent `SCHEMA` statements and `USE` are rejected as
   well; select the target database in `--db-url` so Ptah can validate the
   database it will modify. References to another database are rejected even
-  when qualified directly. Safety preflight treats double-quoted names in
-  relation and routine positions as identifiers even before
-  `SET SESSION sql_mode = 'ANSI_QUOTES'` executes; use single quotes for string
-  literals in those positions. Ptah also refuses executable comments, `CALL`,
+  when qualified directly. Ptah also refuses executable comments, `CALL`,
   prepared or dynamic SQL, table locks, definitions of views, triggers,
   routines, and events, references to existing views or trigger-bearing tables,
   and calls to stored routines. Those forms can hide work that does not share

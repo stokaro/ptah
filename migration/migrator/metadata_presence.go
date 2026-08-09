@@ -96,9 +96,10 @@ func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error 
 	if err := m.conn.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&sqlMode); err != nil {
 		return fmt.Errorf("failed to inspect MySQL-family session sql_mode: %w", err)
 	}
-	if mysqlSQLModeDisablesBackslashEscapes(sqlMode) {
+	if mode, parserChanging := mysqlParserChangingSQLMode(sqlMode); parserChanging {
 		return fmt.Errorf(
-			"tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains NO_BACKSLASH_ESCAPES; use tx-mode none",
+			"tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains parser-changing mode %s; use tx-mode none",
+			mode,
 		)
 	}
 	var defaultEngine string
