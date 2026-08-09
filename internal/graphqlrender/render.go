@@ -1,7 +1,9 @@
-// Package graphqlrender renders a Ptah schema as GraphQL SDL: one object type per
-// table, plus an input type, a Relay-style connection/edge pair, enum types for
-// enum columns and object relations for foreign keys. The output parses with a
-// standard GraphQL parser and is a usable starting point for a schema.
+// Package graphqlrender renders a Ptah schema as GraphQL SDL: one object type
+// per table, enum types for enum columns and object relations for foreign keys.
+// Operation shapes — inputs, Relay-style connections, and Query fields — are
+// emitted only when Options.Operations names them, because Ptah generates no
+// resolver, authorization, or data access to stand behind them. The output
+// parses with a standard GraphQL parser.
 package graphqlrender
 
 import (
@@ -17,6 +19,9 @@ import (
 type Options struct {
 	IncludeTables []string
 	ExcludeTables []string
+	// Operations selects the operation shapes to emit. Its zero value emits
+	// data types only.
+	Operations Operations
 }
 
 // Result is the rendered GraphQL SDL plus any lossy-export diagnostics.
@@ -38,7 +43,9 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	enums := schemaexport.EnumIndex(db)
 
 	reg := newNameRegistry()
-	// Reserve built-in and structural names so no generated type can shadow them.
+	// Reserve built-in and structural names so no generated type can shadow
+	// them. They are reserved whatever the operation selection is, so a table
+	// named "page_info" gets the same object-type name in every profile.
 	for _, reserved := range []string{
 		scalarInt, scalarFloat, scalarString, scalarBoolean, scalarID, scalarDateTime, scalarJSON,
 		pageInfoType, queryType, "Mutation", "Subscription",
@@ -55,6 +62,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 
 	b := &builder{
 		reg:             reg,
+		ops:             opts.Operations,
 		enums:           enums,
 		typeNames:       typeNames,
 		enumNameByKey:   map[string]string{},
@@ -65,7 +73,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		b.addTable(db, table)
 	}
 	if len(b.objectTypes) == 0 {
-		b.warn("schema", "no exportable tables; emitted a placeholder Query type")
+		b.warn("schema", "no exportable tables; nothing was emitted for them")
 	}
 
 	return Result{Data: []byte(b.render()), Diagnostics: b.diagnostics}, nil
@@ -74,13 +82,15 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 // builder accumulates the SDL model across tables before serialization.
 type builder struct {
 	reg           *nameRegistry
+	ops           Operations
 	enums         map[string][]string
 	typeNames     map[string]string
 	enumNameByKey map[string]string
 	customScalars map[string]bool
 
 	objectTypes     []gqlType
-	inputTypes      []gqlType
+	createInputs    []gqlType
+	updateInputs    []gqlType
 	edgeTypes       []gqlType
 	connTypes       []gqlType
 	enumTypes       []gqlEnum
@@ -89,14 +99,22 @@ type builder struct {
 	diagnostics     []schemaexport.Diagnostic
 }
 
+// column pairs an emitted object field with the source column it came from, so
+// the input projections reuse the exact name the object type published rather
+// than re-deriving it and drifting from a deduplicated one.
+type column struct {
+	source goschema.Field
+	field  gqlField
+}
+
 func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 	fields := schemaexport.FieldsFor(db, table)
 	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
 	typeName := b.typeNames[table.Name]
 
 	object := gqlType{name: typeName, desc: table.Comment}
-	input := gqlType{name: b.reg.unique(typeName + "Input")}
 	usedFieldNames := map[string]bool{}
+	var columns []column
 
 	for _, field := range fields {
 		// Column names are arbitrary annotation strings; a GraphQL field name
@@ -113,14 +131,7 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 
 		objectField := b.columnField(table, field, pk, name)
 		object.fields = append(object.fields, objectField)
-
-		// A server-generated column (serial / auto-increment) is not a create
-		// input; everything else is.
-		if !isServerGenerated(field) {
-			inputField := objectField
-			inputField.desc = ""
-			input.fields = append(input.fields, inputField)
-		}
+		columns = append(columns, column{source: field, field: objectField})
 	}
 
 	// Foreign keys become object relations alongside the scalar id column.
@@ -153,47 +164,142 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 	}
 
 	// A type with no fields is a GraphQL syntax error; skip the whole table.
+	// Its operations go with it: they would all reference a type that does not
+	// exist.
 	if len(object.fields) == 0 {
 		b.warn("type "+typeName, "table has no exportable columns; type omitted")
 		return
 	}
 
 	b.objectTypes = append(b.objectTypes, object)
-	if len(input.fields) > 0 {
-		b.inputTypes = append(b.inputTypes, input)
+	b.addInputs(typeName, columns, pk)
+	b.addQueries(table, typeName, columns, pk)
+}
+
+// addInputs emits the requested operation inputs from the write projection: the
+// columns a client may set, rather than every column that is not
+// server-generated. An input whose projection is empty is omitted, because an
+// input type with no fields does not parse.
+func (b *builder) addInputs(typeName string, columns []column, pk map[string]bool) {
+	if b.ops.CreateInput {
+		fields := writeProjection(columns, pk, createShape)
+		if len(fields) == 0 {
+			b.warn("input "+typeName+createInputSuffix,
+				"every column is server-owned, so the create projection is empty; input omitted")
+		} else {
+			b.createInputs = append(b.createInputs,
+				gqlType{name: b.reg.unique(typeName + createInputSuffix), fields: fields})
+		}
 	}
+	if b.ops.UpdateInput {
+		fields := writeProjection(columns, pk, updateShape)
+		if len(fields) == 0 {
+			b.warn("input "+typeName+updateInputSuffix,
+				"every column is server-owned or part of the primary key, so the update projection is empty; input omitted")
+		} else {
+			b.updateInputs = append(b.updateInputs,
+				gqlType{name: b.reg.unique(typeName + updateInputSuffix), fields: fields})
+		}
+	}
+}
 
-	edgeName := b.reg.unique(typeName + "Edge")
-	b.edgeTypes = append(b.edgeTypes, gqlType{
-		name: edgeName,
-		fields: []gqlField{
-			{name: "node", typ: typeName, nonNull: true},
-			{name: "cursor", typ: scalarString, nonNull: true},
-		},
-	})
-	connName := b.reg.unique(typeName + "Connection")
-	b.connTypes = append(b.connTypes, gqlType{
-		name: connName,
-		fields: []gqlField{
-			{name: "edges", typ: edgeName, nonNull: true, list: true, listNonNull: true},
-			{name: "pageInfo", typ: pageInfoType, nonNull: true},
-		},
-	})
-
-	// Query root fields: a paginated connection for the table, and a by-id
-	// lookup when the table has a single-column primary key.
-	b.addQueryField(gqlField{
-		name: lowerFirst(schemaexport.SanitizeGraphQLName(schemaexport.PascalCase(table.Name))),
-		args: "(first: Int, after: String)",
-		typ:  connName,
-	})
-	if pk := schemaexport.EffectivePrimaryKey(table, fields); len(pk) == 1 {
+// addQueries emits the requested Query root fields and, for the list shape, the
+// connection and edge types they return.
+func (b *builder) addQueries(table goschema.Table, typeName string, columns []column, pk map[string]bool) {
+	if b.ops.List {
+		edgeName := b.reg.unique(typeName + "Edge")
+		b.edgeTypes = append(b.edgeTypes, gqlType{
+			name: edgeName,
+			fields: []gqlField{
+				{name: "node", typ: typeName, nonNull: true},
+				{name: "cursor", typ: scalarString, nonNull: true},
+			},
+		})
+		connName := b.reg.unique(typeName + "Connection")
+		b.connTypes = append(b.connTypes, gqlType{
+			name: connName,
+			fields: []gqlField{
+				{name: "edges", typ: edgeName, nonNull: true, list: true, listNonNull: true},
+				{name: "pageInfo", typ: pageInfoType, nonNull: true},
+			},
+		})
 		b.addQueryField(gqlField{
-			name: lowerFirst(typeName),
-			args: "(" + schemaexport.SanitizeGraphQLName(pk[0]) + ": ID!)",
-			typ:  typeName,
+			name: lowerFirst(schemaexport.SanitizeGraphQLName(schemaexport.PascalCase(table.Name))),
+			args: "(first: Int, after: String)",
+			typ:  connName,
 		})
 	}
+	if !b.ops.ByID {
+		return
+	}
+	key, ok := b.keyArgument(typeName, columns, pk)
+	if !ok {
+		return
+	}
+	b.addQueryField(gqlField{name: lowerFirst(typeName), args: "(" + key + ")", typ: typeName})
+}
+
+// keyArgument renders the by-key Query argument for a table. It reports false
+// when the key is not usable as one: a composite or absent primary key has no
+// single argument, and a key column that the object type did not publish (a
+// name collision, for instance) would make the argument reference a field that
+// is not there. Either way the operation is omitted rather than emitted broken.
+func (b *builder) keyArgument(typeName string, columns []column, pk map[string]bool) (string, bool) {
+	if len(pk) != 1 {
+		// The shape was asked for by name, so a table that cannot supply it says
+		// so rather than quietly contributing nothing.
+		b.warn("type Query."+lowerFirst(typeName),
+			fmt.Sprintf("by-id query needs a single-column primary key; this table declares %d key column(s), so it is omitted",
+				len(pk)))
+		return "", false
+	}
+	for _, col := range columns {
+		if !pk[col.source.Name] {
+			continue
+		}
+		// The argument repeats the published column's own type, so a key that
+		// did not map to ID is not silently re-declared as one.
+		arg := col.field
+		arg.nonNull = true
+		return col.field.name + ": " + arg.typeRef(), true
+	}
+	b.warn("type Query."+lowerFirst(typeName),
+		"the primary key column is not present in the exported type; by-id query omitted")
+	return "", false
+}
+
+// writeShape names which input projection a caller wants.
+type writeShape int
+
+const (
+	createShape writeShape = iota
+	updateShape
+)
+
+// writeProjection returns the input fields for a table's create or update
+// shape: the published columns a client may assign, minus the ones the database
+// owns. The update shape also drops the primary key, which identifies the row
+// rather than being assigned to it, and makes every remaining field optional so
+// an omitted field means "unchanged".
+func writeProjection(columns []column, pk map[string]bool, shape writeShape) []gqlField {
+	var fields []gqlField
+	for _, col := range columns {
+		if isServerOwned(col.source) {
+			continue
+		}
+		if shape == updateShape && pk[col.source.Name] {
+			continue
+		}
+		field := col.field
+		field.desc = ""
+		if shape == updateShape || hasDefault(col.source) {
+			// A column the database fills in when it is not supplied, and every
+			// column of a partial update, must not be mandatory on the way in.
+			field.nonNull = false
+		}
+		fields = append(fields, field)
+	}
+	return fields
 }
 
 // columnField builds the GraphQL field for a column, mapping an array column to a
@@ -306,14 +412,35 @@ func (b *builder) warn(path, message string) {
 	})
 }
 
-// isServerGenerated reports whether a column's value is produced by the database
-// (serial or auto-increment), and so does not belong in a create input.
-func isServerGenerated(field goschema.Field) bool {
+// isServerOwned reports whether the database, not the caller, produces a
+// column's value: a serial or auto-increment column, a PostgreSQL
+// GENERATED ALWAYS AS IDENTITY column, a generated/computed column, and a column
+// the server rewrites on every update. None of them belongs in an input the
+// caller fills in. A plain DEFAULT is not in this set — a caller may still
+// supply that column — so those fields stay in the projection as optional.
+func isServerOwned(field goschema.Field) bool {
 	if field.AutoInc {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(field.IdentityGeneration), "ALWAYS") {
+		return true
+	}
+	if strings.TrimSpace(field.GeneratedExpression) != "" {
+		return true
+	}
+	if strings.TrimSpace(field.UpdateExpression) != "" {
 		return true
 	}
 	base, _ := schemaexport.NormalizeType(field.Type)
 	return strings.Contains(base, "SERIAL")
+}
+
+// hasDefault reports whether the database supplies a value when the column is
+// omitted, which makes the column optional in a create input even when it is
+// NOT NULL.
+func hasDefault(field goschema.Field) bool {
+	return field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "" ||
+		strings.TrimSpace(field.Default) != ""
 }
 
 func toSet(values []string) map[string]bool {
