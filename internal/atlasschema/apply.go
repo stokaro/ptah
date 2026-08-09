@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -138,11 +139,12 @@ type applyComputation struct {
 	statements []string
 	current    *types.DBSchema
 	desired    *goschema.Database
-	// readScope is the schema allow-list current was read at, nil when the read
-	// was the connection's own default. A saved plan records no schema scope, so
-	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
-	// current has to know whether the two would be the same read.
-	readScope []string
+	// readWidened reports that current was read at a wider or narrower scope
+	// than [VerifyPlanTarget] will re-read the same database at. A saved plan
+	// records no schema scope, so the verifier asks [schemascope.ReadNames] with
+	// no selection; a caller fingerprinting current has to know whether the two
+	// would be the same read.
+	readWidened bool
 }
 
 func computeApplyPlan(
@@ -181,10 +183,9 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	readScope := applyReadScope(opts.Schemas, conn.Info().Schema, desired)
-	current, err := dbschema.ReadSchemaWithSchemas(conn, readScope)
+	current, readWidened, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
+		return applyComputation{}, err
 	}
 	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
 	if currentErr != nil && !emptySelection(currentErr) {
@@ -218,7 +219,11 @@ func computeApplyPlan(
 			currentErr)
 	}
 
-	computation := applyComputation{current: current, desired: desired, readScope: readScope}
+	computation := applyComputation{
+		current:     current,
+		desired:     desired,
+		readWidened: readWidened,
+	}
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
 	if err != nil {
@@ -240,46 +245,75 @@ func computeApplyPlan(
 	return computation, nil
 }
 
+// applyCurrentState reads the database side of an apply, and reports whether
+// that read covers something other than the one [VerifyPlanTarget] will make
+// when a plan saved from it is used later.
+//
+// The two scopes are resolved side by side, here, because a plan file records
+// no schema scope: the verifier can only ask [schemascope.ReadNames] with no
+// selection, so the planning run has to know whether its own read was the same
+// one. Deriving them in two places is how a freshly saved plan reported itself
+// stale against the database it had just been computed from (stokaro/ptah#1276).
+func applyCurrentState(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	requested []string,
+	desired *goschema.Database,
+) (current *types.DBSchema, readWidened bool, err error) {
+	verifierScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+	if err != nil {
+		return nil, false, fmt.Errorf("read database schema: %w", err)
+	}
+	readScope := applyReadScope(requested, verifierScope, desired)
+	current, err = dbschema.ReadSchemaWithSchemas(conn, readScope)
+	if err != nil {
+		return nil, false, fmt.Errorf("read database schema: %w", err)
+	}
+	return current, !slices.Equal(readScope, verifierScope), nil
+}
+
 // applyReadScope resolves the schemas the DATABASE side of an apply is read at.
 //
 // The two sides of a comparison have to be read at the same scope or silence on
 // one of them is mistaken for absence. `schema inspect` on a URL that pins no
-// schema now describes every schema of the realm (stokaro/ptah#1264); applying
-// that description back to the database it came from used to read only the
+// schema describes every schema of the realm (stokaro/ptah#1264); applying that
+// description back to the database it came from used to read only the
 // connection's own schema, find no `extra` there, and plan `CREATE SCHEMA
 // extra` and `CREATE TABLE "extra"."b"` for a schema and a table the database
 // already has. Measured on PostgreSQL 17.10: the plan never converged, and
 // executing it failed at SQLSTATE 42P07.
 //
-// The scope is taken from the DESIRED state rather than from the URL, and that
-// choice is the safety property. A URL-derived realm scope would widen the read
-// for every document, including one that describes a single schema of a
-// multi-schema database -- and a schema the database has that the document does
-// not describe is planned for removal. Measured on the same database, a
-// document declaring only `public` read at two-schema scope plans `DROP TABLE
-// IF EXISTS "extra"."b" CASCADE`. Reading exactly the schemas the document
-// names cannot reach an object no document mentions.
+// base is what the URL says this run covers, resolved once by
+// [schemascope.ReadNames] so that this verb, `schema diff`, `schema inspect`
+// and `migrate diff` cannot disagree about it. An earlier fix derived the scope
+// here from the DESIRED state instead, to keep a document describing one schema
+// of a multi-schema database from reaching the others. That is the wrong
+// protection at the wrong layer: it makes a whole schema silently unmanaged
+// rather than authoritatively absent, and it makes this verb disagree with
+// `schema diff` over the same two inputs. The pinned Atlas community binary
+// v1.3.0 plans `DROP SCHEMA "extra" CASCADE` for that document on both verbs,
+// measured on PostgreSQL 17.10, and a desired state that means to keep a schema
+// it does not describe says so with a `ptah:not-described schema` record --
+// which the comparator honors and no scope trick can express.
+//
+// The desired state's own schemas are still added on top, because a URL pinned
+// to one schema by `search_path` covers less than a document may name, and a
+// creation planned for an object that exists fails the run.
 //
 // An explicit `--schema` outranks both: it is the operator naming the scope.
-//
-// nil is returned when the desired state names nothing beyond the schema the
-// connection is already on, so the common case reads exactly what it read
-// before.
-func applyReadScope(requested []string, connectedSchema string, desired *goschema.Database) []string {
+func applyReadScope(requested []string, base []string, desired *goschema.Database) []string {
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}
-	connected := strings.TrimSpace(connectedSchema)
-	named := desiredSchemaNames(desired)
-	beyond := slices.DeleteFunc(named, func(name string) bool { return name == connected })
-	if len(beyond) == 0 {
+	scope := slices.Clone(base)
+	scope = append(scope, desiredSchemaNames(desired)...)
+	scope = slices.DeleteFunc(scope, func(name string) bool { return strings.TrimSpace(name) == "" })
+	slices.Sort(scope)
+	scope = slices.Compact(scope)
+	if len(scope) == 0 {
 		return nil
 	}
-	if connected != "" {
-		beyond = append(beyond, connected)
-	}
-	slices.Sort(beyond)
-	return slices.Compact(beyond)
+	return scope
 }
 
 // desiredSchemaNames is every schema a desired state names, over the
