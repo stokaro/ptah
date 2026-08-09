@@ -214,6 +214,7 @@ func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
 		"CREATE VIEW active_jobs AS SELECT * FROM jobs",
 		"CREATE TRIGGER jobs_audit AFTER INSERT ON jobs FOR EACH ROW INSERT INTO audit VALUES (NEW.id)",
 		"CREATE DEFINER = app PROCEDURE apply_jobs() INSERT INTO jobs VALUES (1)",
+		"CREATE DEFINER = CURRENT_USER() EVENT cleanup_jobs ON SCHEDULE AT CURRENT_TIMESTAMP DO DELETE FROM jobs",
 		"ALTER FUNCTION next_job_id COMMENT 'changed'",
 		"CREATE EVENT cleanup_jobs DO DELETE FROM jobs",
 	}

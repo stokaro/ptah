@@ -224,6 +224,11 @@ func TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testin
 	runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t, adminURL)
 }
 
+func TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, adminURL)
+}
+
 func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 
@@ -403,6 +408,34 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
 		c.Assert(err, qt.ErrorMatches, `.*nested or dynamic SQL cannot be tied to Ptah's transaction witness.*`)
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("DEFINER function before indirect writer", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_definer")
+		cleanupIssue887(t, adminConn, names)
+		defer cleanupIssue887(t, adminConn, names)
+		eventName := fmt.Sprintf("ptah887event%d", time.Now().UnixNano())
+		defer issue887DropEvent(t, adminConn, eventName)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"DEFINER function before indirect writer",
+			fmt.Sprintf(
+				"CREATE DEFINER=CURRENT_USER() EVENT %s ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR DO SELECT 1",
+				eventName,
+			),
+			"SELECT 1",
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*defines an indirect database writer that Ptah cannot validate before execution.*`)
+		c.Assert(issue887EventCount(t, adminConn, eventName), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
 	})
 
 	t.Run("filesystem writes", func(t *testing.T) {
@@ -1144,6 +1177,65 @@ func runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T, adminURL string
 	c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
 }
 
+func runMySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_files")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable))
+	c.Assert(err, qt.IsNil)
+
+	var secureFileDir string
+	err = conn.QueryRowContext(ctx, "SELECT @@secure_file_priv").Scan(&secureFileDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(secureFileDir, qt.Not(qt.Equals), "")
+	filePrefix := strings.TrimRight(secureFileDir, "/") + "/" + names.createdTable
+	tests := []struct {
+		name      string
+		statement string
+		path      string
+	}{
+		{
+			name:      "SELECT OUTFILE",
+			statement: fmt.Sprintf("SELECT 'blocked' INTO OUTFILE '%s.txt'", filePrefix),
+			path:      filePrefix + ".txt",
+		},
+		{
+			name:      "SELECT DUMPFILE",
+			statement: fmt.Sprintf("SELECT 'blocked' INTO DUMPFILE '%s.bin'", filePrefix),
+			path:      filePrefix + ".bin",
+		},
+		{
+			name:      "TABLE OUTFILE",
+			statement: fmt.Sprintf("TABLE %s INTO OUTFILE '%s.tbl'", names.ledgerTable, filePrefix),
+			path:      filePrefix + ".tbl",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
+
+			err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+			c.Assert(err, qt.ErrorMatches, `.*writes a file outside Ptah's migration transaction.*`)
+			c.Assert(issue887FileMissing(t, conn, test.path), qt.IsTrue)
+			c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+		})
+	}
+}
+
 func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
 	t.Helper()
 
@@ -1875,6 +1967,29 @@ WHERE table_schema = ? AND table_name = ? AND index_name = ?`,
 	return count
 }
 
+func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event string) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.events WHERE event_schema = ? AND event_name = ?`,
+		conn.Info().Schema,
+		event,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887FileMissing(t *testing.T, conn *dbschema.DatabaseConnection, path string) bool {
+	t.Helper()
+
+	var missing bool
+	err := conn.QueryRowContext(context.Background(), "SELECT LOAD_FILE(?) IS NULL", path).Scan(&missing)
+	qt.Assert(t, err, qt.IsNil)
+	return missing
+}
+
 func issue887TableCountInSchema(
 	t *testing.T,
 	conn *dbschema.DatabaseConnection,
@@ -1958,6 +2073,11 @@ func issue887DropTrigger(t *testing.T, conn *dbschema.DatabaseConnection, trigge
 func issue887DropFunction(t *testing.T, conn *dbschema.DatabaseConnection, function string) {
 	t.Helper()
 	issue887CleanupSQL(t, conn, "DROP FUNCTION IF EXISTS "+function)
+}
+
+func issue887DropEvent(t *testing.T, conn *dbschema.DatabaseConnection, event string) {
+	t.Helper()
+	issue887CleanupSQL(t, conn, "DROP EVENT IF EXISTS "+event)
 }
 
 func issue887DropUser(t *testing.T, conn *dbschema.DatabaseConnection, username string) {

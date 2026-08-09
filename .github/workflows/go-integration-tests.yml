@@ -340,6 +340,7 @@ jobs:
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$' | grep -q '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$' | grep -q '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$'
           go test ./migration/migrator -list '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$' | grep -q '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$' | grep -q '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$'
           go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 5m
 
       - name: Run no-transaction and shadow generator integration tests

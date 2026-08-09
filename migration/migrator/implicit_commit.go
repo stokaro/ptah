@@ -170,11 +170,24 @@ func mysqlDefinesIndirectWriter(tokens []lexer.Token) bool {
 		return false
 	}
 	for _, token := range tokens[1:] {
-		if token.Value == "(" {
-			return false
-		}
 		if matchesAnyKeyword(token, "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION", "EVENT") {
 			return true
+		}
+		if matchesAnyKeyword(
+			token,
+			"TABLE",
+			"INDEX",
+			"DATABASE",
+			"SCHEMA",
+			"USER",
+			"ROLE",
+			"SERVER",
+			"TABLESPACE",
+			"LOGFILE",
+			"RESOURCE",
+			"SPATIAL",
+		) {
+			return false
 		}
 	}
 	return false
