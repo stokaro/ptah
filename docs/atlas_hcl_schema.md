@@ -621,6 +621,45 @@ untouched, and a nested `env` block keeps reporting the surrounding object's own
 error. Command-level `atlas.hcl` project config support is documented in
 [Atlas Project Config](atlas_project_config.md).
 
+One document declares each object once. A document that declares the same
+object twice is refused, naming the kind and the object, because the second
+declaration would otherwise be folded into the first and the run would report
+success on a document PostgreSQL refuses. Identity is the object's own: `users`
+and `Users` are two tables, one table name in two schemas is two tables, and an
+index, constraint or foreign key name belongs to its table.
+
+Which kinds refuse is decided by one measured rule: a repeat is refused where
+the Atlas community CLI refuses the same document. That is `table`, `column`,
+`index`, a named `check` or `constraint`, `foreign_key` (both the single-column
+form written onto a column and the multi-column form written as a table
+constraint), `enum`, `sequence`, `domain`, `composite`, `range`, `extension`,
+`trigger` and `policy`.
+
+Repeats that CLI reads at exit 0 are read at exit 0 here too: `view`,
+`materialized` and `role`, whose blocks it drops unread, and `unique`,
+`primary_key`, `row_security` and `variable`, which it merges. Setting
+`PTAH_HCL_STRICT_REDECLARATIONS=1` refuses a repeated `view`, `materialized`,
+`role` or `unique` as well, which is the rule an HCL schema *directory* already
+applies across its files.
+
+Four blocks are exempt under every setting: a repeated `schema` block, because a
+directory of HCL files is read as one document and its files each open with the
+same one; `function`, whose identity in PostgreSQL includes its argument types so
+two blocks sharing a name can be two overloads; `permission`, which renders a
+GRANT the engine accepts twice; and `data`, which declares no database object.
+
+Setting `PTAH_HCL_MERGE_REDECLARATIONS=1` restores the merge for every kind.
+
+An `enum` block accepts one or two labels. `enum "public" "mood"` names the
+schema and then the enum, exactly as `table` does, and is the spelling the Atlas
+community CLI's own inspect writes when one enum name exists in more than one
+schema. By default two enums sharing a bare name are one object however they are
+spelled, because that CLI keys enums by their bare name and answers
+`duplicate enum "mood"`. Setting `PTAH_HCL_SCHEMA_SCOPED_ENUMS=1` keys them by
+their qualified name, which is what `public.mood` and `other.mood` are, and is
+the setting under which Ptah reads its own inspect output for such a database
+back.
+
 A top-level `variable` block is accepted but not evaluated. References such as
 `var.name` are not substituted, and a variable with no default is not reported as
 missing, so a schema file relying on variables renders the reference as literal
