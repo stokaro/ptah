@@ -3930,7 +3930,19 @@ type EmbeddedSources struct {
 package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Enum struct {
-    Name   string   // The generated enum type name (e.g., "enum_user_status")
+    Name string // The generated enum type name (e.g., "enum_user_status")
+    // Schema owns the enum, empty for the connection's or document's default
+    // schema. It is a field rather than a qualifier folded into Name because
+    // Name is what a column's declared type is matched against, and a domain,
+    // composite and range each keep the two apart for the same reason.
+    //
+    // An enum is a TYPE, so its identity is (schema, name) exactly as a
+    // domain's is: public.mood and extra.mood are two types with different
+    // value sets. Without this field an enum read out of a non-default schema
+    // was described as belonging to the connected one, and applying that
+    // description built the type in the wrong schema and typed the column that
+    // uses it against the wrong type (stokaro/ptah#1276).
+    Schema string
     Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
 }
     Enum represents a global enumeration type definition that can be shared
@@ -3977,6 +3989,7 @@ type Enum struct {
         MySQL:
           CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 
+func (e Enum) QualifiedName() string
 
 ### go.5x5.cz/ptah/core/goschema.Extension
 
@@ -5656,6 +5669,7 @@ type DBEnum struct {
 }
     DBEnum represents a database enum type (PostgreSQL)
 
+func (e DBEnum) QualifiedName() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBExtension
 
@@ -5724,6 +5738,7 @@ type DBFunction struct {
 }
     DBFunction represents a PostgreSQL custom function read from the database
 
+func (f DBFunction) QualifiedName() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBGrant
 

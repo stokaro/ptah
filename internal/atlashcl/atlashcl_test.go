@@ -241,8 +241,13 @@ table "users" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
+	// The block's `schema` attribute is carried rather than discarded. An enum
+	// is a type, and a type declared in `main` is not the same type as one
+	// declared anywhere else, so the DDL below names the schema on both the
+	// CREATE TYPE and the column that is declared against it
+	// (stokaro/ptah#1276).
 	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{
-		{Name: "status", Values: []string{"active", "inactive"}},
+		{Name: "status", Schema: "main", Values: []string{"active", "inactive"}},
 	})
 	c.Assert(db.Fields, qt.HasLen, 1)
 	c.Assert(db.Fields[0].Type, qt.Equals, "status")
@@ -250,8 +255,8 @@ table "users" {
 	c.Assert(db.Fields[0].DefaultSet, qt.IsTrue)
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
-	c.Assert(sql, qt.Contains, "CREATE TYPE status AS ENUM ('active', 'inactive');")
-	c.Assert(sql, qt.Contains, "status status NOT NULL DEFAULT 'active'")
+	c.Assert(sql, qt.Contains, "CREATE TYPE main.status AS ENUM ('active', 'inactive');")
+	c.Assert(sql, qt.Contains, "status main.status NOT NULL DEFAULT 'active'")
 }
 
 func TestParseEnumRequiresStringValues(t *testing.T) {

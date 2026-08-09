@@ -67,6 +67,7 @@ table "users" {
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |
+| `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
 | `extension` | PostgreSQL `if_not_exists`, `version`, and comments. |
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |

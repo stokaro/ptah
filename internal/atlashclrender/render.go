@@ -441,7 +441,7 @@ func (r *renderer) renderSchemas() {
 func (r *renderer) renderEnums() {
 	enums := append([]goschema.Enum(nil), r.db.Enums...)
 	sort.Slice(enums, func(i, j int) bool {
-		return enums[i].Name < enums[j].Name
+		return enums[i].QualifiedName() < enums[j].QualifiedName()
 	})
 	for _, enum := range enums {
 		r.linef(`enum %s {`, quote(enum.Name))
@@ -455,12 +455,21 @@ func (r *renderer) renderEnums() {
 		// -- one operand, measured both ways. That binary's own inspect writes
 		// the attribute too (stokaro/ptah#1251).
 		//
-		// goschema.Enum carries no schema of its own, so the schema the whole
-		// read belongs to is the only name available. It is also the right one:
-		// a catalog omits the schema exactly where the engine treats the read's
-		// own schema as implicit, which is the same reason renderTable falls
-		// back to it.
-		if schema := r.schemaFor(""); schema != "" {
+		// The schema is the ENUM'S, falling back to the render's default only
+		// where the enum names none -- the rule renderTable follows, for the
+		// same reason: a catalog blanks the schema exactly where the engine
+		// treats the read's own schema as implicit.
+		//
+		// It used to be the render's default unconditionally, because
+		// goschema.Enum carried no schema. That is right for every read of one
+		// schema and wrong for every read of more than one: `schema inspect`
+		// against a URL that pins no schema describes the whole realm, so
+		// `extra.mood` was written as `schema = schema.public` -- an enum
+		// attributed to a schema that does not hold it. Applying that document
+		// created the type in `public` and typed `extra.b.feeling` against it,
+		// so the round trip produced a database whose column type pointed at
+		// the wrong schema (stokaro/ptah#1276).
+		if schema := r.schemaFor(enum.Schema); schema != "" {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.rawAttr(1, "values", stringList(enum.Values))
