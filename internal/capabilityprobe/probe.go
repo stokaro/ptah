@@ -95,6 +95,17 @@ type Report struct {
 	SessionDeltas []capability.Capability
 	// Rows is one entry per registered capability, sorted by key.
 	Rows []Row
+	// Decidable is how many rows this run was obliged to decide: the
+	// registered keys the dialect's plan did NOT declare undecidable in
+	// advance, on a line the matrix can credit an observation to. It is zero
+	// on an unattributable line, where every row is undecidable by
+	// construction and the count would be a demand no run can meet.
+	//
+	// It is derived from the plan rather than written down per dialect
+	// because a number somebody maintains by hand drifts the moment a
+	// capability is added, and the drift is silent in the direction that
+	// lowers the bar.
+	Decidable int
 	// Planned is false when the probe has no statement table for this
 	// dialect, so nothing was executed at all.
 	Planned bool
@@ -139,7 +150,11 @@ func (r *Report) Mismatches() []Row {
 //
 // Failing on "decided nothing" is not defensive padding. A skipped check that
 // reads as a passed check is how a matrix comes to certify lines nobody ever
-// probed, and this repository has been bitten by that shape before.
+// probed, and this repository has been bitten by that shape before. Failing on
+// "decided less than the plan promised" is the same argument one step further
+// in: a floor of one row lets twenty-three of twenty-four go quietly
+// unmeasured while the run still exits zero, and coverage that can erode
+// without turning anything red is coverage nobody is holding.
 func (r *Report) Err() error {
 	var problems []error
 
@@ -167,12 +182,34 @@ func (r *Report) Err() error {
 		problems = append(problems, fmt.Errorf(
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
-	if r.Decided() == 0 {
-		problems = append(problems, fmt.Errorf(
-			"this run decided 0 of %d capability rows; a probe that measured nothing must not read as a probe that passed",
-			len(r.Rows)))
+	if r.Decided() < r.floor() {
+		problems = append(problems, r.coverageProblem())
 	}
 	return errors.Join(problems...)
+}
+
+// floor is the fewest rows a run may decide and still be allowed to report
+// success.
+//
+// On a line the matrix can credit it is every row the plan promised to answer,
+// so a run that quietly stopped deciding most of them fails. Everywhere else
+// it is one, which keeps the original guard: a probe that decided nothing must
+// never read as a probe that passed.
+func (r *Report) floor() int {
+	return max(1, r.Decidable)
+}
+
+// coverageProblem states the shortfall in the terms of whichever floor applied.
+func (r *Report) coverageProblem() error {
+	if r.Decidable == 0 {
+		return fmt.Errorf(
+			"this run decided 0 of %d capability rows; a probe that measured nothing must not read as a probe that passed",
+			len(r.Rows))
+	}
+	return fmt.Errorf(
+		"this run decided %d of %d capability rows, %d fewer than the %d the %s plan promised to answer; "+
+			"coverage that erodes without failing anything is coverage nobody is holding",
+		r.Decided(), len(r.Rows), r.Decidable-r.Decided(), r.Decidable, r.Dialect)
 }
 
 // cellProblems reports the ways a matched cell can be a lie about the server
@@ -301,7 +338,29 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 			s.broken, namespace)
 	}
 	report.Rows = assemble(report, observations, attempts)
+	report.Decidable = decidable(report, dialectPlan)
 	return nil
+}
+
+// decidable counts the rows this run had to decide for its coverage to be
+// intact: every registered key the plan did not declare undecidable in advance.
+//
+// On a line no observation can be credited to it is zero rather than that
+// count. Every row there is undecidable by construction — the resolver hands
+// each release of the engine the same preset — so demanding decisions would
+// turn a correctly reported limitation into a permanent failure and teach
+// readers to ignore the exit code.
+func decidable(report *Report, p plan) int {
+	if lineReason(report) != "" {
+		return 0
+	}
+	n := 0
+	for _, key := range capability.All() {
+		if _, declared := p.undecided[key]; !declared {
+			n++
+		}
+	}
+	return n
 }
 
 // runPlan executes a dialect's experiments in order and collects one
