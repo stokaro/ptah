@@ -16,18 +16,27 @@ package postgres
 // them makes these tests fail where reverting them leaves the rest of the suite
 // green.
 //
-// One projection needs more than presence, and it is the operator-class one.
-// A class's PARAMETERS are not in pg_opclass: PostgreSQL keeps them in the
-// attoptions of the INDEX relation's own pg_attribute row for the key's
-// position, so the projection has to reach a particular relation at a
-// particular attribute number. Both halves of that reach can be wrong while the
-// word attoptions is still in the query -- `keyatt.attnum = 1::smallint`
-// reports the first key's parameters for every key, `keyatt.attrelid =
-// ix.indrelid` reports the table column's options instead of the index
-// attribute's -- so the fake evaluates the join the projection wrote rather
-// than asking whether a word appears in it. What the fake cannot prove is that
-// the model matches PostgreSQL; the live guard in
-// integration/gonative/index_attributes_postgres_test.go is what does that.
+// Two projections need more than presence.
+//
+// The operator-class one: a class's PARAMETERS are not in pg_opclass, because
+// PostgreSQL keeps them in the attoptions of the INDEX relation's own
+// pg_attribute row for the key's position, so the projection has to reach a
+// particular relation at a particular attribute number. Both halves of that
+// reach can be wrong while the word attoptions is still in the query --
+// `keyatt.attnum = 1::smallint` reports the first key's parameters for every
+// key, `keyatt.attrelid = ix.indrelid` reports the table column's options
+// instead of the index attribute's -- so the fake evaluates the join the
+// projection wrote rather than asking whether a word appears in it. Evaluating
+// it also means accepting every spelling the query's own joins prove equal; see
+// [namesIndexRelation].
+//
+// The comment one: obj_description takes an object AND the catalog its
+// description is filed under, and only the pair answers. See
+// [answerCommentProjection].
+//
+// What the fake cannot prove is that the model matches PostgreSQL; the live
+// guard in integration/gonative/index_attributes_postgres_test.go is what does
+// that.
 
 import (
 	"database/sql/driver"
@@ -471,7 +480,7 @@ func answerOpclassProjection(catalog pgIndexCatalog, query string) (string, erro
 	}
 	entries := make([]string, 0, len(catalog.keyOpclasses))
 	for position, class := range catalog.keyOpclasses {
-		params, err := attoptionsAsProjected(catalog, projection, position+1)
+		params, err := attoptionsAsProjected(catalog, query, projection, position+1)
 		if err != nil {
 			return "", err
 		}
@@ -484,24 +493,40 @@ func answerOpclassProjection(catalog pgIndexCatalog, query string) (string, erro
 }
 
 // answerCommentProjection returns the comment the index_comment projection asks
-// for, decided by WHICH relation it passes to obj_description.
+// for, decided by BOTH arguments it passes to obj_description: which object,
+// and which catalog that object's description is filed under.
 //
 // The index row joins pg_class twice -- once as the index, once as the table --
 // so obj_description(t.oid, 'pg_class') is the same function on the same
-// catalog reaching a different object, and it reads a comment. Answering any
-// projection that says obj_description with the index's comment would let that
-// pass, which is the shape of hole the operator-class projection next door had.
+// catalog reaching a different object, and it reads a comment.
+//
+// The second argument is load-bearing in its own right, and it is the cheaper
+// wrong implementation of the two: obj_description(i.oid, 'pg_index') is the
+// same length, names the catalog the row plainly comes from, and returns NULL,
+// because a comment on any relation -- an index included -- is filed in
+// pg_description under classoid pg_class, never pg_index. A fake that read only
+// the object would answer it with the index's comment and let the whole unit
+// suite pass at exit 0 while the comment was silently dropped on every real
+// server.
 func answerCommentProjection(catalog pgIndexCatalog, query string) (string, error) {
 	projection, ok := selectListItem(query, "index_comment", "FROM pg_index")
 	if !ok {
 		return "", fmt.Errorf("query has no projection aliased %q:\n%s", "index_comment", query)
 	}
-	switch {
-	case !strings.Contains(projection, "obj_description"):
+	object, descriptionCatalog, called := objDescriptionArguments(projection)
+	if !called {
 		return "", nil
-	case strings.Contains(projection, "i.oid"):
+	}
+	// Any other catalog name finds no pg_description row and returns NULL,
+	// which the projection's COALESCE turns into the empty string. That is a
+	// real server's answer, not this fake declining to model something.
+	if descriptionCatalog != "'pg_class'" {
+		return "", nil
+	}
+	switch object {
+	case "i.oid":
 		return catalog.comment, nil
-	case strings.Contains(projection, "t.oid"):
+	case "t.oid":
 		return catalog.tableComment, nil
 	default:
 		return "", fmt.Errorf(
@@ -509,6 +534,24 @@ func answerCommentProjection(catalog pgIndexCatalog, query string) (string, erro
 			projection,
 		)
 	}
+}
+
+// objDescriptionArguments returns the two arguments of the projection's
+// obj_description call, and whether it calls it at all.
+func objDescriptionArguments(projection string) (object, descriptionCatalog string, ok bool) {
+	_, rest, called := strings.Cut(projection, "obj_description(")
+	if !called {
+		return "", "", false
+	}
+	arguments, _, closed := strings.Cut(rest, ")")
+	if !closed {
+		return "", "", false
+	}
+	fields := splitTopLevel(arguments)
+	if len(fields) != 2 {
+		return "", "", false
+	}
+	return strings.TrimSpace(fields[0]), strings.TrimSpace(fields[1]), true
 }
 
 // attoptionsAsProjected returns the attoptions the projection's own join lands
@@ -526,9 +569,9 @@ func answerCommentProjection(catalog pgIndexCatalog, query string) (string, erro
 //   - a correlation that names an attribute number the index does not have,
 //     which a LEFT JOIN answers with NULL and the projection's COALESCE turns
 //     into the empty string.
-func attoptionsAsProjected(catalog pgIndexCatalog, projection string, ordinality int) (string, error) {
+func attoptionsAsProjected(catalog pgIndexCatalog, query, projection string, ordinality int) (string, error) {
 	relation, joined := joinOperand(projection, "keyatt.attrelid")
-	if !joined || relation != "ix.indexrelid" {
+	if !joined || !namesIndexRelation(query, relation) {
 		return "", nil
 	}
 	correlation, correlated := joinOperand(projection, "keyatt.attnum")
@@ -546,6 +589,62 @@ func attoptionsAsProjected(catalog pgIndexCatalog, projection string, ordinality
 		return "", nil
 	}
 	return catalog.keyOpclasses[attnum-1].attoptions, nil
+}
+
+// namesIndexRelation reports whether an expression is the index relation's OID,
+// as the query's OWN joins prove it rather than as one preferred spelling.
+//
+// `keyatt.attrelid = i.oid` and `keyatt.attrelid = ix.indexrelid` are the same
+// join, because the query itself says `JOIN pg_class i ON i.oid =
+// ix.indexrelid`. Comparing the operand to one fixed string made the first of
+// those a red test and the second a green one for a difference no server can
+// observe, which is a guard blocking a correct refactor rather than a defect.
+// Equality is therefore resolved through the outer FROM clause: every `a = b`
+// there is an edge, and any expression in the connected component of
+// `ix.indexrelid` names the index relation.
+//
+// It stays exactly as discriminating as before on the mutants it exists for.
+// `ix.indrelid` and `t.oid` are each other's component and are not connected to
+// `ix.indexrelid` by any join in this query, so both still read the TABLE's
+// attribute and still report no parameters.
+func namesIndexRelation(query, expression string) bool {
+	from := stripSQLLineComments(query)
+	if marker := strings.LastIndex(from, "FROM pg_index"); marker >= 0 {
+		from = from[marker:]
+	}
+
+	equal := map[string][]string{}
+	for line := range strings.SplitSeq(from, "\n") {
+		left, right, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		leftFields, rightFields := strings.Fields(left), strings.Fields(right)
+		if len(leftFields) == 0 || len(rightFields) == 0 {
+			continue
+		}
+		a, b := leftFields[len(leftFields)-1], rightFields[0]
+		equal[a] = append(equal[a], b)
+		equal[b] = append(equal[b], a)
+	}
+
+	seen := map[string]bool{"ix.indexrelid": true}
+	frontier := []string{"ix.indexrelid"}
+	for len(frontier) > 0 {
+		current := frontier[len(frontier)-1]
+		frontier = frontier[:len(frontier)-1]
+		if current == expression {
+			return true
+		}
+		for _, next := range equal[current] {
+			if seen[next] {
+				continue
+			}
+			seen[next] = true
+			frontier = append(frontier, next)
+		}
+	}
+	return false
 }
 
 // joinOperand returns the expression the projection equates with the named
@@ -985,6 +1084,128 @@ func TestPostgresIndexStorageParams(t *testing.T) {
 			params, err := postgresIndexStorageParams(test.reloptions)
 			c.Assert(err, qt.IsNil)
 			c.Assert(params, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// indexQueryForFake returns the SQL the reader actually issues, captured
+// through the fake server, so the tests below reason about the real query
+// rather than about a copy of it that can drift away from the reader.
+func indexQueryForFake(t *testing.T) string {
+	t.Helper()
+	captured := ""
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		captured = query
+		return serveIndexQuery(plainCatalog(), query)
+	})
+	_, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema("public")
+	qt.Assert(t, err, qt.IsNil)
+	return captured
+}
+
+// TestNamesIndexRelation states the equivalence the fake evaluates instead of
+// pinning one spelling.
+//
+// `keyatt.attrelid = i.oid` is the same join as `keyatt.attrelid =
+// ix.indexrelid` -- the query says so itself, in `JOIN pg_class i ON i.oid =
+// ix.indexrelid` -- and a rewrite between them is correct against a real
+// server. Answering "no parameters" for one of the two would fail a refactor
+// over a difference no server can observe. The rows below are the whole point
+// of the pair: both spellings of the INDEX relation are accepted, and both
+// spellings of the TABLE relation are still refused, which is what keeps the
+// wrong-relation mutant red.
+func TestNamesIndexRelation(t *testing.T) {
+	c := qt.New(t)
+	query := indexQueryForFake(t)
+
+	tests := []struct {
+		name       string
+		expression string
+		want       bool
+	}{
+		{
+			name:       "the index relation as pg_index spells it",
+			expression: "ix.indexrelid",
+			want:       true,
+		},
+		{
+			name:       "the index relation as the joined pg_class row spells it",
+			expression: "i.oid",
+			want:       true,
+		},
+		{
+			name:       "the table relation as pg_index spells it",
+			expression: "ix.indrelid",
+			want:       false,
+		},
+		{
+			name:       "the table relation as the joined pg_class row spells it",
+			expression: "t.oid",
+			want:       false,
+		},
+		{
+			name:       "a relation the query joins for something else entirely",
+			expression: "am.oid",
+			want:       false,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(namesIndexRelation(query, test.expression), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestAnswerCommentProjectionReadsTheCatalogArgument pins the second argument
+// of obj_description in the unit layer.
+//
+// A relation's comment is filed in pg_description under classoid pg_class, and
+// an index is a relation. obj_description(i.oid, 'pg_index') is therefore the
+// cheaper wrong implementation with everything going for it -- the same length,
+// and it names the catalog the row visibly comes from -- and it returns NULL.
+// Until this fake read that argument it answered such a projection with the
+// index's comment, so the whole unit suite passed at exit 0 while every real
+// server dropped the comment; only the live guard caught it, and the live guard
+// runs only in integration-tests.
+func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
+	c := qt.New(t)
+
+	catalog := commentedCatalog()
+
+	tests := []struct {
+		name       string
+		projection string
+		want       string
+	}{
+		{
+			name:       "the index relation, filed under pg_class",
+			projection: `COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment`,
+			want:       catalog.comment,
+		},
+		{
+			name:       "the table relation, filed under pg_class",
+			projection: `COALESCE(obj_description(t.oid, 'pg_class'), '') as index_comment`,
+			want:       catalog.tableComment,
+		},
+		{
+			name:       "the index relation, filed under a catalog that holds no descriptions",
+			projection: `COALESCE(obj_description(i.oid, 'pg_index'), '') as index_comment`,
+			want:       "",
+		},
+		{
+			name:       "a projection that asks for no description at all",
+			projection: `'' as index_comment`,
+			want:       "",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			query := "SELECT\n\t" + test.projection + "\nFROM pg_index ix"
+			got, err := answerCommentProjection(catalog, query)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
