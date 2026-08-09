@@ -499,9 +499,13 @@ env {
 }
 ```
 
-`name` selects instances after `for_each` evaluation. A block without `name`
-uses its label, if present. List and tuple instances keep source order; map,
-object, and set instances use stable key order.
+For an unlabeled block selected with `--env`, `name` must depend on `atlas.env`;
+a static name or a name based only on `each.key` does not define that selected
+environment. Labeled blocks use their label as the initial candidate. Every
+expanded instance of an admitted block is evaluated before its resulting name
+is filtered, so an invalid nonmatching instance still fails the command. List
+and tuple instances keep source order; map, object, and set instances use stable
+key order.
 
 `ptah-compat migrate apply --env local` runs every selected instance in that
 order and stops at the first failure. With `--format '{{ json . }}'`, each

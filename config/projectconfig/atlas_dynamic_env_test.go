@@ -186,7 +186,7 @@ func TestParseAtlasCollectionFiltersLabeledEnvByEvaluatedName(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas env "local" not found`)
 }
 
-func TestParseAtlasCollectionSelectsUnlabeledStaticEnvByName(t *testing.T) {
+func TestParseAtlasCollectionRejectsUnlabeledStaticEnvSelection(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {
   name = "local"
@@ -199,17 +199,14 @@ env {
 }
 `)
 
-	configs, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+	_, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
 		EnvName: "local",
 	})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(dynamicEnvSummaries(configs), qt.DeepEquals, []dynamicEnvSummary{
-		{Name: "local", URL: "sqlite://local.db"},
-	})
+	c.Assert(err, qt.ErrorMatches, `atlas env "local" not found`)
 }
 
-func TestParseAtlasCollectionSelectsForEachInstanceByEvaluatedName(t *testing.T) {
+func TestParseAtlasCollectionRejectsUnlabeledEachKeySelection(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {
   for_each = {
@@ -221,6 +218,21 @@ func TestParseAtlasCollectionSelectsForEachInstanceByEvaluatedName(t *testing.T)
 }
 `)
 
+	_, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `atlas env "local" not found`)
+}
+
+func TestParseAtlasCollectionSelectsComputedAtlasEnvName(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env {
+  name = format("%s", atlas.env)
+  url  = "sqlite://local.db"
+}
+`)
+
 	configs, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
 		EnvName: "local",
 	})
@@ -229,6 +241,27 @@ func TestParseAtlasCollectionSelectsForEachInstanceByEvaluatedName(t *testing.T)
 	c.Assert(dynamicEnvSummaries(configs), qt.DeepEquals, []dynamicEnvSummary{
 		{Name: "local", URL: "sqlite://local.db"},
 	})
+}
+
+func TestParseAtlasCollectionEvaluatesRejectedLabeledInstance(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "local" {
+  for_each = {
+    local = "sqlite://local.db"
+    prod  = "sqlite://prod.db"
+  }
+  name = each.key
+  url  = each.key == "prod" ? var.missing : each.value
+}
+`)
+
+	_, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "schemahcl: evaluate env block instance 2")
+	c.Assert(err.Error(), qt.Contains, `no variable named "var"`)
 }
 
 func TestParseAtlasCollectionMergesGlobalPolicyIntoEveryInstance(t *testing.T) {

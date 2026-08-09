@@ -422,9 +422,13 @@ env {
 ```
 
 `atlas.env` is the requested `--env` value. `each.key` and `each.value` expose
-the current list, tuple, map, object, or set entry. A labeled block uses its
-label when `name` is absent. List and tuple instances keep source order; the
-other collection types use stable key order.
+the current list, tuple, map, object, or set entry. For an unlabeled block,
+`name` must depend on `atlas.env`; a static name or a name based only on
+`each.key` does not define the requested environment. A labeled block uses its
+label as the initial candidate when `name` is absent. Every expanded instance
+of an admitted block is evaluated before its resulting name is filtered, so an
+invalid nonmatching instance still fails. List and tuple instances keep source
+order; the other collection types use stable key order.
 
 `ptah-compat migrate apply --env local` runs every selected target sequentially
 and stops at the first failure. A formatted run emits one document per attempted

@@ -683,12 +683,12 @@ func (p atlasParser) parseAtlasEnvInstance(
 			return Config{}, false, err
 		}
 	}
-	if selectedName != "" && name != selectedName {
-		return Config{}, false, nil
-	}
 	cfg, err := p.parseEnv(env, name)
 	if err != nil {
 		return Config{}, false, err
+	}
+	if selectedName != "" && name != selectedName {
+		return Config{}, false, nil
 	}
 	return cfg, true, nil
 }
@@ -2074,7 +2074,7 @@ func selectAtlasEnvBlocks(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock
 
 		dynamic := make([]atlasEnvBlock, 0, 1)
 		for _, env := range envs {
-			if !env.labeled() {
+			if !env.labeled() && atlasEnvNameUsesSelection(env) {
 				dynamic = append(dynamic, env)
 			}
 		}
@@ -2087,6 +2087,23 @@ func selectAtlasEnvBlocks(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock
 		return envs, nil
 	}
 	return nil, fmt.Errorf("atlas.hcl contains multiple env blocks; pass --env")
+}
+
+func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
+	name, ok := env.block.Body.Attributes["name"]
+	if !ok {
+		return false
+	}
+	for _, traversal := range name.Expr.Variables() {
+		if len(traversal) < 2 || traversal.RootName() != "atlas" {
+			continue
+		}
+		attribute, ok := traversal[1].(hcl.TraverseAttr)
+		if ok && attribute.Name == "env" {
+			return true
+		}
+	}
+	return false
 }
 
 func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
