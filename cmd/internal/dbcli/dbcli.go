@@ -42,9 +42,28 @@ func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, ConnectTimeoutFlagName, DefaultConnectTimeout.String(), "Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.")
 }
 
-// RegisterSchemasFlag registers a comma-separated schema allow-list flag.
+// RegisterSchemasFlag registers a comma-separated schema allow-list flag for a
+// verb whose empty value leaves the read at the schema the connection landed
+// in.
 func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.")
+}
+
+// RegisterURLScopedSchemasFlag registers the same flag for the verbs whose
+// empty value lets the database URL decide, through
+// [go.5x5.cz/ptah/internal/schemascope.ReadNames]: a PostgreSQL-family URL that
+// pins a schema with `search_path` is read at that schema, and one that pins
+// none is read across every schema of the connected database.
+//
+// The two spellings exist because the two groups of verbs really do differ, and
+// one help string covering both would be false for one of them. `schema
+// inspect`, `schema diff` and `schema apply` compare against a description that
+// may name any schema of the database, so a read narrower than the URL turns
+// silence into intent (stokaro/ptah#1264, stokaro/ptah#1276); `introspect`,
+// `compare`, `migrate` and the rest keep the narrower default they document.
+func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). "+
+		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema.")
 }
 
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
