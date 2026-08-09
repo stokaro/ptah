@@ -546,14 +546,11 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 	})
 }
 
-// TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern pins the
-// database of a schema-level privilege as the pattern the server stores rather
-// than as a name. Every schema here contains an underscore, which the cases
-// above never do, and that is the whole point: `SHOW GRANTS` prints the
-// escaped `ptah\_test` for the privilege the official MySQL and MariaDB images
-// create for MYSQL_USER on `ptah_test`, and a name comparison both refuses a
-// user who holds TRIGGER and misses the REVOKE that took it away.
-func TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern(t *testing.T) {
+// TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema verifies the
+// behavior that remains safe under both values of MySQL's partial_revokes: an
+// escaped literal name is decoded, but an unescaped wildcard is not inferred to
+// cover the selected database.
+func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -575,16 +572,16 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern(t *testing.T) 
 			want:   true,
 		},
 		{
-			name:   "trailing wildcard covers the database",
+			name:   "trailing wildcard fails closed",
 			schema: "ptah_test",
 			grants: []string{"GRANT TRIGGER ON `ptah%`.* TO `ptah`@`%`"},
-			want:   true,
+			want:   false,
 		},
 		{
-			name:   "unescaped underscore matches any single character",
+			name:   "unescaped underscore wildcard fails closed",
 			schema: "ptahXtest",
 			grants: []string{"GRANT TRIGGER ON `ptah_test`.* TO `ptah`@`%`"},
-			want:   true,
+			want:   false,
 		},
 		{
 			name:   "escaped percent is not a wildcard",

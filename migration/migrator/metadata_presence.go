@@ -277,70 +277,7 @@ func mysqlPrivilegeStatementCoversSchema(tokens []lexer.Token, verb, schema stri
 		return true
 	}
 	grantedSchema, identifier := mysqlGrantSchemaValue(tokens[on+1])
-	return identifier && mysqlGrantSchemaPatternMatches(grantedSchema, schema)
-}
-
-// mysqlGrantSchemaPatternMatches reports whether the database of a schema-level
-// GRANT or REVOKE covers schema.
-//
-// A schema-level privilege stores its database as a pattern, not as a name:
-// `_` matches one character, `%` matches any run, and a backslash escapes
-// either. Comparing the two as plain strings therefore answers a different
-// question than the server does, and it answers it wrongly in the ordinary
-// case. Granting on a database whose name contains an underscore is documented
-// to require escaping it, the official MySQL and MariaDB container images do
-// exactly that when they provision MYSQL_USER, and `SHOW GRANTS` then prints
-// `ptah\_test` for a privilege that covers `ptah_test`. Reading that as a name
-// makes Ptah refuse tx-mode file for a user who does hold TRIGGER.
-func mysqlGrantSchemaPatternMatches(pattern, schema string) bool {
-	patternRunes := []rune(pattern)
-	schemaRunes := []rune(schema)
-	patternIndex, schemaIndex := 0, 0
-	wildcard, wildcardMatch := -1, 0
-	for schemaIndex < len(schemaRunes) {
-		if consumed, matched := mysqlGrantPatternStep(patternRunes, patternIndex, schemaRunes[schemaIndex]); matched {
-			patternIndex += consumed
-			schemaIndex++
-			continue
-		}
-		if patternIndex < len(patternRunes) && patternRunes[patternIndex] == '%' {
-			wildcard = patternIndex
-			wildcardMatch = schemaIndex
-			patternIndex++
-			continue
-		}
-		if wildcard < 0 {
-			return false
-		}
-		// The last `%` matched too little: give it one more character and retry
-		// the rest of the pattern from there.
-		patternIndex = wildcard + 1
-		wildcardMatch++
-		schemaIndex = wildcardMatch
-	}
-	for patternIndex < len(patternRunes) && patternRunes[patternIndex] == '%' {
-		patternIndex++
-	}
-	return patternIndex == len(patternRunes)
-}
-
-// mysqlGrantPatternStep reports how many pattern runes a single schema rune
-// consumes, and whether it matches at all. A `%` never matches here: it is the
-// backtracking point and belongs to the caller.
-func mysqlGrantPatternStep(pattern []rune, index int, schemaRune rune) (consumed int, matched bool) {
-	if index >= len(pattern) {
-		return 0, false
-	}
-	if pattern[index] == '\\' && index+1 < len(pattern) {
-		return 2, pattern[index+1] == schemaRune
-	}
-	if pattern[index] == '_' {
-		return 1, true
-	}
-	if pattern[index] == '%' {
-		return 0, false
-	}
-	return 1, pattern[index] == schemaRune
+	return identifier && grantedSchema == schema
 }
 
 // mysqlGrantSchemaValue accepts ANSI_QUOTES output because SHOW GRANTS uses

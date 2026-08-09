@@ -229,6 +229,11 @@ func TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect(t *test
 	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, adminURL)
 }
 
+func TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted(t *testing.T) {
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runMySQLEscapedDatabaseGrantIsAccepted(t, adminURL)
+}
+
 func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 
@@ -1236,6 +1241,50 @@ func runMySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T, adminURL stri
 	}
 }
 
+func runMySQLEscapedDatabaseGrantIsAccepted(t *testing.T, adminURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, adminConn)
+
+	database := fmt.Sprintf("p887_test_%d", time.Now().UnixNano())
+	_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+database)
+	c.Assert(err, qt.IsNil)
+	defer issue887DropDatabase(t, adminConn, database)
+	username, password := issue887CreateUser(t, adminConn)
+	defer issue887DropUser(t, adminConn, username)
+	_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+		"GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'",
+		sqlident.Quote("mysql", database),
+		username,
+	))
+	c.Assert(err, qt.IsNil)
+
+	limitedURL := issue887ReplaceMySQLDatabase(
+		t,
+		issue887ReplaceMySQLCredentials(t, adminURL, username, password),
+		database,
+	)
+	conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names("mysql_escaped_grant")
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"escaped database grant",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+}
+
 func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
 	t.Helper()
 
@@ -1784,6 +1833,14 @@ func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password st
 	_, endpoint, found := strings.Cut(remainder, "@")
 	qt.Assert(t, found, qt.IsTrue)
 	return fmt.Sprintf("%s://%s:%s@%s", scheme, username, password, endpoint)
+}
+
+func issue887ReplaceMySQLDatabase(t *testing.T, rawURL, database string) string {
+	t.Helper()
+
+	slash := strings.LastIndex(rawURL, "/")
+	qt.Assert(t, slash, qt.Not(qt.Equals), -1)
+	return rawURL[:slash+1] + database
 }
 
 func issue887Migrator(
