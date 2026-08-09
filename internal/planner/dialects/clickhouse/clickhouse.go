@@ -26,8 +26,10 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -115,8 +117,9 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 }
 
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	for _, td := range diff.TablesModified {
-		structName := lookupStructName(generated, td.TableName)
+		structName := lookupStructName(generated, td.TableName, semantics)
 		if structName == "" {
 			result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find struct for table %s; skipping modifications", td.TableName)))
 			continue
@@ -221,13 +224,16 @@ func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff) []ast.
 	return result
 }
 
-func lookupStructName(generated *goschema.Database, tableName string) string {
-	for _, t := range generated.Tables {
-		if t.QualifiedName() == tableName {
-			return t.StructName
-		}
+func lookupStructName(
+	generated *goschema.Database,
+	tableName string,
+	semantics identifier.Semantics,
+) string {
+	table := objectlookup.Qualified(generated.Tables, tableName, semantics)
+	if table == nil {
+		return ""
 	}
-	return ""
+	return table.StructName
 }
 
 func lookupField(generated *goschema.Database, structName, columnName string) *goschema.Field {
