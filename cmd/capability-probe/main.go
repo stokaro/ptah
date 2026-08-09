@@ -4,7 +4,14 @@
 // It answers one question per capability: does the server actually behave the
 // way core/platform/capability says it does? A disagreement exits non-zero. So
 // does a run that decided nothing — a probe that skipped every row must not
-// read as a probe that passed every row.
+// read as a probe that passed every row — and so does a run that decided fewer
+// rows than the dialect's plan promised to answer. The report's summary line
+// prints the count and that floor side by side, because "decided 22" alone
+// cannot tell an intact run from an eroded one.
+//
+// A server on a release line cells.go does not declare exits non-zero too, and
+// so does one on a line declared without a measured preset: both are gaps the
+// probe names rather than papers over.
 //
 //	capability-probe --db-url postgres://user:pw@localhost:5432/db
 //	capability-probe --db-url mysql://root:pw@localhost:3306/db --evidence

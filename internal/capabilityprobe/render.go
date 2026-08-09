@@ -113,9 +113,12 @@ func writeSessionDeltas(w io.Writer, r *Report) {
 	fmt.Fprintf(w, "  session      pinned session changed %s\n", strings.Join(names, ", "))
 }
 
+// writeSummary prints the counts and the floor the run had to clear. The floor
+// belongs on the same line as the count it is compared against: a reader who
+// sees "decided 22" cannot tell an intact run from an eroded one without it.
 func writeSummary(w io.Writer, r *Report) {
-	fmt.Fprintf(w, "\nsummary: %d rows — %d AGREES, %d DISAGREES, %d UNDECIDABLE; decided %d\n",
-		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Undecidable), r.Decided())
+	fmt.Fprintf(w, "\nsummary: %d rows — %d AGREES, %d DISAGREES, %d UNDECIDABLE; decided %d, floor %d\n",
+		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Undecidable), r.Decided(), r.floor())
 }
 
 func writeAnnotations(w io.Writer, r *Report) {

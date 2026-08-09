@@ -215,7 +215,10 @@ The newest measured line per refined dialect:
 
 PostgreSQL 18 therefore resolves saturated even though the integration matrix
 already runs `postgres:18`: Ptah has no measured PostgreSQL 18 capability line
-yet, so 18 is planned with the PostgreSQL 17 preset and says so.
+yet, so 18 is planned with the PostgreSQL 17 preset and says so. MySQL is in the
+same position for the same reason — the matrix runs `mysql:26.7`, which is the
+`26.7.0` in the examples above — so two of the three refined dialects are
+currently described to their own CI by a stand-in.
 
 Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
@@ -233,9 +236,9 @@ server version, and the line it was planned as; an unparseable version is
 recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
 deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
 emits nothing, and connecting to a supported server is a clean run. The
-integration matrix runs `postgres:18`, so a saturated resolution there fires on
-every connection — a warning would be noise on every command rather than a
-diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
+integration matrix runs `postgres:18` and `mysql:26.7`, so a saturated
+resolution fires on every connection to either — a warning would be noise on
+every command rather than a diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
 `NewestMeasured` from `ResolveServerVersion` directly.
 
 Surfacing an unrefined version to the user on a channel of its own is
