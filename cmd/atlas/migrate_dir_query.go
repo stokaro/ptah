@@ -69,43 +69,28 @@ func atlasDirFormatSpelling(query url.Values) string {
 	return "--dir-format"
 }
 
-// checkWritingVerbDirQuery refuses a foreign layout that the `--dir` QUERY
-// named, for the one verb that WRITES into the directory: `migrate diff`.
+// WHERE THE FOREIGN-LAYOUT REFUSAL WENT. A `checkWritingVerbDirQuery` used to
+// stand here and refuse a foreign layout the `--dir` QUERY named, for the one
+// verb that WRITES into the directory: `migrate diff`. It was the strict side —
+// exit 1 where the community binary exits 0 — and it was there because writing
+// a foreign layout is a different problem from reading one. The reading verbs
+// (hash, validate, lint, status, set) convert a layout in memory and report on
+// it, which is what #992, #1002 and #1133 built; `migrate diff` has to write
+// reverse SQL as well as forward SQL, in five different shapes, and planned no
+// reverse at all.
 //
-// `migrate new` used to share this refusal. It no longer calls here at all —
-// it grew a converted path in stokaro/ptah#845 and honors `?format=goose`
-// today, exit 0 with files in that layout, matching the community binary.
+// stokaro/ptah#1013 closed that. `migration/generator.ReverseSchemaDiff` is now
+// injected into the writer as [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanReverse],
+// the plan carries both directions, and each layout composes its own files. The
+// refusal is gone because the capability it stood in for arrived, which is the
+// only reason to remove a refusal of this kind.
 //
-// Writing a foreign layout is a different problem from reading one. The reading
-// verbs — hash, validate, lint, status, set — convert a foreign layout in
-// memory and report on it, which is what #992, #1002 and #1133 built. Measured
-// against the pinned community binary v1.3.0 on 2026-08-07, `migrate diff` in a
-// foreign layout writes reverse SQL as well as forward SQL, in five different
-// shapes: golang-migrate and flyway put it in a second file, goose and dbmate
-// put it under a directive in the same file, and liquibase interleaves one
-// `--rollback:` line per forward statement. Ptah's `migrate diff` plans forward
-// statements only, so honoring the query here would write a directory whose
-// rollback half is missing or empty. Refusing is the strict side: it never
-// exits 0 where the community binary exits 1. stokaro/ptah#1013 tracks the gap.
-//
-// The refusal is limited to the query spelling deliberately. `--dir-format`
-// naming a foreign layout is refused too, but AFTER the atlas.sum gate, because
-// that is where the community binary refuses it: on an unhashed directory
-// `migrate diff demo --dir file://d --dir-format goose` prints the checksum
-// error there, not a format complaint, while `--dir-format ATLAS` — a value it
-// cannot parse at all — prints `unknown dir format` ahead of the gate.
-//
-// An empty `?format=` value selects the native Atlas layout and passes, which
-// is what the community binary does with it too.
-func checkWritingVerbDirQuery(format atlasmigrateimport.Format, query url.Values) error {
-	if atlasmigrate.ReadsNativeAtlasDir(format) || !atlasmigrate.DirFormatFromQuery(query) {
-		return nil
-	}
-	return fmt.Errorf(
-		"Atlas accepts ?format=%s, but Ptah does not implement that directory format for this command yet",
-		format,
-	)
-}
+// What did NOT change is the position of the two checks around it:
+// [resolveWritingVerbDirFormat] still refuses an unparsable value ahead of the
+// atlas.sum gate, and a parsable foreign one still reaches the gate first —
+// measured on the pinned community binary v1.3.0, an unhashed directory with
+// `--dir-format goose` prints the checksum error there, not a format complaint,
+// while `--dir-format ATLAS` prints `unknown dir format` ahead of the gate.
 
 // dirQueryStrictEnvVar turns the report below into a refusal.
 //
