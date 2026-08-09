@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // TestExcludeDatabaseReport_NamesSelectorsThatMatchedNothing is the emptiness
@@ -181,25 +182,61 @@ func TestUnmatchedAcrossStates_IntersectsSides(t *testing.T) {
 // binary.
 func TestAllowUnmatchedExclude_ReadsTheOptIn(t *testing.T) {
 	tests := []struct {
-		name  string
-		value string
-		want  bool
+		name        string
+		env         func(testing.TB)
+		want        bool
+		wantMessage string
 	}{
-		{name: "unset keeps the safe default", value: "", want: false},
-		{name: "false keeps the safe default", value: "false", want: false},
-		{name: "unparsable keeps the safe default", value: "maybe", want: false},
-		{name: "1 opts in", value: "1", want: true},
-		{name: "true opts in", value: "true", want: true},
+		{
+			name: "unset keeps the safe default",
+			env:  envbooltest.Unset(atlasfilter.AllowUnmatchedExcludeEnvVar),
+		},
+		{
+			name: "false keeps the safe default",
+			env:  envbooltest.Set(atlasfilter.AllowUnmatchedExcludeEnvVar, "false"),
+		},
+		{
+			name:        "unparsable is refused",
+			env:         envbooltest.Set(atlasfilter.AllowUnmatchedExcludeEnvVar, "maybe"),
+			wantMessage: `invalid boolean value "maybe" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
+		},
+		{
+			name:        "an exported empty value is refused",
+			env:         envbooltest.Set(atlasfilter.AllowUnmatchedExcludeEnvVar, ""),
+			wantMessage: `invalid boolean value "" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
+		},
+		{
+			name: "1 opts in",
+			env:  envbooltest.Set(atlasfilter.AllowUnmatchedExcludeEnvVar, "1"),
+			want: true,
+		},
+		{
+			name: "true opts in",
+			env:  envbooltest.Set(atlasfilter.AllowUnmatchedExcludeEnvVar, "true"),
+			want: true,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv(atlasfilter.AllowUnmatchedExcludeEnvVar, test.value)
+			test.env(t)
 
-			c.Assert(atlasfilter.AllowUnmatchedExclude(), qt.Equals, test.want)
+			got, err := atlasfilter.AllowUnmatchedExclude()
+
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(errMessage(err), qt.Equals, test.wantMessage)
 		})
 	}
+}
+
+// errMessage renders an error for comparison against a table row without a
+// branch in the test body.
+func errMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // TestUnmatchedExcludeError_NamesEverySelector keeps the diagnostic quoting the

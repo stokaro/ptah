@@ -156,6 +156,20 @@ func computeApplyPlan(
 	if len(opts.ToURLs) == 0 && opts.Desired == nil {
 		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
 	}
+	// Resolved here, before the desired state is loaded and before the target is
+	// read, so a malformed value refuses the run with nothing planned, nothing
+	// executed and nothing written. Resolving it beside the refusal below would
+	// hide the typo on every run whose --exclude selectors all matched -- the
+	// healthy pipeline -- and surface it only on the run it was set to govern.
+	// See stokaro/ptah#1334.
+	allowUnmatched := false
+	if opts.RefuseUnmatchedExclude {
+		allowed, err := atlasfilter.AllowUnmatchedExclude()
+		if err != nil {
+			return applyComputation{}, err
+		}
+		allowUnmatched = allowed
+	}
 
 	scope := atlasfilter.Scope{
 		Schemas:       opts.Schemas,
@@ -186,8 +200,8 @@ func computeApplyPlan(
 	// message restores the permissive one. Callers that only compute a plan
 	// say so instead.
 	unmatched := atlasfilter.UnmatchedAcrossStates(currentReport, desiredReport)
-	if opts.RefuseUnmatchedExclude {
-		if err := refuseUnmatchedExclude(opts.Diagnostics, unmatched); err != nil {
+	if opts.RefuseUnmatchedExclude && !allowUnmatched {
+		if err := refuseUnmatchedExclude(unmatched); err != nil {
 			return applyComputation{}, err
 		}
 	} else {

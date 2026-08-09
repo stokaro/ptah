@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // resolveWritingVerbDirFormat resolves the migration directory layout the one
@@ -131,16 +131,14 @@ const dirQueryStrictEnvVar = "PTAH_STRICT_DIR_QUERY"
 // atlasDirQueryStrictFromEnv resolves whether an ignored `--dir` query key is
 // refused rather than reported.
 func atlasDirQueryStrictFromEnv() (bool, error) {
-	value, ok := os.LookupEnv(dirQueryStrictEnvVar)
-	if !ok || value == "" {
-		return false, nil
-	}
-	strict, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("invalid boolean value %q for %s", value, dirQueryStrictEnvVar)
-	}
-	return strict, nil
+	return dirQueryStrict.Resolve()
 }
+
+// dirQueryStrict is the declaration of the variable, made once, on the surface
+// that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly empty value
+// is now refused here too, which is stokaro/ptah#1334's one change to this
+// reader.
+var dirQueryStrict = envbool.New(dirQueryStrictEnvVar, false)
 
 // reportIgnoredDirQuery names the `--dir` URL query keys the run took no
 // meaning from, on every verb that reads that query.

@@ -112,6 +112,14 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err := refuseAtlasUIFlag(cmd, "schema", "inspect", atlasSchemaWebFlag()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The variable this verb owns is resolved here, before the project file is
+	// read and before anything is connected to, so a malformed value is refused
+	// on every inspect rather than on the ones whose schema happens to contain a
+	// block the default would omit. See stokaro/ptah#1334.
+	omitRefusedBlocks, err := atlasInspectOmitsRefusedBlocks()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	mode := ignoreMissingEnvSelection
 	if needsAtlasSchemaInspectConfig(cmd) {
@@ -171,7 +179,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames:  true,
-		OmitAtlasRefusedBlocks: atlasInspectOmitsRefusedBlocks(),
+		OmitAtlasRefusedBlocks: omitRefusedBlocks,
 		Vars:                   schemaVars,
 	})
 	if err != nil {
@@ -202,8 +210,12 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 //
 // Native `ptah schema inspect` never calls this and always describes every
 // construct Ptah models.
-func atlasInspectOmitsRefusedBlocks() bool {
-	return !atlashclrender.KeepAtlasRefusedBlocks()
+func atlasInspectOmitsRefusedBlocks() (bool, error) {
+	keep, err := atlashclrender.KeepAtlasRefusedBlocks()
+	if err != nil {
+		return false, err
+	}
+	return !keep, nil
 }
 
 func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {

@@ -153,6 +153,18 @@ schemas or migrations, native `ptah` reaches it under native names.
 
 ### The variables
 
+Every variable below is a boolean, and they all read the same way: leaving it
+unset selects the default described here, a valid boolean is honored, and
+anything else — including an exported empty value — fails the command before it
+does any work, naming the variable and the value you typed. The accepted
+spellings and the error shape are documented once, in
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
+The value is read on every run of the command that owns it, not only on the runs
+that would have used the enabled behavior, so `PTAH_ATLAS_LINT_ALL_VERSIONS=yes`
+in a CI environment file fails the next run rather than the next run that
+happens to omit `--latest`.
+
 **`PTAH_ATLAS_INSPECT_ALL_BLOCKS`** — by default, `ptah-compat schema inspect`
 leaves an `extension`, `sequence` or `policy` block out of PostgreSQL HCL
 output when nothing else in the document depends on it, and reports each
@@ -200,12 +212,12 @@ no opt-in.
 `format` is ignored, exactly as the community CLI ignores it, and named on
 standard error so a misspelled `?fromat=goose` does not quietly read the
 directory in the wrong layout. Set it to `1` and such a key is a refusal
-instead, for a pipeline that wants a typo to stop the run. An invalid value is
-an error rather than a silent "off": the value is read on every run of the eight
-verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`,
-`set`, `status` and `validate` — whether or not the URL carries a query at all,
-so `PTAH_STRICT_DIR_QUERY=nope` in a CI environment file fails the next run
-rather than the next typo. `migrate checkpoint`, `down`, `edit`, `rebase`, `rm`
+instead, for a pipeline that wants a typo to stop the run. The value is read on
+every run of the eight verbs that accept a `--dir` query — `apply`, `diff`,
+`hash`, `lint`, `new`, `set`, `status` and `validate` — whether or not the URL
+carries a query at all, so `PTAH_STRICT_DIR_QUERY=nope` in a CI environment file
+fails the next run rather than the next typo.
+`migrate checkpoint`, `down`, `edit`, `rebase`, `rm`
 and `test` refuse a `--dir` query outright, so neither the note nor this
 variable applies there.
 

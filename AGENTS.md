@@ -50,6 +50,39 @@ The shape that satisfies both:
 "CE refuses it, so we stopped emitting it" is an incomplete answer. The complete
 one names where the capability still lives.
 
+### Boolean `PTAH_*` environment variables are strict
+
+Absence selects the documented default; a present value must parse as a boolean
+or the owning command refuses before doing work. **Never convert a boolean
+environment parse error into the default value.**
+
+The four states are distinguishable and stay that way. `os.Getenv` answers the
+empty string for an absent variable and for `PTAH_X=` alike, which is how a typo
+in a CI environment file, a container manifest or a systemd unit became a silent
+default; use `os.LookupEnv`, and treat an exported empty value as the
+configuration error it is.
+
+In practice that means: declare the variable once with
+`envbool.New(name, defaultValue)` in the package that owns it, resolve it through
+`Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a feature
+call site. `internal/envbool` holds the one grammar (exactly
+`strconv.ParseBool`'s spellings, nothing trimmed) and the one error shape
+(`invalid boolean value %q for %s`); `cmd/internal/envboolguard` refuses a new
+tree that reintroduces the pattern.
+
+Resolve the variables a command owns **before** its early returns. A malformed
+value must not stay dormant because this invocation did not reach the branch
+where the value would have mattered -- that branch is the one the operator
+already knows they changed, and the runs that never reach it are the whole of a
+healthy pipeline. Validate on every invocation of the command or subsystem that
+recognizes the variable, and on no others: an invalid PostgreSQL-inspection
+variable must not break an unrelated SQLite command.
+
+Every boolean `PTAH_*` variable today opts IN to the more permissive side, so a
+typo lands on the strict default and fails closed. If one ever defaults to the
+permissive side, a typo on it fails OPEN and this stops being a usability rule.
+Do not add one.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own

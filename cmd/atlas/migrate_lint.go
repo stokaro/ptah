@@ -3,8 +3,6 @@ package atlas
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
@@ -96,6 +95,21 @@ func runAtlasMigrateLint(
 	cmd *cobra.Command,
 	opts atlasMigrateLintOptions,
 ) (runErr error) {
+	// Both variables this verb owns are resolved first, before the project file
+	// is opened and before any directory or dev database is touched. Resolving
+	// them at their use sites left each one dormant on the runs that did not need
+	// it -- a lint that named a scope never read PTAH_ATLAS_LINT_ALL_VERSIONS,
+	// and a lint carrying --dev-url never read PTAH_ATLAS_LINT_WITHOUT_DEV_URL --
+	// so a typo in either survived every healthy run of the pipeline that
+	// exported it. See stokaro/ptah#1334.
+	lintAllVersions, err := atlasMigrateLintAllVersions()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	withoutDevURL, err := lintWithoutDevURL()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	project, loaded, err := openAtlasProjectForCommand(cmd, ignoreMissingEnvSelection)
 	if err != nil {
@@ -154,8 +168,10 @@ func runAtlasMigrateLint(
 	// the same invocation carrying a tampered atlas.sum answers it too. An
 	// atlas.hcl env that supplies `dev` satisfies it there and here, which is why
 	// this reads the merged value rather than the flag.
-	if err := requireAtlasMigrateLintDevURL(opts.devURL); err != nil {
-		return cmdutil.Fail(cmd, err)
+	if !withoutDevURL {
+		if err := requireAtlasMigrateLintDevURL(opts.devURL); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if err := validateAtlasMigrateLintOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -169,8 +185,10 @@ func runAtlasMigrateLint(
 	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "lint", opts.dirFormat, nil); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := requireAtlasMigrateLintScope(cmd, opts, projectCfg); err != nil {
-		return cmdutil.Fail(cmd, err)
+	if !lintAllVersions {
+		if err := requireAtlasMigrateLintScope(cmd, opts, projectCfg); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if formatOutput {
 		if err := validateAtlasMigrateLintFormat(opts.format); err != nil {
@@ -368,11 +386,15 @@ func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {
 // [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 const atlasMigrateLintAllVersionsEnvVar = "PTAH_ATLAS_LINT_ALL_VERSIONS"
 
-// atlasMigrateLintAllVersions reports whether the opt-in is set to a true
-// boolean. Unset, empty, false and unparsable values all keep the default.
-func atlasMigrateLintAllVersions() bool {
-	all, err := strconv.ParseBool(os.Getenv(atlasMigrateLintAllVersionsEnvVar))
-	return err == nil && all
+// atlasLintAllVersions is the declaration of the variable, made once, on the
+// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false)
+
+// atlasMigrateLintAllVersions reports whether the opt-in lints the whole
+// directory. Unset keeps the default and a valid false spelling keeps it too; an
+// empty or unparsable value is a configuration error (stokaro/ptah#1334).
+func atlasMigrateLintAllVersions() (bool, error) {
+	return atlasLintAllVersions.Resolve()
 }
 
 // atlasMigrateLintScopeGiven reports whether anything named the set of versions
@@ -437,7 +459,7 @@ func requireAtlasMigrateLintScope(
 	opts atlasMigrateLintOptions,
 	projectCfg projectconfig.Config,
 ) error {
-	if atlasMigrateLintScopeGiven(cmd, opts, projectCfg) || atlasMigrateLintAllVersions() {
+	if atlasMigrateLintScopeGiven(cmd, opts, projectCfg) {
 		return nil
 	}
 	return errors.New("--latest or --git-base is required")
@@ -459,22 +481,25 @@ func requireAtlasMigrateLintScope(
 // is stokaro/ptah#1231 case 2, which #1307 explicitly left open rather than
 // widening into itself.
 func requireAtlasMigrateLintDevURL(devURL string) error {
-	if strings.TrimSpace(devURL) != "" || lintWithoutDevURL() {
+	if strings.TrimSpace(devURL) != "" {
 		return nil
 	}
 	return errors.New(`required flag(s) "dev-url" not set`)
 }
 
-// lintWithoutDevURL reports whether the opt-in variable is set to a true
-// boolean value. Unset, empty, false and unparsable values all keep the
-// default, mirroring how the other PTAH_* opt-ins on this surface read theirs.
+// atlasLintWithoutDevURL is the declaration of the variable, made once, on the
+// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false)
+
+// lintWithoutDevURL reports whether the opt-in asks for Ptah's database-free
+// analysis. Unset keeps the requirement and a valid false spelling keeps it too;
+// an empty or unparsable value is a configuration error (stokaro/ptah#1334).
 //
 // It relaxes ONLY the dev-database requirement. A run with no scope is still
 // refused; [atlasMigrateLintAllVersions] is the separate opt-in for that, and
 // neither variable implies the other.
-func lintWithoutDevURL() bool {
-	allow, err := strconv.ParseBool(os.Getenv(atlasLintWithoutDevURLEnvVar))
-	return err == nil && allow
+func lintWithoutDevURL() (bool, error) {
+	return atlasLintWithoutDevURL.Resolve()
 }
 
 func validateAtlasMigrateLintFormat(format string) error {

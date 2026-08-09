@@ -601,10 +601,15 @@ func TestCompatMigrateLintScopeOptIn(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "-- 1 version ok")
 }
 
-// TestCompatMigrateLintScopeOptInIgnoresNonBoolean keeps the opt-in from being
-// a check that anything at all disables. Unset, empty, false and unparsable
-// values all keep the default refusal.
-func TestCompatMigrateLintScopeOptInIgnoresNonBoolean(t *testing.T) {
+// TestCompatMigrateLintScopeOptInRefusesANonBoolean keeps the opt-in from being
+// a check that anything at all disables, and from being one a typo disables in
+// silence.
+//
+// Before stokaro/ptah#1334 `yes please` produced `--latest or --git-base is
+// required`, which reads to the operator as "the opt-in does not cover this
+// run" rather than "the opt-in was never read". The refusal now names the
+// variable and the value the operator typed.
+func TestCompatMigrateLintScopeOptInRefusesANonBoolean(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
@@ -623,7 +628,72 @@ func TestCompatMigrateLintScopeOptInIgnoresNonBoolean(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "--latest or --git-base is required", qt.Commentf("%s", out.String()))
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "yes please" for PTAH_ATLAS_LINT_ALL_VERSIONS`,
+		qt.Commentf("%s", out.String()))
+}
+
+// TestCompatMigrateLintScopeOptInRefusesEvenWhenTheScopeIsNamed is the
+// discriminating case for "validate before control-flow shortcuts".
+//
+// `--latest 1` names a scope, so the opt-in's value cannot change what this run
+// does. That is precisely the run a pipeline makes every day, and resolving the
+// variable at its use site left the typo dormant on all of them.
+func TestCompatMigrateLintScopeOptInRefusesEvenWhenTheScopeIsNamed(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "yes please")
+	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", "file://migrations",
+		"--dev-url", "sqlite://file?mode=memory",
+		"--latest", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "yes please" for PTAH_ATLAS_LINT_ALL_VERSIONS`,
+		qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Not(qt.Contains), "1 version ok",
+		qt.Commentf("the refusal has to land before the report is produced"))
+}
+
+// TestCompatMigrateLintDevURLOptInRefusesEvenWhenADevURLIsGiven is the same
+// discriminating case for the other lint variable. A run carrying --dev-url
+// never consults PTAH_ATLAS_LINT_WITHOUT_DEV_URL, and that is every healthy run.
+func TestCompatMigrateLintDevURLOptInRefusesEvenWhenADevURLIsGiven(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "tru")
+	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", "file://migrations",
+		"--dev-url", "sqlite://file?mode=memory",
+		"--latest", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "tru" for PTAH_ATLAS_LINT_WITHOUT_DEV_URL`,
+		qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Not(qt.Contains), "1 version ok",
+		qt.Commentf("the refusal has to land before the report is produced"))
 }
 
 // writeAtlasProjectFile writes an atlas.hcl whose migration directory is chosen

@@ -2,14 +2,13 @@ package atlashclrender
 
 import (
 	"fmt"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // Top-level HCL block spellings an inspected render can emit. Only the ones a
@@ -44,13 +43,19 @@ const (
 // surface rather than being told to rewrite against native `ptah`.
 const KeepAtlasRefusedBlocksEnvVar = "PTAH_ATLAS_INSPECT_ALL_BLOCKS"
 
-// KeepAtlasRefusedBlocks reports whether the opt-in variable is set to a true
-// boolean value. Unset, empty, false and unparsable values all keep the
-// default, mirroring how [go.5x5.cz/ptah/internal/atlassource] reads its own
-// opt-in.
-func KeepAtlasRefusedBlocks() bool {
-	keep, err := strconv.ParseBool(os.Getenv(KeepAtlasRefusedBlocksEnvVar))
-	return err == nil && keep
+// keepAtlasRefusedBlocks is the declaration of the variable, made once, in the
+// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var keepAtlasRefusedBlocks = envbool.New(KeepAtlasRefusedBlocksEnvVar, false)
+
+// KeepAtlasRefusedBlocks reports whether the opt-in restores every block Ptah
+// models.
+//
+// Unset keeps the default and a valid false spelling keeps it too; an empty or
+// unparsable value is a configuration error, because a render that silently
+// omitted an extension after an operator believed they had asked for it is the
+// one answer this must never give (stokaro/ptah#1334).
+func KeepAtlasRefusedBlocks() (bool, error) {
+	return keepAtlasRefusedBlocks.Resolve()
 }
 
 // atlasRefusedBlockTypes lists, per dialect, the top-level block types the

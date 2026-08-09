@@ -169,6 +169,13 @@ reads are untouched, so a `pg_` name still fails at the server whatever you set
 it to. It is an environment variable rather than a flag because `ptah-compat`
 registers exactly the flags the Atlas community CLI registers.
 
+Both variables on this page are booleans and read the same way: unset selects
+the default described above, a valid boolean is honored, and anything else fails
+the command before it reads or compares anything — including on a run that
+declares no reserved role and leaves no role out, which is what makes a typo
+visible before the day it would have mattered. See
+[Boolean environment variables](../../reference/configuration/#boolean-environment-variables).
+
 :::caution
 Ptah never drops a role automatically. A role that disappears from the desired
 schema stays in the database, because roles may be shared with DBAs,
