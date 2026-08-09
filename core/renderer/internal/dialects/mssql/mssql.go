@@ -728,21 +728,37 @@ func unquoteIdentifier(identifier string) string {
 	return identifier
 }
 
+// splitQualifiedIdentifier splits on the dots that separate name parts while
+// leaving dots inside a bracketed, double-quoted or backtick-quoted part alone.
+// A doubled closing bracket is SQL Server's escape for a literal bracket and
+// does not end the bracketed part.
+//
+// Each part is a SLICE of the input, never a character-by-character copy. The
+// delimiters this scan recognizes are ASCII, and UTF-8 is self synchronizing --
+// no byte of a multi-byte sequence is ever below 0x80 -- so a byte scan can
+// find them without decoding, and slicing hands every other byte back exactly
+// as it arrived. The previous form accumulated `string(character)` from a byte,
+// which re-encodes each byte as its own code point: `Ä` (C3 84) came back out
+// as `Ã` plus U+0084, renaming every non-ASCII object. See stokaro/ptah#1352.
+//
+// Decoding to runes would fix that case and introduce another: text that is not
+// valid UTF-8 -- a Latin-1 schema file, say -- decodes to U+FFFD per bad byte
+// and would be rewritten just as silently. A splitter owes its caller the bytes
+// it was given.
 func splitQualifiedIdentifier(identifier string) []string {
-	parts := []string{""}
+	var parts []string
+	start := 0
 	inBrackets := false
 	inQuotes := false
 	inBackticks := false
 	for i := 0; i < len(identifier); i++ {
-		character := identifier[i]
-		switch character {
+		switch identifier[i] {
 		case '[':
 			if !inQuotes && !inBackticks {
 				inBrackets = true
 			}
 		case ']':
 			if inBrackets && i+1 < len(identifier) && identifier[i+1] == ']' {
-				parts[len(parts)-1] += "]]"
 				i++
 				continue
 			}
@@ -757,13 +773,12 @@ func splitQualifiedIdentifier(identifier string) []string {
 			}
 		case '.':
 			if !inBrackets && !inQuotes && !inBackticks {
-				parts = append(parts, "")
-				continue
+				parts = append(parts, identifier[start:i])
+				start = i + 1
 			}
 		}
-		parts[len(parts)-1] += string(character)
 	}
-	return parts
+	return append(parts, identifier[start:])
 }
 
 func unsupportedFeaturef(format string, args ...any) error {
