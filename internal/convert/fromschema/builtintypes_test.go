@@ -1,6 +1,7 @@
 package fromschema_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -303,20 +304,105 @@ func TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 	}
 }
 
-// TestQualifyDeclaredUserTypesKeepsUnmeasuredDialectsUnchanged pins that the
-// guard is dialect scoped rather than global.
+// TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling is the dialect
+// axis, and it exists because an earlier revision of this file had no row on it.
 //
-// Only PostgreSQL's catalog was read, so only PostgreSQL is listed. A dialect
-// absent from that map has to behave the way it behaved before the guard
-// existed -- silently applying PostgreSQL's catalog to ClickHouse would be a
-// claim about a server nobody queried.
-func TestQualifyDeclaredUserTypesKeepsUnmeasuredDialectsUnchanged(t *testing.T) {
+// The guard was keyed on the literal platform.Postgres while
+// [fromschema.QualifyDeclaredUserTypes] runs for every dialect, so on the other
+// three PostgreSQL-family targets the PASS was present and only the GUARD was
+// absent. Measured with the shipped CLI on the commit before the fix, one
+// document declaring `CREATE DOMAIN advm.money` beside a `money` column and a
+// `money[]` column:
+//
+//	ptah schema render --dialect postgres     ->  "c" money       "arr" money[]
+//	ptah schema render --dialect cockroachdb  ->  "c" advm.money  "arr" advm.money[]
+//	ptah schema render --dialect yugabytedb   ->  "c" advm.money  "arr" advm.money[]
+//	ptah schema render --dialect spanner      ->  "c" advm.money  "arr" advm.money[]
+//
+// and the yugabytedb plan replayed into a live YugabyteDB 2026.1.0.0-b118 at
+// exit 0, where the catalog then read `c | advm.money | advm | d` against a
+// source that read `c | money | pg_catalog | b`. A base type became a domain on
+// a second engine, silently, exactly as on PostgreSQL.
+//
+// The spellings are read out of platform.NormalizeDialect's own switch rather
+// than listed here, so this asserts over every spelling ptah accepts -- the
+// aliases `pgx`, `crdb`, `ysql` and `google_spanner` included -- and a family
+// member added to platform.IsPostgresFamily later is covered without anyone
+// editing this file. That is the same reason the guard selects on that
+// predicate instead of naming four dialects.
+func TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling(t *testing.T) {
 	c := qt.New(t)
 
-	qualified := fromschema.QualifyDeclaredUserTypes(
-		shadowingDocument("money[]", declareShadowingDomain), platform.ClickHouse,
-	)
+	family := slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
+		return !platform.IsPostgresFamily(spelling)
+	})
 
-	c.Assert(qualified.Fields, qt.HasLen, 1)
-	c.Assert(qualified.Fields[0].Type, qt.Equals, "advm.money[]")
+	// Extraction control: an empty or truncated family list would make the
+	// sweep below pass while comparing nothing.
+	for _, canonical := range []string{
+		platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+	} {
+		c.Assert(family, qt.Contains, canonical)
+	}
+
+	retyped := slices.DeleteFunc(slices.Clone(family), func(spelling string) bool {
+		qualified := fromschema.QualifyDeclaredUserTypes(
+			shadowingDocument("money[]", declareShadowingDomain), spelling,
+		)
+		return qualified.Fields[0].Type == "money[]"
+	})
+
+	c.Assert(retyped, qt.HasLen, 0, qt.Commentf("these PostgreSQL-family spellings retyped a built-in column"))
+}
+
+// TestQualifyDeclaredUserTypesLeavesNonPostgresTargetsToTheirOwnCatalog is the
+// non-interference control for the sweep above: the guard reaches the
+// PostgreSQL family and stops there.
+//
+// It is not an approval of a gap. On these two engines the declaration is the
+// only thing in reach that answers to `money`, so qualifying the column is the
+// right answer rather than an unguarded one, and both halves of that were
+// measured rather than assumed:
+//
+//	MySQL 9.7.1        SELECT CAST(1 AS money)  -> ERROR 1064 (42000), exit 1
+//	                   SELECT CAST(1 AS decimal(12,2)) -> 1.00, exit 0
+//	ClickHouse 24.8.14 SELECT name FROM system.data_type_families
+//	                     WHERE lower(name) IN ('money','decimal','uuid')
+//	                     -> Decimal, UUID
+//
+// The control terms are in both queries on purpose: an empty answer to a broken
+// query looks exactly like an absent type.
+//
+// This is also the row that separates "the PostgreSQL family shares one
+// vocabulary" from "one vocabulary for every dialect". Handing these two
+// targets pg_catalog's names would strip a qualifier from a user type that is
+// the column's only possible meaning.
+func TestQualifyDeclaredUserTypesLeavesNonPostgresTargetsToTheirOwnCatalog(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{
+			name:    "mysql, which refuses money as a type name",
+			dialect: platform.MySQL,
+		},
+		{
+			name:    "clickhouse, whose data_type_families has no money",
+			dialect: platform.ClickHouse,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			qualified := fromschema.QualifyDeclaredUserTypes(
+				shadowingDocument("money[]", declareShadowingDomain), test.dialect,
+			)
+
+			c.Assert(qualified.Fields, qt.HasLen, 1)
+			c.Assert(qualified.Fields[0].Type, qt.Equals, "advm.money[]")
+		})
+	}
 }
