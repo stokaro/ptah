@@ -94,9 +94,12 @@ func TestSchemaExportCommandWritesAPISchemas(t *testing.T) {
 	dir := t.TempDir()
 	writeModel(c, dir)
 
+	// The graphql marker is an object type rather than a Query root: the default
+	// export is types-only, and TestSchemaExportGraphQLDefaultIsTypesOnly pins
+	// the absence of an operation surface.
 	for _, tc := range []struct{ format, contains string }{
 		{"openapi-v3", "openapi: 3.0.3"},
-		{"graphql", "type Query {"},
+		{"graphql", "type User {"},
 	} {
 		cmd := schema.NewSchemaCommand()
 		var stdout, stderr bytes.Buffer
