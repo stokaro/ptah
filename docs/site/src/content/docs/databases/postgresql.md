@@ -328,14 +328,24 @@ which happens on a crash-recovery restart, on `pg_stat_reset()`, and for a
 table restored into a fresh cluster. A table holding millions of rows reports
 exactly what an empty one reports.
 
-A table Ptah cannot get statistics for counts as **populated**, so it gets the
-non-blocking build. The alternative failed closed in the wrong direction: a
-blocking `CREATE INDEX` immediately after a bulk load or a restore held writes
-for the length of the scan. Running `ANALYZE` on the table before generating
-gives the decision a real number and restores the transactional build for a
-table that is genuinely empty. A table that does not exist in the database yet
-is a separate case and stays transactional — the migration creates it, so it
-starts empty.
+Missing statistics alone would be a poor test, because `reltuples = -1` is also
+the state of every table that has never had a row inserted — so reading it as
+"row count unknown" would put every freshly created table into a
+non-transactional migration of its own. Ptah asks the file system instead:
+`pg_relation_size` reports the table's main fork, which is not reset by an
+analyze, by a counter reset, or by a restore.
+
+- **No statistics and no storage** is an empty table. It gets the plain,
+  transactional `CREATE INDEX`.
+- **No statistics but storage in use** is a row count Ptah genuinely does not
+  know, and it counts as **populated** — the non-blocking build. Failing the
+  other way was the wrong direction: a blocking `CREATE INDEX` immediately after
+  a bulk load or a restore held writes for the length of the scan.
+
+Running `ANALYZE` on the table before generating gives the decision a real
+number in either case. A table that does not exist in the database yet is a
+separate case and stays transactional — the migration creates it, so it starts
+empty.
 
 ### Partitioned parents
 

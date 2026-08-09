@@ -193,6 +193,109 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(valid, qt.IsTrue)
 }
 
+// TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres
+// is the other side of the tri-state, and it is the common case rather than the
+// exotic one.
+//
+// pg_class.reltuples is -1 for ANY relation nothing has analyzed, which
+// includes every table that has never had a row inserted -- so "statistics are
+// unusable" on its own marks a freshly created empty table as populated, and
+// the concurrent build it then selects arrives as CREATE INDEX CONCURRENTLY in
+// its own non-transactional migration file for a table with nothing in it. The
+// storage the relation occupies is the fact that separates the two, because it
+// is read from the file system rather than from statistics.
+//
+// The table carries a text column on purpose. That gives it a TOAST relation
+// whose index occupies a page while the table itself occupies none, so
+// pg_table_size -- the size function this reads as the obvious one -- reports
+// 8192 for an empty table and cannot be the probe. The assertions below pin
+// both numbers so the distinction cannot be quietly re-collapsed.
+func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPostgres(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	adminURL := requireGeneratorPostgresURL(t)
+	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_empty_stats")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
+	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(target)
+
+	_, err = target.ExecContext(ctx, `
+		CREATE TABLE members (
+			id BIGINT NOT NULL,
+			email TEXT NOT NULL
+		) WITH (autovacuum_enabled = false)
+	`)
+	c.Assert(err, qt.IsNil)
+
+	// The precondition: the table is empty and nothing has analyzed it, so it
+	// reports exactly the statistics a bulk-loaded table reports before its
+	// first ANALYZE -- and its main fork, unlike pg_table_size, is empty too.
+	var reltuples, liveTuples, mainFork, tableSize, actualRows int64
+	c.Assert(target.QueryRowContext(ctx, `
+		SELECT c.reltuples::bigint,
+		       COALESCE(st.n_live_tup, 0),
+		       pg_relation_size(c.oid),
+		       pg_table_size(c.oid),
+		       (SELECT COUNT(*) FROM members)
+		FROM pg_class c
+		LEFT JOIN pg_stat_all_tables st ON st.relid = c.oid
+		WHERE c.relname = 'members'
+	`).Scan(&reltuples, &liveTuples, &mainFork, &tableSize, &actualRows), qt.IsNil)
+	c.Assert(reltuples, qt.Equals, int64(-1))
+	c.Assert(liveTuples, qt.Equals, int64(0))
+	c.Assert(actualRows, qt.Equals, int64(0))
+	c.Assert(mainFork, qt.Equals, int64(0))
+	c.Assert(tableSize > 0, qt.IsTrue, qt.Commentf("pg_table_size was %d", tableSize))
+
+	dir := t.TempDir()
+	entitiesDir := writeUnknownStatsIndexEntities(c, dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir,
+		DatabaseURL:   targetURL,
+		MigrationName: "add_members_email_index",
+		OutputDir:     migrationsDir,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(files.Files[0].NoTransaction, qt.IsFalse)
+
+	upSQL, err := os.ReadFile(files.Files[0].UpFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_members_email" ON "members" ("email");`)
+	c.Assert(string(upSQL), qt.Not(qt.Contains), "CONCURRENTLY")
+	c.Assert(string(upSQL), qt.Not(qt.Contains), "no_transaction")
+	downSQL, err := os.ReadFile(files.Files[0].DownFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX IF EXISTS "idx_members_email";`)
+	c.Assert(string(downSQL), qt.Not(qt.Contains), "CONCURRENTLY")
+
+	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
+	c.Assert(err, qt.IsNil)
+	migrations := migrator.NewMigrator(target, provider)
+	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_members_email")
+	c.Assert(exists, qt.IsTrue)
+	c.Assert(valid, qt.IsTrue)
+
+	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
+	c.Assert(exists, qt.IsFalse)
+
+	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
+	c.Assert(exists, qt.IsTrue)
+	c.Assert(valid, qt.IsTrue)
+}
+
 // setupUnknownRowStatistics populates a table and then leaves PostgreSQL with
 // no usable statistics for it, deterministically.
 //

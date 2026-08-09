@@ -276,6 +276,23 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	// restored dump. GREATEST floors all of that to 0, which reads as "empty"
 	// and is how a populated table silently earned a blocking index build.
 	//
+	// The second conjunct is what keeps that tri-state from swallowing every
+	// ordinary empty table. reltuples = -1 is the state of ANY never-analyzed
+	// relation, which includes every table that has never had a row inserted,
+	// so "no usable statistics" alone marks a freshly created table as one
+	// whose row count is unknown -- and a caller resolving the unknown toward a
+	// concurrent build then emits CREATE INDEX CONCURRENTLY, in its own
+	// non-transactional migration, for a table with nothing in it.
+	// pg_relation_size reads the main fork's size from the file system rather
+	// than from statistics, so it is not reset by any of the events above:
+	// measured on PostgreSQL 17.10, a never-analyzed table holding 5000 rows
+	// reports 188416 and a never-analyzed empty one reports 0, while both
+	// report reltuples = -1 and n_live_tup = 0. It is the table's own main fork
+	// on purpose -- pg_table_size adds the TOAST relation and its index, and an
+	// empty table with one text column already carries an 8192-byte TOAST
+	// index. A relation with no statistics and no storage is empty; only a
+	// relation with no statistics and storage is genuinely unknown.
+	//
 	// relkind = 'p' is the declaratively partitioned parent.
 	// information_schema.tables reports it as an ordinary BASE TABLE, so the
 	// catalog is the only place the distinction survives, and PostgreSQL
@@ -285,7 +302,8 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 		SELECT table_schema, table_name, table_type,
 		       COALESCE(obj_description(c.oid), '') as table_comment,
 		       COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows,
-		       NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false) AS row_stats_unknown,
+		       (NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false))
+		           AND COALESCE(pg_relation_size(c.oid), 0) > 0 AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t
