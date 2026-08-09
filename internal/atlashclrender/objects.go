@@ -41,8 +41,8 @@ func (r *renderer) renderSequences() {
 		}
 		sequence.Canonicalize()
 		r.linef(`sequence %s {`, quote(sequence.Name))
-		if sequence.Schema != "" {
-			r.rawAttr(1, "schema", r.schemaRef(sequence.Schema))
+		if schema := r.schemaFor(sequence.Schema); schema != "" {
+			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		// A quoted string, not the bare word `bigint`. Bare, it is an HCL
 		// variable reference with nothing behind it and the pinned Atlas
@@ -105,8 +105,8 @@ func (r *renderer) renderUserTypes() {
 func (r *renderer) renderDomain(domain goschema.Domain) {
 	domain.Canonicalize()
 	r.linef(`domain %s {`, quote(domain.Name))
-	if domain.Schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(domain.Schema))
+	if schema := r.schemaFor(domain.Schema); schema != "" {
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.rawAttr(1, "type", userTypeExpr(domain.BaseType))
 	if domain.NotNull {
@@ -128,8 +128,8 @@ func (r *renderer) renderDomain(domain goschema.Domain) {
 func (r *renderer) renderComposite(composite goschema.CompositeType) {
 	composite.Canonicalize()
 	r.linef(`composite %s {`, quote(composite.Name))
-	if composite.Schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(composite.Schema))
+	if schema := r.schemaFor(composite.Schema); schema != "" {
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "comment", composite.Comment)
 	for _, field := range composite.Fields {
@@ -144,8 +144,8 @@ func (r *renderer) renderComposite(composite goschema.CompositeType) {
 func (r *renderer) renderRange(rangeType goschema.Range) {
 	rangeType.Canonicalize()
 	r.linef(`range %s {`, quote(rangeType.Name))
-	if rangeType.Schema != "" {
-		r.rawAttr(1, "schema", r.schemaRef(rangeType.Schema))
+	if schema := r.schemaFor(rangeType.Schema); schema != "" {
+		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
 	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
@@ -248,7 +248,7 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	}
 	name := objectNameFromQualified(function.Name)
 	r.linef(`function %s {`, quote(name))
-	if schema := schemaNameFromQualified(function.Name); schema != "" {
+	if schema := r.schemaFor(schemaNameFromQualified(function.Name)); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	// Every one of these four is a quoted string rather than a bare word.
@@ -310,7 +310,7 @@ func (r *renderer) renderViews() {
 		}
 		name := objectNameFromQualified(view.Name)
 		r.linef(`view %s {`, quote(name))
-		if schema := schemaNameFromQualified(view.Name); schema != "" {
+		if schema := r.schemaFor(schemaNameFromQualified(view.Name)); schema != "" {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.stringAttr(1, "as", view.Body)
@@ -341,7 +341,7 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	}
 	name := objectNameFromQualified(view.Name)
 	r.linef(`materialized %s {`, quote(name))
-	if schema := schemaNameFromQualified(view.Name); schema != "" {
+	if schema := r.schemaFor(schemaNameFromQualified(view.Name)); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "as", view.Body)
