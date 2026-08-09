@@ -235,7 +235,7 @@ The native OCI source is available to `schema compare` and `drift` through `--sc
 
 **Implementation status.** Partial.
 
-Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff.skip.drop_table` and `diff.concurrent_index.create` policy, supported migration-lint analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx`, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`) with `sensitive` support, string/list variable overrides through repeated `--var name=value` with conversion to the declared type, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors such as `lint.latest` and `lint.git`.
+Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, output formats, supported diff and lint policy, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`, `map(string)`) with `sensitive` support, string/list `--var` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `toset`, `atlas.env`, `each.key`, `each.value`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors. Atlas-compatible `migrate apply` expands labeled or unlabeled env `for_each` collections into ordered database targets.
 
 Whole-document structural validation classifies every environment before one is
 selected. Unsupported shapes fail in selected and unselected environments.
@@ -247,8 +247,8 @@ Cloud, registry, data sources beyond the local subset, variable `validation` blo
 
 **Conformance status.** Partially measured. As of 2026-08-08, parser, merge,
 direct-command, adapter, and live SQLite tests cover the supported local subset,
-whole-document structural decisions, selected-environment evaluation, and
-ignored-name warnings.
+whole-document structural decisions, selected-environment evaluation,
+multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#583`](https://github.com/stokaro/ptah/issues/583), [`stokaro/ptah#581`](https://github.com/stokaro/ptah/issues/581), [`stokaro/ptah#619`](https://github.com/stokaro/ptah/issues/619).
 

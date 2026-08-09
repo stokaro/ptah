@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
@@ -40,6 +42,14 @@ type atlasMigrateApplyOptions struct {
 	lockTimeout     string
 	lock            atlasLockOptions
 	format          string
+}
+
+type atlasMigrateApplyRunOptions struct {
+	amount          uint64
+	baselineVersion int64
+	toVersion       int64
+	lockRequest     atlasLockRequest
+	skipChecks      bool
 }
 
 func newAtlasMigrateApplyCommand() *cobra.Command {
@@ -136,16 +146,75 @@ func runAtlasMigrateApply(
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
-	formatOutput := cmd.Flags().Changed("format")
 	mode := ignoreMissingEnvSelection
 	if needsAtlasMigrateApplyConfig(cmd) {
 		mode = reportMissingEnvSelection
 	}
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	projects, loaded, err := openAtlasProjectsForCommand(cmd, mode)
 	if err != nil {
 		return err
 	}
-	defer closeAtlasProject(&project, &runErr)
+	defer closeAtlasProjectSet(&projects, &runErr)
+
+	amount, err := atlasmigrate.ParseApplyAmount(args)
+	if err != nil {
+		return err
+	}
+	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
+	if err != nil {
+		return err
+	}
+	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
+	if err != nil {
+		return err
+	}
+	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
+	if err != nil {
+		return err
+	}
+	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
+	if err != nil {
+		return err
+	}
+	runOpts := atlasMigrateApplyRunOptions{
+		amount:          amount,
+		baselineVersion: baselineVersion,
+		toVersion:       toVersion,
+		lockRequest:     lockRequest,
+		skipChecks:      skipChecks,
+	}
+
+	targets := projects.projects
+	if !loaded {
+		targets = []atlasProject{{}}
+	}
+	out := cmd.OutOrStdout()
+	var targetOutput bytes.Buffer
+	cmd.SetOut(io.MultiWriter(out, &targetOutput))
+	defer cmd.SetOut(out)
+	for index, project := range targets {
+		formatted, err := runAtlasMigrateApplyTarget(cmd, project, opts, runOpts)
+		if err != nil {
+			return err
+		}
+		if formatted && index < len(targets)-1 && atlasMigrateApplyOutputNeedsSeparator(targetOutput.Bytes()) {
+			if _, err := fmt.Fprintln(out); err != nil {
+				return fmt.Errorf("write atlas migrate apply report separator: %w", err)
+			}
+		}
+		targetOutput.Reset()
+	}
+	return nil
+}
+
+func runAtlasMigrateApplyTarget(
+	cmd *cobra.Command,
+	project atlasProject,
+	opts atlasMigrateApplyOptions,
+	runOpts atlasMigrateApplyRunOptions,
+) (bool, error) {
+	formatOutput := cmd.Flags().Changed("format")
+	loaded := project.root != nil
 	projectCfg := project.Config
 	if loaded {
 		opts.url = dbcli.EffectiveString(
@@ -193,21 +262,24 @@ func runAtlasMigrateApply(
 		formatOutput = formatOutput || formatValue.Present
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
-		return fmt.Errorf("--format must not be empty")
+		return formatOutput, fmt.Errorf("--format must not be empty")
 	}
 	if formatOutput {
 		if err := atlasreport.ValidateMigrateApplyTemplate(opts.format); err != nil {
-			return err
+			return formatOutput, err
 		}
 	}
 	if opts.url == "" {
-		return fmt.Errorf("database URL is required")
+		return formatOutput, fmt.Errorf("database URL is required")
 	}
 	if opts.dir == "" {
-		return fmt.Errorf("migrations directory is required")
+		return formatOutput, fmt.Errorf("migrations directory is required")
 	}
 
-	var localDir atlasargs.LocalDir
+	var (
+		localDir atlasargs.LocalDir
+		err      error
+	)
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
@@ -216,7 +288,7 @@ func runAtlasMigrateApply(
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	// An atlas.hcl `migration { format = "" }` selects the native Atlas layout
 	// rather than being refused. `migrate apply` registers no --dir-format flag,
@@ -226,59 +298,39 @@ func runAtlasMigrateApply(
 	// [resolveAtlasMigrateApplyDirFormat] below maps the empty value to the
 	// Atlas format, the same as the empty --dir-format the other verbs accept.
 
-	amount, err := atlasmigrate.ParseApplyAmount(args)
-	if err != nil {
-		return err
-	}
-	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
-	if err != nil {
-		return err
-	}
-	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
-	if err != nil {
-		return err
-	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 	execOrder, err := migrator.ParseExecOrder(opts.execOrder)
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
-		return err
-	}
-	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
-	if err != nil {
-		return err
-	}
-	skipChecks, err := resolveAtlasApplySkipChecks(cmd)
-	if err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	resolvedDirFormat, err := resolveAtlasMigrateApplyDirFormat(cmd, opts.dirFormat, localDir.Query)
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	source, err := project.openLocal(localDir)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	dir := source.Display()
 	captured, err := atlasmigrate.CaptureApplySource(source.FS(), resolvedDirFormat)
 	closeErr := source.Close()
 	if err != nil {
-		return errors.Join(
+		return formatOutput, errors.Join(
 			fmt.Errorf("atlas migrate apply --dir: %w", err),
 			closeErr,
 		)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: close migrations directory: %w", closeErr)
 	}
 
 	// Integrity gate (#955, #970, #973): the SOURCE directory must carry an
@@ -295,45 +347,46 @@ func runAtlasMigrateApply(
 	// unhashed directory can execute or create the target database — CE emits
 	// the checksum refusal even when --url is unreachable.
 	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	migrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
 	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
+		return formatOutput, fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	linearity, err := flywayLinearityOperands(captured, resolvedDirFormat)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
 	cleanScope, plan, err := inspectThenPrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
-		Dir:                  dir,
-		FS:                   migrationFS,
-		DryRun:               opts.dryRun,
-		ExecOrder:            execOrder,
-		OutOfOrderExempt:     linearity.outOfOrderExempt,
-		SourceVersions:       linearity.sourceVersions,
-		TxMode:               txMode,
-		RevisionsSchema:      opts.revisionsSchema,
-		MigrationLockTimeout: migrationLockTimeout,
-		MigrationLockName:    lockRequest.Name,
-		SkipMigrationLock:    lockRequest.Skip,
-		Amount:               amount,
-		ToVersion:            toVersion,
-		AllowDirty:           opts.allowDirty,
-		BaselineVersion:      baselineVersion,
-		SkipChecks:           skipChecks,
+		Dir:                      dir,
+		FS:                       migrationFS,
+		DryRun:                   opts.dryRun,
+		ExecOrder:                execOrder,
+		OutOfOrderExempt:         linearity.outOfOrderExempt,
+		SourceVersions:           linearity.sourceVersions,
+		TxMode:                   txMode,
+		RevisionsSchema:          opts.revisionsSchema,
+		MigrationLockTimeout:     migrationLockTimeout,
+		MigrationLockName:        runOpts.lockRequest.Name,
+		SkipMigrationLock:        runOpts.lockRequest.Skip,
+		Amount:                   runOpts.amount,
+		ToVersion:                runOpts.toVersion,
+		AllowDirty:               opts.allowDirty,
+		DiscardRolledBackFailure: true,
+		BaselineVersion:          runOpts.baselineVersion,
+		SkipChecks:               runOpts.skipChecks,
 	})
 	if err != nil {
-		return err
+		return formatOutput, err
 	}
 	if err := runAtlasMigrateApplyRefusals(cmd.Context(), atlasMigrateApplyRefusalOperands{
 		conn:            conn,
@@ -344,10 +397,10 @@ func runAtlasMigrateApply(
 		execOrder:       execOrder,
 		revisionsSchema: opts.revisionsSchema,
 		allowDirty:      opts.allowDirty,
-		baselineVersion: baselineVersion,
+		baselineVersion: runOpts.baselineVersion,
 		cleanScope:      cleanScope,
 	}); err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
@@ -356,7 +409,7 @@ func runAtlasMigrateApply(
 	emitApplyStart := func([]int64) {}
 	if !formatOutput {
 		emitApplyStart = func(selectedVersions []int64) {
-			emitAtlasMigrateApplyStart(out, opts, baselineVersion, selectedVersions)
+			emitAtlasMigrateApplyStart(out, opts, runOpts.baselineVersion, selectedVersions)
 		}
 	}
 	result, err := plan.ExecuteWithPreflight(
@@ -370,28 +423,37 @@ func runAtlasMigrateApply(
 		if formatOutput && result.ApplyError != nil {
 			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 			if writeErr != nil {
-				return fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
+				return formatOutput, fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
+			// The structured report already carries the execution error. Atlas
+			// leaves stderr empty in this mode, so return a coded failure that
+			// bypasses the generic command diagnostic without losing exit status.
+			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
-		return err
+		return formatOutput, err
 	}
 	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, migrationFS, conn, result); handled || err != nil {
-		return err
+		return formatOutput, err
 	}
 
 	if opts.dryRun {
 		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred)
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(result.SelectedVersions))
-		return nil
+		return formatOutput, nil
 	}
 	if formatOutput {
-		return writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
-	return nil
+	return formatOutput, nil
+}
+
+func atlasMigrateApplyOutputNeedsSeparator(output []byte) bool {
+	trimmed := bytes.TrimLeft(output, " \t\r")
+	return len(trimmed) > 0 && !bytes.HasSuffix(trimmed, []byte{'\n'})
 }
 
 // noteAtlasMigrateApplyLockUnsupported surfaces the capability decision behind

@@ -38,6 +38,8 @@ local `variable` defaults and Atlas-style `--var name=value` overrides,
 references for local schema-file workflows.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
 and local `diff` policy defaults for the `ptah-compat` binary's commands.
+`ptah-compat migrate apply` expands env `for_each` collections and applies each
+selected database target sequentially.
 
 Ptah reads each selected project config once per command and converts it to a
 typed configuration value. Migration database settings and online-DDL policy

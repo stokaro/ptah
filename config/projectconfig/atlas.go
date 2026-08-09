@@ -37,38 +37,43 @@ func LoadAtlasFile(path, envName string) (Config, error) {
 // config file with Atlas-compatible evaluation options. A missing file returns
 // an empty config.
 func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error) {
-	return loadAtlasFileWithOptions(path, opts)
+	configs, err := LoadAtlasFileCollectionWithOptions(path, opts)
+	if err != nil {
+		return Config{}, err
+	}
+	return singularAtlasConfig(configs, opts.EnvName)
 }
 
-func loadAtlasFileWithOptions(
+// LoadAtlasFileCollectionWithOptions loads every selected instance from an
+// Atlas project config file with Atlas-compatible evaluation options. A
+// missing file returns a collection containing one empty config.
+func LoadAtlasFileCollectionWithOptions(
 	path string,
 	opts AtlasLoadOptions,
-) (
-	cfg Config,
-	returnErr error,
-) {
+) ([]Config, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve atlas config path %s: %w", path, err)
+		return nil, fmt.Errorf("resolve atlas config path %s: %w", path, err)
 	}
 	root, err := os.OpenRoot(filepath.Dir(absolute))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Config{}, nil
+		return []Config{{}}, nil
 	}
 	if err != nil {
-		return Config{}, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
+		return nil, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
 	}
-	defer func() {
-		returnErr = errors.Join(returnErr, root.Close())
-	}()
 	raw, err := fs.ReadFile(root.FS(), filepath.Base(absolute))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return Config{}, nil
+		return []Config{{}}, root.Close()
 	case err != nil:
-		return Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
+		return nil, errors.Join(
+			fmt.Errorf("failed to read atlas config %s: %w", path, err),
+			root.Close(),
+		)
 	}
-	return ParseAtlasFSWithOptions(raw, path, root.FS(), opts)
+	configs, parseErr := ParseAtlasFSCollectionWithOptions(raw, path, root.FS(), opts)
+	return configs, errors.Join(parseErr, root.Close())
 }
 
 // ParseAtlas parses the supported subset of an Atlas project config file.
@@ -84,6 +89,19 @@ func ParseAtlas(data []byte, filename, envName string) (Config, error) {
 // read a file outside it. os.DirFS is deliberately not used here: it follows
 // such a link out of the directory and hands back the target's contents.
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error) {
+	configs, err := ParseAtlasCollectionWithOptions(data, filename, opts)
+	if err != nil {
+		return Config{}, err
+	}
+	return singularAtlasConfig(configs, opts.EnvName)
+}
+
+// ParseAtlasCollectionWithOptions parses every selected instance from an
+// Atlas project config file with Atlas-compatible evaluation options.
+//
+// file() and fileset() use the same rooted filesystem for every instance, so
+// expansion does not weaken the project directory confinement.
+func ParseAtlasCollectionWithOptions(data []byte, filename string, opts AtlasLoadOptions) ([]Config, error) {
 	if filename == "" {
 		filename = AtlasFileName
 	}
@@ -93,12 +111,10 @@ func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) 
 		// calls neither parses from an unreadable directory exactly as it did
 		// before the sandbox was rooted, so the failure is reported by the
 		// first read instead of by the parse.
-		return ParseAtlasFSWithOptions(data, filename, unreadableFS{err: err}, opts)
+		return ParseAtlasFSCollectionWithOptions(data, filename, unreadableFS{err: err}, opts)
 	}
-	// Closed here rather than in a defer, so the exported signature keeps its
-	// unnamed results and the public API snapshot stays byte-identical.
-	cfg, parseErr := ParseAtlasFSWithOptions(data, filename, root.FS(), opts)
-	return cfg, errors.Join(parseErr, root.Close())
+	configs, parseErr := ParseAtlasFSCollectionWithOptions(data, filename, root.FS(), opts)
+	return configs, errors.Join(parseErr, root.Close())
 }
 
 // unreadableFS reports the same error from every open. It stands in for a
@@ -127,23 +143,54 @@ func ParseAtlasFSWithOptions(
 	fsys fs.FS,
 	opts AtlasLoadOptions,
 ) (Config, error) {
+	configs, err := ParseAtlasFSCollectionWithOptions(data, filename, fsys, opts)
+	if err != nil {
+		return Config{}, err
+	}
+	return singularAtlasConfig(configs, opts.EnvName)
+}
+
+// ParseAtlasFSCollectionWithOptions parses every selected Atlas project config
+// instance while resolving file() and fileset() through fsys. fsys must be
+// rooted at the directory that contains filename.
+func ParseAtlasFSCollectionWithOptions(
+	data []byte,
+	filename string,
+	fsys fs.FS,
+	opts AtlasLoadOptions,
+) ([]Config, error) {
 	if filename == "" {
 		filename = AtlasFileName
 	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
-		return Config{}, fmt.Errorf("parse atlas project config: %s", diags.Error())
+		return nil, fmt.Errorf("parse atlas project config: %s", diags.Error())
 	}
 	body, ok := file.Body.(*hclsyntax.Body)
 	if !ok {
-		return Config{}, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
+		return nil, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
 	p, err := newAtlasParser(fsys, opts.Vars, filename)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
-	return p.parse(body, opts.EnvName)
+	return p.parseCollection(body, opts.EnvName)
+}
+
+func singularAtlasConfig(configs []Config, envName string) (Config, error) {
+	switch len(configs) {
+	case 1:
+		return configs[0], nil
+	case 0:
+		return Config{}, fmt.Errorf("atlas env %q selected no project config instances", envName)
+	default:
+		return Config{}, fmt.Errorf(
+			"atlas env %q selected %d project config instances; use the corresponding collection-valued API",
+			envName,
+			len(configs),
+		)
+	}
 }
 
 type atlasParser struct {
@@ -216,6 +263,7 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 				"format":     stdlib.FormatFunc,
 				"getenv":     atlasGetenvFunc(),
 				"jsonencode": stdlib.JSONEncodeFunc,
+				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
 			},
 		},
 		varOverride:     overrides,
@@ -224,14 +272,18 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 	}, nil
 }
 
-func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error) {
+func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Config, error) {
+	p.ctx.Variables["atlas"] = cty.ObjectVal(map[string]cty.Value{
+		"env": cty.StringVal(envName),
+	})
+
 	// CE's tolerance covers unknown ATTRIBUTES as well as blocks -- measured,
 	// and the point stokaro/ptah#1014 left open. The expression is still
 	// evaluated, so a bad reference in one is still fatal.
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
 		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
-			return Config{}, p.evaluationFailed(name, attr, diags)
+			return nil, p.evaluationFailed(name, attr, diags)
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
@@ -239,42 +291,52 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	base := Config{}
 	blocks, err := p.collectAtlasTopBlocks(body.Blocks)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
 	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 
 	if err := p.configureEvalContext(blocks.variables, blocks.locals, blocks.data); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 	if err := p.parseSingleAtlasBlock(blocks.globalLint, &base, p.parseLint); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 	if len(blocks.envs) == 0 {
 		base.IgnoredConstructs = p.ignoredConstructs()
-		return base, nil
+		return []Config{base}, nil
 	}
 
-	selected, err := selectAtlasEnvBlock(blocks.envs, envName)
+	selected, err := selectAtlasEnvBlocks(blocks.envs, envName)
 	if err != nil {
-		return Config{}, err
+		return nil, err
 	}
-	cfg, err := p.parseEnv(selected)
-	if err != nil {
-		return Config{}, err
+	configs := make([]Config, 0, len(selected))
+	for _, env := range selected {
+		instances, err := p.parseAtlasEnvInstances(env, envName)
+		if err != nil {
+			return nil, err
+		}
+		for _, instance := range instances {
+			merged := Merge(base, instance)
+			if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
+				return nil, err
+			}
+			configs = append(configs, merged)
+		}
 	}
-	merged := Merge(base, cfg)
-	if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
-		return Config{}, err
+	if len(configs) == 0 {
+		return nil, fmt.Errorf("atlas env %q not found", envName)
 	}
-	// Set after Merge, not inside parseEnv: Merge carries only the fields it
-	// knows about, so an assignment made before it is silently dropped.
-	merged.IgnoredConstructs = p.ignoredConstructs()
-	return merged, nil
+	ignored := p.ignoredConstructs()
+	for i := range configs {
+		configs[i].IgnoredConstructs = slices.Clone(ignored)
+	}
+	return configs, nil
 }
 
 type atlasTopBlocks struct {
@@ -527,6 +589,10 @@ type atlasEnvBlock struct {
 	block *hclsyntax.Block
 }
 
+func (e atlasEnvBlock) labeled() bool {
+	return len(e.block.Labels) == 1
+}
+
 func atlasEnvBlockFromHCL(block *hclsyntax.Block) (atlasEnvBlock, error) {
 	if len(block.Labels) > 1 {
 		return atlasEnvBlock{}, unsupportedBlock(block)
@@ -541,9 +607,95 @@ func atlasEnvBlockFromHCL(block *hclsyntax.Block) (atlasEnvBlock, error) {
 	}, nil
 }
 
-func (p atlasParser) parseEnv(env atlasEnvBlock) (Config, error) {
+func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName string) ([]Config, error) {
+	nameAttr := env.block.Body.Attributes["name"]
+	forEachAttr, ok := env.block.Body.Attributes["for_each"]
+	if !ok {
+		instance, selected, err := p.parseAtlasEnvInstance(env, nameAttr, selectedName)
+		if err != nil {
+			return nil, err
+		}
+		if !selected {
+			return nil, nil
+		}
+		return []Config{instance}, nil
+	}
+	forEach, diags := forEachAttr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
+		return nil, p.evaluationFailed("for_each", forEachAttr, diags)
+	}
+	if forEach.IsNull() {
+		return nil, fmt.Errorf("schemahcl: for_each cannot be null")
+	}
+	if !forEach.IsWhollyKnown() {
+		return nil, fmt.Errorf("schemahcl: for_each must be wholly known")
+	}
+	forEachType := forEach.Type()
+	if !forEachType.IsListType() &&
+		!forEachType.IsTupleType() &&
+		!forEachType.IsMapType() &&
+		!forEachType.IsObjectType() &&
+		!forEachType.IsSetType() {
+		return nil, fmt.Errorf("schemahcl: for_each does not support %s type", forEachType.FriendlyName())
+	}
+
+	configs := make([]Config, 0, forEach.LengthInt())
+	// cty preserves list/tuple order and gives map/object/set iterators a stable
+	// key order, so one iterator defines the public expansion order.
+	iterator := forEach.ElementIterator()
+	instanceNumber := 0
+	for iterator.Next() {
+		instanceNumber++
+		key, value := iterator.Element()
+		child := p.ctx.NewChild()
+		child.Variables = map[string]cty.Value{
+			"each": cty.ObjectVal(map[string]cty.Value{
+				"key":   key,
+				"value": value,
+			}),
+		}
+		instanceParser := p
+		instanceParser.ctx = child
+		instance, selected, err := instanceParser.parseAtlasEnvInstance(env, nameAttr, selectedName)
+		if err != nil {
+			// Values commonly contain database URLs and may originate in a
+			// sensitive variable. The ordinal identifies the failing expansion
+			// without publishing credentials through the error path.
+			return nil, fmt.Errorf("schemahcl: evaluate env block instance %d: %w", instanceNumber, err)
+		}
+		if selected {
+			configs = append(configs, instance)
+		}
+	}
+	return configs, nil
+}
+
+func (p atlasParser) parseAtlasEnvInstance(
+	env atlasEnvBlock,
+	nameAttr *hclsyntax.Attribute,
+	selectedName string,
+) (Config, bool, error) {
+	name := env.name
+	if nameAttr != nil {
+		var err error
+		name, err = p.nonEmptyStringAttr("name", nameAttr)
+		if err != nil {
+			return Config{}, false, err
+		}
+	}
+	if selectedName != "" && name != selectedName {
+		return Config{}, false, nil
+	}
+	cfg, err := p.parseEnv(env, name)
+	if err != nil {
+		return Config{}, false, err
+	}
+	return cfg, true, nil
+}
+
+func (p atlasParser) parseEnv(env atlasEnvBlock, name string) (Config, error) {
 	cfg := Config{
-		EnvName: env.name,
+		EnvName: name,
 	}
 	cfg.presence.mark(fieldEnvName)
 
@@ -713,6 +865,9 @@ func (p atlasParser) parseSchemaMode(block *hclsyntax.Block, cfg *Config) error 
 
 func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cfg *Config) error {
 	switch attrName {
+	case "for_each", "name":
+		// Meta attributes are evaluated before the instance body.
+		return nil
 	case "url":
 		value, err := p.stringAttr(attrName, attr)
 		if err != nil {
@@ -1257,11 +1412,8 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if err != nil {
 			return err
 		}
-		if variable.sensitive && p.sensitiveValues != nil &&
-			value.Type() == cty.String && !value.IsNull() {
-			if raw := value.AsString(); raw != "" {
-				*p.sensitiveValues = append(*p.sensitiveValues, raw)
-			}
+		if variable.sensitive && p.sensitiveValues != nil {
+			appendSensitiveStrings(p.sensitiveValues, value)
 		}
 		vars[name] = value
 	}
@@ -1308,6 +1460,27 @@ func appendAtlasVarValue(existing cty.Value, value cty.Value) cty.Value {
 	return cty.ListVal([]cty.Value{existing, value})
 }
 
+func appendSensitiveStrings(target *[]string, value cty.Value) {
+	if value.IsNull() || !value.IsWhollyKnown() {
+		return
+	}
+	if value.Type() == cty.String {
+		if raw := value.AsString(); raw != "" {
+			*target = append(*target, raw)
+		}
+		return
+	}
+	if !value.CanIterateElements() {
+		return
+	}
+	iterator := value.ElementIterator()
+	for iterator.Next() {
+		key, element := iterator.Element()
+		appendSensitiveStrings(target, key)
+		appendSensitiveStrings(target, element)
+	}
+}
+
 // atlasVariable is one parsed atlas.hcl variable block.
 type atlasVariable struct {
 	name       string
@@ -1325,7 +1498,7 @@ func (v atlasVariable) typed() bool {
 // atlasSupportedVariableTypes names the variable type constraints Ptah
 // implements, for error messages. Anything else fails loudly so a config never
 // silently drops a constraint Atlas enforces.
-const atlasSupportedVariableTypes = "string, number, bool, and list(string)"
+const atlasSupportedVariableTypes = "string, number, bool, list(string), and map(string)"
 
 func (p atlasParser) parseVariableBlock(block *hclsyntax.Block) (atlasVariable, error) {
 	variable := atlasVariable{name: block.Labels[0]}
@@ -1460,8 +1633,8 @@ func atlasVariableTypeAttr(name string, attr *hclsyntax.Attribute) (cty.Type, er
 }
 
 // atlasVariableType maps the accepted atlas.hcl type expressions to cty types.
-// Exotic constraints (object, tuple, map, set, ...) report not-ok so the
-// caller rejects them with an error naming the supported set.
+// Other constraints (object, tuple, set, ...) report not-ok so the caller
+// rejects them with an error naming the supported set.
 func atlasVariableType(expr hclsyntax.Expression) (cty.Type, bool) {
 	switch expr := expr.(type) {
 	case *hclsyntax.ScopeTraversalExpr:
@@ -1474,9 +1647,14 @@ func atlasVariableType(expr hclsyntax.Expression) (cty.Type, bool) {
 			return cty.Bool, true
 		}
 	case *hclsyntax.FunctionCallExpr:
-		if expr.Name == "list" && len(expr.Args) == 1 {
+		if len(expr.Args) == 1 {
 			if arg, ok := expr.Args[0].(*hclsyntax.ScopeTraversalExpr); ok && atlasTypeKeyword(arg) == "string" {
-				return cty.List(cty.String), true
+				switch expr.Name {
+				case "list":
+					return cty.List(cty.String), true
+				case "map":
+					return cty.Map(cty.String), true
+				}
 			}
 		}
 	}
@@ -1504,6 +1682,8 @@ func atlasVariableTypeName(typ cty.Type) string {
 		return "bool"
 	case typ.IsListType():
 		return "list(string)"
+	case typ.IsMapType():
+		return "map(string)"
 	default:
 		return typ.FriendlyName()
 	}
@@ -1880,19 +2060,33 @@ func (p atlasParser) hclSchemaDataSource(block *hclsyntax.Block) (cty.Value, err
 	}
 }
 
-func selectAtlasEnvBlock(envs []atlasEnvBlock, envName string) (atlasEnvBlock, error) {
+func selectAtlasEnvBlocks(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
 	if envName != "" {
+		labeled := make([]atlasEnvBlock, 0, 1)
 		for _, env := range envs {
-			if env.name == envName {
-				return env, nil
+			if env.labeled() && env.name == envName {
+				labeled = append(labeled, env)
 			}
 		}
-		return atlasEnvBlock{}, fmt.Errorf("atlas env %q not found", envName)
+		if len(labeled) > 0 {
+			return labeled, nil
+		}
+
+		dynamic := make([]atlasEnvBlock, 0, 1)
+		for _, env := range envs {
+			if !env.labeled() {
+				dynamic = append(dynamic, env)
+			}
+		}
+		if len(dynamic) > 0 {
+			return dynamic, nil
+		}
+		return nil, fmt.Errorf("atlas env %q not found", envName)
 	}
 	if len(envs) == 1 {
-		return envs[0], nil
+		return envs, nil
 	}
-	return atlasEnvBlock{}, fmt.Errorf("atlas.hcl contains multiple env blocks; pass --env")
+	return nil, fmt.Errorf("atlas.hcl contains multiple env blocks; pass --env")
 }
 
 func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
