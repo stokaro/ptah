@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
@@ -11,6 +12,24 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+type issue887StatementInterceptor struct {
+	called bool
+}
+
+func (*issue887StatementInterceptor) ValidateDirectives(map[string]string) error {
+	return nil
+}
+
+func (i *issue887StatementInterceptor) ExecuteStatement(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	string,
+	map[string]string,
+) (bool, error) {
+	i.called = true
+	return true, nil
+}
 
 // TestRolledBackProgress_MySQLDataOnlyBodyResumesFromTheTop is the end-to-end
 // guard for stokaro/ptah#887 on a server whose DDL commits itself.
@@ -32,13 +51,18 @@ func TestRolledBackProgress_MariaDBDataOnlyBodyResumesFromTheTop(t *testing.T) {
 	runRolledBackDataOnlyBody(t, dbURL, "mariadb")
 }
 
-// TestRolledBackProgress_MySQLCommittedDDLPrefixIsKept is the non-interference
-// control for the test above. MySQL commits the transaction before it runs a
-// DDL statement, so the statements ahead of a failing CREATE TABLE really are
-// durable; forgetting that would make the retry repeat them.
-func TestRolledBackProgress_MySQLCommittedDDLPrefixIsKept(t *testing.T) {
+// TestRolledBackProgress_MySQLFailingDDLKeepsUnknownOutcome verifies that a
+// witness committed before a failing DDL statement is not downgraded to an
+// ordinary failure. The prefix is durable, but the statement outcome remains
+// unknown and automatic retry must stop before it can repeat user SQL.
+func TestRolledBackProgress_MySQLFailingDDLKeepsUnknownOutcome(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRolledBackCommittedDDLPrefix(t, dbURL, "mysql")
+}
+
+func TestRolledBackProgress_MariaDBFailingDDLKeepsUnknownOutcome(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRolledBackCommittedDDLPrefix(t, dbURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix(t *testing.T) {
@@ -161,6 +185,324 @@ func TestRolledBackProgress_MariaDBRejectsInheritedStorageEngine(t *testing.T) {
 	runRejectsInheritedStorageEngine(t, dbURL, "mariadb_create_like")
 }
 
+func TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, "mysql")
+}
+
+func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, "mariadb")
+}
+
+func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+
+	t.Run("executable comment", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_exec_comment")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"executable comment",
+			fmt.Sprintf("/*! SET autocommit = 0 */; INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*MySQL-family executable comments can bypass transaction-witness validation.*`)
+		c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("opaque up function", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_opaque_up")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		called := false
+		migration := &migrator.Migration{
+			Version:     1,
+			Description: "opaque up",
+			Up: func(context.Context, *dbschema.DatabaseConnection) error {
+				called = true
+				return nil
+			},
+			Down: migrator.NoopMigrationFunc,
+		}
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run an opaque up function in tx-mode file.*`)
+		c.Assert(called, qt.IsFalse)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("opaque down function", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_opaque_down")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		upSQL := fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable)
+		initial := migrator.CreateMigrationFromSQL(
+			1,
+			"opaque down",
+			upSQL,
+			fmt.Sprintf("DROP TABLE %s", names.createdTable),
+		)
+		c.Assert(issue887Migrator(conn, names, initial).MigrateUp(ctx), qt.IsNil)
+		called := false
+		opaque := &migrator.Migration{
+			Version:     1,
+			Description: "opaque down",
+			UpSQL:       upSQL,
+			Up:          migrator.NoopMigrationFunc,
+			Down: func(context.Context, *dbschema.DatabaseConnection) error {
+				called = true
+				return nil
+			},
+		}
+
+		err = issue887Migrator(conn, names, opaque).MigrateDown(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run an opaque down function in tx-mode file.*`)
+		c.Assert(called, qt.IsFalse)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("statement interceptor", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_interceptor")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		interceptor := &issue887StatementInterceptor{}
+		migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(
+			1,
+			"interceptor",
+			"migration.up.sql",
+			"migration.down.sql",
+			fstest.MapFS{
+				"migration.up.sql":   &fstest.MapFile{Data: []byte("SELECT 1")},
+				"migration.down.sql": &fstest.MapFile{Data: []byte("SELECT 1")},
+			},
+			interceptor,
+		)
+		c.Assert(err, qt.IsNil)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run an up statement interceptor in tx-mode file.*`)
+		c.Assert(interceptor.called, qt.IsFalse)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("nested SQL", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_call")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		migration := migrator.CreateMigrationFromSQL(1, "nested SQL", "CALL missing_procedure()", "SELECT 1")
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*nested or dynamic SQL cannot be tied to Ptah's transaction witness.*`)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database table", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_cross_db")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = conn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+externalDatabase) }()
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY) ENGINE=MyISAM", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross database",
+			fmt.Sprintf("INSERT INTO %s.external_jobs VALUES (1)", externalDatabase),
+			fmt.Sprintf("DELETE FROM %s.external_jobs", externalDatabase),
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(
+			issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
+			qt.Equals,
+			int64(0),
+		)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("database creation", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_create_db")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		databaseName := fmt.Sprintf("ptah887created%d", time.Now().UnixNano())
+		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+databaseName) }()
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"database creation",
+			"CREATE DATABASE "+databaseName,
+			"DROP DATABASE "+databaseName,
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*changes state outside Ptah's migration transaction.*`)
+		c.Assert(
+			issue887ScalarCount(
+				t,
+				conn,
+				fmt.Sprintf("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '%s'", databaseName),
+			),
+			qt.Equals,
+			int64(0),
+		)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("triggered relation", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_trigger")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TRIGGER %s AFTER INSERT ON %s FOR EACH ROW INSERT INTO %s (id) VALUES (NEW.id)",
+			triggerName,
+			names.ledgerTable,
+			names.blockerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName) }()
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"triggered relation",
+			fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*relation .* has indirect behavior that Ptah cannot tie to the transaction witness.*`)
+		c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
+		c.Assert(issue887ScalarCount(t, conn, "SELECT COUNT(*) FROM "+names.blockerTable), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("stored function", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_routine")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		routineName := fmt.Sprintf("ptah887routine%d", time.Now().UnixNano())
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE FUNCTION %s() RETURNS INT DETERMINISTIC RETURN 7", routineName,
+		))
+		c.Assert(err, qt.IsNil)
+		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS "+routineName) }()
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"stored function",
+			fmt.Sprintf("INSERT INTO %s VALUES (%s(), 'one')", names.ledgerTable, routineName),
+			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*routine .* can execute SQL outside Ptah's transaction witness.*`)
+		c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("secret redaction", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_secret")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		secret := fmt.Sprintf("ptah-%s-%d", dialect, time.Now().UnixNano())
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"secret",
+			"SET PASSWORD = '"+secret+"'",
+			"SELECT 1",
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(err.Error(), qt.Not(qt.Contains), secret)
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+}
+
 func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
 	t.Helper()
 
@@ -253,6 +595,7 @@ func runRolledBackCommittedDDLPrefix(t *testing.T, dbURL, dialect string) {
 	// there and the revision has to say so.
 	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
 	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887RevisionError(t, conn, names), qt.Equals, "statement execution outcome is unknown after process interruption")
 
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", names.blockerTable))
 	c.Assert(err, qt.IsNil)
@@ -262,10 +605,11 @@ func runRolledBackCommittedDDLPrefix(t *testing.T, dbURL, dialect string) {
 		AllowDirty:               true,
 		DiscardRolledBackFailure: true,
 	})
-	c.Assert(err, qt.IsNil)
-	// Two rows, not three: the committed INSERT must not have run twice.
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(2))
-	c.Assert(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{"one", "three"})
+	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume automatically: the outcome of statement 2 is unknown.*`)
+	// The retry did not enter the body and therefore did not repeat the committed
+	// INSERT or run the statement after the failed DDL.
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{"one"})
 }
 
 func runRolledBackDDLThenDML(
@@ -350,7 +694,7 @@ func runRejectsAutocommitControl(t *testing.T, dbURL, dialect string) {
 
 	mig := issue887Migrator(conn, names, migration)
 	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because "SET autocommit = 0" controls transaction state; remove the transaction control and let Ptah manage the file transaction`)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because it controls transaction state; remove the transaction control and let Ptah manage the file transaction`)
 	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
@@ -380,7 +724,7 @@ func runRejectsChangingTargetDatabase(t *testing.T, dbURL, dialect string) {
 
 	mig := issue887Migrator(conn, names, migration)
 	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because "USE .*" changes the target database; select the database in the connection URL so Ptah can verify its storage engines`)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because it changes the target database; select the database in the connection URL so Ptah can verify its storage engines`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }
@@ -677,6 +1021,18 @@ func issue887AppliedCount(t *testing.T, conn *dbschema.DatabaseConnection, names
 	return issue887ScalarCount(t, conn, fmt.Sprintf(
 		"SELECT applied FROM %s WHERE version = '1'", names.revisionsTable,
 	))
+}
+
+func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
+	t.Helper()
+
+	var failure string
+	err := conn.QueryRowContext(
+		context.Background(),
+		fmt.Sprintf("SELECT error FROM %s WHERE version = '1'", names.revisionsTable),
+	).Scan(&failure)
+	qt.Assert(t, err, qt.IsNil)
+	return failure
 }
 
 func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {

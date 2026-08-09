@@ -275,13 +275,14 @@ const (
 type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrationExecutionMode) error
 
 type sqlMigrationFile struct {
-	fn           sqlMigrationFunc
-	sql          string
-	sourcePath   string
-	timeouts     MigrationTimeouts
-	txMode       MigrationFileTxMode
-	txModeSource migrationFileTxModeSource
-	txModeErr    error
+	fn                   sqlMigrationFunc
+	sql                  string
+	sourcePath           string
+	timeouts             MigrationTimeouts
+	txMode               MigrationFileTxMode
+	txModeSource         migrationFileTxModeSource
+	txModeErr            error
+	statementIntercepted bool
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []atlasTxtarCheckFile
@@ -501,12 +502,13 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 			return executeMigrationFileSQL(ctx, conn, filename, sql, hooks, mode)
 		},
-		sql:          sql,
-		sourcePath:   filename,
-		timeouts:     timeouts,
-		txMode:       txMode.mode,
-		txModeSource: txMode.source,
-		txModeErr:    txMode.err,
+		sql:                  sql,
+		sourcePath:           filename,
+		timeouts:             timeouts,
+		txMode:               txMode.mode,
+		txModeSource:         txMode.source,
+		txModeErr:            txMode.err,
+		statementIntercepted: hooks.interceptor != nil,
 	}, nil
 }
 
@@ -700,15 +702,17 @@ type Migration struct {
 	UpTxMode MigrationFileTxMode
 	// DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
 	// global transaction-mode flag, so the zero value behaves like file.
-	DownTxMode       MigrationFileTxMode
-	upTxModeSource   migrationFileTxModeSource
-	downTxModeSource migrationFileTxModeSource
-	upTxModeErr      error
-	downTxModeErr    error
-	upSourcePath     string
-	downSourcePath   string
-	upSQLFunc        sqlMigrationFunc
-	downSQLFunc      sqlMigrationFunc
+	DownTxMode                  MigrationFileTxMode
+	upTxModeSource              migrationFileTxModeSource
+	downTxModeSource            migrationFileTxModeSource
+	upTxModeErr                 error
+	downTxModeErr               error
+	upSourcePath                string
+	downSourcePath              string
+	upSQLFunc                   sqlMigrationFunc
+	downSQLFunc                 sqlMigrationFunc
+	upHasStatementInterceptor   bool
+	downHasStatementInterceptor bool
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.

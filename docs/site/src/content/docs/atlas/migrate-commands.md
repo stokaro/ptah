@@ -179,15 +179,30 @@ An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
 before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
 new table inherits an engine that the session default does not prove.
 
-MySQL-family `file` bodies cannot contain transaction-control SQL such as
-`BEGIN`, `COMMIT`, or `SET autocommit`; Ptah owns the file transaction. Durable
-server-state operations such as `SET GLOBAL`, `SET PERSIST`, and `RESET` are
-refused because their effects are not tied to the InnoDB witness. `USE` is also
-refused; the connection URL must name the database whose engines Ptah validates.
+MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
+the InnoDB witness:
+
+- Transaction controls such as `BEGIN`, `COMMIT`, and `SET autocommit`.
+- Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
+  and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `USE` and qualified references to another database. The connection URL must
+  name the database whose engines Ptah validates.
+- Executable comments, nested or dynamic SQL, and table locks.
+- Definitions of indirect database objects, references to existing views or
+  trigger-bearing tables, and stored-routine calls.
+- Custom migration functions, whose inner statements are opaque to Ptah.
+- Statement interceptors, which can replace inspected SQL with another
+  execution path.
+
+Rejection errors identify the statement number and safety class without echoing
+the SQL.
+
 MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
 and replays safe settings such as `SET SESSION sql_mode` from a verified
-committed prefix before an automatic retry.
+committed prefix before an automatic retry. A durable unknown-outcome witness
+blocks automatic retry until the database is inspected and the revision is
+repaired.
 
 When a statement committed under `--tx-mode none`, or its outcome is unknown,
 `ptah-compat` preserves the revision row. `migrate status` reports that row as

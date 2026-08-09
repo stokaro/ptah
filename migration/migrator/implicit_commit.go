@@ -33,34 +33,71 @@ func (m *Migrator) validateTransactionalProgressSQL(
 	if !implicitCommitDialect(m.connectionDialect()) {
 		return nil
 	}
+	if !migration.hasSQLExecutor(direction) {
+		return fmt.Errorf(
+			"migration %d cannot run an opaque %s function in tx-mode file on a MySQL-family database; "+
+				"use a SQL-backed migration or tx-mode none",
+			migration.Version,
+			direction,
+		)
+	}
+	if migration.hasStatementInterceptor(direction) {
+		return fmt.Errorf(
+			"migration %d cannot run a %s statement interceptor in tx-mode file on a MySQL-family database; "+
+				"an interceptor can execute SQL outside Ptah's transaction witness, so use tx-mode none",
+			migration.Version,
+			direction,
+		)
+	}
 	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
 	for i, statement := range statements {
 		tokens := significantSQLTokens(statement, m.connectionDialect())
+		if mysqlExecutableComment(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because MySQL-family executable comments "+
+					"can bypass transaction-witness validation; use ordinary SQL or tx-mode none",
+				migration.Version,
+				i+1,
+			)
+		}
 		if len(tokens) > 0 && tokens[0].MatchIdentifierValue("USE") {
 			return fmt.Errorf(
-				"migration %d cannot run tx-mode file statement %d because %q changes the target database; "+
+				"migration %d cannot run tx-mode file statement %d because it changes the target database; "+
 					"select the database in the connection URL so Ptah can verify its storage engines",
 				migration.Version,
 				i+1,
-				strings.TrimSpace(statement),
 			)
 		}
 		if mysqlUnwitnessedStateChange(tokens) {
 			return fmt.Errorf(
-				"migration %d cannot run tx-mode file statement %d because %q changes state outside "+
+				"migration %d cannot run tx-mode file statement %d because it changes state outside "+
 					"Ptah's migration transaction; use a session-scoped setting or tx-mode none",
 				migration.Version,
 				i+1,
-				strings.TrimSpace(statement),
+			)
+		}
+		if mysqlOpaqueExecution(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because nested or dynamic SQL cannot be "+
+					"tied to Ptah's transaction witness; use direct SQL or tx-mode none",
+				migration.Version,
+				i+1,
+			)
+		}
+		if mysqlDefinesIndirectWriter(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because it defines an indirect database "+
+					"writer that Ptah cannot validate before execution; use tx-mode none",
+				migration.Version,
+				i+1,
 			)
 		}
 		if isTransactionControlStatement(statement, m.connectionDialect()) {
 			return fmt.Errorf(
-				"migration %d cannot run tx-mode file statement %d because %q controls transaction state; "+
+				"migration %d cannot run tx-mode file statement %d because it controls transaction state; "+
 					"remove the transaction control and let Ptah manage the file transaction",
 				migration.Version,
 				i+1,
-				strings.TrimSpace(statement),
 			)
 		}
 		if mysqlCreateTableLike(tokens) {
@@ -86,6 +123,55 @@ func (m *Migrator) validateTransactionalProgressSQL(
 	return nil
 }
 
+func (m *Migration) hasSQLExecutor(direction MigrationDirection) bool {
+	if direction == MigrationDirectionDown {
+		return m.downSQLFunc != nil
+	}
+	return m.upSQLFunc != nil
+}
+
+func (m *Migration) hasStatementInterceptor(direction MigrationDirection) bool {
+	if direction == MigrationDirectionDown {
+		return m.downHasStatementInterceptor
+	}
+	return m.upHasStatementInterceptor
+}
+
+func mysqlExecutableComment(tokens []lexer.Token) bool {
+	for _, token := range tokens {
+		if token.Type != lexer.TokenUnknown {
+			continue
+		}
+		value := strings.TrimSpace(token.Value)
+		if strings.HasPrefix(value, "/*!") || strings.HasPrefix(value, "/*M!") {
+			return true
+		}
+	}
+	return false
+}
+
+func mysqlOpaqueExecution(tokens []lexer.Token) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	return matchesAnyKeyword(tokens[0], "CALL", "PREPARE", "EXECUTE", "DEALLOCATE", "LOCK", "UNLOCK")
+}
+
+func mysqlDefinesIndirectWriter(tokens []lexer.Token) bool {
+	if len(tokens) == 0 || !matchesAnyKeyword(tokens[0], "CREATE", "ALTER") {
+		return false
+	}
+	for _, token := range tokens[1:] {
+		if token.Value == "(" {
+			return false
+		}
+		if matchesAnyKeyword(token, "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION", "EVENT") {
+			return true
+		}
+	}
+	return false
+}
+
 // mysqlUnwitnessedStateChange identifies MySQL-family statements whose effects
 // are not session-local and are not tied to the InnoDB transaction containing
 // the revision witness. Replaying one after the witness rolls back can repeat a
@@ -94,6 +180,9 @@ func (m *Migrator) validateTransactionalProgressSQL(
 func mysqlUnwitnessedStateChange(tokens []lexer.Token) bool {
 	if len(tokens) == 0 {
 		return false
+	}
+	if mysqlDatabaseCatalogChange(tokens) {
+		return true
 	}
 	if tokens[0].MatchIdentifierValue("RESET") {
 		return true
@@ -124,6 +213,22 @@ func mysqlUnwitnessedStateChange(tokens []lexer.Token) bool {
 		) {
 			return true
 		}
+	}
+	return false
+}
+
+func mysqlDatabaseCatalogChange(tokens []lexer.Token) bool {
+	if len(tokens) == 0 || !matchesAnyKeyword(tokens[0], "CREATE", "ALTER", "DROP") {
+		return false
+	}
+	for _, token := range tokens[1:] {
+		if token.Type != lexer.TokenIdentifier {
+			continue
+		}
+		if matchesAnyKeyword(token, "OR", "REPLACE", "IF", "NOT", "EXISTS") {
+			continue
+		}
+		return matchesAnyKeyword(token, "DATABASE", "SCHEMA")
 	}
 	return false
 }

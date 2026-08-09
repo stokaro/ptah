@@ -1827,6 +1827,9 @@ func (m *Migrator) applyUpMigrationObserved(
 		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
 			return false, err
 		}
+		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp); err != nil {
+			return false, err
+		}
 	}
 	plan, err := m.planUpRetry(ctx, migration)
 	if err != nil {
@@ -2136,6 +2139,9 @@ func (m *Migrator) withTransactionalMigrationSession(
 		if err := scoped.requireTransactionalTargetEngines(ctx); err != nil {
 			return err
 		}
+		if err := scoped.requireTransactionalTargetIsolation(ctx, migration, direction); err != nil {
+			return err
+		}
 		return use(&scoped)
 	})
 }
@@ -2280,16 +2286,22 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 		}
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
-	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
+	usesWitness := usesTransactionalProgressWitness(m.connectionDialect(), txMode)
+	if usesWitness {
 		if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionDown); err != nil {
 			return err
 		}
 		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
 			return err
 		}
+		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionDown); err != nil {
+			return err
+		}
 	}
-	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+	if !usesWitness || m.conn.Writer().IsDryRun() {
+		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+		}
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
 }
@@ -2333,6 +2345,9 @@ func (m *Migrator) rollbackMigrationTransactional(
 			migration,
 			MigrationDirectionDown,
 			func(scoped *Migrator) error {
+				if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+					return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+				}
 				return scoped.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
 			},
 		)

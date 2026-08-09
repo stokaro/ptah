@@ -679,13 +679,23 @@ a different engine is rejected before Ptah upgrades its layout. A `file`
 migration that selects a non-InnoDB engine or inherits an unverified engine
 through `CREATE TABLE ... LIKE` is rejected before its body starts.
 
-Top-level transaction-control statements, including `SET autocommit`, are also
-rejected because Ptah owns the file transaction and cannot prove a checkpoint
-boundary after the body changes that state. Durable server-state operations
-such as `SET GLOBAL`, `SET PERSIST`, and `RESET` are refused because their
-effects do not share the witness transaction. `USE` is rejected so the
-connection URL, the engine preflight, the migration target, and the qualified
-metadata table all refer to the same database.
+MySQL-family `file` mode rejects SQL whose effective writes cannot be proven
+from the outer statement:
+
+- Top-level transaction controls, including `SET autocommit`.
+- Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
+  and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `USE` and qualified references to another database. The connection URL,
+  engine preflight, migration target, and metadata table must refer to one
+  database.
+- Executable comments, `CALL`, prepared or dynamic SQL, and table locks.
+- Definitions of views, triggers, routines, and events; references to existing
+  views or trigger-bearing tables; and stored-routine calls.
+- Statement interceptors, which can replace inspected SQL with another
+  execution path.
+
+Rejection diagnostics omit the SQL text so credentials in a refused statement
+are not disclosed.
 
 ### Non-Transactional Migrations
 
@@ -769,8 +779,10 @@ suffix or a direction-suffixed applied state, is rejected before migration work
 continues. Completed rollbacks are represented by deleting the row.
 
 A custom `MigrationFunc` is opaque to Ptah and can only be recorded at function
-completion; use SQL-backed migrations when statement-level crash progress is
-required.
+completion. MySQL-family `file` mode rejects it because an implicit commit may
+make only part of the function durable without a statement witness. Use a
+SQL-backed migration for `file` mode or select `none` when the function owns its
+recovery behavior.
 
 On PostgreSQL, `RepairMigration` also refuses to finish while an index a
 conditional create in the selected direction expects is still unusable. A

@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/lexer"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
@@ -120,6 +122,234 @@ LIMIT 1`, schema).Scan(&table, &engine)
 		table,
 		engine,
 	)
+}
+
+type mysqlTransactionalCatalog struct {
+	otherSchemas    map[string]struct{}
+	unsafeRelations map[string]struct{}
+	routines        map[string]struct{}
+}
+
+func (m *Migrator) requireTransactionalTargetIsolation(
+	ctx context.Context,
+	migration *Migration,
+	direction MigrationDirection,
+) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return nil
+	}
+	catalog, err := m.loadMySQLTransactionalCatalog(ctx)
+	if err != nil {
+		return err
+	}
+	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
+	for i, statement := range statements {
+		tokens := significantSQLTokens(statement, m.connectionDialect())
+		if schema, referenced := mysqlReferencedSchema(tokens, catalog.otherSchemas); referenced {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because it references database %s outside "+
+					"the selected database; use a connection scoped to that database or tx-mode none",
+				migration.Version,
+				i+1,
+				schema,
+			)
+		}
+		if relation, referenced := mysqlReferencedCatalogName(tokens, catalog.unsafeRelations); referenced {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
+					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
+				migration.Version,
+				i+1,
+				relation,
+			)
+		}
+		if routine, invoked := mysqlInvokedRoutine(tokens, catalog.routines); invoked {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
+					"Ptah's transaction witness; use direct SQL or tx-mode none",
+				migration.Version,
+				i+1,
+				routine,
+			)
+		}
+	}
+	return nil
+}
+
+func (m *Migrator) loadMySQLTransactionalCatalog(ctx context.Context) (mysqlTransactionalCatalog, error) {
+	schema := m.connectionSchemaName()
+	catalog := mysqlTransactionalCatalog{
+		otherSchemas:    make(map[string]struct{}),
+		unsafeRelations: make(map[string]struct{}),
+		routines:        make(map[string]struct{}),
+	}
+	if err := m.collectMySQLCatalogNames(
+		ctx,
+		"SELECT schema_name FROM information_schema.schemata WHERE LOWER(schema_name) <> LOWER(?)",
+		[]any{schema},
+		func(name string) { catalog.otherSchemas[strings.ToLower(name)] = struct{}{} },
+	); err != nil {
+		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family database boundaries: %w", err)
+	}
+	if err := m.collectMySQLCatalogNames(
+		ctx,
+		"SELECT table_name FROM information_schema.views WHERE table_schema = ?",
+		[]any{schema},
+		func(name string) { catalog.unsafeRelations[strings.ToLower(name)] = struct{}{} },
+	); err != nil {
+		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family views: %w", err)
+	}
+	if err := m.collectMySQLCatalogNames(
+		ctx,
+		"SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ?",
+		[]any{schema},
+		func(name string) { catalog.unsafeRelations[strings.ToLower(name)] = struct{}{} },
+	); err != nil {
+		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family triggers: %w", err)
+	}
+	if err := m.collectMySQLCatalogNames(
+		ctx,
+		"SELECT routine_name FROM information_schema.routines WHERE routine_schema = ?",
+		[]any{schema},
+		func(name string) { catalog.routines[strings.ToLower(name)] = struct{}{} },
+	); err != nil {
+		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family routines: %w", err)
+	}
+	return catalog, nil
+}
+
+func (m *Migrator) collectMySQLCatalogNames(
+	ctx context.Context,
+	query string,
+	args []any,
+	collect func(string),
+) error {
+	rows, err := m.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		collect(name)
+	}
+	return rows.Err()
+}
+
+func mysqlReferencedSchema(tokens []lexer.Token, names map[string]struct{}) (string, bool) {
+	for i, token := range tokens {
+		name, identifier := mysqlIdentifierValue(token)
+		if !identifier || i+2 >= len(tokens) || tokens[i+1].Value != "." {
+			continue
+		}
+		if _, referenced := mysqlIdentifierValue(tokens[i+2]); !referenced {
+			continue
+		}
+		relationReference := mysqlDirectRelationReference(tokens, i)
+		routineReference := i+3 < len(tokens) && tokens[i+3].Value == "("
+		if !relationReference && !routineReference {
+			continue
+		}
+		if _, known := names[strings.ToLower(name)]; known {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func mysqlReferencedCatalogName(tokens []lexer.Token, names map[string]struct{}) (string, bool) {
+	for i, token := range tokens {
+		name, identifier := mysqlIdentifierValue(token)
+		if !identifier {
+			continue
+		}
+		_, known := names[strings.ToLower(name)]
+		if !known || !mysqlRelationReference(tokens, i) {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+func mysqlRelationReference(tokens []lexer.Token, index int) bool {
+	if index >= 2 && tokens[index-1].Value == "." {
+		return mysqlDirectRelationReference(tokens, index-2)
+	}
+	return mysqlDirectRelationReference(tokens, index)
+}
+
+func mysqlDirectRelationReference(tokens []lexer.Token, index int) bool {
+	if index > 0 && matchesAnyKeyword(tokens[index-1], "FROM", "JOIN", "INTO", "UPDATE", "TABLE", "USING") {
+		return true
+	}
+	if index > 0 && tokens[index-1].Value == "," && mysqlCommaContinuesRelationList(tokens[:index-1]) {
+		return true
+	}
+	return mysqlFollowsDMLTargetPrefix(tokens[:index])
+}
+
+func mysqlCommaContinuesRelationList(tokens []lexer.Token) bool {
+	depth := 0
+	for _, v := range slices.Backward(tokens) {
+		switch v.Value {
+		case ")":
+			depth++
+		case "(":
+			if depth == 0 {
+				return false
+			}
+			depth--
+		}
+		if depth != 0 || v.Type != lexer.TokenIdentifier {
+			continue
+		}
+		if matchesAnyKeyword(v, "FROM", "UPDATE", "USING") {
+			return true
+		}
+		if matchesAnyKeyword(v, "SELECT", "SET", "VALUES", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT") {
+			return false
+		}
+	}
+	return false
+}
+
+func mysqlFollowsDMLTargetPrefix(tokens []lexer.Token) bool {
+	for _, v := range slices.Backward(tokens) {
+		token := v
+		if matchesAnyKeyword(token, "LOW_PRIORITY", "DELAYED", "HIGH_PRIORITY", "IGNORE", "INTO") {
+			continue
+		}
+		return matchesAnyKeyword(token, "INSERT", "REPLACE", "UPDATE")
+	}
+	return false
+}
+
+func mysqlInvokedRoutine(tokens []lexer.Token, routines map[string]struct{}) (string, bool) {
+	for i, token := range tokens {
+		name, identifier := mysqlIdentifierValue(token)
+		if !identifier || i+1 >= len(tokens) || tokens[i+1].Value != "(" {
+			continue
+		}
+		if _, known := routines[strings.ToLower(name)]; known {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func mysqlIdentifierValue(token lexer.Token) (string, bool) {
+	if token.Type != lexer.TokenIdentifier {
+		return "", false
+	}
+	value := token.Value
+	if len(value) >= 2 && value[0] == '`' && value[len(value)-1] == '`' {
+		return strings.ReplaceAll(value[1:len(value)-1], "``", "`"), true
+	}
+	return value, true
 }
 
 func missingMetadataColumns(present map[string]struct{}, required []string) []string {

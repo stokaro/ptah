@@ -1622,7 +1622,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 			return fmt.Errorf("failed to read migration %d progress witness: %w", migration.Version, err)
 		}
 		if revision != nil {
-			if preservesProgressWitnessUnknownOutcome(ctx, failure, revision) {
+			if preservesProgressWitnessUnknownOutcome(failure, revision, m.connectionDialect()) {
 				return nil
 			}
 			applied = revision.Applied
@@ -1674,9 +1674,9 @@ func (m *Migrator) restoreTransactionalRecoverySession(
 }
 
 func preservesProgressWitnessUnknownOutcome(
-	ctx context.Context,
 	failure error,
 	revision *MigrationRevision,
+	dialect string,
 ) bool {
 	if revision.Error != unknownStatementOutcomeError {
 		return false
@@ -1687,9 +1687,20 @@ func preservesProgressWitnessUnknownOutcome(
 	}
 	var execErr *MigrationExecutionError
 	if !errors.As(failure, &execErr) {
+		return true
+	}
+	if errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded) {
+		return true
+	}
+	return !mysqlAtomicFailureStatement(execErr.Statement, dialect)
+}
+
+func mysqlAtomicFailureStatement(statement, dialect string) bool {
+	tokens := significantSQLTokens(statement, dialect)
+	if len(tokens) == 0 {
 		return false
 	}
-	return ctx.Err() != nil || errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded)
+	return matchesAnyKeyword(tokens[0], "INSERT", "UPDATE", "DELETE", "REPLACE")
 }
 
 func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode MigrationTxMode) bool {
