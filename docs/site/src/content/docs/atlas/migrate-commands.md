@@ -164,16 +164,30 @@ the zero-progress revision row. The next apply retries the whole file without
 `--allow-dirty`, matching Atlas. Native `ptah migrations up` keeps its durable
 failure record instead.
 
-On MySQL and MariaDB a rollback does not always reach zero progress. The server
-commits the open transaction on its own before a DDL statement, and that commit
-*ends* the transaction rather than flushing it: every statement after the DDL
-runs with no transaction open and commits itself, so the rollback reaches none
-of them either. `ptah-compat` records that whole committed prefix — and its
-`partial_hashes` — and the row stays, because retrying the file whole would
-repeat SQL the server has already committed. A body that reached no such
-statement leaves nothing behind and its row is removed like any other
-rolled-back failure. A statement Ptah cannot classify counts as rolled back, so
-a retry repeats it rather than skipping it on a guess.
+On MySQL and MariaDB a `file` rollback does not always reach zero progress: the
+server may commit around DDL. `ptah-compat` does not guess the boundary from SQL
+keywords. The Atlas revision row is an InnoDB witness updated on the same
+physical transaction before and after each statement. An implicit server commit
+makes the matching `applied` count and `partial_hashes` durable with the body;
+an ordinary rollback removes both the user DML and its witness. A plain-DML body
+that rolls back leaves no committed prefix and is retried whole. A witnessed
+DDL/DML prefix stays dirty because retrying it would repeat committed SQL.
+
+This recovery mode requires InnoDB for the Atlas revision table, the session's
+default storage engine, and every existing base table in the selected database.
+An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
+before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
+new table inherits an engine that the session default does not prove.
+
+MySQL-family `file` bodies cannot contain transaction-control SQL such as
+`BEGIN`, `COMMIT`, or `SET autocommit`; Ptah owns the file transaction. Durable
+server-state operations such as `SET GLOBAL`, `SET PERSIST`, and `RESET` are
+refused because their effects are not tied to the InnoDB witness. `USE` is also
+refused; the connection URL must name the database whose engines Ptah validates.
+MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
+remain valid. Ptah runs the body on one pinned session, discards it afterward,
+and replays safe settings such as `SET SESSION sql_mode` from a verified
+committed prefix before an automatic retry.
 
 When a statement committed under `--tx-mode none`, or its outcome is unknown,
 `ptah-compat` preserves the revision row. `migrate status` reports that row as

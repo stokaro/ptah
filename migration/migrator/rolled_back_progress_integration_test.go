@@ -41,166 +41,124 @@ func TestRolledBackProgress_MySQLCommittedDDLPrefixIsKept(t *testing.T) {
 	runRolledBackCommittedDDLPrefix(t, dbURL, "mysql")
 }
 
-// TestRolledBackProgress_MySQLDDLCarriesTheStatementsAfterIt is the guard for
-// the first blocker on stokaro/ptah#1356.
-//
-// An implicit commit does not flush the open transaction, it ENDS it. Every
-// statement after a DDL statement therefore runs with no transaction open and
-// commits itself, and the ROLLBACK the failure triggers reaches none of them.
-// Measured directly on both servers:
-//
-//	START TRANSACTION; INSERT INTO led VALUES (1,'one'); CREATE TABLE ddl1 (i INT);
-//	INSERT INTO led VALUES (3,'three'); ROLLBACK; SELECT id,note FROM led ORDER BY id;
-//	-> rows 1 and 3 both survive
-//
-// Counting the prefix only up to the DDL statement recorded applied=1 for the
-// body below, where two statements had committed. The retry then resumed at
-// statement two and inserted its row a second time, and the migration reported
-// success. The ledger has no primary key on purpose: a repeat has to show up as
-// a duplicated row rather than as an error, because that is how it shows up in
-// production.
-func TestRolledBackProgress_MySQLDDLCarriesTheStatementsAfterIt(t *testing.T) {
+func TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRolledBackDDLCarriesTheRest(t, dbURL, "mysql")
+	runRolledBackDDLThenDML(t, dbURL, "mysql", migrator.RevisionTableFormatAtlas)
 }
 
-func TestRolledBackProgress_MariaDBDDLCarriesTheStatementsAfterIt(t *testing.T) {
+func TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRolledBackDDLCarriesTheRest(t, dbURL, "mariadb")
+	runRolledBackDDLThenDML(t, dbURL, "mariadb", migrator.RevisionTableFormatAtlas)
 }
 
-// TestRolledBackProgress_MySQLNonCommittingStatementKeepsNothing is the guard
-// for the second blocker on stokaro/ptah#1356: a statement the classifier
-// wrongly reports as committing.
-//
-// `UNLOCK TABLES` with no table locked was measured to commit nothing on both
-// servers, and no table can be locked inside a migration transaction because a
-// LOCK TABLES would already have ended it. Reporting it as committing recorded
-// applied=2 for the body below, and the resume then skipped the INSERT that
-// really had been rolled back — permanently, while reporting success. That is
-// the same shape as `LOAD DATA`, which was also measured to commit nothing on
-// both servers and is pinned in TestImplicitCommitEffectOf; this body uses
-// UNLOCK TABLES because it needs no server-side data file to run.
-func TestRolledBackProgress_MySQLNonCommittingStatementKeepsNothing(t *testing.T) {
+func TestRolledBackProgress_MySQLNativeRevisionKeepsTheWholeDurablePrefix(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRolledBackNonCommittingStatement(t, dbURL, "mysql")
+	runRolledBackDDLThenDML(t, dbURL, "mysql_native", migrator.RevisionTableFormatPtah)
 }
 
-func TestRolledBackProgress_MariaDBNonCommittingStatementKeepsNothing(t *testing.T) {
+func TestRolledBackProgress_MariaDBNativeRevisionKeepsTheWholeDurablePrefix(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRolledBackNonCommittingStatement(t, dbURL, "mariadb")
+	runRolledBackDDLThenDML(t, dbURL, "mariadb_native", migrator.RevisionTableFormatPtah)
 }
 
-func runRolledBackDDLCarriesTheRest(t *testing.T, dbURL, dialect string) {
-	t.Helper()
-
-	c := qt.New(t)
-	ctx := context.Background()
-
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
-
-	names := issue887Names(dialect + "_carry")
-	cleanupIssue887(t, conn, names)
-	defer cleanupIssue887(t, conn, names)
-
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER, note VARCHAR(64))", names.ledgerTable,
-	))
-	c.Assert(err, qt.IsNil)
-
-	body := fmt.Sprintf(
-		"CREATE TABLE %[3]s (id INTEGER PRIMARY KEY);\n"+
-			"INSERT INTO %[1]s (id, note) VALUES (1, 'one');\n"+
-			"INSERT INTO %[1]s (id, note) SELECT 2, 'two' FROM %[2]s;\n",
-		names.ledgerTable, names.blockerTable, names.createdTable,
-	)
-	migration := migrator.CreateMigrationFromSQL(1, "ddl carries the rest", body,
-		fmt.Sprintf("DELETE FROM %s", names.ledgerTable))
-
-	failing := issue887Migrator(conn, names, migration)
-	err = failing.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
-	c.Assert(err, qt.IsNotNil)
-	// The CREATE ended the transaction, so the INSERT after it committed on its
-	// own and the ROLLBACK could not reach it.
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
-	c.Assert(issue887TableExists(t, conn, names.createdTable), qt.IsTrue)
-	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(2))
-
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
-	))
-	c.Assert(err, qt.IsNil)
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id) VALUES (7)", names.blockerTable))
-	c.Assert(err, qt.IsNil)
-
-	retried := issue887Migrator(conn, names, migration)
-	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		AllowDirty:               true,
-		DiscardRolledBackFailure: true,
-	})
-	c.Assert(err, qt.IsNil)
-	// Two rows, not three. Recording applied=1 resumed at the INSERT that had
-	// already committed and left the ledger reading one, one, two.
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(2))
-	c.Assert(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{"one", "two"})
-	c.Assert(issue887TableExists(t, conn, names.createdTable), qt.IsTrue)
+func TestRolledBackProgress_MySQLRejectsAutocommitControl(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsAutocommitControl(t, dbURL, "mysql")
 }
 
-func runRolledBackNonCommittingStatement(t *testing.T, dbURL, dialect string) {
-	t.Helper()
+func TestRolledBackProgress_MariaDBRejectsAutocommitControl(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsAutocommitControl(t, dbURL, "mariadb")
+}
 
-	c := qt.New(t)
-	ctx := context.Background()
+func TestRolledBackProgress_MySQLRejectsChangingTargetDatabase(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsChangingTargetDatabase(t, dbURL, "mysql")
+}
 
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	c.Assert(err, qt.IsNil)
-	defer func() { _ = conn.Close() }()
+func TestRolledBackProgress_MariaDBRejectsChangingTargetDatabase(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsChangingTargetDatabase(t, dbURL, "mariadb")
+}
 
-	names := issue887Names(dialect + "_nocommit")
-	cleanupIssue887(t, conn, names)
-	defer cleanupIssue887(t, conn, names)
+func TestRolledBackProgress_MySQLReplaysCommittedSessionState(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRolledBackSessionStateReplay(t, dbURL, "mysql")
+}
 
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER, note VARCHAR(64))", names.ledgerTable,
-	))
-	c.Assert(err, qt.IsNil)
+func TestRolledBackProgress_MariaDBReplaysCommittedSessionState(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRolledBackSessionStateReplay(t, dbURL, "mariadb")
+}
 
-	body := fmt.Sprintf(
-		"INSERT INTO %[1]s (id, note) VALUES (1, 'one');\n"+
-			"UNLOCK TABLES;\n"+
-			"INSERT INTO %[1]s (id, note) SELECT 2, 'two' FROM %[2]s;\n",
-		names.ledgerTable, names.blockerTable,
-	)
-	migration := migrator.CreateMigrationFromSQL(1, "non committing statement", body,
-		fmt.Sprintf("DELETE FROM %s", names.ledgerTable))
+func TestRolledBackProgress_MySQLAtlasDownRecordsTheDurablePrefix(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRolledBackDownProgress(t, dbURL, "mysql_down_atlas", migrator.RevisionTableFormatAtlas)
+}
 
-	failing := issue887Migrator(conn, names, migration)
-	err = failing.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
-	c.Assert(err, qt.IsNotNil)
-	// UNLOCK TABLES committed nothing, so the rollback took the INSERT with it
-	// and no revision row may claim otherwise.
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
-	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+func TestRolledBackProgress_MariaDBAtlasDownRecordsTheDurablePrefix(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRolledBackDownProgress(t, dbURL, "mariadb_down_atlas", migrator.RevisionTableFormatAtlas)
+}
 
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
-	))
-	c.Assert(err, qt.IsNil)
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id) VALUES (7)", names.blockerTable))
-	c.Assert(err, qt.IsNil)
+func TestRolledBackProgress_MySQLNativeDownRecordsTheDurablePrefix(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRolledBackDownProgress(t, dbURL, "mysql_down_native", migrator.RevisionTableFormatPtah)
+}
 
-	retried := issue887Migrator(conn, names, migration)
-	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		AllowDirty:               true,
-		DiscardRolledBackFailure: true,
-	})
-	c.Assert(err, qt.IsNil)
-	// Both rows. Recording applied=2 resumed past the INSERT the rollback had
-	// undone, and no run ever applied it.
-	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(2))
-	c.Assert(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{"one", "two"})
+func TestRolledBackProgress_MariaDBNativeDownRecordsTheDurablePrefix(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRolledBackDownProgress(t, dbURL, "mariadb_down_native", migrator.RevisionTableFormatPtah)
+}
+
+func TestRolledBackProgress_MySQLRejectsNonTransactionalMetadata(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsNonTransactionalMetadata(t, dbURL, "mysql_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsNonTransactionalMetadata(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsNonTransactionalMetadata(t, dbURL, "mariadb_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t, dbURL, "mysql_native_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t, dbURL, "mariadb_native_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsNonTransactionalTargetTable(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsNonTransactionalTargetTable(t, dbURL, "mysql_target_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsNonTransactionalTargetTable(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsNonTransactionalTargetTable(t, dbURL, "mariadb_target_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsCreatingNonTransactionalTargetTable(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mysql_create_myisam")
+}
+
+func TestRolledBackProgress_MariaDBRejectsCreatingNonTransactionalTargetTable(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mariadb_create_myisam")
+}
+
+func TestRolledBackProgress_MySQLRejectsInheritedStorageEngine(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsInheritedStorageEngine(t, dbURL, "mysql_create_like")
+}
+
+func TestRolledBackProgress_MariaDBRejectsInheritedStorageEngine(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsInheritedStorageEngine(t, dbURL, "mariadb_create_like")
 }
 
 func runRolledBackDataOnlyBody(t *testing.T, dbURL, dialect string) {
@@ -310,6 +268,359 @@ func runRolledBackCommittedDDLPrefix(t *testing.T, dbURL, dialect string) {
 	c.Assert(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{"one", "three"})
 }
 
+func runRolledBackDDLThenDML(
+	t *testing.T,
+	dbURL,
+	dialect string,
+	revisionFormat migrator.RevisionTableFormat,
+) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(dialect + "_ddl_dml")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	body := fmt.Sprintf(
+		"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
+			"INSERT INTO %[2]s (id, note) VALUES (1, 'one');\n"+
+			"INSERT INTO %[3]s (id) VALUES (7);\n",
+		names.createdTable, names.ledgerTable, names.blockerTable,
+	)
+	migration := migrator.CreateMigrationFromSQL(1, "ddl then dml", body,
+		fmt.Sprintf("DROP TABLE %s", names.createdTable))
+
+	failing := issue887MigratorWithFormat(conn, names, revisionFormat, migration)
+	err = failing.MigrateUp(ctx)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(issue887MetadataEngine(t, conn, names), qt.Equals, "InnoDB")
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(2))
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	retried := issue887MigratorWithFormat(conn, names, revisionFormat, migration)
+	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
+	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.blockerTable)), qt.Equals, int64(1))
+}
+
+func runRejectsAutocommitControl(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(dialect + "_autocommit_zero")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	body := fmt.Sprintf(
+		"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
+			"SET autocommit = 0;\n"+
+			"INSERT INTO %[2]s (id, note) VALUES (1, 'one');\n",
+		names.createdTable, names.ledgerTable,
+	)
+	migration := migrator.CreateMigrationFromSQL(1, "autocommit zero", body,
+		fmt.Sprintf("DROP TABLE %s", names.createdTable))
+
+	mig := issue887Migrator(conn, names, migration)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because "SET autocommit = 0" controls transaction state; remove the transaction control and let Ptah manage the file transaction`)
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsChangingTargetDatabase(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(dialect + "_use")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	body := fmt.Sprintf(
+		"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
+			"USE %[2]s;\n",
+		names.createdTable, conn.Info().Schema,
+	)
+	migration := migrator.CreateMigrationFromSQL(1, "change database", body,
+		fmt.Sprintf("DROP TABLE %s", names.createdTable))
+
+	mig := issue887Migrator(conn, names, migration)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 2 because "USE .*" changes the target database; select the database in the connection URL so Ptah can verify its storage engines`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRolledBackSessionStateReplay(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(dialect + "_session_replay")
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	body := fmt.Sprintf(
+		"SET SESSION sql_mode = 'ANSI_QUOTES';\n"+
+			"CREATE TABLE %[1]s (id INTEGER PRIMARY KEY);\n"+
+			"INSERT INTO \"%[1]s\" (id) VALUES (1);\n"+
+			"INSERT INTO \"%[2]s\" (id) VALUES (7);\n",
+		names.createdTable, names.blockerTable,
+	)
+	migration := migrator.CreateMigrationFromSQL(1, "session replay", body,
+		fmt.Sprintf("DROP TABLE %s", names.createdTable))
+
+	failing := issue887Migrator(conn, names, migration)
+	err = failing.MigrateUp(ctx)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(issue887AppliedCount(t, conn, names), qt.Equals, int64(3))
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	retried := issue887Migrator(conn, names, migration)
+	err = retried.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.createdTable)), qt.Equals, int64(1))
+}
+
+func runRolledBackDownProgress(
+	t *testing.T,
+	dbURL,
+	prefix string,
+	revisionFormat migrator.RevisionTableFormat,
+) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	upSQL := fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable)
+	downSQL := fmt.Sprintf(
+		"DROP TABLE %[1]s;\n"+
+			"INSERT INTO %[2]s (id, note) VALUES (1, 'one');\n"+
+			"INSERT INTO %[3]s (id) VALUES (7);\n",
+		names.createdTable, names.ledgerTable, names.blockerTable,
+	)
+	migration := migrator.CreateMigrationFromSQL(1, "down progress", upSQL, downSQL)
+	mig := issue887MigratorWithFormat(conn, names, revisionFormat, migration)
+
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.IsNil)
+	err = mig.MigrateDown(ctx)
+	c.Assert(err, qt.IsNotNil)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(status.DirtyRevision.Applied, qt.Equals, 2)
+	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(1))
+}
+
+func runRejectsNonTransactionalMetadata(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (version VARCHAR(191) PRIMARY KEY) ENGINE=MyISAM", names.revisionsTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	migration := migrator.CreateMigrationFromSQL(1, "metadata engine", "SELECT 1", "SELECT 1")
+	mig := issue887Migrator(conn, names, migration)
+	conn.SchemaWriter().SetDryRun(true)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migrations metadata table .* must use InnoDB to track MySQL-family implicit commits; found MyISAM`)
+	conn.SchemaWriter().SetDryRun(false)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migrations metadata table .* must use InnoDB to track MySQL-family implicit commits; found MyISAM`)
+}
+
+func runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s (
+version BIGINT PRIMARY KEY,
+description TEXT NOT NULL,
+applied_at TIMESTAMP NOT NULL
+) ENGINE=MyISAM`, names.revisionsTable))
+	c.Assert(err, qt.IsNil)
+
+	migration := migrator.CreateMigrationFromSQL(1, "native metadata engine", "SELECT 1", "SELECT 1")
+	mig := issue887MigratorWithFormat(conn, names, migrator.RevisionTableFormatPtah, migration)
+	conn.SchemaWriter().SetDryRun(true)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migrations metadata table .* must use InnoDB to track MySQL-family implicit commits; found MyISAM`)
+	c.Assert(issue887ColumnCount(t, conn, names.revisionsTable, "state"), qt.Equals, int64(0))
+
+	conn.SchemaWriter().SetDryRun(false)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migrations metadata table .* must use InnoDB to track MySQL-family implicit commits; found MyISAM`)
+	c.Assert(issue887ColumnCount(t, conn, names.revisionsTable, "state"), qt.Equals, int64(0))
+}
+
+func runRejectsNonTransactionalTargetTable(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=MyISAM", names.ledgerTable,
+	))
+	c.Assert(err, qt.IsNil)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"target engine",
+		fmt.Sprintf("INSERT INTO %s (id) VALUES (1)", names.ledgerTable),
+		fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+	)
+	mig := issue887Migrator(conn, names, migration)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*tx-mode file requires InnoDB target tables on MySQL-family databases; table .* uses MyISAM`)
+	c.Assert(issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.ledgerTable)), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsCreatingNonTransactionalTargetTable(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"create target engine",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=MyISAM", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	mig := issue887Migrator(conn, names, migration)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 statement 1 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsInheritedStorageEngine(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"inherited target engine",
+		fmt.Sprintf("CREATE TABLE %s LIKE %s", names.createdTable, names.blockerTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	mig := issue887Migrator(conn, names, migration)
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because CREATE TABLE LIKE inherits a storage engine that Ptah cannot prove is InnoDB; declare the table explicitly or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
 type issue887TestNames struct {
 	revisionsTable string
 	ledgerTable    string
@@ -332,9 +643,18 @@ func issue887Migrator(
 	names issue887TestNames,
 	migrations ...*migrator.Migration,
 ) *migrator.Migrator {
+	return issue887MigratorWithFormat(conn, names, migrator.RevisionTableFormatAtlas, migrations...)
+}
+
+func issue887MigratorWithFormat(
+	conn *dbschema.DatabaseConnection,
+	names issue887TestNames,
+	format migrator.RevisionTableFormat,
+	migrations ...*migrator.Migration,
+) *migrator.Migrator {
 	return migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithMigrationsTable("", names.revisionsTable).
-		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+		WithRevisionTableFormat(format).
 		WithTransactionMode(migrator.MigrationTxModeFile).
 		WithMigrationLockTimeout(10 * time.Second)
 }
@@ -359,17 +679,53 @@ func issue887AppliedCount(t *testing.T, conn *dbschema.DatabaseConnection, names
 	))
 }
 
-// issue887TableExists asserts against the catalog rather than the revision row.
-// A committed prefix that the accounting claims and the schema does not have is
-// exactly the failure these tests exist to catch.
-func issue887TableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
+func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
 	t.Helper()
 
-	count := issue887ScalarCount(t, conn, fmt.Sprintf(
-		"SELECT COUNT(*) FROM information_schema.tables "+
-			"WHERE table_schema = DATABASE() AND table_name = '%s'", table,
-	))
-	return count == 1
+	var engine string
+	err := conn.QueryRowContext(
+		context.Background(),
+		"SELECT engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+		conn.Info().Schema,
+		names.revisionsTable,
+	).Scan(&engine)
+	qt.Assert(t, err, qt.IsNil)
+	return engine
+}
+
+func issue887TableCount(t *testing.T, conn *dbschema.DatabaseConnection, table string) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+		conn.Info().Schema,
+		table,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue887ColumnCount(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	table,
+	column string,
+) int64 {
+	t.Helper()
+
+	var count int64
+	err := conn.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = ?`,
+		conn.Info().Schema,
+		table,
+		column,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
 }
 
 func issue887ScalarCount(t *testing.T, conn *dbschema.DatabaseConnection, query string) int64 {
@@ -404,9 +760,7 @@ func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names 
 func cleanupIssue887(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) {
 	t.Helper()
 
-	for _, table := range []string{
-		names.revisionsTable, names.blockerTable, names.ledgerTable, names.createdTable,
-	} {
+	for _, table := range []string{names.revisionsTable, names.blockerTable, names.createdTable, names.ledgerTable} {
 		_, _ = conn.ExecContext(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
 	}
 }

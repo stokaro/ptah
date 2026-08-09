@@ -2,6 +2,8 @@ package migrator
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,6 +62,64 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 		return false, fmt.Errorf("incomplete migrations metadata layout: missing columns %s", strings.Join(missing, ", "))
 	}
 	return false, nil
+}
+
+func (m *Migrator) requireTransactionalMetadataEngine(ctx context.Context) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return nil
+	}
+	schema := configuredOrConnectionSchema(m.metadataTableSchemaName(), m.connectionSchemaName())
+	var engine string
+	err := m.conn.QueryRowContext(ctx, `SELECT engine
+FROM information_schema.tables
+WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'`, schema, m.migrationsTableName()).Scan(&engine)
+	if err != nil {
+		return fmt.Errorf("failed to inspect migrations metadata storage engine: %w", err)
+	}
+	if !strings.EqualFold(engine, "InnoDB") {
+		return fmt.Errorf(
+			"migrations metadata table %s must use InnoDB to track MySQL-family implicit commits; found %s",
+			m.qualifiedMigrationsTable(),
+			engine,
+		)
+	}
+	return nil
+}
+
+func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return nil
+	}
+	var defaultEngine string
+	if err := m.conn.QueryRowContext(ctx, "SELECT @@SESSION.default_storage_engine").Scan(&defaultEngine); err != nil {
+		return fmt.Errorf("failed to inspect MySQL-family default storage engine: %w", err)
+	}
+	if !strings.EqualFold(defaultEngine, "InnoDB") {
+		return fmt.Errorf(
+			"tx-mode file requires InnoDB on MySQL-family databases; default storage engine is %s",
+			defaultEngine,
+		)
+	}
+	schema := m.connectionSchemaName()
+	var table, engine string
+	err := m.conn.QueryRowContext(ctx, `SELECT table_name, engine
+FROM information_schema.tables
+WHERE table_schema = ? AND table_type = 'BASE TABLE'
+  AND UPPER(COALESCE(engine, '')) <> 'INNODB'
+ORDER BY table_name
+LIMIT 1`, schema).Scan(&table, &engine)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect MySQL-family target table storage engines: %w", err)
+	}
+	return fmt.Errorf(
+		"tx-mode file requires InnoDB target tables on MySQL-family databases; table %s.%s uses %s",
+		schema,
+		table,
+		engine,
+	)
 }
 
 func missingMetadataColumns(present map[string]struct{}, required []string) []string {

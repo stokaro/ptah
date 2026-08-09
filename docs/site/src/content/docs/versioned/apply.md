@@ -204,6 +204,17 @@ people and pipelines share a directory:
   the complete body and pins its physical session before changing revision
   metadata, so either failure leaves a new version absent and preserves an
   existing dirty row unchanged.
+  MySQL and MariaDB also reject transaction-control statements in `file` mode:
+  Ptah owns that file transaction, and changing `autocommit` inside the body
+  would make a post-DDL checkpoint ambiguous. Their revision metadata, default
+  storage engine, and every existing base table in the selected database must
+  use InnoDB. A migration that explicitly selects another storage engine or
+  inherits one through `CREATE TABLE ... LIKE` is refused before its first
+  statement. Durable server-state operations such as `SET GLOBAL`, `SET
+  PERSIST`, and `RESET` are refused for the same reason: their effects do not
+  share the InnoDB transaction containing the witness. `USE` is rejected as
+  well; select the target database in `--db-url` so Ptah can validate the
+  database it will modify.
   Pre-migration checks are not rerun after committed progress because they
   describe the original pre-migration state. Automatic continuation is
   up-direction only: a row left dirty by an interrupted rollback is refused so
@@ -336,27 +347,19 @@ skips is only ever the prefix that really survived:
   Nothing is recorded as committed, and the retry runs the body from its first
   statement. An Atlas-format row written for such a failure is removed rather
   than left claiming progress that no longer exists.
-- Under `file` or `all` on MySQL and MariaDB, the server commits the open
-  transaction on its own before a DDL statement, so part of a rolled-back body
-  can survive it. That commit ends the transaction rather than flushing it, so
-  every statement after the DDL runs with no transaction open, commits itself,
-  and survives the rollback too. The committed prefix therefore runs to the last
-  statement that executed, not to the last statement that forced the commit —
-  and the failing statement forces its own commit before it runs, so the
-  statements ahead of a failing DDL are committed as well. A body of plain DML
-  that fails leaves nothing behind and is retried whole; a body that reached a
-  DDL statement keeps everything up to the failure and is resumed after it.
-  A statement Ptah cannot classify is treated as rolled back, so a retry repeats
-  it rather than skipping it on a guess.
-- A body that rolls back its own transaction part-way is the one shape a single
-  counter cannot describe: the statements after the `ROLLBACK` are durable and
-  the ones before it are not. Ptah records no committed prefix for it, which
-  never claims a statement committed that was not, at the cost of repeating the
-  statements after the in-body `ROLLBACK` on a retry.
+- Under `file` on MySQL and MariaDB, the server may commit the open transaction
+  around DDL, so part of a failed body can survive its final rollback. Ptah does
+  not infer that prefix from SQL keywords. Before and after each statement it
+  updates the InnoDB revision row on the same physical transaction as the body.
+  A server-side implicit commit therefore makes the matching witness durable;
+  an ordinary rollback removes both user DML and its witness. Plain DML that
+  rolls back retries from the first statement, while a durable DDL/DML prefix
+  resumes at the first statement not witnessed as complete. Ptah pins and then
+  discards the physical session; a retry replays safe session settings from the
+  verified prefix before it continues. MySQL and MariaDB do not support `all`.
 
-Transactional modes therefore never expose partial progress that a rollback
-undid, and non-transactional mode never hides progress that a rollback could
-not undo.
+Recorded progress therefore excludes transactional work that a rollback undid,
+while non-transactional mode retains work that no rollback could undo.
 
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, or its deadline expires while an autocommit statement is

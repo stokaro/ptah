@@ -663,6 +663,30 @@ before the affected migration body or revision row changes. Global `all`
 validates the complete selected batch before opening its transaction; global
 `file` and `none` validate each selected file when execution reaches it.
 
+MySQL and MariaDB support `file` and `none`, but not `all`. Their DDL may commit
+the server transaction even though Ptah did not request a commit. In `file`
+mode, Ptah therefore updates the revision row before and after each statement
+on the same physical transaction as the migration body. A server-side implicit
+commit makes the matching progress witness durable; an ordinary rollback
+removes both transactional DML and its witness. A retry skips only the verified
+durable prefix and replays safe session settings from that prefix on a newly
+pinned session before continuing.
+
+The witness requires InnoDB for revision metadata, the session default, and
+every existing base table in the selected database. Ptah-created native and
+Atlas revision tables declare `ENGINE=InnoDB`; an existing revision table using
+a different engine is rejected before Ptah upgrades its layout. A `file`
+migration that selects a non-InnoDB engine or inherits an unverified engine
+through `CREATE TABLE ... LIKE` is rejected before its body starts.
+
+Top-level transaction-control statements, including `SET autocommit`, are also
+rejected because Ptah owns the file transaction and cannot prove a checkpoint
+boundary after the body changes that state. Durable server-state operations
+such as `SET GLOBAL`, `SET PERSIST`, and `RESET` are refused because their
+effects do not share the witness transaction. `USE` is rejected so the
+connection URL, the engine preflight, the migration target, and the qualified
+metadata table all refer to the same database.
+
 ### Non-Transactional Migrations
 
 Most migrations should stay transactional. When the database rejects

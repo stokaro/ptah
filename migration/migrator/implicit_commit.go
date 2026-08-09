@@ -1,6 +1,9 @@
 package migrator
 
 import (
+	"fmt"
+	"strings"
+
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/lexer"
 )
@@ -23,280 +26,289 @@ func implicitCommitDialect(dialect string) bool {
 	}
 }
 
-// implicitCommitEffect is what a MySQL-family server does to the transaction
-// that is open when a statement starts.
-//
-// Two bits matter, not one. Whether the statement makes the work before it
-// durable is the obvious bit. Whether it leaves a transaction open afterwards
-// is the bit the first version of this file missed, and it is the one that
-// decides the fate of every statement that follows: after a DDL statement no
-// transaction is open, so the statements after it commit themselves and a later
-// ROLLBACK cannot reach them.
-type implicitCommitEffect int
-
-const (
-	// implicitCommitNone leaves the transaction state alone. The statement is
-	// durable exactly when no transaction was open.
-	implicitCommitNone implicitCommitEffect = iota
-	// implicitCommitEnds commits the open transaction and leaves none open, so
-	// every statement after it commits on its own.
-	implicitCommitEnds
-	// implicitCommitRestarts commits the open transaction and immediately opens
-	// a new one, so the statements after it are pending again.
-	implicitCommitRestarts
-	// implicitCommitDiscards throws the open transaction away. The work before
-	// it is gone, which no prefix counter can describe.
-	implicitCommitDiscards
-)
-
-// commitsBeforeItRuns reports whether the server has already committed whatever
-// was pending by the time the statement itself executes — including when the
-// statement then fails. Measured on both servers: an INSERT before a
-// `CREATE TABLE` that fails with "table already exists" still survives the
-// ROLLBACK that follows.
-func (e implicitCommitEffect) commitsBeforeItRuns() bool {
-	return e == implicitCommitEnds || e == implicitCommitRestarts
-}
-
-// implicitCommitEffectOf classifies one statement of a MySQL-family migration
-// body.
-//
-// Every row below was measured on MySQL 9.7.1 and MariaDB 11.4.12 with the same
-// probe, one statement at a time:
-//
-//	START TRANSACTION;
-//	INSERT INTO led VALUES (1,'a_pre');
-//	<the statement under test>
-//	INSERT INTO led VALUES (2,'b_post');
-//	ROLLBACK;
-//	SELECT note FROM led;
-//
-// Both rows surviving means the statement committed the prefix and left no
-// transaction open (implicitCommitEnds). Only `a_pre` surviving means it
-// committed the prefix and opened a new transaction (implicitCommitRestarts).
-// Neither surviving means it committed nothing (implicitCommitNone). Only
-// `b_post` surviving means the prefix was thrown away (implicitCommitDiscards).
-// [TestImplicitCommitEffectOf] carries the measured result of every probe.
-//
-// Two rows differ between the servers, which is why the dialect reaches this
-// far down: `CACHE INDEX` and `LOAD INDEX INTO CACHE` end the transaction on
-// MySQL and do nothing at all on MariaDB.
-//
-// An unclassified statement is reported as implicitCommitNone. That direction
-// is the one a resume can survive: the statement is treated as undone and run
-// again, instead of being skipped forever on the strength of a guess.
-func implicitCommitEffectOf(statement, dialect string) implicitCommitEffect {
-	tokens := significantSQLTokens(statement, dialect)
-	if len(tokens) == 0 {
-		return implicitCommitNone
+func (m *Migrator) validateTransactionalProgressSQL(
+	migration *Migration,
+	direction MigrationDirection,
+) error {
+	if !implicitCommitDialect(m.connectionDialect()) {
+		return nil
 	}
-	head := tokens[0]
-	switch {
-	case matchesAnyKeyword(head, "CREATE", "DROP"):
-		// Measured: every CREATE and DROP ends the transaction — table, index,
-		// view, database, user — except the TEMPORARY forms, which commit
-		// nothing.
-		if hasTemporaryQualifier(tokens) {
-			return implicitCommitNone
+	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
+	for i, statement := range statements {
+		tokens := significantSQLTokens(statement, m.connectionDialect())
+		if len(tokens) > 0 && tokens[0].MatchIdentifierValue("USE") {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because %q changes the target database; "+
+					"select the database in the connection URL so Ptah can verify its storage engines",
+				migration.Version,
+				i+1,
+				strings.TrimSpace(statement),
+			)
 		}
-		return implicitCommitEnds
-	case head.MatchIdentifierValue("SET"):
-		return setStatementEffect(tokens)
-	case head.MatchIdentifierValue("LOAD"):
-		return loadStatementEffect(tokens, dialect)
-	case head.MatchIdentifierValue("CACHE"):
-		// Measured: `CACHE INDEX mi IN default` ends the transaction on MySQL
-		// and commits nothing on MariaDB.
-		return keyCacheEffect(dialect)
-	case matchesAnyKeyword(head, "BEGIN", "START"):
-		// Measured: both commit the prefix and open a new transaction, so the
-		// statement after them is pending again. `START` reaches here only as
-		// `START TRANSACTION`; no other START form was measured, and treating
-		// one as opening a transaction costs nothing a resume can notice.
-		return implicitCommitRestarts
-	case head.MatchIdentifierValue("COMMIT"):
-		// Measured: `COMMIT` ends the transaction, `COMMIT AND CHAIN` opens a
-		// new one straight away.
-		if hasChainClause(tokens) {
-			return implicitCommitRestarts
+		if mysqlUnwitnessedStateChange(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because %q changes state outside "+
+					"Ptah's migration transaction; use a session-scoped setting or tx-mode none",
+				migration.Version,
+				i+1,
+				strings.TrimSpace(statement),
+			)
 		}
-		return implicitCommitEnds
-	case head.MatchIdentifierValue("ROLLBACK"):
-		// Measured: `ROLLBACK TO SAVEPOINT` keeps the transaction and commits
-		// nothing; a whole-transaction ROLLBACK destroys the prefix.
-		if isSavepointRollback(tokens) {
-			return implicitCommitNone
+		if isTransactionControlStatement(statement, m.connectionDialect()) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because %q controls transaction state; "+
+					"remove the transaction control and let Ptah manage the file transaction",
+				migration.Version,
+				i+1,
+				strings.TrimSpace(statement),
+			)
 		}
-		return implicitCommitDiscards
-	case matchesAnyKeyword(head,
-		// Measured, identical on both servers: each of these ends the
-		// transaction. The representative statement measured for each keyword
-		// is the one [TestImplicitCommitEffectOf] carries.
-		"ALTER", "ANALYZE", "CHECK", "FLUSH", "GRANT", "INSTALL", "LOCK",
-		"OPTIMIZE", "RENAME", "REPAIR", "RESET", "REVOKE", "TRUNCATE",
-		"UNINSTALL",
-	):
-		return implicitCommitEnds
-	}
-	return implicitCommitNone
-}
-
-// setStatementEffect classifies the SET forms.
-//
-// Measured: `SET PASSWORD` and `SET DEFAULT ROLE` end the transaction. Every
-// other SET commits nothing — including `SET autocommit = 1`, which the first
-// version of this file listed as committing. It does not, because the session
-// autocommit value is already 1: Ptah opens the migration transaction with
-// START TRANSACTION and never turns session autocommit off, so the assignment
-// has nothing to change and commits nothing. `SET autocommit = 0` was measured
-// in the same session shape and also commits nothing.
-func setStatementEffect(tokens []lexer.Token) implicitCommitEffect {
-	rest := tokens[1:]
-	if len(rest) == 0 {
-		return implicitCommitNone
-	}
-	if rest[0].MatchIdentifierValue("PASSWORD") {
-		return implicitCommitEnds
-	}
-	if len(rest) > 1 && rest[0].MatchIdentifierValue("DEFAULT") && rest[1].MatchIdentifierValue("ROLE") {
-		return implicitCommitEnds
-	}
-	return implicitCommitNone
-}
-
-// loadStatementEffect classifies the LOAD forms.
-//
-// Measured: `LOAD DATA INFILE` commits nothing on either server — a ROLLBACK
-// takes the INSERT before it and the loaded rows with it. `LOAD INDEX INTO
-// CACHE` ends the transaction on MySQL and commits nothing on MariaDB.
-func loadStatementEffect(tokens []lexer.Token, dialect string) implicitCommitEffect {
-	if len(tokens) > 1 && tokens[1].MatchIdentifierValue("INDEX") {
-		return keyCacheEffect(dialect)
-	}
-	return implicitCommitNone
-}
-
-// keyCacheEffect answers for the two MyISAM key-cache statements, the only
-// place the two servers disagree.
-func keyCacheEffect(dialect string) implicitCommitEffect {
-	if platform.NormalizeDialect(dialect) == platform.MySQL {
-		return implicitCommitEnds
-	}
-	return implicitCommitNone
-}
-
-// hasTemporaryQualifier reports whether TEMP or TEMPORARY qualifies the object
-// a leading CREATE or DROP names.
-//
-// The qualifier can only appear before the TABLE keyword, so the scan stops
-// there. Scanning a fixed number of leading tokens instead reads a column named
-// `temp` in `CREATE TABLE hastemp (temp INT)` as the qualifier — measured, that
-// statement ends the transaction like any other CREATE TABLE.
-func hasTemporaryQualifier(tokens []lexer.Token) bool {
-	for i := range tokens[1:] {
-		token := tokens[1+i]
-		if token.MatchIdentifierValue("TEMP") || token.MatchIdentifierValue("TEMPORARY") {
-			return true
+		if mysqlCreateTableLike(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because CREATE TABLE LIKE inherits "+
+					"a storage engine that Ptah cannot prove is InnoDB; declare the table explicitly or use tx-mode none",
+				migration.Version,
+				i+1,
+			)
 		}
-		if token.MatchIdentifierValue("TABLE") {
-			return false
-		}
-	}
-	return false
-}
-
-// hasChainClause reports whether a COMMIT carries AND CHAIN rather than
-// AND NO CHAIN.
-func hasChainClause(tokens []lexer.Token) bool {
-	for i := range tokens {
-		if !tokens[i].MatchIdentifierValue("CHAIN") {
+		engine, selected := mysqlStorageEngineSelection(statement, m.connectionDialect())
+		if !selected || strings.EqualFold(engine, "InnoDB") || strings.EqualFold(engine, "DEFAULT") {
 			continue
 		}
-		return i == 0 || !tokens[i-1].MatchIdentifierValue("NO")
+		return fmt.Errorf(
+			"migration %d statement %d selects non-transactional storage engine %s; "+
+				"tx-mode file requires InnoDB on MySQL-family databases",
+			migration.Version,
+			i+1,
+			engine,
+		)
 	}
-	return false
+	return nil
 }
 
-// isSavepointRollback reports whether a ROLLBACK names a savepoint instead of
-// discarding the whole transaction.
-func isSavepointRollback(tokens []lexer.Token) bool {
-	return containsAnyKeyword(tokens[1:], "TO")
-}
+// mysqlUnwitnessedStateChange identifies MySQL-family statements whose effects
+// are not session-local and are not tied to the InnoDB transaction containing
+// the revision witness. Replaying one after the witness rolls back can repeat a
+// durable server change, while skipping it can lose a change that never took
+// effect. File mode therefore refuses these statements before any body SQL.
+func mysqlUnwitnessedStateChange(tokens []lexer.Token) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	if tokens[0].MatchIdentifierValue("RESET") {
+		return true
+	}
+	if !tokens[0].MatchIdentifierValue("SET") {
+		return false
+	}
 
-func containsAnyKeyword(tokens []lexer.Token, keywords ...string) bool {
-	for i := range tokens {
-		if matchesAnyKeyword(tokens[i], keywords...) {
+	assignmentStart := true
+	for _, token := range tokens[1:] {
+		if token.Value == "," {
+			assignmentStart = true
+			continue
+		}
+		if !assignmentStart || token.Type != lexer.TokenIdentifier {
+			continue
+		}
+		assignmentStart = false
+		if matchesAnyKeyword(
+			token,
+			"GLOBAL",
+			"PERSIST",
+			"PERSIST_ONLY",
+			"PASSWORD",
+			"DEFAULT",
+			"RESOURCE",
+			"STATEMENT",
+		) {
 			return true
 		}
 	}
 	return false
 }
 
-// committedPrefixAfterRollback returns how many leading statements of sqlText a
-// MySQL-family server has already committed when the transaction wrapping the
-// body rolls back, given that executed statements ran and that the statement at
-// failedIndex (1-based, 0 when no statement itself failed) is the one that
-// stopped the run.
-//
-// The rule is not "the prefix ends at the last statement that forced a commit".
-// An implicit commit ENDS the transaction; it does not merely flush it. Every
-// statement after one therefore runs with no transaction open and commits
-// itself, and the ROLLBACK the failure triggers reaches none of them. Measured
-// on MySQL 9.7.1 and MariaDB 11.4.12:
-//
-//	START TRANSACTION; INSERT INTO led VALUES (1,'one'); CREATE TABLE ddl1 (i INT);
-//	INSERT INTO led VALUES (3,'three'); ROLLBACK; SELECT id,note FROM led ORDER BY id;
-//	-> rows 1 and 3 both survive
-//
-// So the walk below tracks whether a transaction is open at all, and counts a
-// statement as committed either because it forced the commit itself or because
-// nothing was open to hold it. The failing statement counts the same way: the
-// server commits before it runs, and it does so even when the statement then
-// fails.
-//
-// A body that rolls back a transaction it is itself inside is the one shape no
-// counter can describe — the statements after the ROLLBACK are durable and the
-// ones before it are not, so the durable set is not a prefix. Zero is the only
-// prefix that never claims a statement committed which did not, so that is what
-// it reports, at the cost of re-running the statements after the in-body
-// ROLLBACK. A ROLLBACK that arrives with no transaction open is a no-op and
-// costs nothing.
-func committedPrefixAfterRollback(sqlText, dialect string, executed, failedIndex int) int {
-	if executed <= 0 {
-		return 0
+func mysqlCreateTableLike(tokens []lexer.Token) bool {
+	if len(tokens) < 3 || !tokens[0].MatchIdentifierValue("CREATE") {
+		return false
 	}
-	statements := splitSQLStatementsForDialect(sqlText, dialect)
-	if len(statements) < executed {
-		// The executor counted more statements than the split finds, so the
-		// prefix cannot be classified statement by statement. Reporting nothing
-		// committed is the conservative answer: a retry re-runs the body from
-		// the top instead of skipping a statement that may never have run.
-		return 0
+	tableKeyword := mysqlTableKeyword(tokens)
+	if tableKeyword < 0 {
+		return false
 	}
-	inTransaction := true
-	committed := 0
-	for i, statement := range statements[:executed] {
-		switch implicitCommitEffectOf(statement, dialect) {
-		case implicitCommitEnds:
-			committed, inTransaction = i+1, false
-		case implicitCommitRestarts:
-			committed, inTransaction = i+1, true
-		case implicitCommitDiscards:
-			// With no transaction open there is nothing to throw away and the
-			// statement is a no-op; the prefix ahead of it is already durable.
-			if inTransaction {
-				return 0
-			}
-			committed = i + 1
-		case implicitCommitNone:
-			if !inTransaction {
-				committed = i + 1
-			}
+
+	depth := 0
+	for _, token := range tokens[tableKeyword+1:] {
+		switch token.Value {
+		case "(":
+			depth++
+			continue
+		case ")":
+			depth = max(depth-1, 0)
+			continue
+		}
+		if depth == 0 && token.MatchIdentifierValue("LIKE") {
+			return true
 		}
 	}
-	if failedIndex > executed && failedIndex <= len(statements) &&
-		implicitCommitEffectOf(statements[failedIndex-1], dialect).commitsBeforeItRuns() {
-		return executed
+	return false
+}
+
+func mysqlStorageEngineSelection(statement, dialect string) (string, bool) {
+	tokens := significantSQLTokens(statement, dialect)
+	if len(tokens) == 0 {
+		return "", false
 	}
-	return committed
+	if tokens[0].MatchIdentifierValue("SET") {
+		return mysqlStorageEngineSetting(tokens)
+	}
+	if tokens[0].MatchIdentifierValue("CREATE") {
+		return mysqlCreateTableStorageEngine(tokens)
+	}
+	if tokens[0].MatchIdentifierValue("ALTER") {
+		return mysqlAlterTableStorageEngine(tokens)
+	}
+	return "", false
+}
+
+func mysqlStorageEngineSetting(tokens []lexer.Token) (string, bool) {
+	assignmentStart := 1
+	for assignmentStart < len(tokens) {
+		assignmentEnd := len(tokens)
+		for i := assignmentStart; i < len(tokens); i++ {
+			if tokens[i].Value == "," {
+				assignmentEnd = i
+				break
+			}
+		}
+		if engine, selected := mysqlStorageEngineAssignment(tokens[assignmentStart:assignmentEnd]); selected {
+			return engine, true
+		}
+		assignmentStart = assignmentEnd + 1
+	}
+	return "", false
+}
+
+func mysqlStorageEngineAssignment(tokens []lexer.Token) (string, bool) {
+	equals := -1
+	storageEngineTarget := false
+	for i, token := range tokens {
+		if token.Value == "=" {
+			equals = i
+			break
+		}
+		if matchesAnyKeyword(token, "STORAGE_ENGINE", "DEFAULT_STORAGE_ENGINE") {
+			storageEngineTarget = true
+		}
+	}
+	if !storageEngineTarget || equals < 0 {
+		return "", false
+	}
+	return mysqlStorageEngineValue(tokens, equals+1)
+}
+
+func mysqlCreateTableStorageEngine(tokens []lexer.Token) (string, bool) {
+	tableKeyword := mysqlTableKeyword(tokens)
+	if tableKeyword < 0 {
+		return "", false
+	}
+	optionStart := mysqlTableNameEnd(tokens, tableKeyword+1)
+	if optionStart < 0 {
+		return "", false
+	}
+	depth := 0
+	for i := optionStart; i < len(tokens); i++ {
+		token := tokens[i]
+		switch token.Value {
+		case "(":
+			depth++
+			continue
+		case ")":
+			depth = max(depth-1, 0)
+			continue
+		}
+		if depth != 0 {
+			continue
+		}
+		if matchesAnyKeyword(token, "AS", "SELECT") {
+			return "", false
+		}
+		if token.MatchIdentifierValue("ENGINE") {
+			return mysqlStorageEngineValue(tokens, i+1)
+		}
+	}
+	return "", false
+}
+
+func mysqlAlterTableStorageEngine(tokens []lexer.Token) (string, bool) {
+	tableKeyword := mysqlTableKeyword(tokens)
+	if tableKeyword < 0 {
+		return "", false
+	}
+	optionStart := mysqlTableNameEnd(tokens, tableKeyword+1)
+	if optionStart < 0 {
+		return "", false
+	}
+	depth := 0
+	atOptionStart := true
+	for i := optionStart; i < len(tokens); i++ {
+		token := tokens[i]
+		switch token.Value {
+		case "(":
+			depth++
+			continue
+		case ")":
+			depth = max(depth-1, 0)
+			continue
+		case ",":
+			if depth == 0 {
+				atOptionStart = true
+			}
+			continue
+		}
+		if depth != 0 || !atOptionStart {
+			continue
+		}
+		if token.MatchIdentifierValue("ENGINE") {
+			return mysqlStorageEngineValue(tokens, i+1)
+		}
+		atOptionStart = false
+	}
+	return "", false
+}
+
+func mysqlTableKeyword(tokens []lexer.Token) int {
+	for i, token := range tokens[1:min(len(tokens), 6)] {
+		if token.MatchIdentifierValue("TABLE") {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+func mysqlTableNameEnd(tokens []lexer.Token, start int) int {
+	for start < len(tokens) && matchesAnyKeyword(tokens[start], "IF", "NOT", "EXISTS") {
+		start++
+	}
+	if start >= len(tokens) || tokens[start].Type != lexer.TokenIdentifier {
+		return -1
+	}
+	start++
+	if start+1 < len(tokens) && tokens[start].Value == "." && tokens[start+1].Type == lexer.TokenIdentifier {
+		start += 2
+	}
+	return start
+}
+
+func mysqlStorageEngineValue(tokens []lexer.Token, start int) (string, bool) {
+	for _, token := range tokens[start:] {
+		if token.Value == "=" {
+			continue
+		}
+		if token.Value == "," || token.Type == lexer.TokenSemicolon {
+			return "", false
+		}
+		return strings.Trim(token.Value, "`\"'"), true
+	}
+	return "", false
 }

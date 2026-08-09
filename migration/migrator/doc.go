@@ -152,6 +152,12 @@
 // revision-table mode intentionally keeps its own documented bookkeeping
 // semantics.
 //
+// MySQL and MariaDB file transactions use an InnoDB revision-row witness on the
+// same physical transaction as the migration body because their DDL can commit
+// independently. These dialects reject transaction-control SQL, durable server
+// settings outside that transaction, and unverified storage engines in file
+// mode; batch mode is unsupported.
+//
 // # SQL File Support
 //
 // The package provides utilities for SQL file-based migrations:

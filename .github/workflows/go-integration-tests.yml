@@ -324,6 +324,14 @@ jobs:
         run: |
           go test -v -count=1 ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration' -timeout 3m
 
+      - name: Run MySQL-family rolled-back progress tests
+        env:
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+        run: |
+          go test ./migration/migrator -list '^TestRolledBackProgress_' | grep -q '^TestRolledBackProgress_'
+          go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 3m
+
       - name: Run no-transaction and shadow generator integration tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
