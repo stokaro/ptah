@@ -676,8 +676,10 @@ The witness requires InnoDB for revision metadata, the session default, and
 every existing base table in the selected database. Ptah-created native and
 Atlas revision tables declare `ENGINE=InnoDB`; an existing revision table using
 a different engine is rejected before Ptah upgrades its layout. A `file`
-migration that selects a non-InnoDB engine or inherits an unverified engine
-through `CREATE TABLE ... LIKE` is rejected before its body starts.
+migration that selects a non-InnoDB engine, resets an engine setting to
+`DEFAULT`, or inherits an unverified engine through `CREATE TABLE ... LIKE` is
+rejected before its body starts. `DEFAULT` is refused because its effective
+value can differ from the session default that preflight verified.
 
 On MySQL, the migration account must hold `TRIGGER` at database or global scope
 so Ptah can see a complete trigger catalog. MariaDB exposes each trigger's
@@ -697,6 +699,9 @@ from the outer statement:
 - Top-level transaction controls, including `SET autocommit`.
 - Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
   and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- Dynamic `sql_mode` assignments and static mode lists that enable
+  `NO_BACKSLASH_ESCAPES`. They can make the server disagree with Ptah about
+  statement boundaries after preflight.
 - `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
   outside the InnoDB transaction.
 - `USE` and qualified references to another database. The connection URL,
@@ -707,6 +712,9 @@ from the outer statement:
   views or trigger-bearing tables; and stored-routine calls.
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
+
+Preflight also refuses a session that already has `NO_BACKSLASH_ESCAPES`
+enabled, including through the connection DSN or a server default.
 
 Safety preflight treats double-quoted names in relation and routine positions
 as identifiers even before `SET SESSION sql_mode = 'ANSI_QUOTES'` executes.

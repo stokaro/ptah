@@ -100,6 +100,47 @@ func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
 	}
 }
 
+func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET @@SESSION.sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES'",
+		"SET sql_mode = DEFAULT",
+		"SET sql_mode = @@GLOBAL.sql_mode",
+		"SET sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')",
+		`SET sql_mode = "ANSI_QUOTES"`,
+		"SET time_zone = '+00:00', sql_mode = DEFAULT",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"SET SESSION sql_mode = 'ANSI_QUOTES'",
+		"SET @@SESSION.sql_mode = 'STRICT_TRANS_TABLES,ANSI_QUOTES'",
+		"SET sql_mode = ''",
+		"SET time_zone = '+00:00', sql_mode = 'ANSI_QUOTES'",
+		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
+		"INSERT INTO jobs (sql_mode) VALUES ('NO_BACKSLASH_ESCAPES')",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
 func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
 	c := qt.New(t)
 

@@ -177,6 +177,36 @@ func TestRolledBackProgress_MariaDBRejectsCreatingNonTransactionalTargetTable(t 
 	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mariadb_create_myisam")
 }
 
+func TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsDefaultStorageEngineReset(t, dbURL, "mysql_default_engine")
+}
+
+func TestRolledBackProgress_MariaDBRejectsDefaultStorageEngineReset(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsDefaultStorageEngineReset(t, dbURL, "mariadb_default_engine")
+}
+
+func TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnsafeSQLModeChange(t, dbURL, "mysql_unsafe_sql_mode")
+}
+
+func TestRolledBackProgress_MariaDBRejectsUnsafeSQLModeChange(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnsafeSQLModeChange(t, dbURL, "mariadb_unsafe_sql_mode")
+}
+
+func TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnsafeInitialSQLMode(t, dbURL, "mysql_initial_sql_mode")
+}
+
+func TestRolledBackProgress_MariaDBRejectsUnsafeInitialSQLMode(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnsafeInitialSQLMode(t, dbURL, "mariadb_initial_sql_mode")
+}
+
 func TestRolledBackProgress_MySQLRejectsANSIQuotedNonTransactionalTargetTable(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsANSIQuotedNonTransactionalTargetTable(t, dbURL, "mysql_ansi_myisam")
@@ -1749,6 +1779,87 @@ func runRejectsCreatingNonTransactionalTargetTable(t *testing.T, dbURL, prefix s
 	mig := issue887Migrator(conn, names, migration)
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.ErrorMatches, `.*migration 1 statement 1 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsDefaultStorageEngineReset(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"reset target engine",
+		fmt.Sprintf(
+			"SET SESSION default_storage_engine = DEFAULT; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 statement 1 selects storage engine DEFAULT, whose effective engine can differ from the verified session default; select InnoDB explicitly or use tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsUnsafeSQLModeChange(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?multiStatements=true")
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"unsafe sql mode",
+		fmt.Sprintf(
+			"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'; SELECT 'safe\\'; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
+			names.createdTable,
+		),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file statement 1 because its sql_mode assignment can change how MySQL-family statement boundaries are parsed; use a static mode without NO_BACKSLASH_ESCAPES or tx-mode none`)
+	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+func runRejectsUnsafeInitialSQLMode(t *testing.T, dbURL, prefix string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL+"?sql_mode=%27NO_BACKSLASH_ESCAPES%27")
+	c.Assert(err, qt.IsNil)
+	defer issue887CloseConnection(t, conn)
+
+	names := issue887Names(prefix)
+	cleanupIssue887(t, conn, names)
+	defer cleanupIssue887(t, conn, names)
+
+	migration := migrator.CreateMigrationFromSQL(
+		1,
+		"unsafe initial sql mode",
+		fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable),
+		fmt.Sprintf("DROP TABLE %s", names.createdTable),
+	)
+	err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+	c.Assert(err, qt.ErrorMatches, `.*tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains NO_BACKSLASH_ESCAPES; use tx-mode none`)
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 }

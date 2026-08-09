@@ -92,6 +92,15 @@ func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error 
 	if !implicitCommitDialect(m.connectionDialect()) {
 		return nil
 	}
+	var sqlMode string
+	if err := m.conn.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&sqlMode); err != nil {
+		return fmt.Errorf("failed to inspect MySQL-family session sql_mode: %w", err)
+	}
+	if mysqlSQLModeDisablesBackslashEscapes(sqlMode) {
+		return fmt.Errorf(
+			"tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains NO_BACKSLASH_ESCAPES; use tx-mode none",
+		)
+	}
 	var defaultEngine string
 	if err := m.conn.QueryRowContext(ctx, "SELECT @@SESSION.default_storage_engine").Scan(&defaultEngine); err != nil {
 		return fmt.Errorf("failed to inspect MySQL-family default storage engine: %w", err)

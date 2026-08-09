@@ -208,9 +208,11 @@ people and pipelines share a directory:
   Ptah owns that file transaction, and changing `autocommit` inside the body
   would make a post-DDL checkpoint ambiguous. Their revision metadata, default
   storage engine, and every existing base table in the selected database must
-  use InnoDB. A migration that explicitly selects another storage engine or
-  inherits one through `CREATE TABLE ... LIKE` is refused before its first
-  statement. On MySQL, the migration account must hold `TRIGGER` at database or
+  use InnoDB. A migration that explicitly selects another storage engine,
+  resets an engine setting to `DEFAULT`, or inherits one through
+  `CREATE TABLE ... LIKE` is refused before its first statement. `DEFAULT` can
+  resolve differently from the session default that preflight verified. On
+  MySQL, the migration account must hold `TRIGGER` at database or
   global scope so Ptah can see a complete trigger catalog. MariaDB exposes each
   trigger's identity and target table without `TRIGGER`, so it does not require
   that privilege for this catalog check. Ptah refuses MySQL `file` mode when it
@@ -218,8 +220,13 @@ people and pipelines share a directory:
   the selected database exactly in `SHOW GRANTS`. Ptah decodes escaped literal
   wildcard characters in the database name, but deliberately does not infer
   coverage from an unescaped `%` or `_` pattern because MySQL's
-  `partial_revokes` setting changes that pattern's meaning. Durable server-state
-  operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`, and `CREATE`,
+  `partial_revokes` setting changes that pattern's meaning. Dynamic `sql_mode`
+  assignments and static mode lists containing `NO_BACKSLASH_ESCAPES` are also
+  refused because they can make the server and Ptah disagree about statement
+  boundaries after preflight. A session that already has
+  `NO_BACKSLASH_ESCAPES` enabled through the connection DSN or server default is
+  refused for the same reason. Durable server-state operations such as
+  `SET GLOBAL`, `SET PERSIST`, `RESET`, and `CREATE`,
   `ALTER`, or `DROP DATABASE` are refused for the same reason: their effects do
   not share the InnoDB transaction containing the witness. `SELECT` or `TABLE`
   with `INTO OUTFILE` or `INTO DUMPFILE` is also refused because it writes

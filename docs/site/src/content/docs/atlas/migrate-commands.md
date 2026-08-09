@@ -176,8 +176,10 @@ DDL/DML prefix stays dirty because retrying it would repeat committed SQL.
 This recovery mode requires InnoDB for the Atlas revision table, the session's
 default storage engine, and every existing base table in the selected database.
 An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
-before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
-new table inherits an engine that the session default does not prove.
+before the migration runs. Resetting an engine setting to `DEFAULT` is refused
+because its effective value can differ from the verified session default.
+`CREATE TABLE ... LIKE` is also refused because the new table inherits an engine
+that the session default does not prove.
 
 On MySQL, the migration account must hold `TRIGGER` at database or global scope
 so Ptah can see a complete trigger catalog. MariaDB exposes each trigger's
@@ -197,6 +199,9 @@ the InnoDB witness:
 - Transaction controls such as `BEGIN`, `COMMIT`, and `SET autocommit`.
 - Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
   and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- Dynamic `sql_mode` assignments and static mode lists that contain
+  `NO_BACKSLASH_ESCAPES`, because they can change statement boundaries after
+  Ptah validates them.
 - `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
   outside the InnoDB transaction.
 - `USE` and qualified references to another database. The connection URL must
@@ -208,14 +213,18 @@ the InnoDB witness:
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
 
+Preflight also refuses a session that already has `NO_BACKSLASH_ESCAPES`
+enabled, including through the connection DSN or a server default.
+
 Statement-level rejection errors identify the statement number and safety class
 without echoing the SQL. Migration-function and interceptor refusals identify
 the affected direction instead because their inner statements are opaque.
 
 MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
-and replays safe settings such as `SET SESSION sql_mode` from a verified
-committed prefix before an automatic retry. A durable unknown-outcome witness
+and replays safe settings such as a static `SET SESSION sql_mode` that does not
+enable `NO_BACKSLASH_ESCAPES` from a verified committed prefix before an
+automatic retry. A durable unknown-outcome witness
 blocks automatic retry until the database is inspected and the revision is
 repaired.
 
