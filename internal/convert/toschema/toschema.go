@@ -449,6 +449,13 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 			Operator: part.Operator,
 			Prefix:   part.Prefix,
 			Desc:     part.Desc,
+			// NullsOrder is the other half of a sort direction and travels with
+			// it. Dropping it here made an index key read out of SQL differ from
+			// the same key read out of the catalog on a property neither side
+			// could see, which is a rebuild of an identical index. The three
+			// IndexPart shapes deliberately spell the value the same way; see
+			// [go.5x5.cz/ptah/core/goschema.NullsOrderFirst].
+			NullsOrder: part.NullsOrder,
 		})
 	}
 	return schemaParts
