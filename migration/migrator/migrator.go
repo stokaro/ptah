@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -77,6 +78,11 @@ type MigrateUpOptions struct {
 	// a pending dirty migration. It does not bypass committed-prefix verification;
 	// callers should expose it only as an explicit recovery action.
 	AllowDirty bool
+	// DiscardRolledBackFailure removes the Atlas revision row written for a
+	// failed up migration only when this invocation observed a successful
+	// transaction rollback. Existing dirty revisions and uncertain commit or
+	// rollback outcomes remain recorded and block automatic retry.
+	DiscardRolledBackFailure bool
 	// AssumedAppliedVersions are treated as applied for plan selection without
 	// reading or writing revision metadata. This is intended for dry-run paths
 	// that need to model metadata-only operations such as baseline.
@@ -1262,6 +1268,9 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
 	checksDeferred, err := m.applyUpMigrations(ctx, migrationsToApply)
 	if err != nil {
+		if opts.DiscardRolledBackFailure {
+			return errors.Join(err, m.discardRolledBackFailure(ctx, err))
+		}
 		return err
 	}
 	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
@@ -1679,7 +1688,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		plan := plans[migration.Version]
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
 		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[migration.Version]); err != nil {
-			_ = tx.Rollback()
+			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 			return nil, m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err, plan)
 		}
 		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[migration.Version], plan); err != nil {
@@ -1972,7 +1981,7 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
 	if err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -1986,7 +1995,7 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
 	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -1998,11 +2007,11 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	}
 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
 	}
 	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -2013,7 +2022,7 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		)
 	}
 	if err := m.completeMigrationRevisionOn(ctx, txConn, migration, startedAt); err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -2036,6 +2045,34 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	}
 	m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
 	return nil
+}
+
+type migrationTransactionRolledBackError struct {
+	version int64
+	cause   error
+}
+
+func (e *migrationTransactionRolledBackError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *migrationTransactionRolledBackError) Unwrap() error {
+	return e.cause
+}
+
+func migrationFailureAfterRollback(version int64, failure, rollbackErr error) error {
+	if rollbackErr != nil {
+		return fmt.Errorf("%w; additionally failed to roll back migration transaction: %v", failure, rollbackErr)
+	}
+	return &migrationTransactionRolledBackError{version: version, cause: failure}
+}
+
+func migrationTransactionRollbackVersion(err error) (int64, bool) {
+	var target *migrationTransactionRolledBackError
+	if !errors.As(err, &target) {
+		return 0, false
+	}
+	return target.version, true
 }
 
 func (m *Migrator) applyUpMigrationNoTransaction(

@@ -75,10 +75,11 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to apply migration "+dirtyRetryVersionTwo)
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "dr_two")
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "dr_two")
 
 	// Without the flag the dirty guard still refuses, so --allow-dirty is doing
 	// the work rather than the guard having quietly disappeared.
@@ -87,6 +88,7 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 	)
 	c.Assert(guardErr, qt.IsNotNil)
 	c.Assert(guardErr.Error(), qt.Contains, "is dirty")
@@ -95,6 +97,7 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 		"--allow-dirty",
 	)
 	c.Assert(retryErr, qt.IsNil)
@@ -135,6 +138,7 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
 
@@ -143,6 +147,7 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 	)
 	c.Assert(guardErr, qt.IsNotNil)
 	c.Assert(guardErr.Error(), qt.Contains, "is dirty")
@@ -175,6 +180,7 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
+		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
 
@@ -186,8 +192,8 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 
 	c.Assert(statusErr, qt.IsNil)
 	c.Assert(statusOut, qt.Contains, "Migration Status: PENDING\n")
-	c.Assert(statusOut, qt.Contains, "  -- Current Version: "+dirtyRetryVersionTwo+" (0 statements applied)\n")
-	c.Assert(statusOut, qt.Contains, "  -- Next Version:    "+dirtyRetryVersionTwo+" (2 statements left)\n")
+	c.Assert(statusOut, qt.Contains, "  -- Current Version: "+dirtyRetryVersionTwo+" (1 statements applied)\n")
+	c.Assert(statusOut, qt.Contains, "  -- Next Version:    "+dirtyRetryVersionTwo+" (1 statements left)\n")
 	c.Assert(statusOut, qt.Contains, "  -- Executed Files:  2 (last one partially)\n")
 	c.Assert(statusOut, qt.Contains, "  -- Pending Files:   1\n")
 	c.Assert(statusOut, qt.Contains, "\nLast migration attempt had errors:\n")

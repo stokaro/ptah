@@ -159,9 +159,14 @@ surfaces are allowed to differ and only the compatibility one is a contract.
 
 ## Recovering from a migration body that failed part-way
 
-Unlike Atlas, Ptah records a revision row for a migration whose body failed, so
-the failure survives the run that caused it. `migrate status` reports that row
-as a half-applied file, because `Current Version` counts it:
+When a transactional body fails and `Rollback` succeeds, `ptah-compat` removes
+the zero-progress revision row. The next apply retries the whole file without
+`--allow-dirty`, matching Atlas. Native `ptah migrations up` keeps its durable
+failure record instead.
+
+When a statement committed under `--tx-mode none`, or its outcome is unknown,
+`ptah-compat` preserves the revision row. `migrate status` reports that row as
+a half-applied file, because `Current Version` counts it:
 
 ```text
 Migration Status: PENDING
@@ -390,6 +395,12 @@ redacted. With `--env`, Ptah can read `env.url`, `migration`, and
 revision rows and include only migrations that a real apply would select. They
 also run the same dirty-state, checksum, execution-order, and transaction-mode
 validations as a real apply.
+
+An env `for_each` can select several database targets. `migrate apply` runs
+them sequentially in stable expansion order and stops at the first failure.
+Formatted output contains one document per attempted target with one newline
+between adjacent documents. A structured execution failure stays in that
+target's report; stderr remains empty and the process exits `1`.
 
 `--lock-name` replaces the name of the session advisory lock that serializes
 migration runs (`ptah_migrate` by default). Two runs serialize only when they

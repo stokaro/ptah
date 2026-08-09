@@ -384,12 +384,12 @@ the same check:
 Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
 ```
 
-Variable blocks accept the `type` constraints `string`, `number`, `bool`, and
-`list(string)` — the attribute Atlas requires — so one
-`atlas.hcl` with typed variables works with both binaries. `--var` overrides
-convert to the declared type, and repeated `--var` flags fill a `list(string)`
-variable. Overrides of the wrong shape, defaults that do not match the declared
-type, and other type constraints such as `object(...)` fail with named errors.
+Variable blocks accept the `type` constraints `string`, `number`, `bool`,
+`list(string)`, and `map(string)`. `--var` overrides convert to scalar types,
+and repeated flags fill a `list(string)` variable. `map(string)` values come
+from defaults or HCL expressions because the string/list flag syntax does not
+encode maps. Overrides of the wrong shape, defaults that do not match the
+declared type, and other constraints such as `object(...)` fail with named errors.
 `sensitive = true` is accepted; parse-time conversion errors print
 `(sensitive value)` instead of the variable's value, though a sensitive value
 interpolated into a URL or path can still appear in downstream errors that
@@ -400,6 +400,42 @@ If an `atlas.hcl` file has exactly one `env` block, named or unnamed, Ptah can
 use it as the default. Atlas-compatible `migrate apply` does not need to select
 an environment when both `--url` and `--dir` are explicit. Other ambiguous or
 unsupported environment layouts fail instead of guessing.
+
+### Expand one environment into several targets
+
+Use `for_each` when one Atlas environment applies the same migration directory
+to several databases:
+
+```hcl
+env {
+  for_each = toset([
+    "sqlite://bar.db?_fk=1",
+    "sqlite://foo.db?_fk=1",
+  ])
+  name = atlas.env
+  url  = each.value
+
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+`atlas.env` is the requested `--env` value. `each.key` and `each.value` expose
+the current collection entry. For an unlabeled block,
+`name` must depend on `atlas.env`; a static name or a name based only on
+`each.key` does not define the requested environment. A labeled block uses its
+label as the initial candidate when `name` is absent. Every expanded instance
+of an admitted block is evaluated before its resulting name is filtered, so an
+invalid nonmatching instance still fails. Tuples and lists keep source order;
+objects, maps, and sets use stable key order. As a Ptah extension, typed list
+and map values are accepted for env `for_each` in addition to tuple, object,
+and set values.
+
+`ptah-compat migrate apply --env local` runs every selected target sequentially
+and stops at the first failure. A formatted run emits one document per attempted
+target with one newline between adjacent documents. Commands that require one
+project instance reject a multi-instance selection instead of choosing one.
 
 ## Structural validation and ignored names
 

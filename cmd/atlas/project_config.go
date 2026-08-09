@@ -57,6 +57,39 @@ type atlasProject struct {
 	migrationDirResolved bool
 }
 
+// atlasProjectSet owns one rooted project directory and exposes one non-owning
+// project view per selected Atlas environment instance. The root is shared so
+// dynamic expansion cannot reopen or resolve the same project through a
+// different filesystem boundary for each target.
+type atlasProjectSet struct {
+	projects []atlasProject
+	root     *pathguard.OpenedDirectory
+}
+
+func (s *atlasProjectSet) Close() error {
+	if s == nil || s.root == nil {
+		return nil
+	}
+	err := s.root.Close()
+	s.root = nil
+	return err
+}
+
+type atlasProjectSource struct {
+	path string
+	raw  []byte
+	root *pathguard.OpenedDirectory
+}
+
+func (s *atlasProjectSource) Close() error {
+	if s == nil || s.root == nil {
+		return nil
+	}
+	err := s.root.Close()
+	s.root = nil
+	return err
+}
+
 func (p *atlasProject) Close() error {
 	if p == nil || p.root == nil {
 		return nil
@@ -74,6 +107,10 @@ func closeAtlasProjectOnError(project *atlasProject, runErr *error) {
 	if *runErr != nil {
 		closeAtlasProject(project, runErr)
 	}
+}
+
+func closeAtlasProjectSet(projects *atlasProjectSet, runErr *error) {
+	*runErr = errors.Join(*runErr, projects.Close())
 }
 
 func (p atlasProject) localDirWithQuery(raw string) (atlasargs.LocalDir, error) {
@@ -159,42 +196,79 @@ func openAtlasProject(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 ) (atlasProject, bool, error) {
+	source, loaded, err := openAtlasProjectSource(flags, requirement)
+	if err != nil || !loaded {
+		return atlasProject{}, loaded, err
+	}
+	cfg, err := projectconfig.ParseAtlasFSWithOptions(
+		source.raw,
+		source.path,
+		source.root.FS(),
+		projectconfig.AtlasLoadOptions{EnvName: flags.envName, Vars: flags.vars},
+	)
+	if err != nil {
+		return atlasProject{}, false, errors.Join(err, source.Close())
+	}
+	root := source.root
+	source.root = nil
+	return atlasProject{Config: cfg, root: root}, true, nil
+}
+
+func openAtlasProjects(
+	flags atlasProjectFlagValues,
+	requirement atlasProjectRequirement,
+) (atlasProjectSet, bool, error) {
+	source, loaded, err := openAtlasProjectSource(flags, requirement)
+	if err != nil || !loaded {
+		return atlasProjectSet{}, loaded, err
+	}
+	configs, err := projectconfig.ParseAtlasFSCollectionWithOptions(
+		source.raw,
+		source.path,
+		source.root.FS(),
+		projectconfig.AtlasLoadOptions{EnvName: flags.envName, Vars: flags.vars},
+	)
+	if err != nil {
+		return atlasProjectSet{}, false, errors.Join(err, source.Close())
+	}
+	projects := make([]atlasProject, 0, len(configs))
+	for _, cfg := range configs {
+		projects = append(projects, atlasProject{Config: cfg, root: source.root})
+	}
+	root := source.root
+	source.root = nil
+	return atlasProjectSet{projects: projects, root: root}, true, nil
+}
+
+func openAtlasProjectSource(
+	flags atlasProjectFlagValues,
+	requirement atlasProjectRequirement,
+) (atlasProjectSource, bool, error) {
 	path, err := atlasConfigPathValue(flags.configPath)
 	if err != nil {
-		return atlasProject{}, false, err
+		return atlasProjectSource{}, false, err
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return atlasProject{}, false, fmt.Errorf("resolve atlas config path %s: %w", path, err)
+		return atlasProjectSource{}, false, fmt.Errorf("resolve atlas config path %s: %w", path, err)
 	}
 	root, err := pathguard.OpenDirectory(filepath.Dir(absolute))
 	if err != nil {
-		return atlasProject{}, false, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
+		return atlasProjectSource{}, false, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
 	}
 	raw, err := fs.ReadFile(root.FS(), filepath.Base(absolute))
 	if errors.Is(err, fs.ErrNotExist) && requirement == optionalAtlasProject {
 		closeErr := root.Close()
-		return atlasProject{}, false, closeErr
+		return atlasProjectSource{}, false, closeErr
 	}
 	if err != nil {
 		closeErr := root.Close()
-		return atlasProject{}, false, errors.Join(
+		return atlasProjectSource{}, false, errors.Join(
 			fmt.Errorf("failed to read atlas config %s: %w", path, err),
 			closeErr,
 		)
 	}
-	cfg, err := projectconfig.ParseAtlasFSWithOptions(raw, path, root.FS(), projectconfig.AtlasLoadOptions{
-		EnvName: flags.envName,
-		Vars:    flags.vars,
-	})
-	if err != nil {
-		closeErr := root.Close()
-		return atlasProject{}, false, errors.Join(err, closeErr)
-	}
-	return atlasProject{
-		Config: cfg,
-		root:   root,
-	}, true, nil
+	return atlasProjectSource{path: path, raw: raw, root: root}, true, nil
 }
 
 func openRequiredMergedProjectConfig(
@@ -332,6 +406,33 @@ func openAtlasProjectForCommand(
 		}
 	}
 	return project, loaded, nil
+}
+
+func openAtlasProjectsForCommand(
+	cmd *cobra.Command,
+	mode missingAtlasEnvSelectionMode,
+) (atlasProjectSet, bool, error) {
+	flags, changed, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return atlasProjectSet{}, false, err
+	}
+	requirement := optionalAtlasProject
+	if changed {
+		requirement = requiredAtlasProject
+	}
+	projects, loaded, err := openAtlasProjects(flags, requirement)
+	if err != nil {
+		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
+			return atlasProjectSet{}, false, nil
+		}
+		return atlasProjectSet{}, false, err
+	}
+	if loaded && len(projects.projects) > 0 {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), projects.projects[0].Config); err != nil {
+			return atlasProjectSet{}, false, errors.Join(err, projects.Close())
+		}
+	}
+	return projects, loaded, nil
 }
 
 func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, bool, error) {

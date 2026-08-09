@@ -149,10 +149,14 @@ type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
     func Load(opts LoadOptions) (Config, error)
     func LoadAtlasFile(path, envName string) (Config, error)
+    func LoadAtlasFileCollectionWithOptions(path string, opts AtlasLoadOptions) ([]Config, error)
     func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error)
+    func LoadCollection(opts LoadOptions) ([]Config, error)
     func LoadPtahFile(path, envName string) (Config, error)
     func Merge(base, override Config) Config
     func ParseAtlas(data []byte, filename, envName string) (Config, error)
+    func ParseAtlasCollectionWithOptions(data []byte, filename string, opts AtlasLoadOptions) ([]Config, error)
+    func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) ([]Config, error)
     func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
     func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
     func ParsePtah(data []byte, filename, envName string) (Config, error)
@@ -236,10 +240,14 @@ type Config struct {
 
 func Load(opts LoadOptions) (Config, error)
 func LoadAtlasFile(path, envName string) (Config, error)
+func LoadAtlasFileCollectionWithOptions(path string, opts AtlasLoadOptions) ([]Config, error)
 func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error)
+func LoadCollection(opts LoadOptions) ([]Config, error)
 func LoadPtahFile(path, envName string) (Config, error)
 func Merge(base, override Config) Config
 func ParseAtlas(data []byte, filename, envName string) (Config, error)
+func ParseAtlasCollectionWithOptions(data []byte, filename string, opts AtlasLoadOptions) ([]Config, error)
+func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) ([]Config, error)
 func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
@@ -7708,6 +7716,11 @@ type MigrateUpOptions struct {
     // a pending dirty migration. It does not bypass committed-prefix verification;
     // callers should expose it only as an explicit recovery action.
     AllowDirty bool
+    // DiscardRolledBackFailure removes the Atlas revision row written for a
+    // failed up migration only when this invocation observed a successful
+    // transaction rollback. Existing dirty revisions and uncertain commit or
+    // rollback outcomes remain recorded and block automatic retry.
+    DiscardRolledBackFailure bool
     // AssumedAppliedVersions are treated as applied for plan selection without
     // reading or writing revision metadata. This is intended for dry-run paths
     // that need to model metadata-only operations such as baseline.

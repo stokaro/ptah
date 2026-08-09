@@ -52,9 +52,12 @@ type ApplyOptions struct {
 	// it is enforced by the migrator inside the migration lock rather than by
 	// the preview below, so a run that races another writer applies the
 	// versions the bound names rather than a count computed before the lock.
-	ToVersion       int64
-	AllowDirty      bool
-	BaselineVersion int64
+	ToVersion  int64
+	AllowDirty bool
+	// DiscardRolledBackFailure mirrors Atlas's handling of a failed
+	// transactional migration whose body was fully rolled back.
+	DiscardRolledBackFailure bool
+	BaselineVersion          int64
 	// SkipChecks bypasses pre-migration check evaluation. Atlas registers no
 	// flag for this on `migrate apply` (measured on CE v1.2.0 and on
 	// Atlas's own help surface), so the compat command resolves it from
@@ -238,10 +241,11 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 	executionStarted := false
 	lockedPlanObserved := false
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		Amount:                 p.opts.Amount,
-		TargetVersion:          p.opts.ToVersion,
-		AllowDirty:             p.opts.AllowDirty,
-		AssumedAppliedVersions: p.assumedAppliedVersions,
+		Amount:                   p.opts.Amount,
+		TargetVersion:            p.opts.ToVersion,
+		AllowDirty:               p.opts.AllowDirty,
+		DiscardRolledBackFailure: p.opts.DiscardRolledBackFailure,
+		AssumedAppliedVersions:   p.assumedAppliedVersions,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			lockedPlanObserved = true
 			result.SelectedVersions = slices.Clone(plan.Versions)
