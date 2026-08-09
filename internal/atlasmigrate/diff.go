@@ -128,9 +128,13 @@ type DiffResult struct {
 	SumPath        string
 }
 
+// devSchemaReader reads the replayed dev database at an ALREADY RESOLVED read
+// scope. The names come from [schemascope.ReadNames] at the call site, not from
+// here, so this verb reads the same schemas `schema diff`, `schema inspect` and
+// `schema apply` read (stokaro/ptah#1276).
 type devSchemaReader func(
 	conn *dbschema.DatabaseConnection,
-	schemas []string,
+	readNames []string,
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, error)
 
@@ -238,15 +242,13 @@ func generateDiff(
 		replaySource,
 		migrator.MigrationDirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			replayed, err := runtime.readDevSchema(replayConn, schemas, devDefaultSchema)
+			replayed, compared, err := compareReplayedState(
+				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
+			)
 			if err != nil {
 				return err
 			}
-			current = replayed
-			diff, err = schemadiff.CompareWithDatabase(ctx, replayConn, desired, replayed, nil)
-			if err != nil {
-				return fmt.Errorf("compare dev database schema: %w", err)
-			}
+			current, diff = replayed, compared
 			return nil
 		},
 	); err != nil {
@@ -510,18 +512,60 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 	return opts
 }
 
-func readScopedDevSchema(
-	conn *dbschema.DatabaseConnection,
+// compareReplayedState reads the state the migration directory just replayed
+// on the dev database and compares the desired state against it.
+//
+// Which schemas that read covers is resolved here, by the one owner every other
+// read consumes. A directory that creates `extra.b`, replayed and then read at
+// the dev connection's own schema, reported the replay as having created
+// nothing there, and `migrate diff` re-emitted `CREATE TABLE "extra"."b"` into a
+// new migration file on every run: two runs, two files, and applying the
+// directory failed at SQLSTATE 42P07. Measured on PostgreSQL 17.10
+// (stokaro/ptah#1276).
+func compareReplayedState(
+	ctx context.Context,
+	replayConn *dbschema.DatabaseConnection,
+	runtime diffRuntime,
 	schemas []string,
 	defaultSchema string,
+	desired *goschema.Database,
+) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
+	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
+	}
+	replayed, err := runtime.readDevSchema(replayConn, readNames, defaultSchema)
+	if err != nil {
+		return nil, nil, err
+	}
+	diff, err := schemadiff.CompareWithDatabase(ctx, replayConn, desired, replayed, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
+	}
+	return replayed, diff, nil
+}
+
+// readScopedDevSchema reads the state the migration directory replayed, which
+// is the CURRENT side of `migrate diff`.
+//
+// readNames is the resolved read scope, and it is also what the result is
+// filtered by. The two were separate when the filter carried an explicit
+// `--schema` selection and the read carried nothing, and that gap is the
+// defect: filtering by the names actually read is a no-op for every object the
+// read could have returned, and it is exactly the selection when one was made
+// (stokaro/ptah#1276).
+func readScopedDevSchema(
+	conn *dbschema.DatabaseConnection,
+	readNames []string,
+	defaultSchema string,
 ) (*dbschematypes.DBSchema, error) {
-	current, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	current, err := dbschema.ReadSchemaWithSchemas(conn, readNames)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
 	return schemascope.FilterDatabaseWithDefaultSchema(
 		withoutRevisionTable(current),
-		schemas,
+		readNames,
 		defaultSchema,
 	), nil
 }

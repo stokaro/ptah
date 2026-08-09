@@ -158,7 +158,17 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemascope.SplitNames(opts.Schemas))
+	// Which schemas this read covers is [schemascope.ReadNames]'s decision, not
+	// this function's. Deriving it here is what made a database URL describe the
+	// connected schema alone while `schema inspect` described the whole realm,
+	// and the comparator -- which cannot tell a schema nobody read from a schema
+	// nobody wants -- planned `DROP TABLE "extra"."b" CASCADE` off the
+	// difference (stokaro/ptah#1276).
+	names, err := schemascope.ReadNames(ctx, conn.Info(), opts.Schemas, conn)
+	if err != nil {
+		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
+	}
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
@@ -221,7 +231,15 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		snapshot,
 		migrator.MigrationDirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
-			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, schemascope.SplitNames(opts.Schemas))
+			// Same decision, same owner: a migration directory that creates a
+			// second schema describes it, and a read scoped to the dev
+			// connection's own schema would report the replay as having created
+			// nothing there (stokaro/ptah#1276).
+			names, err := schemascope.ReadNames(ctx, replayConn.Info(), opts.Schemas, replayConn)
+			if err != nil {
+				return fmt.Errorf("read dev database schema: %w", err)
+			}
+			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, names)
 			if err != nil {
 				return fmt.Errorf("read dev database schema: %w", err)
 			}
