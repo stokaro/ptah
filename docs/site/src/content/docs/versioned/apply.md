@@ -324,6 +324,40 @@ the same recoverable state in both revision-table formats;
 Atlas's hidden failed-down state. [Roll back migrations](../rollback/) shows
 how to resume it through the native repair command.
 
+**What a failed body records depends on the transaction mode — and, on the
+MySQL family, on the statements themselves.** The committed prefix a resume
+skips is only ever the prefix that really survived:
+
+- Under `none`, every statement commits on its own. The revision row is
+  checkpointed after each one, so `applied` and the cumulative digests name
+  exactly the statements that ran, and the retry continues at the next one.
+- Under `file` or `all` on PostgreSQL, CockroachDB, YugabyteDB, SQLite and
+  SQL Server, DDL is transactional and the failure rolls the whole body back.
+  Nothing is recorded as committed, and the retry runs the body from its first
+  statement. An Atlas-format row written for such a failure is removed rather
+  than left claiming progress that no longer exists.
+- Under `file` or `all` on MySQL and MariaDB, the server commits the open
+  transaction on its own before a DDL statement, so part of a rolled-back body
+  can survive it. That commit ends the transaction rather than flushing it, so
+  every statement after the DDL runs with no transaction open, commits itself,
+  and survives the rollback too. The committed prefix therefore runs to the last
+  statement that executed, not to the last statement that forced the commit —
+  and the failing statement forces its own commit before it runs, so the
+  statements ahead of a failing DDL are committed as well. A body of plain DML
+  that fails leaves nothing behind and is retried whole; a body that reached a
+  DDL statement keeps everything up to the failure and is resumed after it.
+  A statement Ptah cannot classify is treated as rolled back, so a retry repeats
+  it rather than skipping it on a guess.
+- A body that rolls back its own transaction part-way is the one shape a single
+  counter cannot describe: the statements after the `ROLLBACK` are durable and
+  the ones before it are not. Ptah records no committed prefix for it, which
+  never claims a statement committed that was not, at the cost of repeating the
+  statements after the in-body `ROLLBACK` on a retry.
+
+Transactional modes therefore never expose partial progress that a rollback
+undid, and non-transactional mode never hides progress that a rollback could
+not undo.
+
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, or its deadline expires while an autocommit statement is
 in flight, the revision row preserves the last known completed statement and

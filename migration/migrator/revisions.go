@@ -170,6 +170,7 @@ type migrationProgress struct {
 
 func migrationExecutionProgress(
 	err error,
+	sqlText string,
 	dialect string,
 	txMode MigrationTxMode,
 ) migrationProgress {
@@ -185,10 +186,10 @@ func migrationExecutionProgress(
 	var observationErr *StatementObservationError
 	if errors.As(err, &observationErr) {
 		event := observationErr.Event
-		applied := event.Index
-		if migrationProgressRolledBack(dialect, txMode) {
-			applied = 0
-		}
+		// The observed statement executed and only the observation that follows
+		// it failed, so no statement of the body is itself the failure: pass 0
+		// as the failing index rather than the statement that succeeded.
+		applied := rolledBackApplied(sqlText, dialect, txMode, event.Index, 0)
 		return migrationProgress{
 			Applied: applied, Total: event.Total,
 			Statement: event.Statement, FailedIndex: event.Index,
@@ -200,26 +201,47 @@ func migrationExecutionProgress(
 		return migrationProgress{}
 	}
 
-	applied := execErr.StatementIndex - 1
+	applied := max(execErr.StatementIndex-1, 0)
 	// The recorded counter is not decoration: a retry resumes at applied+1, so
 	// overstating it skips a statement that never ran. Whether the earlier
-	// statements survived the failure is a property of the transaction mode and
-	// the dialect, which is what migrationProgressRolledBack answers — this
-	// branch used to carry its own shorter, unnormalized list that omitted SQLite
-	// and SQL Server and so recorded applied=1 for a file whose transaction had
-	// rolled the whole body back (#966).
-	if migrationProgressRolledBack(dialect, txMode) {
-		applied = 0
-	}
-	if applied < 0 {
-		applied = 0
-	}
+	// statements survived the failure is a property of the transaction mode, the
+	// dialect and — on the MySQL family — the statements themselves, which is
+	// what rolledBackApplied answers. This branch used to carry its own shorter,
+	// unnormalized list that omitted SQLite and SQL Server and so recorded
+	// applied=1 for a file whose transaction had rolled the whole body back
+	// (#966).
+	applied = rolledBackApplied(sqlText, dialect, txMode, applied, execErr.StatementIndex)
 	return migrationProgress{
 		Applied: applied, Total: execErr.Total,
 		Statement: execErr.Statement, FailedIndex: execErr.StatementIndex,
 	}
 }
 
+// rolledBackApplied corrects how many statements a failed migration body left
+// committed, given that executed of them ran before the statement at
+// failedIndex (1-based, 0 when no statement itself failed) stopped it.
+//
+// A body that did not run inside a transaction keeps its own count. A body that
+// did, on a dialect whose DDL is transactional, committed nothing. On the MySQL
+// family neither answer holds: the server commits on its own before every DDL
+// statement, so part of the body can survive a rollback and the rest cannot.
+// Recording the whole prefix there marks statements applied that the rollback
+// undid, and a resume then skips them permanently (#887); recording zero
+// re-runs DDL the server already committed.
+func rolledBackApplied(sqlText, dialect string, txMode MigrationTxMode, executed, failedIndex int) int {
+	if !migrationProgressRolledBack(dialect, txMode) {
+		return executed
+	}
+	if !implicitCommitDialect(dialect) {
+		return 0
+	}
+	return committedPrefixAfterRollback(sqlText, dialect, executed, failedIndex)
+}
+
+// migrationProgressRolledBack reports whether the migration body ran inside a
+// transaction that the failure rolled back. It says nothing about which
+// statements survived that rollback — on the MySQL family, where the server
+// commits DDL on its own, some of them do. See [rolledBackApplied].
 func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 	if txMode == MigrationTxModeAll {
 		return true
@@ -228,7 +250,8 @@ func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 		return false
 	}
 	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer,
+		platform.MySQL, platform.MariaDB:
 		return true
 	default:
 		return false
@@ -1531,22 +1554,19 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
-	progress := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
+	progress := migrationExecutionProgress(failure, sqlText, m.conn.Info().Dialect, txMode)
 	applied, total, stmt, failedIndex := progress.Applied, progress.Total, progress.Statement, progress.FailedIndex
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}
-	// migrationExecutionProgress reports a plain execution error as
-	// StatementIndex-1 statements applied, and only zeroes that for tx-mode all
-	// and the PostgreSQL family -- so on SQLite and SQL Server, whose DDL is
-	// transactional too, a rolled-back body still counts its failing statement's
-	// predecessors as committed. Recovery from a rollback reads that number to
-	// decide whether the schema was changed at all, so the down direction
-	// corrects it here, using the same rule the observation path already uses.
+	// The per-statement progress recorder reports its own count, which the
+	// rollback correction inside migrationExecutionProgress never sees.
+	// Recovery from a rollback reads that number to decide whether the schema
+	// was changed at all, so the down direction runs the same correction here.
 	// The up direction is left alone deliberately: it is the number the
 	// Atlas-shaped surface reports.
-	if direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {
-		applied = 0
+	if direction == MigrationDirectionDown {
+		applied = rolledBackApplied(sqlText, m.conn.Info().Dialect, txMode, applied, failedIndex)
 	}
 	if direction == MigrationDirectionUp {
 		applied = max(applied, migrationAppliedFloor(ctx))

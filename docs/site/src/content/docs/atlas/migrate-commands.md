@@ -164,6 +164,17 @@ the zero-progress revision row. The next apply retries the whole file without
 `--allow-dirty`, matching Atlas. Native `ptah migrations up` keeps its durable
 failure record instead.
 
+On MySQL and MariaDB a rollback does not always reach zero progress. The server
+commits the open transaction on its own before a DDL statement, and that commit
+*ends* the transaction rather than flushing it: every statement after the DDL
+runs with no transaction open and commits itself, so the rollback reaches none
+of them either. `ptah-compat` records that whole committed prefix — and its
+`partial_hashes` — and the row stays, because retrying the file whole would
+repeat SQL the server has already committed. A body that reached no such
+statement leaves nothing behind and its row is removed like any other
+rolled-back failure. A statement Ptah cannot classify counts as rolled back, so
+a retry repeats it rather than skipping it on a guess.
+
 When a statement committed under `--tx-mode none`, or its outcome is unknown,
 `ptah-compat` preserves the revision row. `migrate status` reports that row as
 a half-applied file, because `Current Version` counts it:
