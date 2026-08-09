@@ -223,8 +223,13 @@ people and pipelines share a directory:
   the witness transaction. A custom `MigrationFunc` is opaque for the same
   reason and must use `none`; a `StatementInterceptor` is also opaque because
   it can replace the inspected statement with different SQL. MySQL-family
-  `file` mode accepts directly executed SQL-backed migrations only. Rejected
-  diagnostics identify the statement number and safety class without echoing
+  `file` mode accepts directly executed SQL-backed migrations only. The
+  migration account must hold `TRIGGER` at database or global scope, because
+  MySQL and MariaDB hide trigger metadata from an account without it while
+  those triggers still fire during ordinary DML. A refused statement is
+  reported by its number and safety class; a `MigrationFunc` or
+  `StatementInterceptor` is refused for the whole migration and reported by
+  direction, because neither has a statement to point at. Neither form repeats
   the SQL, which may contain credentials.
   Pre-migration checks are not rerun after committed progress because they
   describe the original pre-migration state. Automatic continuation is

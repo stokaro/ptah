@@ -312,6 +312,77 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 	}
 }
 
+// TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern pins the
+// database of a schema-level privilege as the pattern the server stores rather
+// than as a name. Every schema here contains an underscore, which the cases
+// above never do, and that is the whole point: `SHOW GRANTS` prints the
+// escaped `ptah\_test` for the privilege the official MySQL and MariaDB images
+// create for MYSQL_USER on `ptah_test`, and a name comparison both refuses a
+// user who holds TRIGGER and misses the REVOKE that took it away.
+func TestMySQLGrantsProvideTriggerCatalogVisibility_SchemaPattern(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		schema string
+		grants []string
+		want   bool
+	}{
+		{
+			name:   "escaped underscore covers the database",
+			schema: "ptah_test",
+			grants: []string{"GRANT ALL PRIVILEGES ON `ptah\\_test`.* TO `ptah`@`%`"},
+			want:   true,
+		},
+		{
+			name:   "literal underscore covers the database",
+			schema: "ptah_test",
+			grants: []string{"GRANT ALL PRIVILEGES ON `ptah_test`.* TO `ptah`@`%`"},
+			want:   true,
+		},
+		{
+			name:   "trailing wildcard covers the database",
+			schema: "ptah_test",
+			grants: []string{"GRANT TRIGGER ON `ptah%`.* TO `ptah`@`%`"},
+			want:   true,
+		},
+		{
+			name:   "unescaped underscore matches any single character",
+			schema: "ptahXtest",
+			grants: []string{"GRANT TRIGGER ON `ptah_test`.* TO `ptah`@`%`"},
+			want:   true,
+		},
+		{
+			name:   "escaped percent is not a wildcard",
+			schema: "ptah_test",
+			grants: []string{"GRANT TRIGGER ON `ptah\\%test`.* TO `ptah`@`%`"},
+			want:   false,
+		},
+		{
+			name:   "escaped underscore does not reach another database",
+			schema: "ptah_test",
+			grants: []string{"GRANT TRIGGER ON `archive\\_test`.* TO `ptah`@`%`"},
+			want:   false,
+		},
+		{
+			name:   "escaped revoke takes the privilege away",
+			schema: "ptah_test",
+			grants: []string{
+				"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`",
+				"REVOKE TRIGGER ON `ptah\\_test`.* FROM `ptah`@`%`",
+			},
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, test.schema, "mysql")
+			c.Assert(visible, qt.Equals, test.want)
+		})
+	}
+}
+
 func TestMySQLReferencedCatalogName(t *testing.T) {
 	c := qt.New(t)
 	names := map[string]struct{}{"active_jobs": {}}

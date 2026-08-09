@@ -97,6 +97,16 @@ func TestRolledBackProgress_MariaDBRejectsAutocommitControl(t *testing.T) {
 	runRejectsAutocommitControl(t, dbURL, "mariadb")
 }
 
+func TestRolledBackProgress_MySQLRejectsTransactionControl(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsTransactionControl(t, dbURL, "mysql")
+}
+
+func TestRolledBackProgress_MariaDBRejectsTransactionControl(t *testing.T) {
+	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsTransactionControl(t, dbURL, "mariadb")
+}
+
 func TestRolledBackProgress_MySQLRejectsChangingTargetDatabase(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runRejectsChangingTargetDatabase(t, dbURL, "mysql")
@@ -321,6 +331,46 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(err, qt.ErrorMatches, `.*cannot run a statement interceptor for the up direction in tx-mode file.*`)
 		c.Assert(interceptor.called, qt.IsFalse)
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	// An interceptor is refused in both directions, and the message names the
+	// direction rather than leaning on a stray article. A rollback body reaches
+	// the same execution path as an apply body, so an interceptor can run SQL
+	// outside the witness on the way down exactly as it can on the way up.
+	t.Run("statement interceptor down", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_interceptor_down")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		upSQL := fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable)
+		downSQL := fmt.Sprintf("DROP TABLE %s", names.createdTable)
+		initial := migrator.CreateMigrationFromSQL(1, "interceptor down", upSQL, downSQL)
+		c.Assert(issue887Migrator(conn, names, initial).MigrateUp(ctx), qt.IsNil)
+
+		interceptor := &issue887StatementInterceptor{}
+		intercepted, err := migrator.NewMigrationFromSQLFilesWithInterceptor(
+			1,
+			"interceptor down",
+			"migration.up.sql",
+			"migration.down.sql",
+			fstest.MapFS{
+				"migration.up.sql":   &fstest.MapFile{Data: []byte(upSQL)},
+				"migration.down.sql": &fstest.MapFile{Data: []byte(downSQL)},
+			},
+			interceptor,
+		)
+		c.Assert(err, qt.IsNil)
+
+		err = issue887Migrator(conn, names, intercepted).MigrateDown(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run a statement interceptor for the down direction in tx-mode file.*`)
+		c.Assert(interceptor.called, qt.IsFalse)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(1))
 	})
 
 	t.Run("nested SQL", func(t *testing.T) {
@@ -775,6 +825,73 @@ func runRejectsAutocommitControl(t *testing.T, dbURL, dialect string) {
 	c.Assert(issue887LedgerCount(t, conn, names), qt.Equals, int64(0))
 	c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+}
+
+// runRejectsTransactionControl drives the primary transaction-control arm of
+// the tx-mode file preflight through MigrateUp on a live server.
+//
+// The witness contract holds only while one InnoDB transaction covers both the
+// body and the revision row, so a body statement that ends that transaction
+// breaks it. `COMMIT AND CHAIN` and `ROLLBACK AND CHAIN` are the cases worth
+// naming: they end the transaction and immediately open another one, so the
+// session still looks like it is inside a transaction even though everything
+// before them has already been made durable or thrown away. A classifier that
+// asks "is this a bare COMMIT or ROLLBACK?" instead of "does this control the
+// transaction?" lets both through, MigrateUp then returns nil for a run that
+// applied only the tail of the body, and the revision row calls the migration
+// complete. The counted notes are what separate that from a correct run: the
+// returned error alone cannot, because the broken version returns none.
+func runRejectsTransactionControl(t *testing.T, dbURL, dialect string) {
+	t.Helper()
+
+	tests := []struct {
+		name    string
+		control string
+	}{
+		{name: "commit", control: "COMMIT"},
+		{name: "rollback", control: "ROLLBACK"},
+		{name: "commit and chain", control: "COMMIT AND CHAIN"},
+		{name: "rollback and chain", control: "ROLLBACK AND CHAIN"},
+		{name: "start transaction", control: "START TRANSACTION"},
+		{name: "savepoint", control: "SAVEPOINT ptah_887_control"},
+		{name: "release savepoint", control: "RELEASE SAVEPOINT ptah_887_control"},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := context.Background()
+			conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+			c.Assert(err, qt.IsNil)
+			defer func() { _ = conn.Close() }()
+
+			names := issue887Names(fmt.Sprintf("%s_txcontrol%d", dialect, index))
+			cleanupIssue887(t, conn, names)
+			defer cleanupIssue887(t, conn, names)
+			_, err = conn.ExecContext(ctx, fmt.Sprintf(
+				"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+			))
+			c.Assert(err, qt.IsNil)
+
+			body := fmt.Sprintf(
+				"INSERT INTO %[1]s (id, note) VALUES (1, 'one');\n"+
+					"%[2]s;\n"+
+					"INSERT INTO %[1]s (id, note) VALUES (2, 'two');\n",
+				names.ledgerTable, test.control,
+			)
+			migration := migrator.CreateMigrationFromSQL(1, "transaction control", body,
+				fmt.Sprintf("DELETE FROM %s", names.ledgerTable))
+
+			err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+			// Checks, not assertions: a classifier that misses this control
+			// reports success and loses the first note, and both symptoms are
+			// worth seeing in the same failure.
+			c.Check(err, qt.ErrorMatches,
+				`.*migration 1 cannot run tx-mode file statement 2 because it controls transaction state.*`)
+			c.Check(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{})
+			c.Check(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+		})
+	}
 }
 
 func runRejectsChangingTargetDatabase(t *testing.T, dbURL, dialect string) {

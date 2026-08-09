@@ -179,6 +179,14 @@ An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
 before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
 new table inherits an engine that the session default does not prove.
 
+The migration account must also hold `TRIGGER` at database or global scope.
+MySQL and MariaDB hide trigger metadata from an account without it while those
+triggers still fire during ordinary DML, so without the privilege `ptah-compat`
+cannot prove a target table has no hidden indirect writer and refuses `file`
+mode. A privilege on a database whose name contains an underscore escapes it,
+so a grant covering `ptah_test` is stored and printed as `ptah\_test`, and
+`ptah-compat` reads that database the way the server does.
+
 MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
 the InnoDB witness:
 
@@ -194,8 +202,11 @@ the InnoDB witness:
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
 
-Rejection errors identify the statement number and safety class without echoing
-the SQL.
+The first five entries are statement-level: the error names the statement number
+and its safety class. Custom migration functions and statement interceptors have
+no statement to point at, so those two are refused for the whole migration and
+the error names the direction instead. None of these errors repeats the SQL, so
+a credential inside a refused statement stays out of the message.
 
 MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
