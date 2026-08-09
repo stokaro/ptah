@@ -1,11 +1,6 @@
 package generator
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -32,32 +27,18 @@ func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL
 // callers surface a wording that matches the file kind they asked for. It is
 // the shared core of WriteDataMigrationFiles and WriteCheckpointFiles, which
 // differ only in the file-name scheme and that label.
+//
+// The whole transaction runs through one binding of outputDir. It used to
+// resolve the pathname afresh for the mkdir, the existence check, each of the
+// two creates and the ptah.sum commit, which is the shape stokaro/ptah#1118
+// describes: with the directory renamed aside after the up half was created,
+// the call returned nil having written the up half into the retained directory
+// and the down half and ptah.sum into the directory that took over the pathname.
 func writeMigrationPair(
 	outputDir string,
 	version int64,
 	description, upSQL, downSQL, kind string,
 	nameFor func(version int64, description, direction string) string,
 ) (upPath, downPath string, err error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return "", "", fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	upPath = filepath.Join(outputDir, nameFor(version, description, "up"))
-	downPath = filepath.Join(outputDir, nameFor(version, description, "down"))
-	if fileExists(upPath) || fileExists(downPath) {
-		return "", "", fmt.Errorf("%s files for version %d already exist", kind, version)
-	}
-
-	if err := writeNewMigrationFile(upPath, upSQL); err != nil {
-		return "", "", fmt.Errorf("failed to write %s up file: %w", kind, err)
-	}
-	if err := writeNewMigrationFile(downPath, downSQL); err != nil {
-		_ = os.Remove(upPath)
-		return "", "", fmt.Errorf("failed to write %s down file: %w", kind, err)
-	}
-
-	if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatPtah); err != nil {
-		return "", "", fmt.Errorf("failed to rewrite ptah.sum: %w", err)
-	}
-	return upPath, downPath, nil
+	return writeRootedMigrationPair(outputDir, version, description, upSQL, downSQL, kind, nameFor)
 }
