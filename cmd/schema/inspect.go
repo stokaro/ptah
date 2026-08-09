@@ -83,7 +83,7 @@ inspected output never references an object it omitted.`,
 	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Local schema file to inspect (.hcl, .yaml, .yml, or .sql); requires --dev-url")
 	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
 	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, inspectIncludeFlag, nil, "Schema objects to include in inspection (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, inspectExcludeFlag, nil, "Schema objects to exclude from inspection (Atlas-style selectors)")
 	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, or json")

@@ -106,7 +106,7 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags.BoolVar(&opts.edit, applyEditFlag, false, "Open the planned SQL in $VISUAL or $EDITOR before confirmation")
 	flags.StringVar(&opts.txMode, applyTxModeFlag, "", "Transaction mode: all, file, or none (default file)")
 	flags.StringVar(&opts.lockTimeout, applyLockTimeoutFlag, "", "Timeout for acquiring the schema apply lock, such as 10s (empty waits indefinitely)")
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")

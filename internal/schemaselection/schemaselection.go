@@ -37,6 +37,10 @@ const searchPathParam = "search_path"
 // PostgresNonSystemSchemas is the WHERE predicate that keeps the schemas a
 // realm describes and drops the server's own, over a `pg_namespace n`.
 //
+// CockroachDB exposes crdb_internal through the PostgreSQL catalog surface, but
+// its virtual relations are not ordinary user tables and PostgreSQL readers
+// cannot inspect them as comparison input.
+//
 // The ESCAPE clause matters: in LIKE, `_` matches any single character, so an
 // unescaped 'pg\_%' would also hide a user schema named `pgapp` and describe
 // less of the database than is there.
@@ -46,6 +50,7 @@ const searchPathParam = "search_path"
 // go.5x5.cz/ptah/internal/migrateclean, which needs each schema's tables as
 // well. Those two questions differ; "which schemas is the realm" does not.
 const PostgresNonSystemSchemas = `n.nspname <> 'information_schema'
+			  AND n.nspname <> 'crdb_internal'
 			  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`
 
 // RowQuerier is the part of *sql.DB and *sql.Tx [Selection.Resolve] needs.
