@@ -169,6 +169,76 @@ func Realm(dialect, rawURL, connectedSchema string) bool {
 	}
 }
 
+// sqliteDefaultSchema is the only schema a SQLite connection has. It is spelled
+// here rather than imported from the identifier semantics because this package
+// needs the NAME a diagnostic prints, not the comparison rules that type
+// carries, and importing those would pull the identifier layer under every
+// caller of a URL question.
+const sqliteDefaultSchema = "main"
+
+// URLScope reports the one schema a database URL limits a run to, and whether it
+// limits it at all.
+//
+// It answers [Realm]'s question from the URL ALONE, which is the point: the
+// caller that needs it has not connected yet. The pinned Atlas community binary
+// v1.3.0 refuses an HCL desired state that declares more than one schema against
+// a schema-limited URL, and Ptah has to refuse it before the dev database is
+// reset -- destroying that database over a document the run was never going to
+// read is worse than the divergence being fixed. Measured with
+// `schema inspect -u file://two-schema-blocks.hcl`:
+//
+//	--dev-url sqlite://dv?mode=memory              exit 1, limited to "main"
+//	--dev-url postgres://…/db?search_path=public   exit 1, limited to "public"
+//	--dev-url mysql://…/wf823_dev                  exit 1, limited to "wf823_dev"
+//	--dev-url postgres://…/db                      exit 0, not limited
+//
+// PostgreSQL-family URLs defer to [FromURL], so this and [Realm] cannot disagree
+// there. A dialect whose boundary nobody has measured limits nothing, which
+// keeps this from refusing a run the comparison tool accepts.
+func URLScope(rawURL string) (scope string, limited bool) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", false
+	}
+	dialect, err := atlasurl.DialectFromURL(rawURL)
+	if err != nil {
+		return "", false
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLite:
+		// SQLite has one namespace, so every SQLite URL is limited to it.
+		return sqliteDefaultSchema, true
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		selected := FromURL(rawURL).Scope
+		return selected, selected != ""
+	case platform.MySQL, platform.MariaDB:
+		named := urlDatabaseName(rawURL)
+		return named, named != ""
+	default:
+		return "", false
+	}
+}
+
+// urlDatabaseName reads the database a MySQL-family URL names, which is the same
+// thing as its schema there.
+//
+// It cuts the string rather than going through [net/url.Parse] because the
+// driver's own `tcp(host:port)` spelling is not a parseable URL host, and a
+// parse failure would answer "no database" for a URL that names one -- the
+// looser direction.
+func urlDatabaseName(rawURL string) string {
+	_, afterScheme, ok := strings.Cut(rawURL, "://")
+	if !ok {
+		return ""
+	}
+	_, path, ok := strings.Cut(afterScheme, "/")
+	if !ok {
+		return ""
+	}
+	path, _, _ = strings.Cut(path, "?")
+	return strings.TrimSpace(path)
+}
+
 // RowsQuerier is the part of *sql.DB and dbschema.DatabaseConnection
 // [RealmSchemas] needs.
 type RowsQuerier interface {

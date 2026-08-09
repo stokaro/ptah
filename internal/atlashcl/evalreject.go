@@ -102,10 +102,19 @@ func (p *parser) appendUnresolvedExpr(name string, attr *hclsyntax.Attribute, ou
 // root's own range, the way checkDroppedExpr reports one, because that is what
 // the community binary underlines -- `var.status` points at `var`. Everything
 // else is the HCL diagnostic, which already names the member or the operand.
+//
+// The one exception is a `schema.` reference the document itself declares: the
+// HCL diagnostic calls that name unknown, and it is not.
 func (p *parser) unresolvedExprError(expr hclsyntax.Expression) error {
 	for _, traversal := range hclsyntax.Variables(expr) {
 		root, ok := traversal[0].(hcl.TraverseRoot)
-		if !ok || !isEvalNamespace(root.Name) {
+		if !ok {
+			continue
+		}
+		if !isEvalNamespace(root.Name) {
+			if p.declaresSchemaRoot(root.Name) {
+				return p.schemaReferenceNotAValueError(root.Name, root.SrcRange)
+			}
 			continue
 		}
 		if _, bound := p.ctx.Variables[root.Name]; !bound {
@@ -116,6 +125,41 @@ func (p *parser) unresolvedExprError(expr hclsyntax.Expression) error {
 		return p.evaluationFailed(diags)
 	}
 	return nil
+}
+
+// declaresSchemaRoot reports whether name is the `schema.` reference root and
+// this document's own top-level `schema` blocks bind it.
+//
+// Both halves matter. A document with no `schema` block does not bind the root,
+// and "there is no variable named schema" is then the accurate thing to say.
+func (p *parser) declaresSchemaRoot(name string) bool {
+	return name == droppedSchemaNamespace && len(p.declaredSchemas) > 0
+}
+
+// schemaReferenceNotAValueError reports a `schema.` reference used where a value
+// was required.
+//
+// It replaces the HCL diagnostic for this one shape because that diagnostic is
+// wrong about the cause. Measured on a document declaring `schema "main"`:
+// `procedure "p" { names = jsonencode(schema.main) }` was refused with
+// `unknown variable: There is no variable named "schema"` -- for a name bound
+// two lines away, which `schema = schema.main` resolves on the same file, and
+// which a dropped body's own scope binds (see droppedSchemaRoot). A reader sent
+// after a missing block finds one already there.
+//
+// The refusal stays. Only a function call spelled as the whole value reaches
+// here (see mustEvaluate), every value helper in this package falls back to an
+// attribute's SOURCE TEXT when an expression will not evaluate, and a call let
+// through would reach the database as the literal `jsonencode(schema.main)`.
+// The pinned Atlas community binary v1.3.0 loads that document at exit 0, so
+// this is Ptah refusing what that binary accepts -- the same asymmetry the
+// closed dropped-body scope takes, and the one that costs a message rather than
+// a wrong schema.
+func (p *parser) schemaReferenceNotAValueError(name string, rng hcl.Range) error {
+	return fmt.Errorf(
+		"parse HCL schema at %s: schema reference %q has no value to pass to a function call: only var. and local. references are evaluated here",
+		rng.String(), name,
+	)
 }
 
 // sqlCallArgument unwraps `sql(X)` to X, reporting whether it unwrapped

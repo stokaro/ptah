@@ -95,6 +95,38 @@ a column declared against a type in another schema is written against that
 schema's type. Applying such a document therefore rebuilds each object where it
 was, and applying it back to the database it describes plans nothing.
 
+#### A schema-limited run refuses a multi-schema HCL desired state
+
+An HCL desired state that declares more than one top-level `schema` block is
+refused when the run is limited to a single schema, and the message names the
+file and every block it counted:
+
+```text
+cannot use HCL with more than 1 schema when dev-url is limited to schema "main":
+2 top-level schema blocks are declared: "main" at schema.hcl:1, "other" at schema.hcl:4
+```
+
+A run is limited when the URL that decides its scope names one schema: any
+SQLite URL, a PostgreSQL-family URL carrying `search_path=<one name>`, or a
+MySQL-family URL naming a database. `--dev-url` is checked first and the target
+`--url` second, so the message names the flag that limited the run. A
+PostgreSQL-family URL with no `search_path` limits nothing, and the same
+document loads there with both schemas described.
+
+The refusal covers `schema inspect`, `schema apply`, `schema diff`,
+`schema plan validate` and `migrate diff`, because a desired state the run
+cannot reach in full is a desired state no plan can honor. Without it the extra
+schemas were dropped and the run reported success:
+`schema diff --from one.hcl --to two-schemas.hcl` answered
+`Schemas are synced, no changes to be made`, and `migrate diff` wrote a
+migration file covering half the document.
+
+The count is of BLOCKS, not of distinct names. A document that opens
+`schema "main"` twice — which is what a directory of per-table HCL files looks
+like when every file repeats the schema block — is two blocks, and is refused
+on a SQLite dev database for that reason. Declare the schema once, or give the
+run a realm-scoped URL.
+
 `--schema` / `-s` narrows inspection when the underlying database reader supports
 schema scoping, and outranks the URL's scope: naming a schema that does not
 exist renders an empty document rather than falling back to the connection's
