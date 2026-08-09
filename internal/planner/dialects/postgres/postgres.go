@@ -249,14 +249,12 @@ func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
 func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, enumName := range diff.EnumsAdded {
 		for _, enum := range generated.Enums {
-			if enum.Name == enumName {
-				values := make([]string, len(enum.Values))
-				for i, v := range enum.Values {
-					values[i] = "'" + v + "'"
-				}
-
-				enumNode := ast.NewEnum(enum.Name, enum.Values...)
-				result = append(result, enumNode)
+			// The diff names enums by qualified name, so the lookup does too.
+			// Building the node through fromschema.FromEnum keeps the CREATE
+			// TYPE identifier and the column type that references it derived
+			// from one place (stokaro/ptah#1276).
+			if enum.QualifiedName() == enumName {
+				result = append(result, fromschema.FromEnum(enum))
 				break
 			}
 		}
@@ -307,7 +305,7 @@ func postgresEnumValues(generated *goschema.Database, enumName string) ([]string
 		return nil, false
 	}
 	for _, enum := range generated.Enums {
-		if enum.Name == enumName {
+		if enum.QualifiedName() == enumName {
 			return append([]string(nil), enum.Values...), true
 		}
 	}
@@ -323,9 +321,16 @@ func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []p
 		tablesByStruct[table.StructName] = table
 	}
 
+	// A field names its declared type by bare name -- that is what
+	// fromschema.declaredEnum matches on -- while the diff names the enum by
+	// qualified name. Both spellings are accepted so a rebuild of an enum in a
+	// non-default schema still finds the columns it has to convert. Where two
+	// schemas hold an enum of one name the bare spelling cannot separate them;
+	// see the residual note on stokaro/ptah#1276.
+	bareName := postgresBaseName(enumName)
 	usages := make([]postgresEnumColumnUsage, 0)
 	for _, field := range generated.Fields {
-		if field.Type != enumName {
+		if field.Type != enumName && field.Type != bareName {
 			continue
 		}
 		table, ok := tablesByStruct[field.StructName]
@@ -442,8 +447,6 @@ func quotePostgresIdentifier(name string) string {
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	orderedTables := deporder.TablesForCreate(generated, diff.TablesAdded)
 
-	result = p.addSchemaPreconditions(result, orderedTables)
-
 	// Phase 1: Create tables without foreign key constraints
 	result = p.createTablesWithoutForeignKeys(result, generated, orderedTables)
 
@@ -454,10 +457,54 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 	return p.addForeignKeyConstraints(result, generated, deporder.TablesForCreate(generated, diff.TablesAdded))
 }
 
-func (p *Planner) addSchemaPreconditions(result []ast.Node, tables []goschema.Table) []ast.Node {
-	seen := make(map[string]struct{})
-	for _, table := range tables {
-		schema := strings.TrimSpace(table.Schema)
+// addSchemaPreconditions creates every schema this migration is about to put an
+// object into, before it puts anything into any of them.
+//
+// It reads the diff rather than the desired state, so a run that changes nothing
+// emits nothing and an inspect/apply round trip stays the clean no-op it has to
+// be. And it reads EVERY added-object list rather than the tables alone, which
+// is the defect it replaces: the preconditions used to be derived from
+// diff.TablesAdded inside addNewTables, so they were emitted after the types,
+// sequences and functions phases and covered none of them. Measured on
+// PostgreSQL 17.10, applying a `schema inspect` document of a multi-schema
+// database to an empty one:
+//
+//	CREATE SEQUENCE "s_misc"."m_seq" ...
+//	ERROR: schema "s_misc" does not exist (SQLSTATE 3F000)
+//
+// with `CREATE SCHEMA IF NOT EXISTS s_misc` seventeen statements further down.
+// The same shape reaches CREATE DOMAIN, CREATE TYPE and CREATE FUNCTION
+// (stokaro/ptah#1276).
+//
+// The schema is taken from the qualified name each comparison already puts on
+// the diff -- tables, enums, domains, composites, ranges, sequences, functions,
+// views, materialized views and a trigger's target relation are all named that
+// way -- so a kind added later is covered by adding its list here and nothing
+// else. Names that carry no schema contribute none, which is every name on a
+// single-schema migration.
+func (p *Planner) addSchemaPreconditions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	names := make([]string, 0, len(diff.TablesAdded))
+	names = append(names, diff.TablesAdded...)
+	names = append(names, diff.EnumsAdded...)
+	names = append(names, diff.DomainsAdded...)
+	names = append(names, diff.CompositeTypesAdded...)
+	names = append(names, diff.RangesAdded...)
+	names = append(names, diff.SequencesAdded...)
+	names = append(names, diff.FunctionsAdded...)
+	names = append(names, diff.ViewsAdded...)
+	names = append(names, diff.MaterializedViewsAdded...)
+	for _, trigger := range diff.TriggersAdded {
+		names = append(names, trigger.TableName)
+	}
+
+	seen := make(map[string]struct{}, len(names))
+	schemas := make([]string, 0, len(names))
+	for _, name := range names {
+		ref, ok := tableref.Parse(name)
+		if !ok || !ref.Qualified {
+			continue
+		}
+		schema := strings.TrimSpace(ref.Schema)
 		if schema == "" {
 			continue
 		}
@@ -465,6 +512,10 @@ func (p *Planner) addSchemaPreconditions(result []ast.Node, tables []goschema.Ta
 			continue
 		}
 		seen[schema] = struct{}{}
+		schemas = append(schemas, schema)
+	}
+	slices.Sort(schemas)
+	for _, schema := range schemas {
 		result = append(result, ast.NewRawSQL("CREATE SCHEMA IF NOT EXISTS "+schema))
 	}
 	return result
@@ -1406,7 +1457,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		result = appendSkipComments(result, skipped)
 	}
 
-	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
+	// 0. Create the schemas this migration adds objects to, before anything is
+	// created in them. Every phase below can name a schema, so this cannot sit
+	// inside one of them.
+	result = p.addSchemaPreconditions(result, diff)
+
+	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)

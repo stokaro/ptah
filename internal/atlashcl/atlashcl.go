@@ -330,8 +330,15 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	if len(values) == 0 {
 		return p.blockError(block, "enum %q requires values", block.Labels[0])
 	}
+	// The `schema` attribute is read rather than merely tolerated. It was
+	// accepted by rejectUnsupportedEnumAttrs and then discarded, so a document
+	// declaring `enum "mood" { schema = schema.extra }` was read back as an
+	// enum belonging to nothing, and applying it created the type in whatever
+	// schema the connection defaulted to (stokaro/ptah#1276). A `function`
+	// block's schema has always been read here; an enum's is the same fact.
 	p.db.Enums = append(p.db.Enums, goschema.Enum{
 		Name:   block.Labels[0],
+		Schema: p.optionalRefName(block.Body.Attributes["schema"]),
 		Values: values,
 	})
 	return nil

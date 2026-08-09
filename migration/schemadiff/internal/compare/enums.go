@@ -2,9 +2,12 @@ package compare
 
 import (
 	"sort"
+	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -80,39 +83,89 @@ import (
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
+// Enums compares enum types under the connection's default schema.
+//
+// It delegates to [EnumsWithSemantics] with zero semantics, which is the
+// no-default-schema rule: a blank schema stays blank and only matches a blank
+// one. Callers that have a live connection have a default schema and should
+// pass it.
 func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	// Create maps for quick lookup
-	genEnums := make(map[string]goschema.Enum)
-	for _, enum := range generated.Enums {
-		genEnums[enum.Name] = enum
-	}
+	EnumsWithSemantics(generated, database, diff, identifier.Semantics{})
+}
 
-	dbEnums := make(map[string]types.DBEnum)
+// EnumsWithSemantics compares enum types by (schema, name) identity.
+//
+// An enum is a TYPE, and a type's identity is its schema and its name together:
+// public.mood and extra.mood hold different values, so keying on the bare name
+// made a read covering two schemas collapse them into one and report a changed
+// enum as converged. Every name this puts on the diff is qualified wherever the
+// enum names a schema, which is what lets the planner emit
+// `CREATE TYPE "extra"."mood"` instead of creating it wherever the connection
+// happens to point (stokaro/ptah#1276).
+//
+// The matching rule is the one views and functions use, and it is deliberately
+// ASYMMETRIC, because a blank schema means a different thing on each side:
+//
+//   - On the DATABASE side, blank means the connection's own schema, which the
+//     reader blanks by convention. It is canonicalized against
+//     semantics.DefaultSchema before anything is compared.
+//   - On the GENERATED side, blank means UNQUALIFIED -- the author named no
+//     schema. A Go annotation cannot name one at all, so an introspected
+//     brownfield schema round-tripped through annotations arrives here with an
+//     enum that names none against a read that names the schema it was scoped
+//     to. Such a name matches a uniquely-named enum wherever it lives, and
+//     nothing when two schemas hold that name, because guessing there is what
+//     would attribute the type to a schema it does not belong to.
+//
+// Both halves are load-bearing and each was measured. Without the first, an
+// `enum` block's `schema = schema.public` -- which is mandatory, the pinned
+// Atlas community binary v1.3.0 having no reading for a block without one --
+// did not match the read's blank, and a `schema inspect` document applied back
+// to its own database planned
+//
+//	CREATE TYPE "public"."p_color" AS ENUM ('red', 'green');
+//	DROP TYPE IF EXISTS "p_color" CASCADE;
+//
+// Without the second, `ptah introspect --schemas <s>` followed by a comparison
+// of the generated annotations against the same read reported
+//
+//	EnumsAdded:   {"status_type"}
+//	EnumsRemoved: {"<s>.status_type"}
+//
+// for a schema nothing had changed. Both on PostgreSQL 17.10.
+func EnumsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	dbByIdentity := make(map[tableIdentity]types.DBEnum, len(database.Enums))
+	dbByName := make(map[string][]types.DBEnum, len(database.Enums))
 	for _, enum := range database.Enums {
-		dbEnums[enum.Name] = enum
+		schema, name := enumParts(enum.Schema, enum.Name)
+		dbByIdentity[newTableIdentity(schema, name, semantics)] = enum
+		dbByName[semantics.TableIdentityKey(name)] = append(dbByName[semantics.TableIdentityKey(name)], enum)
 	}
 
-	// Find added and removed enums
-	for enumName := range genEnums {
-		if _, exists := dbEnums[enumName]; !exists {
-			diff.EnumsAdded = append(diff.EnumsAdded, enumName)
+	matched := make(map[string]struct{}, len(database.Enums))
+	for _, genEnum := range generated.Enums {
+		dbEnum, exists := findDatabaseEnum(genEnum, dbByIdentity, dbByName, semantics)
+		if !exists {
+			diff.EnumsAdded = append(diff.EnumsAdded, genEnum.QualifiedName())
+			continue
+		}
+		matched[dbEnum.QualifiedName()] = struct{}{}
+		enumDiff := EnumValues(genEnum, dbEnum)
+		if len(enumDiff.ValuesAdded) > 0 || len(enumDiff.ValuesRemoved) > 0 {
+			diff.EnumsModified = append(diff.EnumsModified, enumDiff)
 		}
 	}
 
-	for enumName := range dbEnums {
-		if _, exists := genEnums[enumName]; !exists {
-			diff.EnumsRemoved = append(diff.EnumsRemoved, enumName)
+	for _, enum := range database.Enums {
+		if _, ok := matched[enum.QualifiedName()]; ok {
+			continue
 		}
-	}
-
-	// Find modified enums
-	for enumName, genEnum := range genEnums {
-		if dbEnum, exists := dbEnums[enumName]; exists {
-			enumDiff := EnumValues(genEnum, dbEnum)
-			if len(enumDiff.ValuesAdded) > 0 || len(enumDiff.ValuesRemoved) > 0 {
-				diff.EnumsModified = append(diff.EnumsModified, enumDiff)
-			}
-		}
+		diff.EnumsRemoved = append(diff.EnumsRemoved, enum.QualifiedName())
 	}
 
 	// Sort for consistent output
@@ -121,6 +174,46 @@ func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 	sort.Slice(diff.EnumsModified, func(i, j int) bool {
 		return diff.EnumsModified[i].EnumName < diff.EnumsModified[j].EnumName
 	})
+}
+
+// findDatabaseEnum resolves one generated enum against the read.
+func findDatabaseEnum(
+	genEnum goschema.Enum,
+	dbByIdentity map[tableIdentity]types.DBEnum,
+	dbByName map[string][]types.DBEnum,
+	semantics identifier.Semantics,
+) (types.DBEnum, bool) {
+	schema, name := enumParts(genEnum.Schema, genEnum.Name)
+	if strings.TrimSpace(schema) != "" {
+		enum, ok := dbByIdentity[newTableIdentity(schema, name, semantics)]
+		return enum, ok
+	}
+	candidates := dbByName[semantics.TableIdentityKey(name)]
+	if len(candidates) != 1 {
+		return types.DBEnum{}, false
+	}
+	return candidates[0], true
+}
+
+// enumParts splits one enum into the schema and name to compare it under.
+//
+// It reads a qualifier out of the NAME when the schema field is empty, because
+// not every producer fills the field: a SQL schema file loaded through
+// internal/convert/toschema names an enum `public.e1` outright. Without this,
+// that spelling and the reader's separate (public, e1) were two different
+// enums.
+//
+// tableref.Parse is what separates a qualifier from a literal dot -- an enum
+// named "tenant.data" is one quoted part and stays whole -- so this cannot turn
+// a name into a schema it never had.
+func enumParts(schema, name string) (enumSchema, enumName string) {
+	if strings.TrimSpace(schema) != "" {
+		return schema, name
+	}
+	if ref, ok := tableref.Parse(name); ok && ref.Qualified {
+		return ref.Schema, ref.Name
+	}
+	return "", name
 }
 
 // EnumValues performs detailed value-level comparison between generated and database enum types.
@@ -194,7 +287,10 @@ func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 // Value lists are sorted alphabetically to ensure deterministic migration
 // generation and reliable testing across multiple runs.
 func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
-	enumDiff := difftypes.EnumDiff{EnumName: genEnum.Name}
+	// The qualified name, so the planner can name the type it has to alter.
+	// It is the bare name for every enum that names no schema, which is every
+	// enum a Go annotation can declare (stokaro/ptah#1276).
+	enumDiff := difftypes.EnumDiff{EnumName: genEnum.QualifiedName()}
 
 	// Create sets for comparison
 	genValues := make(map[string]bool)

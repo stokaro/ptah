@@ -188,8 +188,11 @@ func CompareReportingUndecidedAdditions(
 		cov,
 	)
 
-	// Compare enum type definitions and values
-	compare.Enums(generated, database, diff)
+	// Compare enum type definitions and values. The semantics carry the
+	// connection's default schema, without which an `enum` block's mandatory
+	// `schema = schema.public` and the reader's blanked schema read as two
+	// different types (stokaro/ptah#1276).
+	compare.EnumsWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)

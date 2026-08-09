@@ -38,7 +38,21 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
+// defaultSchema is the namespace every unqualified SQLite object already
+// belongs to. It is not a schema anybody creates.
+const defaultSchema = "main"
+
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	if node.Name == defaultSchema {
+		// `main` is where the connection already is, so there is nothing to
+		// create and nothing to refuse. An introspected SQLite database
+		// describes it as a schema — the pinned Atlas community binary v1.3.0
+		// renders `schema "main" {}` in HCL and no statement at all in SQL —
+		// and turning that into a "not supported" comment would put a refusal
+		// in the output for something the author never asked for
+		// (stokaro/ptah#1264).
+		return nil
+	}
 	r.notSupported("schemas", node.Name)
 	return nil
 }
