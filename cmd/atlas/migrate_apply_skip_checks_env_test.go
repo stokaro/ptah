@@ -430,5 +430,5 @@ func TestMigrateApplySkipChecksEnvStillRecordsRevisions(t *testing.T) {
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(out, qt.Contains, "No migration files to execute.")
+	c.Assert(out, qt.Contains, "No migration files to execute")
 }

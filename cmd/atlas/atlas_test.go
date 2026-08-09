@@ -535,7 +535,7 @@ func TestCompatCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	// SQLite owns unqualified objects in "main", so a "public" schema scope
 	// selects nothing and the apply reports a synced schema.
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made")
 }
 
 func TestCompatCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
@@ -2519,7 +2519,10 @@ CREATE TABLE users (
 	err = second.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made.\n")
+	// No trailing period: this is the byte-exact form the pinned community
+	// binary v1.3.0 writes for `schema apply` (stokaro/ptah#1235 finding 9.4).
+	// Its `schema diff` answer keeps its period and already matched.
+	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made\n")
 }
 
 func TestCompatCommand_SchemaApplyDryRunDoesNotApply(t *testing.T) {
@@ -3123,7 +3126,11 @@ func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Not(qt.Contains), "No migration files to execute.")
+	// The text printer terminates its line; the same sentence inside the JSON
+	// document is followed by a quote. Asserting on the newline is what keeps
+	// this row meaningful now that the two spellings are the same string
+	// (stokaro/ptah#1235 finding 9.3 removed the text form's trailing period).
+	c.Assert(out.String(), qt.Not(qt.Contains), "No migration files to execute\n")
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Current, qt.Equals, "1")

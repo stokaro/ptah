@@ -208,7 +208,7 @@ func TestSchemaApplySQLiteTableShapeConvergesOnKeyNullability(t *testing.T) {
 				qt.Commentf("persisted DDL: %s", sqliteTableDDL(c, dbPath, test.table)))
 
 			second := applySQLiteSourceFile(c, dbPath, sourcePath, "dev2.db")
-			c.Assert(second, qt.Contains, "Schema is synced, no changes to be made.")
+			c.Assert(second, qt.Contains, "Schema is synced, no changes to be made")
 		})
 	}
 }
@@ -237,5 +237,5 @@ func TestSchemaApplySQLiteTableShapeStillPlansGenuineChanges(t *testing.T) {
 	c.Assert(keyColumnNullability(c, dbPath, "users"), qt.DeepEquals, map[string]bool{"id": true})
 
 	again := applySQLiteSourceFile(c, dbPath, after, "dev3.db")
-	c.Assert(again, qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(again, qt.Contains, "Schema is synced, no changes to be made")
 }

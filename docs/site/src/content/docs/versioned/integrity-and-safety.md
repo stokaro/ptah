@@ -467,7 +467,7 @@ it, run or not:
   *ran*, and the covered migrations below it need not all be among them.
   Measured on `V1__g1.sql` and `V3__g3.sql` recorded as `1` and `3` with
   `V2__g2.sql` added afterwards: `migrate set 4611686018427551119` reports
-  `(3 set)`, the next apply prints `No migration files to execute.` at exit 0,
+  `(3 set)`, the next apply prints `No migration files to execute` at exit 0,
   and table `g2` is absent with its version recorded — it can never run again.
   The refusal names that file and the version the command would assert, so
   nothing is lost by following the printed instruction.

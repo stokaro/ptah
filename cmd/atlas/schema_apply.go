@@ -304,7 +304,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if formatOutput {
 			return writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, plan.Statements())
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
+		// No trailing period, and only on this verb. The pinned community binary
+		// v1.3.0 writes `Schema is synced, no changes to be made\n` here -- 40
+		// bytes against Ptah's 41, read back with xxd and wc -c from an unpiped
+		// second `schema apply --auto-approve` over a synced SQLite database --
+		// while its `schema diff` answer, `Schemas are synced, no changes to be
+		// made.`, does carry one and already matches (stokaro/ptah#1235 9.4).
+		// The native `ptah schema apply` sentence is untouched: no parity is owed
+		// there and it is not this surface.
+		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made")
 		return nil
 	}
 

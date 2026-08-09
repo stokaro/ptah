@@ -212,7 +212,7 @@ CREATE POLICY tenant_isolation ON shipments FOR ALL TO PUBLIC USING (tenant_id =
 	c.Assert(firstErr, qt.IsNil, qt.Commentf("%s", firstOut))
 	c.Assert(firstOut, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(secondErr, qt.IsNil, qt.Commentf("%s", secondOut))
-	c.Assert(secondOut, qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(secondOut, qt.Contains, "Schema is synced, no changes to be made")
 	c.Assert(rlsPolicyRows(t, targetURL), qt.DeepEquals, []string{
 		"orders/tenant_isolation",
 		"shipments/tenant_isolation",
