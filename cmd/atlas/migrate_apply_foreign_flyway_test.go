@@ -247,7 +247,7 @@ func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing
 
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "No migration files to execute.")
+	c.Assert(stdout, qt.Contains, "No migration files to execute")
 	// The seed did not run a second time.
 	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 1)
 }
@@ -264,7 +264,7 @@ func TestCompatMigrateApply_ForeignFlywayRefusalPrintsWorkingRecovery(t *testing
 //
 // Measured with the route still offered there: `migrate set 4611686018427551119`
 // reports `(3 set)` — `+ 4611686018427510315 (g2)` among them — the next
-// `migrate apply` prints `No migration files to execute.` at exit 0, and table
+// `migrate apply` prints `No migration files to execute` at exit 0, and table
 // g2 is absent with its version recorded, so it can never run again. Following
 // the printed instruction lost a migration and the refusal said nothing.
 //
@@ -485,7 +485,7 @@ func TestCompatMigrateApply_ForeignFlywayBaselineOverForeignHistory(t *testing.T
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "No migration files to execute.")
+	c.Assert(stdout, qt.Contains, "No migration files to execute")
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"p", "q"})
 }
 

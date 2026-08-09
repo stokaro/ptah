@@ -232,7 +232,7 @@ func foreignFlywayRefusal(
 // V1__g1.sql and V3__g3.sql recorded by the other implementation as `1` and `3`
 // with V2__g2.sql added afterwards: the head is V3's 4611686018427551119, and
 // `migrate set 4611686018427551119` reports `(3 set)` — g1, g2 and g3 — so the
-// next `migrate apply` prints `No migration files to execute.` at exit 0 with
+// next `migrate apply` prints `No migration files to execute` at exit 0 with
 // table g2 never created and now unreachable, because its version is recorded.
 // The operator followed the printed instruction and lost a migration; the
 // refusal said nothing about it. That is the shape this clause withdraws on,

@@ -336,6 +336,14 @@ func atlasSchemaInspectBase64URL(value any) string {
 // Tables still contribute their schema, so a reader that describes no schemas
 // keeps rendering what it did before rather than losing its tables to a
 // missing row.
+//
+// The connected schema is deliberately NOT seeded here. Seeding it would close
+// the empty-database cell on its own, and it was measured reopening two shapes
+// that already matched: `--schema extra` on a realm PostgreSQL URL gained a
+// second, empty `{"name":"public"}` entry the binary never prints, and
+// `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where that
+// binary answers `{}`. Which schemas exist is the reader's answer, not the
+// connection's; see [go.5x5.cz/ptah/internal/schemaselection].
 func atlasSchemaInspectJSON(schema *dbschematypes.DBSchema, info dbschematypes.DBInfo) atlasSchemaInspectJSONRealm {
 	schemasByName := make(map[string]*atlasSchemaInspectJSONSchema)
 	indexesByTable := atlasSchemaInspectIndexesByTable(schema.Indexes)
@@ -396,12 +404,23 @@ func atlasSchemaInspectTable(
 	for _, column := range table.Columns {
 		jsonTable.Columns = append(jsonTable.Columns, atlasSchemaInspectColumn(column))
 	}
+	// A UNIQUE constraint whose backing index the reader already reported is one
+	// index, not two. SQLite reports both: `pragma index_list` names the implicit
+	// `sqlite_autoindex_<table>_<n>` and the constraint carries that same name, so
+	// `CREATE TABLE t (…, a TEXT UNIQUE, b TEXT UNIQUE, …)` printed five indexes
+	// where the pinned community binary v1.3.0 printed three, each autoindex
+	// listed twice (stokaro/ptah#1235 finding 6.2). The constraint branch still
+	// has to run for readers that report a UNIQUE constraint with no index row of
+	// its own, which is why the duplicate is dropped by name here rather than by
+	// deleting the branch.
+	indexNames := make(map[string]struct{}, len(indexesByTable[table.QualifiedName()]))
 	for _, index := range indexesByTable[table.QualifiedName()] {
 		jsonIndex := atlasSchemaInspectIndex(index)
 		if index.IsPrimary {
 			jsonTable.PrimaryKey = atlasSchemaInspectPrimaryKey(jsonIndex.Parts)
 			continue
 		}
+		indexNames[jsonIndex.Name] = struct{}{}
 		jsonTable.Indexes = append(jsonTable.Indexes, jsonIndex)
 	}
 	for _, constraint := range constraintsByTable[table.QualifiedName()] {
@@ -411,7 +430,12 @@ func atlasSchemaInspectTable(
 				jsonTable.PrimaryKey = atlasSchemaInspectPrimaryKey(atlasSchemaInspectConstraintIndexParts(constraint))
 			}
 		case "UNIQUE":
-			jsonTable.Indexes = append(jsonTable.Indexes, atlasSchemaInspectUniqueConstraintIndex(constraint))
+			jsonIndex := atlasSchemaInspectUniqueConstraintIndex(constraint)
+			if _, alreadyReported := indexNames[jsonIndex.Name]; alreadyReported {
+				continue
+			}
+			indexNames[jsonIndex.Name] = struct{}{}
+			jsonTable.Indexes = append(jsonTable.Indexes, jsonIndex)
 		case "FOREIGN KEY":
 			jsonTable.ForeignKeys = append(jsonTable.ForeignKeys, atlasSchemaInspectForeignKey(constraint))
 		}

@@ -212,7 +212,7 @@ func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQ
 // `migrate new` uses. The contents are the measured Atlas layout: the
 // directive on the first line, a blank separator line, then the SQL.
 func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string) {
-	stem := atlasEmptyMigrationName(description)
+	stem := atlasCheckpointNameStem(description)
 	if stem == "" {
 		stem = "checkpoint"
 	}

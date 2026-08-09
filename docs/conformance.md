@@ -260,7 +260,7 @@ entry is a running hash over the preceding files, so editing one file changes
 the recorded hash of every file below it. Measured on the two-migration fixture
 above, repairing only the edited version moved the refusal to the next one, and
 repairing both returned `migrate apply` to exit 0 with
-`No migration files to execute.`
+`No migration files to execute`
 
 The refusal is exit 1 in the direction the rules allow, and it is stricter than
 Atlas CE, never looser. See
@@ -877,9 +877,9 @@ ask it rather than the dialect. Before they did, measured on 2026-08-08 at exit
 
 | Command | Table | Before | After |
 | --- | --- | --- | --- |
-| `schema apply --to file://schema.sql --auto-approve`, run twice | `WITHOUT ROWID` | second run planned a full table rebuild, and so would every run after it | `Schema is synced, no changes to be made.` |
-| the same | `STRICT` | second run planned a full table rebuild | `Schema is synced, no changes to be made.` |
-| the same | rowid | `Schema is synced, no changes to be made.` | unchanged |
+| `schema apply --to file://schema.sql --auto-approve`, run twice | `WITHOUT ROWID` | second run planned a full table rebuild, and so would every run after it | `Schema is synced, no changes to be made` |
+| the same | `STRICT` | second run planned a full table rebuild | `Schema is synced, no changes to be made` |
+| the same | rowid | `Schema is synced, no changes to be made` | unchanged |
 | `migrate diff <name> --to file://schema.sql`, run twice | `WITHOUT ROWID` | wrote a second migration file containing that rebuild | `The migration directory is synced with the desired state, no changes to be made` |
 
 The pinned binary answered `Schemas are synced, no changes to be made.` against
@@ -977,6 +977,82 @@ Ptah was silent. A plain `integer` column against a desired schema that declares
 A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
+
+## Output Shape: Three Cells From The #1235 Register
+
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
+places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
+exit code and disagree on the bytes. Three of them are closed here. Every row was
+measured with each binary in its own directory, every exit code read from an
+unpiped invocation.
+
+| Finding | Command | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- | --- |
+| 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
+| 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
+| 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
+
+**6.2 is not SQLite-specific, though the register is.** It reproduces on
+PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
+twice. A UNIQUE constraint and the index that backs it are one entry in
+`indexes`, deduplicated by index name — the constraint branch still runs for a
+reader that reports a UNIQUE constraint with no index row of its own.
+
+**6.1 — an empty schema is still a schema — is closed elsewhere and stays
+closed.** The same divergence is
+[`stokaro/ptah#1264`](https://github.com/stokaro/ptah/issues/1264), and the
+realm document has named the schemas its READER described since that landed, so
+an empty database answers `{"schemas":[{"name":"main"}]}` on SQLite and
+`{"schemas":[{"name":"public","comment":"standard public schema"}]}` on
+PostgreSQL 17, byte-identically to the pinned binary. Seeding the CONNECTED
+schema instead would close the same cell one line earlier and reopen two shapes
+that already matched — measured live on PostgreSQL 17, `--schema extra` on a
+realm URL gained a second, empty `{"name":"public"}` entry that binary never
+prints, and `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where
+it answers `{}`. Which schemas exist is the reader's answer, not the
+connection's.
+
+**9.4 changes one verb only.** The pinned binary's `schema diff` answer,
+`Schemas are synced, no changes to be made.`, does carry a period and already
+matched; only the `apply` spelling grew one. The native `ptah schema apply`
+sentence is untouched: no parity is owed on that surface.
+
+### `migrate new` writes the name it was given
+
+Findings 8.6 and 8.7 of the same register: the Atlas-layout file name is
+`<version>_<name>.sql` composed from the name verbatim on that binary, and Ptah
+mapped spaces to hyphens and dropped every character outside `[-_0-9A-Za-z]`.
+The name is covered by `atlas.sum`, so a rewritten name is also a different
+checksum for the same command. Measured, each binary in its own directory:
+
+| `migrate new …` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `"add users table"` | `<version>_add users table.sql` | `<version>_add-users-table.sql` | matches |
+| `"add_users.sql"` | `<version>_add_users.sql.sql` | `<version>_add_userssql.sql` | matches |
+
+That binary reads a directory Ptah writes this way at exit 0, and Ptah reads its
+own back at exit 0.
+
+Two rules survive, and both are deliberate:
+
+- Leading and trailing whitespace is still trimmed. That binary keeps it —
+  `migrate new "  padded  "` writes `<version>_  padded  .sql` — but a file name
+  with trailing spaces does not survive every filesystem this tool writes into,
+  and no finding in the register asks for one.
+- A name whose composed file name Ptah's own reader would classify as something
+  other than a new up migration is refused before anything is written. Exactly
+  one suffix does that today: `migrator.ParseAtlasMigrationFileName` reads
+  `<version>_x.down.sql` as the down half of a pair, because Atlas importers emit
+  that spelling for golang-migrate directories.
+
+That second rule is stricter than the pinned binary, which writes
+`<version>_x.down.sql` at exit 0 and reads it back as a pending migration at exit
+0. Refusing to write it does **not** close the reader gap: measured on
+2026-08-08, a directory that binary wrote that way makes `ptah-compat migrate
+status` exit 1 with `Atlas migration version <version> has down migration but no
+up migration`, where it exits 0. That divergence is in the
+"Ptah exits 1, the binary exits 0" direction the register lists as unfiled, and
+it is reported here rather than closed.
 
 ## Reports
 
