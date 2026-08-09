@@ -189,6 +189,9 @@ type DBEnum struct {
 	Values []string `json:"values"`
 }
 
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (e DBEnum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name) }
+
 // DBDomain represents a PostgreSQL domain type read from the database.
 type DBDomain struct {
 	Name     string `json:"name"`
@@ -594,6 +597,9 @@ type DBFunction struct {
 	Body       string `json:"body"`       // Function body/implementation
 	Comment    string `json:"comment"`    // Function comment/description
 }
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (f DBFunction) QualifiedName() string { return QualifyTableName(f.Schema, f.Name) }
 
 // DBView represents a database view read from the database.
 type DBView struct {

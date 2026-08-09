@@ -378,6 +378,19 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 	// at the same time, which is how `--dialect sqlite3` used to drop the enum
 	// entirely and render the column as the bare type name `enum_status`.
 	if emitsStandaloneEnumDefinitions(targetPlatform) {
+		// A standalone enum type is created in a schema, and a column declared
+		// against it has to name the same one. The declared type is matched by
+		// bare name -- that is what makes an annotation `type="mood"` find the
+		// enum -- so the qualifier is put back here, from the enum's own
+		// schema, rather than being expected in the field.
+		//
+		// Without it, `CREATE TYPE "extra"."mood"` was followed by
+		// `CREATE TABLE "extra"."b" ("feeling" mood)`, which resolves through
+		// search_path and fails with `type "mood" does not exist` on every
+		// schema off the path (stokaro/ptah#1276). An enum with no schema is
+		// left exactly as it was, which is every enum a Go annotation, a YAML
+		// schema, or a single-schema read can produce.
+		field.Type = enum.QualifiedName()
 		return field
 	}
 
@@ -1527,7 +1540,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 // Returns an *ast.EnumNode ready for SQL generation by dialect-specific visitors.
 // The visitor implementation determines how the enum is rendered for each database type.
 func FromEnum(enum goschema.Enum) *ast.EnumNode {
-	return ast.NewEnum(enum.Name, enum.Values...)
+	return ast.NewEnum(enum.QualifiedName(), enum.Values...)
 }
 
 // qualifyTypeName returns schema.name when schema is set, or name otherwise. The

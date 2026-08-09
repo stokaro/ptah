@@ -88,10 +88,19 @@ func newDatabase() *goschema.Database {
 	}
 }
 
+// convertEnums carries the schema the reader recorded, exactly as the domain,
+// composite and range conversions below do.
+//
+// Dropping it made every enum in the result belong to whatever schema the
+// consumer defaulted to. On a read covering more than one schema that is a
+// claim about a type the database does not hold: `extra.mood` was described as
+// `public.mood`, applying the description built the type in `public`, and the
+// column in `extra` that uses it was typed against it (stokaro/ptah#1276).
 func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
 	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, goschema.Enum{
 			Name:   dbEnum.Name,
+			Schema: dbEnum.Schema,
 			Values: dbEnum.Values,
 		})
 	}
@@ -280,11 +289,21 @@ func convertRLSPolicies(
 	}
 }
 
+// convertFunctions carries the schema the reader recorded, in Name, which is
+// where goschema.Function keeps it -- the same place views and materialized
+// views keep theirs, and the same place the HCL parser already writes it from a
+// `function` block's `schema` attribute.
+//
+// Dropping it left the name unqualified, so the Atlas-compatible render wrote a
+// `function` block with no schema attribute at all and an apply recreated the
+// function in whatever schema the connection defaulted to. On a read covering
+// more than one schema, `extra.f_extra` came back as `public.f_extra`
+// (stokaro/ptah#1276).
 func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.DBFunction) {
 	for _, dbFunction := range dbFunctions {
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
-			Name:       dbFunction.Name,
+			Name:       dbFunction.QualifiedName(),
 			Parameters: dbFunction.Parameters,
 			Returns:    dbFunction.Returns,
 			Language:   dbFunction.Language,

@@ -600,8 +600,36 @@ func QualifyTableName(schema, table string) string {
 //	MySQL:
 //	  CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 type Enum struct {
-	Name   string   // The generated enum type name (e.g., "enum_user_status")
+	Name string // The generated enum type name (e.g., "enum_user_status")
+	// Schema owns the enum, empty for the connection's or document's default
+	// schema. It is a field rather than a qualifier folded into Name because
+	// Name is what a column's declared type is matched against, and a domain,
+	// composite and range each keep the two apart for the same reason.
+	//
+	// An enum is a TYPE, so its identity is (schema, name) exactly as a
+	// domain's is: public.mood and extra.mood are two types with different
+	// value sets. Without this field an enum read out of a non-default schema
+	// was described as belonging to the connected one, and applying that
+	// description built the type in the wrong schema and typed the column that
+	// uses it against the wrong type (stokaro/ptah#1276).
+	Schema string
 	Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+//
+// Name is returned VERBATIM when Schema is empty, rather than through
+// QualifyTableName, because Name is not always a bare identifier here. A SQL
+// schema file loaded through internal/convert/toschema parks the qualifier in
+// Name -- `public.e1` -- and an enum may legitimately be named with a literal
+// dot, which QualifyTableName canonicalizes by quoting. Running either through
+// it changes the identifier: `public.e1` becomes the single quoted name
+// "public.e1", and the already-quoted "tenant.data" gains a second layer.
+func (e Enum) QualifiedName() string {
+	if strings.TrimSpace(e.Schema) == "" {
+		return e.Name
+	}
+	return QualifyTableName(e.Schema, e.Name)
 }
 
 // Domain represents a PostgreSQL domain type parsed from Go annotations.
