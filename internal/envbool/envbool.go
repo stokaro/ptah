@@ -17,12 +17,28 @@
 // is absent, it is set to a false spelling, it is set to the empty string, and
 // it holds a typo. An operator who wrote `PTAH_ALLOW_RESERVED_ROLE_NAMES=yes`
 // in a CI environment file, a container manifest or a systemd unit believes
-// they changed the behavior, and nothing tells them otherwise. Every boolean
-// toggle in this tree opts IN to the more permissive side, so the typo lands on
-// the strict default and fails closed -- which is why this is a usability
-// defect today and would be a security one the first time a boolean `PTAH_*`
-// variable defaults to the permissive side. The guard test over [Registered]
-// asserts every declared default is false, so that flip cannot happen quietly.
+// they changed the behavior, and nothing tells them otherwise.
+//
+// # An absent variable must select the side that fails closed
+//
+// Almost every boolean toggle in this tree opts IN to the more permissive side,
+// so an absent variable -- a name a container manifest never passed through, a
+// sudo invocation stripped, a CI job forgot -- lands on the strict default and
+// fails CLOSED. A variable whose false default is the PERMISSIVE side inverts
+// that, and forgetting it opens the gate it guards.
+//
+// `Default() == false` was the assertion, and it is a PROXY for that rule
+// rather than the rule. The proxy holds only while `true` means "permit more",
+// and it stopped holding before anyone noticed: `PTAH_STRICT_DIR_QUERY`, whose
+// own doc says it "turns the report below into a refusal", already defaults to
+// the permissive side and already passes an assertion whose stated reason it
+// contradicts. So the direction is DECLARED here -- [New] for the ordinary
+// shape, [NewOptInRefusal] for a toggle whose true value refuses -- and the
+// guard test over [Registered] checks the rule instead of the proxy.
+//
+// The declaration is also where a permissive default has to justify itself in
+// writing, because such a default is only sound when it is a measured
+// compatibility floor rather than a safety decision.
 //
 // The accepted spellings are exactly [strconv.ParseBool]'s, deliberately not a
 // narrower or wider set: `1 t T TRUE true True` and `0 f F FALSE false False`.
@@ -77,6 +93,10 @@ func Parse(name, value string) (bool, error) {
 type Var struct {
 	name         string
 	defaultValue bool
+	// permissiveDefaultReason is empty for the ordinary shape, whose absent
+	// value selects the side that fails closed, and holds the written
+	// justification for a toggle declared through [NewOptInRefusal].
+	permissiveDefaultReason string
 }
 
 var (
@@ -84,14 +104,40 @@ var (
 	registry   []Var
 )
 
-// New declares a boolean `PTAH_*` environment variable and records it in the
-// registry [Registered] reports.
+// New declares a boolean `PTAH_*` environment variable whose TRUE value selects
+// the more permissive behavior, and records it in the registry [Registered]
+// reports.
 //
 // defaultValue is what an ABSENT variable selects. It is stated here rather
 // than at the call site so the default and the name travel together and a guard
 // test can read both.
+//
+// This is the ordinary shape and it carries a claim: an absent variable selects
+// the side that fails closed. A toggle whose true value REFUSES something the
+// default accepts must be declared through [NewOptInRefusal] instead, or the
+// guard's stated reason stops describing it.
+//
+// A variable that only changes how much a run DESCRIBES or INSPECTS -- more
+// roles, more migration versions -- is the ordinary shape. It permits more
+// output, not more input, and forgetting it cannot let a bad schema through.
 func New(name string, defaultValue bool) Var {
-	variable := Var{name: name, defaultValue: defaultValue}
+	return register(Var{name: name, defaultValue: defaultValue})
+}
+
+// NewOptInRefusal declares a boolean `PTAH_*` environment variable whose TRUE
+// value REFUSES something the default accepts, so its false default is the
+// permissive side.
+//
+// whyThePermissiveDefaultIsSafe is required and is read by the guard test, not
+// by the program. A permissive default is sound only when it is a measured
+// compatibility floor or a deliberate report-don't-refuse decision, and the
+// declaration is where that has to be written down rather than inferred from
+// the variable's name.
+func NewOptInRefusal(name, whyThePermissiveDefaultIsSafe string) Var {
+	return register(Var{name: name, permissiveDefaultReason: whyThePermissiveDefaultIsSafe})
+}
+
+func register(variable Var) Var {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registry = append(registry, variable)
@@ -106,6 +152,23 @@ func (v Var) Name() string {
 // Default returns the value an absent variable selects.
 func (v Var) Default() bool {
 	return v.defaultValue
+}
+
+// DefaultFailsClosed reports whether an absent variable selects the side that
+// permits less, which is the property the guard test asserts and the reason
+// this package exists in the shape it does.
+//
+// It is DECLARED rather than derived. Nothing about a bool says which of its two
+// values is the strict one, so `Default() == false` can only ever be a proxy for
+// this, and the proxy is silently wrong for a toggle whose true value refuses.
+func (v Var) DefaultFailsClosed() bool {
+	return v.permissiveDefaultReason == ""
+}
+
+// PermissiveDefaultReason returns the written justification a variable whose
+// default is the permissive side carries, and "" for every other variable.
+func (v Var) PermissiveDefaultReason() string {
+	return v.permissiveDefaultReason
 }
 
 // Resolve reads the variable and reports what it selects.
