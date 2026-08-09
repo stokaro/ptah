@@ -1150,38 +1150,64 @@ func publicationStagedNames(journal publicationJournal) []string {
 	return names
 }
 
+// beforeDirSumCommit runs after the checksum commit has captured the state it
+// intends to replace and staged its replacement, and immediately before the
+// conditional rename that publishes it. It is nil outside tests.
+//
+// It exists because that gap is the one thing the conditional commit is for and
+// nothing else can stage a replacement inside it. Every other moment is either
+// before the capture -- where the capture simply observes the newer state -- or
+// after the rename, where there is nothing left to protect. A test that writes
+// over the checksum before calling the writer measures the capture, not the
+// commit (stokaro/ptah#1118).
+var beforeDirSumCommit func()
+
+func notifyBeforeDirSumCommit() {
+	if beforeDirSumCommit != nil {
+		beforeDirSumCommit()
+	}
+}
+
 // publishDirSum commits atlas.sum through the same rooted handle that published
 // the migration files, conditionally on the checksum state the transaction
 // observed. A concurrent writer that replaced atlas.sum after the migration
 // snapshot was verified is reported instead of overwritten.
 func publishDirSum(w *migrationWriterDir, sum *migratesum.SumFile) (string, error) {
+	return publishDirSumAs(w, migratesum.AtlasFileName, sum)
+}
+
+// publishDirSumAs is publishDirSum for a caller that selects the integrity file
+// itself, so the paired `ptah.sum` layout commits through the same rooted,
+// conditional path as the Atlas one rather than by pathname.
+func publishDirSumAs(w *migrationWriterDir, sumName string, sum *migratesum.SumFile) (string, error) {
 	if sum == nil {
 		return "", errors.New("migration checksum must not be nil")
 	}
-	sumPath := filepath.Join(w.path, migratesum.AtlasFileName)
-	destination, err := expectedSumDestination(w)
+	sumPath := filepath.Join(w.path, sumName)
+	destination, err := expectedSumDestination(w, sumName)
 	if err != nil {
-		return "", fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err)
+		return "", fmt.Errorf("write %s: %w", sumName, err)
 	}
 	tempName, err := stageRootedFile(
 		w.dir,
-		"."+migratesum.AtlasFileName+".*.tmp",
+		"."+sumName+".*.tmp",
 		sum.Bytes(),
 		publishedFileMode,
 	)
 	if err != nil {
-		return "", fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err)
+		return "", fmt.Errorf("write %s: %w", sumName, err)
 	}
 	info, err := w.dir.Lstat(tempName)
 	if err != nil {
 		return "", errors.Join(
-			fmt.Errorf("write %s: %w", migratesum.AtlasFileName, err),
+			fmt.Errorf("write %s: %w", sumName, err),
 			removeRootedFiles(w.dir, []string{tempName}),
 		)
 	}
+	notifyBeforeDirSumCommit()
 	publishErr := w.dir.PublishFile(
 		tempName,
-		migratesum.AtlasFileName,
+		sumName,
 		info,
 		publishedFileMode,
 		destination,
@@ -1194,11 +1220,11 @@ func publishDirSum(w *migrationWriterDir, sum *migratesum.SumFile) (string, erro
 		// That is exactly the commit-uncertain contract the checksum writer has
 		// always reported, so the journal is retained for recovery.
 		return "", &migratesum.CommitUncertainError{
-			Err: fmt.Errorf("write %s: %w", migratesum.AtlasFileName, publishErr),
+			Err: fmt.Errorf("write %s: %w", sumName, publishErr),
 		}
 	}
 	return "", errors.Join(
-		fmt.Errorf("write %s: %w", migratesum.AtlasFileName, publishErr),
+		fmt.Errorf("write %s: %w", sumName, publishErr),
 		removeRootedFiles(w.dir, []string{tempName}),
 	)
 }
@@ -1207,8 +1233,8 @@ func publishDirSum(w *migrationWriterDir, sum *migratesum.SumFile) (string, erro
 // is read through the rooted handle immediately before the staged sum is
 // published, so the window between the two is closed by the conditional commit
 // rather than by trusting the read.
-func expectedSumDestination(w *migrationWriterDir) (fsdurable.Destination, error) {
-	info, err := w.dir.Lstat(migratesum.AtlasFileName)
+func expectedSumDestination(w *migrationWriterDir, sumName string) (fsdurable.Destination, error) {
+	info, err := w.dir.Lstat(sumName)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fsdurable.ExpectAbsent(), nil
 	}
@@ -1218,7 +1244,7 @@ func expectedSumDestination(w *migrationWriterDir) (fsdurable.Destination, error
 	if !info.Mode().IsRegular() {
 		return fsdurable.Destination{}, fmt.Errorf(
 			"%s is not a regular file",
-			filepath.Join(w.path, migratesum.AtlasFileName),
+			filepath.Join(w.path, sumName),
 		)
 	}
 	return fsdurable.ExpectFile(info), nil

@@ -98,14 +98,29 @@ bytes.
 ## Writing back to the directory
 
 The verbs that write a migration directory — `migrate diff`, `migrate new`, and
-native `ptah migrations generate` and `ptah migrations create` — bind it the
+native `ptah migrations generate`, `ptah migrations create`,
+`ptah migrations checkpoint` and `ptah migrations data` — bind it the
 same way and keep the binding. They open the directory and its parent once,
-before staging, and every staged file, published migration, `atlas.sum`,
-journal, commit marker, rollback quarantine and cleanup entry is named as a
-direct child of one of those two handles. A migration directory that does not
-exist yet is created through the bound parent, so it is materialized where the
-run looked rather than where the pathname points by then. Recovery of an
-interrupted batch runs through the same handles.
+before staging, and every staged file, published migration, `atlas.sum` or
+`ptah.sum`, journal, commit marker, rollback quarantine and cleanup entry is
+named as a direct child of one of those two handles. A migration directory that
+does not exist yet is created through the bound parent, so it is materialized
+where the run looked rather than where the pathname points by then. Recovery of
+an interrupted batch runs through the same handles.
+
+Both commits inside that boundary are conditional on what the run observed. A
+migration file is created exclusively, so a name taken since the version was
+chosen is reported rather than overwritten. The integrity file is a replacement
+by construction and cannot use the same rule, so its commit is bound to the
+checksum state captured immediately before it: a rival that wrote its own
+`atlas.sum` or `ptah.sum` in between is reported, and its bytes are left in
+place.
+
+`atlas.sum` and `ptah.sum` take the same path. Until
+[#1118](https://github.com/stokaro/ptah/issues/1118) closed it, `ptah.sum` was
+written by pathname and unconditionally, which let a checkpoint or data
+migration land in one directory while its checksum landed in another, leaving
+the first uncovered and the second describing a snapshot it never held.
 
 Replacing the directory after the run validated it therefore cannot redirect
 what it writes, and a directory configured through `atlas.hcl` stays inside the

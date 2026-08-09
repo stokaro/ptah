@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // MigrationWriter is the rooted migration-directory capability a writer
@@ -140,15 +141,28 @@ func (w *MigrationWriter) Remove(name string) error {
 	return err
 }
 
-// PublishAtlasSum commits atlas.sum through the bound handle, conditionally on
-// the checksum state this transaction observed, and returns its path. A
-// concurrent writer that replaced atlas.sum after the snapshot was taken is
+// PublishSum commits the integrity file the layout selects -- atlas.sum for the
+// Atlas layout, ptah.sum for the paired one -- through the bound handle,
+// conditionally on the checksum state this transaction observed, and returns
+// its path. A concurrent writer that replaced it after the snapshot was taken is
 // reported instead of overwritten.
-func (w *MigrationWriter) PublishAtlasSum(sum *migratesum.SumFile) (string, error) {
+//
+// The layout is a parameter rather than a second method because the two layouts
+// differ only in the file name: both must reach the destination through the same
+// handle the migration files were created through, or the checksum describes a
+// directory this transaction did not write into (stokaro/ptah#1118).
+func (w *MigrationWriter) PublishSum(
+	format migrator.MigrationDirFormat,
+	sum *migratesum.SumFile,
+) (string, error) {
 	if !w.dir.Exists() {
 		return "", w.dir.missingDirError()
 	}
-	return publishDirSum(w.dir, sum)
+	sumName, err := migratesum.FileNameForFormat(format)
+	if err != nil {
+		return "", err
+	}
+	return publishDirSumAs(w.dir, sumName, sum)
 }
 
 // PublishArtifacts durably publishes artifacts as one journaled batch through

@@ -2,10 +2,7 @@ package generator
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,7 +12,6 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -179,34 +175,21 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 // that does not cover it, so the write fails rather than silently choosing a
 // different version.
 //
-// atlas.sum is written unconditionally. This does not check whether outputDir
-// also carries a ptah.sum; a directory holding both integrity files is
-// ambiguous to `--dir-format auto`, so callers that accept a user-chosen
-// directory should reject that combination first, as
-// `ptah migrations checkpoint` does.
+// atlas.sum is committed conditionally on the checksum state this call
+// observed, so a concurrent writer that replaced it is reported rather than
+// overwritten. This does not check whether outputDir also carries a ptah.sum; a
+// directory holding both integrity files is ambiguous to `--dir-format auto`, so
+// callers that accept a user-chosen directory should reject that combination
+// first, as `ptah migrations checkpoint` does.
+//
+// The whole transaction runs through one binding of outputDir, so the file and
+// the checksum are committed to the same filesystem object even if the pathname
+// is replaced mid-call (stokaro/ptah#1118).
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
 	if version <= 0 {
 		return "", fmt.Errorf("checkpoint version must be greater than zero, got %d", version)
 	}
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return "", fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	name, contents := AtlasCheckpointArtifact(version, description, upSQL)
-	filePath := filepath.Join(outputDir, name)
-	if err := writeNewMigrationFile(filePath, contents); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return "", fmt.Errorf("checkpoint file %s already exists", filePath)
-		}
-		return "", fmt.Errorf("failed to write atlas checkpoint file: %w", err)
-	}
-	if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {
-		// The checkpoint is only safe to leave behind once atlas.sum covers it;
-		// an uncovered file makes the whole directory fail verification.
-		_ = os.Remove(filePath)
-		return "", fmt.Errorf("failed to write atlas checkpoint checksum: %w", err)
-	}
-	return filePath, nil
+	return writeRootedAtlasCheckpoint(outputDir, version, description, upSQL)
 }
 
 // AtlasCheckpointArtifact returns the file name and contents that
