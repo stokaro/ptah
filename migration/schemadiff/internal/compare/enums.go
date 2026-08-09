@@ -206,7 +206,7 @@ func findDatabaseEnum(
 // tableref.Parse is what separates a qualifier from a literal dot -- an enum
 // named "tenant.data" is one quoted part and stays whole -- so this cannot turn
 // a name into a schema it never had.
-func enumParts(schema, name string) (string, string) {
+func enumParts(schema, name string) (enumSchema, enumName string) {
 	if strings.TrimSpace(schema) != "" {
 		return schema, name
 	}
