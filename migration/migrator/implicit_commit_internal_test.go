@@ -107,6 +107,7 @@ func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
 
 	statements := []string{
 		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET SESSION `sql_mode` = 'NO_BACKSLASH_ESCAPES'",
 		"SET SESSION sql_mode = 'ANSI_QUOTES'",
 		"SET @@SESSION.sql_mode = 'ANSI_QUOTES,NO_BACKSLASH_ESCAPES'",
 		"SET @@SESSION.sql_mode = 'STRICT_TRANS_TABLES,ANSI_QUOTES'",
@@ -134,6 +135,7 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 	statements := []string{
 		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
 		"SET @sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SET @`sql_mode` = 'NO_BACKSLASH_ESCAPES'",
 		"INSERT INTO jobs (sql_mode) VALUES ('NO_BACKSLASH_ESCAPES')",
 	}
 

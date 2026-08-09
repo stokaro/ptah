@@ -1864,7 +1864,7 @@ func runRejectsUnsafeSQLModeChange(t *testing.T, dbURL, prefix string) {
 		1,
 		"unsafe sql mode",
 		fmt.Sprintf(
-			"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'; SELECT 'safe\\'; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
+			"SET SESSION `sql_mode` = 'NO_BACKSLASH_ESCAPES'; SELECT 'safe\\'; CREATE TABLE %s (id INTEGER PRIMARY KEY)",
 			names.createdTable,
 		),
 		fmt.Sprintf("DROP TABLE %s", names.createdTable),

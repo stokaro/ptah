@@ -180,7 +180,8 @@ func mysqlUnsafeSQLModeAssignment(tokens []lexer.Token) bool {
 			return false
 		}
 		atSigns += strings.Count(token.Value, "@")
-		if token.MatchIdentifierValue("SQL_MODE") {
+		identifier, isIdentifier := mysqlMigrationIdentifierValue(token)
+		if isIdentifier && strings.EqualFold(identifier, "SQL_MODE") {
 			return atSigns != 1
 		}
 	}
