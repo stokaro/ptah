@@ -200,7 +200,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows := make([][]driver.Value, 0, 100)
 	for i := range 50 {
 		tableName := fmt.Sprintf("table_%02d", i)
-		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
+		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false, false, false})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "integer", "int4", "", "", "", "NO", nil, nil, nil, nil, int64(1), "", "", "", ""},
 			[]driver.Value{tableName, "name", "character varying", "varchar", "", "", "", "NO", nil, int64(255), nil, nil, int64(2), "", "", "", ""},
@@ -240,6 +240,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 					"table_type",
 					"table_comment",
 					"estimated_rows",
+					"row_stats_unknown",
+					"partitioned",
 					"rls_enabled",
 				},
 				Rows: tableRows,

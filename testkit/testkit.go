@@ -499,7 +499,10 @@ func normalizeSchema(schema *dbtypes.DBSchema) {
 	})
 
 	for idx := range schema.Tables {
+		// Both statistics fields depend on whether autovacuum happened to have
+		// analyzed the table before the read, which no test controls.
 		schema.Tables[idx].EstimatedRows = 0
+		schema.Tables[idx].RowStatsUnknown = false
 		slices.SortFunc(schema.Tables[idx].Columns, compareColumns)
 	}
 

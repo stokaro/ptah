@@ -266,11 +266,27 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 		return nil, fmt.Errorf("failed to read columns for schema %s: %w", schemaName, err)
 	}
 
-	// Read tables, excluding system tables like schema_migrations
+	// Read tables, excluding system tables like schema_migrations.
+	//
+	// row_stats_unknown is the tri-state EstimatedRows cannot carry on its own.
+	// PostgreSQL 14 and later store pg_class.reltuples = -1 for a relation that
+	// has never been vacuumed or analyzed, and the cumulative statistics view
+	// reports n_live_tup = 0 both for an empty table and for one whose counters
+	// were reset -- after a crash-recovery restart, a pg_stat_reset(), or a
+	// restored dump. GREATEST floors all of that to 0, which reads as "empty"
+	// and is how a populated table silently earned a blocking index build.
+	//
+	// relkind = 'p' is the declaratively partitioned parent.
+	// information_schema.tables reports it as an ordinary BASE TABLE, so the
+	// catalog is the only place the distinction survives, and PostgreSQL
+	// rejects both CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
+	// such a relation.
 	tablesQuery := `
 		SELECT table_schema, table_name, table_type,
 		       COALESCE(obj_description(c.oid), '') as table_comment,
 		       COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows,
+		       NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false) AS row_stats_unknown,
+		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
@@ -290,7 +306,16 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	var tables []types.DBTable
 	for rows.Next() {
 		var table types.DBTable
-		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment, &table.EstimatedRows, &table.RLSEnabled)
+		err := rows.Scan(
+			&table.Schema,
+			&table.Name,
+			&table.Type,
+			&table.Comment,
+			&table.EstimatedRows,
+			&table.RowStatsUnknown,
+			&table.Partitioned,
+			&table.RLSEnabled,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}

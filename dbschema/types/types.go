@@ -74,16 +74,32 @@ type DBSchemaInfo struct {
 }
 
 // DBTable represents a database table
+//
+// EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
+// alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
+// as pg_class.reltuples = -1, which floors to the same 0 a genuinely empty
+// table reports. RowStatsUnknown carries that distinction so a caller choosing
+// between a blocking and a non-blocking index build can fail safe instead of
+// reading an absent statistic as an empty table. Readers that never collect
+// row statistics leave both fields zero, which claims nothing.
+//
+// Partitioned marks a PostgreSQL declaratively partitioned parent (relkind
+// 'p'). information_schema.tables reports it as an ordinary BASE TABLE, so
+// Type cannot carry it, and the distinction decides which statements are legal:
+// PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
+// a partitioned relation with SQLSTATE 0A000.
 type DBTable struct {
-	Name          string     `json:"name"`
-	Schema        string     `json:"schema,omitempty"`
-	Type          string     `json:"type"` // TABLE, VIEW, etc.
-	Comment       string     `json:"comment"`
-	Columns       []DBColumn `json:"columns"`
-	EstimatedRows int64      `json:"estimated_rows,omitempty"` // Best-effort planner estimate from database statistics
-	RLSEnabled    bool       `json:"rls_enabled"`              // Whether RLS is enabled on this table (PostgreSQL)
-	Strict        bool       `json:"strict,omitempty"`         // SQLite STRICT table option
-	WithoutRowID  bool       `json:"without_rowid,omitempty"`  // SQLite WITHOUT ROWID table option
+	Name            string     `json:"name"`
+	Schema          string     `json:"schema,omitempty"`
+	Type            string     `json:"type"` // TABLE, VIEW, etc.
+	Comment         string     `json:"comment"`
+	Columns         []DBColumn `json:"columns"`
+	EstimatedRows   int64      `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
+	RowStatsUnknown bool       `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
+	Partitioned     bool       `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
+	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
+	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.

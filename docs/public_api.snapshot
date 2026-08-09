@@ -6111,17 +6111,33 @@ func (s DBSequence) QualifiedName() string
 package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBTable struct {
-    Name          string     `json:"name"`
-    Schema        string     `json:"schema,omitempty"`
-    Type          string     `json:"type"` // TABLE, VIEW, etc.
-    Comment       string     `json:"comment"`
-    Columns       []DBColumn `json:"columns"`
-    EstimatedRows int64      `json:"estimated_rows,omitempty"` // Best-effort planner estimate from database statistics
-    RLSEnabled    bool       `json:"rls_enabled"`              // Whether RLS is enabled on this table (PostgreSQL)
-    Strict        bool       `json:"strict,omitempty"`         // SQLite STRICT table option
-    WithoutRowID  bool       `json:"without_rowid,omitempty"`  // SQLite WITHOUT ROWID table option
+    Name            string     `json:"name"`
+    Schema          string     `json:"schema,omitempty"`
+    Type            string     `json:"type"` // TABLE, VIEW, etc.
+    Comment         string     `json:"comment"`
+    Columns         []DBColumn `json:"columns"`
+    EstimatedRows   int64      `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
+    RowStatsUnknown bool       `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
+    Partitioned     bool       `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+    RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
+    Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
+    WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
 }
     DBTable represents a database table
+
+    EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
+    alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
+    as pg_class.reltuples = -1, which floors to the same 0 a genuinely empty
+    table reports. RowStatsUnknown carries that distinction so a caller choosing
+    between a blocking and a non-blocking index build can fail safe instead of
+    reading an absent statistic as an empty table. Readers that never collect
+    row statistics leave both fields zero, which claims nothing.
+
+    Partitioned marks a PostgreSQL declaratively partitioned parent (relkind
+    'p'). information_schema.tables reports it as an ordinary BASE TABLE,
+    so Type cannot carry it, and the distinction decides which statements
+    are legal: PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX
+    CONCURRENTLY on a partitioned relation with SQLSTATE 0A000.
 
 func (t DBTable) QualifiedName() string
 
@@ -7119,6 +7135,15 @@ type File struct {
     // IsUp reports whether statement rules treat this as an up migration:
     // the migrator parses it as up, or its name carries the .up.sql suffix.
     IsUp bool
+    // IsDown reports whether this is the rollback half of a migration: the
+    // migrator parses it as down, or its name carries the .down.sql suffix.
+    //
+    // A down file is executed against a production database exactly like an up
+    // file, so a hazard in one is a hazard in the other. Rules stay up-only by
+    // default because most of them describe a forward change, and the ones that
+    // describe a statement's cost or its executability opt in with
+    // [Rule.AppliesToDown].
+    IsDown bool
     // HasPair reports whether the matching counterpart file (down for up,
     // up for down) exists in the same directory.
     HasPair bool
@@ -7130,8 +7155,9 @@ type File struct {
     // NoTransaction reports whether file-scoped directives opt this migration
     // out of the migrator's transaction wrapper.
     NoTransaction bool
-    // Statements holds the parsed statements of up migrations. Empty for
-    // down migrations (statement rules do not run there).
+    // Statements holds the parsed statements of up and down migrations. Empty
+    // for any other file. A rule that reads them without checking direction
+    // gets both, which is why every direction-sensitive rule tests IsUp.
     Statements []Statement
     // Changes holds the semantic schema changes this up migration expresses,
     // recovered from Ptah's dialect-aware SQL parser. Empty for down migrations
@@ -7245,9 +7271,21 @@ type Rule struct {
     // Dialects restricts the rule to specific target dialects; empty means
     // every dialect.
     Dialects []string
-    // CheckStatement inspects one statement of an up migration and reports
-    // whether the rule fires, with a specific message.
+    // CheckStatement inspects one statement of a migration and reports whether
+    // the rule fires, with a specific message. It sees up migrations only
+    // unless AppliesToDown is set.
     CheckStatement func(stmt *Statement) (bool, string)
+    // AppliesToDown extends a CheckStatement rule to the down half of a
+    // migration. It is off by default because most statement rules describe a
+    // forward schema change, where the rollback is the remedy rather than the
+    // hazard. Set it for a rule that describes the cost or the executability of
+    // a statement, which the database charges identically in either direction:
+    // a blocking DROP INDEX holds the same lock whether a migration is being
+    // applied or rolled back.
+    //
+    // It has no effect on a CheckFile rule, which receives every file already
+    // and decides for itself; those read [File.IsUp] and [File.IsDown].
+    AppliesToDown bool
     // CheckFile inspects file-level form and returns full findings.
     CheckFile func(file *File) []Finding
 }

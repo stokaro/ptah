@@ -24,9 +24,13 @@
 //     identifiers stay opaque single words, so data or a column named like a
 //     keyword can neither trigger nor mask a rule.
 //
-// Statement-level rules run on up migrations only: a down migration dropping
-// what its up created is the expected shape, not a hazard. File-level form
-// rules (naming, pairing) look at every *.sql file.
+// Statement-level rules run on up migrations by default: a down migration
+// dropping what its up created is the expected shape, not a hazard. A rule
+// whose subject is the cost or the executability of a statement rather than the
+// schema change it expresses sets [Rule.AppliesToDown] and is checked in both
+// directions -- PostgreSQL charges the same lock for a blocking DROP INDEX
+// whether a migration is being applied or rolled back. File-level form rules
+// (naming, pairing) look at every *.sql file.
 package lint
 
 import (
@@ -63,9 +67,21 @@ type Rule struct {
 	// Dialects restricts the rule to specific target dialects; empty means
 	// every dialect.
 	Dialects []string
-	// CheckStatement inspects one statement of an up migration and reports
-	// whether the rule fires, with a specific message.
+	// CheckStatement inspects one statement of a migration and reports whether
+	// the rule fires, with a specific message. It sees up migrations only
+	// unless AppliesToDown is set.
 	CheckStatement func(stmt *Statement) (bool, string)
+	// AppliesToDown extends a CheckStatement rule to the down half of a
+	// migration. It is off by default because most statement rules describe a
+	// forward schema change, where the rollback is the remedy rather than the
+	// hazard. Set it for a rule that describes the cost or the executability of
+	// a statement, which the database charges identically in either direction:
+	// a blocking DROP INDEX holds the same lock whether a migration is being
+	// applied or rolled back.
+	//
+	// It has no effect on a CheckFile rule, which receives every file already
+	// and decides for itself; those read [File.IsUp] and [File.IsDown].
+	AppliesToDown bool
 	// CheckFile inspects file-level form and returns full findings.
 	CheckFile func(file *File) []Finding
 }
@@ -157,6 +173,9 @@ func runRules(file *File, opts Options, rules []Rule) []Finding {
 				attachUniqueStatementContext(file, &finding)
 				findings = append(findings, finding)
 			}
+			continue
+		}
+		if !file.IsUp && !rule.AppliesToDown {
 			continue
 		}
 		for i := range file.Statements {

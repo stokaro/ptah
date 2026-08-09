@@ -862,8 +862,11 @@ func postgresConcurrentIndexRule() Rule {
 		Title:    "concurrent index operation in a transactional migration",
 		Severity: SeverityWarning,
 		Dialects: []string{"postgres"},
+		// Either direction: a down file carrying DROP INDEX CONCURRENTLY without
+		// the no_transaction marker cannot execute at all, and the rollback half
+		// of a concurrent build is exactly where that statement appears.
 		CheckFile: func(file *File) []Finding {
-			if !file.IsUp || file.NoTransaction {
+			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
 				return nil
 			}
 			var findings []Finding
@@ -897,13 +900,23 @@ func postgresAddUniqueConstraintRule() Rule {
 		"adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates existing rows; build a unique index concurrently first when the table is populated")
 }
 
+// postgresDropIndexRule reports a blocking index drop in either direction.
+//
+// The down half is where this rule earns its keep: the statement that removes
+// an index is what a rollback file is normally made of, and PostgreSQL takes
+// the same ACCESS EXCLUSIVE lock whichever direction asked for it. Confining
+// statement rules to up files left a rollback that blocks writes on a populated
+// table reported as clean -- including one Ptah generates itself, whenever the
+// forward statement was not a concurrent build.
 func postgresDropIndexRule() Rule {
-	return postgresStatementRule("PG106", "index dropped with a table lock", func(stmt *Statement) (bool, string) {
+	rule := postgresStatementRule("PG106", "index dropped with a table lock", func(stmt *Statement) (bool, string) {
 		if !hasWordPrefix(stmt.Words, "DROP", "INDEX") || slices.Contains(stmt.Words, "CONCURRENTLY") {
 			return false, ""
 		}
 		return true, "DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables"
 	})
+	rule.AppliesToDown = true
+	return rule
 }
 
 func postgresColumnAlignmentRule() Rule {
@@ -1092,8 +1105,12 @@ func transactionRules() []Rule {
 			Title:    "transactional and non-transactional statements mixed",
 			Severity: SeverityWarning,
 			Dialects: []string{"postgres"},
+			// Either direction: the migrator wraps a down file in the same
+			// transaction it wraps an up file in, so a rollback that mixes
+			// CREATE INDEX CONCURRENTLY with transactional DDL is refused by
+			// PostgreSQL exactly the same way.
 			CheckFile: func(file *File) []Finding {
-				if !file.IsUp || file.NoTransaction {
+				if (!file.IsUp && !file.IsDown) || file.NoTransaction {
 					return nil
 				}
 				var nonTransactional *Statement

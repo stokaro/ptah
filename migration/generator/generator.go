@@ -927,8 +927,14 @@ func planGeneratedMigrationSpecs(
 		diff, skipped = diffpolicy.ApplyForDialect(diff, skipSet, info.Dialect)
 	}
 
-	concurrentIndexRefs := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
-	concurrentIndexDropRefs := concurrentIndexDropRefsForPolicy(diff, info, policy)
+	concurrentIndexRefs, err := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	concurrentIndexDropRefs, err := concurrentIndexDropRefsForPolicy(diff, dbSchema, info, policy)
+	if err != nil {
+		return nil, nil, err
+	}
 	plannerOpts := planner.Options{
 		Capabilities:            info.Capabilities,
 		ConcurrentIndexRefs:     concurrentIndexRefs,
@@ -1190,19 +1196,86 @@ func isConcurrentIndexNode(node ast.Node) bool {
 // concurrently. When the diff policy requests it, every newly added index is
 // concurrent (still gated on dialect and the CreateIndexConcurrently
 // capability); otherwise the populated-table heuristic applies.
+//
+// A partitioned parent is refused rather than published: PostgreSQL rejects
+// CREATE INDEX CONCURRENTLY on relkind 'p' with SQLSTATE 0A000, so the request
+// cannot be honored and silently downgrading it would give a project that asked
+// for a non-blocking build a blocking one without saying so. The heuristic path
+// downgrades instead -- see [concurrentIndexRefsForPopulatedTables].
 func concurrentIndexRefsForPolicy(
 	diff *types.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) []types.IndexRef {
+) ([]types.IndexRef, error) {
 	if !policy.ConcurrentIndex {
-		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info)
+		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info), nil
 	}
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+		return nil, nil
+	}
+	refs := diff.IndexAdditions()
+	if err := refusePartitionedConcurrentIndexRefs(refs, dbSchema, concurrentIndexCreatePolicy); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+// concurrentIndexPolicyKind names the half of the concurrent-index policy a
+// refusal came from, so the diagnostic can quote the configuration key the
+// operator would change.
+type concurrentIndexPolicyKind struct {
+	statement string
+	configKey string
+}
+
+var (
+	concurrentIndexCreatePolicy = concurrentIndexPolicyKind{
+		statement: "CREATE INDEX CONCURRENTLY",
+		configKey: "diff.concurrent_index.create",
+	}
+	concurrentIndexDropPolicy = concurrentIndexPolicyKind{
+		statement: "DROP INDEX CONCURRENTLY",
+		configKey: "diff.concurrent_index.drop",
+	}
+)
+
+// refusePartitionedConcurrentIndexRefs fails generation before any migration
+// file is written when an explicitly requested concurrent index statement names
+// a PostgreSQL partitioned parent.
+//
+// PostgreSQL answers both statements with SQLSTATE 0A000 on relkind 'p'
+// ("cannot create index on partitioned table ... concurrently", "cannot drop
+// partitioned index ... concurrently"), and it answers at execution time -- so
+// without this the plan is written, hashed, and committed, and the failure
+// arrives against a production database instead of against the developer who
+// generated it.
+func refusePartitionedConcurrentIndexRefs(
+	refs []types.IndexRef,
+	dbSchema *dbschematypes.DBSchema,
+	kind concurrentIndexPolicyKind,
+) error {
+	partitioned := partitionedTableSet(dbSchema)
+	var offending []string
+	for _, ref := range refs {
+		if _, ok := partitioned[ref.TableName]; !ok {
+			continue
+		}
+		offending = append(offending, fmt.Sprintf("%q on %q", ref.Name, ref.TableName))
+	}
+	if len(offending) == 0 {
 		return nil
 	}
-	return diff.IndexAdditions()
+	return fmt.Errorf(
+		"%s requested by %s cannot be generated for partitioned table(s): %s; "+
+			"PostgreSQL refuses a concurrent index statement on a partitioned parent (SQLSTATE 0A000). "+
+			"Unset %s to generate the plain, transactional statement, or manage the index per partition "+
+			"(CREATE INDEX ... ON ONLY the parent, CREATE INDEX CONCURRENTLY on each partition, then ALTER INDEX ... ATTACH PARTITION)",
+		kind.statement,
+		kind.configKey,
+		strings.Join(offending, ", "),
+		kind.configKey,
+	)
 }
 
 // concurrentIndexDropRefsForPolicy resolves which index removals are dropped
@@ -1221,14 +1294,15 @@ func concurrentIndexRefsForPolicy(
 // marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
 	diff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) []types.IndexRef {
+) ([]types.IndexRef, error) {
 	if !policy.ConcurrentIndexDrop {
-		return nil
+		return nil, nil
 	}
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.DropIndexConcurrently) {
-		return nil
+		return nil, nil
 	}
 	// Match the planner's own redefinition test (indexscope conflict semantics),
 	// not plain struct equality: two refs differing only in identifier case are
@@ -1249,9 +1323,21 @@ func concurrentIndexDropRefsForPolicy(
 		}
 		refs = append(refs, ref)
 	}
-	return refs
+	if err := refusePartitionedConcurrentIndexRefs(refs, dbSchema, concurrentIndexDropPolicy); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
+// concurrentIndexRefsForPopulatedTables is the default heuristic: build an
+// index concurrently when the table it targets already holds rows.
+//
+// A partitioned parent is excluded rather than refused. Nothing asked for a
+// concurrent build here, PostgreSQL supports no concurrent form for relkind
+// 'p', and the plain CREATE INDEX the exclusion selects is legal SQL that says
+// what it does -- lint reports it as PG101 exactly like any other blocking
+// build. Refusing instead would leave a project with a partitioned table unable
+// to generate an index migration at all.
 func concurrentIndexRefsForPopulatedTables(
 	diff *types.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
@@ -1261,8 +1347,12 @@ func concurrentIndexRefsForPopulatedTables(
 		return nil
 	}
 	populatedTables := populatedTableSet(dbSchema)
+	partitioned := partitionedTableSet(dbSchema)
 	var refs []types.IndexRef
 	for _, ref := range diff.IndexAdditions() {
+		if _, ok := partitioned[ref.TableName]; ok {
+			continue
+		}
 		if _, ok := populatedTables[ref.TableName]; ok {
 			refs = append(refs, ref)
 		}
@@ -1270,13 +1360,48 @@ func concurrentIndexRefsForPopulatedTables(
 	return refs
 }
 
+// populatedTableSet indexes the tables a concurrent build should be preferred
+// for, under every spelling an index ref can use for its table.
+//
+// A table whose row statistics the database could not report counts as
+// populated. PostgreSQL reports a never-analyzed relation as reltuples = -1 and
+// a relation whose cumulative counters were reset as n_live_tup = 0, and both
+// floor to the same 0 an empty table reports; reading that 0 as "empty" is how
+// a table holding millions of rows earned a blocking CREATE INDEX immediately
+// after a bulk load, a restored dump, or a crash-recovery restart. Choosing the
+// concurrent build when nothing is known costs a non-transactional migration
+// file on a table that may turn out to be empty; choosing the blocking build
+// costs writes for the length of the scan. Only the first is recoverable, so
+// the unknown is resolved toward it.
+//
+// A table absent from dbSchema entirely is a different case and stays
+// transactional: the migration creates it, so it starts empty.
 func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
+	return tableSetMatching(dbSchema, func(table dbschematypes.DBTable) bool {
+		return table.RowStatsUnknown || table.EstimatedRows > 0
+	})
+}
+
+// partitionedTableSet indexes the PostgreSQL declaratively partitioned parents.
+func partitionedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
+	return tableSetMatching(dbSchema, func(table dbschematypes.DBTable) bool {
+		return table.Partitioned
+	})
+}
+
+// tableSetMatching collects the selected tables under both the qualified and
+// the bare spelling, because an index ref carries whichever one the diff was
+// built from.
+func tableSetMatching(
+	dbSchema *dbschematypes.DBSchema,
+	selected func(dbschematypes.DBTable) bool,
+) map[string]struct{} {
 	out := make(map[string]struct{})
 	if dbSchema == nil {
 		return out
 	}
 	for _, table := range dbSchema.Tables {
-		if table.EstimatedRows <= 0 {
+		if !selected(table) {
 			continue
 		}
 		out[table.QualifiedName()] = struct{}{}
