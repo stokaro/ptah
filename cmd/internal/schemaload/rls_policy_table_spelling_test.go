@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/internal/schemaload"
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 )
 
@@ -266,6 +267,61 @@ CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
 		`ALTER TABLE "App"."orders" ENABLE ROW LEVEL SECURITY;`,
 	})
+}
+
+// TestLoad_SQLSchemaFileFoldsASCIIOnly pins which fold the reference resolver
+// uses, because the two candidates agree on every fixture that came before
+// this one.
+//
+// `catalogPostgresIdentifierPart` folds an unquoted component with
+// `identifier.ComparisonASCIIInsensitive`. Substituting
+// `identifier.ComparisonUnicodeInsensitive` -- `strings.ToLower`, which does
+// fold `Ä` to `ä` -- passed the entire suite. The two differ only outside
+// ASCII, and until this fixture nothing outside ASCII was ever loaded.
+//
+// PostgreSQL folds ASCII only. Measured on PostgreSQL 17.10 with
+// server_encoding UTF8, against a database holding both `Ä` and `ä`:
+// `CREATE POLICY p ON Ä` exits 0 with its pg_policy row on `public.Ä`, not on
+// `public.ä`. Both relations exist in this fixture for the same reason they did
+// in that measurement: under a Unicode fold the reference resolves to the OTHER
+// declared table rather than failing, so the declaration is silently relocated
+// and nothing reports an error -- the shape of stokaro/ptah#1311.
+//
+// This row stops at the loaded schema and does not assert the render. The
+// PostgreSQL renderer widens identifier bytes to runes when it splits a
+// qualified identifier (`core/renderer/internal/dialects/postgres/postgres.go`,
+// `splitQualifiedIdentifier`), so `Ä` is emitted as two mojibake characters;
+// `sqlite` and `mssql` carry the same line. That is a separate defect, and
+// asserting the render here would write it into a baseline instead of leaving
+// it to be fixed.
+func TestLoad_SQLSchemaFileFoldsASCIIOnly(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE "Ä" (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+CREATE TABLE "ä" (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE Ä ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON Ä FOR ALL TO PUBLIC USING (tenant_id = 1);
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(tableNames(database.Tables), qt.DeepEquals, []string{"Ä", "ä"})
+	c.Assert(database.RLSPolicies, qt.HasLen, 1)
+	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "Ä")
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "Ä")
+}
+
+// tableNames projects the loaded tables onto their declared names, so a
+// fixture can say which relations exist without asserting the whole schema.
+func tableNames(tables []goschema.Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.QualifiedName())
+	}
+	return names
 }
 
 // TestLoad_SQLSchemaFileKeepsTwoTablesDifferingOnlyInCase is the boundary the
