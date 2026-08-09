@@ -254,6 +254,21 @@ back is exact either way, but Ptah does not offer per-statement rollback there,
 because pairing each forward statement with a reverse statement would be a guess
 about a reverse plan that is computed for the run as a whole.
 
+The rollback half is planned against the state the migration starts from, not
+the state it produces, so a forward migration that DROPS a table rolls back into
+the CREATE TABLE that puts it back. That re-created table carries its own
+primary key and its single-column foreign keys, and the rollback does not repeat
+them; a rollback that did is refused by the server outright. A CHECK constraint
+is not in the table body at all, so it is restored by its own statement.
+
+Two differences survive that round trip, on this verb and on
+`ptah migrations generate` alike. The restored primary key takes the server's
+default name rather than the name it had, because the table body has nowhere to
+put one. A column that was UNIQUE comes back both from the table body and from
+the named constraint, so the restored table holds two unique constraints where
+it held one. Neither stops the rollback from applying; both mean a
+`schema diff` immediately after a rollback can report work to do.
+
 ### `ptah-compat migrate lint`
 
 Runs Ptah migration linting with Atlas `--dir-format` defaulting to `atlas`.

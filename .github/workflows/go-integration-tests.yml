@@ -246,6 +246,19 @@ jobs:
           go test -tags=integration ./migration/generator -list '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' | grep -q '^TestReverseViewLikeObjects_DownRoundTrip_Integration$'
           go test -v -count=1 -tags=integration ./migration/generator -run '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' -timeout 5m
 
+      # The rollback of a migration that DROPS a table has to re-create it, and
+      # the version this gate was added for rendered a perfectly good CREATE
+      # TABLE and was then refused at `ALTER TABLE ... ADD PRIMARY KEY` because
+      # the re-created table already carried one. Only a server can say that.
+      # The -list line is the same guard the step above uses: a test that stopped
+      # existing must fail here rather than be silently not run.
+      - name: Run dropped-table rollback round trip
+        env:
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go test -tags=integration ./migration/generator -list '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' | grep -q '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$'
+          go test -v -count=1 -tags=integration ./migration/generator -run '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' -timeout 5m
+
       - name: Run database-realm cleanup and replay tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

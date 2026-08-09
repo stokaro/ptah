@@ -1677,6 +1677,12 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
+	// A re-created table brings its own primary key and field-level foreign keys
+	// back with it, so listing those a second time as constraint additions is
+	// how a rollback of a DROP TABLE became unexecutable. This runs before the
+	// index-removal restorations are appended purely for readability: those are
+	// UNIQUE constraints, which the rule deliberately never drops.
+	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemovedWithTables, dbSchema)
 	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
 	reversed.SetIndexAdditions(indexAdditions)
 	reversed.SetIndexRemovals(diff.IndexAdditions())

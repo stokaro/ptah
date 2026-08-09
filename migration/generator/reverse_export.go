@@ -41,6 +41,14 @@ import (
 // [goschema.Database] — because the reverse restores that state rather than the
 // desired one.
 //
+// A table the reverse RE-CREATES is restored by that CREATE TABLE, so the
+// result deliberately does not also list the constraints the re-created body
+// brings back with it: its primary key, and the field-level foreign keys the
+// planner's new-table pass re-adds. Repeating them is not merely redundant —
+// PostgreSQL refuses the second primary key outright, so a rollback carrying
+// both aborts part-applied (stokaro/ptah#1013). Everything the re-created body
+// does NOT restore, a CHECK above all, is still listed and still rendered.
+//
 // Two refinements this package applies to its own down direction are NOT
 // included, because neither is expressible without the dialect, which this
 // signature deliberately does not take:
