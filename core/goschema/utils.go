@@ -1224,80 +1224,52 @@ var rlsTableSemantics = identifier.ForDialect(platform.Postgres)
 //
 //   - the exact spelling wins, through [tableScopeResolver.resolve];
 //   - failing that, the table identity wins, which is what folds
-//     `public.orders` onto a table declared without a schema;
-//   - failing that, an ASCII case fold wins, and only downwards, onto a table
-//     whose declared name is already its own folded form ([foldTarget]), and
-//     only when exactly one declared table matches. Two tables declared as
-//     `orders` and `"ORDERS"` are two tables -- PostgreSQL keeps a policy
-//     called `p` on each -- so an ambiguous fold resolves to nothing and the
-//     reference keeps its spelling.
+//     `public.orders` onto a table declared without a schema.
 //
-// The fold is one-directional because Ptah does not retain whether an
-// identifier was quoted. `CREATE TABLE ORDERS` and `CREATE TABLE "ORDERS"` are
-// two different instructions to PostgreSQL -- the first creates `orders`, the
-// second creates `ORDERS` -- and both reach this resolver as the string
-// `ORDERS`. Folding in both directions therefore has to be wrong for one of
-// two indistinguishable inputs, and being wrong for the quoted one relocates an
-// access-control declaration onto a relation the author did not name.
+// There is deliberately no case fold here, and that is the whole point of this
+// comment. `ORDERS` and `"ORDERS"` are two different instructions to
+// PostgreSQL -- the first names `orders`, the second names `ORDERS` -- and by
+// the time a declaration reaches this resolver the two are the same string.
+// Folding here therefore had to be wrong for one of two inputs it cannot tell
+// apart, and being wrong for the quoted one relocated an access-control
+// declaration onto a relation the author did not name (stokaro/ptah#1311).
+// Measured on PostgreSQL 17.10 against a database holding only `orders`,
+// `CREATE POLICY p ON "ORDERS"` exits 1 with `relation "ORDERS" does not
+// exist`, while the folded render `CREATE POLICY "p" ON "orders"` exits 0 and
+// leaves a pg_policy row on `public.orders`.
+//
+// Quoting is resolved where it still exists instead. The SQL frontend folds
+// each component of a row-level security table reference as PostgreSQL does --
+// unquoted components lose their case, quoted components keep it -- so a
+// reference arrives here already naming its relation. Sources with no quoting
+// syntax at all (Go annotations, YAML, HCL, a hand-built [Database]) are
+// case-preserving by construction, because Ptah quotes every identifier it
+// renders; for them the declaration is already the relation and there is
+// nothing to fold. A reference that matches no declared table keeps its own
+// spelling, so the render reproduces the database's own answer rather than
+// quietly succeeding somewhere else.
 type rlsTableResolver struct {
 	scopes     tableScopeResolver
 	byIdentity map[string]string
-	byFolded   map[string]string
 }
 
 func newRLSTableResolver(tables []Table, scopes tableScopeResolver) rlsTableResolver {
 	resolver := rlsTableResolver{
 		scopes:     scopes,
 		byIdentity: make(map[string]string, len(tables)),
-		byFolded:   make(map[string]string, len(tables)),
 	}
 	for _, table := range tables {
 		qualifiedName := table.QualifiedName()
 		identity := rlsTableSemantics.QualifiedTableIdentityKey(qualifiedName)
 		addTableScope(resolver.byIdentity, identity, qualifiedName)
-		if foldTarget(identity) {
-			addTableScope(resolver.byFolded, foldedRLSTableIdentity(identity), qualifiedName)
-		}
 	}
 	return resolver
-}
-
-// foldTarget reports whether a reference in some other case may be folded onto
-// a table declared under this identity.
-//
-// Only a table whose declared name is already its own folded form qualifies. A
-// table declared `orders` is indistinguishable from an unquoted lower-case
-// declaration, so folding `ORDERS` onto it is exactly what PostgreSQL does. A
-// table declared `ORDERS` or `Orders` may have been written `"ORDERS"` or
-// `"Orders"`, and Ptah cannot tell, so it is not a fold target: the reference
-// keeps its spelling and the render reproduces the database's own answer.
-//
-// Measured on PostgreSQL 17.10, on a file declaring `CREATE TABLE "ORDERS"` and
-// then writing `ALTER TABLE orders ENABLE ROW LEVEL SECURITY`, psql with
-// `-v ON_ERROR_STOP=1` exits 3 with `relation "orders" does not exist`, and the
-// pinned Atlas community v1.3.0 binary exits 1 on the same file. Folding the
-// declaration up instead bound both statements to `ORDERS`, applied cleanly,
-// and left the relation the file named with `relrowsecurity = f` and no policy.
-//
-// The schema half of the identity is an identifier too, and answers the same
-// question: `app` may be folded onto, `App` may not.
-func foldTarget(identity string) bool {
-	return identity == foldedRLSTableIdentity(identity)
-}
-
-// foldedRLSTableIdentity folds the ASCII case an unquoted PostgreSQL identifier
-// loses on its way into the catalog.
-func foldedRLSTableIdentity(identity string) string {
-	return identifier.ComparisonASCIIInsensitive.IdentityKey(identity)
 }
 
 func (r rlsTableResolver) resolve(structName, table string) string {
 	scoped := r.scopes.resolve(structName, table)
 	identity := rlsTableSemantics.QualifiedTableIdentityKey(scoped)
 	if declared := resolvedTableScope(r.byIdentity, identity, ""); declared != "" {
-		return declared
-	}
-	if declared := resolvedTableScope(r.byFolded, foldedRLSTableIdentity(identity), ""); declared != "" {
 		return declared
 	}
 	return scoped

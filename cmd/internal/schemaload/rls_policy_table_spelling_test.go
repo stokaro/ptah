@@ -195,6 +195,79 @@ CREATE POLICY p ON ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
 	})
 }
 
+// TestLoad_SQLSchemaFileKeepsAQuotedReferenceOffAnUnquotedTable is the
+// direction the case fold must not run, seen from the side the fold could not
+// tell apart.
+//
+// `CREATE POLICY p ON "ORDERS"` names the relation `ORDERS`. A table declared
+// `orders` is a different relation, and PostgreSQL says so: measured on
+// PostgreSQL 17.10 with `-v ON_ERROR_STOP=1`, this file exits 1 with
+// `relation "ORDERS" does not exist`. Folding the reference down to the
+// declaration instead rendered `CREATE POLICY "p" ON "orders"`, which the same
+// server accepts with exit 0 and a pg_policy row on `public.orders` -- an
+// access-control declaration moved onto a relation the author did not name
+// (stokaro/ptah#1311).
+//
+// The reference therefore keeps `ORDERS` and the render reproduces the
+// database's own answer.
+func TestLoad_SQLSchemaFileKeepsAQuotedReferenceOffAnUnquotedTable(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE orders (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.RLSPolicies, qt.HasLen, 1)
+	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "ORDERS")
+
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
+		"CREATE POLICY \"p\" ON \"ORDERS\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
+	})
+}
+
+// TestLoad_SQLSchemaFileFoldsOnlyTheUnquotedHalfOfAQualifiedReference is the
+// half the whole-string fold could not reach.
+//
+// `"App".ORDERS` is two components with two different answers: the quoted
+// schema keeps its case, the unquoted table loses its own. PostgreSQL 17.10
+// resolves it to `App.orders` and accepts the policy with exit 0 against a
+// table created as `"App".orders`. Folding the complete identity instead asked
+// whether `App.ORDERS` folds to itself, which it does not because of the
+// schema, so the reference kept `App.ORDERS` and the render was answered with
+// `relation "App.ORDERS" does not exist` (exit 1, measured).
+func TestLoad_SQLSchemaFileFoldsOnlyTheUnquotedHalfOfAQualifiedReference(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE SCHEMA "App";
+CREATE TABLE "App".orders (id INTEGER PRIMARY KEY, tenant_id INTEGER);
+ALTER TABLE "App".ORDERS ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_id = 1);
+`), 0o600), qt.IsNil)
+
+	database, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.RLSPolicies, qt.HasLen, 1)
+	c.Assert(database.RLSPolicies[0].Table, qt.Equals, "App.orders")
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "App.orders")
+
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(createPolicyStatements(statements), qt.DeepEquals, []string{
+		"CREATE POLICY \"p\" ON \"App\".\"orders\" FOR ALL TO PUBLIC\n    USING (tenant_id = 1)\n;",
+	})
+	c.Assert(rowLevelSecurityStatements(statements), qt.DeepEquals, []string{
+		`ALTER TABLE "App"."orders" ENABLE ROW LEVEL SECURITY;`,
+	})
+}
+
 // TestLoad_SQLSchemaFileKeepsTwoTablesDifferingOnlyInCase is the boundary the
 // case fold must not cross. A quoted identifier keeps its case, so `orders`
 // and `"ORDERS"` are two tables; PostgreSQL 17.10 accepts a policy called `p`
