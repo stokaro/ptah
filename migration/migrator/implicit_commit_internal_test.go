@@ -197,37 +197,119 @@ func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
 	}
 }
 
-func TestMySQLReferencedSchema(t *testing.T) {
+func TestMySQLReferencedExternalSchema(t *testing.T) {
 	c := qt.New(t)
-	names := map[string]struct{}{"archive": {}}
 
-	qualified, referenced := mysqlReferencedSchema(
+	qualified, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("INSERT INTO `archive`.jobs VALUES (1)", "mysql"),
-		names,
+		"ptahtest",
 	)
 	c.Assert(referenced, qt.IsTrue)
 	c.Assert(qualified, qt.Equals, "archive")
 
-	routine, referenced := mysqlReferencedSchema(
+	routine, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("INSERT INTO jobs VALUES (archive.next_job_id())", "mysql"),
-		names,
+		"ptahtest",
 	)
 	c.Assert(referenced, qt.IsTrue)
 	c.Assert(routine, qt.Equals, "archive")
 
-	unqualified, referenced := mysqlReferencedSchema(
+	selected, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("INSERT INTO ptahtest.jobs VALUES (1)", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsFalse)
+	c.Assert(selected, qt.Equals, "")
+
+	caseVariant, referenced := mysqlReferencedExternalSchema(
+		significantSQLTokens("INSERT INTO PTAHTEST.jobs VALUES (1)", "mysql"),
+		"ptahtest",
+	)
+	c.Assert(referenced, qt.IsTrue)
+	c.Assert(caseVariant, qt.Equals, "PTAHTEST")
+
+	unqualified, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("SELECT archive FROM jobs", "mysql"),
-		names,
+		"ptahtest",
 	)
 	c.Assert(referenced, qt.IsFalse)
 	c.Assert(unqualified, qt.Equals, "")
 
-	alias, referenced := mysqlReferencedSchema(
+	alias, referenced := mysqlReferencedExternalSchema(
 		significantSQLTokens("SELECT archive.id FROM jobs AS archive", "mysql"),
-		names,
+		"ptahtest",
 	)
 	c.Assert(referenced, qt.IsFalse)
 	c.Assert(alias, qt.Equals, "")
+}
+
+func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		grants []string
+	}{
+		{
+			name:   "database trigger",
+			grants: []string{"GRANT SELECT, INSERT, TRIGGER ON `ptahtest`.* TO `ptah`@`%`"},
+		},
+		{
+			name:   "global all privileges",
+			grants: []string{"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`"},
+		},
+		{
+			name:   "active role expanded by server",
+			grants: []string{"GRANT TRIGGER ON `ptahtest`.* TO `ptah_trigger_role`"},
+		},
+		{
+			name:   "ANSI quotes session",
+			grants: []string{`GRANT ALL PRIVILEGES ON "ptahtest".* TO "ptah"@"%"`},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, "ptahtest", "mysql")
+			c.Assert(visible, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		grants []string
+	}{
+		{
+			name:   "no trigger privilege",
+			grants: []string{"GRANT SELECT, INSERT ON `ptahtest`.* TO `ptah`@`%`"},
+		},
+		{
+			name:   "different database",
+			grants: []string{"GRANT TRIGGER ON `archive`.* TO `ptah`@`%`"},
+		},
+		{
+			name:   "table scope is incomplete",
+			grants: []string{"GRANT TRIGGER ON `ptahtest`.`jobs` TO `ptah`@`%`"},
+		},
+		{
+			name: "partial revoke",
+			grants: []string{
+				"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`",
+				"REVOKE TRIGGER ON `ptahtest`.* FROM `ptah`@`%`",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, "ptahtest", "mysql")
+			c.Assert(visible, qt.IsFalse)
+		})
+	}
 }
 
 func TestMySQLReferencedCatalogName(t *testing.T) {

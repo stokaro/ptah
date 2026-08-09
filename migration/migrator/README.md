@@ -679,6 +679,11 @@ a different engine is rejected before Ptah upgrades its layout. A `file`
 migration that selects a non-InnoDB engine or inherits an unverified engine
 through `CREATE TABLE ... LIKE` is rejected before its body starts.
 
+The migration account must hold `TRIGGER` at database or global scope. MySQL
+and MariaDB hide trigger metadata from accounts without that privilege, while
+those hidden triggers can still run during ordinary DML. Ptah therefore refuses
+`file` mode when it cannot prove that its trigger catalog view is complete.
+
 MySQL-family `file` mode rejects SQL whose effective writes cannot be proven
 from the outer statement:
 

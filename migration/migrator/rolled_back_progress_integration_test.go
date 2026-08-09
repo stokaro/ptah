@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -10,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -187,15 +189,17 @@ func TestRolledBackProgress_MariaDBRejectsInheritedStorageEngine(t *testing.T) {
 
 func TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, "mysql")
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, adminURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, "mariadb")
+	adminURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "MARIADB_TEST_URL", "MARIADB_URL")
+	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, adminURL, "mariadb")
 }
 
-func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect string) {
+func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 
 	t.Run("executable comment", func(t *testing.T) {
@@ -314,7 +318,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 		c.Assert(err, qt.IsNil)
 
 		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*cannot run an up statement interceptor in tx-mode file.*`)
+		c.Assert(err, qt.ErrorMatches, `.*cannot run a statement interceptor for the up direction in tx-mode file.*`)
 		c.Assert(interceptor.called, qt.IsFalse)
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 	})
@@ -342,15 +346,20 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
 		defer func() { _ = conn.Close() }()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = adminConn.Close() }()
 
 		names := issue887Names(dialect + "_cross_db")
 		cleanupIssue887(t, conn, names)
 		defer cleanupIssue887(t, conn, names)
 		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = conn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
 		c.Assert(err, qt.IsNil)
-		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+externalDatabase) }()
-		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		defer func() {
+			_, _ = adminConn.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+externalDatabase)
+		}()
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
 			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY) ENGINE=MyISAM", externalDatabase,
 		))
 		c.Assert(err, qt.IsNil)
@@ -364,7 +373,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
 		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
 		c.Assert(
-			issue887ScalarCount(t, conn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
+			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
 			qt.Equals,
 			int64(0),
 		)
@@ -410,6 +419,9 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
 		defer func() { _ = conn.Close() }()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = adminConn.Close() }()
 
 		names := issue887Names(dialect + "_trigger")
 		cleanupIssue887(t, conn, names)
@@ -423,14 +435,16 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.blockerTable,
 		))
 		c.Assert(err, qt.IsNil)
-		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
 			"CREATE TRIGGER %s AFTER INSERT ON %s FOR EACH ROW INSERT INTO %s (id) VALUES (NEW.id)",
 			triggerName,
 			names.ledgerTable,
 			names.blockerTable,
 		))
 		c.Assert(err, qt.IsNil)
-		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName) }()
+		defer func() {
+			_, _ = adminConn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName)
+		}()
 		migration := migrator.CreateMigrationFromSQL(
 			1,
 			"triggered relation",
@@ -445,12 +459,73 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 	})
 
+	t.Run("hidden trigger catalog", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = adminConn.Close() }()
+
+		username := fmt.Sprintf("p887_%d", time.Now().UnixNano())
+		password := username + "_password"
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password,
+		))
+		c.Assert(err, qt.IsNil)
+		defer func() {
+			_, _ = adminConn.ExecContext(context.Background(), fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", username))
+		}()
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON %s.* TO '%s'@'%%'",
+			sqlident.Quote(dialect, adminConn.Info().Schema),
+			username,
+		))
+		c.Assert(err, qt.IsNil)
+
+		limitedURL := issue887ReplaceMySQLCredentials(t, adminURL, username, password)
+		conn, err := dbschema.ConnectToDatabase(ctx, limitedURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = conn.Close() }()
+
+		names := issue887Names(dialect + "_hidden_trigger")
+		cleanupIssue887(t, adminConn, names)
+		defer cleanupIssue887(t, adminConn, names)
+		triggerName := fmt.Sprintf("ptah887trigger%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW SET NEW.note = 'triggered'",
+			triggerName,
+			names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		defer func() {
+			_, _ = adminConn.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName)
+		}()
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"hidden trigger catalog",
+			fmt.Sprintf("INSERT INTO %s VALUES (1, 'one')", names.ledgerTable),
+			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+		)
+
+		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*tx-mode file requires the TRIGGER privilege at database or global scope.*`)
+		c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
 	t.Run("stored function", func(t *testing.T) {
 		c := qt.New(t)
 		ctx := context.Background()
 		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		c.Assert(err, qt.IsNil)
 		defer func() { _ = conn.Close() }()
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer func() { _ = adminConn.Close() }()
 
 		names := issue887Names(dialect + "_routine")
 		cleanupIssue887(t, conn, names)
@@ -460,11 +535,13 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, dialect strin
 			"CREATE TABLE %s (id INTEGER PRIMARY KEY, note VARCHAR(64))", names.ledgerTable,
 		))
 		c.Assert(err, qt.IsNil)
-		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
 			"CREATE FUNCTION %s() RETURNS INT DETERMINISTIC RETURN 7", routineName,
 		))
 		c.Assert(err, qt.IsNil)
-		defer func() { _, _ = conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS "+routineName) }()
+		defer func() {
+			_, _ = adminConn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS "+routineName)
+		}()
 		migration := migrator.CreateMigrationFromSQL(
 			1,
 			"stored function",
@@ -980,6 +1057,16 @@ func issue887Names(prefix string) issue887TestNames {
 		blockerTable:   "ptah_887_blocker_" + suffix,
 		createdTable:   "ptah_887_created_" + suffix,
 	}
+}
+
+func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password string) string {
+	t.Helper()
+
+	scheme, remainder, found := strings.Cut(rawURL, "://")
+	qt.Assert(t, found, qt.IsTrue)
+	_, endpoint, found := strings.Cut(remainder, "@")
+	qt.Assert(t, found, qt.IsTrue)
+	return fmt.Sprintf("%s://%s:%s@%s", scheme, username, password, endpoint)
 }
 
 func issue887Migrator(

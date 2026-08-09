@@ -327,7 +327,9 @@ jobs:
       - name: Run MySQL-family rolled-back progress tests
         env:
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
           go test ./migration/migrator -list '^TestRolledBackProgress_' | grep -q '^TestRolledBackProgress_'
           go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 3m

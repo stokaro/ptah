@@ -43,7 +43,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 	}
 	if migration.hasStatementInterceptor(direction) {
 		return fmt.Errorf(
-			"migration %d cannot run a %s statement interceptor in tx-mode file on a MySQL-family database; "+
+			"migration %d cannot run a statement interceptor for the %s direction in tx-mode file on a MySQL-family database; "+
 				"an interceptor can execute SQL outside Ptah's transaction witness, so use tx-mode none",
 			migration.Version,
 			direction,

@@ -125,7 +125,6 @@ LIMIT 1`, schema).Scan(&table, &engine)
 }
 
 type mysqlTransactionalCatalog struct {
-	otherSchemas    map[string]struct{}
 	unsafeRelations map[string]struct{}
 	routines        map[string]struct{}
 }
@@ -145,7 +144,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
 	for i, statement := range statements {
 		tokens := significantSQLTokens(statement, m.connectionDialect())
-		if schema, referenced := mysqlReferencedSchema(tokens, catalog.otherSchemas); referenced {
+		if schema, referenced := mysqlReferencedExternalSchema(tokens, m.connectionSchemaName()); referenced {
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it references database %s outside "+
 					"the selected database; use a connection scoped to that database or tx-mode none",
@@ -179,21 +178,15 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 func (m *Migrator) loadMySQLTransactionalCatalog(ctx context.Context) (mysqlTransactionalCatalog, error) {
 	schema := m.connectionSchemaName()
 	catalog := mysqlTransactionalCatalog{
-		otherSchemas:    make(map[string]struct{}),
 		unsafeRelations: make(map[string]struct{}),
 		routines:        make(map[string]struct{}),
 	}
-	if err := m.collectMySQLCatalogNames(
-		ctx,
-		"SELECT schema_name FROM information_schema.schemata WHERE LOWER(schema_name) <> LOWER(?)",
-		[]any{schema},
-		func(name string) { catalog.otherSchemas[strings.ToLower(name)] = struct{}{} },
-	); err != nil {
-		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family database boundaries: %w", err)
+	if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
+		return mysqlTransactionalCatalog{}, err
 	}
 	if err := m.collectMySQLCatalogNames(
 		ctx,
-		"SELECT table_name FROM information_schema.views WHERE table_schema = ?",
+		"SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'VIEW'",
 		[]any{schema},
 		func(name string) { catalog.unsafeRelations[strings.ToLower(name)] = struct{}{} },
 	); err != nil {
@@ -218,6 +211,88 @@ func (m *Migrator) loadMySQLTransactionalCatalog(ctx context.Context) (mysqlTran
 	return catalog, nil
 }
 
+func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, schema string) error {
+	rows, err := m.conn.QueryContext(ctx, "SHOW GRANTS")
+	if err != nil {
+		return fmt.Errorf("failed to prove MySQL-family trigger catalog visibility: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	grants := []string{}
+	for rows.Next() {
+		var grant string
+		if err := rows.Scan(&grant); err != nil {
+			return fmt.Errorf("failed to scan MySQL-family grants: %w", err)
+		}
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to inspect MySQL-family grants: %w", err)
+	}
+	if !mysqlGrantsProvideTriggerCatalogVisibility(grants, schema, m.connectionDialect()) {
+		return fmt.Errorf(
+			"tx-mode file requires the TRIGGER privilege at database or global scope on MySQL-family databases " +
+				"so Ptah can prove that target tables have no hidden indirect writers",
+		)
+	}
+	return nil
+}
+
+func mysqlGrantsProvideTriggerCatalogVisibility(grants []string, schema, dialect string) bool {
+	provided := false
+	revoked := false
+	for _, grant := range grants {
+		tokens := significantSQLTokens(grant, dialect)
+		if mysqlPrivilegeStatementCoversSchema(tokens, "GRANT", schema) {
+			provided = true
+		}
+		if mysqlPrivilegeStatementCoversSchema(tokens, "REVOKE", schema) {
+			revoked = true
+		}
+	}
+	return provided && !revoked
+}
+
+func mysqlPrivilegeStatementCoversSchema(tokens []lexer.Token, verb, schema string) bool {
+	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue(verb) {
+		return false
+	}
+	on := -1
+	hasTrigger := false
+	for i, token := range tokens[1:] {
+		if token.MatchIdentifierValue("ON") {
+			on = i + 1
+			break
+		}
+		if matchesAnyKeyword(token, "ALL", "TRIGGER") {
+			hasTrigger = true
+		}
+	}
+	if !hasTrigger || on < 0 || on+3 >= len(tokens) || tokens[on+2].Value != "." || tokens[on+3].Value != "*" {
+		return false
+	}
+	if tokens[on+1].Value == "*" {
+		return true
+	}
+	grantedSchema, identifier := mysqlGrantSchemaValue(tokens[on+1])
+	return identifier && grantedSchema == schema
+}
+
+// mysqlGrantSchemaValue accepts ANSI_QUOTES output because SHOW GRANTS uses
+// the session SQL mode when it renders identifiers. This decoder is deliberately
+// local to server-generated grants; double quotes remain string delimiters in
+// ordinary MySQL migration SQL unless the session explicitly changes that mode.
+func mysqlGrantSchemaValue(token lexer.Token) (string, bool) {
+	if value, identifier := mysqlIdentifierValue(token); identifier {
+		return value, true
+	}
+	if token.Type != lexer.TokenString || len(token.Value) < 2 ||
+		token.Value[0] != '"' || token.Value[len(token.Value)-1] != '"' {
+		return "", false
+	}
+	return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), true
+}
+
 func (m *Migrator) collectMySQLCatalogNames(
 	ctx context.Context,
 	query string,
@@ -239,7 +314,7 @@ func (m *Migrator) collectMySQLCatalogNames(
 	return rows.Err()
 }
 
-func mysqlReferencedSchema(tokens []lexer.Token, names map[string]struct{}) (string, bool) {
+func mysqlReferencedExternalSchema(tokens []lexer.Token, selectedSchema string) (string, bool) {
 	for i, token := range tokens {
 		name, identifier := mysqlIdentifierValue(token)
 		if !identifier || i+2 >= len(tokens) || tokens[i+1].Value != "." {
@@ -253,7 +328,7 @@ func mysqlReferencedSchema(tokens []lexer.Token, names map[string]struct{}) (str
 		if !relationReference && !routineReference {
 			continue
 		}
-		if _, known := names[strings.ToLower(name)]; known {
+		if name != selectedSchema {
 			return name, true
 		}
 	}
