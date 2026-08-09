@@ -499,10 +499,14 @@ func normalizeSchema(schema *dbtypes.DBSchema) {
 	})
 
 	for idx := range schema.Tables {
-		// Both statistics fields depend on whether autovacuum happened to have
-		// analyzed the table before the read, which no test controls.
+		// EstimatedRows depends on whether autovacuum happened to have analyzed
+		// the table before the read, which no test controls.
+		//
+		// DBTable.RowStatsUnknown (stokaro/ptah#997) is nondeterministic for the
+		// same reason and belongs here too, but this module compiles against the
+		// PUBLISHED go.5x5.cz/ptah, so the field cannot be named until a release
+		// carries it. Add it when this module's ptah requirement is bumped.
 		schema.Tables[idx].EstimatedRows = 0
-		schema.Tables[idx].RowStatsUnknown = false
 		slices.SortFunc(schema.Tables[idx].Columns, compareColumns)
 	}
 
