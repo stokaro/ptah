@@ -136,8 +136,16 @@ its table and two tables may each carry one called `tenant_isolation`. Both
 }
 ```
 
-`rls_policies_added` held bare policy-name strings before Ptah v0.2.0. A
-consumer reading that field reads `.policy_name` now; nothing was removed.
+`rls_policies_added` held bare policy-name strings in Ptah v0.2.0 and earlier —
+the v0.2.0 tag itself still declares `RLSPoliciesAdded []string`, so the object
+form has not appeared in a release yet. A consumer reading that field reads
+`.policy_name` now; nothing was removed.
+
+The same pair identifies a policy everywhere else it is named: the plan resolves
+`rls_policies_added`, `rls_policies_removed` and `rls_policies_modified` by the
+owning table together with the policy name, and the table is matched under the
+target's identifier rules, so `orders` and `public.orders` are one table. A
+reference the target schema cannot resolve is rejected rather than skipped.
 
 ## Plan-only runs
 
