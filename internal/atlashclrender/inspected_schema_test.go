@@ -580,10 +580,13 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 		target string
 	}{
 		{
-			// The table target comes back qualified: goschema.Finalize reads a
-			// grant's schema off the table block it names, which is what it has
-			// always done and what the schema restore for the other two block
-			// types is modeled on.
+			// All three targets come back qualified, and that uniformity is
+			// the point. goschema.Finalize reads a grant's schema off the block
+			// it names, and an inspected render now attributes a view and a
+			// materialized view to the read's schema exactly as it has always
+			// attributed a table. Before stokaro/ptah#1138 only this row was
+			// qualified; the other two came back bare, which was the asymmetry
+			// rather than the rule.
 			name: "a table",
 			db: func() *goschema.Database {
 				return relationTargetDocument(goschema.Grant{
@@ -601,7 +604,7 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
 				return db
 			},
-			target: "v",
+			target: "public.v",
 		},
 		{
 			name: "a materialized view",
@@ -612,7 +615,7 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 				db.MaterializedViews = []goschema.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
 				return db
 			},
-			target: "mv",
+			target: "public.mv",
 		},
 	}
 
@@ -657,7 +660,12 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Triggers, qt.HasLen, 1)
-	c.Assert(parsed.Triggers[0].Table, qt.Equals, "v")
+	// Qualified, because an inspected render attributes the view block to the
+	// read's schema the way it has always attributed a table block. A trigger
+	// on an inspected TABLE has always come back `public.t`; the bare `v` this
+	// line used to expect was the view being the odd one out
+	// (stokaro/ptah#1138).
+	c.Assert(parsed.Triggers[0].Table, qt.Equals, "public.v")
 }
 
 // TestRenderedRelationTargetKeepsItsSchema pins that shortening the reference
@@ -673,23 +681,30 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 // restore for these lives in the HCL reader beside the other two positions the
 // same note leaves out.
 //
-// The single-schema row is the control: a bare name there was never carrying a
-// schema, and inventing one would change a document the author controls.
+// The second row is the one an inspected read produces for its own schema. The
+// grant goes in bare, because a catalog reports the read's own schema as
+// implicit, and comes back naming that schema -- exactly as the same document's
+// TABLE target always has (stokaro/ptah#1138). Separating the written target
+// from the expected one is what makes the row an assertion about the restore
+// rather than an echo.
 func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 	tests := []struct {
-		name       string
-		viewName   string
-		wantTarget string
+		name        string
+		viewName    string
+		grantTarget string
+		wantTarget  string
 	}{
 		{
-			name:       "a view outside the default schema",
-			viewName:   "other.v",
-			wantTarget: "other.v",
+			name:        "a view outside the default schema",
+			viewName:    "other.v",
+			grantTarget: "other.v",
+			wantTarget:  "other.v",
 		},
 		{
-			name:       "a view the document declares no schema for",
-			viewName:   "v",
-			wantTarget: "v",
+			name:        "a view the catalog reported without a schema",
+			viewName:    "v",
+			grantTarget: "v",
+			wantTarget:  "public.v",
 		},
 	}
 
@@ -699,7 +714,7 @@ func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 			c := qt.New(t)
 
 			db := relationTargetDocument(goschema.Grant{
-				Role: "app", OnTable: test.wantTarget, Privileges: []string{"SELECT"},
+				Role: "app", OnTable: test.grantTarget, Privileges: []string{"SELECT"},
 			})
 			db.Views = []goschema.View{{Name: test.viewName, Body: "SELECT id FROM t"}}
 
@@ -779,16 +794,23 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 	tests := []struct {
 		name           string
 		sequenceSchema string
+		grantTarget    string
 		wantTarget     string
 	}{
 		{
 			name:           "a sequence outside the default schema",
 			sequenceSchema: "app",
+			grantTarget:    "app.order_seq",
 			wantTarget:     "app.order_seq",
 		},
 		{
-			name:       "a sequence the document declares no schema for",
-			wantTarget: "order_seq",
+			// Bare in, because a catalog reports the read's own schema as
+			// implicit; qualified out, because the sequence block now names
+			// that schema the way the table block always has
+			// (stokaro/ptah#1138).
+			name:        "a sequence the catalog reported without a schema",
+			grantTarget: "order_seq",
+			wantTarget:  "public.order_seq",
 		},
 	}
 
@@ -798,7 +820,7 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 			c := qt.New(t)
 
 			db := relationTargetDocument(goschema.Grant{
-				Role: "app", OnSequence: test.wantTarget, Privileges: []string{"USAGE"},
+				Role: "app", OnSequence: test.grantTarget, Privileges: []string{"USAGE"},
 			})
 			db.Sequences = []goschema.Sequence{{Name: "order_seq", Schema: test.sequenceSchema}}
 
