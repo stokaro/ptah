@@ -70,6 +70,7 @@ func TestCompatMigrateApplyDynamicEnvironments_HappyPath(t *testing.T) {
 	c.Assert(sqliteIndexCount(c, filepath.Join(root, "bar.db"), "c1_unique"), qt.Equals, 0)
 	c.Assert(sqliteIndexCount(c, filepath.Join(root, "foo.db"), "c1_unique"), qt.Equals, 0)
 	c.Assert(stdout, qt.Contains, "}\n{")
+	c.Assert(bytes.Count([]byte(stdout), []byte{'\n'}), qt.Equals, 1)
 
 	reports := decodeDynamicApplyReports(c, stdout)
 	c.Assert(reports[0].URL.Host, qt.Equals, "bar.db")
@@ -104,6 +105,7 @@ func TestCompatMigrateApplyDynamicEnvironments_PartialFailureAndRetry(t *testing
 	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "foo.db")), qt.DeepEquals, []string{"20240112070806"})
 	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "qux.db")), qt.DeepEquals, []string{"20240112070806"})
 	c.Assert(failureStdout, qt.Contains, "}\n{")
+	c.Assert(bytes.Count([]byte(failureStdout), []byte{'\n'}), qt.Equals, 1)
 	failureReports := decodeDynamicApplyReports(c, failureStdout)
 	c.Assert(failureReports[0].URL.Host, qt.Equals, "bar.db")
 	c.Assert(failureReports[0].Target, qt.Equals, "20240116003831")
@@ -119,6 +121,7 @@ func TestCompatMigrateApplyDynamicEnvironments_PartialFailureAndRetry(t *testing
 	c.Assert(retryErr, qt.ErrorMatches, `(?s).*UNIQUE constraint failed: t1.c1.*`)
 	c.Assert(retryStderr, qt.Equals, "")
 	c.Assert(retryStdout, qt.Contains, "}\n{")
+	c.Assert(bytes.Count([]byte(retryStdout), []byte{'\n'}), qt.Equals, 1)
 	retryReports := decodeDynamicApplyReports(c, retryStdout)
 	c.Assert(retryReports[0].URL.Host, qt.Equals, "bar.db")
 	c.Assert(retryReports[0].Applied, qt.HasLen, 0)
