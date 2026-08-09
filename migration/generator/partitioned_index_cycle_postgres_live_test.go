@@ -3,6 +3,7 @@ package generator_test
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -158,9 +159,23 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 // A copy attached under a name of the operator's own choosing
 // (my_local_created) is not droppable; a standalone index carrying the name
 // PostgreSQL would have generated for a copy (events_2026_id_idx) is. Neither
-// the name nor the table separates them -- pg_inherits does. relkind does not
-// either: it marks the parent, which is the one object of the three that a
-// DROP INDEX may name.
+// the name nor the table separates them -- pg_inherits over the INDEX relation
+// does. Three things this fixture is built to refuse:
+//
+//   - The naming convention. events_2026_id_idx carries the name a copy would
+//     have and is droppable; my_local_created is a copy and is not.
+//   - relkind. It marks the parent ('I') and leaves the copy ('i'), and two of
+//     the three droppable indexes here are 'I' while the third is 'i'.
+//   - The partition's own attachment. pg_inherits over the TABLE relation is
+//     true for every index on events_2026, which is three of these five.
+//
+// The fixture is read TWICE, before and after the ATTACH, because the two
+// halves of it are the same object in different states and a single reading
+// cannot tell a rule that answers the state from one that answers the name. It
+// also records what the catalog cannot hold at once: attaching the only
+// partition's index to idx_events_created is exactly what makes that parent
+// indisvalid, so "my_local_created is attached" and "idx_events_created is not
+// yet valid" are states of two different moments, never of one.
 func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
@@ -187,17 +202,51 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 		CREATE INDEX events_2026_id_idx ON events_2026 (id);
 		CREATE INDEX my_local_created ON events_2026 (created_at);
 		CREATE INDEX idx_events_created ON ONLY events (created_at);
-		ALTER INDEX idx_events_created ATTACH PARTITION my_local_created;
 	`)
 	c.Assert(err, qt.IsNil)
 
-	schema, err := target.Reader().ReadSchema()
+	// Before the ATTACH. my_local_created is an ordinary index that happens to
+	// live on a partition, and idx_events_created is a parent with no child
+	// yet, so it is not valid. A rule keyed on the partition's own attachment
+	// marks my_local_created here, and this is where it is wrong.
+	c.Assert(
+		readPartitionedIndexCatalog(c, target),
+		qt.DeepEquals,
+		[]partitionedIndexRow{
+			{Name: "events_2026_id_idx", RelKind: "i", Valid: true, Ready: true, Attached: false},
+			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
+			{Name: "idx_events_created", RelKind: "I", Valid: false, Ready: true, Attached: false},
+			{Name: "idx_events_tenant", RelKind: "I", Valid: true, Ready: true, Attached: false},
+			{Name: "my_local_created", RelKind: "i", Valid: true, Ready: true, Attached: false},
+		},
+	)
+	c.Assert(readPartitionAttachedMarks(c, target), qt.DeepEquals, map[string]bool{
+		"idx_events_tenant":      false,
+		"idx_events_created":     false,
+		"events_2026_tenant_idx": true,
+		"events_2026_id_idx":     false,
+		"my_local_created":       false,
+	})
+
+	_, err = target.ExecContext(ctx, `ALTER INDEX idx_events_created ATTACH PARTITION my_local_created`)
 	c.Assert(err, qt.IsNil)
 
-	attached := make(map[string]bool, len(schema.Indexes))
-	for _, index := range schema.Indexes {
-		attached[index.Name] = index.PartitionAttached
-	}
+	// After the ATTACH. my_local_created became a copy without being touched,
+	// and idx_events_created became valid without being touched: the single
+	// partition now has an attached index, which is the condition PostgreSQL
+	// validates the parent on.
+	c.Assert(
+		readPartitionedIndexCatalog(c, target),
+		qt.DeepEquals,
+		[]partitionedIndexRow{
+			{Name: "events_2026_id_idx", RelKind: "i", Valid: true, Ready: true, Attached: false},
+			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
+			{Name: "idx_events_created", RelKind: "I", Valid: true, Ready: true, Attached: false},
+			{Name: "idx_events_tenant", RelKind: "I", Valid: true, Ready: true, Attached: false},
+			{Name: "my_local_created", RelKind: "i", Valid: true, Ready: true, Attached: true},
+		},
+	)
+	attached := readPartitionAttachedMarks(c, target)
 	c.Assert(attached, qt.DeepEquals, map[string]bool{
 		"idx_events_tenant":      false,
 		"idx_events_created":     false,
@@ -206,12 +255,67 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 		"my_local_created":       true,
 	})
 
-	// The reader's mark and the server's refusal name the same objects.
+	// The reader's mark and the server's refusal name the same objects, over
+	// the WHOLE fixture rather than over a chosen pair. Three of these five
+	// indexes accept a DROP INDEX and two refuse it, and the two that refuse
+	// are exactly the two the reader marks.
+	c.Assert(refusedDropIndex(c, target, indexNames(attached)), qt.DeepEquals, attached)
+
+	// The refusal is the one #997 is about, quoted rather than counted.
 	_, err = target.ExecContext(ctx, `DROP INDEX "events_2026_id_idx"`)
 	c.Assert(err, qt.IsNil)
 	_, err = target.ExecContext(ctx, `DROP INDEX "my_local_created"`)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "cannot drop index my_local_created")
+}
+
+// readPartitionAttachedMarks reports PartitionAttached per index name, as the
+// reader under test describes the live database.
+func readPartitionAttachedMarks(c *qt.C, conn *dbschema.DatabaseConnection) map[string]bool {
+	c.Helper()
+	schema, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	marks := make(map[string]bool, len(schema.Indexes))
+	for _, index := range schema.Indexes {
+		marks[index.Name] = index.PartitionAttached
+	}
+	return marks
+}
+
+// indexNames lists the keys of a per-index map in sorted order, so the set the
+// server is asked about is the set the reader described rather than a list
+// written out by hand beside it.
+func indexNames(marks map[string]bool) []string {
+	names := make([]string, 0, len(marks))
+	for name := range marks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// refusedDropIndex reports, per index name, whether PostgreSQL refuses a
+// DROP INDEX that names it.
+//
+// Each attempt runs in a transaction of its own and is rolled back, so every
+// name is measured against the same catalog the reader was asked about --
+// dropping one index for real would change what the next attempt means, and
+// dropping a parent takes its copies with it.
+func refusedDropIndex(c *qt.C, conn *dbschema.DatabaseConnection, names []string) map[string]bool {
+	c.Helper()
+	session, err := conn.Conn(c.Context())
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(session.Close(), qt.IsNil) }()
+
+	refused := make(map[string]bool, len(names))
+	for _, name := range names {
+		transaction, beginErr := session.BeginTx(c.Context(), nil)
+		c.Assert(beginErr, qt.IsNil)
+		_, dropErr := transaction.ExecContext(c.Context(), `DROP INDEX "`+name+`"`)
+		refused[name] = dropErr != nil
+		c.Assert(transaction.Rollback(), qt.IsNil)
+	}
+	return refused
 }
 
 // partitionedIndexRow is one pg_index observation, named so a failure reads as
