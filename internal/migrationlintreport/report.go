@@ -431,7 +431,7 @@ func lintDirectory(
 		FS:                analysis.SnapshotFS(),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
 		ObserveVersion:    replayVersionObserver(baseline, capture),
-		ObserveReplayed:   capture.replayedObserver(),
+		ObserveReplayed:   capture.replayedObserver(ctx),
 	}); err != nil {
 		return analysis, capture.result(), fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
@@ -471,11 +471,17 @@ func (c *schemaCapture) result() replayedSchemas {
 	return replayedSchemas{current: c.current, desired: c.desired}
 }
 
-func (c *schemaCapture) replayedObserver() func(*dbschema.DatabaseConnection) error {
+// replayedObserver closes over the run's context, because the hook the replay
+// takes carries none and the read behind it is a database round trip that has
+// to be cancelable with the rest of the run. It is the shape
+// [go.5x5.cz/ptah/internal/atlasschema] uses for the same callback.
+func (c *schemaCapture) replayedObserver(ctx context.Context) func(*dbschema.DatabaseConnection) error {
 	if c == nil {
 		return nil
 	}
-	return c.observeReplayed
+	return func(conn *dbschema.DatabaseConnection) error {
+		return c.observeReplayed(ctx, conn)
+	}
 }
 
 // replayVersionObserver combines the two per-version readers into the single

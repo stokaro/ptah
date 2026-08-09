@@ -67,14 +67,14 @@ func firstAnalyzedVersion(analysis lint.Analysis) (int64, bool) {
 
 // observeVersion records the state the first analyzed version starts from.
 func (c *schemaCapture) observeVersion(
-	_ context.Context,
+	ctx context.Context,
 	version int64,
 	conn *dbschema.DatabaseConnection,
 ) error {
 	if c == nil || !c.hasBase || version != c.baseVersion {
 		return nil
 	}
-	rendered, err := c.render(conn)
+	rendered, err := c.render(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -83,11 +83,14 @@ func (c *schemaCapture) observeVersion(
 }
 
 // observeReplayed records the state the directory leaves behind.
-func (c *schemaCapture) observeReplayed(conn *dbschema.DatabaseConnection) error {
+func (c *schemaCapture) observeReplayed(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+) error {
 	if c == nil {
 		return nil
 	}
-	rendered, err := c.render(conn)
+	rendered, err := c.render(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -98,8 +101,11 @@ func (c *schemaCapture) observeReplayed(conn *dbschema.DatabaseConnection) error
 	return nil
 }
 
-func (c *schemaCapture) render(conn *dbschema.DatabaseConnection) (string, error) {
-	return atlasschema.Inspect(conn, atlasschema.InspectOptions{
+func (c *schemaCapture) render(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+) (string, error) {
+	return atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 		DevURL:  c.devURL,
 		Schemas: c.schemas,
 		Format:  "hcl",
