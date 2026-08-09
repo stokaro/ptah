@@ -383,8 +383,30 @@ Atlas CE v1.3.0 binary preserves. All nine are now read. Measured on PostgreSQL
 replaying the emitted SQL into a fresh database with
 `psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
 the replayed database against the source with the pinned binary as a neutral
-observer. These affected the live-database read path only; an HCL source
-carrying the same attributes always rendered correctly.
+observer.
+
+Eight of the nine affected the live-database read path only: an HCL source
+carrying those eight rendered correctly before any of this work, and the fix for
+each of them is a projection in `internal/dbschema/postgres`. The ninth, the
+index's own comment, is not one of them, and the row below is the counterexample
+to the sentence this paragraph used to carry. `//ptah:schema:index comment=` and
+the HCL `index { comment = ... }` both filled the model and had done so for a
+long time; the PostgreSQL **renderer** then dropped the value, because
+PostgreSQL's `CREATE INDEX` has no `COMMENT` clause to carry it and nothing
+emitted the separate statement. Measured on PostgreSQL 17.10 against the same
+one-index HCL document, before and after:
+
+```text
+index "i" { columns = [column.name]  comment = "keep me" }
+
+before:  CREATE INDEX IF NOT EXISTS "i" ON "public"."t" ("name");
+after:   CREATE INDEX IF NOT EXISTS "i" ON "public"."t" ("name");
+         COMMENT ON INDEX "public"."i" IS 'keep me';
+```
+
+So that row needed a new statement in
+`core/renderer/internal/dialects/postgres` as well as a new projection in the
+reader, and the loss was never confined to the read path.
 
 | Attribute | Read from | Before | Tracked in |
 | --- | --- | --- | --- |
@@ -436,6 +458,11 @@ to rebuild. `pages_per_range` does survive all four:
 - the SQL parser reads it out of a `WITH` clause,
 - and the PostgreSQL renderer writes one.
 
+Surviving the `.sql` surface is a claim about the reading half as well as the
+writing half, and it did not hold for the *operator class* until this work; see
+[Every key suffix has to survive the `.sql` surface
+too](#every-key-suffix-has-to-survive-the-sql-surface-too).
+
 Measured on PostgreSQL 17.10, `fillfactor`, `deduplicate_items`, `buffering`,
 `fastupdate`, `gin_pending_list_limit` and `autosummarize` have no slot on that
 HCL surface, and Atlas CE v1.3.0 drops all of them too:
@@ -485,6 +512,81 @@ tsvector_ops (siglen = 64))` separates it from "no parameters at all", and
 `(a tsvector_ops (siglen = 32), b tsvector_ops (siglen = 64))` separates it from
 every constant and from a reordering, since the two keys carry different values.
 
+The unit-level fake server evaluates that join rather than matching its
+spelling, and both halves of "evaluates" matter. `keyatt.attrelid = i.oid` is
+the same join as `keyatt.attrelid = ix.indexrelid`, because the query itself
+says `JOIN pg_class i ON i.oid = ix.indexrelid`; comparing the operand to one
+fixed string failed a correct rewrite over a difference no server can observe.
+Equality is resolved through the outer `FROM` clause instead, which keeps
+`ix.indrelid` and `t.oid` refused — they are each other's component and not
+connected to `ix.indexrelid` by any join in that query.
+
+The same fake reads **both** arguments of `obj_description`. A relation's
+comment is filed in `pg_description` under classoid `pg_class`, and an index is
+a relation, so `obj_description(i.oid, 'pg_index')` returns NULL on every real
+server — measured, it drops the `COMMENT ON INDEX` statement from the emitted
+SQL — while a fake that read only the object answered it with the index's
+comment and let the whole unit suite pass at exit 0.
+
+### Every key suffix has to survive the `.sql` surface too
+
+The criterion above — a value the model records has to survive every surface the
+model passes through — is not only about storage parameters. Ptah's own `.sql`
+schema-file surface is one of those surfaces, and until this work it could not
+read back a single index key suffix that Ptah's PostgreSQL renderer writes.
+
+The renderer emits an operator class, its parameters, `DESC` and `NULLS
+FIRST`/`LAST` as part of the key. The SQL frontend keeps each key list element
+as one opaque string — which is fine — and the AST-to-IR converter then
+classified anything that was not a bare identifier as an *expression*, so the
+suffix came back glued to the column name and the next render wrapped the whole
+thing in parentheses. Measured on PostgreSQL 17.10 against a database holding
+
+```text
+CREATE TABLE t (id integer PRIMARY KEY, code text, created_at timestamptz,
+                score integer, tsv tsvector);
+CREATE INDEX i_opclass  ON t (code text_pattern_ops);
+CREATE INDEX i_desc     ON t (created_at DESC NULLS LAST);
+CREATE INDEX i_nullsfst ON t (score NULLS FIRST);
+CREATE INDEX i_siglen   ON t USING gist (tsv tsvector_ops (siglen = 64));
+```
+
+with `ptah-compat schema inspect --format '{{ sql . }}'` writing the document
+and `ptah-compat schema diff --from <that database> --to file://<that document>`
+reading it back, the diff of a schema against its own description planned:
+
+```text
+DROP INDEX IF EXISTS "i_desc";
+CREATE INDEX IF NOT EXISTS "i_desc" ON "t" (("created_at" DESC NULLS LAST));
+DROP INDEX IF EXISTS "i_nullsfst";
+CREATE INDEX IF NOT EXISTS "i_nullsfst" ON "t" (("score" NULLS FIRST));
+DROP INDEX IF EXISTS "i_opclass";
+CREATE INDEX IF NOT EXISTS "i_opclass" ON "t" (("code" text_pattern_ops));
+DROP INDEX IF EXISTS "i_siglen";
+CREATE INDEX IF NOT EXISTS "i_siglen" ON "t" USING gist (("tsv" tsvector_ops(siglen=64)));
+```
+
+Every one of those CREATEs is refused by PostgreSQL — `syntax error at or near
+"tsvector_ops"`, psql exit 3 — and the DROP ahead of it is not. Replayed, the
+index is gone and nothing replaces it, which is strictly worse than the silent
+losses the rest of this section is about.
+
+Three of the four predate #1242: only the parameterised class is new, and only
+because the reader had nothing to write there before. The fix is one class
+rather than four instances — the converter now reads a key list element as
+`{ column | ( expression ) } [ opclass [ ( param = value, … ) ] ] [ ASC | DESC ]
+[ NULLS { FIRST | LAST } ]`, and it also stops dropping the NULLS ordering of a
+key handed to it already structured. A parameter list is re-spelled the way the
+catalog reports it, `name(a=1, b=2)`, because that is the spelling it is
+compared against; `siglen='64'` and `siglen=64` are one parameter.
+
+Two deliberate limits. The conversion is all-or-nothing per key list: an element
+it does not fully understand — a per-key `COLLATE`, a MySQL prefix length, a
+backtick- or bracket-quoted key — leaves the whole list on the legacy path
+exactly as before, rather than being half-converted. And an operator class is
+read only where one can exist: the key it follows has to be spelled the
+PostgreSQL-family way, bare or double-quoted.
+
 ### The index comment
 
 An index's own comment is a member of the same family, read from
@@ -512,6 +614,16 @@ create.
 The fixture that pins it puts a *different* comment on the table, because the
 index row joins both relations and `obj_description(t.oid, 'pg_class')` is the
 same function on the same catalog reaching the wrong object.
+
+The comment reaches the HCL surface and the live target, and it does not reach
+the `.sql` one: `COMMENT ON INDEX` parses as a statement but the AST-to-IR
+converter does not attach it back to the index, so a `.sql` document written by
+`schema inspect` describes an index with no comment. Nothing observable follows
+from that today — the comparator does not compare index comments either, so the
+document still plans nothing against the database it came from, measured — but
+it is a real hole in the same surface enumeration and it is recorded here rather
+than left implicit. Closing it means the comparator arm below and the converter
+hop together.
 
 What is **not** closed is a comment *change* on an index that already exists:
 the index comparator does not compare comments, so `schema apply` plans nothing
