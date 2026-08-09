@@ -866,13 +866,40 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- LIKE prefix scans it was created for, and nothing reports it.
 			-- opcdefault separates the two, so a default class reports the
 			-- empty string rather than a name the emitted DDL does not need.
+			--
+			-- opcdefault does not settle it alone, because an operator class can
+			-- take PARAMETERS and the index attribute's pg_attribute.attoptions
+			-- is where PostgreSQL keeps them. Measured on PostgreSQL 17.10,
+			--
+			--   CREATE INDEX i ON t USING gist (tsv tsvector_ops (siglen = 64))
+			--
+			-- stores opcname tsvector_ops with opcdefault true and attoptions
+			-- {siglen=64}: reading opcdefault alone reports the empty string and
+			-- rebuilds the index with the 124-byte default signature, which is a
+			-- different index that psql accepts at exit 0. A parameterised class
+			-- is therefore named even when it is the type's default, because the
+			-- name is the only place its parameters can hang. See #1242.
+			--
+			-- The three catalog values are carried out separately and combined by
+			-- postgresOperatorClassSpelling rather than by a CASE here. Which of
+			-- them wins is the part that is easy to get wrong -- testing default
+			-- before parameters silently drops the parameters of a default class
+			-- -- and a rule written in Go is one a table-driven test can hold
+			-- against every combination of the three.
 			COALESCE((
 				SELECT json_agg(
-					CASE WHEN op.opcdefault IS NOT FALSE THEN '' ELSE op.opcname::text END
+					json_build_object(
+						'name', op.opcname::text,
+						'is_default', COALESCE(op.opcdefault, false),
+						'params', COALESCE(array_to_string(keyatt.attoptions, ', '), '')
+					)
 					ORDER BY keys.ordinality
 				)::text
 				FROM unnest(ix.indclass) WITH ORDINALITY AS keys(opcoid, ordinality)
 				LEFT JOIN pg_opclass op ON op.oid = keys.opcoid
+				LEFT JOIN pg_attribute keyatt
+					ON keyatt.attrelid = ix.indexrelid
+					AND keyatt.attnum = keys.ordinality::smallint
 				WHERE keys.ordinality <= ix.indnkeyatts
 			), '[]') as index_key_opclasses,
 			-- pg_index.indoption is a per-key bitmask: bit 0 is DESC, bit 1 is
@@ -898,11 +925,30 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- column does not replay at all without it, because point has no
 			-- default btree operator class. See #1242.
 			am.amname as index_method,
+			-- The index relation's storage parameters, the WITH (...) clause.
+			-- pg_class.reloptions holds them as "name=value" strings. Measured on
+			-- PostgreSQL 17.10, CREATE INDEX ... USING brin (ts)
+			-- WITH (pages_per_range = 32) stores {pages_per_range=32}, and an
+			-- index rebuilt without it summarizes 128 pages per range instead of
+			-- 32 -- a different index that psql accepts at exit 0. Only the
+			-- parameters the whole model can carry back out again are kept; see
+			-- postgresIndexStorageParams. See #1242.
+			COALESCE(array_to_json(i.reloptions)::text, '[]') as index_storage_params,
 			-- The extensions this index resolves to, from the resolved operator
 			-- class OIDs and the access method OID rather than from either
 			-- one's name -- including the class the DDL does print, which is
 			-- the non-default one. See requiredExtensionsProjection.
 			` + requiredExtensionsProjection("ix.indclass", "i.relam") + ` as index_required_extensions,
+			-- The index's own object comment. It hangs off the INDEX relation,
+			-- so obj_description takes indexrelid and 'pg_class'; the table's
+			-- comment is a different object and is read elsewhere. Measured on
+			-- PostgreSQL 17.10, the pinned Atlas community binary v1.3.0 reads
+			-- this one and emits both COMMENT ON INDEX "i" IS 'keep me' and
+			-- comment = "keep me" inside the index block, where Ptah emitted
+			-- neither: the comment was dropped between the catalog and the
+			-- model, psql accepted the replay at exit 0, and the index simply
+			-- had no comment. See #1242.
+			COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -927,8 +973,8 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 		err := rows.Scan(
 			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
 			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
-			&row.includeColumns, &row.method, &row.requiredExtensions,
-			&row.predicate, &row.isPrimary, &row.isUnique,
+			&row.includeColumns, &row.method, &row.storageParams, &row.requiredExtensions,
+			&row.comment, &row.predicate, &row.isPrimary, &row.isUnique,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
@@ -967,12 +1013,17 @@ type postgresIndexRow struct {
 	includeColumns string
 	// method is pg_am.amname.
 	method string
+	// storageParams is the JSON array of pg_class.reloptions entries, each
+	// spelled "name=value".
+	storageParams string
 	// requiredExtensions is the JSON array of extension names the index's
 	// resolved operator classes and access method belong to.
 	requiredExtensions string
-	predicate          string
-	isPrimary          bool
-	isUnique           bool
+	// comment is obj_description of the index relation.
+	comment   string
+	predicate string
+	isPrimary bool
+	isUnique  bool
 }
 
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
@@ -983,6 +1034,7 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 		TableName:     row.tableName,
 		Definition:    row.indexDef,
 		Condition:     row.predicate,
+		Comment:       row.comment,
 		IsUnique:      row.isUnique,
 		IsPrimary:     row.isPrimary,
 		Method:        row.method,
@@ -1021,7 +1073,60 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 		return types.DBIndex{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
 	}
 
+	index.StorageParams, err = postgresIndexStorageParams(row.storageParams)
+	if err != nil {
+		return types.DBIndex{}, fmt.Errorf("failed to parse index storage parameters for %s: %w", row.indexName, err)
+	}
+
 	return index, nil
+}
+
+// postgresRoundTrippableIndexStorageParams names the PostgreSQL index storage
+// parameters this reader records.
+//
+// It is deliberately not every parameter pg_class.reloptions can hold. A
+// parameter recorded here has to survive every surface the model passes
+// through, because [go.5x5.cz/ptah/migration/schemadiff] treats a difference in
+// the recorded set as a reason to rebuild the index. `pages_per_range` does
+// survive: the Atlas-compatible HCL reader accepts `page_per_range` and
+// `pages_per_range`, the HCL writer emits one, the SQL parser reads one out of
+// a WITH clause, and the PostgreSQL renderer writes one.
+//
+// Measured on PostgreSQL 17.10, `fillfactor`, `deduplicate_items`, `buffering`,
+// `fastupdate`, `gin_pending_list_limit` and `autosummarize` have no slot on
+// that HCL surface, and the pinned Atlas community binary v1.3.0 drops all of
+// them too -- `CREATE INDEX i ON t (name) WITH (fillfactor = 70)` comes back
+// from both as `CREATE INDEX "i" ON "t" ("name")`. Recording one of those would
+// not make it survive an inspect-and-diff round trip; it would make every such
+// index differ from its own inspected document forever. docs/conformance.md
+// records the omission.
+var postgresRoundTrippableIndexStorageParams = []string{"pages_per_range"}
+
+// postgresIndexStorageParams decodes pg_class.reloptions, which PostgreSQL
+// reports as an array of "name=value" strings, into the storage parameters the
+// model carries. An entry with no "=" is skipped rather than recorded with an
+// empty value, because a valueless reloption is not something CREATE INDEX can
+// be handed back.
+func postgresIndexStorageParams(value string) (map[string]string, error) {
+	entries, err := decodePostgresNameList(value)
+	if err != nil {
+		return nil, err
+	}
+	params := map[string]string{}
+	for _, entry := range entries {
+		name, paramValue, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		if !slices.Contains(postgresRoundTrippableIndexStorageParams, name) {
+			continue
+		}
+		params[name] = paramValue
+	}
+	if len(params) == 0 {
+		return nil, nil
+	}
+	return params, nil
 }
 
 // decodePostgresNameList decodes a JSON array of names fetched alongside an
@@ -1043,19 +1148,56 @@ func decodePostgresNameList(value string) ([]string, error) {
 	return names, nil
 }
 
-// applyPostgresIndexOpclasses attaches the non-default operator class of each
-// key to its part.
+// postgresKeyOperatorClass is the operator class of one index key as the
+// catalog reports it, before it is reduced to the spelling emitted DDL needs.
+type postgresKeyOperatorClass struct {
+	// Name is pg_opclass.opcname.
+	Name string `json:"name"`
+	// IsDefault is pg_opclass.opcdefault: this class is what the key's type
+	// resolves to on this access method when CREATE INDEX names none.
+	IsDefault bool `json:"is_default"`
+	// Params is the class's parameters as PostgreSQL keeps them, in the index
+	// attribute's pg_attribute.attoptions -- `siglen=64`, and empty for the
+	// overwhelmingly common class that takes none.
+	Params string `json:"params"`
+}
+
+// postgresOperatorClassSpelling reduces one key's operator class to the text
+// the emitted CREATE INDEX has to carry, or the empty string when the index is
+// reproduced exactly by naming no class at all.
+//
+// The parameter test comes first, and that order is the whole rule. A class can
+// be both the key type's default and parameterised: measured on PostgreSQL
+// 17.10, CREATE INDEX i ON t USING gist (tsv tsvector_ops (siglen = 64)) stores
+// opcname tsvector_ops with opcdefault true and attoptions {siglen=64}. Testing
+// IsDefault first reports the empty string for it and rebuilds the index with
+// the 124-byte default signature -- a different index that psql accepts at exit
+// 0 and that nothing reports. The class name is the only place its parameters
+// can hang, so a parameterised class is named even when it is the default. See
+// #1242.
+func postgresOperatorClassSpelling(class postgresKeyOperatorClass) string {
+	if class.Params != "" {
+		return class.Name + "(" + class.Params + ")"
+	}
+	if class.IsDefault {
+		return ""
+	}
+	return class.Name
+}
+
+// applyPostgresIndexOpclasses attaches the operator class of each key to its
+// part.
 //
 // A list that does not line up with the parts is dropped rather than applied
 // off by one: an operator class on the wrong key builds a different index than
 // the one being read, which is worse than not carrying it at all.
 func applyPostgresIndexOpclasses(parts []types.DBIndexPart, opclassesJSON string) ([]types.DBIndexPart, error) {
-	opclasses, err := decodePostgresKeyList[string](opclassesJSON, len(parts))
+	opclasses, err := decodePostgresKeyList[postgresKeyOperatorClass](opclassesJSON, len(parts))
 	if err != nil || opclasses == nil {
 		return parts, err
 	}
 	for position := range parts {
-		parts[position].Operator = opclasses[position]
+		parts[position].Operator = postgresOperatorClassSpelling(opclasses[position])
 	}
 	return parts, nil
 }

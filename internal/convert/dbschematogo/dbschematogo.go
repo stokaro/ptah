@@ -6,6 +6,7 @@ package dbschematogo
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -204,11 +205,13 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Parts:         convertIndexParts(dbIndex.Parts),
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
+			Comment:       dbIndex.Comment,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
 			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,
 
 			IncludeColumns: slices.Clone(dbIndex.IncludeColumns),
+			StorageParams:  maps.Clone(dbIndex.StorageParams),
 			// Carried rather than recomputed: only the reader has the catalog,
 			// and an operator class the index's own DDL leaves implicit is
 			// reachable no other way.

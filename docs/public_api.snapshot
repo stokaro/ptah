@@ -5786,6 +5786,18 @@ type DBIndex struct {
     // Condition is the WHERE clause for partial indexes when the dialect
     // exposes one structurally.
     Condition string `json:"condition,omitempty"`
+    // Comment is the index's own object comment, as PostgreSQL keeps it in
+    // pg_description for the index relation and reports through
+    // obj_description(indexrelid, 'pg_class').
+    //
+    // It is the index's, not the table's: COMMENT ON INDEX and COMMENT ON TABLE
+    // address different objects, and an index has a slot for one on every
+    // surface below this model -- goschema.Index.Comment, the Atlas-compatible
+    // HCL reader's `comment` attribute, and the HCL writer's. Before #1242 this
+    // field did not exist, so a comment the server reported was dropped between
+    // the catalog and the model and every surface below it saw an index that
+    // had none. Empty means the object carries no comment.
+    Comment string `json:"comment,omitempty"`
     // NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
     // state. Nil means the clause was not present in the definition.
     NullsDistinct *bool `json:"nulls_distinct,omitempty"`
@@ -5805,6 +5817,16 @@ type DBIndex struct {
     // IncludeColumns carries PostgreSQL INCLUDE payload columns, the
     // non-key columns stored in the index for index-only scans.
     IncludeColumns []string `json:"include_columns,omitempty"`
+    // StorageParams carries the index's WITH (...) storage parameters, keyed by
+    // parameter name with the value as the server spells it.
+    //
+    // A reader records only the parameters the rest of the model can carry back
+    // out again. A parameter recorded here but dropped by one of the surfaces
+    // the model passes through would make every such index differ from its own
+    // inspected document forever, and the rebuild that difference plans would
+    // drop the parameter it was meant to protect. See #1242 and
+    // docs/conformance.md for the ones a PostgreSQL reader deliberately omits.
+    StorageParams map[string]string `json:"storage_params,omitempty"`
 
     // RequiresExtensions names the extensions this index cannot be built
     // without, as the catalog resolved them rather than as the DDL spells them.
@@ -5872,10 +5894,14 @@ type DBIndexPart struct {
     // that reports one in Name makes the renderer quote it into a column
     // reference that does not exist.
     Expr string `json:"expr,omitempty"`
-    // Operator is the non-default operator class this key was built with, for
-    // example text_pattern_ops. Empty means the key uses its type's default
-    // class, which is the only case where omitting it from emitted DDL
-    // reproduces the index. See #1242.
+    // Operator is the operator class this key was built with, for example
+    // text_pattern_ops, together with its parameters when it has any, for
+    // example tsvector_ops(siglen=64). Empty means the key uses its type's
+    // default class with no parameters, which is the only case where omitting
+    // it from emitted DDL reproduces the index. See #1242.
+    //
+    // A parameterised class is carried even when it is the type's default,
+    // because the class name is the only place its parameters can hang.
     Operator string `json:"operator,omitempty"`
     Desc     bool   `json:"desc,omitempty"`
     // NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",

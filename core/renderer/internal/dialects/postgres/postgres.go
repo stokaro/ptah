@@ -46,7 +46,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, r.dropIndexTarget(node))
+	parts = append(parts, r.qualifiedIndexTarget(node.Table, node.Name))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -63,20 +63,26 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
-func (r *Renderer) dropIndexTarget(node *ast.DropIndexNode) string {
-	if r.dialect == platform.CockroachDB && node.Table != "" {
-		return r.escapeQualifiedIdentifier(node.Table) + "@" + r.escapeIdentifier(node.Name)
+// qualifiedIndexTarget spells an index the way a statement that names the index
+// itself -- DROP INDEX, COMMENT ON INDEX -- has to spell it.
+//
+// An index lives in its table's namespace, so the qualifier is borrowed from the
+// table rather than taken from the index name. CockroachDB does not address an
+// index by a schema-qualified name at all; it addresses it as table@index.
+func (r *Renderer) qualifiedIndexTarget(table, name string) string {
+	if r.dialect == platform.CockroachDB && table != "" {
+		return r.escapeQualifiedIdentifier(table) + "@" + r.escapeIdentifier(name)
 	}
-	tableParts := splitQualifiedIdentifier(node.Table)
+	tableParts := splitQualifiedIdentifier(table)
 	if len(tableParts) < 2 {
 		// No table namespace to borrow, so the index name is the only place a
 		// qualifier can be, and `DROP INDEX app.idx` puts one there. Escaping
 		// it whole would emit "app.idx" as a single identifier and name an
 		// index nobody created. See [ast.DropIndexNode.Name].
-		return r.escapeQualifiedIdentifier(node.Name)
+		return r.escapeQualifiedIdentifier(name)
 	}
 	schemaParts := tableParts[:len(tableParts)-1]
-	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(node.Name)
+	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(name)
 }
 
 // VisitCreateSchema renders a CREATE SCHEMA statement.
@@ -713,6 +719,20 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	// An index comment is a separate statement: CREATE INDEX has no COMMENT
+	// clause in PostgreSQL's grammar, unlike MySQL's index definition. Emitting
+	// it here is what keeps the comment attached to the index the statement
+	// above just created -- before #1242 the value was carried all the way from
+	// the annotation or the HCL document to this node and then dropped, and the
+	// index arrived with no comment at exit 0.
+	if node.Comment != "" {
+		r.w.WriteLinef(
+			"COMMENT ON INDEX %s IS %s;",
+			r.qualifiedIndexTarget(node.Table, node.Name),
+			r.escapeValue(node.Comment),
+		)
+	}
 
 	return nil
 }
