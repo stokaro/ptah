@@ -8,13 +8,12 @@ package reservedrole
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 const (
@@ -116,13 +115,17 @@ func likePattern() string {
 	return pattern.String()
 }
 
-// Allowed reports whether the opt-in variable is set to a true boolean value.
-// Unset, empty, false and unparsable values all keep the refusal, mirroring how
-// [go.5x5.cz/ptah/internal/rolescope] and
-// [go.5x5.cz/ptah/internal/atlassource] read their own opt-ins.
-func Allowed() bool {
-	allow, err := strconv.ParseBool(os.Getenv(AllowEnvVar))
-	return err == nil && allow
+// allow is the declaration of the variable, made once, in the package that owns
+// it. See [go.5x5.cz/ptah/internal/envbool].
+var allow = envbool.New(AllowEnvVar, false)
+
+// Allowed reports whether the opt-in lifts the refusal.
+//
+// Unset keeps the refusal and a valid false spelling keeps it too; an empty or
+// unparsable value is a configuration error rather than a silent refusal
+// (stokaro/ptah#1334).
+func Allowed() (bool, error) {
+	return allow.Resolve()
 }
 
 // ValidateDeclared refuses a desired schema that declares a reserved role,
@@ -140,7 +143,22 @@ func Allowed() bool {
 // normalized or raw target dialect; an empty or non-PostgreSQL dialect declares
 // nothing about PostgreSQL role names and is left alone.
 func ValidateDeclared(dialect string, roles []goschema.Role) error {
-	if !platform.IsPostgresFamily(dialect) || Allowed() {
+	if !platform.IsPostgresFamily(dialect) {
+		// A non-PostgreSQL target declares nothing about PostgreSQL role names,
+		// so this subsystem does not recognize the variable on that run and must
+		// not fail a MySQL render for it. That boundary is stokaro/ptah#1334's:
+		// validate on every invocation of the subsystem that owns the variable,
+		// and on no others.
+		return nil
+	}
+	// Resolved before the roles are scanned, so a desired schema that declares
+	// no reserved role at all -- the whole of a healthy pipeline -- still
+	// refuses a malformed value instead of passing in silence.
+	allowed, err := Allowed()
+	if err != nil {
+		return err
+	}
+	if allowed {
 		return nil
 	}
 	var refused []string

@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // Every test in this file drives the whole compatibility CLI, argv in and exit
@@ -83,30 +84,60 @@ func TestCompatCommand_MigrateLintWithoutDevURLOptIn(t *testing.T) {
 	c.Assert(out, qt.Contains, "-- 1 version ok")
 }
 
-// TestCompatCommand_MigrateLintOptInIgnoresNonBooleanValues pins that the
-// opt-in is a boolean, so an operator who exported it as a word does not get a
-// silently looser CLI.
-func TestCompatCommand_MigrateLintOptInIgnoresNonBooleanValues(t *testing.T) {
+// TestCompatCommand_MigrateLintOptInIsABoolean pins that the opt-in is a
+// boolean, so an operator who exported it as a word does not get a silently
+// looser CLI -- and, since stokaro/ptah#1334, does not get a silently STRICTER
+// one either.
+//
+// The two answers are different on purpose. A valid false keeps the community
+// binary's own refusal, word for word, because that is the compatibility
+// default. A value that is not a boolean at all is a configuration error naming
+// the variable, because `required flag(s) "dev-url" not set` would send an
+// operator who did set the opt-in looking at their command line instead of at
+// their environment file.
+func TestCompatCommand_MigrateLintOptInIsABoolean(t *testing.T) {
 	tests := []struct {
-		name  string
-		value string
+		name    string
+		env     func(testing.TB)
+		wantErr string
 	}{
-		{name: "empty", value: ""},
-		{name: "false", value: "false"},
-		{name: "zero", value: "0"},
-		{name: "word", value: "yes please"},
+		{
+			name:    "unset",
+			env:     envbooltest.Unset("PTAH_ATLAS_LINT_WITHOUT_DEV_URL"),
+			wantErr: `Error: required flag(s) "dev-url" not set`,
+		},
+		{
+			name:    "false",
+			env:     envbooltest.Set("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "false"),
+			wantErr: `Error: required flag(s) "dev-url" not set`,
+		},
+		{
+			name:    "zero",
+			env:     envbooltest.Set("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "0"),
+			wantErr: `Error: required flag(s) "dev-url" not set`,
+		},
+		{
+			name:    "empty",
+			env:     envbooltest.Set("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", ""),
+			wantErr: `Error: invalid boolean value "" for PTAH_ATLAS_LINT_WITHOUT_DEV_URL`,
+		},
+		{
+			name:    "word",
+			env:     envbooltest.Set("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "yes please"),
+			wantErr: `Error: invalid boolean value "yes please" for PTAH_ATLAS_LINT_WITHOUT_DEV_URL`,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := seedAtlasPreconditionDir(c, t.TempDir())
-			t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", test.value)
+			test.env(t)
 
 			out, err := runAtlasPrecondition(c, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(out, qt.Contains, `Error: required flag(s) "dev-url" not set`)
+			c.Assert(out, qt.Contains, test.wantErr)
 		})
 	}
 }

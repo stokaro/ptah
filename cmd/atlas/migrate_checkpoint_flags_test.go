@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -98,7 +99,7 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "")
+			envbooltest.Unset("PTAH_ALLOW_NONINTERACTIVE_EDIT")(c)
 			test.env(c)
 			migrationsDir, devURL := checkpointFlagFixture(c)
 

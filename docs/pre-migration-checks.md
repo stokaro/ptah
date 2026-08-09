@@ -173,6 +173,17 @@ prefixes remain part of the executable SQL body. The effective form must still
 contain exactly one top-level `SELECT`, so an internal statement delimiter or a
 non-`SELECT` body fails closed before the query runs.
 
+A guard is compared the way the server compares it: the body counts as real SQL
+whenever the guard is less than or equal to the server's own version number,
+encoded as `major*10000 + minor*100 + patch`. `/*!80000 ... */` is therefore live
+on MySQL 8.0 and on everything newer, not only on 8.0. Do not use a large guard
+to park SQL you intend to stay inert — server versions keep rising, and a guard
+that was unreachable when it was written stops being unreachable. MySQL 26.7
+encodes as `260700`, so it honors `/*!99999 ... */`. MariaDB is the exception in
+one band only: it ignores MySQL guards from `50700` through `99999` outright
+whatever its own version is, and reads anything above that band as a MariaDB
+version.
+
 ## Bypassing checks
 
 Checks are an additive, finer-grained safety gate that composes with the coarse
@@ -191,18 +202,25 @@ PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 The name is not a second convention. Ptah binds every native flag to a
 `PTAH_<FLAG>` environment twin, so `ptah migrations up --skip-checks` already
 answers to `PTAH_SKIP_CHECKS`; `ptah-compat migrate apply` reads the same
-variable. Values are parsed as booleans (`1`, `true`, `t`, and their negations),
-and an unset or empty value enforces checks. A run with the bypass active prints
-a warning on stderr, because unlike a flag it leaves no trace in the command
-line.
+variable. A run with the bypass active prints a warning on stderr, because
+unlike a flag it leaves no trace in the command line.
 
-The two binaries agree on the name and on every valid boolean. They differ on an
-**invalid** one: `ptah-compat migrate apply` refuses it outright, before opening
-the database, so a typo in a CI environment file cannot read as a bypass that
-silently was not one, while native `ptah migrations up` discards the parse error
-and enforces checks. Both fail safe — a value neither of them understands never
-bypasses anything — but only the compat surface says so. Values with surrounding
-whitespace (`" 1"`) are not booleans and follow the same split.
+The two binaries agree on the name, on every valid boolean, and on every invalid
+one. An unset variable enforces checks and so does a valid false spelling; any
+other value — a typo, surrounding whitespace as in `" 1"`, or an exported empty
+value — is a configuration error that stops the run before the database is
+opened, on both binaries:
+
+```console
+$ PTAH_SKIP_CHECKS=notabool ptah migrations up --db-url "$DB" --migrations-dir migrations
+error: invalid boolean value "notabool" for PTAH_SKIP_CHECKS
+$ PTAH_SKIP_CHECKS=notabool ptah-compat migrate apply --url "$DB" --dir file://migrations
+Error: invalid boolean value "notabool" for PTAH_SKIP_CHECKS
+```
+
+A typo in a CI environment file therefore cannot read as a bypass that silently
+was not one. See
+[Boolean environment variables](site/src/content/docs/reference/configuration.md).
 
 It is an environment variable rather than a flag because Atlas registers no
 `--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas

@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -185,8 +186,16 @@ func writeEmptyAtlasMigration(
 	names []string,
 	name string,
 ) (*MigrationFiles, error) {
-	version := nextAvailableAtlasVersion(names, nextAtlasMigrationVersion())
+	version, err := firstFreeAtlasVersion(names, nextAtlasMigrationVersion())
+	if err != nil {
+		return nil, err
+	}
 	for {
+		// The retry below advances the version, so the bound is re-checked here
+		// rather than only on the value the scan chose.
+		if err := migrationversion.Check(version, migrator.MigrationDirFormatAtlas); err != nil {
+			return nil, err
+		}
 		fileName := atlasEmptyMigrationFileName(version, name)
 		err := writer.WriteNew(fileName, "")
 		if errors.Is(err, fs.ErrExist) {
@@ -220,8 +229,16 @@ func writeEmptyPtahMigration(
 	generatedAt := time.Now().UTC().Format(time.RFC3339)
 	upSQL := emptyMigrationSQL(name, generatedAt, "UP")
 	downSQL := emptyMigrationSQL(name, generatedAt, "DOWN")
-	version := nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), name)
+	version, err := nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), name)
+	if err != nil {
+		return nil, err
+	}
 	for {
+		// The two retries below advance the version, so the bound is re-checked
+		// here rather than only on the value the scan chose.
+		if err := migrationversion.Check(version, migrator.MigrationDirFormatPtah); err != nil {
+			return nil, err
+		}
 		upName := migrator.GenerateMigrationFileName(version, name, "up")
 		downName := migrator.GenerateMigrationFileName(version, name, "down")
 

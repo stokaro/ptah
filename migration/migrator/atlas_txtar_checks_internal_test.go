@@ -169,7 +169,20 @@ func TestValidateCheckAssertion_Accepted(t *testing.T) {
 		{name: "MariaDB whole executable comment", assertion: "/*M! SELECT 1 */", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB"},
 		{name: "MySQL ignores MariaDB comment", assertion: "/*M! DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "8.4.6"},
 		{name: "MariaDB ignores MySQL 50700 comment", assertion: "/*!50700 DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB"},
-		{name: "MySQL ignores future version guard", assertion: "/*!99999 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "8.4.6"},
+		{name: "MySQL guard above the server version", assertion: "/*!99999 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "8.4.6"},
+		// A guard is "above the server" relative to a server, never in the
+		// abstract. 99999 was once treated as unreachable; MySQL 26.7.0 encodes
+		// as 260700 and walked straight past it, which is what turned the
+		// integration fixture that hard-coded it into the #791 failure. Staying
+		// inert on a 26.x server takes six digits, so this row also pins that a
+		// guard wider than five digits is still read as a guard.
+		{name: "MySQL six-digit guard above a 26.x server", assertion: "/*!260701 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "26.7.0"},
+		// MariaDB ignores the whole 50700..99999 MySQL band whatever its own
+		// version is, so — unlike MySQL — 99999 is permanently inert there.
+		// Measured on mariadb:10.11 and mariadb:12, which is why the #108 bump
+		// does not disturb this row.
+		{name: "MariaDB 12 ignores the 99999 MySQL band", assertion: "/*!99999 DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "12.3.2-MariaDB"},
+		{name: "MariaDB guard above the server version", assertion: "/*!120303 DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "12.3.2-MariaDB"},
 		{name: "MySQL short numeric prefix is SQL", assertion: "SELECT /*!1234 + 1 */ = 1235", dialect: platform.MySQL, serverVersion: "8.4.6"},
 		{name: "MariaDB short numeric prefix is SQL", assertion: "SELECT /*!1234 + 1 */ = 1235", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB"},
 	}
@@ -194,6 +207,13 @@ func TestValidateCheckAssertion_Rejected(t *testing.T) {
 		{name: "MariaDB executable DELETE", assertion: "/*M! DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB", wantErr: "check assertion must be a read-only SELECT statement"},
 		{name: "MariaDB pre-50700 executable DELETE", assertion: "/*!50699 DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB", wantErr: "check assertion must be a read-only SELECT statement"},
 		{name: "MySQL current version guard", assertion: "/*!80000 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "8.4.6", wantErr: "check assertion must be a read-only SELECT statement"},
+		// The #791 failure, transcribed away from a database. The literal is
+		// unchanged from the fixture that broke; only the server moved. Both
+		// rows are the pair the boundary is made of: at the server version the
+		// guard is live, and it stays live for every version above it.
+		{name: "MySQL 99999 guard is live on a 26.x server", assertion: "/*!99999 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "26.7.0", wantErr: "check assertion must be a read-only SELECT statement"},
+		{name: "MySQL guard exactly at the server version", assertion: "/*!260700 DELETE FROM users */ SELECT 1", dialect: platform.MySQL, serverVersion: "26.7.0", wantErr: "check assertion must be a read-only SELECT statement"},
+		{name: "MariaDB guard exactly at the server version", assertion: "/*!120302 DELETE FROM users */ SELECT 1", dialect: platform.MariaDB, serverVersion: "12.3.2-MariaDB", wantErr: "check assertion must be a read-only SELECT statement"},
 		{name: "multiple statements inside executable comment", assertion: "/*! SELECT 1; COMMIT; DROP TABLE users */", dialect: platform.MySQL, serverVersion: "8.4.6", wantErr: "check assertion must be one read-only SELECT statement, got 3 statements"},
 		{name: "MySQL numeric body is not SELECT", assertion: "/*!1234 SELECT 1 */", dialect: platform.MySQL, serverVersion: "8.4.6", wantErr: "check assertion must be a read-only SELECT statement"},
 		{name: "MariaDB numeric body is not SELECT", assertion: "/*M!1234 SELECT 1 */", dialect: platform.MariaDB, serverVersion: "10.11.14-MariaDB", wantErr: "check assertion must be a read-only SELECT statement"},

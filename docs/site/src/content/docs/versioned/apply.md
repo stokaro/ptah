@@ -204,6 +204,33 @@ people and pipelines share a directory:
   the complete body and pins its physical session before changing revision
   metadata, so either failure leaves a new version absent and preserves an
   existing dirty row unchanged.
+  MySQL and MariaDB also reject transaction-control statements in `file` mode:
+  Ptah owns that file transaction, and changing `autocommit` inside the body
+  would make a post-DDL checkpoint ambiguous. Their revision metadata, default
+  storage engine, and every existing base table in the selected database must
+  use InnoDB. A migration that explicitly selects another storage engine or
+  inherits one through `CREATE TABLE ... LIKE` is refused before its first
+  statement. Durable server-state operations such as `SET GLOBAL`, `SET
+  PERSIST`, `RESET`, and `CREATE`, `ALTER`, or `DROP DATABASE` are refused for
+  the same reason: their effects do not share the InnoDB transaction containing
+  the witness. The equivalent `SCHEMA` statements and `USE` are rejected as
+  well; select the target database in `--db-url` so Ptah can validate the
+  database it will modify. References to another database are rejected even
+  when qualified directly. Ptah also refuses executable comments, `CALL`,
+  prepared or dynamic SQL, table locks, definitions of views, triggers,
+  routines, and events, references to existing views or trigger-bearing tables,
+  and calls to stored routines. Those forms can hide work that does not share
+  the witness transaction. A custom `MigrationFunc` is opaque for the same
+  reason and must use `none`; a `StatementInterceptor` is also opaque because
+  it can replace the inspected statement with different SQL. MySQL-family
+  `file` mode accepts directly executed SQL-backed migrations only. The
+  migration account must hold `TRIGGER` at database or global scope, because
+  MySQL and MariaDB hide trigger metadata from an account without it while
+  those triggers still fire during ordinary DML. A refused statement is
+  reported by its number and safety class; a `MigrationFunc` or
+  `StatementInterceptor` is refused for the whole migration and reported by
+  direction, because neither has a statement to point at. Neither form repeats
+  the SQL, which may contain credentials.
   Pre-migration checks are not rerun after committed progress because they
   describe the original pre-migration state. Automatic continuation is
   up-direction only: a row left dirty by an interrupted rollback is refused so
@@ -323,6 +350,35 @@ the same recoverable state in both revision-table formats;
 `ptah-compat migrate down` keeps the Atlas table layout but does not copy
 Atlas's hidden failed-down state. [Roll back migrations](../rollback/) shows
 how to resume it through the native repair command.
+
+**What a failed body records depends on the transaction mode — and, on the
+MySQL family, on the statements themselves.** The committed prefix a resume
+skips is only ever the prefix that really survived:
+
+- Under `none`, every statement commits on its own. The revision row is
+  checkpointed after each one, so `applied` and the cumulative digests name
+  exactly the statements that ran, and the retry continues at the next one.
+- Under `file` or `all` on PostgreSQL, CockroachDB, YugabyteDB, SQLite and
+  SQL Server, DDL is transactional and the failure rolls the whole body back.
+  Nothing is recorded as committed, and the retry runs the body from its first
+  statement. An Atlas-format row written for such a failure is removed rather
+  than left claiming progress that no longer exists.
+- Under `file` on MySQL and MariaDB, the server may commit the open transaction
+  around DDL, so part of a failed body can survive its final rollback. Ptah does
+  not infer that prefix from SQL keywords. Before and after each statement it
+  updates the InnoDB revision row on the same physical transaction as the body.
+  A server-side implicit commit therefore makes the matching witness durable;
+  an ordinary rollback removes both user DML and its witness. Plain DML that
+  rolls back retries from the first statement, while a durable DDL/DML prefix
+  resumes at the first statement not witnessed as complete. Ptah pins and then
+  discards the physical session; a retry replays safe session settings from the
+  verified prefix before it continues. If a witness committed before a failing
+  statement whose lack of side effects cannot be proven, the row remains marked
+  unknown and automatic retry stops for manual inspection. MySQL and MariaDB do
+  not support `all`.
+
+Recorded progress therefore excludes transactional work that a rollback undid,
+while non-transactional mode retains work that no rollback could undo.
 
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, or its deadline expires while an autocommit statement is

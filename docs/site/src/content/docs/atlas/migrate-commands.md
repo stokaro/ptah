@@ -87,6 +87,13 @@ evaluates version guards against the connected server. Numeric prefixes shorter
 than five digits remain part of the executable SQL body. Hidden statement
 delimiters and non-`SELECT` effective bodies fail closed before query execution.
 
+A guard counts as live whenever it is less than or equal to the server's own
+version number (`major*10000 + minor*100 + patch`), so `/*!80000 ... */` runs on
+MySQL 8.0 and on every later release too. A large guard is not a way to keep SQL
+inert: MySQL 26.7 encodes as `260700` and honors `/*!99999 ... */`. MariaDB
+ignores the MySQL `50700`-`99999` band whatever its own version is, and treats
+higher numbers as MariaDB versions.
+
 A failure aborts before any body statement, matching Atlas's
 enforcement point. Ptah ignores unrelated embedded files.
 
@@ -163,6 +170,57 @@ When a transactional body fails and `Rollback` succeeds, `ptah-compat` removes
 the zero-progress revision row. The next apply retries the whole file without
 `--allow-dirty`, matching Atlas. Native `ptah migrations up` keeps its durable
 failure record instead.
+
+On MySQL and MariaDB a `file` rollback does not always reach zero progress: the
+server may commit around DDL. `ptah-compat` does not guess the boundary from SQL
+keywords. The Atlas revision row is an InnoDB witness updated on the same
+physical transaction before and after each statement. An implicit server commit
+makes the matching `applied` count and `partial_hashes` durable with the body;
+an ordinary rollback removes both the user DML and its witness. A plain-DML body
+that rolls back leaves no committed prefix and is retried whole. A witnessed
+DDL/DML prefix stays dirty because retrying it would repeat committed SQL.
+
+This recovery mode requires InnoDB for the Atlas revision table, the session's
+default storage engine, and every existing base table in the selected database.
+An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
+before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
+new table inherits an engine that the session default does not prove.
+
+The migration account must also hold `TRIGGER` at database or global scope.
+MySQL and MariaDB hide trigger metadata from an account without it while those
+triggers still fire during ordinary DML, so without the privilege `ptah-compat`
+cannot prove a target table has no hidden indirect writer and refuses `file`
+mode. A privilege on a database whose name contains an underscore escapes it,
+so a grant covering `ptah_test` is stored and printed as `ptah\_test`, and
+`ptah-compat` reads that database the way the server does.
+
+MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
+the InnoDB witness:
+
+- Transaction controls such as `BEGIN`, `COMMIT`, and `SET autocommit`.
+- Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
+  and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `USE` and qualified references to another database. The connection URL must
+  name the database whose engines Ptah validates.
+- Executable comments, nested or dynamic SQL, and table locks.
+- Definitions of indirect database objects, references to existing views or
+  trigger-bearing tables, and stored-routine calls.
+- Custom migration functions, whose inner statements are opaque to Ptah.
+- Statement interceptors, which can replace inspected SQL with another
+  execution path.
+
+The first five entries are statement-level: the error names the statement number
+and its safety class. Custom migration functions and statement interceptors have
+no statement to point at, so those two are refused for the whole migration and
+the error names the direction instead. None of these errors repeats the SQL, so
+a credential inside a refused statement stays out of the message.
+
+MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
+remain valid. Ptah runs the body on one pinned session, discards it afterward,
+and replays safe settings such as `SET SESSION sql_mode` from a verified
+committed prefix before an automatic retry. A durable unknown-outcome witness
+blocks automatic retry until the database is inspected and the revision is
+repaired.
 
 When a statement committed under `--tx-mode none`, or its outcome is unknown,
 `ptah-compat` preserves the revision row. `migrate status` reports that row as
@@ -386,8 +444,14 @@ ptah-compat migrate apply 2 \
 
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`,
-`--lock-name`, `--skip-lock`, and `--format`. `--format` executes a Go template
-against a Ptah apply result that mirrors Atlas's public apply-template fields:
+`--to-version`, `--lock-name`, `--skip-lock`, and `--format`. The pinned
+community binary registers every one of those except `--to-version`,
+`--lock-name`, and `--skip-lock`, which are documented on the wider Atlas
+distribution's `migrate apply` and adopted here under
+[#951](https://github.com/stokaro/ptah/issues/951).
+
+`--format` executes a Go template against a Ptah apply result that mirrors
+Atlas's public apply-template fields:
 `Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
 `Dir`; `{{ json . }}` emits the same result as JSON with database credentials
 redacted. With `--env`, Ptah can read `env.url`, `migration`, and
@@ -402,6 +466,20 @@ Formatted output contains one document per attempted target with one newline
 between adjacent documents. A structured execution failure stays in that
 target's report; stderr remains empty and the process exits `1`.
 
+`--to-version` bounds the run at a migration version: every pending migration up
+to and including that version runs, and nothing above it does. A version the
+directory does not carry is refused before any migration executes, and the bound
+cannot be combined with the positional `amount`, because the two select
+different prefixes and neither outranks the other. Under `--dry-run` the bound
+narrows the reported plan the same way.
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 20240101000002
+```
+
 `--lock-name` replaces the name of the session advisory lock that serializes
 migration runs (`ptah_migrate` by default). Two runs serialize only when they
 name the same lock, so this is how a Ptah run coordinates with another tool on
@@ -411,10 +489,13 @@ executes. An empty value is refused rather than falling back to the default
 name.
 
 `--skip-lock` acquires no lock at all: no wait, no timeout, and no
-serialization against another runner. It cannot be combined with `--lock-name`,
-because there is no lock to name. On dialects with no advisory-lock semantics —
-SQLite, ClickHouse, CockroachDB, and Spanner — an explicit `--lock-name` prints
-a note on stderr naming the lock that was not acquired.
+serialization against another runner. The lock is taken before the pending set
+is computed, so a run with nothing left to apply still waits on a held lock,
+and exits `0` under `--skip-lock` in the same state. It cannot be combined with
+`--lock-name`, because there is no lock to name. On dialects with no
+advisory-lock semantics — SQLite, ClickHouse, CockroachDB, and Spanner — an
+explicit `--lock-name` prints a note on stderr naming the lock that was not
+acquired.
 
 Atlas migration files may override global `file` or `none` with a leading
 header followed by a blank line:
@@ -612,9 +693,10 @@ that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
 names (`-- +goose Frobnicate`) stay comments, as they do in Atlas.
-Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
-`--lock-name`; Ptah follows that surface and rejects those flags on
-`migrate apply`.
+The pinned community binary does not register `migrate apply --dir-format`, and
+Ptah rejects it on `migrate apply` too; the directory format is selected there
+by the `?format=` query on `--dir`, as
+[Apply a migration directory](#apply-a-migration-directory) describes.
 
 The direct `migrate down --format` path uses the same snapshot for rollback
 planning, optional `--dev-url` shadow verification, target execution, and the
@@ -1254,6 +1336,59 @@ Two inputs are refused on a non-`atlas` layout. A migration name is required,
 because a file named by the version alone is one Ptah's own `migrate apply`
 cannot read back on four of the five layouts. `--edit` is refused, which is what
 Atlas does for a non-Atlas directory as well.
+
+The `<version>` in every row of that table is the UTC `yyyyMMddHHmmss` second the
+command ran in, on every layout, and it is the same value `migrate diff` stamps.
+`migrate new` and `migrate diff` step forward only to get past a version the
+directory already holds — never to get past the newest one. A directory whose
+newest migration is dated in the future therefore receives today's version,
+sorting below that migration, which is what Atlas was measured to do and what
+both of those verbs now do
+([#938](https://github.com/stokaro/ptah/issues/938)). `migrate new` used to bump
+to newest + 1 instead, so the same directory could hold both shapes.
+
+Two verbs bump past the newest migration instead, and each has a reason it must.
+`migrate checkpoint`'s version has to outrank every migration it squashes, or a
+fresh database bootstraps from the checkpoint and then applies a migration whose
+SQL that checkpoint body already contains. `migrate rebase` moves a migration to
+the END of history, so a version sorting below the newest one would not move it
+at all. Into a directory holding `20200101000000_users.sql` and
+`29991231235959_archived.sql`, checkpoint wrote `30000101000000_squash.sql`;
+`migrate apply` against an empty database then reported `1 pending migrations`
+and produced both tables; and `migrate new` into that same directory took today's
+second, sorting below the 2999 migration. One binary, two rules, on the one
+directory shape that separates them.
+
+Whichever rule applies, the step lands on a second that exists. `29991231235959`
+plus one as an integer is `29991231235960` — sixty seconds past the minute,
+which `time.Parse` refuses under the very layout the rest of the name uses — and
+that is what the bump used to write, `29991231235961` on the run after it. Every
+Atlas-layout version `migrate new`, `migrate diff`, `migrate checkpoint` and
+`migrate rebase` write now reads back as the UTC second it looks like, so the
+bump beside a `29991231235959` neighbor lands on `30000101000000` and then on
+`30000101000001`, and two migrations created inside the same `:59` second land on
+the next minute rather than on a sixtieth one.
+
+`migrate rebase` was the last of those four to stamp that shape. It took a Unix
+epoch for every layout, so moving a migration to the end of an Atlas directory
+numbered `1_init.sql`, `2_second.sql` wrote a ten-digit `1786268355_init.sql`
+beside fourteen-digit neighbors, and beside a `29991231235959` migration it wrote
+`29991231235960` and then `29991231235961`. It now reads the same UTC clock the
+other three do for an Atlas directory, and keeps the epoch for the paired ptah
+layout described next, whose names cannot carry a fourteen-digit version at all.
+`atlas migrate rebase --help` on the community binary prints `'atlas migrate
+rebase' is not supported by the community version.` and exits 0, so there is no
+measured stamping behavior to match here — the same position `migrate
+checkpoint` is in.
+
+Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
+rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads
+that layout, so no compatibility argument moves it, and a version that only goes
+forwards is the safer of the two. Its versions are ten digits, so they never
+look like a timestamp and the calendar rule above does not apply to them. What
+it will not do is walk past `9999999999`, the largest version its fixed-width
+`NNNNNNNNNN` name can hold. It refuses instead, because the eleven-digit name it
+used to write was one the reader silently skipped.
 
 `migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
 planned SQL, and nothing writes a migration body in a foreign tool's convention

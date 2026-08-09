@@ -110,10 +110,13 @@ environment variable rather than a flag this surface must not grow:
 PTAH_SKIP_CHECKS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
 ```
 
-It parses as a boolean, rejects a non-boolean value outright, warns on stderr
-while active, and bypasses checks only — `atlas.sum` verification and revision
-bookkeeping are unaffected. See
-[Pre-migration checks](../../versioned/integrity-and-safety/).
+It reads like every other boolean `PTAH_*` variable — unset enforces the checks,
+a valid boolean is honored, and anything else, an exported empty value included,
+fails the run before a migration is applied. It warns on stderr while active and
+bypasses checks only: `atlas.sum` verification and revision bookkeeping are
+unaffected. See
+[Pre-migration checks](../../versioned/integrity-and-safety/) and
+[Boolean environment variables](../configuration/#boolean-environment-variables).
 
 Native twin: [`ptah migrations up`](../native-commands/).
 

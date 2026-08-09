@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // TestAtlasInspectRefusedBlockGate pins both states of the capability gate, and
@@ -34,12 +35,12 @@ import (
 func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 	tests := []struct {
 		name   string
-		value  string
+		env    func(testing.TB)
 		assert func(c *qt.C, hcl, diagnostics string)
 	}{
 		{
-			name:  "unset omits the blocks the pinned binary refuses",
-			value: "",
+			name: "unset omits the blocks the pinned binary refuses",
+			env:  envbooltest.Unset(atlashclrender.KeepAtlasRefusedBlocksEnvVar),
 			assert: func(c *qt.C, hcl, diagnostics string) {
 				c.Assert(hcl, qt.Not(qt.Contains), "extension \"pgcrypto\"")
 				c.Assert(hcl, qt.Not(qt.Contains), "sequence \"lonely_seq\"")
@@ -50,8 +51,8 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 			},
 		},
 		{
-			name:  "the opt-in puts every block back",
-			value: "1",
+			name: "the opt-in puts every block back",
+			env:  envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "1"),
 			assert: func(c *qt.C, hcl, diagnostics string) {
 				c.Assert(hcl, qt.Contains, "extension \"pgcrypto\"")
 				c.Assert(hcl, qt.Contains, "sequence \"lonely_seq\"")
@@ -60,8 +61,8 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 			},
 		},
 		{
-			name:  "a false value keeps the compatible default",
-			value: "false",
+			name: "a false value keeps the compatible default",
+			env:  envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "false"),
 			assert: func(c *qt.C, hcl, diagnostics string) {
 				c.Assert(hcl, qt.Not(qt.Contains), "extension \"pgcrypto\"")
 				c.Assert(diagnostics, qt.Contains, "omitted from Atlas-compatible")
@@ -72,15 +73,17 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv(atlashclrender.KeepAtlasRefusedBlocksEnvVar, test.value)
+			test.env(t)
 
+			omit, gateErr := atlasInspectOmitsRefusedBlocks()
+			c.Assert(gateErr, qt.IsNil)
 			var diagnostics bytes.Buffer
 			report := atlasreport.NewSchemaInspectReport(
 				refusedBlockGateDatabase(),
 				&types.DBSchema{},
 				types.DBInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
-				atlasInspectOmitsRefusedBlocks(),
+				omit,
 				true,
 			)
 
@@ -101,11 +104,20 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 // `pq: relation "order_seq" does not exist`. Reproducing it would be copying a
 // defect, so the sequence stays whichever way the gate is set.
 func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
-	for _, value := range []string{"", "1"} {
-		t.Run("PTAH_ATLAS_INSPECT_ALL_BLOCKS="+value, func(t *testing.T) {
+	states := []struct {
+		name string
+		env  func(testing.TB)
+	}{
+		{name: "unset", env: envbooltest.Unset(atlashclrender.KeepAtlasRefusedBlocksEnvVar)},
+		{name: "1", env: envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "1")},
+	}
+	for _, state := range states {
+		t.Run("PTAH_ATLAS_INSPECT_ALL_BLOCKS="+state.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv(atlashclrender.KeepAtlasRefusedBlocksEnvVar, value)
+			state.env(t)
 
+			omit, gateErr := atlasInspectOmitsRefusedBlocks()
+			c.Assert(gateErr, qt.IsNil)
 			var diagnostics bytes.Buffer
 			db := refusedBlockGateDatabase()
 			db.Fields = append(db.Fields, goschema.Field{
@@ -119,7 +131,7 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 				&types.DBSchema{},
 				types.DBInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
-				atlasInspectOmitsRefusedBlocks(),
+				omit,
 				true,
 			)
 

@@ -259,13 +259,19 @@ Runtime values resolve in this order:
 4. `ptah.yaml`
 5. Built-in command defaults
 
-A non-empty `PTAH_<FLAG>` value must parse as the corresponding flag type.
-Ptah rejects a malformed value before argument validation, command hooks, or
-database work begins. For example, `PTAH_DRY_RUN=notabool` fails with
+A `PTAH_<FLAG>` value must parse as the corresponding flag type. Ptah rejects a
+malformed value before argument validation, command hooks, or database work
+begins. For example, `PTAH_DRY_RUN=notabool` fails with
 `invalid boolean value "notabool" for PTAH_DRY_RUN` instead of running with
 the default `false` value. An explicit CLI flag wins without reading its
-environment twin, including when that environment value is malformed. Empty
-environment values remain unset.
+environment twin, including when that environment value is malformed. An empty
+value remains unset for every flag type except boolean, where it is rejected.
+
+Boolean `PTAH_*` variables — flag twins and direct feature toggles alike —
+follow one rule: absence selects the documented default, a present value must
+parse as a boolean, and anything else fails the command before it does work.
+The accepted spellings and the error shape are documented once, in the
+[Configuration reference](site/src/content/docs/reference/configuration.md).
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

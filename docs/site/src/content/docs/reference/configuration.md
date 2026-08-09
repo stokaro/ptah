@@ -13,13 +13,56 @@ Configuration precedence is:
 | 4 | `ptah.yaml` selected environment |
 | 5 | Built-in defaults |
 
-A non-empty `PTAH_<FLAG>` value must parse as the corresponding flag type.
-Ptah rejects a malformed value before argument validation, command hooks, or
-database work begins. For example, `PTAH_DRY_RUN=notabool` fails with
+A `PTAH_<FLAG>` value must parse as the corresponding flag type. Ptah rejects a
+malformed value before argument validation, command hooks, or database work
+begins. For example, `PTAH_DRY_RUN=notabool` fails with
 `invalid boolean value "notabool" for PTAH_DRY_RUN` instead of running with
 the default `false` value. An explicit CLI flag wins without reading its
-environment twin, including when that environment value is malformed. Empty
-environment values remain unset.
+environment twin, including when that environment value is malformed. An empty
+value remains unset for every flag type except boolean, where it is rejected;
+see [Boolean environment variables](#boolean-environment-variables).
+
+## Boolean environment variables
+
+Every boolean `PTAH_*` variable follows one rule, whether it is a flag's
+environment twin or a feature toggle read directly:
+
+| State | Result |
+| --- | --- |
+| Not set | The documented default |
+| Set to a valid boolean | Parsed and honored |
+| Set to anything else | The command fails before doing any work |
+
+The accepted spellings are Go's `strconv.ParseBool` spellings:
+
+```text
+true:  1  t  T  true  True  TRUE
+false: 0  f  F  false  False  FALSE
+```
+
+Nothing is trimmed before parsing. `" true"`, `"true "` and an exported empty
+value are all rejected, because a quoting or expansion mistake in a YAML
+manifest, a CI environment file or a systemd unit is exactly the configuration
+error this rule exists to surface. The refusal names the variable and the raw
+value:
+
+```text
+Error: invalid boolean value "maybe" for PTAH_POSTGRES_INSPECT_ALL_ROLES
+```
+
+The refusal comes before the command connects to a database, writes a migration
+file, applies schema changes, touches revision state, or produces a
+machine-readable result on standard output. It also comes before the command's
+own early returns: an invalid value is rejected even on a run that would never
+have consulted it, such as a `migrate lint` that already names `--latest`, or a
+`schema apply` whose `--exclude` selectors all match.
+
+A command only validates the variables it owns. A malformed PostgreSQL
+inspection variable does not break an unrelated SQLite command or
+`ptah version`.
+
+Non-boolean `PTAH_*` variables are unchanged: an empty value still reads as
+unset for them.
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

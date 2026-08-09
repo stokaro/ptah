@@ -29,7 +29,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/config/projectconfig"
@@ -37,6 +36,7 @@ import (
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
@@ -333,8 +333,23 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 	if err := ValidateEnvAttr(source.EnvAttr); err != nil {
 		return nil, err
 	}
+	// Env expansion is the subsystem that recognizes the external-schema opt-in,
+	// so the value is resolved on every expansion -- including the ones that
+	// reference `url` or `migration`, and the ones whose selected env declares no
+	// external schema program at all. Resolving it only inside
+	// [expandEnvExternalSchema] would let PTAH_ALLOW_EXTERNAL_SCHEMA=tru pass in
+	// silence on every configuration that does not use the feature, which is
+	// exactly the pipeline that exports it and never sees it work.
+	// See stokaro/ptah#1334.
+	allowExternal, err := externalSchemaAllowed()
+	if err != nil {
+		return nil, err
+	}
 	switch source.EnvAttr {
 	case "src", "schema.src":
+		if !allowExternal && envSelectsExternalSchema(env) {
+			return nil, errExternalSchemaDisabled()
+		}
 		return expandEnvSchemaSources(source, env)
 	case "url":
 		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DatabaseURL)
@@ -352,7 +367,7 @@ func expandEnv(source Source, env ProjectEnv) ([]Source, error) {
 
 func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 	if len(env.Config.SchemaSources) == 0 {
-		if len(env.Config.ExternalSchema.Program) > 0 {
+		if envSelectsExternalSchema(env) {
 			return expandEnvExternalSchema(source, env)
 		}
 		return nil, errors.New("the selected atlas.hcl env does not define schema sources (env.src or env.schema.src)")
@@ -374,12 +389,6 @@ func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 // explicit environment opt-in; the gate fails during classification, before
 // any database is contacted and before the program could run.
 func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
-	if !externalSchemaAllowed() {
-		return nil, fmt.Errorf(
-			"atlas.hcl data.external_schema executes a repository-controlled program and is disabled by default; set %s=1 to allow it",
-			AllowExternalSchemaEnvVar,
-		)
-	}
 	external := env.Config.ExternalSchema
 	return []Source{{
 		Raw:  source.Raw,
@@ -393,13 +402,45 @@ func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
 	}}, nil
 }
 
-// externalSchemaAllowed reports whether the external schema opt-in variable is
-// set to a true boolean value. Unset, empty, false, and unparsable values all
-// deny, mirroring how the native env twin feeds the --allow-external-schema
-// bool flag.
-func externalSchemaAllowed() bool {
-	allowed, err := strconv.ParseBool(os.Getenv(AllowExternalSchemaEnvVar))
-	return err == nil && allowed
+// envSelectsExternalSchema reports whether the selected env's desired state is
+// the declared external schema program rather than ordinary schema sources.
+//
+// The gate above and the expansion below both ask this, and they have to agree:
+// a gate testing a different condition would either refuse an env that runs no
+// program or let one run unguarded.
+func envSelectsExternalSchema(env ProjectEnv) bool {
+	return len(env.Config.SchemaSources) == 0 && len(env.Config.ExternalSchema.Program) > 0
+}
+
+// errExternalSchemaDisabled is the refusal an env expansion returns when the
+// selected env's desired state is a repository-controlled program and the
+// opt-in was not given. It names the way back, because a refusal that does not
+// is a dead end.
+func errExternalSchemaDisabled() error {
+	return fmt.Errorf(
+		"atlas.hcl data.external_schema executes a repository-controlled program and is disabled by default; set %s=1 to allow it",
+		AllowExternalSchemaEnvVar,
+	)
+}
+
+// allowExternalSchema is the declaration of the variable, made once, in the
+// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+//
+// The same name reaches the native surface as the --allow-external-schema
+// flag's environment twin, which cmd/internal/cmdflags already parses under the
+// same grammar and the same error, so one name means one thing on both
+// binaries.
+var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false)
+
+// externalSchemaAllowed reports whether executing an atlas.hcl
+// data.external_schema program is allowed.
+//
+// Unset denies and a valid false spelling denies too; an empty or unparsable
+// value is a configuration error. Denying on a typo is the safe direction, but
+// silence is not: an operator who exported the opt-in and is refused anyway has
+// to be told why (stokaro/ptah#1334).
+func externalSchemaAllowed() (bool, error) {
+	return allowExternalSchema.Resolve()
 }
 
 // classifyEnvValue classifies one env-provided source value. Relative local

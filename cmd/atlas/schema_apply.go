@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/schemafile"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -944,6 +943,15 @@ func ensureAtlasSchemaApplyDevURL(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
+	// Resolved before the --dev-url shortcut, so a run that supplies a dev
+	// database still refuses a malformed value. That is the whole of a healthy
+	// pipeline: the variable exists for the runs that have no dev database, and
+	// validating it only there would let a typo survive every other run.
+	// See stokaro/ptah#1334.
+	allowed, err := atlasApplyWithoutDevURLAllowed()
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.devURL) != "" {
 		return nil
 	}
@@ -954,15 +962,22 @@ func ensureAtlasSchemaApplyDevURL(
 		// can improve on it.
 		return nil //nolint:nilerr // the caller already refused on this error
 	}
-	if atlasApplyWithoutDevURLAllowed() {
+	if allowed {
 		return nil
 	}
 	return errors.New("--dev-url cannot be empty")
 }
 
-func atlasApplyWithoutDevURLAllowed() bool {
-	allowed, err := strconv.ParseBool(os.Getenv(applyWithoutDevURLEnvVar))
-	return err == nil && allowed
+// atlasApplyWithoutDevURL is the declaration of the variable, made once, on the
+// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false)
+
+// atlasApplyWithoutDevURLAllowed reports whether a non-database desired state
+// may be applied with no dev database. Unset keeps the refusal and a valid false
+// spelling keeps it too; an empty or unparsable value is a configuration error
+// (stokaro/ptah#1334).
+func atlasApplyWithoutDevURLAllowed() (bool, error) {
+	return atlasApplyWithoutDevURL.Resolve()
 }
 
 func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
