@@ -42,6 +42,11 @@ import (
 //   - a type whose bare name is declared more than once, where nothing in the
 //     column says which was meant and guessing would type it against the wrong
 //     declaration
+//   - a type whose bare name the server resolves through its own catalog, which
+//     is the same situation reached through a different second declaration: the
+//     column names a built-in and a user type at once. Rewriting it retypes a
+//     column that was correct, at exit 0, and the catalog of the replayed
+//     database is where it shows up. See [namesABuiltInType]
 //   - the SCALAR spelling of an enum, because [declaredEnum] is the only test
 //     for "is this column an enum" and it matches the bare name; rewriting it
 //     here would hide the enum from the standalone-versus-inline decision
@@ -80,6 +85,14 @@ func declaredUserTypeQualifiers(
 	declare := func(into map[string]string, name, schema, qualified string) {
 		name = strings.TrimSpace(name)
 		if name == "" || strings.TrimSpace(schema) == "" {
+			return
+		}
+		if namesABuiltInType(targetPlatform, name) {
+			// Ambiguous with the server's own catalog, and handled the same way
+			// as ambiguous with a second declaration: mapped to the empty
+			// string, so nothing later in this function can re-add it. See
+			// [namesABuiltInType] for the measurement.
+			into[name] = ""
 			return
 		}
 		if _, seen := into[name]; seen {
