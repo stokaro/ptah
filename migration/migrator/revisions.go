@@ -185,10 +185,10 @@ func migrationExecutionProgress(
 	var observationErr *StatementObservationError
 	if errors.As(err, &observationErr) {
 		event := observationErr.Event
-		applied := event.Index
-		if migrationProgressRolledBack(dialect, txMode) {
-			applied = 0
-		}
+		// The observed statement executed and only the observation that follows
+		// it failed, so no statement of the body is itself the failure: pass 0
+		// as the failing index rather than the statement that succeeded.
+		applied := rolledBackApplied(dialect, txMode, event.Index)
 		return migrationProgress{
 			Applied: applied, Total: event.Total,
 			Statement: event.Statement, FailedIndex: event.Index,
@@ -200,26 +200,41 @@ func migrationExecutionProgress(
 		return migrationProgress{}
 	}
 
-	applied := execErr.StatementIndex - 1
+	applied := max(execErr.StatementIndex-1, 0)
 	// The recorded counter is not decoration: a retry resumes at applied+1, so
 	// overstating it skips a statement that never ran. Whether the earlier
-	// statements survived the failure is a property of the transaction mode and
-	// the dialect, which is what migrationProgressRolledBack answers — this
-	// branch used to carry its own shorter, unnormalized list that omitted SQLite
-	// and SQL Server and so recorded applied=1 for a file whose transaction had
-	// rolled the whole body back (#966).
-	if migrationProgressRolledBack(dialect, txMode) {
-		applied = 0
-	}
-	if applied < 0 {
-		applied = 0
-	}
+	// statements survived the failure is a property of the transaction mode, the
+	// dialect and — on the MySQL family — the statements themselves, which is
+	// what rolledBackApplied answers. This branch used to carry its own shorter,
+	// unnormalized list that omitted SQLite and SQL Server and so recorded
+	// applied=1 for a file whose transaction had rolled the whole body back
+	// (#966).
+	applied = rolledBackApplied(dialect, txMode, applied)
 	return migrationProgress{
 		Applied: applied, Total: execErr.Total,
 		Statement: execErr.Statement, FailedIndex: execErr.StatementIndex,
 	}
 }
 
+// rolledBackApplied corrects how many statements a failed migration body left
+// committed, given that executed of them ran before it stopped.
+//
+// A body that did not run inside a transaction keeps its own count. A body that
+// did reports zero from this error-only fallback because SQL text cannot prove
+// what a stateful database session committed. MySQL and MariaDB replace this
+// fallback with the revision-row witness installed by
+// [Migrator.withTransactionalProgressRecorder].
+func rolledBackApplied(dialect string, txMode MigrationTxMode, executed int) int {
+	if !migrationProgressRolledBack(dialect, txMode) {
+		return executed
+	}
+	return 0
+}
+
+// migrationProgressRolledBack reports whether the migration body ran inside a
+// transaction that the failure rolled back. It says nothing about which
+// statements survived that rollback — on the MySQL family, where the server
+// commits DDL on its own, some of them do. See [rolledBackApplied].
 func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 	if txMode == MigrationTxModeAll {
 		return true
@@ -228,7 +243,8 @@ func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
 		return false
 	}
 	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer,
+		platform.MySQL, platform.MariaDB:
 		return true
 	default:
 		return false
@@ -666,6 +682,10 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     operator_version VARCHAR(255) NOT NULL
 )`, qualifiedTable)
 	}
+	engineClause := ""
+	if implicitCommitDialect(dialect) {
+		engineClause = " ENGINE=InnoDB"
+	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR(255) PRIMARY KEY,
     description TEXT NOT NULL,
@@ -679,7 +699,7 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     hash VARCHAR(255) NOT NULL,
     partial_hashes JSON NULL,
     operator_version VARCHAR(255) NOT NULL
-)`, qualifiedTable)
+)%s`, qualifiedTable, engineClause)
 }
 
 func (m *Migrator) isClickHouse() bool {
@@ -1390,12 +1410,23 @@ func (m *Migrator) checkpointMigrationRevision(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
+	return m.checkpointMigrationRevisionOn(recordCtx, m.conn, migration, startedAt, event, direction)
+}
+
+func (m *Migrator) checkpointMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+	direction MigrationDirection,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.checkpointMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
 		sqlText := migrationSQLForDirection(migration, direction)
-		return executeSQLOutsideTransaction(
-			recordCtx,
-			m.conn,
+		return executeSQLOn(
+			ctx,
+			conn,
 			query,
 			event.Index,
 			event.Total,
@@ -1405,9 +1436,9 @@ func (m *Migrator) checkpointMigrationRevision(
 			strconv.FormatInt(migration.Version, 10),
 		)
 	}
-	return executeSQLOutsideTransaction(
-		recordCtx,
-		m.conn,
+	return executeSQLOn(
+		ctx,
+		conn,
 		query,
 		encodeRevisionState(migrationStatePending, direction),
 		event.Index,
@@ -1430,12 +1461,23 @@ func (m *Migrator) markMigrationStatementInFlight(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
+	return m.markMigrationStatementInFlightOn(recordCtx, m.conn, migration, startedAt, event, direction)
+}
+
+func (m *Migrator) markMigrationStatementInFlightOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+	event StatementEvent,
+	direction MigrationDirection,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	if m.revisionTableFormat.isAtlas() {
 		sqlText := migrationSQLForDirection(migration, direction)
-		return executeSQLOutsideTransaction(
-			recordCtx,
-			m.conn,
+		return executeSQLOn(
+			ctx,
+			conn,
 			query,
 			event.Index-1,
 			event.Total,
@@ -1447,9 +1489,9 @@ func (m *Migrator) markMigrationStatementInFlight(
 			strconv.FormatInt(migration.Version, 10),
 		)
 	}
-	return executeSQLOutsideTransaction(
-		recordCtx,
-		m.conn,
+	return executeSQLOn(
+		ctx,
+		conn,
 		query,
 		encodeRevisionState(migrationStatePending, direction),
 		event.Index-1,
@@ -1459,6 +1501,32 @@ func (m *Migrator) markMigrationStatementInFlight(
 		time.Since(startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(migration, direction, event.Index-1),
 		migration.Version,
+	)
+}
+
+// withTransactionalProgressRecorder stores the MySQL-family progress witness
+// on the same physical transaction as the migration body. An implicit server
+// commit therefore makes the witness durable with the user SQL, while a normal
+// rollback removes both. This avoids guessing transaction boundaries from SQL
+// keywords, whose effects depend on session state and storage engine details.
+func (m *Migrator) withTransactionalProgressRecorder(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+	direction MigrationDirection,
+) context.Context {
+	if !implicitCommitDialect(m.connectionDialect()) || conn.Writer().IsDryRun() {
+		return ctx
+	}
+	return withStatementProgressRecorder(
+		ctx,
+		func(ctx context.Context, event StatementEvent) error {
+			return m.markMigrationStatementInFlightOn(ctx, conn, migration, startedAt, event, direction)
+		},
+		func(ctx context.Context, event StatementEvent) error {
+			return m.checkpointMigrationRevisionOn(ctx, conn, migration, startedAt, event, direction)
+		},
 	)
 }
 
@@ -1531,22 +1599,34 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
+	if err := m.restoreTransactionalRecoverySession(recordCtx, failure, txMode); err != nil {
+		return err
+	}
 	progress := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
 	applied, total, stmt, failedIndex := progress.Applied, progress.Total, progress.Statement, progress.FailedIndex
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}
-	// migrationExecutionProgress reports a plain execution error as
-	// StatementIndex-1 statements applied, and only zeroes that for tx-mode all
-	// and the PostgreSQL family -- so on SQLite and SQL Server, whose DDL is
-	// transactional too, a rolled-back body still counts its failing statement's
-	// predecessors as committed. Recovery from a rollback reads that number to
-	// decide whether the schema was changed at all, so the down direction
-	// corrects it here, using the same rule the observation path already uses.
+	// The per-statement progress recorder reports its own count, which the
+	// rollback correction inside migrationExecutionProgress never sees.
+	// Recovery from a rollback reads that number to decide whether the schema
+	// was changed at all, so the down direction runs the same correction here.
 	// The up direction is left alone deliberately: it is the number the
 	// Atlas-shaped surface reports.
-	if direction == MigrationDirectionDown && migrationProgressRolledBack(m.conn.Info().Dialect, txMode) {
-		applied = 0
+	if direction == MigrationDirectionDown {
+		applied = rolledBackApplied(m.conn.Info().Dialect, txMode, applied)
+	}
+	if usesTransactionalProgressWitness(m.conn.Info().Dialect, txMode) {
+		revision, err := m.getRevision(recordCtx, migration.Version)
+		if err != nil {
+			return fmt.Errorf("failed to read migration %d progress witness: %w", migration.Version, err)
+		}
+		if revision != nil {
+			if preservesProgressWitnessUnknownOutcome(failure, revision, m.connectionDialect()) {
+				return nil
+			}
+			applied = revision.Applied
+		}
 	}
 	if direction == MigrationDirectionUp {
 		applied = max(applied, migrationAppliedFloor(ctx))
@@ -1570,6 +1650,57 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		m.dirtyRevisionChecksum(migration, direction, applied),
 		migration.Version,
 	)
+}
+
+func usesTransactionalProgressWitness(dialect string, txMode MigrationTxMode) bool {
+	return txMode == MigrationTxModeFile && implicitCommitDialect(dialect)
+}
+
+func (m *Migrator) restoreTransactionalRecoverySession(
+	ctx context.Context,
+	failure error,
+	txMode MigrationTxMode,
+) error {
+	if !usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
+		return nil
+	}
+	if _, rolledBack := migrationTransactionRollbackVersion(failure); !rolledBack {
+		return nil
+	}
+	if _, err := m.conn.ExecContext(ctx, "SET autocommit = 1"); err != nil {
+		return fmt.Errorf("failed to restore MySQL-family autocommit before recording migration recovery state: %w", err)
+	}
+	return nil
+}
+
+func preservesProgressWitnessUnknownOutcome(
+	failure error,
+	revision *MigrationRevision,
+	dialect string,
+) bool {
+	if revision.Error != unknownStatementOutcomeError {
+		return false
+	}
+	var progressErr *statementProgressError
+	if errors.As(failure, &progressErr) {
+		return true
+	}
+	var execErr *MigrationExecutionError
+	if !errors.As(failure, &execErr) {
+		return true
+	}
+	if errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded) {
+		return true
+	}
+	return !mysqlAtomicFailureStatement(execErr.Statement, dialect)
+}
+
+func mysqlAtomicFailureStatement(statement, dialect string) bool {
+	tokens := significantSQLTokens(statement, dialect)
+	if len(tokens) == 0 {
+		return false
+	}
+	return matchesAnyKeyword(tokens[0], "INSERT", "UPDATE", "DELETE", "REPLACE")
 }
 
 func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode MigrationTxMode) bool {

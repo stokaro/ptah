@@ -67,6 +67,21 @@ func TestIsTransactionControlStatement(t *testing.T) {
 	}{
 		{name: "PostgreSQL begin", statement: "BEGIN", dialect: "postgres", want: true},
 		{name: "PostgreSQL set transaction", statement: "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE", dialect: "postgres", want: true},
+		// A chained commit or rollback ends the migration transaction and opens
+		// another one on the same session, so the connection still reports a
+		// transaction while the body before it has already been made durable or
+		// discarded. Reading "is this bare COMMIT or ROLLBACK?" instead of "does
+		// this end the transaction?" lets exactly these two through.
+		{name: "MySQL commit", statement: "COMMIT", dialect: "mysql", want: true},
+		{name: "MySQL rollback", statement: "ROLLBACK", dialect: "mysql", want: true},
+		{name: "MySQL commit and chain", statement: "COMMIT AND CHAIN", dialect: "mysql", want: true},
+		{name: "MariaDB rollback and chain", statement: "ROLLBACK AND CHAIN", dialect: "mariadb", want: true},
+		{name: "MySQL commit and no chain release", statement: "COMMIT AND NO CHAIN RELEASE", dialect: "mysql", want: true},
+		{name: "MySQL start transaction", statement: "START TRANSACTION", dialect: "mysql", want: true},
+		{name: "MySQL savepoint", statement: "SAVEPOINT ptah_save", dialect: "mysql", want: true},
+		{name: "MySQL release savepoint", statement: "RELEASE SAVEPOINT ptah_save", dialect: "mysql", want: true},
+		{name: "MySQL rollback to savepoint", statement: "ROLLBACK TO SAVEPOINT ptah_save", dialect: "mysql", want: true},
+		{name: "PostgreSQL abort", statement: "ABORT", dialect: "postgres", want: true},
 		{name: "MySQL autocommit zero", statement: "SET autocommit = 0", dialect: "mysql", want: true},
 		{name: "MariaDB session autocommit", statement: "SET @@session.autocommit = 1", dialect: "mariadb", want: true},
 		{name: "SQL Server implicit transactions", statement: "SET IMPLICIT_TRANSACTIONS ON", dialect: "sqlserver", want: true},

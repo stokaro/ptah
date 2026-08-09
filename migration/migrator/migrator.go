@@ -544,6 +544,10 @@ BEGIN
     )
 END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
 	}
+	engineClause := ""
+	if implicitCommitDialect(m.connectionDialect()) {
+		engineClause = " ENGINE=InnoDB"
+	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
@@ -555,7 +559,7 @@ END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
     error_stmt TEXT NULL,
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
-)`, m.qualifiedMigrationsTable())
+)%s`, m.qualifiedMigrationsTable(), engineClause)
 }
 
 func (m *Migrator) getVersionSQL() string {
@@ -623,6 +627,12 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
+	// Check the engine before upgrading an existing table. ALTER TABLE itself
+	// commits on the MySQL family, so validating afterward could mutate metadata
+	// that Ptah has already decided is unsafe to use as a transaction witness.
+	if err := m.requireTransactionalMetadataEngine(ctx); err != nil {
+		return err
+	}
 	if !m.revisionTableFormat.isAtlas() {
 		if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
 			return fmt.Errorf("failed to prepare migrations version column: %w", err)
@@ -670,6 +680,9 @@ func (m *Migrator) inspectDryRunMetadata(ctx context.Context) (available, legacy
 	}
 	if !exists {
 		return false, false, nil
+	}
+	if err := m.requireTransactionalMetadataEngine(ctx); err != nil {
+		return false, false, err
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return true, false, nil
@@ -1807,6 +1820,17 @@ func (m *Migrator) applyUpMigrationObserved(
 			return false, err
 		}
 	}
+	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
+		if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionUp); err != nil {
+			return false, err
+		}
+		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
+			return false, err
+		}
+		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp); err != nil {
+			return false, err
+		}
+	}
 	plan, err := m.planUpRetry(ctx, migration)
 	if err != nil {
 		return false, err
@@ -1831,6 +1855,10 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	if txMode == MigrationTxModeNone {
 		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt, plan)
+	}
+	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) && !m.conn.Writer().IsDryRun() {
+		ctx = withMigrationResume(ctx, plan.resumeFrom)
+		return checksDeferred, m.applyUpMigrationTransactionalWithPlan(ctx, migration, startedAt, plan)
 	}
 	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
 		return false, fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
@@ -1960,6 +1988,40 @@ func (m *Migrator) recordAppliedMigrationOn(
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	return m.applyUpMigrationTransactionalOnSession(ctx, migration, startedAt)
+}
+
+func (m *Migrator) applyUpMigrationTransactionalWithPlan(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	plan upRetryPlan,
+) error {
+	return m.withTransactionalMigrationSession(
+		ctx,
+		migration,
+		MigrationDirectionUp,
+		func(scoped *Migrator) error {
+			if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
+				return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			}
+			if plan.resumeFrom > 1 {
+				scoped.logger.Info(
+					"Resuming migration after a partially applied attempt",
+					"version", migration.Version,
+					"resumeFromStatement", plan.resumeFrom,
+				)
+			}
+			return scoped.applyUpMigrationTransactionalOnSession(ctx, migration, startedAt)
+		},
+	)
+}
+
+func (m *Migrator) applyUpMigrationTransactionalOnSession(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	scoped := *m
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row: they read committed state on the pool, so
@@ -1992,7 +2054,14 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		)
 	}
 
-	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	executionCtx := scoped.withTransactionalProgressRecorder(
+		ctx,
+		txConn,
+		migration,
+		startedAt,
+		MigrationDirectionUp,
+	)
+	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
 	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
@@ -2045,6 +2114,36 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	}
 	m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
 	return nil
+}
+
+func (m *Migrator) withTransactionalMigrationSession(
+	ctx context.Context,
+	migration *Migration,
+	direction MigrationDirection,
+	use func(*Migrator) error,
+) error {
+	return m.conn.WithSession(ctx, func(conn *dbschema.DatabaseConnection) error {
+		scoped := *m
+		scoped.conn = conn
+		if scoped.migrationsSchema == "" {
+			scoped.migrationsSchema = scoped.connectionSchemaName()
+		}
+		if err := scoped.restoreNoTransactionSessionPrefix(
+			ctx,
+			migration,
+			direction,
+			migrationResumeFrom(ctx),
+		); err != nil {
+			return fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+		}
+		if err := scoped.requireTransactionalTargetEngines(ctx); err != nil {
+			return err
+		}
+		if err := scoped.requireTransactionalTargetIsolation(ctx, migration, direction); err != nil {
+			return err
+		}
+		return use(&scoped)
+	})
 }
 
 type migrationTransactionRolledBackError struct {
@@ -2187,8 +2286,22 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 		}
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
-	if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+	usesWitness := usesTransactionalProgressWitness(m.connectionDialect(), txMode)
+	if usesWitness {
+		if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionDown); err != nil {
+			return err
+		}
+		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
+			return err
+		}
+		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionDown); err != nil {
+			return err
+		}
+	}
+	if !usesWitness || m.conn.Writer().IsDryRun() {
+		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+		}
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
 }
@@ -2226,6 +2339,28 @@ func (m *Migrator) rollbackMigrationTransactional(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
+	if usesTransactionalProgressWitness(m.connectionDialect(), MigrationTxModeFile) && !m.conn.Writer().IsDryRun() {
+		return m.withTransactionalMigrationSession(
+			ctx,
+			migration,
+			MigrationDirectionDown,
+			func(scoped *Migrator) error {
+				if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+					return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+				}
+				return scoped.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
+			},
+		)
+	}
+	return m.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
+}
+
+func (m *Migrator) rollbackMigrationTransactionalOnSession(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+) error {
 	scoped := *m
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
@@ -2242,7 +2377,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
 	if err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
@@ -2253,10 +2388,17 @@ func (m *Migrator) rollbackMigrationTransactional(
 		)
 	}
 
-	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	executionCtx := scoped.withTransactionalProgressRecorder(
+		ctx,
+		txConn,
+		migration,
+		startedAt,
+		MigrationDirectionDown,
+	)
+	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
 	if err := migration.executeDown(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
@@ -2268,11 +2410,11 @@ func (m *Migrator) rollbackMigrationTransactional(
 	}
 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
 	}
 	if err := scoped.refuseRollbackCompletionOverUnsafeIndexOn(ctx, txConn, migration); err != nil {
-		_ = tx.Rollback()
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
 			ctx,
 			migration,
@@ -2284,8 +2426,15 @@ func (m *Migrator) rollbackMigrationTransactional(
 	}
 
 	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
+		return m.failRollbackWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to record migration reversion %d", migration.Version),
+		)
 	}
 
 	if err := tx.Commit(); err != nil {
