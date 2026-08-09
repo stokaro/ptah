@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"time"
 
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -80,9 +83,9 @@ func Rebase(dir string, version int64, format migrator.MigrationDirFormat) (newV
 	if version == maxVersion {
 		return 0, nil, fmt.Errorf("migration version %d is already last; rebase would not move it", version)
 	}
-	newVersion = migrator.GetNextMigrationVersion()
-	if newVersion <= maxVersion {
-		newVersion = maxVersion + 1
+	newVersion, err = rebaseVersion(maxVersion, format)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	// Plan every rename and validate the new names before touching any file, so a
@@ -116,6 +119,61 @@ func Rebase(dir string, version int64, format migrator.MigrationDirFormat) (newV
 	slices.Sort(touched)
 	res, err := rehash(dir, format, touched)
 	return newVersion, res, err
+}
+
+// rebaseNow reads the wall clock a rebased version is stamped from. It is a
+// variable so a test can freeze the second and then state the exact version a
+// rebase must choose; production never assigns it.
+var rebaseNow = func() time.Time { return time.Now().UTC() }
+
+// rebaseClock returns the version the clock alone would give a rebased
+// migration in a format directory.
+//
+// The Atlas layout gets the UTC yyyyMMddHHmmss second, which is the shape
+// `migrate new`, `migrate diff` and `migrate checkpoint` already stamp into
+// those directories. Rebase used to take the Unix epoch there instead, so
+// moving a migration to the end of a directory whose versions were all below
+// the epoch wrote a ten-digit `1786262044_init.sql` next to fourteen-digit
+// neighbors -- one directory, two version shapes (stokaro/ptah#938).
+//
+// The paired ptah layout keeps the epoch. Its names render the version with
+// %010d, so a fourteen-digit stamp is above [migrationversion.PtahMax] and is
+// not a name that layout can carry at all.
+func rebaseClock(format migrator.MigrationDirFormat) int64 {
+	now := rebaseNow().UTC()
+	if format != migrator.MigrationDirFormatAtlas {
+		return now.Unix()
+	}
+	stamp, err := strconv.ParseInt(now.Format(migrationversion.StampLayout), 10, 64)
+	if err != nil {
+		return now.Unix()
+	}
+	return stamp
+}
+
+// rebaseVersion returns the version a rebased migration lands on: strictly above
+// maxVersion, the newest version already in the directory, and readable back by
+// the reader that will order it.
+//
+// The clock can land at or below the newest migration -- a directory holding a
+// future-dated migration is the ordinary case -- and rebase means "after
+// everything", so the fallback bumps past the newest rather than sorting below
+// it the way `migrate new` deliberately does.
+//
+// The bump asks [migrationversion.Advance] instead of adding one. Beside a
+// `29991231235959_future.sql` the raw increment wrote 29991231235960 -- sixty
+// seconds past the minute, an instant time.Parse refuses under the layout the
+// rest of the name uses -- and a second rebase then wrote 29991231235961 on top
+// of it (stokaro/ptah#938).
+func rebaseVersion(maxVersion int64, format migrator.MigrationDirFormat) (int64, error) {
+	clock, err := migrationversion.Writable(rebaseClock(format), format)
+	if err != nil {
+		return 0, err
+	}
+	if clock > maxVersion {
+		return clock, nil
+	}
+	return migrationversion.Advance(maxVersion, format)
 }
 
 // Rehash rewrites the integrity file for dir without otherwise changing it. It is

@@ -1257,31 +1257,45 @@ Atlas does for a non-Atlas directory as well.
 
 The `<version>` in every row of that table is the UTC `yyyyMMddHHmmss` second the
 command ran in, on every layout, and it is the same value `migrate diff` stamps.
-It steps forward only to get past a version the directory already holds — never
-to get past the newest one. A directory whose newest migration is dated in the
-future therefore receives today's version, sorting below that migration, which is
-what Atlas was measured to do and what both of those verbs now do
+`migrate new` and `migrate diff` step forward only to get past a version the
+directory already holds — never to get past the newest one. A directory whose
+newest migration is dated in the future therefore receives today's version,
+sorting below that migration, which is what Atlas was measured to do and what
+both of those verbs now do
 ([#938](https://github.com/stokaro/ptah/issues/938)). `migrate new` used to bump
 to newest + 1 instead, so the same directory could hold both shapes.
 
-`migrate checkpoint` is the exception, and it is one on purpose: its version has
-to outrank every migration it squashes, or a fresh database bootstraps from the
-checkpoint and then applies a migration whose SQL that checkpoint body already
-contains. So it keeps bumping. Into a directory holding
-`20200101000000_users.sql` and `29991231235959_archived.sql` it wrote
-`30000101000000_squash.sql`; `migrate apply` against an empty database then
-reported `1 pending migrations` and produced both tables; and `migrate new` into
-that same directory took today's second, sorting below the 2999 migration. One
-binary, two rules, on the one directory shape that separates them.
+Two verbs bump past the newest migration instead, and each has a reason it must.
+`migrate checkpoint`'s version has to outrank every migration it squashes, or a
+fresh database bootstraps from the checkpoint and then applies a migration whose
+SQL that checkpoint body already contains. `migrate rebase` moves a migration to
+the END of history, so a version sorting below the newest one would not move it
+at all. Into a directory holding `20200101000000_users.sql` and
+`29991231235959_archived.sql`, checkpoint wrote `30000101000000_squash.sql`;
+`migrate apply` against an empty database then reported `1 pending migrations`
+and produced both tables; and `migrate new` into that same directory took today's
+second, sorting below the 2999 migration. One binary, two rules, on the one
+directory shape that separates them.
 
 Whichever rule applies, the step lands on a second that exists. `29991231235959`
 plus one as an integer is `29991231235960` — sixty seconds past the minute,
 which `time.Parse` refuses under the very layout the rest of the name uses — and
-that is what the bump used to write, `29991231235961` on the checkpoint after
-it. Every version this binary stamps now round-trips through `yyyyMMddHHmmss`,
-so the bump beside a `29991231235959` neighbor lands on `30000101000000`, and
-two migrations created inside the same `:59` second land on the next minute
-rather than on a sixtieth second.
+that is what the bump used to write, `29991231235961` on the run after it. Every
+Atlas-layout version `migrate new`, `migrate diff`, `migrate checkpoint` and
+`migrate rebase` write now reads back as the UTC second it looks like, so the
+bump beside a `29991231235959` neighbor lands on `30000101000000` and then on
+`30000101000001`, and two migrations created inside the same `:59` second land on
+the next minute rather than on a sixtieth one.
+
+`migrate rebase` was the last of those four to stamp that shape. It took a Unix
+epoch for every layout, so moving a migration to the end of an Atlas directory
+numbered `1_init.sql`, `2_second.sql` wrote a ten-digit `1786262044_init.sql`
+beside fourteen-digit neighbors, and beside a `29991231235959` migration it wrote
+`29991231235960` and then `29991231235961`. It now reads the same UTC clock the
+other three do for an Atlas directory, and keeps the epoch for the paired ptah
+layout described next, whose names cannot carry a fourteen-digit version at all.
+The community binary does not register `migrate rebase`, so there is no measured
+behavior to match here — the same position `migrate checkpoint` is in.
 
 Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
 rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads
