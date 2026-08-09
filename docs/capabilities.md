@@ -382,6 +382,62 @@ value or wants to pin a specific server version in tests/CI.
   object. Every row of these four keys was measured against a live server of
   that engine except Spanner's, which has no container and no live test (#942)
   and follows Google's documentation.
+- **One answer shape for every refused object kind (#929).** `sequences`,
+  `role_management`, and `row_level_security` answer the same question as the
+  four keys above and now answer it the same way. The PostgreSQL-family
+  renderer used to turn those three into an error, which is not something a
+  migration plan can carry, so the planner compensated by dropping roles,
+  grants, and RLS from the plan before they could reach a visitor — silently.
+  The two commands therefore disagreed about the same desired schema on the
+  same target: `ptah schema render --dialect cockroachdb` exited 2 with
+  `cockroachdb does not support role management` and rendered nothing, while
+  `ptah schema apply --dry-run` against a live CockroachDB exited 0 and planned
+  the schema minus the role, the grant, and the policies, naming none of them.
+  Both now exit 0 and write the same named skip comment, which
+  `SplitApplyStatements` strips before anything reaches a server.
+
+  Note the consequence: because the comment is not a change the database can
+  absorb, a schema declaring an object its target cannot host is reported
+  again every time the plan is rebuilt, rather than reported once and then
+  called synced. Measured on live YugabyteDB 2026.1.0.0 (PostgreSQL 15.12-YB)
+  over a `users` table with `//ptah:schema:rls:enable` and one policy, applied
+  twice, then planned a third time:
+
+  ```console
+  $ ptah schema apply --root-dir ./models --db-url "$YB_URL" --dry-run
+  Planned schema changes:
+  -- YUGABYTEDB: row-level security on users is not supported by this target; skipped.
+  -- YUGABYTEDB: policy users_self on users is not supported by this target; skipped.;
+  ```
+
+  That is the whole of standard output, header line and trailing `;` included;
+  the exit status is 0. The plan printer terminates the last statement even
+  when that statement is only comments. Earlier Ptah answered `Schema is synced, no changes to be made.`
+  there, over a database whose `pg_class.relrowsecurity` was `f` and whose
+  `pg_policies` was empty — an affirmative false report rather than mere
+  under-generation, which is the same reasoning that made the ClickHouse
+  planner name what it cannot carry (#931 item 7).
+
+  **Which commands say it, measured.** "Every plan" is not true of every verb,
+  so here is the census, all against the same live YugabyteDB database in the
+  state above:
+
+  | Command | Reports the refused object | Exit |
+  | --- | --- | --- |
+  | `ptah schema apply --dry-run` | both lines | 0 |
+  | `ptah schema apply --auto-approve` | both lines | 0 |
+  | `ptah schema plan` | both lines | 0 |
+  | `ptah schema diff` (desired state as a `.sql` file; it takes no `--root-dir`) | both lines | 0 |
+  | `ptah schema compare` | both lines, under `Reconciling SQL:` | 0 |
+  | `ptah migrations plan` | both lines, then `Generated 0 migration statements.` | 0 |
+  | `ptah schema drift` | names the categories `rls_enabled_tables_added` and `rls_policies_added`, not the skip lines — it reads the diff, not the plan | 1 |
+  | `ptah migrations generate` | **nothing at all**: no output, no migration file | 0 |
+
+  `ptah migrations generate` is the one gap, and it is not specific to refused
+  objects: that verb prints nothing whenever it writes no file, including when
+  the desired schema and the database already agree. Closing it means giving
+  that verb a voice of its own, which is a change to `migrations generate`
+  rather than to the capability gates, so it is not done here.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and
