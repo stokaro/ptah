@@ -286,6 +286,77 @@ func TestGetOrderedCreateStatements_NormalizesAtlasActionTokens(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "SET_NULL")
 }
 
+// TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect pins the
+// underscore spelling an HCL schema file carries (on_delete = SET_NULL) to the
+// spaced keywords SQL actually defines, on every dialect that renders a
+// referential action rather than on postgres alone.
+//
+// The spelling matters because neither engine parses the underscore form. Run
+// against PostgreSQL 17.10, `ALTER TABLE ... ON DELETE SET_NULL` answers
+// `ERROR: syntax error at or near "SET_NULL"`, and against MySQL 9.7.2
+// `ON DELETE SET_DEFAULT` answers `ERROR 1064 (42000) ... near 'SET_DEFAULT'`.
+// A renderer that passes the token through therefore emits DDL no server
+// accepts, which is why the assertion is on the emitted keywords and not merely
+// on a successful render.
+func TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver"} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(
+				foreignKeyActionDatabase("SET_NULL", "NO_ACTION"),
+				dialect,
+			)
+
+			c.Assert(err, qt.IsNil)
+			sql := strings.Join(statements, "\n")
+			c.Assert(sql, qt.Contains, "ON DELETE SET NULL")
+			c.Assert(sql, qt.Contains, "ON UPDATE NO ACTION")
+			c.Assert(sql, qt.Not(qt.Contains), "SET_NULL")
+			c.Assert(sql, qt.Not(qt.Contains), "NO_ACTION")
+		})
+	}
+}
+
+// TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePath
+// pins that the underscore spelling is normalized BEFORE the per-dialect
+// capability gate rather than after it.
+//
+// Widening the accepted set to include the underscore tokens is the cheaper
+// wrong fix for "ptah refuses SET_NULL": it compiles, it clears the reported
+// symptom, and it renders at exit 0. What it also does is route SET_DEFAULT
+// past the MySQL-family refusal and SET_NULL past the Spanner one, so the
+// spelling that no server parses reaches a server that would have refused the
+// action even spelled correctly.
+func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name     string
+		dialect  string
+		onDelete string
+		onUpdate string
+		wantErr  string
+	}{
+		{name: "mysql set default", dialect: "mysql", onDelete: "SET_DEFAULT", wantErr: "mysql does not support ON DELETE SET DEFAULT"},
+		{name: "mariadb set default", dialect: "mariadb", onUpdate: "SET_DEFAULT", wantErr: "mariadb does not support ON UPDATE SET DEFAULT"},
+		{name: "spanner set null", dialect: "spanner", onDelete: "SET_NULL", wantErr: "spanner does not support ON DELETE SET NULL"},
+		{name: "spanner update cascade", dialect: "spanner", onUpdate: "NO_ACTION", wantErr: "spanner does not support ON UPDATE NO ACTION"},
+		{name: "unknown underscore token", dialect: "postgres", onDelete: "SET_ARCHIVE", wantErr: "postgres does not support ON DELETE SET ARCHIVE"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := foreignKeyActionDatabase(test.onDelete, test.onUpdate)
+
+			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
 func TestGetOrderedCreateStatements_SpannerMutualCompositeForeignKeys(t *testing.T) {
 	c := qt.New(t)
 	database := mutualCompositeForeignKeyDatabase()
