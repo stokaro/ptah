@@ -87,6 +87,13 @@ evaluates version guards against the connected server. Numeric prefixes shorter
 than five digits remain part of the executable SQL body. Hidden statement
 delimiters and non-`SELECT` effective bodies fail closed before query execution.
 
+A guard counts as live whenever it is less than or equal to the server's own
+version number (`major*10000 + minor*100 + patch`), so `/*!80000 ... */` runs on
+MySQL 8.0 and on every later release too. A large guard is not a way to keep SQL
+inert: MySQL 26.7 encodes as `260700` and honors `/*!99999 ... */`. MariaDB
+ignores the MySQL `50700`-`99999` band whatever its own version is, and treats
+higher numbers as MariaDB versions.
+
 A failure aborts before any body statement, matching Atlas's
 enforcement point. Ptah ignores unrelated embedded files.
 
