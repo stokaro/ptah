@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
@@ -1365,9 +1366,14 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
+	// One set of identifier rules for the whole plan. Every question of the form
+	// "do these two spellings name the same object" is answered with it, so the
+	// resolvers below and the statements that accompany what they resolve cannot
+	// disagree about which table a reference belongs to.
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	indexes, err := indexscope.NewResolverWithSemantics(
 		p.targetDialect(),
-		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		semantics,
 		diff,
 		generated,
 	)
@@ -1383,7 +1389,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// would have removed it -- the diff is either coherent or it is not.
 	policies, err := rlsscope.NewResolverWithSemantics(
 		p.targetDialect(),
-		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		semantics,
 		diff,
 		generated,
 	)
@@ -1465,7 +1471,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
 	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.enableRLSOnTables(result, diff, generated)
+		result = p.enableRLSOnTables(result, diff, generated, semantics)
 	}
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
@@ -2230,19 +2236,57 @@ func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *go
 // declare a policy without a separate enablement annotation, and CREATE POLICY
 // on a table whose row-level security is off protects nothing, so the
 // enablement is emitted with the table rather than left to the operator.
-func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	tablesNeedingRLS := make(map[string]bool)
+//
+// Which table a policy belongs to is decided under the target's identifier
+// semantics, the same rules [addNewRLSPolicies] resolves the policy itself
+// with. `orders` and `public.orders` are one relation and two strings, so
+// asking `slices.Contains(diff.TablesAdded, policy.Table)` answered no whenever
+// the desired table and the policy's declaration were spelled differently: the
+// plan emitted CREATE POLICY and no ENABLE ROW LEVEL SECURITY, applied cleanly,
+// and left a pg_policy row on a relation whose pg_class.relrowsecurity was
+// still false. The policy was inert and the plan reported success. Measured on
+// PostgreSQL 17.10 -- the fourth appearance of one mistake, after
+// stokaro/ptah#1276, stokaro/ptah#1311 and stokaro/ptah#1347.
+//
+// The map is keyed by identity and carries the spelling to render, so a table
+// named by both sources is enabled once. The rendered spelling comes from the
+// diff -- the comparator's own verdict, or the name the plan creates the table
+// under -- rather than from the declaration, so the statement always names an
+// object this plan is known to have produced.
+func (p *Planner) enableRLSOnTables(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
+	tablesNeedingRLS := make(map[string]string)
+	rememberTable := func(tableName string) {
+		key := semantics.QualifiedTableIdentityKey(tableName)
+		if _, seen := tablesNeedingRLS[key]; !seen {
+			tablesNeedingRLS[key] = tableName
+		}
+	}
 	for _, tableName := range diff.RLSEnabledTablesAdded {
-		tablesNeedingRLS[tableName] = true
+		rememberTable(tableName)
+	}
+
+	addedTables := make(map[string]string, len(diff.TablesAdded))
+	for _, tableName := range diff.TablesAdded {
+		key := semantics.QualifiedTableIdentityKey(tableName)
+		if _, seen := addedTables[key]; !seen {
+			addedTables[key] = tableName
+		}
 	}
 	for _, policy := range generated.RLSPolicies {
-		if slices.Contains(diff.TablesAdded, policy.Table) {
-			tablesNeedingRLS[policy.Table] = true
+		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.Table)]
+		if !isNew {
+			continue
 		}
+		rememberTable(addedTable)
 	}
 
 	// Iterate in sorted order so migration output is deterministic (issue #59).
-	for _, tableName := range slices.Sorted(maps.Keys(tablesNeedingRLS)) {
+	for _, tableName := range slices.Sorted(maps.Values(tablesNeedingRLS)) {
 		enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
 			SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
 		result = append(result, enableRLSNode)
