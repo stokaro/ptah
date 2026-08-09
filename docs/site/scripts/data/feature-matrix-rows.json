@@ -762,7 +762,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "diff and new stamp the UTC YYYYMMDDHHMMSS second, stepping only past a version already taken, as CE does; checkpoint and rebase bump past the newest. Every step parses back as a second.",
-    "evidence": "Executed on SQLite, into a directory holding 29991231235959_future.sql: `ptah-compat migrate diff --dir file://s_diff --dev-url sqlite://dv1.db --to file://desired.sql adddiff` wrote 20260809080113_adddiff.sql at clock 20260809080113; `ptah-compat migrate new --dir file://s_new hello` wrote 20260809080026_hello.sql at clock 20260809080026 — both sort BELOW the 2999 migration. `ptah-compat migrate checkpoint` wrote 30000101000000_cp1.sql and then 30000101000001_cp2.sql; `ptah-compat migrate rebase` wrote 30000101000000_users.sql and then 30000101000001_future.sql. Before stokaro/ptah#938 the bump computed 29991231235959+1 = 29991231235960, which time.Parse refuses under \"20060102150405\"."
+    "evidence": "Executed on SQLite, into a directory holding 29991231235959_future.sql: `ptah-compat migrate diff --dir file://s_diff --dev-url sqlite://dv1.db --to file://desired.sql adddiff` wrote 20260809095041_adddiff.sql at clock 20260809095041; `ptah-compat migrate new --dir file://s_new hello` wrote 20260809095034_hello.sql at clock 20260809095034 — both sort BELOW the 2999 migration. `ptah-compat migrate checkpoint` wrote 30000101000000_cp1.sql and then 30000101000001_cp2.sql; `ptah-compat migrate rebase` wrote 30000101000000_users.sql and then 30000101000001_future.sql. Before stokaro/ptah#938 the bump computed 29991231235959+1 = 29991231235960, which time.Parse refuses under \"20060102150405\"."
   },
   {
     "area": "Versioned migrations — directory",
