@@ -192,6 +192,10 @@ callback, so planning and execution use the same effective policy.
 
 The scoped connection must not escape the callback. Ptah discards the physical
 connection afterward so session-local state cannot leak to a later pool user.
+Use `dbschema.DatabaseConnection.WithSessionOrCurrent` when the same operation
+can be called either from a pool-backed connection or from an existing pinned
+session; it pins only when needed and otherwise reuses the caller's current
+session lifecycle.
 
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers

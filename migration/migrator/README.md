@@ -672,6 +672,25 @@ removes both transactional DML and its witness. A retry skips only the verified
 durable prefix and replays safe session settings from that prefix on a newly
 pinned session before continuing.
 
+Temporary tables remain available in `file` mode. Creating one does not make
+permanent InnoDB work durable by itself, and Ptah discards the pinned physical
+session after every attempt, so a temporary table or nontransactional temporary
+table data cannot leak into the retry. If a later implicit commit makes a
+prefix containing a temporary object durable, automatic resume refuses that
+prefix because the object cannot be reconstructed safely.
+
+The configured migration metadata table name is reserved. Before reading or
+writing revision metadata, Ptah refuses and discards a pinned MySQL-family
+session that already contains a same-named temporary table. It also rejects
+migration statements that directly reference the metadata relation. This
+prevents a temporary table from shadowing the permanent InnoDB witness,
+including through a schema-qualified name.
+
+In `none` mode, MySQL and MariaDB keep revision bookkeeping on a separate
+checked metadata session while the migration body runs on its own discarded
+session. Body-local temporary objects therefore cannot shadow revision
+bookkeeping, while nontransactional progress is still recorded durably.
+
 The witness requires InnoDB for revision metadata, the session default, and
 every existing base table in the selected database. Ptah-created native and
 Atlas revision tables declare `ENGINE=InnoDB`; an existing revision table using
@@ -707,6 +726,8 @@ from the outer statement:
 - `USE` and qualified references to another database. The connection URL,
   engine preflight, migration target, and metadata table must refer to one
   database.
+- Direct references to the configured migration metadata table. That relation
+  is reserved for Ptah's transaction witness.
 - Executable comments, `CALL`, prepared or dynamic SQL, and table locks.
 - Definitions of views, triggers, routines, and events; references to existing
   views or trigger-bearing tables; and stored-routine calls.

@@ -747,6 +747,56 @@ func TestMySQLReferencedCatalogName_IgnoresNonRelationIdentifiers(t *testing.T) 
 	}
 }
 
+func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"CREATE TEMPORARY TABLE schema_migrations (version BIGINT)",
+		"CREATE TEMPORARY TABLE app.schema_migrations (version BIGINT)",
+		"ALTER TABLE staging RENAME TO schema_migrations",
+		"ALTER TABLE staging RENAME schema_migrations",
+		"RENAME TABLE staging TO app.schema_migrations",
+		"SELECT * FROM `APP`.`SCHEMA_MIGRATIONS`",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlReferencesNamedRelation(
+				significantSQLTokens(statement, "mysql"),
+				"app",
+				"app",
+				"schema_migrations",
+			)
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLReferencesNamedRelation_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"CREATE TEMPORARY TABLE audit.schema_migrations (version BIGINT)",
+		"CREATE TEMPORARY TABLE app.other_table (version BIGINT)",
+		"ALTER TABLE users RENAME COLUMN legacy TO schema_migrations",
+		"ALTER TABLE users RENAME INDEX legacy TO schema_migrations",
+		"SELECT schema_migrations FROM app.users",
+		"SELECT * FROM audit.schema_migrations",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlReferencesNamedRelation(
+				significantSQLTokens(statement, "mysql"),
+				"app",
+				"app",
+				"schema_migrations",
+			)
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
 func TestMySQLInvokedRoutine(t *testing.T) {
 	c := qt.New(t)
 	routines := map[string]struct{}{"next_job_id": {}}
@@ -821,6 +871,39 @@ func TestMySQLCreateTableLike_Absent(t *testing.T) {
 	for _, statement := range statements {
 		c.Run(statement, func(c *qt.C) {
 			got := mysqlCreateTableLike(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
+func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"CREATE TEMPORARY TABLE jobs (id BIGINT)",
+		"CREATE OR REPLACE TEMPORARY TABLE jobs (id BIGINT)",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlCreatesTemporaryTable(significantSQLTokens(statement, "mysql"))
+			c.Assert(got, qt.IsTrue)
+		})
+	}
+}
+
+func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
+	c := qt.New(t)
+
+	statements := []string{
+		"CREATE TABLE jobs (id BIGINT)",
+		"CREATE TEMPORARY VIEW jobs AS SELECT 1",
+		"ALTER TABLE jobs ADD COLUMN temporary BIGINT",
+	}
+
+	for _, statement := range statements {
+		c.Run(statement, func(c *qt.C) {
+			got := mysqlCreatesTemporaryTable(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
 	}

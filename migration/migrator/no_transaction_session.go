@@ -33,6 +33,24 @@ func (m *Migrator) withNoTransactionSession(
 	if m.conn.Writer().IsDryRun() || m.noTransactionSession != nil {
 		return use(m)
 	}
+	if implicitCommitDialect(m.connectionDialect()) {
+		return m.conn.WithSession(ctx, func(metadataConn *dbschema.DatabaseConnection) error {
+			metadataScoped := *m
+			metadataScoped.conn = metadataConn
+			if metadataScoped.migrationsSchema == "" {
+				metadataScoped.migrationsSchema = metadataScoped.connectionSchemaName()
+			}
+			if err := metadataScoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
+				return err
+			}
+			return m.conn.WithSession(ctx, func(bodyConn *dbschema.DatabaseConnection) error {
+				scoped := metadataScoped
+				scoped.noTransactionSession = bodyConn
+				scoped.postgresIndexObservation = nil
+				return use(&scoped)
+			})
+		})
+	}
 	return m.conn.WithSession(ctx, func(conn *dbschema.DatabaseConnection) error {
 		scoped := *m
 		scoped.noTransactionSession = conn
