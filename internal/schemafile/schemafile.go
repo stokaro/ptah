@@ -3,6 +3,7 @@ package schemafile
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -686,6 +687,7 @@ func toDBIndexes(
 			NullsDistinct:  index.NullsDistinct,
 			Method:         indexAccessMethod(index.Type, dialect),
 			IncludeColumns: append([]string(nil), index.IncludeColumns...),
+			StorageParams:  maps.Clone(index.StorageParams),
 			Type:           index.Type,
 			Granularity:    index.Granularity,
 		})

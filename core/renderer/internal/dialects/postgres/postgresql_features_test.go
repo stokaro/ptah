@@ -180,6 +180,48 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			},
 			expected: "CREATE INDEX IF NOT EXISTS idx_products_search ON products USING GIN (name, tags) WHERE status = 'active';\n",
 		},
+		{
+			// PostgreSQL's CREATE INDEX has no COMMENT clause -- unlike
+			// MySQL's index definition, where the comment is part of the same
+			// statement -- so the comment has to be a statement of its own or
+			// it is not applied at all. Rendering it as a `-- keep me` line,
+			// which is what this renderer does for every other node's Comment
+			// field and what a copy of the neighbouring code produces, replays
+			// at exit 0 and leaves the index with no comment. See #1242.
+			name: "index comment is applied, not annotated",
+			index: &ast.IndexNode{
+				Name:    "idx_users_email",
+				Table:   "users",
+				Columns: []string{"email"},
+				Comment: "keep me",
+			},
+			expected: "CREATE INDEX idx_users_email ON users (email);\n" +
+				"COMMENT ON INDEX idx_users_email IS 'keep me';\n",
+		},
+		{
+			// The index lives in the table's namespace, so the statement that
+			// names the index has to borrow the qualifier from the table. A
+			// bare `COMMENT ON INDEX "idx"` reaches whatever the session's
+			// search_path finds first.
+			name: "index comment on a qualified table is qualified too",
+			index: &ast.IndexNode{
+				Name:    "idx_users_email",
+				Table:   "app.users",
+				Columns: []string{"email"},
+				Comment: "keep me",
+			},
+			expected: "CREATE INDEX idx_users_email ON app.users (email);\n" +
+				"COMMENT ON INDEX app.idx_users_email IS 'keep me';\n",
+		},
+		{
+			name: "an index with no comment emits no COMMENT statement",
+			index: &ast.IndexNode{
+				Name:    "idx_users_email",
+				Table:   "users",
+				Columns: []string{"email"},
+			},
+			expected: "CREATE INDEX idx_users_email ON users (email);\n",
+		},
 	}
 
 	for _, tt := range tests {

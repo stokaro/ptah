@@ -157,10 +157,14 @@ jobs:
       # started modeling. The spelling of a table REFERENCE is another
       # (stokaro/ptah#1260): `table.<schema>.<name>` costs the whole document,
       # so the rendered output is put to that binary here rather than trusted.
-      # The last one is the WHOLE inspected document (stokaro/ptah#1234): a
+      # The next one is the WHOLE inspected document (stokaro/ptah#1234): a
       # permission body that does not evaluate and a `schema.<name>` reference
       # nothing declares are properties of the file rather than of any one
       # attribute, so neither is visible to the runs above.
+      # The last one is an index storage parameter (stokaro/ptah#1242), and it
+      # is the one where reading the binary's exit status is not enough: it
+      # ACCEPTS both spellings of that attribute at exit 0 and honors one, so
+      # the run asks what came back rather than whether the document was read.
       # All of them live in internal/atlashclrender and are listed before they
       # are run, for the same reason as above.
       - name: Verify HCL render conformance selection
@@ -175,7 +179,8 @@ jobs:
           grep -Fx 'TestOracleReadsTheReferenceSpellingPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleReadsTheInspectedDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
           grep -Fx 'TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
-          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 7
+          grep -Fx 'TestOracleKeepsTheIndexStorageParameterPtahRenders' "$RUNNER_TEMP/atlas-column-type-tests"
+          test "$(grep -c '^TestOracle' "$RUNNER_TEMP/atlas-column-type-tests")" -eq 8
 
       - name: Run HCL render conformance tests
         run: |
@@ -213,6 +218,14 @@ jobs:
           # silently stopped matching them cannot leave the job green.
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_wraps_a_sized_array_whose_element_name_is_modeled' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_that_same_array_quoted' "$RUNNER_TEMP/atlas-column-type-run"
+          # The index storage-parameter rows are a pair for the same reason
+          # (stokaro/ptah#1242), and here an exit status cannot separate them:
+          # the binary ACCEPTS both spellings of the attribute at exit 0 and
+          # honors one. `rendered` asks what it came back with, and the plural
+          # row is what proves that question discriminates -- without it,
+          # `rendered` would pass on a build that had started honoring both.
+          grep -Fq 'TestOracleKeepsTheIndexStorageParameterPtahRenders/rendered' "$RUNNER_TEMP/atlas-column-type-run"
+          grep -Fq 'TestOracleKeepsTheIndexStorageParameterPtahRenders/plural_spelling_is_dropped_in_silence' "$RUNNER_TEMP/atlas-column-type-run"
           grep -Fq 'TestOracleAcceptsTheWrapItFallsBackTo/postgres_refuses_an_array_written_bare' "$RUNNER_TEMP/atlas-column-type-run"
 
           # And for the whole-document run (stokaro/ptah#1234). Each `rendered`
