@@ -61,8 +61,8 @@ import (
 // TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276 pins both halves so this
 // split is a decision rather than an accident.
 func namesABuiltInType(dialect, typeName string) bool {
-	names, known := builtInTypeNames[platform.NormalizeDialect(dialect)]
-	if !known {
+	names := builtInTypeNamesFor(dialect)
+	if names == nil {
 		return false
 	}
 	trimmed := strings.TrimSpace(typeName)
@@ -73,17 +73,74 @@ func namesABuiltInType(dialect, typeName string) bool {
 	return found
 }
 
-// builtInTypeNames maps a dialect to the type names its own catalog answers to.
+// builtInTypeNamesFor returns the type names the target's own catalog answers
+// to, or nil for a target whose catalog this package has no vocabulary for.
 //
-// A dialect absent from this map treats no name as built in, which is exactly
-// the behavior it had before stokaro/ptah#1138 -- the same convention
-// internal/atlashclrender/modeled_types.go uses for the same reason. Only
-// PostgreSQL is listed because only PostgreSQL was measured; CockroachDB,
-// YugabyteDB and Spanner reuse much of the PostgreSQL type namespace, and
-// listing them here on that resemblance would be a claim nobody ran.
-var builtInTypeNames = map[string]map[string]struct{}{
-	platform.Postgres: builtInNameSet(postgresCatalogTypeNames, postgresGrammarTypeNames),
+// The selector is [platform.IsPostgresFamily] rather than a list of dialect
+// names, because that is the same predicate that decides what the guarded pass
+// emits. Keying the guard on the literal "postgres" while
+// [QualifyDeclaredUserTypes] runs for four dialects is how stokaro/ptah#1138's
+// collision stayed live on three of them: the PASS was never absent for
+// cockroachdb, yugabytedb or spanner, only the GUARD was. Measured with a
+// ptah binary built from the commit before this fix, one document declaring
+// `CREATE DOMAIN advm.money` beside a `money` column and a `money[]` column:
+//
+//	ptah schema render --dialect postgres     ->  "c" money       "arr" money[]
+//	ptah schema render --dialect cockroachdb  ->  "c" advm.money  "arr" advm.money[]
+//	ptah schema render --dialect yugabytedb   ->  "c" advm.money  "arr" advm.money[]
+//	ptah schema render --dialect spanner      ->  "c" advm.money  "arr" advm.money[]
+//
+// and the yugabytedb plan replayed into a live YugabyteDB at exit 0 turned
+// `money | pg_catalog | b` into `advm.money | advm | d`, the same base-type-
+// became-a-domain the PostgreSQL measurement found.
+//
+// The four family members share one vocabulary because they emit one document:
+// the four renders above differ only in a comment line. How well that one
+// vocabulary fits each member was measured rather than assumed, with the same
+// catalog query [postgresCatalogTypeNames] carries:
+//
+//   - YugabyteDB 2026.1.0.0-b118 (PostgreSQL 15.12-YB) returns the SAME 107
+//     names, no additions and no omissions, and `money` there is
+//     `money | b | pg_catalog`. For YugabyteDB this list is exact.
+//   - CockroachDB v26.2.5 returns 52 names. Sixty-one of the 107 are absent,
+//     `money` among them, and six names it does have are absent here (box2d,
+//     citext, geography, geometry, ltree, vector). It also refuses
+//     `CREATE DOMAIN advm.money AS DECIMAL(12,2)` outright -- "unimplemented:
+//     this syntax" -- so the domain half of the collision cannot arise there at
+//     all.
+//   - Spanner's PostgreSQL dialect was not run.
+//
+// So the list is exact for one member and an over-approximation for another,
+// and that is tolerable only because the two directions are not symmetric. A
+// name listed here that the target does not have costs the shadowed user type
+// its qualifier, which is how that column planned before stokaro/ptah#1138 and
+// which fails LOUDLY at replay: measured on the same CockroachDB,
+// `CREATE TABLE advm.t2 (c money[])` is refused at exit 1 while
+// `CREATE TABLE advm.t (c advm.money[])` against a declared enum succeeds. A
+// name MISSING from here retypes a live column and reports success, which is
+// the YugabyteDB catalog above. Only the second direction is a defect, so
+// inside the family over-inclusion is the side to err on, and the six
+// CockroachDB names this list lacks leave stokaro/ptah#1138's collision open
+// there for those six exactly the way it is open for any name not listed --
+// name by name, never wholesale.
+// [TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling] pins that the
+// set the guard covers is the set the pass runs for.
+//
+// A dialect outside the family gets no vocabulary and treats no name as built
+// in, which is the behavior it had before stokaro/ptah#1138 -- the same
+// convention internal/atlashclrender/modeled_types.go uses. That table stays
+// PostgreSQL-only for a reason that does not apply here: its rows are measured
+// against the pinned community binary, and a wrong row there produces a
+// document that binary cannot read, so its failure directions are symmetric.
+func builtInTypeNamesFor(dialect string) map[string]struct{} {
+	if !platform.IsPostgresFamily(dialect) {
+		return nil
+	}
+	return postgresBuiltInTypeNames
 }
+
+// postgresBuiltInTypeNames is the folded lookup the PostgreSQL family shares.
+var postgresBuiltInTypeNames = builtInNameSet(postgresCatalogTypeNames, postgresGrammarTypeNames)
 
 func builtInNameSet(lists ...[]string) map[string]struct{} {
 	set := make(map[string]struct{})
