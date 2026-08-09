@@ -247,16 +247,15 @@ func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
 }
 
 func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumName := range diff.EnumsAdded {
-		for _, enum := range generated.Enums {
-			// The diff names enums by qualified name, so the lookup does too.
-			// Building the node through fromschema.FromEnum keeps the CREATE
-			// TYPE identifier and the column type that references it derived
-			// from one place (stokaro/ptah#1276).
-			if enum.QualifiedName() == enumName {
-				result = append(result, fromschema.FromEnum(enum))
-				break
-			}
+		// The diff names enums by qualified name, so the lookup does too --
+		// under the target's identifier rules rather than as raw text. Building
+		// the node through fromschema.FromEnum keeps the CREATE TYPE identifier
+		// and the column type that references it derived from one place
+		// (stokaro/ptah#1276).
+		if enum := objectlookup.Qualified(generated.Enums, enumName, semantics); enum != nil {
+			result = append(result, fromschema.FromEnum(*enum))
 		}
 	}
 	return result
@@ -271,9 +270,10 @@ type postgresEnumColumnUsage struct {
 }
 
 func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesRemoved) > 0 {
-			values, ok := postgresEnumValues(generated, enumDiff.EnumName)
+			values, ok := postgresEnumValues(generated, enumDiff.EnumName, semantics)
 			if !ok {
 				result = append(result, ast.NewComment(fmt.Sprintf(
 					"WARNING: Cannot remove enum values %v from %s because the target enum definition was not found",
@@ -300,16 +300,19 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff,
 	return result
 }
 
-func postgresEnumValues(generated *goschema.Database, enumName string) ([]string, bool) {
+func postgresEnumValues(
+	generated *goschema.Database,
+	enumName string,
+	semantics identifier.Semantics,
+) ([]string, bool) {
 	if generated == nil {
 		return nil, false
 	}
-	for _, enum := range generated.Enums {
-		if enum.QualifiedName() == enumName {
-			return append([]string(nil), enum.Values...), true
-		}
+	enum := objectlookup.Qualified(generated.Enums, enumName, semantics)
+	if enum == nil {
+		return nil, false
 	}
-	return nil, false
+	return append([]string(nil), enum.Values...), true
 }
 
 func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []postgresEnumColumnUsage {
@@ -643,7 +646,12 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 	}
 }
 
-func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTableColumns(
+	result []ast.Node,
+	tableDiff types.TableDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
 		// Find the field definition for this column
 		// We need to find the struct name that corresponds to this table name
@@ -651,7 +659,7 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 		var targetStructName string
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
 			targetStructName = table.StructName
 		}
 
@@ -683,7 +691,12 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 
 // addForeignKeyConstraintsForNewColumns adds foreign key constraints for newly added columns.
 // This method is called after all columns have been added to ensure that referenced columns exist.
-func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForNewColumns(
+	result []ast.Node,
+	tableDiff types.TableDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
 		// Find the field definition for this column
 		var targetField *goschema.Field
@@ -692,7 +705,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 		var targetTable *goschema.Table
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
 			targetTable = table
 			targetStructName = table.StructName
 			targetTableName = table.Name
@@ -738,7 +751,12 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 	return result
 }
 
-func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTableColumns(
+	result []ast.Node,
+	tableDiff types.TableDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []ast.Node {
 	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
 	for _, colDiff := range tableDiff.ColumnsModified {
 		// Find the target field definition for this column
@@ -747,7 +765,7 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		var targetStructName string
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
 			targetStructName = table.StructName
 		}
 
@@ -842,11 +860,34 @@ func isGeneratedColumnChange(colDiff types.ColumnDiff) bool {
 	return ok
 }
 
-func findGeneratedTableByDiffName(generated *goschema.Database, tableName string) *goschema.Table {
+// findGeneratedTableByDiffName resolves the declared table a TableDiff names.
+//
+// The two do not always spell the schema the same way. A TableDiff carries the
+// name the DESIRED schema spells, while the schema this resolves against is the
+// pre-change database converted back to a goschema in the down direction --
+// where every name is spelled the way the catalog reported it. Table comparison
+// keys through identifier semantics and therefore reports `users` and
+// `public.users` as ONE modified table, so an `==` here split what the
+// comparator had already joined: the lookup answered nil, no field was found,
+// and addNewTableColumns emitted NOTHING. A rollback of a DROP COLUMN then
+// omitted the ALTER TABLE ... ADD COLUMN that restores it, exited 0 and reported
+// success.
+func findGeneratedTableByDiffName(
+	generated *goschema.Database,
+	tableName string,
+	semantics identifier.Semantics,
+) *goschema.Table {
+	return objectlookup.Qualified(generated.Tables, tableName, semantics)
+}
+
+// findGeneratedTableByStructName resolves a declared table from the Go struct it
+// was declared on. A struct name is not a database identifier, so it carries no
+// schema and no folding rule: it is matched verbatim, and identifier semantics
+// have nothing to say about it.
+func findGeneratedTableByStructName(generated *goschema.Database, structName string) *goschema.Table {
 	for i := range generated.Tables {
-		table := &generated.Tables[i]
-		if table.QualifiedName() == tableName {
-			return table
+		if generated.Tables[i].StructName == structName {
+			return &generated.Tables[i]
 		}
 	}
 	return nil
@@ -884,16 +925,17 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.
 }
 
 func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
 			// Track the initial length to see if any actual operations were added
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, generated)
+			result = p.addNewTableColumns(result, tableDiff, generated, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, generated)
+			result = p.modifyExistingTableColumns(result, tableDiff, generated, semantics)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -915,13 +957,14 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.Schema
 // across all modified tables. This ensures that all columns exist before any foreign key constraints
 // are created, preventing dependency ordering issues.
 func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 {
 			// Track the initial length to see if any actual operations were added
 			initialLength := len(result)
 
 			// Add foreign key constraints for new columns
-			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, generated)
+			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, generated, semantics)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1132,7 +1175,7 @@ type plannedUserType struct {
 // Enums are not in the set: they carry no reference to another user-defined
 // type and are already emitted before this runs.
 func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	planned := p.plannedUserTypes(diff, generated)
+	planned := p.plannedUserTypes(diff, generated, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	byName := make(map[string]ast.Node, len(planned))
 	deps := make([]deporder.UserType, 0, len(planned))
 	for _, userType := range planned {
@@ -1151,10 +1194,14 @@ func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, gen
 // plannedUserTypes collects every domain, range and composite this plan
 // creates, newly added ones first and then the ones recreated in place of a
 // modification, each with the type spellings its definition names.
-func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.Database) []plannedUserType {
+func (p *Planner) plannedUserTypes(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) []plannedUserType {
 	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
-		if domain := findDomain(generated.Domains, name); domain != nil {
+		if domain := findDomain(generated.Domains, name, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: []string{domain.BaseType}},
 				node: fromschema.FromDomain(*domain),
@@ -1162,7 +1209,7 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 		}
 	}
 	for _, name := range diff.RangesAdded {
-		if rangeType := findRange(generated.Ranges, name); rangeType != nil {
+		if rangeType := findRange(generated.Ranges, name, semantics); rangeType != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: []string{rangeType.Subtype}},
 				node: fromschema.FromRange(*rangeType),
@@ -1170,7 +1217,7 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 		}
 	}
 	for _, name := range diff.CompositeTypesAdded {
-		if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
+		if composite := findCompositeType(generated.CompositeTypes, name, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: compositeFieldTypes(*composite)},
 				node: fromschema.FromCompositeType(*composite),
@@ -1182,7 +1229,7 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 	// composite has to wait for the recreation, which dropModifiedUserTypes has
 	// already removed by this point.
 	for _, domainDiff := range diff.DomainsModified {
-		if domain := findDomain(generated.Domains, domainDiff.DomainName); domain != nil {
+		if domain := findDomain(generated.Domains, domainDiff.DomainName, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
 				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
@@ -1190,7 +1237,7 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName); composite != nil {
+		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
 				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
@@ -1201,7 +1248,7 @@ func (p *Planner) plannedUserTypes(diff *types.SchemaDiff, generated *goschema.D
 	// the same drop-and-recreate path domains and composites already use
 	// (stokaro/ptah#931 item 2).
 	for _, rangeDiff := range diff.RangesModified {
-		if rangeType := findRange(generated.Ranges, rangeDiff.RangeName); rangeType != nil {
+		if rangeType := findRange(generated.Ranges, rangeDiff.RangeName, semantics); rangeType != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
 				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
@@ -1257,31 +1304,76 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 // reference, and no single order serves both. That is not a conflict to
 // resolve, because they answer different questions: the create graph is the
 // shape being built, the drop graph is the shape being taken apart.
-func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+//
+// # The drop is emitted only where the recreate is
+//
+// This step and addNewUserTypes are two halves of one statement pair, and they
+// used to disagree about what they cover: the drop was emitted for every
+// modified entry unconditionally, while the recreate was emitted only where the
+// target definition could be resolved out of the schema. A modification whose
+// definition did not resolve therefore produced a DROP with nothing to put the
+// type back, which is not a failed migration -- it is a successful one that
+// leaves the database short of a type.
+//
+// Resolving both halves through the same lookup is what removes the disagreement
+// in the cases it can. Where the definition still does not resolve, the pair is
+// withheld and a comment says so: a type Ptah cannot rebuild is a type Ptah must
+// not drop.
+func (p *Planner) dropModifiedUserTypes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
+	var unresolved []ast.Node
 	for _, domainDiff := range diff.DomainsModified {
+		if findDomain(generated.Domains, domainDiff.DomainName, semantics) == nil {
+			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
+			continue
+		}
 		byName[domainDiff.DomainName] = ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
 			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use")
 		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
+		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
+			continue
+		}
 		byName[compositeDiff.TypeName] = ast.NewDropType(compositeDiff.TypeName).SetIfExists().
 			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use")
 		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
 	for _, rangeDiff := range diff.RangesModified {
+		if findRange(generated.Ranges, rangeDiff.RangeName, semantics) == nil {
+			unresolved = append(unresolved, unrecreatableUserTypeComment("range type", rangeDiff.RangeName))
+			continue
+		}
 		byName[rangeDiff.RangeName] = ast.NewDropType(rangeDiff.RangeName).SetIfExists().
 			SetComment("Recreate modified range type; drop is non-CASCADE and fails if the type is in use")
 		deps = append(deps, deporder.UserType{Name: rangeDiff.RangeName, References: currentRangeReferences(rangeDiff)})
 	}
 
+	result = append(result, unresolved...)
 	for _, name := range deporder.UserTypesForDrop(deps) {
 		if node, ok := byName[name]; ok {
 			result = append(result, node)
 		}
 	}
 	return result
+}
+
+// unrecreatableUserTypeComment reports a modification whose target definition the
+// schema does not hold, in place of the DROP that would have had no recreate.
+func unrecreatableUserTypeComment(kind, name string) ast.Node {
+	return ast.NewComment(fmt.Sprintf(
+		"WARNING: %s %s changed, but the target definition was not found in the schema; "+
+			"neither DROP nor CREATE emitted, manual migration required",
+		kind,
+		name,
+	))
 }
 
 // currentDomainReferences reports the from-side base type of a modified domain,
@@ -1305,31 +1397,20 @@ func currentRangeReferences(rangeDiff types.RangeDiff) []string {
 	return []string{rangeDiff.CurrentSubtype}
 }
 
-func findDomain(domains []goschema.Domain, name string) *goschema.Domain {
-	for i := range domains {
-		if domains[i].QualifiedName() == name {
-			return &domains[i]
-		}
-	}
-	return nil
+func findDomain(domains []goschema.Domain, name string, semantics identifier.Semantics) *goschema.Domain {
+	return objectlookup.Qualified(domains, name, semantics)
 }
 
-func findCompositeType(composites []goschema.CompositeType, name string) *goschema.CompositeType {
-	for i := range composites {
-		if composites[i].QualifiedName() == name {
-			return &composites[i]
-		}
-	}
-	return nil
+func findCompositeType(
+	composites []goschema.CompositeType,
+	name string,
+	semantics identifier.Semantics,
+) *goschema.CompositeType {
+	return objectlookup.Qualified(composites, name, semantics)
 }
 
-func findRange(ranges []goschema.Range, name string) *goschema.Range {
-	for i := range ranges {
-		if ranges[i].QualifiedName() == name {
-			return &ranges[i]
-		}
-	}
-	return nil
+func findRange(ranges []goschema.Range, name string, semantics identifier.Semantics) *goschema.Range {
+	return objectlookup.Qualified(ranges, name, semantics)
 }
 
 // GenerateMigrationASTChecked generates PostgreSQL-specific migration AST statements from schema differences.
@@ -1487,7 +1568,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff)
+	result = p.dropModifiedUserTypes(result, diff, generated)
 	result = p.addNewUserTypes(result, diff, generated)
 
 	// 4. Modify existing enums
@@ -1875,14 +1956,14 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 	return result
 }
 
-// findSequence returns the generated sequence whose qualified name matches name.
-func findSequence(sequences []goschema.Sequence, name string) *goschema.Sequence {
-	for i := range sequences {
-		if sequences[i].QualifiedName() == name {
-			return &sequences[i]
-		}
-	}
-	return nil
+// findSequence returns the generated sequence the diff entry names, under the
+// identifier rules of the target dialect.
+func findSequence(
+	sequences []goschema.Sequence,
+	name string,
+	semantics identifier.Semantics,
+) *goschema.Sequence {
+	return objectlookup.Qualified(sequences, name, semantics)
 }
 
 // addNewSequences emits CREATE SEQUENCE for newly added sequences. The OWNED BY
@@ -1891,8 +1972,9 @@ func findSequence(sequences []goschema.Sequence, name string) *goschema.Sequence
 // be created before its table while OWNED BY requires the table to already
 // exist.
 func (p *Planner) addNewSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(generated.Sequences, name)
+		sequence := findSequence(generated.Sequences, name, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -1906,8 +1988,9 @@ func (p *Planner) addNewSequences(result []ast.Node, diff *types.SchemaDiff, gen
 // addSequenceOwnership emits ALTER SEQUENCE ... OWNED BY for newly added
 // sequences that declare an owner, after their owning tables exist.
 func (p *Planner) addSequenceOwnership(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(generated.Sequences, name)
+		sequence := findSequence(generated.Sequences, name, semantics)
 		if sequence == nil || sequence.OwnedBy == "" {
 			continue
 		}
@@ -1923,8 +2006,9 @@ func (p *Planner) addSequenceOwnership(result []ast.Node, diff *types.SchemaDiff
 // modifyExistingSequences emits ALTER SEQUENCE for sequences whose options
 // changed. Only the changed options (per the diff) are emitted.
 func (p *Planner) modifyExistingSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := findSequence(generated.Sequences, sequenceDiff.SequenceName)
+		sequence := findSequence(generated.Sequences, sequenceDiff.SequenceName, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -2003,26 +2087,27 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 }
 
 func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
 	for _, viewName := range diff.ViewsAdded {
-		if view := findView(generated.Views, viewName); view != nil {
+		if view := findView(generated.Views, viewName, semantics); view != nil {
 			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}
 	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(generated.MaterializedViews, viewName); view != nil {
+		if view := findMaterializedView(generated.MaterializedViews, viewName, semantics); view != nil {
 			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 		}
 	}
 
 	for _, object := range deporder.ViewLikesForCreate(objects) {
 		if object.Materialized {
-			if view := findMaterializedView(generated.MaterializedViews, object.Name); view != nil {
+			if view := findMaterializedView(generated.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, fromschema.FromMaterializedView(*view))
 			}
 			continue
 		}
-		if view := findView(generated.Views, object.Name); view != nil {
+		if view := findView(generated.Views, object.Name, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -2071,10 +2156,11 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 // before removals, so a modification expressed from outside comes out
 // create-then-drop and ends with no view at all.
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	var dropped []string
 	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
 	for _, viewDiff := range diff.ViewsModified {
-		view := objectlookup.View(generated.Views, viewDiff.ViewName)
+		view := objectlookup.View(generated.Views, viewDiff.ViewName, semantics)
 		if view == nil {
 			continue
 		}
@@ -2091,7 +2177,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 
 	// A view on the replace path can also be a dependent of one on the drop
 	// path, in which case it is on both lists and must still be rendered once.
-	recreate := viewLikesLostToCascade(generated, dropped)
+	recreate := viewLikesLostToCascade(generated, dropped, semantics)
 	named := make(map[string]bool, len(recreate))
 	for _, object := range recreate {
 		named[object.Name] = true
@@ -2103,7 +2189,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 	}
 
 	for _, object := range deporder.ViewLikesForCreate(recreate) {
-		result = p.appendViewLikeRecreate(result, generated, object, dropped)
+		result = p.appendViewLikeRecreate(result, generated, object, dropped, semantics)
 	}
 	return result
 }
@@ -2121,9 +2207,10 @@ func (p *Planner) appendViewLikeRecreate(
 	generated *goschema.Database,
 	object deporder.ViewLike,
 	dropped []string,
+	semantics identifier.Semantics,
 ) []ast.Node {
 	if object.Materialized {
-		view := objectlookup.MaterializedView(generated.MaterializedViews, object.Name)
+		view := objectlookup.MaterializedView(generated.MaterializedViews, object.Name, semantics)
 		if view == nil {
 			return result
 		}
@@ -2131,7 +2218,7 @@ func (p *Planner) appendViewLikeRecreate(
 		return append(result, fromschema.FromMaterializedView(*view))
 	}
 
-	view := objectlookup.View(generated.Views, object.Name)
+	view := objectlookup.View(generated.Views, object.Name, semantics)
 	if view == nil {
 		return result
 	}
@@ -2170,7 +2257,11 @@ func viewReplaceKeepsDependents(viewDiff types.ViewDiff, targetBody string) bool
 // DROP MATERIALIZED VIEW ... CASCADE. On PostgreSQL 17.10 that took a hand-made
 // dependent view, a unique index and a GRANT off an object no part of the
 // migration touched -- none of them declared, so nothing put them back.
-func viewLikesLostToCascade(generated *goschema.Database, dropped []string) []deporder.ViewLike {
+func viewLikesLostToCascade(
+	generated *goschema.Database,
+	dropped []string,
+	semantics identifier.Semantics,
+) []deporder.ViewLike {
 	if len(dropped) == 0 {
 		return nil
 	}
@@ -2192,7 +2283,7 @@ func viewLikesLostToCascade(generated *goschema.Database, dropped []string) []de
 		}
 		taken[name] = true
 		frontier = append(frontier, name)
-		if view := objectlookup.View(generated.Views, name); view != nil {
+		if view := objectlookup.View(generated.Views, name, semantics); view != nil {
 			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}
@@ -2220,8 +2311,9 @@ func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.N
 }
 
 func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName); view != nil {
+		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
 			result = append(result, fromschema.FromMaterializedView(*view))
 		}
@@ -2237,8 +2329,9 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaD
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
@@ -2246,8 +2339,9 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, gene
 }
 
 func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
+		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
@@ -2265,16 +2359,24 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 	return result
 }
 
-func findView(views []goschema.View, name string) *goschema.View {
-	return objectlookup.View(views, name)
+func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+	return objectlookup.View(views, name, semantics)
 }
 
-func findMaterializedView(views []goschema.MaterializedView, name string) *goschema.MaterializedView {
-	return objectlookup.MaterializedView(views, name)
+func findMaterializedView(
+	views []goschema.MaterializedView,
+	name string,
+	semantics identifier.Semantics,
+) *goschema.MaterializedView {
+	return objectlookup.MaterializedView(views, name, semantics)
 }
 
-func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName)
+func findTrigger(
+	triggers []goschema.Trigger,
+	tableName, triggerName string,
+	semantics identifier.Semantics,
+) *goschema.Trigger {
+	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 // enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
@@ -3065,7 +3167,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 		if fkRef == nil {
 			continue
 		}
-		if table := findGeneratedTableByDiffName(generated, tableName); table != nil {
+		if table := findGeneratedTableByStructName(generated, f.StructName); table != nil {
 			qualifyForeignKeyRef(generated, *table, fkRef)
 		}
 		fkRef.OnDelete = f.OnDelete
