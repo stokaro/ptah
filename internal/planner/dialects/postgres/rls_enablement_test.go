@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -188,12 +189,23 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	}
 }
 
-// TestPlannerOmitsRLSEnablementWithoutTheCapability records that the RLS
-// statements stay behind the dialect's row-level security capability, so a
-// PostgreSQL-family target without it (CockroachDB, YugabyteDB, Spanner) does
-// not receive PostgreSQL-only DDL. The compare command still reports the
-// category, because it reads the diff rather than the planner's output.
-func TestPlannerOmitsRLSEnablementWithoutTheCapability(t *testing.T) {
+// TestPlannerNamesRLSItCannotCarry records that a PostgreSQL-family target
+// without the row-level security capability (CockroachDB, YugabyteDB, Spanner)
+// receives no PostgreSQL-only RLS DDL, and is TOLD so by name.
+//
+// This test used to assert `nodes, qt.HasLen, 0` — the planner skipped the RLS
+// phases outright when the capability was absent, and the plan came back with
+// no statement and no diagnostic about the tables it had dropped. Meanwhile
+// `schema render --dialect cockroachdb` reached the renderer's RLS gate, which
+// returned an error, and exited 2 rendering nothing at all. Two commands, one
+// desired schema, one target, two different answers (stokaro/ptah#929 items 1
+// and 4).
+//
+// The planner now emits the node and the renderer answers, so the assertion is
+// on the rendered plan rather than on an empty slice: the objects are still not
+// carried, and now the plan names each one. The compare command still reports
+// the category, because it reads the diff rather than the planner's output.
+func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
@@ -201,9 +213,20 @@ func TestPlannerOmitsRLSEnablementWithoutTheCapability(t *testing.T) {
 		RLSEnabledTablesRemoved: []string{"public.p"},
 	}
 
-	nodes, err := postgres.NewWithCapabilities(capability.CockroachDB23()).
+	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
 		GenerateMigrationASTChecked(diff, &goschema.Database{})
-
 	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 0)
+
+	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(strings.Split(strings.TrimRight(sql, "\n"), "\n"), qt.DeepEquals, []string{
+		"-- COCKROACHDB: row-level security on other.secured is not supported by this target; skipped.",
+		"-- COCKROACHDB: row-level security on public.p is not supported by this target; skipped.",
+	})
+	// The DDL itself must be absent, not merely accompanied by a comment: a
+	// renderer that wrote the skip line and then the statement would satisfy a
+	// "names the object" assertion while still sending CockroachDB an
+	// ALTER TABLE ... ENABLE ROW LEVEL SECURITY it cannot run.
+	c.Assert(sql, qt.Not(qt.Contains), "ROW LEVEL SECURITY;")
 }
