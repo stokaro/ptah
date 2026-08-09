@@ -76,6 +76,14 @@ func (m *Migrator) validateTransactionalProgressSQL(
 				i+1,
 			)
 		}
+		if mysqlUnwitnessedFilesystemWrite(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because it writes a file outside "+
+					"Ptah's migration transaction; use tx-mode none",
+				migration.Version,
+				i+1,
+			)
+		}
 		if mysqlOpaqueExecution(tokens) {
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because nested or dynamic SQL cannot be "+
@@ -229,6 +237,18 @@ func mysqlDatabaseCatalogChange(tokens []lexer.Token) bool {
 			continue
 		}
 		return matchesAnyKeyword(token, "DATABASE", "SCHEMA")
+	}
+	return false
+}
+
+func mysqlUnwitnessedFilesystemWrite(tokens []lexer.Token) bool {
+	for i, token := range tokens {
+		if !token.MatchIdentifierValue("INTO") || i+2 >= len(tokens) {
+			continue
+		}
+		if matchesAnyKeyword(tokens[i+1], "OUTFILE", "DUMPFILE") && tokens[i+2].Type == lexer.TokenString {
+			return true
+		}
 	}
 	return false
 }
@@ -395,12 +415,17 @@ func mysqlTableNameEnd(tokens []lexer.Token, start int) int {
 	for start < len(tokens) && matchesAnyKeyword(tokens[start], "IF", "NOT", "EXISTS") {
 		start++
 	}
-	if start >= len(tokens) || tokens[start].Type != lexer.TokenIdentifier {
+	if start >= len(tokens) {
+		return -1
+	}
+	if _, identifier := mysqlMigrationIdentifierValue(tokens[start]); !identifier {
 		return -1
 	}
 	start++
-	if start+1 < len(tokens) && tokens[start].Value == "." && tokens[start+1].Type == lexer.TokenIdentifier {
-		start += 2
+	if start+1 < len(tokens) && tokens[start].Value == "." {
+		if _, identifier := mysqlMigrationIdentifierValue(tokens[start+1]); identifier {
+			start += 2
+		}
 	}
 	return start
 }

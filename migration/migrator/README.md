@@ -679,10 +679,17 @@ a different engine is rejected before Ptah upgrades its layout. A `file`
 migration that selects a non-InnoDB engine or inherits an unverified engine
 through `CREATE TABLE ... LIKE` is rejected before its body starts.
 
-The migration account must hold `TRIGGER` at database or global scope. MySQL
-and MariaDB hide trigger metadata from accounts without that privilege, while
-those hidden triggers can still run during ordinary DML. Ptah therefore refuses
-`file` mode when it cannot prove that its trigger catalog view is complete.
+On MySQL, the migration account must hold `TRIGGER` at database or global scope
+so Ptah can see a complete trigger catalog. MariaDB exposes each trigger's
+identity and target table without `TRIGGER`, so it does not require that
+privilege for this catalog check. Ptah refuses MySQL `file` mode when it cannot
+prove complete visibility.
+
+The MySQL grant must be global or must name the selected database exactly in
+`SHOW GRANTS`. Ptah decodes escaped literal wildcard characters in the database
+name, but deliberately does not infer coverage from an unescaped `%` or `_`
+pattern because MySQL's `partial_revokes` setting changes that pattern's
+meaning.
 
 MySQL-family `file` mode rejects SQL whose effective writes cannot be proven
 from the outer statement:
@@ -690,6 +697,8 @@ from the outer statement:
 - Top-level transaction controls, including `SET autocommit`.
 - Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
   and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
+  outside the InnoDB transaction.
 - `USE` and qualified references to another database. The connection URL,
   engine preflight, migration target, and metadata table must refer to one
   database.
@@ -698,6 +707,14 @@ from the outer statement:
   views or trigger-bearing tables; and stored-routine calls.
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
+
+Safety preflight treats double-quoted names in relation and routine positions
+as identifiers even before `SET SESSION sql_mode = 'ANSI_QUOTES'` executes.
+Use single quotes for string literals in those positions.
+
+The migration advisory lock serializes Ptah clients that use the same lock
+name. It cannot freeze DDL from a client that ignores that lock. Do not run
+out-of-band DDL from the safety preflight until the migration finishes.
 
 Rejection diagnostics omit the SQL text so credentials in a refused statement
 are not disclosed.

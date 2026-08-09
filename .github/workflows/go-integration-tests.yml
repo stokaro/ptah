@@ -331,8 +331,16 @@ jobs:
           MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
-          go test ./migration/migrator -list '^TestRolledBackProgress_' | grep -q '^TestRolledBackProgress_'
-          go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 3m
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix$' | grep -q '^TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix$' | grep -q '^TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries$' | grep -q '^TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsTransactionControl$' | grep -q '^TestRolledBackProgress_MySQLRejectsTransactionControl$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsTransactionControl$' | grep -q '^TestRolledBackProgress_MariaDBRejectsTransactionControl$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$' | grep -q '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$' | grep -q '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$'
+          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$' | grep -q '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$'
+          go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 5m
 
       - name: Run no-transaction and shadow generator integration tests
         env:

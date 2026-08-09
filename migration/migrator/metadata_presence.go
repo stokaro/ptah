@@ -181,8 +181,10 @@ func (m *Migrator) loadMySQLTransactionalCatalog(ctx context.Context) (mysqlTran
 		unsafeRelations: make(map[string]struct{}),
 		routines:        make(map[string]struct{}),
 	}
-	if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
-		return mysqlTransactionalCatalog{}, err
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.MySQL {
+		if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
+			return mysqlTransactionalCatalog{}, err
+		}
 	}
 	if err := m.collectMySQLCatalogNames(
 		ctx,
@@ -231,7 +233,7 @@ func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, sch
 	}
 	if !mysqlGrantsProvideTriggerCatalogVisibility(grants, schema, m.connectionDialect()) {
 		return fmt.Errorf(
-			"tx-mode file requires the TRIGGER privilege at database or global scope on MySQL-family databases " +
+			"tx-mode file requires the TRIGGER privilege at database or global scope on MySQL " +
 				"so Ptah can prove that target tables have no hidden indirect writers",
 		)
 	}
@@ -347,13 +349,43 @@ func mysqlGrantPatternStep(pattern []rune, index int, schemaRune rune) (consumed
 // ordinary MySQL migration SQL unless the session explicitly changes that mode.
 func mysqlGrantSchemaValue(token lexer.Token) (string, bool) {
 	if value, identifier := mysqlIdentifierValue(token); identifier {
-		return value, true
+		return mysqlUnescapeGrantSchema(value)
 	}
 	if token.Type != lexer.TokenString || len(token.Value) < 2 ||
 		token.Value[0] != '"' || token.Value[len(token.Value)-1] != '"' {
 		return "", false
 	}
-	return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), true
+	return mysqlUnescapeGrantSchema(strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`))
+}
+
+// SHOW GRANTS renders privilege-pattern escapes through SQL identifier
+// escaping, so a literal wildcard can require two decoding passes.
+func mysqlUnescapeGrantSchema(value string) (string, bool) {
+	for range 2 {
+		unescaped, valid := mysqlUnescapeGrantSchemaLayer(value)
+		if !valid {
+			return "", false
+		}
+		value = unescaped
+	}
+	return value, true
+}
+
+func mysqlUnescapeGrantSchemaLayer(value string) (string, bool) {
+	var schema strings.Builder
+	schema.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			schema.WriteByte(value[i])
+			continue
+		}
+		if i+1 >= len(value) || !strings.ContainsRune(`_%\\`, rune(value[i+1])) {
+			return "", false
+		}
+		i++
+		schema.WriteByte(value[i])
+	}
+	return schema.String(), true
 }
 
 func (m *Migrator) collectMySQLCatalogNames(
@@ -379,15 +411,17 @@ func (m *Migrator) collectMySQLCatalogNames(
 
 func mysqlReferencedExternalSchema(tokens []lexer.Token, selectedSchema string) (string, bool) {
 	for i, token := range tokens {
-		name, identifier := mysqlIdentifierValue(token)
+		name, identifier := mysqlMigrationIdentifierValue(token)
 		if !identifier || i+2 >= len(tokens) || tokens[i+1].Value != "." {
 			continue
 		}
-		if _, referenced := mysqlIdentifierValue(tokens[i+2]); !referenced {
+		_, referencedIdentifier := mysqlMigrationIdentifierValue(tokens[i+2])
+		privilegeWildcard := tokens[i+2].Value == "*" && mysqlFollowsPrivilegeTargetPrefix(tokens[:i])
+		if !referencedIdentifier && !privilegeWildcard {
 			continue
 		}
-		relationReference := mysqlDirectRelationReference(tokens, i)
-		routineReference := i+3 < len(tokens) && tokens[i+3].Value == "("
+		relationReference := mysqlDirectRelationReference(tokens, i) || privilegeWildcard
+		routineReference := referencedIdentifier && i+3 < len(tokens) && tokens[i+3].Value == "("
 		if !relationReference && !routineReference {
 			continue
 		}
@@ -400,7 +434,7 @@ func mysqlReferencedExternalSchema(tokens []lexer.Token, selectedSchema string) 
 
 func mysqlReferencedCatalogName(tokens []lexer.Token, names map[string]struct{}) (string, bool) {
 	for i, token := range tokens {
-		name, identifier := mysqlIdentifierValue(token)
+		name, identifier := mysqlMigrationIdentifierValue(token)
 		if !identifier {
 			continue
 		}
@@ -421,13 +455,30 @@ func mysqlRelationReference(tokens []lexer.Token, index int) bool {
 }
 
 func mysqlDirectRelationReference(tokens []lexer.Token, index int) bool {
-	if index > 0 && matchesAnyKeyword(tokens[index-1], "FROM", "JOIN", "INTO", "UPDATE", "TABLE", "USING") {
+	if index > 0 && matchesAnyKeyword(
+		tokens[index-1],
+		"FROM",
+		"JOIN",
+		"INTO",
+		"REFERENCES",
+		"TRUNCATE",
+		"UPDATE",
+		"TABLE",
+		"USING",
+	) {
 		return true
 	}
-	if index > 0 && tokens[index-1].Value == "," && mysqlCommaContinuesRelationList(tokens[:index-1]) {
-		return true
+	if index > 0 && tokens[index-1].Value == "," {
+		return mysqlCommaContinuesRelationList(tokens[:index-1]) ||
+			mysqlCommaContinuesDropObjectList(tokens[:index-1])
 	}
-	return mysqlFollowsDMLTargetPrefix(tokens[:index])
+	return mysqlFollowsDMLTargetPrefix(tokens[:index]) ||
+		mysqlFollowsIndexTargetPrefix(tokens[:index]) ||
+		mysqlFollowsRenameTargetPrefix(tokens[:index]) ||
+		mysqlFollowsAlterTableRenameTargetPrefix(tokens[:index]) ||
+		mysqlFollowsDropObjectPrefix(tokens[:index]) ||
+		mysqlFollowsPrivilegeTargetPrefix(tokens[:index]) ||
+		mysqlFollowsTableTargetPrefix(tokens[:index])
 }
 
 func mysqlCommaContinuesRelationList(tokens []lexer.Token) bool {
@@ -445,7 +496,7 @@ func mysqlCommaContinuesRelationList(tokens []lexer.Token) bool {
 		if depth != 0 || v.Type != lexer.TokenIdentifier {
 			continue
 		}
-		if matchesAnyKeyword(v, "FROM", "UPDATE", "USING") {
+		if matchesAnyKeyword(v, "FROM", "UPDATE", "USING", "TABLE") {
 			return true
 		}
 		if matchesAnyKeyword(v, "SELECT", "SET", "VALUES", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT") {
@@ -453,6 +504,69 @@ func mysqlCommaContinuesRelationList(tokens []lexer.Token) bool {
 		}
 	}
 	return false
+}
+
+func mysqlFollowsIndexTargetPrefix(tokens []lexer.Token) bool {
+	if len(tokens) < 3 || !tokens[len(tokens)-1].MatchIdentifierValue("ON") ||
+		!matchesAnyKeyword(tokens[0], "CREATE", "DROP") {
+		return false
+	}
+	return slices.ContainsFunc(tokens[1:len(tokens)-1], func(token lexer.Token) bool {
+		return token.MatchIdentifierValue("INDEX")
+	})
+}
+
+func mysqlFollowsRenameTargetPrefix(tokens []lexer.Token) bool {
+	return len(tokens) >= 3 && tokens[0].MatchIdentifierValue("RENAME") &&
+		tokens[1].MatchIdentifierValue("TABLE") && tokens[len(tokens)-1].MatchIdentifierValue("TO")
+}
+
+func mysqlFollowsAlterTableRenameTargetPrefix(tokens []lexer.Token) bool {
+	if len(tokens) < 4 || !tokens[0].MatchIdentifierValue("ALTER") ||
+		!tokens[1].MatchIdentifierValue("TABLE") ||
+		!matchesAnyKeyword(tokens[len(tokens)-1], "TO", "AS") {
+		return false
+	}
+	return slices.ContainsFunc(tokens[2:len(tokens)-1], func(token lexer.Token) bool {
+		return token.MatchIdentifierValue("RENAME")
+	})
+}
+
+func mysqlFollowsDropObjectPrefix(tokens []lexer.Token) bool {
+	return len(tokens) >= 2 && tokens[0].MatchIdentifierValue("DROP") &&
+		matchesAnyKeyword(tokens[1], "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION", "EVENT")
+}
+
+func mysqlCommaContinuesDropObjectList(tokens []lexer.Token) bool {
+	return len(tokens) >= 2 && tokens[0].MatchIdentifierValue("DROP") &&
+		matchesAnyKeyword(tokens[1], "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION", "EVENT")
+}
+
+func mysqlFollowsPrivilegeTargetPrefix(tokens []lexer.Token) bool {
+	if len(tokens) < 2 || !matchesAnyKeyword(tokens[0], "GRANT", "REVOKE") {
+		return false
+	}
+	if tokens[len(tokens)-1].MatchIdentifierValue("ON") {
+		return true
+	}
+	return len(tokens) >= 3 && tokens[len(tokens)-2].MatchIdentifierValue("ON") &&
+		matchesAnyKeyword(tokens[len(tokens)-1], "TABLE", "FUNCTION", "PROCEDURE")
+}
+
+func mysqlFollowsTableTargetPrefix(tokens []lexer.Token) bool {
+	if len(tokens) < 3 || !matchesAnyKeyword(tokens[0], "CREATE", "ALTER", "DROP") {
+		return false
+	}
+	tableIndex := slices.IndexFunc(tokens[1:], func(token lexer.Token) bool {
+		return token.MatchIdentifierValue("TABLE")
+	})
+	if tableIndex < 0 {
+		return false
+	}
+	tableIndex++
+	return !slices.ContainsFunc(tokens[tableIndex+1:], func(token lexer.Token) bool {
+		return !matchesAnyKeyword(token, "IF", "NOT", "EXISTS")
+	})
 }
 
 func mysqlFollowsDMLTargetPrefix(tokens []lexer.Token) bool {
@@ -468,7 +582,7 @@ func mysqlFollowsDMLTargetPrefix(tokens []lexer.Token) bool {
 
 func mysqlInvokedRoutine(tokens []lexer.Token, routines map[string]struct{}) (string, bool) {
 	for i, token := range tokens {
-		name, identifier := mysqlIdentifierValue(token)
+		name, identifier := mysqlMigrationIdentifierValue(token)
 		if !identifier || i+1 >= len(tokens) || tokens[i+1].Value != "(" {
 			continue
 		}
@@ -488,6 +602,17 @@ func mysqlIdentifierValue(token lexer.Token) (string, bool) {
 		return strings.ReplaceAll(value[1:len(value)-1], "``", "`"), true
 	}
 	return value, true
+}
+
+func mysqlMigrationIdentifierValue(token lexer.Token) (string, bool) {
+	if value, identifier := mysqlIdentifierValue(token); identifier {
+		return value, true
+	}
+	if token.Type != lexer.TokenString || len(token.Value) < 2 ||
+		token.Value[0] != '"' || token.Value[len(token.Value)-1] != '"' {
+		return "", false
+	}
+	return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), true
 }
 
 func missingMetadataColumns(present map[string]struct{}, required []string) []string {

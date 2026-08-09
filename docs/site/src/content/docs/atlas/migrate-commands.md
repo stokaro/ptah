@@ -179,13 +179,17 @@ An explicit non-InnoDB `CREATE`, `ALTER`, or storage-engine setting is refused
 before the migration runs. `CREATE TABLE ... LIKE` is also refused because the
 new table inherits an engine that the session default does not prove.
 
-The migration account must also hold `TRIGGER` at database or global scope.
-MySQL and MariaDB hide trigger metadata from an account without it while those
-triggers still fire during ordinary DML, so without the privilege `ptah-compat`
-cannot prove a target table has no hidden indirect writer and refuses `file`
-mode. A privilege on a database whose name contains an underscore escapes it,
-so a grant covering `ptah_test` is stored and printed as `ptah\_test`, and
-`ptah-compat` reads that database the way the server does.
+On MySQL, the migration account must hold `TRIGGER` at database or global scope
+so Ptah can see a complete trigger catalog. MariaDB exposes each trigger's
+identity and target table without `TRIGGER`, so it does not require that
+privilege for this catalog check. Ptah refuses MySQL `file` mode when it cannot
+prove complete visibility.
+
+The MySQL grant must be global or must name the selected database exactly in
+`SHOW GRANTS`. Ptah decodes escaped literal wildcard characters in the database
+name, but deliberately does not infer coverage from an unescaped `%` or `_`
+pattern because MySQL's `partial_revokes` setting changes that pattern's
+meaning.
 
 MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
 the InnoDB witness:
@@ -193,6 +197,8 @@ the InnoDB witness:
 - Transaction controls such as `BEGIN`, `COMMIT`, and `SET autocommit`.
 - Durable server-state operations such as `SET GLOBAL`, `SET PERSIST`, `RESET`,
   and `CREATE`, `ALTER`, or `DROP DATABASE` or `SCHEMA`.
+- `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
+  outside the InnoDB transaction.
 - `USE` and qualified references to another database. The connection URL must
   name the database whose engines Ptah validates.
 - Executable comments, nested or dynamic SQL, and table locks.
@@ -202,11 +208,9 @@ the InnoDB witness:
 - Statement interceptors, which can replace inspected SQL with another
   execution path.
 
-The first five entries are statement-level: the error names the statement number
-and its safety class. Custom migration functions and statement interceptors have
-no statement to point at, so those two are refused for the whole migration and
-the error names the direction instead. None of these errors repeats the SQL, so
-a credential inside a refused statement stays out of the message.
+Statement-level rejection errors identify the statement number and safety class
+without echoing the SQL. Migration-function and interceptor refusals identify
+the affected direction instead because their inner statements are opaque.
 
 MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
@@ -214,6 +218,14 @@ and replays safe settings such as `SET SESSION sql_mode` from a verified
 committed prefix before an automatic retry. A durable unknown-outcome witness
 blocks automatic retry until the database is inspected and the revision is
 repaired.
+
+Safety preflight treats double-quoted names in relation and routine positions
+as identifiers even before `SET SESSION sql_mode = 'ANSI_QUOTES'` executes.
+Use single quotes for string literals in those positions.
+
+The migration advisory lock serializes Ptah clients that use the same lock
+name. It cannot freeze DDL from a client that ignores that lock. Do not run
+out-of-band DDL from the safety preflight until the migration finishes.
 
 When a statement committed under `--tx-mode none`, or its outcome is unknown,
 `ptah-compat` preserves the revision row. `migrate status` reports that row as
