@@ -175,8 +175,8 @@ people and pipelines share a directory:
 - **Transaction mode** (`--tx-mode`): `file` (default) wraps each migration
   in its own transaction; `all` runs the selected batch in one; `none`
   disables wrapping. A migration may select `file` or `none` with a leading
-  `-- atlas:txmode <mode>` header followed by a blank line. Explicit file modes
-  conflict with global `all`.
+  `-- atlas:txmode <mode>` header. A blank line after that header is accepted
+  but not required. Explicit file modes conflict with global `all`.
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision
