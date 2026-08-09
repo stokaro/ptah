@@ -2,6 +2,199 @@
 
 This file gives coding agents repository-local guidance for working in Ptah.
 
+## What Ptah Is
+
+Ptah generates SQL DDL from annotated Go structs, compares a desired schema
+against a live database, and plans, generates and applies migrations. It ships
+two command-line binaries: the native `ptah`, and `ptah-compat`, a drop-in
+replacement for the Atlas CLI.
+
+`--dialect` accepts nine spellings: `postgres`, `mysql`, `mariadb`, `sqlite`,
+`clickhouse`, `cockroachdb`, `yugabytedb`, `sqlserver` and `spanner`. A dialect
+being accepted is not a promise that every construct renders on it. `SERIAL`,
+for one, is refused by name on ClickHouse, CockroachDB and Spanner rather than
+downgraded behind the author's back, which is the compatibility policy below
+applied to dialects. [`docs/capabilities.md`](docs/capabilities.md) explains how
+capability sets decide what a concrete target accepts.
+
+`dbschema.ConnectToDatabase` dispatches on the URL scheme to five drivers: `pgx`
+for the PostgreSQL family (`postgres`, `cockroachdb`, `yugabytedb`, `spanner`),
+`mysql` for MySQL and MariaDB, and one each for ClickHouse, SQLite and SQL
+Server. A scheme outside that set is refused rather than guessed at.
+
+## Repository Layout
+
+Ptah's public Go surface is a small part of the tree. Most implementation
+packages sit under `internal/` and cannot be imported from another module, so
+check where a package actually lives before writing an import path for it.
+
+Public packages:
+
+- `core/ast` — dialect-agnostic AST for SQL DDL.
+- `core/goschema` — Go source parsing and entity extraction; the annotation
+  parser is `core/goschema/parser.go`.
+- `core/renderer` — dialect-specific SQL generation from the AST. The entry
+  point is `core/renderer/renderer.go`; per-dialect code sits under
+  `core/renderer/internal/dialects/`.
+- `core/platform` — dialect names, normalization, and family predicates such as
+  `IsPostgresFamily`.
+- `dbschema` — connection management plus schema reading and writing against a
+  live database.
+- `migration/generator` — migration file generation from schema diffs.
+- `migration/migrator` — migration execution with rollback.
+- `migration/planner` — migration planning and SQL generation.
+- `migration/schemadiff` — schema comparison; the entry point is
+  `migration/schemadiff/schemadiff.go`.
+
+Internal packages worth knowing, none of them importable from another module:
+
+- `internal/lexer`, `internal/parser` and `internal/dialectlexer` — SQL
+  tokenizer and DDL parser.
+- `internal/astbuilder` — fluent builders for AST nodes.
+- `internal/convert/...` — conversions between schema representations.
+- `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
+  selects between.
+- `internal/envbool` — the one grammar for boolean `PTAH_*` variables.
+
+Command tree:
+
+- `cmd/ptah/main.go` — native binary entry point; `cmd/root/root.go` assembles
+  the tree.
+- `cmd/schema`, `cmd/db`, `cmd/migrations`, `cmd/oci`, `cmd/seed`, `cmd/sql`,
+  `cmd/viz`, `cmd/introspect`, `cmd/version` and `cmd/license` — the namespaces
+  the root command registers. Each leaf verb keeps its own package below them:
+  `cmd/generate` backs `ptah schema render`, `cmd/readdb` backs `ptah db read`,
+  `cmd/migrateup` backs `ptah migrations up`, and so on.
+- `cmd/atlas` — the Atlas-compatible tree, shipped by the separate
+  `cmd/ptah-compat` binary.
+- `cmd/integration-test` — the integration-suite runner binary.
+- `cmd/ptah-ls` — the language-server binary.
+
+Both command trees are adapters.
+[Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership)
+is authoritative for the boundary between them and for the dependency direction
+it implies.
+
+Entities to test against: `stubs/` and `examples/` hold annotated Go entities,
+and `integration/fixtures/entities/` holds the numbered fixture series the
+integration suite migrates through.
+
+## Schema Annotations
+
+Ptah reads structured comments from Go structs. The directive prefix is
+`//ptah:`:
+
+```go
+//ptah:schema:table name="products"
+type Product struct {
+	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	//ptah:schema:index name="idx_products_name" fields="name"
+	Name string
+}
+```
+
+An index annotation has to sit on a struct field, because the walker visits
+comments attached to fields. A `//ptah:schema:index` written at file level,
+after the closing brace and attached to no declaration, contributes no index and
+says nothing while doing it. To declare an index away from its column, give it a
+holder struct and name the table:
+
+```go
+type ProductIndexes struct {
+	//ptah:schema:index name="idx_products_name" fields="name" table="products"
+	_ int
+}
+```
+
+`fields=` is the modern spelling of the column list; `columns=` is accepted as a
+legacy synonym. Unknown attribute names are rejected at parse time, so a typo
+surfaces as an error rather than as a missing index.
+
+## The Native CLI Surface
+
+`ptah` groups its verbs into namespaces. There is no `ptah generate`,
+`ptah compare`, `ptah read-db`, `ptah drop-all` or `ptah migrate`: each answers
+`error: unknown command` and exits 2. Atlas spellings live only in
+`ptah-compat`.
+
+```bash
+# Render desired schema SQL from Go entities
+ptah schema render --root-dir ./models --dialect postgres
+
+# Compare a desired schema with a live database
+ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost/db
+
+# Read the schema of a live database
+ptah db read --db-url postgres://user:pass@localhost/db
+
+# Drop every schema object (DANGEROUS — try --dry-run first)
+ptah db drop-all --db-url postgres://user:pass@localhost/db --dry-run
+
+# Generate migration files from schema differences
+ptah migrations generate --root-dir ./models \
+  --db-url postgres://user:pass@localhost/db \
+  --migrations-dir ./migrations --name create_products
+
+# Apply, inspect, and roll back
+ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations \
+  --target 0 --confirm
+
+# Build metadata
+ptah version
+```
+
+`--dry-run` belongs to the commands that write, not to the CLI as a whole:
+`migrations up`, `migrations down`, `db drop-all` and `schema apply` carry it,
+while `db read` and `version` do not. Check `--help` rather than assuming.
+
+Most flags also read a `PTAH_`-prefixed environment variable, printed as
+`[env: PTAH_...]` on the flag's `--help` line; a flag without that marker, such
+as `db drop-all --auto-approve`, has no environment binding. The boolean
+variables are strict; see
+[Boolean `PTAH_*` environment variables are strict](#boolean-ptah_-environment-variables-are-strict).
+
+`ptah migrations generate` writes a reversible, timestamped pair per migration:
+`<unix-seconds>_<name>.up.sql` and `<unix-seconds>_<name>.down.sql`. Schema
+rendering is deterministic and dependency-aware: the renderer prints the table
+creation order it derived from foreign keys, and two runs over the same entities
+produce byte-identical output.
+
+## Building And Testing
+
+```bash
+# Build the native CLI
+go build -o bin/ptah ./cmd/ptah
+
+# Build the integration-suite runner
+go build -o bin/ptah-integration-test ./cmd/integration-test
+
+# Build every binary: ptah, ptah-ls, ptah-compat, ptah-integration-test
+make build
+
+# Unit tests
+go test ./... -count=1
+make test
+
+# List integration scenarios without running any of them
+bin/ptah-integration-test list
+```
+
+The integration suite runs under Docker Compose through `make integration-test`
+and its per-database variants such as `make integration-test-postgres`. Those
+targets bind fixed host ports and `make docker-clean` prunes system-wide Docker
+state, so look at what is already running before invoking either.
+
+Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
+script is committed without an executable bit, so `./test-ptah.sh` cannot be
+invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
+`MARIADB_TEST_DSN` unconditionally, which makes its `unit` mode depend on
+databases listening on those exact ports.
+
 ## Compatibility Policy
 
 Ptah aims to be a drop-in replacement for the Atlas CLI. That goal has two
@@ -484,6 +677,26 @@ such as "Package x contains x utilities" is not acceptable — the anti-slop
 rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
 
 ## Testing Standards
+
+### Where Tests Live
+
+- Unit tests are ordinary `*_test.go` files that need no server.
+  `go test ./... -count=1` runs the whole set.
+- Integration tests live in `integration/gonative/` behind the `integration`
+  build tag, which is why `go test ./...` does not compile them. Check the
+  constraint line when adding a file there: a misspelled `//go:build` is not a
+  build constraint at all, and the file lands in the ordinary unit run without
+  saying so.
+- Live-database tests elsewhere in the tree skip when their DSN environment
+  variable is unset. **A skip reads as a pass.** A test that needs a server is
+  not covered until it is named in a workflow with the environment that lets it
+  connect, and guarded so a rename cannot pass silently.
+  [`.github/workflows/go-integration-tests.yml`](.github/workflows/go-integration-tests.yml)
+  encodes that discipline with `-list ... | grep -q` guards; keep it.
+- The Docker suite in `cmd/integration-test` covers apply, rollback,
+  idempotency, parallel-execution smoke, partial-failure recovery, and schema
+  diff, and writes reports in stdout, text, JSON, or HTML form into the
+  directory `--output` names.
 
 ### Declarative Tests Only
 

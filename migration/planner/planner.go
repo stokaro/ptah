@@ -481,7 +481,14 @@ func GenerateSchemaDiffASTWithOptions(
 ) ([]ast.Node, error) {
 	caps := opts.CapabilitiesFor(dialect)
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	preparedGenerated := fromschema.AssignDefaultForeignKeyNames(generated, dialect)
+	// Both normalizations belong here rather than in the dialect planners: a
+	// column does not carry the schema of the user type it names, only the
+	// declaration does, and every dialect planner reads its columns out of this
+	// one value (stokaro/ptah#1138).
+	preparedGenerated := fromschema.QualifyDeclaredUserTypes(
+		fromschema.AssignDefaultForeignKeyNames(generated, dialect),
+		dialect,
+	)
 	if diff != nil &&
 		diff.IdentifierSemantics != nil &&
 		!diff.IdentifierSemantics.IsZero() &&

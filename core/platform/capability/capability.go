@@ -863,8 +863,9 @@ func ForDialect(dialect string) Capabilities {
 // measures that line, together with the preset it deserves — never as a side
 // effect of bumping a container tag.
 const (
-	// MySQL84 covers 8.4 LTS through the 9.x LTS line, which is the newest
-	// MySQL the integration matrix runs (mysql:9.7).
+	// MySQL84 covers 8.4 LTS through the 9.x LTS line. The integration matrix
+	// already runs mysql:26.7, which therefore resolves saturated: Ptah has no
+	// measured MySQL 26 capability line yet.
 	newestMeasuredMySQLMajor = 9
 	// MariaDB1011 covers 10.2 through the 11.x lines; the integration matrix
 	// runs mariadb:10.11.
