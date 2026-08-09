@@ -100,6 +100,12 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
 	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_events_tenant")
 	c.Assert(exists, qt.IsFalse)
+
+	// up/down/up: the pair has to be replayable, not merely runnable once.
+	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_events_tenant")
+	c.Assert(exists, qt.IsTrue)
+	c.Assert(valid, qt.IsTrue)
 }
 
 // TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
@@ -177,6 +183,14 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
 	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsFalse)
+
+	// up/down/up over a non-transactional pair: both halves have to be
+	// replayable, and a concurrent build that resumes onto its own leftovers is
+	// exactly where that stops being true.
+	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
+	c.Assert(exists, qt.IsTrue)
+	c.Assert(valid, qt.IsTrue)
 }
 
 // setupUnknownRowStatistics populates a table and then leaves PostgreSQL with
