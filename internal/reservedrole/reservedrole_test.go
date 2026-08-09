@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/reservedrole"
 )
 
@@ -207,29 +208,115 @@ func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
 	}
 }
 
-// TestValidateDeclaredOptInKeepsTheRefusalForEveryOtherValue mirrors how the
-// other PTAH_ opt-ins read themselves: unset, empty, false and unparsable all
-// keep the default.
-func TestValidateDeclaredOptInKeepsTheRefusalForEveryOtherValue(t *testing.T) {
+// TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse mirrors how the other
+// PTAH_ opt-ins read themselves: absence and a valid false keep the default.
+func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
-		name  string
-		value string
+		name string
+		env  func(testing.TB)
 	}{
-		{name: "empty", value: ""},
-		{name: "zero", value: "0"},
-		{name: "false", value: "false"},
-		{name: "unparsable", value: "yes please"},
+		{name: "unset", env: envbooltest.Unset(reservedrole.AllowEnvVar)},
+		{name: "zero", env: envbooltest.Set(reservedrole.AllowEnvVar, "0")},
+		{name: "false", env: envbooltest.Set(reservedrole.AllowEnvVar, "false")},
+		{name: "FALSE", env: envbooltest.Set(reservedrole.AllowEnvVar, "FALSE")},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			c.Setenv(reservedrole.AllowEnvVar, test.value)
+			test.env(c)
 
 			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+		})
+	}
+}
+
+// TestValidateDeclaredRefusesAMalformedOptIn is the state split stokaro/ptah#1334
+// introduced: a value that is neither absent nor a boolean is a configuration
+// error, and the refusal it produces is NOT the schema-diff refusal.
+//
+// The two are asserted apart on purpose. Before this, `yes please` produced the
+// reserved-role refusal, which reads to the operator as "the opt-in did not
+// apply to this role" rather than "the opt-in was never read".
+func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name        string
+		env         func(testing.TB)
+		wantMessage string
+	}{
+		{
+			name:        "unparsable",
+			env:         envbooltest.Set(reservedrole.AllowEnvVar, "yes please"),
+			wantMessage: `invalid boolean value "yes please" for PTAH_ALLOW_RESERVED_ROLE_NAMES`,
+		},
+		{
+			name:        "an exported empty value",
+			env:         envbooltest.Set(reservedrole.AllowEnvVar, ""),
+			wantMessage: `invalid boolean value "" for PTAH_ALLOW_RESERVED_ROLE_NAMES`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			test.env(c)
+
+			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.wantMessage)
+			c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrInvalidSchemaDiff)
+		})
+	}
+}
+
+// TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole is the
+// discriminating case for "validate before control-flow shortcuts".
+//
+// A desired schema declaring no reserved role at all is the whole of a healthy
+// pipeline, and it is the only shape most runs ever have. Resolving the variable
+// beside the refusal left a typo dormant on every one of them and surfaced it
+// only on the run the operator had already set the variable to change, which is
+// the run they would have noticed anyway.
+func TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
+
+	err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "app_user"}})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, `invalid boolean value "yes please" for PTAH_ALLOW_RESERVED_ROLE_NAMES`)
+}
+
+// TestValidateDeclaredLeavesAnUnrelatedDialectAlone is the other side of the
+// same boundary, and it is the half that keeps the rule from becoming a global
+// environment validation.
+//
+// A MySQL render declares nothing about PostgreSQL role names, so this subsystem
+// does not recognize the variable on that invocation and must not fail for it.
+func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
+
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+		{name: "sqlite", dialect: "sqlite"},
+		{name: "an empty dialect", dialect: ""},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := reservedrole.ValidateDeclared(test.dialect, []goschema.Role{{Name: "postgres"}})
+
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

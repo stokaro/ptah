@@ -1,9 +1,9 @@
 package atlasfilter
 
 import (
-	"os"
 	"slices"
-	"strconv"
+
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // AllowUnmatchedExcludeEnvVar restores the permissive treatment of an
@@ -22,12 +22,20 @@ import (
 // keeps working on this same surface rather than being told to rewrite.
 const AllowUnmatchedExcludeEnvVar = "PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE"
 
-// AllowUnmatchedExclude reports whether the opt-in variable is set to a true
-// boolean value. Unset, empty, false and unparsable values all keep the
-// default.
-func AllowUnmatchedExclude() bool {
-	allow, err := strconv.ParseBool(os.Getenv(AllowUnmatchedExcludeEnvVar))
-	return err == nil && allow
+// allowUnmatchedExclude is the declaration of the variable, made once, in the
+// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+var allowUnmatchedExclude = envbool.New(AllowUnmatchedExcludeEnvVar, false)
+
+// AllowUnmatchedExclude reports whether the opt-in restores the permissive
+// treatment of an --exclude selector that named no object.
+//
+// Unset keeps the refusal and a valid false spelling keeps it too; an empty or
+// unparsable value is a configuration error. A shared exclude list is exactly
+// the setting where the variable is exported once and read on every run, so a
+// typo in it must not read as "refusal still on" while the operator believes
+// they turned it off (stokaro/ptah#1334).
+func AllowUnmatchedExclude() (bool, error) {
+	return allowUnmatchedExclude.Resolve()
 }
 
 // UnmatchedAcrossStates intersects per-state [ExcludeReport]s into the

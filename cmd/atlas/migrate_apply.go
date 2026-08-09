@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
@@ -25,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -639,16 +639,18 @@ const applySkipChecksEnvVar = "PTAH_SKIP_CHECKS"
 // believes they are bypassed; the same choice is already made for the
 // PTAH_<FLAG> fallbacks on `migrate down`.
 func atlasApplySkipChecksFromEnv() (bool, error) {
-	value, ok := os.LookupEnv(applySkipChecksEnvVar)
-	if !ok || value == "" {
-		return false, nil
-	}
-	skip, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("invalid boolean value %q for %s", value, applySkipChecksEnvVar)
-	}
-	return skip, nil
+	return applySkipChecks.Resolve()
 }
+
+// applySkipChecks is the declaration of the variable, made once, on the verb
+// that owns it. See [go.5x5.cz/ptah/internal/envbool].
+//
+// It carries the one change stokaro/ptah#1334 makes to this reader: an
+// explicitly EMPTY value used to read as unset here, which folded a
+// `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
+// enforced" without a word. Absence still selects the default; a present value
+// has to parse.
+var applySkipChecks = envbool.New(applySkipChecksEnvVar, false)
 
 // resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
 //

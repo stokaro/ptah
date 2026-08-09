@@ -2535,6 +2535,19 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 // The union is re-sorted by name rather than concatenated, so the fuller
 // description is ordered exactly as the single unscoped query ordered it.
 func (r *Reader) readRolesInto(schema *types.DBSchema) error {
+	// Resolved FIRST, before either query, so a malformed value is refused on
+	// every role read and not only on the runs that would have widened the
+	// description. A server whose scoped and unscoped reads happen to agree
+	// leaves nothing out, and resolving below would let
+	// PTAH_POSTGRES_INSPECT_ALL_ROLES=maybe pass in silence there --
+	// the healthy half of a pipeline, and the only runs a CI environment file
+	// is read on until the schema grows the role that makes the two differ.
+	// See stokaro/ptah#1334.
+	describeAll, err := rolescope.DescribeAll()
+	if err != nil {
+		return err
+	}
+
 	described, err := r.readRoles()
 	if err != nil {
 		return fmt.Errorf("failed to read roles: %w", err)
@@ -2549,7 +2562,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
 	}
 
-	if rolescope.DescribeAll() {
+	if describeAll {
 		everyManagedRole := slices.Concat(described, outOfScope)
 		slices.SortFunc(everyManagedRole, func(a, b types.DBRole) int {
 			return strings.Compare(a.Name, b.Name)
