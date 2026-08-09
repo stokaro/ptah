@@ -72,18 +72,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 177 capabilities below:
+Across the 178 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 107 |
-| Ptah supports it with a stated limitation | 47 |
-| Ptah does not implement it | 23 |
+| Ptah supports it with a stated limitation | 49 |
+| Ptah does not implement it | 22 |
 | Ptah and Atlas CE both support it | 33 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
-| Atlas CE has it and Ptah does not, or only in part | 23 |
-| An Atlas column is ❔ — not established by this page's evidence | 8 |
+| Atlas CE has it and Ptah does not, or only in part | 24 |
+| An Atlas column is ❔ — not established by this page's evidence | 9 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -112,9 +112,10 @@ seven of them as open capabilities regardless.
 | Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order as an ordered script: mixed formats, an empty directory, a subdirectory and a redeclaration refuse. |
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
-| HCL foreign_key deferrable | ❌ | ❌ | ❌ | Errors: unsupported foreign_key attribute "deferrable". DEFERRABLE is absent from the whole Ptah IR, so YAML and Go annotations lack it too. The community binary plans no DEFERRABLE either. |
+| HCL foreign_key deferrable | 🟡 | ❌ | ❌ | `ptah-compat` accepts and drops it at exit 0; native `ptah` exits 2 naming the attribute. DEFERRABLE is absent from the Ptah IR, so YAML and Go annotations lack it too; the binary plans none either. |
 | HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. yamldecode, yamlencode, uuid and print stay refused where it evaluates. |
-| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. Still rejected by name (`ptah-compat` exit 1, native `ptah` exit 2): top-level "lock"/"atlas"; table block "dynamic". The community binary ignores both. |
+| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `ptah-compat` drops top-level "lock"/"atlas" and a table "dynamic" at exit 0; a body naming `dynamic.value` exits 1 on both. Native `ptah` exits 2. |
+| HCL names outside the parsed subset | 🟡 | ✅ | ❔ | `ptah-compat` drops an unmodeled top-level name whose body names a declared schema: `procedure { schema = schema.main }` exits 0, `schema.nope` exits 1 on both binaries. Native `ptah` refuses by name. |
 | HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The binary drops row_security; ptah-compat plans it. |
 | HCL top-level blocks Ptah parses | ✅ | 🟡 | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum. |
 | HCL variable blocks and var.* references | ✅ | ✅ | ✅ | `variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable "x"` — the community binary's own text. |
