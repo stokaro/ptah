@@ -95,7 +95,7 @@ func TestAtlasRebaseBumpsOntoASecondThatExists(t *testing.T) {
 //
 // Rebase took migrator.GetNextMigrationVersion() -- a Unix epoch -- for every
 // layout, so moving a migration to the end of an Atlas directory whose versions
-// were all small wrote a ten-digit 1786262044_init.sql beside fourteen-digit
+// were all small wrote a ten-digit 1786268355_init.sql beside fourteen-digit
 // neighbors. `migrate new`, `migrate diff` and `migrate checkpoint` all stamp
 // the UTC yyyyMMddHHmmss second into those directories.
 //

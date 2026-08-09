@@ -1289,13 +1289,15 @@ the next minute rather than on a sixtieth one.
 
 `migrate rebase` was the last of those four to stamp that shape. It took a Unix
 epoch for every layout, so moving a migration to the end of an Atlas directory
-numbered `1_init.sql`, `2_second.sql` wrote a ten-digit `1786262044_init.sql`
+numbered `1_init.sql`, `2_second.sql` wrote a ten-digit `1786268355_init.sql`
 beside fourteen-digit neighbors, and beside a `29991231235959` migration it wrote
 `29991231235960` and then `29991231235961`. It now reads the same UTC clock the
 other three do for an Atlas directory, and keeps the epoch for the paired ptah
 layout described next, whose names cannot carry a fourteen-digit version at all.
-The community binary does not register `migrate rebase`, so there is no measured
-behavior to match here — the same position `migrate checkpoint` is in.
+`atlas migrate rebase --help` on the community binary prints `'atlas migrate
+rebase' is not supported by the community version.` and exits 0, so there is no
+measured stamping behavior to match here — the same position `migrate
+checkpoint` is in.
 
 Native `ptah migrations create --dir-format ptah` keeps the paired layout's own
 rule, the clock or newest + 1, whichever is greater: nothing outside Ptah reads

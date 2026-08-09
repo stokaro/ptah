@@ -133,7 +133,7 @@ var rebaseNow = func() time.Time { return time.Now().UTC() }
 // `migrate new`, `migrate diff` and `migrate checkpoint` already stamp into
 // those directories. Rebase used to take the Unix epoch there instead, so
 // moving a migration to the end of a directory whose versions were all below
-// the epoch wrote a ten-digit `1786262044_init.sql` next to fourteen-digit
+// the epoch wrote a ten-digit `1786268355_init.sql` next to fourteen-digit
 // neighbors -- one directory, two version shapes (stokaro/ptah#938).
 //
 // The paired ptah layout keeps the epoch. Its names render the version with
