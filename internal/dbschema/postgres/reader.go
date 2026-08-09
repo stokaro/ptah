@@ -1076,11 +1076,11 @@ type postgresIndexRow struct {
 // model. It does not set Schema, which needs the reader's output-schema policy.
 func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 	index := types.DBIndex{
-		Name:          row.indexName,
-		TableName:     row.tableName,
-		Definition:    row.indexDef,
-		Condition:     row.predicate,
-		Comment:       row.comment,
+		Name:              row.indexName,
+		TableName:         row.tableName,
+		Definition:        row.indexDef,
+		Condition:         row.predicate,
+		Comment:           row.comment,
 		IsUnique:          row.isUnique,
 		IsPrimary:         row.isPrimary,
 		Method:            row.method,

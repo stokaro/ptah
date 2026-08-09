@@ -97,6 +97,9 @@ type pgIndexCatalog struct {
 	predicate    string
 	isPrimary    bool
 	isUnique     bool
+	// partitionAttached is whether pg_inherits records this index relation as
+	// attached to an index on a partitioned parent.
+	partitionAttached bool
 }
 
 // pgIndexKeyOpclass is one key's operator class as three separate catalog
@@ -380,6 +383,19 @@ func extensionAccessMethodCatalog() pgIndexCatalog {
 	return catalog
 }
 
+// partitionAttachedCatalog is the copy PostgreSQL creates on a partition when
+// an index is created on its partitioned parent: an ordinary relkind 'i' index
+// that pg_inherits records as attached to the parent's index.
+func partitionAttachedCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.tableName = "events_2026"
+	catalog.indexName = "events_2026_tenant_idx"
+	catalog.indexDef = "CREATE INDEX events_2026_tenant_idx ON public.events_2026 USING btree (tenant)"
+	catalog.keyTexts = `["tenant"]`
+	catalog.partitionAttached = true
+	return catalog
+}
+
 // sortOrderCatalog builds a one-key fixture with the given pg_index.indoption
 // bitmask. The four values were read off PostgreSQL 17.10: (a DESC) reports 3,
 // (c DESC NULLS LAST) reports 1, (b NULLS FIRST) reports 2, plain ascending
@@ -435,10 +451,32 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 		columns = append(columns, answer.alias)
 		values = append(values, value)
 	}
-	columns = append(columns, "predicate", "indisprimary", "indisunique")
-	values = append(values, catalog.predicate, catalog.isPrimary, catalog.isUnique)
+	attached, err := answerPartitionAttached(query, catalog.partitionAttached)
+	if err != nil {
+		return dbtest.QueryResult{}, err
+	}
+	columns = append(columns, "predicate", "indisprimary", "indisunique", "partition_attached")
+	values = append(values, catalog.predicate, catalog.isPrimary, catalog.isUnique, attached)
 
 	return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{values}}, nil
+}
+
+// answerPartitionAttached answers the partition_attached projection the way a
+// server would: with the catalog's answer when the projection reads
+// pg_inherits, and with false when it reads something else.
+//
+// pg_inherits is where the attachment of a partition's index copy to its parent
+// index is recorded, and it is the only place. A projection reading relkind
+// instead is not a weaker version of this question, it is a different one --
+// relkind marks the parent, which is the one index of the pair a DROP INDEX may
+// name -- so a mutant that swaps them gets the answer a server would give it,
+// false, rather than the catalog's.
+func answerPartitionAttached(query string, attached bool) (driver.Value, error) {
+	projection, ok := selectListItem(query, "partition_attached", "FROM pg_index")
+	if !ok {
+		return nil, fmt.Errorf("query has no projection aliased %q:\n%s", "partition_attached", query)
+	}
+	return attached && strings.Contains(projection, "pg_inherits"), nil
 }
 
 // answerProjection returns what a PostgreSQL server would hand back for the
@@ -973,6 +1011,23 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
 					{Name: "name"},
 				})
+			},
+		},
+		{
+			// The attachment of a partition's index copy to its parent index
+			// lives in pg_inherits and nowhere else, so a projection that reads
+			// anything else answers false here exactly as a server would.
+			name:    "a partition's copy of a parent index is reported as attached",
+			catalog: partitionAttachedCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.PartitionAttached, qt.IsTrue)
+			},
+		},
+		{
+			name:    "an ordinary index is not reported as attached",
+			catalog: plainCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.PartitionAttached, qt.IsFalse)
 			},
 		},
 	}

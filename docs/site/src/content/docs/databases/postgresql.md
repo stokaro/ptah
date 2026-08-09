@@ -370,9 +370,9 @@ Creating an index on a partitioned parent makes PostgreSQL create one copy of it
 on every partition, under a name the server chooses (`events_2026_tenant_idx`).
 Those copies are attached to the parent index and cannot be dropped on their own:
 
-```
+```sql
 DROP INDEX "events_2026_tenant_idx";
-ERROR:  cannot drop index events_2026_tenant_idx because index idx_events_tenant requires it
+-- ERROR:  cannot drop index events_2026_tenant_idx because index idx_events_tenant requires it
 ```
 
 A desired state written against the parent never names them, so a comparison
