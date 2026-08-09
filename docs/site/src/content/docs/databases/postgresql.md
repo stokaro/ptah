@@ -198,6 +198,13 @@ declares a policy without declaring enablement is enabled with the table,
 because `CREATE POLICY` on a table whose row-level security is off protects
 nothing.
 
+Which table a policy belongs to is decided under the target's identifier rules
+rather than by spelling, so a policy declared on `orders` and a table created
+as `public.orders` are one table and the enablement is emitted once. Matching
+them as plain strings left the `CREATE POLICY` in the plan without its
+`ENABLE`, and the migration reported success while the policy sat inert on an
+unprotected table.
+
 A policy name is scoped to its table rather than to the schema, which is what
 PostgreSQL itself enforces: `CREATE POLICY tenant_isolation` succeeds on two
 tables in one schema and is refused only when repeated on the same table. Ptah
