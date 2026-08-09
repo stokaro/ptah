@@ -25,7 +25,7 @@
 //
 // # The rule
 //
-// Three tiers, applied in order, and none of them guesses:
+// Three tiers, applied in order:
 //
 //  1. An exact string match wins, so a schema that spells the name the way the
 //     diff does is never re-interpreted.
@@ -35,14 +35,34 @@
 //     `dbo.orders` one object on SQL Server, and `Users` and `users` one table on
 //     SQLite.
 //  3. Otherwise the two are compared on their unqualified names alone, folded by
-//     the same rule. This tier is what resolves a name across two DIFFERENT
-//     schemas, which is the MySQL and MariaDB case: the reader reports
-//     `mydb.v` for a view the declaration calls `v`, and no static default
-//     schema can be known for a dialect whose schema IS its database.
+//     the same rule -- and ONLY where at least one side leaves the schema
+//     unstated. Tier 3 supplies a schema nobody wrote down; it never overrules
+//     one that is written down.
 //
 // A tier that finds two candidates resolves to nothing. Two objects of the same
 // name in different schemas name no one object, and choosing between them would
 // be a coin toss on which one a migration destroys.
+//
+// # Why tier 3 is gated on an unstated schema
+//
+// Tier 3 exists because a bare name carries no schema at all and a static
+// default cannot always supply one. On MySQL and MariaDB the schema IS the
+// database, so [identifier.ForDialect] leaves DefaultSchema empty and tier 2
+// can never join the `mydb.v` a reader reports to the `v` a declaration spells.
+// PostgreSQL has the same shape whenever the migration targets a schema other
+// than `public`: the reader qualifies what the declaration left bare.
+//
+// Comparing unqualified names with no gate answers a different and much worse
+// question. Measured through [go.5x5.cz/ptah/migration/planner.GenerateSchemaDiffSQLStatements]
+// on PostgreSQL 17.10, a schema declaring exactly one `users` table -- in
+// `reporting` -- and a diff naming `app.users` with one added column produced
+// `ALTER TABLE "app"."users" ADD COLUMN "note" TEXT NOT NULL`, built from
+// `reporting.users`'s field list. It exits 0 and information_schema.columns
+// afterwards shows the column on `app.users`: a statement that applies cleanly
+// to a relation the desired schema never declared. Both sides named a schema
+// there, and they named different ones, so tier 3 now declines and the planner
+// emits nothing rather than writing to the wrong object. Refusing to resolve
+// costs a statement; guessing costs the wrong relation.
 package objectlookup
 
 import (
@@ -61,10 +81,28 @@ func Find[T any](items []T, name string, semantics identifier.Semantics, nameOf 
 			return &items[i]
 		}
 	}
-	if match := unique(items, name, semantics.QualifiedTableIdentityKey, nameOf); match != nil {
+	if match := unique(items, nameOf, func(candidate string) bool {
+		return sameIdentity(name, candidate, semantics)
+	}); match != nil {
 		return match
 	}
-	return unique(items, name, unqualifiedKey(semantics), nameOf)
+	return unique(items, nameOf, func(candidate string) bool {
+		return sameUnqualified(name, candidate, semantics)
+	})
+}
+
+// Same reports whether two names refer to the same object, under the same three
+// tiers [Find] applies.
+//
+// It is the form for the sites that hold one reference on each side rather than
+// a collection to search -- a constraint's owning table against the table a
+// TableDiff names, for instance. Those two come from different sources and do
+// not have to spell the schema the same way, and `==` there answers "different
+// object" for one object.
+func Same(reference, candidate string, semantics identifier.Semantics) bool {
+	return reference == candidate ||
+		sameIdentity(reference, candidate, semantics) ||
+		sameUnqualified(reference, candidate, semantics)
 }
 
 // Contains reports whether names holds the object name refers to, under the same
@@ -131,13 +169,12 @@ func Trigger(
 	return Find(named, tableName, semantics, func(trigger goschema.Trigger) string { return trigger.Table })
 }
 
-// unique returns the only item whose key matches name's, or nil when none or
-// more than one does.
-func unique[T any](items []T, name string, key func(string) string, nameOf func(T) string) *T {
-	wanted := key(name)
+// unique returns the only item the tier accepts, or nil when none or more than
+// one does.
+func unique[T any](items []T, nameOf func(T) string, accepts func(string) bool) *T {
 	match := -1
 	for i := range items {
-		if key(nameOf(items[i])) != wanted {
+		if !accepts(nameOf(items[i])) {
 			continue
 		}
 		if match >= 0 {
@@ -151,19 +188,30 @@ func unique[T any](items []T, name string, key func(string) string, nameOf func(
 	return &items[match]
 }
 
-// unqualifiedKey reads the object half of a possibly-qualified name and folds it
-// by the dialect's rule, discarding the schema.
+// sameIdentity is tier 2: both names resolved to a schema and folded by the
+// dialect's comparison rule.
+func sameIdentity(reference, candidate string, semantics identifier.Semantics) bool {
+	return semantics.QualifiedTableIdentityKey(reference) ==
+		semantics.QualifiedTableIdentityKey(candidate)
+}
+
+// sameUnqualified is tier 3: the object halves alone, folded by the same rule,
+// and only where at least one side left the schema unstated.
 //
 // Parsing is delegated to tableref so an object whose own name contains a dot --
 // quoted as `"tenant.data"` -- is not mistaken for a qualified one. A name
-// tableref cannot parse keeps its spelling rather than resolving to something
-// else.
-func unqualifiedKey(semantics identifier.Semantics) func(string) string {
-	return func(value string) string {
-		ref, ok := tableref.Parse(value)
-		if !ok {
-			return value
-		}
-		return semantics.TableIdentityKey(ref.Name)
+// tableref cannot parse states nothing this tier can read, so it is declined
+// rather than resolved to something else; tier 1 has already accepted it against
+// an identical spelling.
+func sameUnqualified(reference, candidate string, semantics identifier.Semantics) bool {
+	referenceRef, referenceOK := tableref.Parse(reference)
+	candidateRef, candidateOK := tableref.Parse(candidate)
+	if !referenceOK || !candidateOK {
+		return false
 	}
+	if referenceRef.Qualified && candidateRef.Qualified {
+		return false
+	}
+	return semantics.TableIdentityKey(referenceRef.Name) ==
+		semantics.TableIdentityKey(candidateRef.Name)
 }

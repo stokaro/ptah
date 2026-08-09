@@ -93,17 +93,21 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	return result, nil
 }
 
+// addNewTables emits CREATE TABLE for every declared table the diff creates.
+//
+// Membership is asked by identity rather than as raw map lookup, for the same
+// reason the SQLite planner's addTables does: `diff.TablesAdded` carries the
+// comparator's spelling while `table.QualifiedName()` carries the declaration's,
+// and a table whose two sides disagree got no CREATE TABLE at all -- no
+// statement, no comment, and a plan that exits 0 having created nothing.
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	added := make(map[string]struct{}, len(diff.TablesAdded))
-	for _, name := range diff.TablesAdded {
-		added[name] = struct{}{}
-	}
-	if len(added) == 0 {
+	if len(diff.TablesAdded) == 0 {
 		return result
 	}
+	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 
 	for _, table := range generated.Tables {
-		if _, ok := added[table.QualifiedName()]; !ok {
+		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
 			continue
 		}
 		// FromTable applies platform.clickhouse.* overrides into the AST

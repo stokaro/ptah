@@ -347,7 +347,7 @@ func (p *Planner) modifyExistingColumns(
 	for _, colDiff := range tableDiff.ColumnsModified {
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
-			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName) {
+			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
 			colDiff.Changes = maps.Clone(colDiff.Changes)
 			delete(colDiff.Changes, "primary_key")
 			suppressColumnPrimary = true
@@ -469,16 +469,35 @@ func (p *Planner) validateColumnModification(tableName string, colDiff types.Col
 	}
 }
 
-func primaryKeyColumnChangeOwnedByTableConstraint(diff *types.SchemaDiff, tableName, columnName string) bool {
+// primaryKeyColumnChangeOwnedByTableConstraint reports whether a table-level
+// PRIMARY KEY entry in the diff already owns the key this column change would
+// otherwise spell inline.
+//
+// The two table names come from different sources and do not have to agree
+// letter for letter: `ConstraintAdditionInfo.TableName` follows the constraint
+// declaration, while `TableDiff.TableName` follows `genTable.QualifiedName()`.
+// Comparing them with `==` answered "not owned" for a table declared `app.orders`
+// whose constraint names it bare, and the planner then emitted BOTH
+// `ALTER TABLE app.orders MODIFY COLUMN id INT PRIMARY KEY` and
+// `ALTER TABLE orders ADD PRIMARY KEY (id)`. Measured on MySQL 9.7.1, the second
+// fails with `ERROR 1068 (42000): Multiple primary key defined` -- the migration
+// aborts halfway through. So the question is asked by identity, exactly as the
+// column-definition lookup a few lines above already asks it.
+func primaryKeyColumnChangeOwnedByTableConstraint(
+	diff *types.SchemaDiff,
+	tableName, columnName string,
+	semantics identifier.Semantics,
+) bool {
 	for _, info := range diff.ConstraintsAddedWithTables {
 		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
-			info.TableName == tableName &&
+			objectlookup.Same(tableName, info.TableName, semantics) &&
 			slices.Contains(info.Columns, columnName) {
 			return true
 		}
 	}
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		if strings.EqualFold(info.Type, "PRIMARY KEY") && info.TableName == tableName {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
+			objectlookup.Same(tableName, info.TableName, semantics) {
 			return true
 		}
 	}
