@@ -243,21 +243,22 @@ jobs:
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          go test -tags=integration ./migration/generator -list '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' | grep -q '^TestReverseViewLikeObjects_DownRoundTrip_Integration$'
-          go test -v -count=1 -tags=integration ./migration/generator -run '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' -timeout 5m
+          sh scripts/require-tests-ran.sh --package ./migration/generator --tags integration \
+            --pattern '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' --timeout 5m
 
       # The rollback of a migration that DROPS a table has to re-create it, and
       # the version this gate was added for rendered a perfectly good CREATE
       # TABLE and was then refused at `ALTER TABLE ... ADD PRIMARY KEY` because
       # the re-created table already carried one. Only a server can say that.
-      # The -list line is the same guard the step above uses: a test that stopped
-      # existing must fail here rather than be silently not run.
+      # require-tests-ran.sh is the same guard the step above uses: a test that
+      # stopped existing, or that skipped itself, must fail here rather than be
+      # silently not run.
       - name: Run dropped-table rollback round trip
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          go test -tags=integration ./migration/generator -list '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' | grep -q '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$'
-          go test -v -count=1 -tags=integration ./migration/generator -run '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' -timeout 5m
+          sh scripts/require-tests-ran.sh --package ./migration/generator --tags integration \
+            --pattern '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' --timeout 5m
 
       - name: Run database-realm cleanup and replay tests
         env:
@@ -289,15 +290,14 @@ jobs:
           go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
 
       # These two skip themselves without a live PostgreSQL, and a skip reads as
-      # a pass, so the log is grepped for the PASS lines afterwards.
+      # a pass, which is the property require-tests-ran.sh asserts directly.
       - name: Run compatibility apply table-spelling tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          go test -v -count=1 ./cmd/atlas -run '^TestSchemaApplyRLS(ReferenceToUndeclaredRelationRefused|DeclaredRelationAccepted)LivePostgres$' -timeout 5m > rls-spelling.log || { cat rls-spelling.log; exit 1; }
-          cat rls-spelling.log
-          grep -q -- '--- PASS: TestSchemaApplyRLSReferenceToUndeclaredRelationRefusedLivePostgres' rls-spelling.log
-          grep -q -- '--- PASS: TestSchemaApplyRLSDeclaredRelationAcceptedLivePostgres' rls-spelling.log
+          sh scripts/require-tests-ran.sh --package ./cmd/atlas \
+            --pattern '^TestSchemaApplyRLS(ReferenceToUndeclaredRelationRefused|DeclaredRelationAccepted)LivePostgres$' \
+            --timeout 5m
 
       - name: Build integration test binary
         run: |
@@ -324,6 +324,13 @@ jobs:
         run: |
           go test -v -count=1 ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration' -timeout 3m
 
+      # Every test in the family has to RUN here, not merely be registered, and
+      # the set is derived rather than listed: --declared-in makes the file the
+      # family lives in the authority on its membership, so a test added there
+      # is covered the day it lands and one renamed out of the family fails.
+      # 5m rather than 3m is headroom for a shared runner, not a measurement:
+      # the family takes about 21s of package time against MySQL 9.7.1 and
+      # MariaDB 10.11.18.
       - name: Run MySQL-family rolled-back progress tests
         env:
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
@@ -331,24 +338,10 @@ jobs:
           MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix$' | grep -q '^TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix$' | grep -q '^TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries$' | grep -q '^TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsTransactionControl$' | grep -q '^TestRolledBackProgress_MySQLRejectsTransactionControl$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsTransactionControl$' | grep -q '^TestRolledBackProgress_MariaDBRejectsTransactionControl$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$' | grep -q '^TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$' | grep -q '^TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$' | grep -q '^TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$' | grep -q '^TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted$' | grep -q '^TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset$' | grep -q '^TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM$' | grep -q '^TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode$' | grep -q '^TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange$' | grep -q '^TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange$'
-          go test ./migration/migrator -list '^TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode$' | grep -q '^TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode$'
-          go test -v -count=1 ./migration/migrator -run '^TestRolledBackProgress_' -timeout 5m
+          sh scripts/require-tests-ran.sh --package ./migration/migrator \
+            --pattern '^TestRolledBackProgress_' \
+            --declared-in migration/migrator/rolled_back_progress_integration_test.go \
+            --timeout 5m
 
       - name: Run no-transaction and shadow generator integration tests
         env:
@@ -356,17 +349,15 @@ jobs:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
         run: |
-          go test ./migration/migrator -list '^TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration$' | grep -q '^TestNoTransactionDirective_PostgresEnumValueCanBeUsedInSameMigration$'
-          go test ./migration/migrator -list '^TestNoTransactionCheckpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver$' | grep -q '^TestNoTransactionCheckpoint_ClickHousePtahRevisionIsVisibleToObserver$'
-          go test ./migration/migrator -list '^TestNoTransactionCheckpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver$' | grep -q '^TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver$'
-          go test ./migration/migrator -list '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$' | grep -q '^TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation$'
-          go test ./migration/generator -list '^TestGenerateMigrationShadowVerificationWithRealDB$' | grep -q '^TestGenerateMigrationShadowVerificationWithRealDB$'
-          go test ./migration/generator -list '^TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres$' | grep -q '^TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres$'
-          go test -v -count=1 ./migration/migrator -run '^TestNoTransaction(Directive_PostgresEnumValueCanBeUsedInSameMigration|Checkpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver|Repair_ClickHouseAtlasRevisionAfterManualReconciliation)$' -timeout 3m
-          go test -v -count=1 ./migration/generator -run '^TestGenerateMigration(ShadowVerificationWithRealDB|_ConcurrentIndexApplyAndRollbackWithRealPostgres)$' -timeout 5m
-          go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$' | grep -q '^TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration$'
-          go test ./cmd/migrateup -list '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$' | grep -q '^TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable$'
-          go test -v -count=1 ./cmd/migrateup -run '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' -timeout 3m
+          sh scripts/require-tests-ran.sh --package ./migration/migrator \
+            --pattern '^TestNoTransaction(Directive_PostgresEnumValueCanBeUsedInSameMigration|Checkpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver|Repair_ClickHouseAtlasRevisionAfterManualReconciliation)$' \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./migration/generator \
+            --pattern '^TestGenerateMigration(ShadowVerificationWithRealDB|_ConcurrentIndexApplyAndRollbackWithRealPostgres)$' \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./cmd/migrateup \
+            --pattern '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' \
+            --timeout 3m
 
       - name: Run migrate-baseline integration tests
         env:
