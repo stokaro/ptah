@@ -339,6 +339,25 @@ func (r *renderer) documentResolvesTableRef(schema, name string) bool {
 
 // schemaFor returns the schema name to write for an object, which is the one it
 // carries or, failing that, the schema the whole read belongs to.
+//
+// Every schema-scoped block an inspected render writes goes through it, and the
+// reason is that the alternative to the attribute is not "no schema", it is
+// "whichever schema replays it". A PostgreSQL catalog blanks the schema on
+// exactly the objects the read's own search_path made implicit, so an object of
+// the schema being inspected arrives with an empty Schema; a block written
+// without the attribute is then created wherever the replaying connection's
+// search_path points.
+//
+// This renderer writes nine schema-scoped block types -- sequence, domain,
+// composite, range, enum, table, function, view, materialized. Measured on
+// PostgreSQL 17.10 with one schema `wf1138s` holding one object of each,
+// inspected and planned back into a fresh database, seven of the nine landed in
+// `public`; only `enum` and `table` were already reaching this helper. See
+// stokaro/ptah#1138, and stokaro/ptah#1276 for the two that were not.
+//
+// An empty default is the parse-and-re-render contract and is deliberately
+// preserved: those callers got their IR from HCL, where an absent schema is
+// what the author wrote, and synthesizing one would invent a declaration.
 func (r *renderer) schemaFor(schema string) string {
 	if strings.TrimSpace(schema) != "" {
 		return schema

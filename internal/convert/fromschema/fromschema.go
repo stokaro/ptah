@@ -2062,7 +2062,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// Normalize once so every conversion path consumes the same names.
 	assigned := AssignDefaultForeignKeyNames(&database, targetPlatform)
-	database = *assigned
+	database = *QualifyDeclaredUserTypes(assigned, targetPlatform)
 	allFields := database.Fields
 
 	// 1. Add schema definitions first (they may be referenced by tables)
