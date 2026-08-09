@@ -329,7 +329,7 @@ jobs:
       # family lives in the authority on its membership, so a test added there
       # is covered the day it lands and one renamed out of the family fails.
       # 5m rather than 3m is headroom for a shared runner, not a measurement:
-      # the family takes about 21s of package time against MySQL 9.7.1 and
+      # the family takes about one minute of package time against MySQL 9.7.1 and
       # MariaDB 10.11.18.
       - name: Run MySQL-family rolled-back progress tests
         env:

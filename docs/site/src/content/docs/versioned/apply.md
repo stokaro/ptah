@@ -389,13 +389,26 @@ skips is only ever the prefix that really survived:
   rolls back retries from the first statement, while a durable DDL/DML prefix
   resumes at the first statement not witnessed as complete. Ptah pins and then
   discards the physical session; a retry replays safe session settings from the
-  verified prefix before it continues. If a witness committed before a failing
-  statement whose lack of side effects cannot be proven, the row remains marked
-  unknown and automatic retry stops for manual inspection. MySQL and MariaDB do
-  not support `all`.
+  verified prefix before it continues. Temporary tables remain available:
+  their DDL does not make permanent InnoDB work durable by itself, and
+  discarding the session prevents temporary state from leaking into a retry. If
+  a later implicit commit makes a prefix containing a temporary object durable,
+  automatic resume refuses because that object cannot be reconstructed safely.
+  The configured migration metadata table name is reserved. Before reading or
+  writing revision metadata, Ptah refuses and discards a pinned session that
+  already contains a same-named temporary table. It also rejects statements
+  that directly reference the metadata relation, including through a
+  schema-qualified name.
+  If a witness committed before a failing statement whose lack of side effects
+  cannot be proven, the row remains marked unknown and automatic retry stops for
+  manual inspection. MySQL and MariaDB do not support `all`.
 
 Recorded progress therefore excludes transactional work that a rollback undid,
 while non-transactional mode retains work that no rollback could undo.
+On MySQL and MariaDB, non-transactional mode keeps revision bookkeeping on a
+separate checked metadata session while the migration body runs on its own
+discarded session, so body-local temporary objects cannot shadow the metadata
+table.
 
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, or its deadline expires while an autocommit statement is

@@ -52,6 +52,15 @@ func (m *Migrator) validateTransactionalProgressSQL(
 	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
 	for i, statement := range statements {
 		tokens := significantSQLTokens(statement, m.connectionDialect())
+		if m.mysqlReferencesMigrationMetadata(tokens) {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because it references Ptah's migration "+
+					"metadata table %s, which is reserved for transaction-witness bookkeeping; choose another relation name",
+				migration.Version,
+				i+1,
+				m.qualifiedMigrationsTable(),
+			)
+		}
 		if mysqlExecutableComment(tokens) {
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because MySQL-family executable comments "+
@@ -361,6 +370,22 @@ func mysqlCreateTableLike(tokens []lexer.Token) bool {
 			continue
 		}
 		if depth == 0 && token.MatchIdentifierValue("LIKE") {
+			return true
+		}
+	}
+	return false
+}
+
+func mysqlCreatesTemporaryTable(tokens []lexer.Token) bool {
+	if len(tokens) < 3 || !tokens[0].MatchIdentifierValue("CREATE") {
+		return false
+	}
+	tableKeyword := mysqlTableKeyword(tokens)
+	if tableKeyword < 0 {
+		return false
+	}
+	for _, token := range tokens[1:tableKeyword] {
+		if token.MatchIdentifierValue("TEMPORARY") {
 			return true
 		}
 	}

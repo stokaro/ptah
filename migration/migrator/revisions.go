@@ -778,33 +778,45 @@ checksum = VALUES(checksum)`
 // exactly the recovery run this guard exists to send the operator towards
 // (#966).
 func (m *Migrator) dirtyRevision(ctx context.Context) (*MigrationRevision, error) {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getDirtyRevisionSQL())
-	args := []any{migrationStateApplied}
-	if m.revisionTableFormat.isAtlas() {
-		args = nil
-	}
-	revision, err := m.scanRevisionRow(m.conn.QueryRowContext(ctx, query, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	revision.Dirty = true
-	return &revision, nil
+	var revision *MigrationRevision
+	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getDirtyRevisionSQL())
+		args := []any{migrationStateApplied}
+		if scoped.revisionTableFormat.isAtlas() {
+			args = nil
+		}
+		scanned, err := scoped.scanRevisionRow(scoped.conn.QueryRowContext(ctx, query, args...))
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		scanned.Dirty = true
+		revision = &scanned
+		return nil
+	})
+	return revision, err
 }
 
 func (m *Migrator) getRevision(ctx context.Context, version int64) (*MigrationRevision, error) {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getRevisionSQL())
-	revision, err := m.scanRevisionRow(m.conn.QueryRowContext(ctx, query, m.revisionVersionArg(version)))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	revision.Dirty = revision.State != migrationStateApplied
-	return &revision, nil
+	var revision *MigrationRevision
+	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getRevisionSQL())
+		scanned, err := scoped.scanRevisionRow(
+			scoped.conn.QueryRowContext(ctx, query, scoped.revisionVersionArg(version)),
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		scanned.Dirty = scanned.State != migrationStateApplied
+		revision = &scanned
+		return nil
+	})
+	return revision, err
 }
 
 func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
