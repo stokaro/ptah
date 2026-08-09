@@ -43,6 +43,13 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
+	// SchemaScope and SchemaScopeFlag limit an HCL desired state to one schema;
+	// see [go.5x5.cz/ptah/internal/schemafile.Options]. They are passed in
+	// rather than derived from DevURL here because a verb with a target URL --
+	// `schema apply` -- is limited by either one, and the caller is the only
+	// layer that knows which flags it has.
+	SchemaScope     string
+	SchemaScopeFlag string
 	// ConnectTimeout bounds opening a database-backed source and reading its
 	// initial connection metadata. A zero value leaves the caller's context
 	// deadline unchanged.
@@ -99,6 +106,8 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			SchemaScope:           opts.SchemaScope,
+			SchemaScopeFlag:       opts.SchemaScopeFlag,
 			Vars:                  opts.Vars,
 		})
 		if err != nil {

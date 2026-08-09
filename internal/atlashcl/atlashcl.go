@@ -41,6 +41,21 @@ type Options struct {
 	// what the community binary does.
 	RecordIgnored func(IgnoredName)
 
+	// RecordSchemaBlock receives every TOP-LEVEL `schema` block the document
+	// declares, in file order, one call per block. Optional; nil discards them.
+	//
+	// It reports blocks rather than schemas because those are two different
+	// numbers and the caller needs the first: `goschema.Finalize` folds two
+	// `schema "main"` blocks into one schema, and the pinned Atlas community
+	// binary v1.3.0 counts that document as two. See [declaredSchemaBlocks].
+	//
+	// The recorder fires for a document that parses, whatever the caller then
+	// does with the count. Deciding what "too many" means needs facts this
+	// parser does not have -- which URL the run is limited to -- so the rule
+	// lives with the caller that knows them
+	// (go.5x5.cz/ptah/internal/schemafile.Options.SchemaScope).
+	RecordSchemaBlock func(SchemaBlock)
+
 	// Vars supplies values for the file's `variable` blocks, spelled the way
 	// `--var` spells them: one entry per flag occurrence, each entry a
 	// comma-separated list of name=value assignments.
@@ -88,6 +103,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		return nil, fmt.Errorf("parse HCL schema: unsupported body type %T", file.Body)
 	}
 
+	schemaBlocks := declaredSchemaBlocks(body)
 	p := parser{
 		src:             data,
 		filename:        filename,
@@ -96,7 +112,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		tolerant:        opts.IgnoreUnknownNames,
 		recordIgnored:   opts.RecordIgnored,
 		refContext:      columnRefContext(body),
-		declaredSchemas: declaredSchemaNames(body),
+		declaredSchemas: schemaBlockNames(schemaBlocks),
 	}
 	// Classify before validating the schema body. A file carrying a project-file
 	// marker is the wrong kind of file, and that verdict must not depend on
@@ -106,6 +122,13 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// block error, so the classification has to run ahead of the body walk.
 	if err := classifyProjectFile(body, filename); err != nil {
 		return nil, err
+	}
+	// After the project-file verdict, so a document that is not a schema file at
+	// all never contributes a schema block to a caller's count.
+	if opts.RecordSchemaBlock != nil {
+		for _, block := range schemaBlocks {
+			opts.RecordSchemaBlock(block)
+		}
 	}
 	// The evaluation context is built from the file's own variable and locals
 	// blocks, so it has to exist before any attribute is read -- including the

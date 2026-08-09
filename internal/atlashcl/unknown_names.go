@@ -38,6 +38,19 @@ type IgnoredName struct {
 	Line     int
 }
 
+// SchemaBlock is one top-level `schema` block a document declared.
+//
+// It carries the label and the position rather than a count, because the caller
+// that refuses a document has to name the blocks it counted: "more than one
+// schema" with no positions leaves an operator grepping a generated file.
+type SchemaBlock struct {
+	// Name is the block's single label.
+	Name string
+	// Filename and Line locate the block.
+	Filename string
+	Line     int
+}
+
 // typeKeyword is the Go type behind the opaque value a bare Atlas type keyword
 // evaluates to inside a dropped body. It carries nothing: the only thing the
 // keyword has to support is being written down.
@@ -206,23 +219,45 @@ func (p *parser) droppedSchemaRoot() (cty.Value, bool) {
 	return cty.ObjectVal(names), true
 }
 
-// declaredSchemaNames collects the labels of the file's top-level `schema`
-// blocks.
+// declaredSchemaBlocks collects the file's top-level `schema` blocks, ONE ENTRY
+// PER BLOCK and in file order.
 //
 // It reads the WHOLE body before the walk starts, because the community binary
 // evaluates the whole file before deciding what to decode: a `procedure` block
 // written above the `schema` block it names resolves there, so collecting these
 // as the walk reaches them would refuse a file over declaration order alone.
 //
+// Repeated labels are KEPT rather than folded, which is what makes the count
+// usable as a count. `goschema.Finalize` deduplicates schemas by name, so a
+// document declaring `schema "main"` twice has one schema in the IR and two
+// blocks here -- and two is the number the pinned Atlas community binary v1.3.0
+// counts: that document is refused against a schema-limited URL with
+// `cannot use HCL with more than 1 schema`, exactly as a document naming two
+// different schemas is.
+//
 // A block with anything other than one label is skipped rather than refused
 // here; parseSchema still reports it when the walk arrives.
-func declaredSchemaNames(body *hclsyntax.Body) []string {
-	names := make([]string, 0)
+func declaredSchemaBlocks(body *hclsyntax.Body) []SchemaBlock {
+	blocks := make([]SchemaBlock, 0)
 	for _, block := range body.Blocks {
 		if block.Type != droppedSchemaNamespace || len(block.Labels) != 1 {
 			continue
 		}
-		names = append(names, block.Labels[0])
+		blocks = append(blocks, SchemaBlock{
+			Name:     block.Labels[0],
+			Filename: block.TypeRange.Filename,
+			Line:     block.TypeRange.Start.Line,
+		})
+	}
+	return blocks
+}
+
+// schemaBlockNames projects [declaredSchemaBlocks] onto the labels the dropped
+// body scope binds.
+func schemaBlockNames(blocks []SchemaBlock) []string {
+	names := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		names = append(names, block.Name)
 	}
 	return names
 }

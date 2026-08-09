@@ -75,10 +75,15 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, fmt.Errorf("--dev-url is required for local schema file diffing")
 	}
 
+	// Both sides are desired states here, so --dev-url is the only URL that can
+	// limit the run to one schema.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
-		Dialect:     dialect,
-		DialectFlag: dialectFlag,
-		DevURL:      opts.DevURL,
+		Dialect:         dialect,
+		DialectFlag:     dialectFlag,
+		DevURL:          opts.DevURL,
+		SchemaScope:     schemaScope,
+		SchemaScopeFlag: schemaScopeFlag,
 		// Both sides introspect exactly the schemas --schema asked for. Without
 		// this the read is scoped to the connection default and the scope
 		// projection below filters a universe that never contained the

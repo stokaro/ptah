@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -403,12 +404,17 @@ func resolveDesiredState(
 	if err := opts.Desired.EnsureDevIsolation(devURL); err != nil {
 		return atlassource.State{}, err
 	}
+	// `migrate diff` has no target URL, so --dev-url is the only URL that can
+	// limit the run to one schema.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:        conn.Info().Dialect,
-		DialectFlag:    "--dev-url",
-		DevURL:         devURL,
-		ConnectTimeout: opts.SourceConnectTimeout,
-		DevLockHeld:    true,
+		Dialect:         conn.Info().Dialect,
+		DialectFlag:     "--dev-url",
+		DevURL:          devURL,
+		SchemaScope:     schemaScope,
+		SchemaScopeFlag: schemaScopeFlag,
+		ConnectTimeout:  opts.SourceConnectTimeout,
+		DevLockHeld:     true,
 		// `migrate diff` is registered on the Atlas-compatible command tree
 		// only, so this surface always reads files written for another tool.
 		IgnoreUnknownHCLNames: true,
