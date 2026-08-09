@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/schemascope"
 )
 
 // readInspectSchema reads the schemas one inspection describes.
@@ -52,28 +52,46 @@ func readInspectSchema(
 
 // inspectSchemaNames resolves the schema names to read.
 //
-// An explicit `--schema` wins over the URL's scope: it is the operator naming
-// what they want described, and a name that turns out not to exist stays
-// absent from the result rather than being replaced by a schema they did not
-// ask for. Measured on PostgreSQL 17, `--schema nope` renders `{}` on both
+// The decision itself belongs to [schemascope.ReadNames], which every read
+// feeding a comparison consumes; this wrapper only labels the failure. An
+// explicit `--schema` wins over the URL's scope: it is the operator naming what
+// they want described, and a name that turns out not to exist stays absent from
+// the result rather than being replaced by a schema they did not ask for.
+// Measured on PostgreSQL 17, `--schema nope` renders `{}` on both
 // implementations.
 func inspectSchemaNames(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
 ) ([]string, error) {
-	if names := SplitSchemaNames(requested); len(names) > 0 {
-		return names, nil
-	}
-	info := conn.Info()
-	if !schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
-		return []string{info.Schema}, nil
-	}
-	names, err := schemaselection.RealmSchemas(ctx, info.Dialect, conn)
+	names, err := schemascope.ReadNames(ctx, conn.Info(), requested, conn)
 	if err != nil {
 		return nil, fmt.Errorf("read database schema: %w", err)
 	}
 	return names, nil
+}
+
+// readVerifierScopedSchema reads a target database at the scope a plan file
+// cannot record: [schemascope.ReadNames] with no selection.
+//
+// Three callers need exactly this one read -- the fingerprint a plan is saved
+// with, the fingerprint it is verified against, and the baseline a rehearsal
+// rebuilds on the dev database -- and a plan is stale the moment any two of
+// them answer differently, whatever the database did. It is one function so
+// they cannot (stokaro/ptah#1276).
+func readVerifierScopedSchema(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+) (*dbschematypes.DBSchema, error) {
+	names, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+	if err != nil {
+		return nil, fmt.Errorf("read database schema: %w", err)
+	}
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
+	if err != nil {
+		return nil, fmt.Errorf("read database schema: %w", err)
+	}
+	return schema, nil
 }
 
 // withConnectedSchemaRow makes sure a run that named no schema describes the
