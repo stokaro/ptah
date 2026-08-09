@@ -15,10 +15,24 @@ package postgres
 // shape a revert restores -- is answered with that literal. Reverting any of
 // them makes these tests fail where reverting them leaves the rest of the suite
 // green.
+//
+// One projection needs more than presence, and it is the operator-class one.
+// A class's PARAMETERS are not in pg_opclass: PostgreSQL keeps them in the
+// attoptions of the INDEX relation's own pg_attribute row for the key's
+// position, so the projection has to reach a particular relation at a
+// particular attribute number. Both halves of that reach can be wrong while the
+// word attoptions is still in the query -- `keyatt.attnum = 1::smallint`
+// reports the first key's parameters for every key, `keyatt.attrelid =
+// ix.indrelid` reports the table column's options instead of the index
+// attribute's -- so the fake evaluates the join the projection wrote rather
+// than asking whether a word appears in it. What the fake cannot prove is that
+// the model matches PostgreSQL; the live guard in
+// integration/gonative/index_attributes_postgres_test.go is what does that.
 
 import (
 	"database/sql/driver"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,15 +57,11 @@ type pgIndexCatalog struct {
 	// keyAttnums is the JSON array of pg_index.indkey attribute numbers. A 0
 	// marks an expression key; every real column has a positive attnum.
 	keyAttnums string
-	// keyOpclasses is the JSON array of per-key operator classes, each an
-	// object of pg_opclass.opcname, pg_opclass.opcdefault and the index
-	// attribute's pg_attribute.attoptions.
-	keyOpclasses string
-	// keyOpclassesWithoutParams is what the same projection returns when it
-	// does not read attoptions -- every params field empty. It is the answer a
-	// real server gives a query that dropped that join, and it is what makes a
-	// reader that stopped asking for the parameters visible here.
-	keyOpclassesWithoutParams string
+	// keyOpclasses is the index's per-key operator classes, one entry per key
+	// in key order. It is kept as catalog facts rather than as the JSON the
+	// reader receives so the fake can assemble the answer the projection's own
+	// join earns; see [answerOpclassProjection].
+	keyOpclasses []pgIndexKeyOpclass
 	// keyOptions is the JSON array of pg_index.indoption bitmasks.
 	keyOptions string
 	// includeColumns is the JSON array of INCLUDE payload column texts.
@@ -68,22 +78,43 @@ type pgIndexCatalog struct {
 	// fixture that rests on it.
 	requiredExtensions     string
 	requiredExtensionsFrom string
-	predicate              string
-	isPrimary              bool
-	isUnique               bool
+	// comment is obj_description of the INDEX relation -- the object COMMENT
+	// ON INDEX addresses -- and tableComment is obj_description of the TABLE
+	// relation the index is on. Both are here because the index row already
+	// joins both relations, so a projection can reach the wrong one and still
+	// read obj_description; see [answerCommentProjection].
+	comment      string
+	tableComment string
+	predicate    string
+	isPrimary    bool
+	isUnique     bool
 }
 
-// opclassJSON spells one key's operator class the way the reader's
-// json_build_object projection returns it.
-func opclassJSON(name string, isDefault bool, params string) string {
-	return fmt.Sprintf(`{"name": %q, "is_default": %t, "params": %q}`, name, isDefault, params)
+// pgIndexKeyOpclass is one key's operator class as three separate catalog
+// facts rather than as the JSON the reader receives.
+//
+// They do not come from one catalog row, and that is the reason for the split.
+// name and isDefault are pg_opclass columns reached through pg_index.indclass,
+// which is a per-key vector; attoptions belongs to the INDEX relation's
+// pg_attribute row at the key's position, which is a different relation reached
+// by a different correlation. A fixture that carried the finished JSON could
+// only say whether the reader asked for parameters at all, never whether it
+// asked for the right key's.
+type pgIndexKeyOpclass struct {
+	// name is pg_opclass.opcname.
+	name string
+	// isDefault is pg_opclass.opcdefault.
+	isDefault bool
+	// attoptions is the index attribute's pg_attribute.attoptions at this key
+	// position, empty for the overwhelmingly common class that takes none.
+	attoptions string
 }
 
-// defaultOpclassJSON is a one-key list holding the key type's default class
-// with no parameters -- what every fixture that is not about operator classes
+// defaultOpclasses is a one-key list holding the key type's default class with
+// no parameters -- what every fixture that is not about operator classes
 // reports.
-func defaultOpclassJSON() string {
-	return "[" + opclassJSON("text_ops", true, "") + "]"
+func defaultOpclasses() []pgIndexKeyOpclass {
+	return []pgIndexKeyOpclass{{name: "text_ops", isDefault: true}}
 }
 
 // plainCatalog is CREATE INDEX i_plain ON t (name): btree, default opclass,
@@ -91,20 +122,19 @@ func defaultOpclassJSON() string {
 // fixture varies from.
 func plainCatalog() pgIndexCatalog {
 	return pgIndexCatalog{
-		schemaName:                "public",
-		tableName:                 "t",
-		indexName:                 "i_plain",
-		indexDef:                  "CREATE INDEX i_plain ON public.t USING btree (name)",
-		keyTexts:                  `["name"]`,
-		keyAttnums:                `[2]`,
-		keyOpclasses:              defaultOpclassJSON(),
-		keyOpclassesWithoutParams: defaultOpclassJSON(),
-		keyOptions:                `[0]`,
-		includeColumns:            `[]`,
-		method:                    "btree",
-		storageParams:             `[]`,
-		requiredExtensions:        `[]`,
-		requiredExtensionsFrom:    "indclass",
+		schemaName:             "public",
+		tableName:              "t",
+		indexName:              "i_plain",
+		indexDef:               "CREATE INDEX i_plain ON public.t USING btree (name)",
+		keyTexts:               `["name"]`,
+		keyAttnums:             `[2]`,
+		keyOpclasses:           defaultOpclasses(),
+		keyOptions:             `[0]`,
+		includeColumns:         `[]`,
+		method:                 "btree",
+		storageParams:          `[]`,
+		requiredExtensions:     `[]`,
+		requiredExtensionsFrom: "indclass",
 	}
 }
 
@@ -148,8 +178,7 @@ func opclassCatalog() pgIndexCatalog {
 	catalog := plainCatalog()
 	catalog.indexName = "i_op"
 	catalog.indexDef = "CREATE INDEX i_op ON public.t USING btree (name text_pattern_ops)"
-	catalog.keyOpclasses = "[" + opclassJSON("text_pattern_ops", false, "") + "]"
-	catalog.keyOpclassesWithoutParams = catalog.keyOpclasses
+	catalog.keyOpclasses = []pgIndexKeyOpclass{{name: "text_pattern_ops"}}
 	return catalog
 }
 
@@ -169,8 +198,64 @@ func parameterisedOpclassCatalog() pgIndexCatalog {
 	catalog.indexDef = "CREATE INDEX i_sig ON public.t USING gist (tsv tsvector_ops (siglen='64'))"
 	catalog.keyTexts = `["tsv"]`
 	catalog.method = "gist"
-	catalog.keyOpclasses = "[" + opclassJSON("tsvector_ops", true, "siglen=64") + "]"
-	catalog.keyOpclassesWithoutParams = "[" + opclassJSON("tsvector_ops", true, "") + "]"
+	catalog.keyOpclasses = []pgIndexKeyOpclass{
+		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
+	}
+	return catalog
+}
+
+// multiKeyParameterisedOpclassCatalog is
+// CREATE INDEX i_sig_multi ON t USING gist (a, b tsvector_ops (siglen = 64)),
+// where the parameters are on a key that is NOT the first one.
+//
+// Measured on PostgreSQL 17.10 for exactly that statement: the index's own
+// pg_attribute rows report no attoptions for attnum 1 and {siglen=64} for
+// attnum 2, and the server prints
+// USING gist (a, b tsvector_ops (siglen='64')).
+//
+// This fixture exists because every other operator-class fixture in this file
+// has one key, and one key cannot tell a per-key correlation from a constant.
+// Reading `keyatt.attnum = 1::smallint` -- which still names attoptions and
+// still joins to the index relation, so neither the presence check nor a join
+// to the wrong relation describes it -- answers every single-key fixture here
+// correctly and reports NO parameters at all for this one. The index it then
+// rebuilds is USING gist ("a", "b"), which psql accepts at exit 0 and which
+// gives the second key the 124-byte default signature.
+func multiKeyParameterisedOpclassCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "i_sig_multi"
+	catalog.indexDef = "CREATE INDEX i_sig_multi ON public.t USING gist (a, b tsvector_ops (siglen='64'))"
+	catalog.keyTexts = `["a", "b"]`
+	catalog.keyAttnums = `[2, 3]`
+	catalog.keyOptions = `[0, 0]`
+	catalog.method = "gist"
+	catalog.keyOpclasses = []pgIndexKeyOpclass{
+		{name: "tsvector_ops", isDefault: true},
+		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
+	}
+	return catalog
+}
+
+// perKeyParameterisedOpclassCatalog is
+// CREATE INDEX i_sig_perkey ON t USING gist
+// (a tsvector_ops (siglen = 32), b tsvector_ops (siglen = 64)),
+// measured on PostgreSQL 17.10 to store {siglen=32} on attnum 1 and
+// {siglen=64} on attnum 2.
+//
+// Both keys carry parameters and the two differ, which is what separates the
+// correlation from every constant at once: attnum 1 puts siglen=32 on both
+// keys, attnum 2 puts siglen=64 on both, and swapping the two keys reports each
+// key the other's signature length. Its sibling above separates the correlation
+// from "no parameters at all"; neither row alone pins both.
+func perKeyParameterisedOpclassCatalog() pgIndexCatalog {
+	catalog := multiKeyParameterisedOpclassCatalog()
+	catalog.indexName = "i_sig_perkey"
+	catalog.indexDef = "CREATE INDEX i_sig_perkey ON public.t USING gist " +
+		"(a tsvector_ops (siglen='32'), b tsvector_ops (siglen='64'))"
+	catalog.keyOpclasses = []pgIndexKeyOpclass{
+		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=32"},
+		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
+	}
 	return catalog
 }
 
@@ -200,6 +285,30 @@ func unrepresentableStorageParamsCatalog() pgIndexCatalog {
 	return catalog
 }
 
+// commentedCatalog is CREATE INDEX i_note ON t (name) followed by
+// COMMENT ON INDEX i_note IS 'keep me', on a table that carries a comment of
+// its own.
+//
+// The comment hangs off the INDEX relation, so it is reachable only through
+// obj_description of that relation; nothing in the index's definition text
+// mentions it, which is why a reader that never asked for it lost it in
+// silence. Measured on PostgreSQL 17.10, the pinned Atlas community binary
+// v1.3.0 reads it and plans COMMENT ON INDEX for it, so this is one of the few
+// index attributes where the community binary was ahead. See #1242.
+//
+// The table's comment is set, and set to something else, because the index row
+// joins the table as well: obj_description(t.oid, 'pg_class') is the same
+// function on the same catalog reaching the wrong object, and a fixture whose
+// table had no comment would report the empty string for it and let that pass.
+func commentedCatalog() pgIndexCatalog {
+	catalog := plainCatalog()
+	catalog.indexName = "i_note"
+	catalog.indexDef = "CREATE INDEX i_note ON public.t USING btree (name)"
+	catalog.comment = "keep me"
+	catalog.tableComment = "the table, not the index"
+	return catalog
+}
+
 // includeCatalog is CREATE INDEX i_inc ON t (a, b) INCLUDE (c). indclass and
 // indoption cover the two key columns only; the payload column is not in them.
 func includeCatalog() pgIndexCatalog {
@@ -208,9 +317,10 @@ func includeCatalog() pgIndexCatalog {
 	catalog.indexDef = "CREATE INDEX i_inc ON public.t USING btree (a, b) INCLUDE (c)"
 	catalog.keyTexts = `["a", "b"]`
 	catalog.keyAttnums = `[2, 3]`
-	catalog.keyOpclasses = "[" + opclassJSON("int4_ops", true, "") + ", " +
-		opclassJSON("int4_ops", true, "") + "]"
-	catalog.keyOpclassesWithoutParams = catalog.keyOpclasses
+	catalog.keyOpclasses = []pgIndexKeyOpclass{
+		{name: "int4_ops", isDefault: true},
+		{name: "int4_ops", isDefault: true},
+	}
 	catalog.keyOptions = `[0, 0]`
 	catalog.includeColumns = `["c"]`
 	return catalog
@@ -279,14 +389,13 @@ func sortOrderCatalog(option string) func() pgIndexCatalog {
 // assigns, which is what makes a projection that stopped reading the catalog
 // visible here instead of silently answered.
 func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, error) {
-	// An operator class's parameters live in pg_attribute.attoptions, not in
-	// pg_opclass, so a projection that reads indclass and not attoptions gets
-	// the classes back with no parameters on them -- which is what a reader
-	// that dropped that join would see, and what it must not be able to hide.
-	opclasses := catalog.keyOpclassesWithoutParams
-	if projection, ok := selectListItem(query, "index_key_opclasses", "FROM pg_index"); ok &&
-		strings.Contains(projection, "attoptions") {
-		opclasses = catalog.keyOpclasses
+	opclasses, err := answerOpclassProjection(catalog, query)
+	if err != nil {
+		return dbtest.QueryResult{}, err
+	}
+	comment, err := answerCommentProjection(catalog, query)
+	if err != nil {
+		return dbtest.QueryResult{}, err
 	}
 
 	answers := []struct {
@@ -302,6 +411,7 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 		{"index_method", "amname", catalog.method},
 		{"index_storage_params", "reloptions", catalog.storageParams},
 		{"index_required_extensions", catalog.requiredExtensionsFrom, catalog.requiredExtensions},
+		{"index_comment", "obj_description", comment},
 	}
 
 	values := []driver.Value{
@@ -343,6 +453,138 @@ func answerProjection(query, alias, catalogColumn, catalogValue string) (string,
 		return catalogValue, nil
 	}
 	return "[]", nil
+}
+
+// answerOpclassProjection assembles the JSON the index_key_opclasses projection
+// returns, by evaluating the joins the projection wrote.
+//
+// pg_opclass answers a key's class name and whether it is the key type's
+// default. It does not answer the class's PARAMETERS: PostgreSQL keeps those in
+// the attoptions of the INDEX relation's pg_attribute row for that key's
+// position. Reaching them takes a relation and an attribute number, and a query
+// can be wrong about either while still mentioning attoptions -- which is why
+// this is evaluated rather than pattern-matched. See [attoptionsAsProjected].
+func answerOpclassProjection(catalog pgIndexCatalog, query string) (string, error) {
+	projection, ok := selectListItem(query, "index_key_opclasses", "FROM pg_index")
+	if !ok {
+		return "", fmt.Errorf("query has no projection aliased %q:\n%s", "index_key_opclasses", query)
+	}
+	entries := make([]string, 0, len(catalog.keyOpclasses))
+	for position, class := range catalog.keyOpclasses {
+		params, err := attoptionsAsProjected(catalog, projection, position+1)
+		if err != nil {
+			return "", err
+		}
+		entries = append(entries, fmt.Sprintf(
+			`{"name": %q, "is_default": %t, "params": %q}`,
+			class.name, class.isDefault, params,
+		))
+	}
+	return "[" + strings.Join(entries, ", ") + "]", nil
+}
+
+// answerCommentProjection returns the comment the index_comment projection asks
+// for, decided by WHICH relation it passes to obj_description.
+//
+// The index row joins pg_class twice -- once as the index, once as the table --
+// so obj_description(t.oid, 'pg_class') is the same function on the same
+// catalog reaching a different object, and it reads a comment. Answering any
+// projection that says obj_description with the index's comment would let that
+// pass, which is the shape of hole the operator-class projection next door had.
+func answerCommentProjection(catalog pgIndexCatalog, query string) (string, error) {
+	projection, ok := selectListItem(query, "index_comment", "FROM pg_index")
+	if !ok {
+		return "", fmt.Errorf("query has no projection aliased %q:\n%s", "index_comment", query)
+	}
+	switch {
+	case !strings.Contains(projection, "obj_description"):
+		return "", nil
+	case strings.Contains(projection, "i.oid"):
+		return catalog.comment, nil
+	case strings.Contains(projection, "t.oid"):
+		return catalog.tableComment, nil
+	default:
+		return "", fmt.Errorf(
+			"the index_comment projection describes an object this fake does not model:\n%s",
+			projection,
+		)
+	}
+}
+
+// attoptionsAsProjected returns the attoptions the projection's own join lands
+// on for the key at this ordinality.
+//
+// Empty is not a fallback here, it is what a real server returns for each of
+// the three ways the join can miss:
+//
+//   - no join to pg_attribute at all, which is the shape the query had before
+//     #1242 and the shape a revert restores;
+//   - a join to ix.indrelid, which lands on the TABLE's column rather than the
+//     index's attribute. Table columns carry attoptions only where someone set
+//     a per-column planner option, which no fixture here and no live fixture in
+//     integration/gonative/index_attributes_postgres_test.go does;
+//   - a correlation that names an attribute number the index does not have,
+//     which a LEFT JOIN answers with NULL and the projection's COALESCE turns
+//     into the empty string.
+func attoptionsAsProjected(catalog pgIndexCatalog, projection string, ordinality int) (string, error) {
+	relation, joined := joinOperand(projection, "keyatt.attrelid")
+	if !joined || relation != "ix.indexrelid" {
+		return "", nil
+	}
+	correlation, correlated := joinOperand(projection, "keyatt.attnum")
+	if !correlated {
+		return "", fmt.Errorf(
+			"the index_key_opclasses projection joins pg_attribute without correlating attnum:\n%s",
+			projection,
+		)
+	}
+	attnum, err := resolveProjectedAttnum(correlation, ordinality)
+	if err != nil {
+		return "", err
+	}
+	if attnum < 1 || attnum > len(catalog.keyOpclasses) {
+		return "", nil
+	}
+	return catalog.keyOpclasses[attnum-1].attoptions, nil
+}
+
+// joinOperand returns the expression the projection equates with the named
+// column, read to the end of that line. Comments are already gone by the time a
+// projection reaches here; see [selectListItem].
+func joinOperand(projection, column string) (string, bool) {
+	_, rest, named := strings.Cut(projection, column)
+	if !named {
+		return "", false
+	}
+	if line, _, multiline := strings.Cut(rest, "\n"); multiline {
+		rest = line
+	}
+	operand, equated := strings.CutPrefix(strings.TrimSpace(rest), "=")
+	if !equated {
+		return "", false
+	}
+	return strings.TrimSpace(operand), true
+}
+
+// resolveProjectedAttnum evaluates what the projection correlates
+// pg_attribute.attnum with, for one key position.
+//
+// Two shapes are answerable and they are the two that matter: the ordinality of
+// the key being read, which is the correlation an index attribute needs, and a
+// constant, which is the cheaper wrong implementation that reports one key's
+// parameters for every key. Anything else is an error rather than a guess,
+// because a fake that guessed would be answering a query no server answers that
+// way, and the reader would look pinned when it is not.
+func resolveProjectedAttnum(correlation string, ordinality int) (int, error) {
+	expression := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(correlation), "::smallint"))
+	if expression == "keys.ordinality" {
+		return ordinality, nil
+	}
+	constant, err := strconv.Atoi(expression)
+	if err != nil {
+		return 0, fmt.Errorf("cannot answer an attnum correlated with %q", correlation)
+	}
+	return constant, nil
 }
 
 // selectListItem returns the SELECT-list expression the query aliases to alias,
@@ -446,6 +688,17 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 				c.Assert(index.Method, qt.Equals, "btree")
 				c.Assert(index.IncludeColumns, qt.IsNil)
 				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Name: "name"}})
+				c.Assert(index.Comment, qt.Equals, "")
+			},
+		},
+		{
+			// Nothing in the index's definition text carries it, so a reader
+			// that does not ask obj_description reports an index with no
+			// comment and the object's comment is gone at exit 0.
+			name:    "an index comment is carried",
+			catalog: commentedCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.Comment, qt.Equals, "keep me")
 			},
 		},
 		{
@@ -494,6 +747,32 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 			assert: func(c *qt.C, index types.DBIndex) {
 				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
 					{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
+				})
+			},
+		},
+		{
+			// One key cannot tell a per-key correlation from a constant, and
+			// every operator-class row above has one key. Reading the first
+			// attribute's options for every key answers all of them and drops
+			// the parameters here.
+			name:    "parameters land on the key that carries them",
+			catalog: multiKeyParameterisedOpclassCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
+					{Name: "a"},
+					{Name: "b", Operator: "tsvector_ops(siglen=64)"},
+				})
+			},
+		},
+		{
+			// Both keys are parameterised and the two differ, so no constant
+			// attribute number and no reordering of the keys reports this row.
+			name:    "each key keeps its own parameters",
+			catalog: perKeyParameterisedOpclassCatalog,
+			assert: func(c *qt.C, index types.DBIndex) {
+				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
+					{Name: "a", Operator: "tsvector_ops(siglen=32)"},
+					{Name: "b", Operator: "tsvector_ops(siglen=64)"},
 				})
 			},
 		},

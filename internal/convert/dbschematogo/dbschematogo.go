@@ -205,6 +205,7 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Parts:         convertIndexParts(dbIndex.Parts),
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
+			Comment:       dbIndex.Comment,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
 			Type:          indexType(dbIndex),
 			Granularity:   dbIndex.Granularity,

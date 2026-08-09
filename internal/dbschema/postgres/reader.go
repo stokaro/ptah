@@ -939,6 +939,16 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- one's name -- including the class the DDL does print, which is
 			-- the non-default one. See requiredExtensionsProjection.
 			` + requiredExtensionsProjection("ix.indclass", "i.relam") + ` as index_required_extensions,
+			-- The index's own object comment. It hangs off the INDEX relation,
+			-- so obj_description takes indexrelid and 'pg_class'; the table's
+			-- comment is a different object and is read elsewhere. Measured on
+			-- PostgreSQL 17.10, the pinned Atlas community binary v1.3.0 reads
+			-- this one and emits both COMMENT ON INDEX "i" IS 'keep me' and
+			-- comment = "keep me" inside the index block, where Ptah emitted
+			-- neither: the comment was dropped between the catalog and the
+			-- model, psql accepted the replay at exit 0, and the index simply
+			-- had no comment. See #1242.
+			COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment,
 			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
@@ -964,7 +974,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			&row.schemaName, &row.tableName, &row.indexName, &row.indexDef,
 			&row.keyTexts, &row.keyAttnums, &row.keyOpclasses, &row.keyOptions,
 			&row.includeColumns, &row.method, &row.storageParams, &row.requiredExtensions,
-			&row.predicate, &row.isPrimary, &row.isUnique,
+			&row.comment, &row.predicate, &row.isPrimary, &row.isUnique,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
@@ -1009,9 +1019,11 @@ type postgresIndexRow struct {
 	// requiredExtensions is the JSON array of extension names the index's
 	// resolved operator classes and access method belong to.
 	requiredExtensions string
-	predicate          string
-	isPrimary          bool
-	isUnique           bool
+	// comment is obj_description of the index relation.
+	comment   string
+	predicate string
+	isPrimary bool
+	isUnique  bool
 }
 
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
@@ -1022,6 +1034,7 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 		TableName:     row.tableName,
 		Definition:    row.indexDef,
 		Condition:     row.predicate,
+		Comment:       row.comment,
 		IsUnique:      row.isUnique,
 		IsPrimary:     row.isPrimary,
 		Method:        row.method,

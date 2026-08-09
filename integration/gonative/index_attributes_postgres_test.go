@@ -6,14 +6,14 @@
 //
 // Why a live server rather than a fake one. The reader's index query asks
 // PostgreSQL four per-key questions -- pg_index.indkey, indclass, indoption, and
-// the index attribute's pg_attribute.attoptions -- and one relation-level
-// question, pg_class.reloptions. A fake server can be told whether the query
-// mentions a catalog column, and internal/dbschema/postgres holds that guard.
-// What it cannot be told is whether the query joins to the RIGHT relation.
-// `attrelid = ix.indexrelid` and `attrelid = ix.indrelid` both mention
-// attoptions and both parse; only one of them names the index's own attribute,
-// and the other quietly reports the table column's options instead. Measured on
-// PostgreSQL 17.10, a real server separates them and nothing short of one does.
+// the index attribute's pg_attribute.attoptions -- and three relation-level
+// ones: pg_class.reloptions, pg_am.amname and the index's own
+// obj_description. The fake server in internal/dbschema/postgres models those
+// joins rather than merely checking that a catalog column is named, so it does
+// catch a query that reaches the table relation instead of the index one. What
+// it cannot do is prove the MODEL is right: it answers what the file says
+// PostgreSQL answers. This is the guard that reads the real catalog, and every
+// value the fake asserts was measured here first.
 //
 // Each fixture is one throwaway database holding one table, so a failure names
 // one attribute. The plain btree index is the control: it varies in none of
@@ -41,7 +41,14 @@ func indexAttributeSeed() []string {
 		"CREATE TABLE t (" +
 			"id integer PRIMARY KEY, doc jsonb, code text, name text, " +
 			"created_at timestamptz, score integer, a integer, b integer, c integer, " +
-			"tsv tsvector, ts timestamptz)",
+			"tsv tsvector, tsv2 tsvector, tsv3 tsvector, ts timestamptz)",
+		// The table's own comment. It is here so the index-comment row below
+		// is measuring the index's object and not whichever comment the query
+		// happened to reach: obj_description(t.oid, 'pg_class') is the same
+		// function on the same catalog, and against a table with no comment it
+		// returns the empty string and looks like a reader that simply found
+		// none.
+		"COMMENT ON TABLE t IS 'the table, not the index'",
 		"CREATE INDEX i_plain ON t (name)",
 		"CREATE INDEX i_gin ON t USING gin (doc)",
 		"CREATE INDEX i_opclass ON t (code text_pattern_ops)",
@@ -50,6 +57,15 @@ func indexAttributeSeed() []string {
 		"CREATE INDEX i_nullsfirst ON t (score NULLS FIRST)",
 		"CREATE INDEX i_include ON t (a, b) INCLUDE (c)",
 		"CREATE INDEX i_opclass_params ON t USING gist (tsv tsvector_ops (siglen = 64))",
+		// Two multi-key GiST indexes. The single-key fixture above cannot tell
+		// a per-key correlation from a constant one: reading the FIRST index
+		// attribute's attoptions for every key answers it, and every other
+		// single-key row here, correctly.
+		"CREATE INDEX i_opclass_params_multikey ON t USING gist (tsv2, tsv3 tsvector_ops (siglen = 64))",
+		"CREATE INDEX i_opclass_params_perkey ON t USING gist " +
+			"(tsv2 tsvector_ops (siglen = 32), tsv3 tsvector_ops (siglen = 64))",
+		"CREATE INDEX i_comment ON t (name)",
+		"COMMENT ON INDEX i_comment IS 'keep me'",
 		"CREATE INDEX i_storage ON t USING brin (ts) WITH (pages_per_range = 32)",
 		"CREATE INDEX i_storage_unrepresentable ON t (name) WITH (fillfactor = 70)",
 	}
@@ -98,6 +114,8 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{{Name: "name"}})
 				c.Assert(index.IncludeColumns, qt.IsNil)
 				c.Assert(index.StorageParams, qt.IsNil)
+				c.Assert(index.Comment, qt.Equals, "",
+					qt.Commentf("the table's comment must not arrive on an index that has none"))
 			},
 		},
 		{
@@ -155,8 +173,8 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 			},
 		},
 		{
-			// The row a fake server cannot hold: the parameters come from the
-			// INDEX relation's pg_attribute row, not the table's.
+			// The parameters come from the INDEX relation's pg_attribute row,
+			// not the table's.
 			name:  "operator class parameters",
 			index: "i_opclass_params",
 			assert: func(c *qt.C, index dbschematypes.DBIndex) {
@@ -164,6 +182,47 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
 					{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
 				})
+			},
+		},
+		{
+			// The parameters are on the SECOND key. Reading the first index
+			// attribute's attoptions for every key still names attoptions and
+			// still joins to the index relation, so it survives both the
+			// presence check and the wrong-relation check -- and reports this
+			// index as USING gist ("tsv2", "tsv3"), which psql accepts at exit
+			// 0 and which gives the second key the 124-byte default signature.
+			name:  "operator class parameters on a key that is not the first",
+			index: "i_opclass_params_multikey",
+			assert: func(c *qt.C, index dbschematypes.DBIndex) {
+				c.Assert(index.Method, qt.Equals, "gist")
+				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+					{Name: "tsv2"},
+					{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
+				})
+			},
+		},
+		{
+			// Both keys are parameterised and the two values differ, so no
+			// constant attribute number and no reordering of the keys reports
+			// this row.
+			name:  "each key keeps its own operator class parameters",
+			index: "i_opclass_params_perkey",
+			assert: func(c *qt.C, index dbschematypes.DBIndex) {
+				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+					{Name: "tsv2", Operator: "tsvector_ops(siglen=32)"},
+					{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
+				})
+			},
+		},
+		{
+			// The index's own object comment, which the pinned community
+			// binary v1.3.0 reads and Ptah dropped. The table carries a
+			// different comment, so this row fails rather than passing by
+			// coincidence if the query reaches the table relation.
+			name:  "index comment",
+			index: "i_comment",
+			assert: func(c *qt.C, index dbschematypes.DBIndex) {
+				c.Assert(index.Comment, qt.Equals, "keep me")
 			},
 		},
 		{
@@ -238,7 +297,12 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 
 			document := boundaryInspect(c, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `ops = "tsvector_ops(siglen=64)"`)
+			// The per-key spelling. It is asserted separately from the one
+			// above because a converter that forwarded the first key's class
+			// to every key would satisfy that one.
+			c.Assert(document, qt.Contains, `ops = "tsvector_ops(siglen=32)"`)
 			c.Assert(document, qt.Contains, "page_per_range = 32")
+			c.Assert(document, qt.Contains, `comment = "keep me"`)
 
 			plan := boundaryApplyBack(c, conn, document, test.compatibility)
 

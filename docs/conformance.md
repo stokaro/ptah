@@ -377,8 +377,8 @@ rather than a parity fix. Tracked as
 
 ## PostgreSQL Introspection: Index and Domain Attributes
 
-Reading a live PostgreSQL database once lost eight attributes that the pinned
-Atlas CE v1.3.0 binary preserves. All eight are now read. Measured on PostgreSQL
+Reading a live PostgreSQL database once lost nine attributes that the pinned
+Atlas CE v1.3.0 binary preserves. All nine are now read. Measured on PostgreSQL
 17.10 by diffing an empty database against a source database with each binary,
 replaying the emitted SQL into a fresh database with
 `psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
@@ -396,6 +396,7 @@ carrying the same attributes always rendered correctly.
 | Domain used as a column type | `information_schema.columns.domain_name` and `domain_schema` | The `CREATE DOMAIN` was emitted but the column was flattened to the domain's base type: psql exited 0 and left a column without the domain's `CHECK` | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | Operator class **parameters**, for example `tsvector_ops(siglen=64)` | the index attribute's `pg_attribute.attoptions` | Dropped with the class name: psql exited 0 and left a GiST index with the 124-byte default signature | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 | Index storage parameters, `WITH (pages_per_range = 32)` | `pg_class.reloptions` | Dropped: psql exited 0 and left a BRIN index summarizing 128 pages per range instead of 32 | [#1242](https://github.com/stokaro/ptah/issues/1242) |
+| The index's own comment | `obj_description` of the index relation | Dropped: psql exited 0, the index existed, and its comment did not — and CE re-diffing the replay against the source still reported the `COMMENT ON INDEX` as missing | [#1242](https://github.com/stokaro/ptah/issues/1242) |
 
 ### A default operator class can still carry parameters
 
@@ -458,21 +459,118 @@ pages_per_range = 32  ->  CREATE INDEX "i" ON "t" USING brin ("ts")
 So an exit status proves nothing here, and Ptah writes the spelling CE honors.
 Ptah's own parser continues to accept both.
 
-### Two attributes of the same family that are still dropped
+### The per-key parameters are correlated per key, not per index
 
-Both are read out of the catalog by nobody and lost by both binaries, so neither
-is a parity gap. They are recorded here because a green replay does not report
-them.
+`pg_attribute.attoptions` is reached from the key's *ordinality* into the
+**index** relation, and both halves of that reach are load-bearing. Measured on
+PostgreSQL 17.10:
+
+```text
+CREATE TABLE t (id integer PRIMARY KEY, a tsvector, b tsvector);
+CREATE INDEX i ON t USING gist (a, b tsvector_ops (siglen = 64));
+
+server:  CREATE INDEX i ON public.t USING gist (a, b tsvector_ops (siglen='64'))
+```
+
+A reader that correlates the join with a constant instead of the key's
+ordinality still names `attoptions` and still joins to the index relation, and
+it reports every single-key fixture correctly. On this one it emits
+`CREATE INDEX ... USING gist ("a", "b")` — psql accepts that at exit 0 and the
+second key silently gets the 124-byte default signature. A reader that joins to
+`ix.indrelid` instead of `ix.indexrelid` reads the table column's options and
+drops the parameters everywhere.
+
+Two live fixtures pin the correlation, because one cannot: `(a, b
+tsvector_ops (siglen = 64))` separates it from "no parameters at all", and
+`(a tsvector_ops (siglen = 32), b tsvector_ops (siglen = 64))` separates it from
+every constant and from a reordering, since the two keys carry different values.
+
+### The index comment
+
+An index's own comment is a member of the same family, read from
+`obj_description` of the **index** relation. Measured on PostgreSQL 17.10:
+
+```text
+CREATE INDEX i ON t (name);
+COMMENT ON INDEX i IS 'keep me';
+
+Atlas CE v1.3.0:  CREATE INDEX "i" ON "t" ("name");
+                  COMMENT ON INDEX "i" IS 'keep me';
+                  index "i" { columns = [column.name]  comment = "keep me" }
+Ptah, before:     CREATE INDEX IF NOT EXISTS "i" ON "t" ("name");
+                  index "i" { type = "btree"  columns = [column.name] }
+```
+
+CE was **ahead** here, so this was a parity gap and not a shared one: replaying
+Ptah's output exited 0, and CE re-diffing the replay against the source still
+reported `COMMENT ON INDEX "i" IS 'keep me';` as missing. Ptah now reads it,
+writes `comment = "keep me"` into the index block, and emits `COMMENT ON INDEX`
+as its own statement — PostgreSQL's `CREATE INDEX` has no `COMMENT` clause,
+unlike MySQL's index definition, so an index comment cannot ride along with the
+create.
+
+The fixture that pins it puts a *different* comment on the table, because the
+index row joins both relations and `obj_description(t.oid, 'pg_class')` is the
+same function on the same catalog reaching the wrong object.
+
+What is **not** closed is a comment *change* on an index that already exists:
+the index comparator does not compare comments, so `schema apply` plans nothing
+for `'a'` -> `'b'` where CE plans a `COMMENT ON INDEX`. That is left open
+deliberately — the comparator's only transition for an index is DROP plus
+CREATE, and planning a rebuild for a comment would be a strictly worse answer
+than planning nothing.
+
+Table and column comments are a separate, wider gap that predates this work and
+is untouched by it. Ptah's PostgreSQL renderer emits an object comment as an SQL
+line comment rather than a `COMMENT ON` statement, so `COMMENT ON TABLE` and
+`COMMENT ON COLUMN` are still dropped where CE emits both — measured on the same
+fixture, CE emitted all three statements and Ptah emitted only the index one.
+
+### Attributes of the same family that are still dropped
+
+None of these is closed. The reasons differ and are recorded per row, because
+"CE drops it too" and "no surface below the model can carry it" are not the
+same statement.
 
 | Attribute | Read from | Atlas CE v1.3.0 | Ptah | Why it is still open |
 | --- | --- | --- | --- | --- |
-| Per-key collation, `(name COLLATE "C")` | `pg_index.indcollation` | Dropped | Dropped | The Atlas HCL surface has no per-key collation attribute — CE inspects the fixture as a bare `columns = [column.name]`. Adding one would emit a document CE cannot read, trading a silent index difference for a loud interop break |
-| Index storage parameters other than `pages_per_range` | `pg_class.reloptions` | Dropped | Dropped | Same reason: no HCL slot, so a recorded value would churn forever. See above |
+| Per-key collation, `(name COLLATE "C")` | `pg_index.indcollation` | Dropped | Dropped | Not a parity gap. The Atlas HCL surface has no per-key collation attribute — CE inspects the fixture as a bare `columns = [column.name]`. Adding one would emit a document CE cannot read, trading a silent index difference for a loud interop break |
+| Index storage parameters other than `pages_per_range` | `pg_class.reloptions` | Dropped | Dropped | Not a parity gap. Same reason: no HCL slot, so a recorded value would churn forever. See above |
+| A comment *change* on an existing index | `obj_description` of the index relation | Plans `COMMENT ON INDEX` | Plans nothing | **A parity gap.** The value is now read and written; only the comparator arm is missing, and the comparator's sole transition for an index is a rebuild |
+| Table and column comments | `obj_description` / `col_description` | Emits `COMMENT ON TABLE` / `COMMENT ON COLUMN` | Emits an SQL line comment | **A parity gap**, wider than the index family and predating it: the PostgreSQL renderer has no `COMMENT ON` statement for either object |
 
 `pg_index` has four per-key vectors — `indkey`, `indclass`, `indoption` and
-`indcollation` — and the reader now asks for three of them. `indcollation` is
-the one left, and it is the only member of this family whose closure needs a new
-attribute on the HCL surface rather than only a new projection.
+`indcollation` — and the reader asks for three of them. `indcollation` is the
+one left, and it is the only member of *that* family whose closure needs a new
+attribute on the HCL surface rather than only a new projection. The index
+comment is not one of the four: it is a relation-level attribute like
+`reloptions`, and it is listed above rather than here because it is now read.
+
+### The Go annotation surface cannot spell a storage parameter
+
+`pages_per_range` is recorded because it survives every surface the model passes
+through, and that criterion has a fifth surface the list above does not name:
+Ptah's own Go annotation surface. `//ptah:schema:index` parses `name`,
+`fields`/`columns`, `table`, `unique`, `comment`, `type`, `where`/`condition`,
+`ops`, `nulls_distinct` and `granularity` — no storage parameters, and no
+`include` either.
+
+The consequence is measured. Against a database holding
+`CREATE INDEX i ON t USING brin (ts) WITH (pages_per_range = 32)`, a model
+declaring `//ptah:schema:index name="i" fields="ts" type="BRIN"` plans:
+
+```text
+DROP INDEX IF EXISTS "i";
+CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
+```
+
+which drops the parameter. This is a pre-existing class rather than a new one:
+with the storage-parameter comparison removed, the identical plan is produced
+for `CREATE INDEX i ON t (a) INCLUDE (b)` against a model declaring
+`//ptah:schema:index name="i" fields="a"` — measured, both on PostgreSQL 17.10.
+Closing the class means adding index attributes to the annotation surface for
+everything the HCL surface can already say, which is its own change and is not
+attempted here.
 
 ### The access-method loss was not silent in general
 

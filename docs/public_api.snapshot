@@ -5785,6 +5785,18 @@ type DBIndex struct {
     // Condition is the WHERE clause for partial indexes when the dialect
     // exposes one structurally.
     Condition string `json:"condition,omitempty"`
+    // Comment is the index's own object comment, as PostgreSQL keeps it in
+    // pg_description for the index relation and reports through
+    // obj_description(indexrelid, 'pg_class').
+    //
+    // It is the index's, not the table's: COMMENT ON INDEX and COMMENT ON TABLE
+    // address different objects, and an index has a slot for one on every
+    // surface below this model -- goschema.Index.Comment, the Atlas-compatible
+    // HCL reader's `comment` attribute, and the HCL writer's. Before #1242 this
+    // field did not exist, so a comment the server reported was dropped between
+    // the catalog and the model and every surface below it saw an index that
+    // had none. Empty means the object carries no comment.
+    Comment string `json:"comment,omitempty"`
     // NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
     // state. Nil means the clause was not present in the definition.
     NullsDistinct *bool `json:"nulls_distinct,omitempty"`
