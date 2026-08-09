@@ -139,12 +139,11 @@ type applyComputation struct {
 	statements []string
 	current    *types.DBSchema
 	desired    *goschema.Database
-	// readWidened reports that current was read at a wider or narrower scope
-	// than [VerifyPlanTarget] will re-read the same database at. A saved plan
-	// records no schema scope, so the verifier asks [schemascope.ReadNames] with
-	// no selection; a caller fingerprinting current has to know whether the two
-	// would be the same read.
-	readWidened bool
+	// readScope is the schema allow-list current was read at, nil when the read
+	// was the connection's own default. A saved plan records no schema scope, so
+	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
+	// current has to know whether the two would be the same read.
+	readScope []string
 }
 
 func computeApplyPlan(
@@ -183,7 +182,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	current, readWidened, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
+	current, readScope, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
 		return applyComputation{}, err
 	}
@@ -220,9 +219,9 @@ func computeApplyPlan(
 	}
 
 	computation := applyComputation{
-		current:     current,
-		desired:     desired,
-		readWidened: readWidened,
+		current:   current,
+		desired:   desired,
+		readScope: readScope,
 	}
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
@@ -245,31 +244,25 @@ func computeApplyPlan(
 	return computation, nil
 }
 
-// applyCurrentState reads the database side of an apply, and reports whether
-// that read covers something other than the one [VerifyPlanTarget] will make
-// when a plan saved from it is used later.
-//
-// The two scopes are resolved side by side, here, because a plan file records
-// no schema scope: the verifier can only ask [schemascope.ReadNames] with no
-// selection, so the planning run has to know whether its own read was the same
-// one. Deriving them in two places is how a freshly saved plan reported itself
-// stale against the database it had just been computed from (stokaro/ptah#1276).
+// applyCurrentState reads the database side of an apply and reports the scope
+// it was read at, which [planSourceSchema] needs in order to fingerprint a
+// state [VerifyPlanTarget] can recompute.
 func applyCurrentState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
 	desired *goschema.Database,
-) (current *types.DBSchema, readWidened bool, err error) {
-	verifierScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+) (current *types.DBSchema, readScope []string, err error) {
+	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
-		return nil, false, fmt.Errorf("read database schema: %w", err)
+		return nil, nil, fmt.Errorf("read database schema: %w", err)
 	}
-	readScope := applyReadScope(requested, verifierScope, desired)
+	readScope = applyReadScope(requested, urlScope, desired)
 	current, err = dbschema.ReadSchemaWithSchemas(conn, readScope)
 	if err != nil {
-		return nil, false, fmt.Errorf("read database schema: %w", err)
+		return nil, nil, fmt.Errorf("read database schema: %w", err)
 	}
-	return current, !slices.Equal(readScope, verifierScope), nil
+	return current, readScope, nil
 }
 
 // applyReadScope resolves the schemas the DATABASE side of an apply is read at.
