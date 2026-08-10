@@ -10,6 +10,7 @@ package capabilityprobe
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"testing"
@@ -121,10 +122,101 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	}
 }
 
+func TestIndexIncludeSPGiSTObservation(t *testing.T) {
+	c := qt.New(t)
+
+	accepted := Attempt{Statement: "CREATE INDEX", Accepted: true}
+	inspected := Attempt{Statement: "SELECT index metadata", Accepted: true}
+	for _, tc := range []struct {
+		name      string
+		created   Attempt
+		inspected Attempt
+		matches   int64
+		want      observation
+	}{
+		{
+			name:    "create rejection proves the capability false",
+			created: Attempt{Statement: "CREATE INDEX", ServerErr: "syntax error"},
+			want:    decided(false),
+		},
+		{
+			name:      "metadata failure after acceptance is undecidable",
+			created:   accepted,
+			inspected: Attempt{Statement: "SELECT index metadata", ServerErr: "catalog unavailable"},
+			want: cannotDecide(
+				"the index statement was accepted but metadata inspection %q failed (%s), so the run cannot tell "+
+					"whether the requested SP-GiST INCLUDE shape was created",
+				"SELECT index metadata", "catalog unavailable",
+			),
+		},
+		{
+			name:      "exact semantic shape proves the capability true",
+			created:   accepted,
+			inspected: inspected,
+			matches:   1,
+			want:      decided(true),
+		},
+		{
+			name:      "accepted but absent semantic shape is false",
+			created:   accepted,
+			inspected: inspected,
+			want: annotated(false,
+				"the index statement was accepted but metadata found no SP-GiST index with exactly one key and one "+
+					"included column, so the server did not preserve the requested semantics",
+			),
+		},
+		{
+			name:      "multiple exact shapes violate the unique-name invariant",
+			created:   accepted,
+			inspected: inspected,
+			matches:   2,
+			want: cannotDecide(
+				"the index statement was accepted but metadata found %d exact SP-GiST index shapes with one key and one "+
+					"included column; more than one match violates the probe's unique-name invariant",
+				2,
+			),
+		},
+	} {
+		c.Run(tc.name, func(c *qt.C) {
+			got := indexIncludeSPGiSTObservation(tc.created, tc.inspected, tc.matches)
+			c.Assert(got, qt.Equals, tc.want)
+		})
+	}
+}
+
+func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tc := range []struct {
+		name    string
+		created Attempt
+		want    observation
+	}{
+		{
+			name:    "rejection proves the capability false",
+			created: Attempt{Statement: "CREATE INDEX", ServerErr: "syntax error"},
+			want:    decided(false),
+		},
+		{
+			name:    "unexpected acceptance is undecidable",
+			created: Attempt{Statement: "CREATE INDEX", Accepted: true},
+			want: cannotDecide(
+				"the index statement was accepted, but this dialect has no portable metadata proof that the payload " +
+					"is a non-key included column; syntax acceptance alone does not establish SP-GiST INCLUDE support",
+			),
+		},
+	} {
+		c.Run(tc.name, func(c *qt.C) {
+			got := uninspectableIndexIncludeSPGiSTObservation(tc.created)
+			c.Assert(got, qt.Equals, tc.want)
+		})
+	}
+}
+
 // TestDecidable_IsDerivedFromThePlanAndTheLine pins the floor's derivation
-// against what live servers actually decided on 2026-08-09: postgres:17 decided
-// 24 of 24, mysql:9.7 decided 23, mariadb:10.11 decided 22. Those runs are the
-// reason the floor can be this strict without failing a healthy server.
+// against the current registry and plan: postgres:17 owes 25 decisions,
+// mysql:9.7 owes 24, and mariadb:10.11 owes 23. The MySQL-family gaps remain
+// only the keys plans.go records as unmeasurable by those engines.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	c := qt.New(t)
 
@@ -409,7 +501,7 @@ func TestReportErr(t *testing.T) {
 // TestReportErr_TheFloorIsWhatThePlanPromised covers the erosion a
 // "decided at least one row" guard cannot see.
 //
-// A run that answered one row of twenty-four is not a run that measured this
+// A run that answered one row of twenty-five is not a run that measured this
 // server, and before the floor existed it exited zero. The rows below move the
 // decided count around a fixed promise, so the boundary is exercised from both
 // sides rather than only from the failing one.
@@ -432,19 +524,28 @@ func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
 		build: func() *Report {
 			return promisedReport(registered, capability.XMLType)
 		},
-		want: `(?s).*decided 23 of 24 capability rows, 1 fewer than the 24 the postgres plan promised to answer.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided %d of %d capability rows, 1 fewer than the %d the postgres plan promised to answer.*`,
+			registered-1, registered, registered,
+		),
 	}, {
-		name: "the shape the old floor let through: one row decided out of twenty-four",
+		name: "the shape the old floor let through: one row decided out of twenty-five",
 		build: func() *Report {
 			return promisedReport(registered, everyKeyExcept(capability.XMLType)...)
 		},
-		want: `(?s).*decided 1 of 24 capability rows, 23 fewer than the 24 the postgres plan promised to answer.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided 1 of %d capability rows, %d fewer than the %d the postgres plan promised to answer.*`,
+			registered, registered-1, registered,
+		),
 	}, {
 		name: "a plan that promised nothing still may not decide nothing",
 		build: func() *Report {
 			return promisedReport(0, everyKeyExcept()...)
 		},
-		want: `(?s).*decided 0 of 24 capability rows; a probe that measured nothing.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided 0 of %d capability rows; a probe that measured nothing.*`,
+			registered,
+		),
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
 			assertErrMatches(c, tc.build().Err(), tc.want)

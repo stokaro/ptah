@@ -36,7 +36,7 @@ type decider func(ctx context.Context, s *session) (verdicts, []Attempt)
 
 // experiment is one measurement against a live server.
 //
-// It is not "one capability, one statement". Three of the twenty-four keys are
+// It is not "one capability, one statement". Three of the twenty-five keys are
 // a mutual-exclusion group decided by two statements, and running them as
 // three independent experiments would let the group report a combination
 // Validate rejects. Two more need a DML follow-up because DDL acceptance is
@@ -203,6 +203,81 @@ func concurrentIndex(key capability.Capability, setup []string, standalone, insi
 			return verdicts{key: decided(true)}, attempts
 		},
 	}
+}
+
+// indexIncludeSPGiST decides whether the server created the index shape the
+// statement requested, rather than merely accepting or rewriting its syntax.
+func indexIncludeSPGiST(setup []string, create, inspect string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.IndexIncludeSPGiST},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.IndexIncludeSPGiST: decided(false)}, attempts
+			}
+
+			matches, inspected := s.query(ctx, inspect)
+			attempts = append(attempts, inspected)
+			return verdicts{capability.IndexIncludeSPGiST: indexIncludeSPGiSTObservation(
+				created, inspected, matches,
+			)}, attempts
+		},
+	}
+}
+
+// uninspectableIndexIncludeSPGiST decides false on rejection. An unexpected
+// acceptance is undecidable because this dialect has no portable catalog proof
+// that distinguishes a key column from a non-key included column.
+func uninspectableIndexIncludeSPGiST(setup []string, create string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.IndexIncludeSPGiST},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			return verdicts{
+				capability.IndexIncludeSPGiST: uninspectableIndexIncludeSPGiSTObservation(created),
+			}, []Attempt{created}
+		},
+	}
+}
+
+func indexIncludeSPGiSTObservation(created, inspected Attempt, matches int64) observation {
+	if !created.Accepted {
+		return decided(false)
+	}
+	if !inspected.Accepted {
+		return cannotDecide(
+			"the index statement was accepted but metadata inspection %q failed (%s), so the run cannot tell "+
+				"whether the requested SP-GiST INCLUDE shape was created",
+			collapse(inspected.Statement), collapse(inspected.ServerErr),
+		)
+	}
+	if matches == 1 {
+		return decided(true)
+	}
+	if matches == 0 {
+		return annotated(false,
+			"the index statement was accepted but metadata found no SP-GiST index with exactly one key and one "+
+				"included column, so the server did not preserve the requested semantics",
+		)
+	}
+	return cannotDecide(
+		"the index statement was accepted but metadata found %d exact SP-GiST index shapes with one key and one "+
+			"included column; more than one match violates the probe's unique-name invariant",
+		matches,
+	)
+}
+
+func uninspectableIndexIncludeSPGiSTObservation(created Attempt) observation {
+	if !created.Accepted {
+		return decided(false)
+	}
+	return cannotDecide(
+		"the index statement was accepted, but this dialect has no portable metadata proof that the payload " +
+			"is a non-key included column; syntax acceptance alone does not establish SP-GiST INCLUDE support",
+	)
 }
 
 // storedResult decides MaterializedViews.
