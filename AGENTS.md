@@ -692,7 +692,9 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   not covered until it is named in a workflow with the environment that lets it
   connect, and guarded so a rename cannot pass silently.
   [`.github/workflows/go-integration-tests.yml`](.github/workflows/go-integration-tests.yml)
-  encodes that discipline with `-list ... | grep -q` guards; keep it.
+  encodes that discipline with `scripts/require-tests-ran.sh`; use that guard
+  for targeted live-test workflow steps instead of hand-maintained
+  `go test -list` or output-grep checks.
 - The Docker suite in `cmd/integration-test` covers apply, rollback,
   idempotency, parallel-execution smoke, partial-failure recovery, and schema
   diff, and writes reports in stdout, text, JSON, or HTML form into the

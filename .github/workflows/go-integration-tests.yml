@@ -241,9 +241,17 @@ jobs:
         run: |
           go test -v -count=1 ./integration -tags=integration -timeout 15m
           go test -v -count=1 ./integration/gonative -tags=integration -timeout 15m
-          go test -v -count=1 ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
-          go test -v -count=1 ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration' -timeout 3m
-          go test -v -count=1 ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
+          sh scripts/require-tests-ran.sh --package ./dbschema \
+            --pattern '^TestSQLServerLive(ReadSchema|RenderedUpsertMerge|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' \
+            --declared-in dbschema/sqlserver_live_test.go \
+            --declared-in dbschema/sqlserver_identifier_live_test.go \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./migration/migrator \
+            --pattern '^(TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration)$' \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./migration/generator \
+            --pattern '^(TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive)$' \
+            --timeout 5m
 
       # The reverse plan for views, materialized views and triggers is decided
       # by what PostgreSQL accepts, and rendering the rollback proves only that
@@ -308,16 +316,40 @@ jobs:
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          go test -v -count=1 ./internal/dblock -run '^TestAdvisoryLock_PostgresFamilyLive$' -timeout 3m
-          go test -v -count=1 ./internal/devlock -run '^Test(Acquire_CockroachDBSerializesSameRealmLive|SameRealm_(PostgresDriverURLOverridesLive|NetworkDatabasesLive))$' -timeout 3m
-          go test -v -count=1 ./migration/generator -run '^TestVerifyRollbackFromShadow_FailurePathRejects(DriverOverrideAliasLive|LiveDialectMismatch)$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/mysql -tags=integration -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/clickhouse -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/mssql -run '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' -timeout 3m
-          go test -v -count=1 ./internal/dbschema/postgres -tags=integration -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|PostgresCleansLargeObjects|PostgresRejectsPublication|RejectsProtectedDatabase)$' -timeout 5m
-          go test -v -count=1 ./internal/schemaclean -tags=integration -run '^TestInspectNamesEveryObjectApplyDestroys_PostgresLive$' -timeout 5m
-          go test -v -count=1 ./internal/migrationreplay -tags=integration -run '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' -timeout 5m
-          go test -v -count=1 ./integration -tags=integration -run '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' -timeout 12m
+          sh scripts/require-tests-ran.sh --package ./internal/dblock \
+            --pattern '^TestAdvisoryLock_PostgresFamilyLive$' \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./internal/devlock \
+            --pattern '^Test(Acquire_CockroachDBSerializesSameRealmLive|SameRealm_(PostgresDriverURLOverridesLive|NetworkDatabasesLive))$' \
+            --declared-in internal/devlock/lock_live_test.go \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./migration/generator \
+            --pattern '^TestVerifyRollbackFromShadow_FailurePathRejects(DriverOverrideAliasLive|LiveDialectMismatch)$' \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./internal/dbschema/mysql --tags integration \
+            --pattern '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$' \
+            --declared-in internal/dbschema/mysql/writer_live_test.go \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./internal/dbschema/clickhouse \
+            --pattern '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' \
+            --declared-in internal/dbschema/clickhouse/writer_cleanup_live_test.go \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./internal/dbschema/mssql \
+            --pattern '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' \
+            --timeout 3m
+          sh scripts/require-tests-ran.sh --package ./internal/dbschema/postgres --tags integration \
+            --pattern '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|PostgresCleansLargeObjects|PostgresRejectsPublication|RejectsProtectedDatabase)$' \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./internal/schemaclean --tags integration \
+            --pattern '^TestInspectNamesEveryObjectApplyDestroys_PostgresLive$' \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./internal/migrationreplay --tags integration \
+            --pattern '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' \
+            --declared-in internal/migrationreplay/replay_realm_live_test.go \
+            --timeout 5m
+          sh scripts/require-tests-ran.sh --package ./integration --tags integration \
+            --pattern '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' \
+            --timeout 12m
 
       # These two skip themselves without a live PostgreSQL, and a skip reads as
       # a pass, which is the property require-tests-ran.sh asserts directly.
@@ -352,7 +384,9 @@ jobs:
           COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          go test -v -count=1 ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration' -timeout 3m
+          sh scripts/require-tests-ran.sh --package ./migration/migrator \
+            --pattern '^(TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration)$' \
+            --timeout 3m
 
       # Every test in the family has to RUN here, not merely be registered, and
       # the set is derived rather than listed: --declared-in makes the file the
@@ -418,7 +452,9 @@ jobs:
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          go test -v -count=1 ./cmd/migratebaseline -run 'TestVerifyBaselineShadowPostgres|TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL' -timeout 3m
+          sh scripts/require-tests-ran.sh --package ./cmd/migratebaseline \
+            --pattern '^(TestVerifyBaselineShadowPostgres|TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL)' \
+            --timeout 3m
 
       - name: Run all databases comprehensive test
         env:
