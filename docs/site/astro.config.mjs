@@ -150,6 +150,7 @@ export default defineConfig({
             { slug: 'atlas/schema-commands' },
             { slug: 'atlas/project-config' },
             { slug: 'atlas/comparison' },
+            { slug: 'atlas/retained-divergences' },
             { slug: 'atlas/conformance' },
             { slug: 'atlas/docs-coverage' },
             { slug: 'atlas/license-boundary' },
