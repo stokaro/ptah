@@ -483,7 +483,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails.",
-    "evidence": "conformance gaps.md probe `inspect-source-workflow`; /Users/buster/Work/denis/ptah/.codex/worktress/docs-feature-matrix/docs/site/src/content/docs/atlas/schema-commands.md"
+    "evidence": "conformance gaps.md probe `inspect-source-workflow`; docs/site/src/content/docs/atlas/schema-commands.md"
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -1032,7 +1032,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner.",
-    "evidence": "/tmp/ptah-mx schema render --dialect postgres (built from /Users/buster/Work/denis/ptah/.codex/worktress/docs-feature-matrix/cmd/ptah); core/platform/capability/capability.go Postgres13/Postgres16/Postgres17 + ForServerVersion; docs/site/src/content/docs/databases/postgresql.md (Version-dependent behavior); comparison.md#supported-databases cites the Atlas Open driver list. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Starter 'Databases engines' names MySQL, MariaDB, PostgreSQL and SQLite, corroborating PostgreSQL on the free tier"
+    "evidence": "`ptah schema render --dialect postgres` built from cmd/ptah; core/platform/capability/capability.go Postgres13/Postgres16/Postgres17 + ForServerVersion; docs/site/src/content/docs/databases/postgresql.md (Version-dependent behavior); comparison.md#supported-databases cites the Atlas Open driver list. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Starter 'Databases engines' names MySQL, MariaDB, PostgreSQL and SQLite, corroborating PostgreSQL on the free tier"
   },
   {
     "area": "Database engines",

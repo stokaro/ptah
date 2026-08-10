@@ -160,12 +160,12 @@ rg -n "Exact error text|Exact output label" --glob '*.md' --glob '*.go'
 The binding rules are in `docs/STYLE_GUIDE.md`. Use Inventario's docs as an
 additional quality reference for tone and structure, especially:
 
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/index.mdx`
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/getting-started.md`
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/self-hosting.md`
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/backup-and-restore.md`
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/groups-and-sharing.md`
-- `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/reports.md`
+- [Home](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/index.mdx)
+- [Getting started](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/getting-started.md)
+- [Self-hosting](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/self-hosting.md)
+- [Backup and restore](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/backup-and-restore.md)
+- [Groups and sharing](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/groups-and-sharing.md)
+- [Reports](https://github.com/denisvmedia/inventario/blob/master/docs/site/src/content/docs/reports.md)
 
 Match the discipline, not the product structure exactly:
 
