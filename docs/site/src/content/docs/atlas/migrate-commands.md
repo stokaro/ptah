@@ -1543,7 +1543,8 @@ from the source directory, and start with a destination that does not already
 contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations are
 not in that list: they are converted onto a reserved version slot above every
 versioned migration, and the destination file name carries that slot rather than
-an R suffix, because Ptah cannot execute an R-suffixed Atlas migration.
+an R suffix, so the imported directory keeps one-time migration semantics
+instead of Flyway-style reapply semantics.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

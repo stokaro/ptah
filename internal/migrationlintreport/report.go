@@ -11,12 +11,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/config/projectconfig"
@@ -59,6 +61,7 @@ type Report struct {
 	Findings         []lint.Finding `json:"findings"`
 	Error            string         `json:"error,omitempty"`
 	Versions         []int64        `json:"-"`
+	VersionKeys      []string       `json:"-"`
 	Analysis         lint.Analysis  `json:"-"`
 	// SchemaCurrent and SchemaDesired are the HCL rendering of the dev database
 	// before the first analyzed version and after the last one. They are empty
@@ -192,7 +195,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	versions, restrictVersions, err := lintVersions(ctx, opts, projectCfg, snapshot)
+	selection, err := lintVersions(ctx, opts, projectCfg, snapshot)
 	if err != nil {
 		return Report{}, err
 	}
@@ -224,8 +227,9 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// and exit 0, on a surface with no comparison binary to justify it.
 		SchemaScope: compatSchemaScope(opts.Compatibility, opts.DevURL),
 		Selection: lint.VersionSelection{
-			Versions:   versions,
-			Restricted: restrictVersions,
+			Versions:    selection.versions,
+			VersionKeys: selection.versionKeys,
+			Restricted:  selection.restricted,
 		},
 		DirFormat:         prepared.dirFormat,
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
@@ -239,7 +243,8 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Dir:              opts.Dir,
 		DisabledRules:    disabled,
 		Findings:         findings,
-		Versions:         versions,
+		Versions:         selection.versions,
+		VersionKeys:      selection.versionKeys,
 		Analysis:         analysis,
 		SchemaCurrent:    schemas.current,
 		SchemaDesired:    schemas.desired,
@@ -490,18 +495,29 @@ func (c *schemaCapture) replayedObserver(ctx context.Context) func(*dbschema.Dat
 func replayVersionObserver(
 	baseline *baselineCollector,
 	capture *schemaCapture,
-) func(context.Context, int64, *dbschema.DatabaseConnection) error {
+) func(context.Context, *migrator.Migration, *dbschema.DatabaseConnection) error {
 	observeBaseline := baseline.observer()
 	if capture == nil {
-		return observeBaseline
+		if observeBaseline == nil {
+			return nil
+		}
+		return func(ctx context.Context, migration *migrator.Migration, conn *dbschema.DatabaseConnection) error {
+			if migration == nil {
+				return nil
+			}
+			return observeBaseline(ctx, migration.Version, conn)
+		}
 	}
-	return func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error {
+	return func(ctx context.Context, migration *migrator.Migration, conn *dbschema.DatabaseConnection) error {
 		if observeBaseline != nil {
-			if err := observeBaseline(ctx, version, conn); err != nil {
+			if migration == nil {
+				return nil
+			}
+			if err := observeBaseline(ctx, migration.Version, conn); err != nil {
 				return err
 			}
 		}
-		return capture.observeVersion(ctx, version, conn)
+		return capture.observeMigration(ctx, migration, conn)
 	}
 }
 
@@ -616,7 +632,7 @@ func lintVersions(
 	opts Options,
 	cfg projectconfig.Config,
 	fsys fs.FS,
-) ([]int64, bool, error) {
+) (lintVersionSelection, error) {
 	projectSelectors := projectLintSelectorUse{
 		latest: !opts.Changed.GitBase,
 		git:    !opts.Changed.Latest,
@@ -624,34 +640,93 @@ func lintVersions(
 	latest, latestSet := effectiveLatest(opts, cfg, projectSelectors)
 	git, err := effectiveGit(opts, cfg, projectSelectors)
 	if err != nil {
-		return nil, false, err
+		return lintVersionSelection{}, err
 	}
 	if !git.ok && gitDirConfigured(opts, cfg, projectSelectors) {
-		return nil, false, fmt.Errorf("--git-dir requires --git-base")
+		return lintVersionSelection{}, fmt.Errorf("--git-dir requires --git-base")
 	}
 	if latestSet && git.ok {
-		return nil, false, fmt.Errorf("--latest and --git-base are mutually exclusive")
+		return lintVersionSelection{}, fmt.Errorf("--latest and --git-base are mutually exclusive")
 	}
 	if latestSet {
 		if latest <= 0 {
-			return nil, false, fmt.Errorf("--latest must be greater than zero")
+			return lintVersionSelection{}, fmt.Errorf("--latest must be greater than zero")
 		}
 		dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
 		if err != nil {
-			return nil, false, err
+			return lintVersionSelection{}, err
 		}
-		versions, err := latestMigrationVersions(fsys, uint(latest), dirFormat)
-		return versions, true, err
+		selection, err := latestMigrationSelection(fsys, uint(latest), dirFormat)
+		selection.restricted = true
+		return selection, err
 	}
 	if git.ok {
 		dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
 		if err != nil {
-			return nil, false, err
+			return lintVersionSelection{}, err
 		}
-		versions, err := gitChangedMigrationVersions(ctx, opts.Dir, git.base, git.dir, dirFormat)
-		return versions, true, err
+		selection, err := gitChangedMigrationSelection(ctx, opts.Dir, git.base, git.dir, dirFormat)
+		selection.restricted = true
+		return selection, err
 	}
-	return nil, false, nil
+	return lintVersionSelection{}, nil
+}
+
+type lintVersionSelection struct {
+	versions    []int64
+	versionKeys []string
+	restricted  bool
+	seenVersion map[int64]struct{}
+	seenKey     map[string]struct{}
+}
+
+func newLintVersionSelection() lintVersionSelection {
+	return lintVersionSelection{
+		seenVersion: map[int64]struct{}{},
+		seenKey:     map[string]struct{}{},
+	}
+}
+
+func (s *lintVersionSelection) add(file migrator.MigrationFile) {
+	key := file.RevisionVersion()
+	if key != "" {
+		if _, ok := s.seenKey[key]; !ok {
+			s.seenKey[key] = struct{}{}
+			s.versionKeys = append(s.versionKeys, key)
+		}
+	}
+	if _, ok := s.seenVersion[file.Version]; ok {
+		return
+	}
+	s.seenVersion[file.Version] = struct{}{}
+	s.versions = append(s.versions, file.Version)
+}
+
+func (s *lintVersionSelection) sort() {
+	slices.Sort(s.versions)
+	slices.SortFunc(s.versionKeys, compareRevisionVersionKeys)
+}
+
+func compareRevisionVersionKeys(a, b string) int {
+	return cmp.Or(cmp.Compare(revisionVersionKeyRank(a), revisionVersionKeyRank(b)), strings.Compare(a, b))
+}
+
+func revisionVersionKeyRank(key string) int64 {
+	if key == "R" {
+		return math.MaxInt64
+	}
+	numeric, ok := strings.CutSuffix(key, "R")
+	if ok {
+		version, err := strconv.ParseInt(numeric, 10, 64)
+		if err == nil {
+			return version
+		}
+	}
+	version, err := strconv.ParseInt(key, 10, 64)
+	if err == nil {
+		return version
+	}
+	return math.MaxInt64
 }
 
 type projectLintSelectorUse struct {
@@ -748,27 +823,27 @@ func gitDirConfigured(
 	return configGitDir.Present && configGitDir.Value != ""
 }
 
-func gitChangedMigrationVersions(
+func gitChangedMigrationSelection(
 	ctx context.Context,
 	migrationsDir string,
 	gitBase string,
 	gitDir string,
 	dirFormat migrator.MigrationDirFormat,
-) ([]int64, error) {
+) (lintVersionSelection, error) {
 	repoRoot, err := gitOutput(ctx, gitDir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("find git repository root: %w", err)
+		return lintVersionSelection{}, fmt.Errorf("find git repository root: %w", err)
 	}
 	migrationsAbs, err := filepath.Abs(migrationsDir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve migrations directory: %w", err)
+		return lintVersionSelection{}, fmt.Errorf("resolve migrations directory: %w", err)
 	}
 	relDir, err := filepath.Rel(repoRoot, migrationsAbs)
 	if err != nil {
-		return nil, fmt.Errorf("resolve migrations directory relative to git repository: %w", err)
+		return lintVersionSelection{}, fmt.Errorf("resolve migrations directory relative to git repository: %w", err)
 	}
 	if strings.HasPrefix(relDir, ".."+string(filepath.Separator)) || relDir == ".." || filepath.IsAbs(relDir) {
-		return nil, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRoot)
+		return lintVersionSelection{}, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRoot)
 	}
 	changed, err := gitOutput(ctx, repoRoot,
 		"diff",
@@ -780,13 +855,13 @@ func gitChangedMigrationVersions(
 		filepath.ToSlash(relDir),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("detect git changeset against %q: %w", gitBase, err)
+		return lintVersionSelection{}, fmt.Errorf("detect git changeset against %q: %w", gitBase, err)
 	}
-	versions, err := migrationVersionsFromChangedPaths(changed, dirFormat)
+	selection, err := migrationSelectionFromChangedPaths(changed, dirFormat)
 	if err != nil {
-		return nil, err
+		return lintVersionSelection{}, err
 	}
-	return versions, nil
+	return selection, nil
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
@@ -799,8 +874,8 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return strings.TrimSpace(string(output)), nil
 }
 
-func migrationVersionsFromChangedPaths(changed string, dirFormat migrator.MigrationDirFormat) ([]int64, error) {
-	seen := map[int64]struct{}{}
+func migrationSelectionFromChangedPaths(changed string, dirFormat migrator.MigrationDirFormat) (lintVersionSelection, error) {
+	selection := newLintVersionSelection()
 	var unversioned []string
 	for name := range strings.Lines(changed) {
 		name = strings.TrimSpace(name)
@@ -812,20 +887,16 @@ func migrationVersionsFromChangedPaths(changed string, dirFormat migrator.Migrat
 			unversioned = append(unversioned, name)
 			continue
 		}
-		if parsed.Repeatable || parsed.Version <= 0 {
+		if parsed.Version < 0 {
 			continue
 		}
-		seen[parsed.Version] = struct{}{}
+		selection.add(*parsed)
 	}
 	if len(unversioned) > 0 {
-		return nil, fmt.Errorf("--git-base requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
+		return lintVersionSelection{}, fmt.Errorf("--git-base requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
 	}
-	versions := make([]int64, 0, len(seen))
-	for version := range seen {
-		versions = append(versions, version)
-	}
-	slices.Sort(versions)
-	return versions, nil
+	selection.sort()
+	return selection, nil
 }
 
 func parseChangedMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
@@ -841,26 +912,20 @@ func parseChangedMigrationName(name string, dirFormat migrator.MigrationDirForma
 	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
 }
 
-func latestMigrationVersions(fsys fs.FS, latest uint, dirFormat migrator.MigrationDirFormat) ([]int64, error) {
+func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrator.MigrationDirFormat) (lintVersionSelection, error) {
 	unversioned, err := unversionedSQLFiles(fsys, dirFormat)
 	if err != nil {
-		return nil, err
+		return lintVersionSelection{}, err
 	}
 	if len(unversioned) > 0 {
-		return nil, fmt.Errorf("--latest requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
+		return lintVersionSelection{}, fmt.Errorf("--latest requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
 	}
 	files, err := migrator.DiscoverMigrationFiles(fsys, dirFormat)
 	if err != nil {
-		return nil, err
+		return lintVersionSelection{}, err
 	}
-	seen := make(map[int64]struct{})
-	for _, file := range files {
-		if file.Repeatable || file.Version <= 0 {
-			continue
-		}
-		seen[file.Version] = struct{}{}
-	}
-	if len(seen) == 0 && len(files) == 0 {
+	selection := latestMigrationSelectionFromFiles(files, latest)
+	if len(selection.versionKeys) == 0 && len(files) == 0 {
 		// An empty migration directory selects no versions rather than failing.
 		// The pinned Atlas community binary v1.3.0 exits 0 with no output for
 		// `migrate lint --latest 1` on one, which is the shape a repository
@@ -871,23 +936,66 @@ func latestMigrationVersions(fsys fs.FS, latest uint, dirFormat migrator.Migrati
 		// carry no version, because then --latest was asked to select from a
 		// set it cannot order, and dropping the diagnostic would silently lint
 		// nothing.
-		return nil, nil
+		return lintVersionSelection{}, nil
 	}
-	if len(seen) == 0 {
-		return nil, fmt.Errorf("no versioned migration files found for --latest")
+	if len(selection.versionKeys) == 0 {
+		return lintVersionSelection{}, fmt.Errorf("no versioned migration files found for --latest")
 	}
-	versions := make([]int64, 0, len(seen))
-	for version := range seen {
-		versions = append(versions, version)
+	return selection, nil
+}
+
+func latestMigrationSelectionFromFiles(files []migrator.MigrationFile, latest uint) lintVersionSelection {
+	candidates := make([]migrator.MigrationFile, 0, len(files))
+	maxVersion := maxMigrationFileVersion(files)
+	for _, file := range files {
+		if file.Version <= 0 && !file.Repeatable {
+			continue
+		}
+		candidates = append(candidates, file)
 	}
-	slices.SortFunc(versions, func(a, b int64) int {
-		return cmp.Compare(b, a)
+	slices.SortStableFunc(candidates, func(a, b migrator.MigrationFile) int {
+		return cmp.Or(
+			cmp.Compare(migrationFileVersionRank(a, maxVersion), migrationFileVersionRank(b, maxVersion)),
+			strings.Compare(a.Name, b.Name),
+		)
 	})
-	if latest < uint(len(versions)) {
-		versions = versions[:int(latest)]
+
+	unique := make([]migrator.MigrationFile, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, file := range candidates {
+		key := file.RevisionVersion()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, file)
 	}
-	slices.Sort(versions)
-	return versions, nil
+	if latest < uint(len(unique)) {
+		unique = unique[len(unique)-int(latest):]
+	}
+	selection := newLintVersionSelection()
+	for _, file := range unique {
+		selection.add(file)
+	}
+	selection.sort()
+	return selection
+}
+
+func maxMigrationFileVersion(files []migrator.MigrationFile) int64 {
+	var maxVersion int64
+	for _, file := range files {
+		if file.Version > maxVersion {
+			maxVersion = file.Version
+		}
+	}
+	return maxVersion
+}
+
+func migrationFileVersionRank(file migrator.MigrationFile, maxVersion int64) int64 {
+	if file.Repeatable && file.Version == 0 {
+		return maxVersion + 1
+	}
+	return file.Version
 }
 
 func unversionedSQLFiles(fsys fs.FS, dirFormat migrator.MigrationDirFormat) ([]string, error) {

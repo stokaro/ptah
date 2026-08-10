@@ -71,7 +71,9 @@ type ApplyPlan struct {
 	Status           *migrator.MigrationStatus
 	Migrations       []*migrator.Migration
 	SelectedVersions []int64
+	SelectedKeys     []string
 	CurrentVersion   int64
+	CurrentKey       string
 	DryRun           bool
 	StartedAt        time.Time
 
@@ -87,7 +89,9 @@ type ApplyResult struct {
 	FinalStatus      *migrator.MigrationStatus
 	Migrations       []*migrator.Migration
 	SelectedVersions []int64
+	SelectedKeys     []string
 	CurrentVersion   int64
+	CurrentKey       string
 	Applied          bool
 	DryRun           bool
 	StartedAt        time.Time
@@ -141,16 +145,24 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		return ApplyPlan{}, fmt.Errorf("error getting migration status: %w", err)
 	}
 	plannedCurrentVersion := statusCurrentAfterAssumedApplied(status.CurrentVersion, assumedAppliedVersions)
+	plannedCurrentKey := statusCurrentKeyAfterAssumedApplied(status.CurrentVersionKey, status.CurrentVersion, plannedCurrentVersion)
 	pending := status.PendingMigrations
+	pendingKeys := status.PendingMigrationKeys
 	if len(assumedAppliedVersions) > 0 {
-		pending = pendingAfterAssumedApplied(status.PendingMigrations, assumedAppliedVersions)
+		pending, pendingKeys = pendingAfterAssumedApplied(
+			status.PendingMigrations,
+			status.PendingMigrationKeys,
+			assumedAppliedVersions,
+		)
 	}
 
 	return ApplyPlan{
 		Status:                 status,
 		Migrations:             mig.MigrationProvider().Migrations(),
 		SelectedVersions:       selectedApplyVersions(pending, opts.Amount, opts.ToVersion),
+		SelectedKeys:           selectedApplyVersionKeys(pending, pendingKeys, opts.Amount, opts.ToVersion),
 		CurrentVersion:         plannedCurrentVersion,
+		CurrentKey:             plannedCurrentKey,
 		DryRun:                 opts.DryRun,
 		StartedAt:              startedAt,
 		mig:                    mig,
@@ -234,7 +246,9 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		Status:           p.Status,
 		Migrations:       p.Migrations,
 		SelectedVersions: p.SelectedVersions,
+		SelectedKeys:     p.SelectedKeys,
 		CurrentVersion:   p.CurrentVersion,
+		CurrentKey:       p.CurrentKey,
 		DryRun:           p.DryRun,
 		StartedAt:        p.StartedAt,
 	}
@@ -249,7 +263,9 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			lockedPlanObserved = true
 			result.SelectedVersions = slices.Clone(plan.Versions)
+			result.SelectedKeys = slices.Clone(plan.VersionKeys)
 			result.CurrentVersion = plan.CurrentVersion
+			result.CurrentKey = plan.CurrentVersionKey
 		},
 		Preflight: func(ctx context.Context, plan migrator.MigrationPlan) error {
 			if err := runApplyPreflight(ctx, hook, plan); err != nil {
@@ -281,8 +297,10 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		}
 		result.FinalStatus = finalStatus
 		result.CurrentVersion = finalStatus.CurrentVersion
+		result.CurrentKey = finalStatus.CurrentVersionKey
 		if !lockedPlanObserved {
 			result.SelectedVersions = nil
+			result.SelectedKeys = nil
 		}
 		return result, nil
 	}
@@ -441,18 +459,20 @@ func applyBaselineVersions(mig *migrator.Migrator, baselineVersion int64) ([]int
 	return versions, nil
 }
 
-func pendingAfterAssumedApplied(pending []int64, assumedApplied []int64) []int64 {
+func pendingAfterAssumedApplied(pending []int64, keys []string, assumedApplied []int64) ([]int64, []string) {
 	assumed := make(map[int64]struct{}, len(assumedApplied))
 	for _, version := range assumedApplied {
 		assumed[version] = struct{}{}
 	}
 	filtered := make([]int64, 0, len(pending))
-	for _, version := range pending {
+	filteredKeys := make([]string, 0, len(keys))
+	for index, version := range pending {
 		if _, ok := assumed[version]; !ok {
 			filtered = append(filtered, version)
+			filteredKeys = append(filteredKeys, applyVersionKeyAt(keys, pending, index))
 		}
 	}
-	return filtered
+	return filtered, filteredKeys
 }
 
 // selectedApplyVersions previews the versions an apply will run, before the
@@ -477,6 +497,27 @@ func selectedApplyVersions(pending []int64, amount uint64, toVersion int64) []in
 	return selected
 }
 
+func selectedApplyVersionKeys(pending []int64, keys []string, amount uint64, toVersion int64) []string {
+	selected := make([]string, 0, len(pending))
+	for index, version := range pending {
+		if toVersion > 0 && version > toVersion {
+			continue
+		}
+		selected = append(selected, applyVersionKeyAt(keys, pending, index))
+		if amount > 0 && uint64(len(selected)) == amount {
+			break
+		}
+	}
+	return selected
+}
+
+func applyVersionKeyAt(keys []string, versions []int64, index int) string {
+	if index < len(keys) && keys[index] != "" {
+		return keys[index]
+	}
+	return strconv.FormatInt(versions[index], 10)
+}
+
 func statusCurrentAfterAssumedApplied(current int64, assumedApplied []int64) int64 {
 	for _, version := range assumedApplied {
 		if version > current {
@@ -484,4 +525,11 @@ func statusCurrentAfterAssumedApplied(current int64, assumedApplied []int64) int
 		}
 	}
 	return current
+}
+
+func statusCurrentKeyAfterAssumedApplied(currentKey string, current int64, assumedCurrent int64) string {
+	if assumedCurrent > current {
+		return strconv.FormatInt(assumedCurrent, 10)
+	}
+	return currentKey
 }

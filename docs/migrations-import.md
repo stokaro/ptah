@@ -56,8 +56,9 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   integers keeps them. An undo (`U<version>__…`) migration becomes the down of
   the versioned migration with the same version. A repeatable (`R__…`) migration
   is imported as a one-time migration ordered after every versioned one (named
-  `repeatable_<desc>`), because Ptah has no repeatable concept — a later change
-  to its source becomes a new Ptah migration rather than an automatic re-run.
+  `repeatable_<desc>`), because Ptah-native migrations do not have Flyway-style
+  reapply semantics — a later source change becomes a new Ptah migration rather
+  than an automatic re-run.
 - **Liquibase specifics.** Only formatted-SQL changelogs are read. A changeset
   has no numeric version (it is identified by `author:id` and applied in changelog
   order), so changesets are assigned sequential Ptah versions in file order — files

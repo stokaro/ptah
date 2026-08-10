@@ -94,7 +94,7 @@ func buildAtlasMigrateDownResult(opts MigrateDownResultOptions) (atlasMigrateDow
 	result := atlasMigrateDownResult{
 		atlasEnv: env,
 		Env:      env,
-		Planned:  atlasMigrateApplyPendingFiles(filesByVersion, opts.PlannedVersions),
+		Planned:  atlasMigrateApplyPendingFiles(filesByVersion, opts.PlannedVersions, nil),
 		Current:  atlasMigrateApplyVersionString(opts.CurrentVersion),
 		Target:   atlasMigrateDownTarget(opts),
 		Total:    len(opts.PlannedVersions),
@@ -123,14 +123,15 @@ func atlasMigrateDownTarget(opts MigrateDownResultOptions) string {
 }
 
 func atlasMigrateDownRevertedFiles(
-	files map[int64]atlasMigrateApplyFile,
+	files map[string]atlasMigrateApplyFile,
 	opts MigrateDownResultOptions,
 ) []*atlasMigrateDownRevertedFile {
 	migrations := atlasMigrateApplyMigrationsByVersion(opts.Migrations)
 	dialect := opts.Driver
 	reverted := make([]*atlasMigrateDownRevertedFile, 0, len(opts.RevertedVersions)+1)
 	for _, version := range opts.RevertedVersions {
-		file, ok := files[version]
+		key := strconv.FormatInt(version, 10)
+		file, ok := files[key]
 		if !ok {
 			continue
 		}
@@ -139,7 +140,7 @@ func atlasMigrateDownRevertedFiles(
 			Start:                 opts.StartedAt,
 			End:                   opts.EndedAt,
 		}
-		if migration := migrations[version]; migration != nil {
+		if migration := migrations[key]; migration != nil {
 			revertedFile.Applied = atlasMigrateApplySplitStatements(migration.DownSQL, dialect)
 		}
 		reverted = append(reverted, revertedFile)
@@ -147,7 +148,7 @@ func atlasMigrateDownRevertedFiles(
 	if opts.DownError == nil {
 		return reverted
 	}
-	failedVersion := atlasMigrateDownFailedVersion(opts)
+	failedVersion := strconv.FormatInt(atlasMigrateDownFailedVersion(opts), 10)
 	file, ok := files[failedVersion]
 	if !ok {
 		return reverted

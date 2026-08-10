@@ -60,7 +60,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 }
 
 func writeMigrateLintTextVersion(w io.Writer, version migrateLintTextVersion, elapsed string) error {
-	if _, err := fmt.Fprintf(w, "\n  -- analyzing version %d\n", version.version); err != nil {
+	if _, err := fmt.Fprintf(w, "\n  -- analyzing version %s\n", version.version); err != nil {
 		return err
 	}
 	if len(version.groups) == 0 {
@@ -218,7 +218,7 @@ type migrateLintText struct {
 }
 
 type migrateLintTextVersion struct {
-	version int64
+	version string
 	groups  []migrateLintTextGroup
 }
 
@@ -265,7 +265,7 @@ func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
 		model.analyzedCount++
 		model.changes += len(file.Changes)
 
-		version := migrateLintTextVersion{version: file.Version}
+		version := migrateLintTextVersion{version: migrateLintVersionKey(file)}
 		version.groups = groupDiagnostics(diagsByFile[path.Clean(file.Path)])
 		hasError, hasWarning, count := versionSeverity(version.groups)
 		model.diagnostics += count
@@ -286,10 +286,10 @@ func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
 	last := model.versions[len(model.versions)-1].version
 	migrations := pluralize(model.analyzedCount, "migration", "migrations")
 	if firstSelected > 0 {
-		base := upFiles[firstSelected-1].Version
-		model.header = fmt.Sprintf("Analyzing changes from version %d to %d (%s in total):", base, last, migrations)
+		base := migrateLintVersionKey(upFiles[firstSelected-1])
+		model.header = fmt.Sprintf("Analyzing changes from version %s to %s (%s in total):", base, last, migrations)
 	} else {
-		model.header = fmt.Sprintf("Analyzing changes until version %d (%s in total):", last, migrations)
+		model.header = fmt.Sprintf("Analyzing changes until version %s (%s in total):", last, migrations)
 	}
 	return model
 }
@@ -297,13 +297,14 @@ func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
 func sortedUpFiles(files []migrationlint.File) []migrationlint.File {
 	upFiles := make([]migrationlint.File, 0, len(files))
 	for _, file := range files {
-		if file.Repeatable || file.Direction != "up" || file.Ignored {
+		if file.Direction != "up" || file.Ignored {
 			continue
 		}
 		upFiles = append(upFiles, file)
 	}
+	maxVersion := migrateLintMaxVersion(upFiles)
 	slices.SortStableFunc(upFiles, func(a, b migrationlint.File) int {
-		return cmp.Or(cmp.Compare(a.Version, b.Version), strings.Compare(a.Name, b.Name))
+		return migrateLintFileOrder(a, b, maxVersion)
 	})
 	return upFiles
 }

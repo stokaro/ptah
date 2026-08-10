@@ -31,9 +31,10 @@ const (
 
 // MigrationRevision records one row from the migration metadata table.
 type MigrationRevision struct {
-	Version     int64  `json:"version"`
-	Description string `json:"description"`
-	State       string `json:"state"`
+	Version      int64  `json:"version"`
+	AtlasVersion string `json:"atlas_version,omitempty"`
+	Description  string `json:"description"`
+	State        string `json:"state"`
 	// Direction is the direction that recorded this row. A row left behind by
 	// a rollback that stopped halfway reads MigrationDirectionDown, which is
 	// what routes `migrations repair --resume-from` to the down body instead of
@@ -57,6 +58,16 @@ type MigrationRevision struct {
 	Dirty           bool      `json:"dirty"`
 	ChecksumCurrent string    `json:"checksum_current,omitempty"`
 	partialHashes   []string
+}
+
+// RevisionVersion returns the exact revision-table version token when the
+// revision came from an Atlas-format table, and the decimal numeric version
+// otherwise.
+func (r MigrationRevision) RevisionVersion() string {
+	if r.AtlasVersion != "" {
+		return r.AtlasVersion
+	}
+	return strconv.FormatInt(r.Version, 10)
 }
 
 // DirtyMigrationError reports that a previous migration run left a dirty row.
@@ -257,13 +268,13 @@ func (m *Migrator) getDirtyRevisionSQL() string {
 			return fmt.Sprintf(`SELECT TOP (1) %s
 FROM %s
 				WHERE %s AND %s
-				ORDER BY %s`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+				ORDER BY %s, version`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
 		}
 		return fmt.Sprintf(`SELECT %s
 FROM %s
 WHERE %s AND %s
 ORDER BY %s
-LIMIT 1`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression())
+LIMIT 1`, m.atlasRevisionProjection(), m.qualifiedMigrationsTable(), atlasDirtyRevisionPredicate, atlasMetadataRowPredicate, m.atlasVersionNumberExpression()+", version")
 	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
@@ -295,7 +306,7 @@ func (m *Migrator) getAppliedRevisionsSQL() string {
 			`SELECT %s
 FROM %s
 WHERE %s AND %s
-ORDER BY %s`,
+ORDER BY %s, version`,
 			m.atlasRevisionProjection(),
 			m.qualifiedMigrationsTable(),
 			atlasAppliedRevisionPredicate,
@@ -318,7 +329,7 @@ func (m *Migrator) getRevisionsSQL() string {
 			`SELECT %s
 FROM %s
 WHERE %s
-ORDER BY %s`,
+ORDER BY %s, version`,
 			m.atlasRevisionProjection(),
 			m.qualifiedMigrationsTable(),
 			atlasMetadataRowPredicate,
@@ -353,7 +364,7 @@ func (m *Migrator) getRevisionsForUpdateSQL() string {
 				`SELECT %s
 FROM %s WITH (UPDLOCK, HOLDLOCK)
 WHERE %s
-ORDER BY %s`,
+ORDER BY %s, version`,
 				m.atlasRevisionProjection(),
 				m.qualifiedMigrationsTable(),
 				atlasMetadataRowPredicate,
@@ -550,11 +561,11 @@ const (
 	atlasAppliedRevisionPredicate    = "NOT " + revisionProgressInvalidPredicate + " AND applied = total AND COALESCE(error, '') = '' AND NOT (" + atlasDownRevisionPredicate + ")"
 )
 
-// atlasMetadataVersionNullGuard maps a dot-prefixed metadata version to NULL so
-// it can be cast to a number safely. See [Migrator.atlasVersionNumberExpression]
-// for why this, and not the predicate above, is what protects the statements
-// that select over every revision row.
-const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' THEN NULL ELSE version END`
+// atlasMetadataVersionNullGuard maps Atlas metadata and repeatable version
+// tokens to NULL so the remaining numeric tokens can be cast safely. See
+// [Migrator.atlasVersionNumberExpression] for why this, and not the predicate
+// above, is what protects the statements that select over every revision row.
+const atlasMetadataVersionNullGuard = `CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END`
 
 // atlasVersionNumberExpression renders the numeric form of the version column.
 //
@@ -800,11 +811,19 @@ func (m *Migrator) dirtyRevision(ctx context.Context) (*MigrationRevision, error
 }
 
 func (m *Migrator) getRevision(ctx context.Context, version int64) (*MigrationRevision, error) {
+	return m.getRevisionByVersionArg(ctx, m.revisionVersionArg(version))
+}
+
+func (m *Migrator) getMigrationRevision(ctx context.Context, migration *Migration) (*MigrationRevision, error) {
+	return m.getRevisionByVersionArg(ctx, m.migrationRevisionVersionArg(migration))
+}
+
+func (m *Migrator) getRevisionByVersionArg(ctx context.Context, version any) (*MigrationRevision, error) {
 	var revision *MigrationRevision
 	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
 		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getRevisionSQL())
 		scanned, err := scoped.scanRevisionRow(
-			scoped.conn.QueryRowContext(ctx, query, scoped.revisionVersionArg(version)),
+			scoped.conn.QueryRowContext(ctx, query, version),
 		)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -880,6 +899,8 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	); err != nil {
 		return MigrationRevision{}, err
 	}
+	version = strings.TrimSpace(version)
+	revision.AtlasVersion = version
 	parsedVersion, err := parseAtlasRevisionVersion(version)
 	if err != nil {
 		return MigrationRevision{}, err
@@ -1031,7 +1052,7 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if m.conn.Writer().IsDryRun() || !m.metadataAvailable || m.legacyRevisionTable {
 		return plan, nil
 	}
-	revision, err := m.getRevision(ctx, migration.Version)
+	revision, err := m.getMigrationRevision(ctx, migration)
 	if err != nil {
 		return upRetryPlan{}, err
 	}
@@ -1298,7 +1319,7 @@ func (m *Migrator) restartAtlasMigrationRevisionOn(
 		migrationRevisionHash(migration),
 		m.atlasPartialHashes(migration.UpSQL, alreadyApplied, m.migrationStatementCount(migration.UpSQL)),
 		ptahOperatorVersion,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 	)
 }
 
@@ -1343,7 +1364,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 		ctx,
 		conn,
 		query,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 		migration.atlasFilenameDescription(),
 		int64(AtlasRevisionTypeApplied),
 		0,
@@ -1406,7 +1427,7 @@ func (m *Migrator) completeAtlasMigrationRevisionOn(
 		time.Since(startedAt).Nanoseconds(),
 		m.atlasNullJSONValue(),
 		ptahOperatorVersion,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 	)
 }
 
@@ -1445,7 +1466,7 @@ func (m *Migrator) checkpointMigrationRevisionOn(
 			time.Since(startedAt).Nanoseconds(),
 			m.atlasDirtyPartialHashes(sqlText, direction, event.Index, event.Total),
 			atlasOperatorVersionForDirection(direction),
-			strconv.FormatInt(migration.Version, 10),
+			migration.RevisionVersion(),
 		)
 	}
 	return executeSQLOn(
@@ -1498,7 +1519,7 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 			event.Statement,
 			m.atlasDirtyPartialHashes(sqlText, direction, event.Index-1, event.Total),
 			atlasOperatorVersionForDirection(direction),
-			strconv.FormatInt(migration.Version, 10),
+			migration.RevisionVersion(),
 		)
 	}
 	return executeSQLOn(
@@ -1586,7 +1607,7 @@ func (m *Migrator) beginAtlasRollbackRevision(
 		int64(0),
 		m.atlasNullJSONValue(),
 		ptahDownOperatorVersion,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 	)
 }
 
@@ -1629,7 +1650,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		applied = rolledBackApplied(m.conn.Info().Dialect, txMode, applied)
 	}
 	if usesTransactionalProgressWitness(m.conn.Info().Dialect, txMode) {
-		revision, err := m.getRevision(recordCtx, migration.Version)
+		revision, err := m.getMigrationRevision(recordCtx, migration)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %d progress witness: %w", migration.Version, err)
 		}
@@ -1754,7 +1775,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 		atlasFailureStatement(sqlText, m.connectionDialect(), failedIndex, stmt),
 		m.atlasDirtyPartialHashes(sqlText, direction, applied, total),
 		atlasOperatorVersionForDirection(direction),
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 	)
 }
 
@@ -1763,7 +1784,10 @@ func (m *Migrator) verifyAppliedMigrationChecksums(ctx context.Context, migratio
 		return nil
 	}
 	for _, migration := range migrations {
-		revision, err := m.getRevision(ctx, migration.Version)
+		if migration.isAtlasRepeatable() {
+			continue
+		}
+		revision, err := m.getMigrationRevision(ctx, migration)
 		if err != nil {
 			return err
 		}
@@ -1909,7 +1933,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 	for _, migration := range migrations {
 		if m.forceAppliedConflictClause() == "" {
 			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
 			}
 		}
@@ -1946,7 +1970,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 	if err := conn.Writer().ExecuteSQL(
 		ctx,
 		query,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 		migration.atlasFilenameDescription(),
 		int64(AtlasRevisionTypeBaseline),
 		0,
@@ -2541,7 +2565,7 @@ func atlasOperatorVersionForDirection(direction MigrationDirection) string {
 
 func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migration) error {
 	if m.isClickHouse() {
-		revision, err := m.getRevision(ctx, migration.Version)
+		revision, err := m.getMigrationRevision(ctx, migration)
 		if err != nil {
 			return err
 		}
@@ -2551,7 +2575,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 	}
 	if m.forceAppliedConflictClause() == "" {
 		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-		if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+		if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 			return err
 		}
 	}
@@ -2581,7 +2605,7 @@ func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Mi
 		ctx,
 		m.conn,
 		query,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 		migration.atlasFilenameDescription(),
 		int64(AtlasRevisionTypeApplied),
 		total,
@@ -2603,7 +2627,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 	if _, err := tx.ExecContext(
 		ctx,
 		query,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 		migration.atlasFilenameDescription(),
 		int64(AtlasRevisionTypeManuallySet),
 		0,
@@ -2677,7 +2701,7 @@ func (m *Migrator) forceAppliedAtlasMigrationClickHouse(ctx context.Context, mig
 		migrationRevisionHash(migration),
 		m.atlasNullJSONValue(),
 		ptahOperatorVersion,
-		strconv.FormatInt(migration.Version, 10),
+		migration.RevisionVersion(),
 	)
 }
 
@@ -2686,4 +2710,11 @@ func (m *Migrator) revisionVersionArg(version int64) any {
 		return strconv.FormatInt(version, 10)
 	}
 	return version
+}
+
+func (m *Migrator) migrationRevisionVersionArg(migration *Migration) any {
+	if m.revisionTableFormat.isAtlas() {
+		return migration.RevisionVersion()
+	}
+	return migration.Version
 }

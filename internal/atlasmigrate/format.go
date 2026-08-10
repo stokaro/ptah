@@ -25,8 +25,7 @@ const DirFormatQueryKey = "format"
 // executes only the source tool's up SQL and never its down or rollback
 // section.
 //
-// Formats Ptah cannot execute yet (such as Flyway repeatable migrations) and
-// malformed layouts return an error. This never opens a pathname or database
+// Malformed layouts return an error. This never opens a pathname or database
 // connection, so callers can capture a rooted source and reject a bad layout
 // before mutating the target database.
 //
