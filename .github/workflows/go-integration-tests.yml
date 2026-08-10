@@ -374,6 +374,31 @@ jobs:
             --declared-in migration/migrator/rolled_back_progress_integration_test.go \
             --timeout 5m
 
+      # Revision-completion and commit failures, one case per DDL transaction
+      # capability class (#999). Four of the five cases need a server and skip
+      # themselves without one, so dropping CLICKHOUSE_URL from this block would
+      # delete the whole no-transaction class from the matrix while the step
+      # stayed green. require-tests-ran.sh refuses a skip outright, and
+      # --declared-in points at both files so a case renamed out of the pattern
+      # fails here rather than quietly stopping.
+      # 10m rather than 5m is headroom for a shared runner, not a measurement:
+      # the family takes about 31s of package time against PostgreSQL 18,
+      # MySQL 26.7, MariaDB 10.11 and ClickHouse 26.7.
+      - name: Run revision-completion class tests
+        env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+        run: |
+          sh scripts/require-tests-ran.sh --package ./migration/migrator \
+            --pattern '^Test(RevisionCompletion|CommitFailure)' \
+            --declared-in migration/migrator/revision_completion_class_test.go \
+            --declared-in migration/migrator/commit_failure_class_test.go \
+            --timeout 10m
+
       - name: Run no-transaction and shadow generator integration tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

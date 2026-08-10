@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/ddltx"
 	"go.5x5.cz/ptah/internal/lexer"
 )
 
@@ -17,13 +17,15 @@ import (
 // MySQL and MariaDB the answer differs statement by statement, and a resume
 // that assumes otherwise either repeats committed SQL or skips SQL that never
 // ran.
+//
+// The dialect set lives in internal/ddltx rather than in a switch here. This
+// function used to be the only place the distinction was written down, so a
+// target whose DDL transaction contract had never been decided read as "not
+// MySQL" and inherited the transactional answer without anyone choosing it.
+// ddltx.ClassOf has no catch-all arm and a guard test over every dialect
+// core/platform/capability knows, so the same omission now fails a test.
 func implicitCommitDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
-	}
+	return ddltx.ClassOf(dialect) == ddltx.ImplicitCommit
 }
 
 func (m *Migrator) validateTransactionalProgressSQL(

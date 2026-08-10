@@ -4839,6 +4839,7 @@ func NormalizeDialect(dialect string) string
 
 ## go.5x5.cz/ptah/core/platform/capability
 
+func DefaultDialects() []string
 func Doc(key Capability) string
 type Capabilities map[Capability]bool
     func ClickHouse24() Capabilities

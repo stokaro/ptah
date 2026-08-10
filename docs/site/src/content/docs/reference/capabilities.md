@@ -74,6 +74,10 @@ the target identifier limit: 63 bytes for the PostgreSQL family, 64 characters
 for the MySQL family, and 128 characters for SQL Server and Spanner. Generated
 names are shortened deterministically before collision checks.
 
+The Go API exposes `capability.DefaultDialects()` for guards and UIs that must
+cover every normalized dialect with a default `capability.ForDialect` preset
+without maintaining a second list.
+
 ## Declarative database testing
 
 `ptah migrations test`, `ptah schema test`, and `migration/dbtest` provide a
