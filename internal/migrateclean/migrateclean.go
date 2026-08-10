@@ -529,16 +529,16 @@ func realmProbe(dialect string) string {
 	if platform.NormalizeDialect(dialect) != platform.Postgres {
 		return ""
 	}
-	// Which schemas belong to the realm is [schemaselection.PostgresNonSystemSchemas],
-	// shared so this gate and `schema inspect` cannot disagree about it. What
-	// this probe adds is the tables, which the gate needs and inspection does
-	// not.
+	// Which schemas belong to the realm is
+	// [schemaselection.PostgresNonSystemSchemasPredicate], shared so this gate
+	// and `schema inspect` cannot disagree about it. What this probe adds is
+	// the tables, which the gate needs and inspection does not.
 	return `
 		SELECT n.nspname, COALESCE(c.relname, '')
 		FROM pg_namespace n
 		LEFT JOIN pg_class c
 		  ON c.relnamespace = n.oid
 		 AND c.relkind IN ('r', 'p')
-		WHERE ` + schemaselection.PostgresNonSystemSchemas + `
+		WHERE ` + schemaselection.PostgresNonSystemSchemasPredicate(dialect) + `
 		ORDER BY n.nspname, c.relname`
 }

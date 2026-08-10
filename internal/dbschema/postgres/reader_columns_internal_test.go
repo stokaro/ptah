@@ -88,6 +88,9 @@ func plainColumnCatalog() pgColumnCatalog {
 // distinguish the two fixtures above on a real server either, and gets the empty
 // string the CASE's ELSE branch returns.
 func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult, error) {
+	if !queryRestrictsColumnsToBaseTables(query) {
+		return dbtest.QueryResult{}, fmt.Errorf("column query reads non-table relations:\n%s", query)
+	}
 	asksAboutDomains, err := queryAsksAboutDomains(query)
 	if err != nil {
 		return dbtest.QueryResult{}, err
@@ -128,6 +131,17 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 			"",
 		}},
 	}, nil
+}
+
+func queryRestrictsColumnsToBaseTables(query string) bool {
+	body := stripSQLComments(query)
+	if !strings.Contains(body, "information_schema.tables") {
+		return false
+	}
+	if !strings.Contains(body, "tbl.table_type = 'BASE TABLE'") {
+		return false
+	}
+	return true
 }
 
 // queryAsksAboutDomains reports whether the formatted_type projection reads

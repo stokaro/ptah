@@ -483,6 +483,9 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 				''
 			) AS owned_sequence_name
 		FROM information_schema.columns col
+		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
+			AND tbl.table_name = col.table_name
+			AND tbl.table_type = 'BASE TABLE'
 		JOIN pg_namespace n ON n.nspname = col.table_schema
 		JOIN pg_class cls ON cls.relname = col.table_name AND cls.relnamespace = n.oid
 		LEFT JOIN pg_attribute a ON a.attrelid = cls.oid
