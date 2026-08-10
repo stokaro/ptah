@@ -401,11 +401,18 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		return r.visitCreateTableAsSelect(node, guard)
 	}
 
-	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
-	lines, err := r.renderCreateTableLines(node)
+	// The lines are rendered before the CREATE TABLE header so that a foreign
+	// key this target cannot host is named on its own line rather than left as
+	// a hole in the column list.
+	lines, refused, err := r.renderCreateTableLines(node)
 	if err != nil {
 		return err
 	}
+	for _, name := range refused {
+		r.writeObjectSkipped(foreignKeyConstraintKind, name)
+	}
+
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
 	for i, line := range lines {
 		if i == len(lines)-1 {
 			r.w.WriteLine(line) // Last line without comma
@@ -452,12 +459,16 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard str
 	return nil
 }
 
-func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) ([]string, error) {
-	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
+// renderCreateTableLines renders the body of a CREATE TABLE and, separately,
+// the identities of the foreign keys this target cannot host. The caller names
+// those on their own lines; returning them rather than writing them keeps the
+// skip comments out of the parenthesized column list.
+func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) (lines, refused []string, err error) {
+	lines = make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
 		line, err := r.renderColumn(column)
 		if err != nil {
-			return nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
+			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
 		lines = append(lines, line)
 	}
@@ -465,14 +476,16 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) ([]string, 
 	for _, constraint := range node.Constraints {
 		line, err := r.renderConstraint(constraint)
 		if err != nil {
-			return nil, fmt.Errorf("error rendering constraint: %w", err)
+			return nil, nil, fmt.Errorf("error rendering constraint: %w", err)
 		}
-		if line != "" {
-			lines = append(lines, line)
+		if line == "" {
+			refused = append(refused, foreignKeyIdentity(constraint))
+			continue
 		}
+		lines = append(lines, line)
 	}
 
-	return r.appendColumnForeignKeyLines(lines, node.Columns)
+	return r.appendColumnForeignKeyLines(lines, refused, node.Columns)
 }
 
 func (r *Renderer) renderPartition(partition *ast.PartitionSpec) (string, error) {
@@ -507,23 +520,34 @@ func renderPartitionExpression(expr string) string {
 	return "(" + expr + ")"
 }
 
-func (r *Renderer) appendColumnForeignKeyLines(lines []string, columns []*ast.ColumnNode) ([]string, error) {
+func (r *Renderer) appendColumnForeignKeyLines(
+	lines, refused []string,
+	columns []*ast.ColumnNode,
+) (outLines, outRefused []string, err error) {
 	for _, column := range columns {
 		if column.ForeignKey == nil {
 			continue
 		}
-		line, err := r.renderColumnForeignKey(column)
+		constraint := columnForeignKeyConstraint(column)
+		line, err := r.renderConstraint(constraint)
 		if err != nil {
-			return nil, err
+			return nil, nil, fmt.Errorf("error rendering foreign key constraint: %w", err)
+		}
+		// An empty line here used to be appended anyway, which put a blank
+		// entry between two commas inside the column list of a target that
+		// cannot host foreign keys.
+		if line == "" {
+			refused = append(refused, foreignKeyIdentity(constraint))
+			continue
 		}
 		lines = append(lines, line)
 	}
-	return lines, nil
+	return lines, refused, nil
 }
 
-func (r *Renderer) renderColumnForeignKey(column *ast.ColumnNode) (string, error) {
+func columnForeignKeyConstraint(column *ast.ColumnNode) *ast.ConstraintNode {
 	fk := column.ForeignKey
-	constraint := &ast.ConstraintNode{
+	return &ast.ConstraintNode{
 		Type:    ast.ForeignKeyConstraint,
 		Name:    fk.Name,
 		Columns: []string{column.Name},
@@ -535,11 +559,6 @@ func (r *Renderer) renderColumnForeignKey(column *ast.ColumnNode) (string, error
 			Name:     fk.Name,
 		},
 	}
-	line, err := r.renderConstraint(constraint)
-	if err != nil {
-		return "", fmt.Errorf("error rendering foreign key constraint: %w", err)
-	}
-	return line, nil
 }
 
 // VisitAlterTable renders PostgreSQL-specific ALTER TABLE statements
@@ -562,7 +581,7 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 				return fmt.Errorf("error rendering add constraint: %w", err)
 			}
 			if constraintLine == "" {
-				r.w.WriteLinef("-- %s: constraint %q is not supported by this target; skipped.", r.dialectUpper, op.Constraint.Name)
+				r.writeObjectSkipped(foreignKeyConstraintKind, foreignKeyIdentity(op.Constraint))
 				continue
 			}
 			// Remove the leading spaces from constraint rendering for ALTER
@@ -824,8 +843,7 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 
 // VisitEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
 func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
-	if !r.capabilities().Has(capability.EnumCustomType) {
-		r.writeObjectSkipped("enum type", node.Name)
+	if r.refuses(capability.EnumCustomType, "enum type", node.Name) {
 		return nil
 	}
 
@@ -1070,6 +1088,13 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		}
 		return fmt.Sprintf("  %s %s", clause, columns), nil
 	case ast.ForeignKeyConstraint:
+		// The empty string is this function's ONLY "the target cannot host
+		// it" answer, and a foreign key is the only constraint kind that can
+		// produce it: every other branch either renders text or returns an
+		// error. Callers turn it into one named skip comment via
+		// foreignKeyIdentity, so all three routes to a refused key -- table
+		// constraint, column reference, ALTER TABLE ADD -- say the same
+		// sentence (stokaro/ptah#929).
 		if !r.capabilities().Has(capability.ForeignKeys) {
 			return "", nil
 		}
@@ -1084,6 +1109,27 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
+}
+
+// foreignKeyConstraintKind is the object kind a refused foreign key is named
+// with. It is a table constraint rather than a schema object, so it says
+// "foreign key constraint" and not "foreign key".
+const foreignKeyConstraintKind = "foreign key constraint"
+
+// foreignKeyIdentity names a foreign key in a skip comment.
+//
+// A schema author need not name a foreign key, and `constraint ""` would tell
+// a reader nothing about what was dropped, so an unnamed key falls back to the
+// local columns and the referenced table -- the pair that identifies it.
+func foreignKeyIdentity(constraint *ast.ConstraintNode) string {
+	if constraint.Name != "" {
+		return constraint.Name
+	}
+	table := ""
+	if constraint.Reference != nil {
+		table = constraint.Reference.Table
+	}
+	return fmt.Sprintf("on (%s) references %s", strings.Join(constraint.Columns, ", "), table)
 }
 
 func renderNullsDistinctClause(nullsDistinct *bool) string {
@@ -1303,8 +1349,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if !r.capabilities().Has(capability.Functions) {
-		r.writeObjectSkipped("function", node.Name)
+	if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1370,8 +1415,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 
 // VisitCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
 func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
-	if err := r.requireRowLevelSecurityCapability(); err != nil {
-		return err
+	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -1417,8 +1462,8 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 
 // VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
 func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
-	if err := r.requireRowLevelSecurityCapability(); err != nil {
-		return err
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -1434,8 +1479,7 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 // VisitDropFunction renders a DROP FUNCTION statement
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if !r.capabilities().Has(capability.Functions) {
-		r.writeObjectSkipped("function", node.Name)
+	if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1512,22 +1556,37 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 	return parts
 }
 
-// writeObjectSkipped records that a schema object the desired schema declares
-// is not emitted for this target, naming both the object kind and the object.
+// writeObjectSkipped records that a declared object is not emitted for this
+// target, naming both the object kind and the object.
 //
-// One renderer serves the whole PostgreSQL family, and both the offline
-// converter and the migration planner hand their nodes to it, so writing the
-// omission here is what makes `schema render` and `schema apply` say the same
-// thing about the same object instead of one of them dropping it in silence
-// (stokaro/ptah#929).
+// Both the offline renderer and the migration planner pass through this
+// renderer, so the skip diagnostic is the shared answer shape for a target that
+// cannot host an object kind (stokaro/ptah#929).
 func (r *Renderer) writeObjectSkipped(kind, name string) {
-	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.", r.dialectUpper, kind, name)
+	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.",
+		r.dialectUpper, commentFragment(kind), commentFragment(name))
+}
+
+// commentFragment keeps diagnostic-only text inside one SQL line comment.
+func commentFragment(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+// refuses reports whether this target cannot host the named object, and writes
+// a skip comment when it cannot. Capability-gated visitors use this helper so
+// `schema render` and `schema apply --dry-run` cannot disagree by returning an
+// error on one path and silently dropping the same object on the other.
+func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
+	if r.capabilities().Has(key) {
+		return false
+	}
+	r.writeObjectSkipped(kind, name)
+	return true
 }
 
 // VisitCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
-	if !r.capabilities().Has(capability.Sequences) {
-		r.writeObjectSkipped("sequence", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
 
@@ -1558,8 +1617,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 // VisitAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
 // the set options are emitted; a node with no set options renders nothing.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
-	if !r.capabilities().Has(capability.Sequences) {
-		r.writeObjectSkipped("sequence", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
 
@@ -1580,8 +1638,7 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 
 // VisitDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
 func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
-	if !r.capabilities().Has(capability.Sequences) {
-		r.writeObjectSkipped("sequence", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
 	}
 
@@ -1603,8 +1660,7 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 
 // VisitCreateView renders a CREATE VIEW statement.
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
-	if !r.capabilities().Has(capability.Views) {
-		r.writeObjectSkipped("view", node.Name)
+	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
 	}
 
@@ -1627,8 +1683,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 
 // VisitDropView renders a DROP VIEW statement.
 func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
-	if !r.capabilities().Has(capability.Views) {
-		r.writeObjectSkipped("view", node.Name)
+	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
 	}
 
@@ -1650,8 +1705,7 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 
 // VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	if !r.capabilities().Has(capability.MaterializedViews) {
-		r.writeObjectSkipped("materialized view", node.Name)
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
 
@@ -1667,8 +1721,7 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 
 // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	if !r.capabilities().Has(capability.MaterializedViews) {
-		r.writeObjectSkipped("materialized view", node.Name)
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
 
@@ -1690,8 +1743,7 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 
 // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
-	if !r.capabilities().Has(capability.MaterializedViews) {
-		r.writeObjectSkipped("materialized view", node.Name)
+	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil
 	}
 
@@ -1714,8 +1766,7 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 	// The linked trigger function below is part of the trigger rather than a
 	// function the schema declared, so one key answers for the pair and one
 	// comment names the object the author actually wrote.
-	if !r.capabilities().Has(capability.Triggers) {
-		r.writeObjectSkipped("trigger", node.Name)
+	if r.refuses(capability.Triggers, "trigger", node.Name) {
 		return nil
 	}
 
@@ -1773,8 +1824,7 @@ func renderPostgreSQLTriggerFunctionBody(body string) string {
 // VisitDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
 // trigger function when its deterministic name is known.
 func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
-	if !r.capabilities().Has(capability.Triggers) {
-		r.writeObjectSkipped("trigger", node.Name)
+	if r.refuses(capability.Triggers, "trigger", node.Name) {
 		return nil
 	}
 
@@ -1852,8 +1902,8 @@ func isIdentifierPart(character byte) bool {
 
 // VisitDropPolicy renders a DROP POLICY statement
 func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	if err := r.requireRowLevelSecurityCapability(); err != nil {
-		return err
+	if r.refuses(capability.RowLevelSecurity, "policy", policyIdentity(node.Name, node.Table)) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -1878,8 +1928,8 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 
 // VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
 func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	if err := r.requireRowLevelSecurityCapability(); err != nil {
-		return err
+	if r.refuses(capability.RowLevelSecurity, "row-level security", "on "+node.Table) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -1895,8 +1945,8 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 
 // VisitCreateRole renders a CREATE ROLE statement for PostgreSQL
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	if err := r.requireRoleManagementCapability(); err != nil {
-		return err
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
 	}
 
 	// Build CREATE ROLE statement
@@ -1970,8 +2020,8 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 
 // VisitDropRole renders a DROP ROLE statement for PostgreSQL
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	if err := r.requireRoleManagementCapability(); err != nil {
-		return err
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -1996,13 +2046,6 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 
 // VisitGrantPrivilege renders a GRANT statement for PostgreSQL.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	if err := r.requireRoleManagementCapability(); err != nil {
-		return err
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("GRANT requires at least one privilege")
@@ -2012,6 +2055,13 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	}
 	if node.ObjectType == "" || node.ObjectName == "" {
 		return fmt.Errorf("GRANT requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "grant", grantIdentity("on", node.ObjectName, "to", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
 	grantOption := ""
@@ -2025,13 +2075,6 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // VisitRevokePrivilege renders a REVOKE statement for PostgreSQL.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	if err := r.requireRoleManagementCapability(); err != nil {
-		return err
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("REVOKE requires at least one privilege")
@@ -2041,6 +2084,13 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	}
 	if node.ObjectType == "" || node.ObjectName == "" {
 		return fmt.Errorf("REVOKE requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "revoke", grantIdentity("on", node.ObjectName, "from", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
 	prefix := "REVOKE"
@@ -2070,8 +2120,8 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 
 // VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	if err := r.requireRoleManagementCapability(); err != nil {
-		return err
+	if r.refuses(capability.RoleManagement, "role", node.Name) {
+		return nil
 	}
 
 	// Add comment if provided
@@ -2089,18 +2139,22 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return nil
 }
 
-func (r *Renderer) requireRowLevelSecurityCapability() error {
-	if r.capabilities().Has(capability.RowLevelSecurity) {
-		return nil
-	}
-	return fmt.Errorf("%s does not support row-level security", r.dialect)
+// policyIdentity and grantIdentity name a row-level-security policy and a
+// privilege grant in a skip comment.
+//
+// Neither object is identified by a bare name. A policy called
+// "tenant_isolation" can exist on several tables at once, and a grant has no
+// name at all -- it is the pair (object, role). Both spellings are built from
+// only the fields BOTH paths carry identically: the offline converter emits one
+// grant node per declared grant with every privilege on it, while the planner
+// emits one per (grant, privilege) pair, so naming the privileges here would
+// make the two paths describe the same refused grant differently.
+func policyIdentity(name, table string) string {
+	return name + " on " + table
 }
 
-func (r *Renderer) requireRoleManagementCapability() error {
-	if r.capabilities().Has(capability.RoleManagement) {
-		return nil
-	}
-	return fmt.Errorf("%s does not support role management", r.dialect)
+func grantIdentity(objectPreposition, objectName, rolePreposition, role string) string {
+	return objectPreposition + " " + objectName + " " + rolePreposition + " " + role
 }
 
 // renderRoleOperation renders a single role operation as an ALTER ROLE statement
