@@ -1,3 +1,5 @@
+//go:build ptah_live_generator
+
 package generator
 
 // White-box testing required: shadowIdentifierSemanticsMatch is the preflight

@@ -1,3 +1,5 @@
+//go:build ptah_live_sqlserver
+
 package dbschema_test
 
 import (

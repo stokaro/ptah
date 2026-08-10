@@ -1,3 +1,5 @@
+//go:build ptah_live_realm_cleanup
+
 package clickhouse_test
 
 import (

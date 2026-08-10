@@ -1,9 +1,9 @@
+//go:build ptah_live_migrator
+
 package migrator_test
 
 import (
 	"context"
-	"os"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -66,22 +66,6 @@ func TestOutOfOrderMigrationsPostgresIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalStatus.AppliedMigrations, qt.DeepEquals, []int64{1, 2, 3, 5})
 	c.Assert(finalStatus.PendingMigrations, qt.HasLen, 0)
-}
-
-func postgresTestURL(t *testing.T) string {
-	t.Helper()
-
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for out-of-order migration integration test")
-	}
-	return dbURL
 }
 
 func issue261Migrator(conn *dbschema.DatabaseConnection, migrations ...*migrator.Migration) *migrator.Migrator {

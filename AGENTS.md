@@ -688,13 +688,17 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   build constraint at all, and the file lands in the ordinary unit run without
   saying so.
 - Live-database tests elsewhere in the tree skip when their DSN environment
-  variable is unset. **A skip reads as a pass.** A test that needs a server is
-  not covered until it is named in a workflow with the environment that lets it
-  connect, and guarded so a rename cannot pass silently.
+  variable is unset. **A skip reads as a pass.** Put each live test in a file
+  selected by a domain tag named `ptah_live_<domain>`. Build constraints apply
+  to whole files, so split mixed unit/live files instead of selecting individual
+  test names. A file that also belongs to the broad integration suite uses a
+  constraint such as `integration || ptah_live_<domain>`.
   [`.github/workflows/go-integration-tests.yml`](.github/workflows/go-integration-tests.yml)
-  encodes that discipline with `scripts/require-tests-ran.sh`; use that guard
-  for targeted live-test workflow steps instead of hand-maintained
-  `go test -list` or output-grep checks.
+  runs targeted contours with `go run ./internal/cmd/testcontour`, passing only
+  the package, contour tag, supporting build tags, and timeout. Do not put test
+  names or regular expressions in those workflow steps. The runner derives
+  membership from tagged files and fails on an empty contour, a missing result,
+  or any skipped test or subtest.
 - The Docker suite in `cmd/integration-test` covers apply, rollback,
   idempotency, parallel-execution smoke, partial-failure recovery, and schema
   diff, and writes reports in stdout, text, JSON, or HTML form into the

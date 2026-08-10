@@ -1,3 +1,5 @@
+//go:build ptah_live_compat_schema_apply
+
 package atlas_test
 
 import (

@@ -1,3 +1,5 @@
+//go:build ptah_live_migrator
+
 package migrator_test
 
 import (
@@ -5,8 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"hash/fnv"
-	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -366,37 +366,6 @@ func runIssue124AdvisoryLockDefaultTimeoutIntegration(t *testing.T, dbURL string
 	err = conn.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", names.logTable)).Scan(&logRows)
 	c.Assert(err, qt.IsNil)
 	c.Assert(logRows, qt.Equals, 1)
-}
-
-func mySQLFamilyTestURL(t *testing.T, dialect string, envNames ...string) string {
-	t.Helper()
-
-	for _, envName := range envNames {
-		dbURL := os.Getenv(envName)
-		if dbURL == "" {
-			continue
-		}
-		if !strings.HasPrefix(dbURL, dialect+"://") {
-			t.Skipf("%s URL required for %s advisory lock integration test", dialect, dialect)
-		}
-		return dbURL
-	}
-
-	t.Skipf("%s not set", strings.Join(envNames, " or "))
-	return ""
-}
-
-func sqlServerTestURL(t *testing.T) string {
-	t.Helper()
-
-	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if dbURL == "" {
-		t.Skip("PTAH_SQLSERVER_TEST_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "sqlserver://") && !strings.HasPrefix(dbURL, "mssql://") {
-		t.Skip("sqlserver URL required for SQL Server advisory lock integration test")
-	}
-	return dbURL
 }
 
 func acquireSQLServerTestMigrationLock(ctx context.Context, conn interface {

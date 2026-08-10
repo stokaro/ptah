@@ -176,7 +176,10 @@ The live SQL Server introspection and identifier-collation tests are opt-in:
 
 ```bash
 PTAH_SQLSERVER_TEST_URL='sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable' \
-  go test ./dbschema ./migration/migrator ./migration/generator -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)|TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive'
+  go run ./internal/cmd/testcontour \
+    --package ./dbschema \
+    --tag ptah_live_sqlserver \
+    --timeout 10m
 ```
 
 The test creates a temporary schema, tables with `IDENTITY`, a reserved-word
@@ -208,6 +211,10 @@ canonical `filter_definition` spelling.
 The generator contour replays the prior schema on a separate SQL Server shadow
 database, then applies the generated ASC-to-DESC migration up, down, and up
 again while re-introspecting the index direction after every transition.
+The repository workflow runs that coverage through the complete
+`ptah_live_generator` and `ptah_live_migrator` contours. Those contours require
+the other database URLs declared in the workflow and reject a missing URL as a
+skipped test.
 
 The integration runner also has an opt-in SQL Server contour:
 

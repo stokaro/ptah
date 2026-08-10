@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration || ptah_live_postgres_family_reader
 
 package gonative_test
 

@@ -1,3 +1,5 @@
+//go:build ptah_live_realm_cleanup
+
 package devlock_test
 
 import (

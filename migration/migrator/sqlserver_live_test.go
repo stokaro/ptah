@@ -1,3 +1,5 @@
+//go:build ptah_live_migrator
+
 package migrator_test
 
 import (

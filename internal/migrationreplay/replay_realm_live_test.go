@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration || ptah_live_realm_cleanup
 
 package migrationreplay_test
 

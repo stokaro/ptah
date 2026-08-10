@@ -66,32 +66,53 @@ MARIADB_CLEANUP_URL="$MARIADB_ADMIN_URL" \
 
 The database-realm cleanup tests use dedicated scratch databases and verify
 that replay cleanup removes database-scoped artifacts without crossing into
-another database. Set the matching URL and run the focused package:
+another database. Live Go test membership is declared by a file-level
+`ptah_live_<domain>` build tag. Run a contour through `testcontour`; it derives
+the tests from tagged files and fails if the contour is empty, a result is
+missing, or any test or subtest skips.
+
+Set the matching administrative URLs, then run the cleanup contour for the
+packages you need:
 
 ```bash
 PTAH_CLICKHOUSE_REALM_TEST_URL="$CLICKHOUSE_ADMIN_URL" \
-  go test -v -count=1 ./internal/dbschema/clickhouse \
-  -run '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive)$'
-
 PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
-  go test -v -count=1 ./internal/dbschema/clickhouse \
-  -run '^TestWriterDropDatabaseRealm_RejectsLegacyServerLive$'
+  go run ./internal/cmd/testcontour \
+    --package ./internal/dbschema/clickhouse \
+    --tag ptah_live_realm_cleanup \
+    --tags integration \
+    --timeout 5m
 
+MYSQL_TEST_URL="$MYSQL_URL" \
 MYSQL_ADMIN_TEST_DSN="$MYSQL_ADMIN_DSN" \
 MARIADB_ADMIN_TEST_DSN="$MARIADB_ADMIN_DSN" \
-  go test -v -count=1 ./internal/dbschema/mysql -tags=integration \
-  -run '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$'
+  go run ./internal/cmd/testcontour \
+    --package ./internal/dbschema/mysql \
+    --tag ptah_live_realm_cleanup \
+    --tags integration \
+    --timeout 5m
 
 PTAH_SQLSERVER_REALM_TEST_URL="$SQLSERVER_ADMIN_URL" \
-  go test -v -count=1 ./internal/dbschema/mssql \
-  -run '^TestWriterDropDatabaseRealm_.*Live$'
+  go run ./internal/cmd/testcontour \
+    --package ./internal/dbschema/mssql \
+    --tag ptah_live_realm_cleanup \
+    --tags integration \
+    --timeout 5m
 
 POSTGRES_URL="$POSTGRES_ADMIN_URL" \
 COCKROACHDB_URL="$COCKROACHDB_ADMIN_URL" \
 YUGABYTEDB_URL="$YUGABYTEDB_ADMIN_URL" \
-  go test -v -count=1 ./internal/dbschema/postgres -tags=integration \
-  -run '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|RejectsProtectedDatabase)$'
+  go run ./internal/cmd/testcontour \
+    --package ./internal/dbschema/postgres \
+    --tag ptah_live_realm_cleanup \
+    --tags integration \
+    --timeout 5m
 ```
+
+Keep broad package runs separate from live contours. A file that belongs to
+both uses `//go:build integration || ptah_live_<domain>`; the broad run remains
+free to skip unavailable databases, while the targeted contour treats a skip
+as a CI failure.
 
 Each URL must identify an administrative connection intended for tests. The
 success-path tests create a separate temporary database and drop it during

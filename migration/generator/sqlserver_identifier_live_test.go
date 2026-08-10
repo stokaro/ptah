@@ -1,3 +1,5 @@
+//go:build ptah_live_generator
+
 package generator_test
 
 import (

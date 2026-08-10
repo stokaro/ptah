@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration || ptah_live_generator
 
 package generator
 
@@ -53,7 +53,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 
 	// 1. The pre-up state, installed through Ptah so the catalog holds what
 	//    Ptah writes rather than a hand-typed approximation of it.
-	prior := rrtSchema(true)
+	prior := rrtPriorSchema()
 	seedDiff := schemadiff.CompareWithDialect(prior, &dbschematypes.DBSchema{}, "postgres")
 	seedSQL, err := generateUpMigrationSQL(seedDiff, prior, "postgres")
 	c.Assert(err, qt.IsNil)
@@ -66,7 +66,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 		qt.Commentf("the seed must leave constraints behind, or the compare proves nothing"))
 
 	// 2. The up migration under test: the table goes away.
-	target := rrtSchema(false)
+	target := rrtTargetSchema()
 	upDiff := schemadiff.CompareWithDialect(target, dbPrior, "postgres")
 	c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{rrtGadgets})
 
@@ -96,36 +96,43 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 		qt.Commentf("down SQL:\n%s", downSQL))
 }
 
-// rrtSchema returns the fixture with or without the table the migration drops.
-//
-// The dropped table carries one constraint of each kind the reverse has to
-// decide about: a primary key and a single-column foreign key, which its own
-// CREATE TABLE restores, and a CHECK, which nothing but an ALTER can restore.
-func rrtSchema(withGadgets bool) *goschema.Database {
-	schema := &goschema.Database{
+func rrtTargetSchema() *goschema.Database {
+	schema := rrtBaseSchema()
+	goschema.Finalize(schema)
+	return schema
+}
+
+func rrtBaseSchema() *goschema.Database {
+	return &goschema.Database{
 		Tables: []goschema.Table{{StructName: "RrtWidget", Name: rrtWidgets}},
 		Fields: []goschema.Field{
 			{StructName: "RrtWidget", Name: "id", Type: "BIGINT", Primary: true},
 		},
 	}
-	if withGadgets {
-		schema.Tables = append(schema.Tables, goschema.Table{StructName: "RrtGadget", Name: rrtGadgets})
-		schema.Fields = append(schema.Fields,
-			goschema.Field{StructName: "RrtGadget", Name: "id", Type: "BIGINT", Primary: true},
-			goschema.Field{StructName: "RrtGadget", Name: "qty", Type: "BIGINT"},
-			goschema.Field{
-				StructName: "RrtGadget", Name: "widget_id", Type: "BIGINT", Nullable: true,
-				Foreign: rrtWidgets + "(id)", ForeignKeyName: "ptah_rrt_gadget_widget_fk",
-			},
-		)
-		schema.Constraints = []goschema.Constraint{{
-			StructName:      "RrtGadget",
-			Table:           rrtGadgets,
-			Name:            "ptah_rrt_gadget_qty_ck",
-			Type:            "CHECK",
-			CheckExpression: "qty > 0",
-		}}
-	}
+}
+
+// rrtPriorSchema returns the fixture with the table the migration drops. The
+// table carries one constraint of each kind the reverse has to decide about: a
+// primary key and a single-column foreign key, which its own CREATE TABLE
+// restores, and a CHECK, which nothing but an ALTER can restore.
+func rrtPriorSchema() *goschema.Database {
+	schema := rrtBaseSchema()
+	schema.Tables = append(schema.Tables, goschema.Table{StructName: "RrtGadget", Name: rrtGadgets})
+	schema.Fields = append(schema.Fields,
+		goschema.Field{StructName: "RrtGadget", Name: "id", Type: "BIGINT", Primary: true},
+		goschema.Field{StructName: "RrtGadget", Name: "qty", Type: "BIGINT"},
+		goschema.Field{
+			StructName: "RrtGadget", Name: "widget_id", Type: "BIGINT", Nullable: true,
+			Foreign: rrtWidgets + "(id)", ForeignKeyName: "ptah_rrt_gadget_widget_fk",
+		},
+	)
+	schema.Constraints = []goschema.Constraint{{
+		StructName:      "RrtGadget",
+		Table:           rrtGadgets,
+		Name:            "ptah_rrt_gadget_qty_ck",
+		Type:            "CHECK",
+		CheckExpression: "qty > 0",
+	}}
 	goschema.Finalize(schema)
 	return schema
 }

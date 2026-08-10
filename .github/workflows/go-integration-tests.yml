@@ -208,11 +208,12 @@ jobs:
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./integration/gonative --tags integration \
-            --pattern '^TestPostgresFamilyReader_' \
-            --declared-in integration/gonative/postgres_family_reader_integration_test.go \
+          go run ./internal/cmd/testcontour \
+            --package ./integration/gonative \
+            --tag ptah_live_postgres_family_reader \
+            --tags integration \
             --timeout 8m
-      
+
       - name: Run executor integration tests with live databases
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
@@ -241,62 +242,25 @@ jobs:
         run: |
           go test -v -count=1 ./integration -tags=integration -timeout 15m
           go test -v -count=1 ./integration/gonative -tags=integration -timeout 15m
-          sh scripts/require-tests-ran.sh --package ./dbschema \
-            --pattern '^TestSQLServerLive(ReadSchema|RenderedUpsertMerge|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' \
-            --declared-in dbschema/sqlserver_live_test.go \
-            --declared-in dbschema/sqlserver_identifier_live_test.go \
-            --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./migration/migrator \
-            --pattern '^(TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration|TestAtlasTxtarChecks_SQLServer(SequenceDoesNotAdvance)?Integration|TestDryRunRevisionState_SQLServerIntegration)$' \
-            --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./migration/generator \
-            --pattern '^(TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive)$' \
-            --timeout 5m
+          go run ./internal/cmd/testcontour \
+            --package ./dbschema \
+            --tag ptah_live_sqlserver \
+            --timeout 10m
 
-      # The reverse plan for views, materialized views and triggers is decided
-      # by what PostgreSQL accepts, and rendering the rollback proves only that
-      # a statement exists. This applies it. The test is behind the integration
-      # build tag in ./migration/generator, which no other step in this file
-      # compiles, so without this step the only live gate for the rollback would
-      # run nowhere.
-      - name: Run reverse view-like rollback round trip
-        env:
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-        run: |
-          sh scripts/require-tests-ran.sh --package ./migration/generator --tags integration \
-            --pattern '^TestReverseViewLikeObjects_DownRoundTrip_Integration$' --timeout 5m
-
-      # The rollback of a migration that DROPS a table has to re-create it, and
-      # the version this gate was added for rendered a perfectly good CREATE
-      # TABLE and was then refused at `ALTER TABLE ... ADD PRIMARY KEY` because
-      # the re-created table already carried one. Only a server can say that.
-      # require-tests-ran.sh is the same guard the step above uses: a test that
-      # stopped existing, or that skipped itself, must fail here rather than be
-      # silently not run.
-      - name: Run dropped-table rollback round trip
-        env:
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-        run: |
-          sh scripts/require-tests-ran.sh --package ./migration/generator --tags integration \
-            --pattern '^TestReverseRecreatedTable_DropTableRollbackApplies_Integration$' --timeout 5m
-
-      # The third ./migration/generator live-test step, alongside the two above.
-      # Every test in it decides something only a server can answer: whether
-      # PostgreSQL refuses a concurrent index on a partitioned parent, which
-      # index a partition's copy makes undroppable, and whether a
-      # never-analyzed relation is empty or merely unmeasured. These tests skip
-      # themselves when no DSN is set, and a skip reads as a pass, so use the
-      # derived guard from #1367 instead of hand-maintained name greps.
-      - name: Run partitioned and row-statistics concurrent-index tests
+      - name: Run generator live contour
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./migration/generator \
-            --pattern '^(TestGenerateMigration_(PartitionedParent|UnknownRowStatistics|EmptyNeverAnalyzed)|TestReadSchema_PartitionAttached)' \
-            --declared-in migration/generator/partitioned_index_cycle_postgres_live_test.go \
-            --declared-in migration/generator/partitioned_index_shadow_postgres_live_test.go \
-            --declared-in migration/generator/partitioned_stats_postgres_live_test.go \
-            --timeout 10m
+          go run ./internal/cmd/testcontour \
+            --package ./migration/generator \
+            --tag ptah_live_generator \
+            --tags integration \
+            --timeout 25m
 
       - name: Run database-realm cleanup and replay tests
         env:
@@ -316,49 +280,35 @@ jobs:
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./internal/dblock \
-            --pattern '^TestAdvisoryLock_PostgresFamilyLive$' \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./internal/devlock \
-            --pattern '^Test(Acquire_CockroachDBSerializesSameRealmLive|SameRealm_(PostgresDriverURLOverridesLive|NetworkDatabasesLive))$' \
-            --declared-in internal/devlock/lock_live_test.go \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./migration/generator \
-            --pattern '^TestVerifyRollbackFromShadow_FailurePathRejects(DriverOverrideAliasLive|LiveDialectMismatch)$' \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./internal/dbschema/mysql --tags integration \
-            --pattern '^TestWriterDropDatabaseRealm_Live(RejectsProtectedDatabase|RejectsExternalStoredProgram|RejectsMissingTriggerPrivilege)$' \
-            --declared-in internal/dbschema/mysql/writer_live_test.go \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./internal/dbschema/clickhouse \
-            --pattern '^TestWriterDropDatabaseRealm_(Live|RejectsExternalDependencyLive|RejectsLegacyServerLive)$' \
-            --declared-in internal/dbschema/clickhouse/writer_cleanup_live_test.go \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./internal/dbschema/mssql \
-            --pattern '^TestWriterDropDatabaseRealm_(Live|RejectsDatabaseScopedArtifactLive|RejectsPreservedSchemaPermissionLive)$' \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./internal/dbschema/postgres --tags integration \
-            --pattern '^TestWriterDropDatabaseRealm_Live(PostgresFamilyCleansCrossSchemaGraph|PostgresCleansLargeObjects|PostgresRejectsPublication|RejectsProtectedDatabase)$' \
-            --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./internal/schemaclean --tags integration \
-            --pattern '^TestInspectNamesEveryObjectApplyDestroys_PostgresLive$' \
-            --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./internal/migrationreplay --tags integration \
-            --pattern '^TestWithReplayedSnapshot_(ClickHouse|SQLServer)Live$' \
-            --declared-in internal/migrationreplay/replay_realm_live_test.go \
-            --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./integration --tags integration \
-            --pattern '^TestAtlasMigrateDiff(MySQLFamilyDatabaseDesiredState|PostgresFamilyDevCleanup)E2E$' \
-            --timeout 12m
+          for package in \
+            ./internal/dblock \
+            ./internal/devlock \
+            ./internal/dbschema/mysql \
+            ./internal/dbschema/clickhouse \
+            ./internal/dbschema/mssql \
+            ./internal/dbschema/postgres \
+            ./internal/schemaclean \
+            ./internal/migrationreplay
+          do
+            go run ./internal/cmd/testcontour \
+              --package "$package" \
+              --tag ptah_live_realm_cleanup \
+              --tags integration \
+              --timeout 5m
+          done
+          go run ./internal/cmd/testcontour \
+            --package ./integration \
+            --tag ptah_live_realm_cleanup \
+            --tags integration \
+            --timeout 15m
 
-      # These two skip themselves without a live PostgreSQL, and a skip reads as
-      # a pass, which is the property require-tests-ran.sh asserts directly.
       - name: Run compatibility apply table-spelling tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./cmd/atlas \
-            --pattern '^TestSchemaApplyRLS(ReferenceToUndeclaredRelationRefused|DeclaredRelationAccepted)LivePostgres$' \
+          go run ./internal/cmd/testcontour \
+            --package ./cmd/atlas \
+            --tag ptah_live_compat_schema_apply \
             --timeout 5m
 
       - name: Build integration test binary
@@ -375,86 +325,50 @@ jobs:
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=stdout,txt,json,html --output=./reports
 
-      - name: Run migrator safety integration tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-        run: |
-          sh scripts/require-tests-ran.sh --package ./migration/migrator \
-            --pattern '^(TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasDotMetadata_(Postgres|MySQL)Integration|TestAtlasTxtarChecks_((Postgres|MySQL|MariaDB)(SessionLockReleased|CommentSemantics|EscapeString|ExecutableCommentEscape|ShortNumericPrefixRejectsNonSelect)?|ClickHouse|CockroachDB|YugabyteDB)Integration|TestAtlasRevisionTable_(Postgres|CockroachDB|YugabyteDB)UsesTimestamptzIntegration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration|TestDryRunRevisionState_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouse)Integration)$' \
-            --timeout 3m
-
-      # Every test in the family has to RUN here, not merely be registered, and
-      # the set is derived rather than listed: --declared-in makes the file the
-      # family lives in the authority on its membership, so a test added there
-      # is covered the day it lands and one renamed out of the family fails.
-      # 5m rather than 3m is headroom for a shared runner, not a measurement:
-      # the family takes about one minute of package time against MySQL 9.7.1 and
-      # MariaDB 10.11.18.
-      - name: Run MySQL-family rolled-back progress tests
-        env:
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
-        run: |
-          sh scripts/require-tests-ran.sh --package ./migration/migrator \
-            --pattern '^TestRolledBackProgress_' \
-            --declared-in migration/migrator/rolled_back_progress_integration_test.go \
-            --timeout 5m
-
-      # Revision-completion and commit failures, one case per DDL transaction
-      # capability class (#999). Four of the five cases need a server and skip
-      # themselves without one, so dropping CLICKHOUSE_URL from this block would
-      # delete the whole no-transaction class from the matrix while the step
-      # stayed green. require-tests-ran.sh refuses a skip outright, and
-      # --declared-in points at both files so a case renamed out of the pattern
-      # fails here rather than quietly stopping.
-      # 10m rather than 5m is headroom for a shared runner, not a measurement:
-      # the family takes about 31s of package time against PostgreSQL 18,
-      # MySQL 26.7, MariaDB 10.11 and ClickHouse 26.7.
-      - name: Run revision-completion class tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
-          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-        run: |
-          sh scripts/require-tests-ran.sh --package ./migration/migrator \
-            --pattern '^Test(RevisionCompletion|CommitFailure)' \
-            --declared-in migration/migrator/revision_completion_class_test.go \
-            --declared-in migration/migrator/commit_failure_class_test.go \
-            --timeout 10m
-
-      - name: Run no-transaction and shadow generator integration tests
+      - name: Run migrator live contour
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
+          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
+          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
+          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./migration/migrator \
-            --pattern '^TestNoTransaction(Directive_PostgresEnumValueCanBeUsedInSameMigration|Checkpoint_ClickHouse(Ptah|Atlas)RevisionIsVisibleToObserver|Repair_ClickHouseAtlasRevisionAfterManualReconciliation)$' \
-            --timeout 3m
-          sh scripts/require-tests-ran.sh --package ./migration/generator \
-            --pattern '^TestGenerateMigration(ShadowVerificationWithRealDB|_ConcurrentIndexApplyAndRollbackWithRealPostgres)$' \
+          go run ./internal/cmd/testcontour \
+            --package ./migration/migrator \
+            --tag ptah_live_migrator \
+            --timeout 30m
+
+      - name: Run migration lint live contour
+        env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go run ./internal/cmd/testcontour \
+            --package ./cmd/migrateup \
+            --tag ptah_live_migration_lint \
             --timeout 5m
-          sh scripts/require-tests-ran.sh --package ./cmd/migrateup \
-            --pattern '^TestMigrateUp_LintConfig(SeverityOverrideControlsPostgresMigration|WarningStillBlocksPostgresDropTable)$' \
-            --timeout 3m
 
       - name: Run migrate-baseline integration tests
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
-          sh scripts/require-tests-ran.sh --package ./cmd/migratebaseline \
-            --pattern '^(TestVerifyBaselineShadowPostgres|TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL)' \
-            --timeout 3m
+          go run ./internal/cmd/testcontour \
+            --package ./cmd/migratebaseline \
+            --tag ptah_live_migrate_baseline \
+            --timeout 5m
 
       - name: Run all databases comprehensive test
         env:

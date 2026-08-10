@@ -2,17 +2,13 @@ package generator_test
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/jackc/pgx/v5"
 
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -129,86 +125,4 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsTargetAliasBeforeReset(t *te
 	).Scan(&protectedTableCount)
 	c.Assert(err, qt.IsNil)
 	c.Assert(protectedTableCount, qt.Equals, 1)
-}
-
-func TestVerifyRollbackFromShadow_FailurePathRejectsLiveDialectMismatch(t *testing.T) {
-	c := qt.New(t)
-	targetConn := openRollbackTarget(c, requireRollbackPostgresURL(c))
-
-	err := generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
-		TargetConnection:  targetConn,
-		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
-		FS:                os.DirFS(t.TempDir()),
-	})
-
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`rollback verification failed: shadow database dialect "sqlite" does not match target dialect "postgres"`,
-	)
-}
-
-func TestVerifyRollbackFromShadow_FailurePathRejectsDriverOverrideAliasLive(t *testing.T) {
-	c := qt.New(t)
-	targetURL := rollbackPostgresDatabaseURL(
-		c,
-		requireRollbackPostgresURL(c),
-		"postgres",
-	)
-	shadowURL := rollbackPostgresDriverOverrideURL(c, targetURL)
-	targetConn := openRollbackTarget(c, targetURL)
-	fastPathSame, err := atlasurl.SameDatabaseEndpoint(targetURL, shadowURL)
-	c.Assert(err, qt.IsNil)
-	c.Assert(fastPathSame, qt.IsTrue)
-
-	err = generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
-		TargetConnection:  targetConn,
-		ShadowDatabaseURL: shadowURL,
-		FS:                os.DirFS(t.TempDir()),
-	})
-
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`rollback verification failed: shadow database must be distinct from target database`,
-	)
-}
-
-func requireRollbackPostgresURL(c *qt.C) string {
-	c.Helper()
-	rawURL := os.Getenv("POSTGRES_TEST_DSN")
-	if rawURL == "" {
-		c.Skip("POSTGRES_TEST_DSN is not set")
-	}
-	return rawURL
-}
-
-func rollbackPostgresDatabaseURL(c *qt.C, rawURL, database string) string {
-	c.Helper()
-	parsed, err := url.Parse(rawURL)
-	c.Assert(err, qt.IsNil)
-	if parsed.Scheme == "" {
-		c.Skip("POSTGRES_TEST_DSN is not a URL")
-	}
-	parsed.Path = "/" + database
-	query := parsed.Query()
-	query.Set("database", database)
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func rollbackPostgresDriverOverrideURL(c *qt.C, rawURL string) string {
-	c.Helper()
-	config, err := pgx.ParseConfig(rawURL)
-	c.Assert(err, qt.IsNil)
-	parsed, err := url.Parse(rawURL)
-	c.Assert(err, qt.IsNil)
-	parsed.Host = "guard.invalid:1"
-	parsed.Path = "/ignored"
-	query := parsed.Query()
-	query.Set("host", config.Host)
-	query.Set("port", strconv.Itoa(int(config.Port)))
-	query.Set("database", config.Database)
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
 }
