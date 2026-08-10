@@ -312,42 +312,43 @@ func TestRolledBackProgress_MariaDBRejectsInheritedStorageEngine(t *testing.T) {
 }
 
 func TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
-	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, adminURL, "mysql")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_scope")
+	runRejectsUnwitnessedExecutionBoundaries(t, targetURL, targetURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	adminURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "MARIADB_TEST_URL", "MARIADB_URL")
-	runRejectsUnwitnessedExecutionBoundaries(t, dbURL, adminURL, "mariadb")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "ptah_887_scope")
+	runRejectsUnwitnessedExecutionBoundaries(t, targetURL, targetURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
-	runMySQLWithoutTriggerPrivilegeFailsClosed(t, adminURL)
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_privilege")
+	runMySQLWithoutTriggerPrivilegeFailsClosed(t, targetURL)
 }
 
 func TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "MARIADB_TEST_URL", "MARIADB_URL")
-	runMariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t, adminURL)
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "ptah_887_privilege")
+	runMariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
-	runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t, adminURL)
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_role")
+	runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
-	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, adminURL)
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_files")
+	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL")
 	runMySQLEscapedDatabaseGrantIsAccepted(t, adminURL)
 }
 
+// dbURL and adminURL must select the same target database. adminURL names the
+// privileged connection used to provision neighboring realms and database
+// objects; it is never the server's mysql system-database URL.
 func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dialect string) {
 	t.Helper()
 
@@ -2345,10 +2346,7 @@ func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password st
 
 func issue887ReplaceMySQLDatabase(t *testing.T, rawURL, database string) string {
 	t.Helper()
-
-	slash := strings.LastIndex(rawURL, "/")
-	qt.Assert(t, slash, qt.Not(qt.Equals), -1)
-	return rawURL[:slash+1] + database
+	return mySQLFamilyURLWithDatabase(t, rawURL, database)
 }
 
 func issue887Migrator(

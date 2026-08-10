@@ -74,10 +74,9 @@ type revisionCompletionTarget struct {
 	// connect returns a live connection or skips the test.
 	connect func(t *testing.T) *dbschema.DatabaseConnection
 	// faultConn returns the connection the fault is installed and removed
-	// over, plus its cleanup. Most targets reuse the migrator's connection;
-	// the MySQL family needs an administrative one, because a server with
-	// binary logging on refuses CREATE TRIGGER to a user without SUPER and the
-	// integration matrix runs migrations as an ordinary user.
+	// over, plus its cleanup. The MySQL family uses an isolated scratch database
+	// with administrative credentials, so its system database remains only the
+	// provisioning realm and this connection can be reused there too.
 	faultConn func(t *testing.T, conn *dbschema.DatabaseConnection) (*dbschema.DatabaseConnection, func())
 	// createBody renders the migration body and its rollback.
 	createBody func(names revisionCompletionNames) (up, down string)
@@ -201,15 +200,13 @@ func revisionCompletionRepairTargets() []revisionCompletionTarget {
 }
 
 func mySQLRevisionCompletionTarget() revisionCompletionTarget {
-	return mySQLFamilyRevisionCompletionTarget("mysql", "MYSQL_ADMIN_TEST_URL", "MYSQL_TEST_URL", "MYSQL_URL")
+	return mySQLFamilyRevisionCompletionTarget("mysql", "MYSQL_ADMIN_TEST_URL")
 }
 
 func mariaDBRevisionCompletionTarget() revisionCompletionTarget {
 	return mySQLFamilyRevisionCompletionTarget(
 		"mariadb",
 		"MARIADB_ADMIN_TEST_URL",
-		"MARIADB_TEST_URL",
-		"MARIADB_URL",
 	)
 }
 
@@ -338,18 +335,6 @@ func reuseMigratorConnection(
 	conn *dbschema.DatabaseConnection,
 ) (*dbschema.DatabaseConnection, func()) {
 	return conn, func() {}
-}
-
-func mySQLFamilyFaultConnection(
-	dialect string,
-	envNames ...string,
-) func(*testing.T, *dbschema.DatabaseConnection) (*dbschema.DatabaseConnection, func()) {
-	return func(t *testing.T, _ *dbschema.DatabaseConnection) (*dbschema.DatabaseConnection, func()) {
-		t.Helper()
-		adminConn, err := dbschema.ConnectToDatabase(t.Context(), mySQLFamilyTestURL(t, dialect, envNames...))
-		qt.Assert(t, err, qt.IsNil)
-		return adminConn, func() { dbschema.CloseAndWarn(adminConn) }
-	}
 }
 
 func revisionCompletionMigrator(
@@ -497,17 +482,18 @@ WHERE table_schema = current_schema() AND table_name = $1 AND table_type = 'BASE
 	return count > 0
 }
 
-func mySQLFamilyRevisionCompletionTarget(dialect string, adminEnv string, envNames ...string) revisionCompletionTarget {
+func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompletionTarget {
 	return revisionCompletionTarget{
-		name:  dialect,
-		class: ddltx.ImplicitCommit,
+		name:      dialect,
+		class:     ddltx.ImplicitCommit,
+		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			t.Helper()
-			conn, err := dbschema.ConnectToDatabase(t.Context(), mySQLFamilyTestURL(t, dialect, envNames...))
+			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEnv, "ptah_rev999")
+			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 			qt.Assert(t, err, qt.IsNil)
 			return conn
 		},
-		faultConn: mySQLFamilyFaultConnection(dialect, append([]string{adminEnv}, envNames...)...),
 		createBody: func(names revisionCompletionNames) (string, string) {
 			return fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB", names.body),
 				fmt.Sprintf("DROP TABLE %s", names.body)

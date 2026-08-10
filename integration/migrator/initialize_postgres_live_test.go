@@ -11,36 +11,38 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-func TestInitializeDebug(t *testing.T) {
+func TestInitializePostgresCreatesMetadata(t *testing.T) {
 	c := qt.New(t)
-
 	dbURL := postgresTestURL(t)
-
-	// Connect to database
 	ctx := t.Context()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
-	// Clean up any existing schema_migrations table to ensure a clean test
-	_, _ = conn.Exec("DROP TABLE IF EXISTS schema_migrations")
+	const migrationsTable = "schema_migrations_initialize_test"
+	_, err = conn.Exec("DROP TABLE IF EXISTS " + migrationsTable)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, cleanupErr := conn.Exec("DROP TABLE IF EXISTS " + migrationsTable)
+		qt.Check(t, cleanupErr, qt.IsNil)
+	}()
 
-	// Create a migrator
-	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider())
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).
+		WithMigrationsTable("", migrationsTable)
 
-	// Test Initialize method directly
 	err = m.Initialize(ctx)
-	c.Assert(err, qt.IsNil, qt.Commentf("Initialize should not fail"))
+	c.Assert(err, qt.IsNil)
 
-	// Test that the table was created
 	var count int
-	row := conn.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'schema_migrations'")
+	row := conn.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = $1",
+		migrationsTable,
+	)
 	err = row.Scan(&count)
 	c.Assert(err, qt.IsNil)
-	c.Assert(count, qt.Equals, 1, qt.Commentf("schema_migrations table should exist"))
+	c.Assert(count, qt.Equals, 1)
 
-	// Test GetCurrentVersion
 	version, err := m.GetCurrentVersion(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(version, qt.Equals, 0, qt.Commentf("Initial version should be 0"))
+	c.Assert(version, qt.Equals, int64(0))
 }

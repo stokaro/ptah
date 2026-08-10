@@ -12,26 +12,26 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-// liveMySQLURLForPrimaryKeyIdentity gates this file on the same environment
-// variables the migrator's MySQL tests use.
-func liveMySQLURLForPrimaryKeyIdentity(t *testing.T) string {
+// liveMySQLAdminURLForPrimaryKeyIdentity returns the server-administration URL.
+// Its configured database is used only to create and remove the scratch realm;
+// the planner and catalog assertions run through the derived database URL.
+func liveMySQLAdminURLForPrimaryKeyIdentity(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("MYSQL_TEST_URL")
+	dbURL := os.Getenv("MYSQL_ADMIN_TEST_URL")
 	if dbURL == "" {
-		dbURL = os.Getenv("MYSQL_TEST_DSN")
-	}
-	if dbURL == "" {
-		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
+		t.Skip("MYSQL_ADMIN_TEST_URL not set")
 	}
 	if !strings.HasPrefix(dbURL, "mysql://") {
-		dbURL = "mysql://" + dbURL
+		t.Skip("MySQL URL required for live planner test")
 	}
 	return dbURL
 }
@@ -42,28 +42,38 @@ func liveMySQLURLForPrimaryKeyIdentity(t *testing.T) string {
 // else touched.
 func createPrimaryKeyIdentityDatabase(c *qt.C, adminURL string) (dbURL, database string) {
 	c.Helper()
-	name := fmt.Sprintf("ptah_pkident_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	name := fmt.Sprintf("ptah_pkident_%d_%d", os.Getpid(), time.Now().UnixNano())
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(admin)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
 
-	_, err = admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS `"+name+"`")
-	c.Assert(err, qt.IsNil)
-	_, err = admin.ExecContext(context.Background(), "CREATE DATABASE `"+name+"`")
+	quotedName := sqlident.Quote("mysql", name)
+	_, err = admin.ExecContext(context.Background(), "CREATE DATABASE "+quotedName)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
-		cleanup, cleanupErr := dbschema.ConnectToDatabase(context.Background(), adminURL)
-		if cleanupErr != nil {
-			return
-		}
-		defer dbschema.CloseAndWarn(cleanup)
-		_, _ = cleanup.ExecContext(context.Background(), "DROP DATABASE IF EXISTS `"+name+"`")
+		_, cleanupErr := admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quotedName)
+		c.Check(cleanupErr, qt.IsNil)
 	})
 
-	parsed, err := url.Parse(adminURL)
+	return mySQLURLWithDatabase(c, adminURL, name), name
+}
+
+func mySQLURLWithDatabase(c *qt.C, rawURL, database string) string {
+	c.Helper()
+
+	if strings.Contains(rawURL, "@tcp(") {
+		scheme, dsn, found := strings.Cut(rawURL, "://")
+		c.Assert(found, qt.IsTrue)
+		config, err := mysqldriver.ParseDSN(dsn)
+		c.Assert(err, qt.IsNil)
+		config.DBName = database
+		return scheme + "://" + config.FormatDSN()
+	}
+
+	parsed, err := url.Parse(rawURL)
 	c.Assert(err, qt.IsNil)
-	parsed.Path = "/" + name
-	return parsed.String(), name
+	parsed.Path = "/" + database
+	return parsed.String()
 }
 
 // executeMySQL runs every statement in order and fails on the first error.
@@ -116,7 +126,7 @@ func primaryKeyColumns(c *qt.C, dbURL, database, table string) []string {
 // information_schema.KEY_COLUMN_USAGE what the table ended up with.
 func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 	c := qt.New(t)
-	adminURL := liveMySQLURLForPrimaryKeyIdentity(t)
+	adminURL := liveMySQLAdminURLForPrimaryKeyIdentity(t)
 
 	tests := []struct {
 		name string
