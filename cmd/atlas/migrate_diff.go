@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -36,7 +37,17 @@ type atlasMigrateDiffOptions struct {
 	edit        bool
 }
 
+type atlasMigrateDiffRunner func(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	atlasmigrate.DiffOptions,
+) (atlasmigrate.DiffResult, error)
+
 func newAtlasMigrateDiffCommand() *cobra.Command {
+	return newAtlasMigrateDiffCommandWithRunner(atlasmigrate.GenerateDiff)
+}
+
+func newAtlasMigrateDiffCommandWithRunner(run atlasMigrateDiffRunner) *cobra.Command {
 	opts := atlasMigrateDiffOptions{}
 	cmd := &cobra.Command{
 		Use:   "diff [flags] [name]",
@@ -68,7 +79,7 @@ diff policy values.`,
 			if len(args) == 1 {
 				name = args[0]
 			}
-			return runAtlasMigrateDiff(cmd, opts, name)
+			return runAtlasMigrateDiff(cmd, opts, name, run)
 		},
 	}
 	flags := cmd.Flags()
@@ -100,6 +111,7 @@ func runAtlasMigrateDiff(
 	cmd *cobra.Command,
 	opts atlasMigrateDiffOptions,
 	name string,
+	run atlasMigrateDiffRunner,
 ) (runErr error) {
 	formatConfigured := cmd.Flags().Changed("format")
 	// dirURLSpelled is --dir as the command line, its environment twin and the
@@ -246,7 +258,7 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
+	diffResult, err := run(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir: migrationsDir,
 		// The same handle the preflight gate captured through. Handing it to the
 		// writer is what keeps the publication bound to the project root the
@@ -276,6 +288,7 @@ func runAtlasMigrateDiff(
 		Policy:             policy,
 		Qualifier:          qualifier,
 		DryRun:             opts.dryRun,
+		Diagnostics:        cmd.ErrOrStderr(),
 		Vars:               schemaVars,
 		PreparePublication: preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
