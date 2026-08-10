@@ -21,25 +21,20 @@
 #
 # Usage:
 #   ./regenerate.sh [path-to-atlas]
+#   PTAH_ATLAS_ORACLE=/path/to/atlas ./regenerate.sh
 #
 # After running, `git status` must be clean. A diff means either the oracle
 # changed or this script drifted from the committed corpus.
 
 set -euo pipefail
 
-ATLAS="${1:-$HOME/Work/denis/ptah-atlas-conformance/bin/atlas}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
 
 # shellcheck source=scripts/lib/atlas-ce-oracle.sh
 source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
 atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
-
-if [ ! -x "$ATLAS" ]; then
-	echo "regenerate: oracle not found or not executable: $ATLAS" >&2
-	echo "regenerate: pass the path to the pinned Atlas CE binary as \$1" >&2
-	exit 1
-fi
+ATLAS="$(atlas_ce_resolve_binary "${1:-}")"
 
 actual_version="$(atlas_ce_verify_binary "$ATLAS")"
 

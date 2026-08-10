@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 
-# Shared lock-file and binary validation for scripts that measure Atlas CE as
-# an external black-box oracle. Call atlas_ce_load_lock before the other
-# functions.
+# Shared path resolution, lock-file loading, and binary validation for scripts
+# that measure Atlas CE as an external black-box oracle. Call
+# atlas_ce_load_lock before the version functions.
+
+atlas_ce_resolve_binary() {
+	local argument_path="${1:-}"
+
+	if [[ -n "$argument_path" ]]; then
+		printf '%s\n' "$argument_path"
+		return 0
+	fi
+	if [[ -n "${PTAH_ATLAS_ORACLE:-}" ]]; then
+		printf '%s\n' "$PTAH_ATLAS_ORACLE"
+		return 0
+	fi
+
+	printf 'atlas-ce: oracle path required; pass it as an argument or set PTAH_ATLAS_ORACLE\n' >&2
+	return 1
+}
 
 atlas_ce_load_lock() {
 	local lock_file="$1"
