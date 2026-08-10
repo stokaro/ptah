@@ -112,7 +112,13 @@ seal_refused() {
 		echo "regenerate: oracle refused ${case_dir#"$HERE"/} but still wrote atlas.sum" >&2
 		exit 1
 	fi
-	printf '%s\n' "$out" | sed "s|$case_dir|<case-dir>|g" >"$case_dir/atlas.refused"
+	# The community binary can append generic installation advice to a refusal.
+	# It is not part of the format-specific verdict and varies with invocation
+	# context, so exclude that exact footer from the deterministic corpus.
+	printf '%s\n' "$out" |
+		sed -e "s|$case_dir|<case-dir>|g" \
+			-e "/^You're running the community build of Atlas, which differs from the official version\\.$/,\$d" \
+		>"$case_dir/atlas.refused"
 	printf '  %-52s %s\n' "${case_dir#"$HERE"/}" "REFUSED (exit $ec)"
 }
 
