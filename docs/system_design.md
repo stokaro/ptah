@@ -285,7 +285,9 @@ type IndexRef struct {
 
 ### CockroachDB/YugabyteDB
 - PostgreSQL-family common subset with live CI coverage for supported scenarios
-- Capability presets disable PostgreSQL features the target does not support, such as advisory locks or `CREATE INDEX CONCURRENTLY` where unavailable
+- Capability presets disable only the PostgreSQL features each measured target
+  line lacks, such as CockroachDB advisory locks or `DROP INDEX CONCURRENTLY`
+  on both distributed targets
 
 ### Spanner
 - Conservative PostgreSQL-interface routing for planning and rendering

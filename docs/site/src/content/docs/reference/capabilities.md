@@ -51,32 +51,19 @@ presupposes `triggers`, so those two requirement edges are validated.
 question and answer it the same way. They used to fail the render instead, and
 an error is not something a plan can carry, so the migration planner dropped
 roles, grants, and row-level security from the plan before they reached a
-visitor — without saying so. `ptah schema render --dialect cockroachdb` then
-exited 2 with `cockroachdb does not support role management` and rendered
-nothing, while `ptah schema apply --dry-run` against the same target exited 0
-and planned the schema minus those objects. Both now exit 0 and write the same
-named skip comment.
+visitor, without saying so. Refused objects now use the same named-skip shape
+as views, materialized views, functions, and triggers.
 
-A refused object is therefore reported again every time the plan is rebuilt,
-rather than reported once and then called synced — the skip comment is not a
-change a database can absorb. Which commands report it was measured, not
-assumed, on live YugabyteDB 2026.1.0.0 over a `users` table with row-level
-security enabled and one policy, after applying that desired schema twice:
+For the PostgreSQL family, that refusal path currently applies to Spanner. A
+role, grant, sequence, row-level security enablement, or policy is written as a
+named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a plan
+in silence. CockroachDB v26.2.5 and YugabyteDB 2026.1 were measured with live
+servers and accept those three categories, so their presets enable them.
 
-| Command | Reports the refused object | Exit |
-| --- | --- | --- |
-| `ptah schema apply --dry-run` | both lines | 0 |
-| `ptah schema apply --auto-approve` | both lines | 0 |
-| `ptah schema plan` | both lines | 0 |
-| `ptah schema diff` | both lines | 0 |
-| `ptah schema compare` | both lines, under `Reconciling SQL:` | 0 |
-| `ptah migrations plan` | both lines, then `Generated 0 migration statements.` | 0 |
-| `ptah schema drift` | the categories `rls_enabled_tables_added` and `rls_policies_added`, not the skip lines — it reads the diff, not the plan | 1 |
-| `ptah migrations generate` | nothing at all: no output and no migration file | 0 |
-
-`ptah migrations generate` is the one gap. It is not specific to refused
-objects: that command prints nothing whenever it writes no file, including
-when the desired schema and the database already agree.
+A refused object is reported again every time the plan is rebuilt, rather than
+reported once and then called synced. The skip comment is not a change a
+database can absorb. Printed plans keep the diagnostic; the apply execution
+path drops comment-only statements before target or dev-database execution.
 
 Exactly one referenced-key policy is enabled for every foreign-key-capable
 preset. PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server, and MySQL 8.4+

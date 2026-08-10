@@ -8,10 +8,10 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
-// Refinement records HOW capability.ResolveServerVersion reaches a cell's
-// preset. It is declared here as data rather than read back from
-// capability.VersionResolution, because that struct cannot tell the three
-// mechanisms apart:
+// Refinement records whether a probe observation can be attributed to one
+// matrix cell, and why. It is declared here as data rather than read back from
+// capability.VersionResolution, because that struct cannot tell the mechanisms
+// apart:
 //
 //   - a banner-matched dialect reports VersionSpecific=true without a version
 //     ever being parsed, so it is indistinguishable from a successful ladder
@@ -20,7 +20,7 @@ import (
 //     what an unparseable banner on a laddered dialect reports.
 //
 // Deriving undecidability from the returned struct would therefore record a
-// CockroachDB v26.2.5 as an agreeing version-specific match and a
+// banner-only CockroachDB line as an agreeing version-specific match and a
 // cleanly-parsed SQL Server as an unreadable banner.
 type Refinement string
 
@@ -29,6 +29,12 @@ const (
 	// version selects which arm of it answers. Only these lines can be
 	// measured per line, because only here does the version change the answer.
 	RefinedByVersion Refinement = "version-ladder"
+
+	// RefinedByMeasuredLine: the resolver still reaches the preset through an
+	// engine banner, but this specific matrix line is backed by a live
+	// measurement of that release line. Sibling lines that share the banner
+	// preset stay RefinedByBanner until they are measured themselves.
+	RefinedByMeasuredLine Refinement = "measured-release-line"
 
 	// RefinedByBanner: the preset is selected by a substring of the banner
 	// before any version is parsed, so every release of the engine receives
@@ -289,12 +295,16 @@ var Cells = []Cell{
 		Refinement: NotRefined, Image: "mcr.microsoft.com/mssql/server:2019-latest",
 	},
 
-	// CockroachDB and YugabyteDB are matched on a banner substring before any
-	// version is parsed, so their lines all receive one preset.
+	// CockroachDB and YugabyteDB currently resolve from a banner substring, but
+	// the current OSS container lines below have been measured directly. Older
+	// lines keep banner attribution until they are re-measured.
 	{
 		Dialect: platform.CockroachDB, Line: "26.2",
 		Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
-		Refinement: RefinedByBanner, Image: "cockroachdb/cockroach:v26.2.5",
+		Refinement: RefinedByMeasuredLine, Image: "cockroachdb/cockroach:v26.2.5",
+		Note: "measured live on CockroachDB CCL v26.2.5: role_management, row_level_security, " +
+			"and sequences agree with CockroachDB23 after issue #1376; create_index_concurrently " +
+			"remains false because the keyword is accepted inside a transaction",
 	},
 	{
 		Dialect: platform.CockroachDB, Line: "25.4",
@@ -304,7 +314,10 @@ var Cells = []Cell{
 	{
 		Dialect: platform.YugabyteDB, Line: "2026.1",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByBanner, Image: "yugabytedb/yugabyte:2026.1.0.0-b118",
+		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2026.1.0.0-b118",
+		Note: "measured live on YugabyteDB 2026.1.0.0-b118: advisory_locks, " +
+			"create_index_concurrently, and row_level_security agree with YugabyteDB25 after issue #1376; " +
+			"drop_index_concurrently remains false because the server refuses that spelling",
 	},
 	{
 		Dialect: platform.YugabyteDB, Line: "2025.2",

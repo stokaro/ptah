@@ -47,17 +47,17 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 		c.Assert(legacyPostgresSQL(sql), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
 	})
 
-	t.Run("cockroach rejects explicit SERIAL", func(t *testing.T) {
+	t.Run("cockroach keeps explicit SERIAL", func(t *testing.T) {
 		c := qt.New(t)
 
 		renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
 		table := ast.NewCreateTable("users").
 			AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary())
 
-		_, err := renderer.Render(table)
+		sql, err := renderer.Render(table)
 
-		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(err, qt.ErrorMatches, `error rendering column id: unsupported feature: cockroachdb does not support sequence-backed type SERIAL; use a platform-specific type override`)
+		c.Assert(err, qt.IsNil)
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
 	})
 
 	t.Run("spanner rejects auto increment mapping", func(t *testing.T) {
@@ -78,14 +78,11 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 // TestPostgreSQLRenderer_RoleManagementCapability pin what a refused
 // row-level-security or role-management object renders as.
 //
-// Both used to assert an error: `cockroachdb does not support role management`,
-// with nothing rendered. That answer is unavailable to the migration planner,
-// which cannot put an error in a plan, so the planner compensated by dropping
-// roles, grants and policies from the plan before they could reach a visitor —
-// and dropped them without saying so. `schema render --dialect cockroachdb`
-// exited 2 and emitted nothing while `schema apply --dry-run` against a live
-// CockroachDB exited 0 and planned the schema minus those objects, naming none
-// of them (stokaro/ptah#929 items 1 and 4).
+// These used to assert an error with nothing rendered. That answer is
+// unavailable to the migration planner, which cannot put an error in a plan, so
+// the planner compensated by dropping roles, grants and policies from the plan
+// before they could reach a visitor — and dropped them without saying so
+// (stokaro/ptah#929 items 1 and 4).
 //
 // The rendered output changed here: no error, one named skip comment per
 // object, same as the sequence, view, function and trigger gates beside them.
@@ -100,22 +97,22 @@ func TestPostgreSQLRenderer_RowLevelSecurityCapability(t *testing.T) {
 			node: ast.NewCreatePolicy("tenant_policy", "users").
 				SetPolicyFor("SELECT").
 				SetUsingExpression("tenant_id = current_setting('app.tenant_id')::uuid"),
-			skipped: "-- COCKROACHDB: policy tenant_policy on users is not supported by this target; skipped.",
+			skipped: "-- SPANNER: policy tenant_policy on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "drop policy",
 			node:    ast.NewDropPolicy("tenant_policy", "users").SetIfExists(),
-			skipped: "-- COCKROACHDB: policy tenant_policy on users is not supported by this target; skipped.",
+			skipped: "-- SPANNER: policy tenant_policy on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "enable RLS",
 			node:    ast.NewAlterTableEnableRLS("users"),
-			skipped: "-- COCKROACHDB: row-level security on users is not supported by this target; skipped.",
+			skipped: "-- SPANNER: row-level security on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "disable RLS",
 			node:    ast.NewAlterTableDisableRLS("users"),
-			skipped: "-- COCKROACHDB: row-level security on users is not supported by this target; skipped.",
+			skipped: "-- SPANNER: row-level security on users is not supported by this target; skipped.",
 		},
 	}
 
@@ -123,7 +120,7 @@ func TestPostgreSQLRenderer_RowLevelSecurityCapability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.IsNil)
@@ -141,27 +138,27 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 		{
 			name:    "create role",
 			node:    ast.NewCreateRole("app_role"),
-			skipped: "-- COCKROACHDB: role app_role is not supported by this target; skipped.",
+			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "drop role",
 			node:    ast.NewDropRole("app_role").SetIfExists(),
-			skipped: "-- COCKROACHDB: role app_role is not supported by this target; skipped.",
+			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "alter role",
 			node:    ast.NewAlterRole("app_role").AddOperation(ast.NewSetLoginOperation(true)),
-			skipped: "-- COCKROACHDB: role app_role is not supported by this target; skipped.",
+			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "grant",
 			node:    ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"}),
-			skipped: "-- COCKROACHDB: grant on users to app_role is not supported by this target; skipped.",
+			skipped: "-- SPANNER: grant on users to app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "revoke",
 			node:    ast.NewRevokePrivilege("app_role", "TABLE", "users", []string{"SELECT"}),
-			skipped: "-- COCKROACHDB: revoke on users from app_role is not supported by this target; skipped.",
+			skipped: "-- SPANNER: revoke on users from app_role is not supported by this target; skipped.",
 		},
 	}
 
@@ -169,7 +166,7 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.IsNil)
@@ -220,7 +217,7 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
@@ -232,15 +229,15 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 func TestPostgreSQLRenderer_SkipCommentNamesStayCommentOnly(t *testing.T) {
 	c := qt.New(t)
 
-	renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+	renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
 	role := ast.NewCreateRole("app_role\nDROP TABLE users")
 
 	sql, err := renderer.Render(role)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "-- COCKROACHDB: role app_role DROP TABLE users is not supported by this target; skipped.")
+	c.Assert(sql, qt.Contains, "-- SPANNER: role app_role DROP TABLE users is not supported by this target; skipped.")
 	c.Assert(sql, qt.Not(qt.Contains), "\nDROP TABLE users")
-	c.Assert(atlasschema.SplitApplyStatements(sql, platform.CockroachDB), qt.HasLen, 0)
+	c.Assert(atlasschema.SplitApplyStatements(sql, platform.Spanner), qt.HasLen, 0)
 }
 
 // noForeignKeys is a PostgreSQL preset with foreign keys switched off.

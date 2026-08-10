@@ -54,7 +54,7 @@ func TestNewPostgreSQLReaderWithCapabilities(t *testing.T) {
 	reader := NewPostgreSQLReaderWithCapabilities(nil, "", capability.CockroachDB23())
 
 	c.Assert(reader.schema, qt.Equals, "public")
-	c.Assert(reader.caps.Has(capability.RowLevelSecurity), qt.IsFalse)
+	c.Assert(reader.caps.Has(capability.RowLevelSecurity), qt.IsTrue)
 	c.Assert(reader.caps.Has(capability.XMLType), qt.IsFalse)
 }
 

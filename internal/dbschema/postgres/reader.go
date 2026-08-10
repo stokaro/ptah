@@ -2660,7 +2660,7 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 				WHEN '*' THEN 'ALL'
 			END AS policy_for,
 			CASE
-				WHEN pol.polroles = '{0}' THEN 'PUBLIC'
+				WHEN array_length(pol.polroles, 1) = 1 AND 0 = ANY(pol.polroles) THEN 'PUBLIC'
 				ELSE array_to_string(ARRAY(
 					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
 				), ',')

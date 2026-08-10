@@ -289,13 +289,13 @@ Rich, interactive report with:
 - Version: 23+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
 - Coverage: opt-in common subset only (`dynamic_cockroachdb_common_subset`)
-- Limitations: no `CREATE INDEX CONCURRENTLY`, XML columns, advisory locks, RLS, or sequence-dependent schema in the CockroachDB scenario
+- Limitations: no `CREATE INDEX CONCURRENTLY`, `DROP INDEX CONCURRENTLY`, XML columns, or advisory locks in the CockroachDB scenario
 
 ### YugabyteDB
 - Version: 2.25+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
 - Coverage: opt-in common subset only (`dynamic_yugabytedb_common_subset`)
-- Limitations: no `CREATE INDEX CONCURRENTLY`, XML columns, RLS, or sequence-dependent schema in the YugabyteDB scenario
+- Limitations: no `DROP INDEX CONCURRENTLY` in the YugabyteDB scenario
 
 ### MySQL
 - Version: 8+

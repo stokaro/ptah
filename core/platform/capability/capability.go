@@ -730,8 +730,10 @@ func SQLServer2022() Capabilities {
 // CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
 // CockroachDB runs schema changes online by design, so PostgreSQL's
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
-// also lacks PostgreSQL's SERIAL/sequence surface, XML type, and advisory-lock
-// functions in Ptah's portable subset.
+// accepts the keyword inside an explicit transaction on v26.2.5, which proves
+// the syntax is parsed as a compatibility no-op rather than as PostgreSQL's
+// non-transactional concurrent index build. XML columns and PostgreSQL
+// advisory-lock functions are outside Ptah's portable CockroachDB subset.
 //
 // Object kinds, measured live on CockroachDB CCL v26.2.5 (the image
 // docker-compose.yaml pins): CREATE VIEW, CREATE MATERIALIZED VIEW,
@@ -747,33 +749,35 @@ func SQLServer2022() Capabilities {
 // here, so writing false would retire triggers for every CockroachDB user on
 // a current release. Splitting the key by version is issue #916's job; until
 // then this preset follows the engine that was measured, not its own name.
+//
+// The same v26.2.5 probe accepted CREATE ROLE plus GRANT SELECT, ALTER TABLE
+// ... ENABLE ROW LEVEL SECURITY plus CREATE POLICY, CREATE SEQUENCE, and
+// CREATE TABLE with SERIAL. Those keys stay enabled because otherwise Ptah
+// refuses objects this measured line can host.
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
 		With(XMLType, false).
-		With(AdvisoryLocks, false).
-		With(RowLevelSecurity, false).
-		With(RoleManagement, false).
-		With(Sequences, false)
+		With(AdvisoryLocks, false)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
-// PostgreSQL for the common DDL subset, but regular CREATE INDEX is already
-// asynchronous in YugabyteDB, so the PostgreSQL CONCURRENTLY keyword is not
-// emitted.
+// PostgreSQL for the common DDL subset. Live YugabyteDB 2026.1.0.0 accepted
+// CREATE INDEX CONCURRENTLY outside a transaction and refused it inside one
+// with PostgreSQL's "cannot run inside a transaction block" shape, so Ptah
+// treats the create-side CONCURRENTLY keyword as meaningful there. DROP INDEX
+// CONCURRENTLY remains disabled: the same probe refused it as unsupported.
 //
 // Object kinds, measured live on YugabyteDB 2026.1.0.0 (PostgreSQL 15.12-YB,
 // the image docker-compose.yaml pins): all four create at exit 0 with the
 // nonsense control refused at exit 1, and pg_views, pg_matviews, pg_proc and
 // pg_trigger each report their object. The materialized view stores its
 // result — after an INSERT it still reports 0 while the plain view reports 1.
+// The same probe accepted advisory lock/unlock calls and row-level security
+// policy DDL, matching the enabled keys below.
 func YugabyteDB25() Capabilities {
-	return Postgres16().
-		With(CreateIndexConcurrently, false).
-		With(DropIndexConcurrently, false).
-		With(AdvisoryLocks, false).
-		With(RowLevelSecurity, false)
+	return Postgres16().With(DropIndexConcurrently, false)
 }
 
 // SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL

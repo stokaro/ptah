@@ -278,13 +278,13 @@ func GetDynamicScenarios() []TestScenario {
 		},
 		{
 			Name:                          "dynamic_cockroachdb_common_subset",
-			Description:                   "Test CockroachDB common PostgreSQL-compatible subset without SERIAL, XML, foreign keys, or concurrent indexes",
+			Description:                   "Test CockroachDB common PostgreSQL-compatible subset without XML, advisory locks, or concurrent indexes",
 			EnhancedTestFunc:              testCockroachDBCommonSubset,
 			PostgresDistributedCompatible: true,
 		},
 		{
 			Name:                          "dynamic_yugabytedb_common_subset",
-			Description:                   "Test YugabyteDB common PostgreSQL-compatible subset without SERIAL, XML, or concurrent indexes",
+			Description:                   "Test YugabyteDB common PostgreSQL-compatible subset without DROP INDEX CONCURRENTLY",
 			EnhancedTestFunc:              testYugabyteDBCommonSubset,
 			PostgresDistributedCompatible: true,
 		},

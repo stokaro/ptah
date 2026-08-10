@@ -732,9 +732,9 @@ func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
 	}
 
 	info := conn.Info()
-	info.Capabilities[capability.RowLevelSecurity] = true
+	info.Capabilities[capability.XMLType] = true
 
-	c.Assert(conn.Info().Capabilities.Has(capability.RowLevelSecurity), qt.IsFalse)
+	c.Assert(conn.Info().Capabilities.Has(capability.XMLType), qt.IsFalse)
 }
 
 func TestRemovePostgresPoolParams(t *testing.T) {
