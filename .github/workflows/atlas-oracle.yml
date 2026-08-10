@@ -93,4 +93,9 @@ jobs:
   complete-integration:
     name: complete integration contour
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Reusable workflows may preserve or reduce caller permissions, but cannot
+    # add scopes that the calling job did not grant.
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/go-integration-tests.yml
