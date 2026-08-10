@@ -90,6 +90,7 @@ so typos fail fast. Current registry:
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
 | `drop_index_concurrently` | `DROP INDEX CONCURRENTLY` (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit `CONCURRENTLY`) |
+| `index_include_spgist` | `SPGIST` indexes with `INCLUDE` payload columns (PostgreSQL 14+) |
 | `views` | Standalone `CREATE VIEW … AS <query>` objects |
 | `materialized_views` | `CREATE MATERIALIZED VIEW`: a view whose query result is stored. Requires `views` |
 | `functions` | User-defined functions declared with a return type, a language, and a body |
@@ -140,6 +141,7 @@ composed sets yourself.
 | `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -162,7 +164,7 @@ older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
 PostgreSQL 17; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
-`CREATE OR REPLACE TRIGGER`).
+`CREATE OR REPLACE TRIGGER` and no `SPGIST` indexes with `INCLUDE` columns).
 
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
 common distributed-SQL subset; `SpannerPostgres()` is deliberately
@@ -253,6 +255,11 @@ planner := mysql.NewWithCapabilities(caps)
 ```
 
 `With` copies — presets are never mutated.
+
+`capability.IndexIncludeSPGiST` distinguishes PostgreSQL 14 and newer from
+PostgreSQL 12–13 when rendering `SPGIST` indexes with `INCLUDE` payload
+columns. Whole-schema and direct-AST rendering consume the same resolved key,
+so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
 
 ### Resolving a preset
 

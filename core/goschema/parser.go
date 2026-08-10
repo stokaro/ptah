@@ -248,6 +248,30 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	for i := range fields {
 		fields[i] = strings.TrimSpace(fields[i])
 	}
+	var includeColumns []string
+	if includeRaw, present := kv["include"]; present {
+		parts := strings.Split(includeRaw, ",")
+		includeColumns = make([]string, len(parts))
+		for i, part := range parts {
+			includeColumns[i] = strings.TrimSpace(part)
+			if includeColumns[i] != "" {
+				continue
+			}
+			ctx := s.annotationContext(comment, "//ptah:schema:index", structName)
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: "ptah:schema:index",
+				Attribute: "include",
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message: fmt.Sprintf(
+					"invalid include list for \"include\" on //ptah:schema:index at %s: column %d is empty; expected non-empty comma-separated column names",
+					structName,
+					i+1,
+				),
+			}
+		}
+	}
 
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
@@ -273,17 +297,18 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	}
 
 	s.schemaIndexes = append(s.schemaIndexes, Index{
-		StructName:    structName,
-		Name:          kv["name"],
-		Fields:        fields,
-		Unique:        kv["unique"] == "true",
-		Comment:       kv["comment"],
-		Type:          kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
-		Condition:     firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
-		Operator:      kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
-		NullsDistinct: parseBoolPtr(kv["nulls_distinct"]),
-		TableName:     tableName,   // Target table name
-		Granularity:   granularity, // CH only: GRANULARITY n for data-skipping indexes
+		StructName:     structName,
+		Name:           kv["name"],
+		Fields:         fields,
+		Unique:         kv["unique"] == "true",
+		Comment:        kv["comment"],
+		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
+		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
+		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
+		IncludeColumns: includeColumns,
+		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
+		TableName:      tableName,   // Target table name
+		Granularity:    granularity, // CH only: GRANULARITY n for data-skipping indexes
 	})
 	return nil
 }

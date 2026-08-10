@@ -314,12 +314,28 @@ func prepareASTNodeForRendering(
 		return prepareConstraintNode(dialect, caps, typed)
 	case *ast.ColumnNode:
 		return prepareColumnNode(dialect, caps, typed)
+	case *ast.IndexNode:
+		return prepareIndexNode(dialect, caps, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
 	}
+}
+
+func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.IndexNode) (*ast.IndexNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "index node is nil",
+		}
+	}
+	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 func prepareStatementListNode(
@@ -788,6 +804,9 @@ func prepareDatabaseForRendering(
 			Message: err.Error(),
 		}
 	}
+	if err := validateDeclaredIndexIncludes(dialect, caps, database.Indexes); err != nil {
+		return goschema.Database{}, err
+	}
 
 	prepared := *database
 	prepared.Tables = slices.Clone(database.Tables)
@@ -855,6 +874,102 @@ func prepareDatabaseForRendering(
 		makeMySQLForeignKeyTableEnginesExplicit(&prepared, dialect)
 	}
 	return prepared, nil
+}
+
+func validateDeclaredIndexIncludes(
+	dialect string,
+	caps capability.Capabilities,
+	indexes []goschema.Index,
+) error {
+	for _, index := range indexes {
+		if err := validateIndexInclude(dialect, caps, index.Name, index.Type, index.IncludeColumns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateIndexInclude(
+	dialect string,
+	caps capability.Capabilities,
+	indexName, indexType string,
+	includeColumns []string,
+) error {
+	if len(includeColumns) == 0 {
+		return nil
+	}
+	for i, column := range includeColumns {
+		if strings.TrimSpace(column) != "" {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("index %q has an empty INCLUDE column at position %d", indexName, i+1),
+		}
+	}
+	trimmedIndexType := strings.TrimSpace(indexType)
+	if trimmedIndexType != indexType {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"index %q access method %q has leading or trailing whitespace",
+				indexName,
+				indexType,
+			),
+		}
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	switch normalizedDialect {
+	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
+	default:
+		return &ptaherr.CapabilityError{
+			Dialect: dialect,
+			Feature: "index INCLUDE columns",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s does not support INCLUDE columns on index %q; target postgres, yugabytedb, or spanner",
+				normalizedDialect,
+				indexName,
+			),
+		}
+	}
+
+	method := strings.ToUpper(trimmedIndexType)
+	var allowed bool
+	var supportedMethods string
+	switch normalizedDialect {
+	case platform.Postgres:
+		allowed = method == "" || method == "BTREE" || method == "GIST" ||
+			(method == "SPGIST" && caps.Has(capability.IndexIncludeSPGiST))
+		supportedMethods = "the default, BTREE, or GIST access method"
+		if caps.Has(capability.IndexIncludeSPGiST) {
+			supportedMethods = "the default, BTREE, GIST, or SPGIST access method"
+		}
+	case platform.YugabyteDB:
+		allowed = method == "" || method == "LSM" || method == "BTREE"
+		supportedMethods = "the default, LSM, or BTREE access method"
+	case platform.Spanner:
+		allowed = method == ""
+		supportedMethods = "the default access method"
+	}
+	if allowed {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "index INCLUDE access method",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s INCLUDE columns on index %q require %s; access method %q is not supported",
+			normalizedDialect,
+			indexName,
+			supportedMethods,
+			method,
+		),
+	}
 }
 
 func makeMySQLForeignKeyTableEnginesExplicit(database *goschema.Database, dialect string) {

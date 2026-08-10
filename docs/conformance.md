@@ -664,8 +664,8 @@ comment is not one of the four: it is a relation-level attribute like
 through, and that criterion has a fifth surface the list above does not name:
 Ptah's own Go annotation surface. `//ptah:schema:index` parses `name`,
 `fields`/`columns`, `table`, `unique`, `comment`, `type`, `where`/`condition`,
-`ops`, `nulls_distinct` and `granularity` — no storage parameters, and no
-`include` either.
+`ops`, `include`, `nulls_distinct` and `granularity` — but no storage
+parameters.
 
 The consequence is measured. Against a database holding
 `CREATE INDEX i ON t USING brin (ts) WITH (pages_per_range = 32)`, a model
@@ -676,13 +676,15 @@ DROP INDEX IF EXISTS "i";
 CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
 ```
 
-which drops the parameter. This is a pre-existing class rather than a new one:
-with the storage-parameter comparison removed, the identical plan is produced
-for `CREATE INDEX i ON t (a) INCLUDE (b)` against a model declaring
-`//ptah:schema:index name="i" fields="a"` — measured, both on PostgreSQL 17.10.
-Closing the class means adding index attributes to the annotation surface for
-everything the HCL surface can already say, which is its own change and is not
-attempted here.
+which drops the parameter. `include` is no longer part of this loss class: a
+model can declare `include="b"`, and PostgreSQL, YugabyteDB, and the Spanner
+PostgreSQL dialect preserve it as `INCLUDE ("b")`. Validation refuses
+CockroachDB and other dialects rather than dropping the payload. It also limits
+methods to default/`BTREE`/`GIST` on PostgreSQL 12–13, adds `SPGIST` on
+PostgreSQL 14 and newer, and accepts default/`LSM` on YugabyteDB. YugabyteDB's
+documented `BTREE` alias renders identically to its default LSM. Spanner accepts
+only the default. Closing the remaining class means adding a storage-parameter
+attribute to the annotation surface, which is not attempted here.
 
 ### The access-method loss was not silent in general
 
