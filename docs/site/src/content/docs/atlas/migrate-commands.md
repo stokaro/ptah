@@ -525,11 +525,10 @@ explicit `--lock-name` prints a note on stderr naming the lock that was not
 acquired.
 
 Atlas migration files may override global `file` or `none` with a leading
-header followed by a blank line:
+header. A blank line after the header is accepted but not required:
 
 ```sql
 -- atlas:txmode file
-
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 

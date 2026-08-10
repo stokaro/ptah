@@ -155,10 +155,19 @@ type User struct {
 	placements := annotationmeta.CommentPlacements(file)
 
 	c.Assert(placements[comments[0]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeFile})
-	c.Assert(placements[comments[1]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeStruct})
+	c.Assert(placements[comments[1]], qt.DeepEquals, annotationmeta.Placement{
+		Scope:      annotationmeta.ScopeStruct,
+		StructName: "User",
+	})
 	c.Assert(placements[comments[2]], qt.DeepEquals, annotationmeta.Placement{
 		Scope:      annotationmeta.ScopeField,
+		StructName: "User",
+		FieldNames: []string{"ID"},
 		NamedField: true,
 	})
-	c.Assert(placements[comments[3]], qt.DeepEquals, annotationmeta.Placement{Scope: annotationmeta.ScopeField})
+	c.Assert(placements[comments[3]], qt.DeepEquals, annotationmeta.Placement{
+		Scope:            annotationmeta.ScopeField,
+		StructName:       "User",
+		EmbeddedTypeName: "Audit",
+	})
 }

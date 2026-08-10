@@ -401,6 +401,185 @@ const placeholder = 0
 	}
 }
 
+func TestExport_FailurePath_CleanupRejectsTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
+	c := qt.New(t)
+	outputData := []byte("previous useful schema\n")
+	tests := []struct {
+		name          string
+		helperSource  string
+		wantDirective string
+	}{
+		{
+			name: "field",
+			helperSource: `
+type Helper struct {
+	//ptah:schema:field name="ghost_id" type="BIGINT"
+	GhostID int64
+}
+`,
+			wantDirective: "ptah:schema:field",
+		},
+		{
+			name: "embedded",
+			helperSource: `
+type Audit struct {
+	//ptah:schema:field name="created_at" type="TIMESTAMP"
+	CreatedAt string
+}
+
+type Helper struct {
+	//ptah:embedded mode="inline"
+	Audit
+}
+`,
+			wantDirective: "ptah:embedded",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			source := filepath.Join(root, "model.go")
+			output := filepath.Join(root, "schema.hcl")
+			sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+` + test.helperSource)
+			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+			result, err := goannotationexport.Export(goannotationexport.Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+			})
+
+			c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
+			c.Assert(err.Error(), qt.Contains, test.wantDirective)
+			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+			assertFileBytes(c, source, sourceData)
+			assertFileBytes(c, output, outputData)
+		})
+	}
+}
+
+func TestExport_FailurePath_CleanupRejectsLossyTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
+	c := qt.New(t)
+	outputData := []byte("previous useful schema\n")
+	tests := []struct {
+		name       string
+		helper     string
+		wantDetail string
+	}{
+		{
+			name: "index",
+			helper: `
+//ptah:schema:index name="idx_helper_ghost" fields="ghost_id"
+type Helper struct{}
+`,
+			wantDetail: "index cannot be rendered because the target table is absent",
+		},
+		{
+			name: "constraint",
+			helper: `
+//ptah:schema:constraint name="helper_ghost_check" type="CHECK" check="ghost_id > 0"
+type Helper struct{}
+`,
+			wantDetail: "constraint cannot be rendered because the target table is absent",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			source := filepath.Join(root, "model.go")
+			output := filepath.Join(root, "schema.hcl")
+			sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct{}
+` + test.helper)
+			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+			result, err := goannotationexport.Export(goannotationexport.Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+			})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, "lossy HCL export")
+			c.Assert(err.Error(), qt.Contains, test.wantDetail)
+			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+			assertFileBytes(c, source, sourceData)
+			assertFileBytes(c, output, outputData)
+		})
+	}
+}
+
+func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name        string
+		annotation  string
+		wantHCL     string
+		wantRemoved int
+	}{
+		{
+			name: "index",
+			annotation: `
+	//ptah:schema:index name="idx_users_id" fields="id"
+	_ int
+`,
+			wantHCL:     `index "idx_users_id"`,
+			wantRemoved: 3,
+		},
+		{
+			name: "constraint",
+			annotation: `
+	//ptah:schema:constraint name="users_id_check" type="CHECK" check="id > 0"
+	_ int
+`,
+			wantHCL:     `check "users_id_check"`,
+			wantRemoved: 3,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			root := c.TempDir()
+			source := filepath.Join(root, "model.go")
+			output := filepath.Join(root, "schema.hcl")
+			sourceData := []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id" type="BIGINT"
+	ID int64
+` + test.annotation + `}
+`)
+			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+
+			result, err := goannotationexport.Export(goannotationexport.Options{
+				RootDir:    root,
+				OutputPath: output,
+				Cleanup:    true,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.RemovedLines, qt.Equals, test.wantRemoved)
+			after, err := os.ReadFile(source)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(after), qt.Not(qt.Contains), "ptah:schema")
+			outputData, err := os.ReadFile(output)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(outputData), qt.Contains, test.wantHCL)
+		})
+	}
+}
+
 func TestExport_FailurePath_CleanupRejectsFileScopedRLSWithoutExportedObject(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
