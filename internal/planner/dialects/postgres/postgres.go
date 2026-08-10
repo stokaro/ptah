@@ -1493,6 +1493,15 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // PostgreSQL-specific visitor.
+//
+// # Object kinds the target cannot host
+//
+// No phase below asks whether the target hosts the object kind it emits. The
+// planner emits the node and the renderer answers, because the renderer is the
+// one component both this path and the offline `schema render` converter pass
+// through. Keeping that answer in one place prevents the plan path from
+// silently dropping an unsupported object while `schema render` reports it
+// differently (stokaro/ptah#929).
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 	if generated == nil {
@@ -1547,9 +1556,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.addNewExtensions(result, diff, generated)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
-	if p.capabilities().Has(capability.RoleManagement) {
-		result = p.addNewRoles(result, diff, generated)
-	}
+	result = p.addNewRoles(result, diff, generated)
 
 	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, generated)
@@ -1596,37 +1603,27 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.modifyExistingTriggers(result, diff, generated)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
-	if p.capabilities().Has(capability.RoleManagement) {
-		result = p.modifyExistingRoles(result, diff, generated)
-	}
+	result = p.modifyExistingRoles(result, diff, generated)
 
 	// 7.5. Revoke removed grants before adding replacement grants.
-	if p.capabilities().Has(capability.RoleManagement) {
-		result = p.removeGrants(result, diff)
-		result = p.revokeGrantOptions(result, diff)
-	}
+	result = p.removeGrants(result, diff)
+	result = p.revokeGrantOptions(result, diff)
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
-	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.enableRLSOnTables(result, diff, generated, semantics)
-	}
+	result = p.enableRLSOnTables(result, diff, generated, semantics)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
-	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result, err = p.addNewRLSPolicies(result, diff, policies)
-		if err != nil {
-			return nil, err
-		}
-		result, err = p.modifyExistingRLSPolicies(result, diff, policies)
-		if err != nil {
-			return nil, err
-		}
+	result, err = p.addNewRLSPolicies(result, diff, policies)
+	if err != nil {
+		return nil, err
+	}
+	result, err = p.modifyExistingRLSPolicies(result, diff, policies)
+	if err != nil {
+		return nil, err
 	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
-	if p.capabilities().Has(capability.RoleManagement) {
-		result = p.addNewGrants(result, diff)
-	}
+	result = p.addNewGrants(result, diff)
 
 	// 10. Add new indexes
 	result, err = p.addNewIndexes(result, diff, indexes)
@@ -1645,14 +1642,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeIndexes(result, diff)
 
 	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
-	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.removeRLSPolicies(result, diff)
-	}
+	result = p.removeRLSPolicies(result, diff)
 
 	// 11. Disable RLS on tables (must be done after removing policies)
-	if p.capabilities().Has(capability.RowLevelSecurity) {
-		result = p.disableRLSOnTables(result, diff)
-	}
+	result = p.disableRLSOnTables(result, diff)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
@@ -1675,9 +1668,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeFunctions(result, diff)
 
 	// 14. Remove roles (must be done after removing functions and policies that depend on them)
-	if p.capabilities().Has(capability.RoleManagement) {
-		result = p.removeRoles(result, diff)
-	}
+	result = p.removeRoles(result, diff)
 
 	// 15. Remove enums (dangerous!)
 	result = p.removeUserTypes(result, diff)

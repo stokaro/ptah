@@ -330,6 +330,22 @@ GO`
 	})
 }
 
+func TestApplyStatements_DropsCommentOnlyStatements(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "comment-only-statements.db")
+	conn := connectSQLite(c, dbPath)
+
+	err := atlasschema.ApplyStatements(context.Background(), conn, migrator.MigrationTxModeAll, []string{
+		"-- SQLITE: role app_user is not supported by this target; skipped.",
+		"CREATE TABLE applied_statement (id INTEGER PRIMARY KEY)",
+	})
+	dbschema.CloseAndWarn(conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqliteTableExists(c, dbPath, "applied_statement"), qt.IsTrue)
+}
+
 func TestFormatMigrationSQL_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
