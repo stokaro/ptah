@@ -2,6 +2,7 @@ package capability_test
 
 import (
 	"maps"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -310,6 +311,25 @@ func TestCapabilities_Clone(t *testing.T) {
 	cl := orig.Clone()
 	cl[capability.DropIndexIfExists] = true
 	c.Assert(orig.Has(capability.DropIndexIfExists), qt.IsFalse, qt.Commentf("clone must be independent"))
+}
+
+func TestDefaultDialects(t *testing.T) {
+	c := qt.New(t)
+
+	dialects := capability.DefaultDialects()
+	c.Assert(dialects, qt.Not(qt.HasLen), 0)
+	c.Assert(slices.IsSorted(dialects), qt.IsTrue)
+
+	for _, dialect := range dialects {
+		c.Run(dialect, func(c *qt.C) {
+			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
+			c.Assert(capability.ForDialect(dialect).Validate(), qt.IsNil)
+		})
+	}
+
+	dialects[0] = "mutated"
+	c.Assert(capability.ForDialect("mutated"), qt.IsNil)
+	c.Assert(slices.IsSorted(capability.DefaultDialects()), qt.IsTrue)
 }
 
 func TestForDialect(t *testing.T) {

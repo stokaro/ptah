@@ -296,21 +296,12 @@ func TestRevisionCompletionClasses_EveryClassIsCovered(t *testing.T) {
 		covered[target.class] = append(covered[target.class], target.name)
 	}
 
-	tests := []struct {
-		name  string
-		class ddltx.Class
-	}{
-		{name: "transactional", class: ddltx.Transactional},
-		{name: "implicit commit", class: ddltx.ImplicitCommit},
-		{name: "no transaction", class: ddltx.NoTransaction},
-	}
-
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			c.Assert(covered[test.class], qt.Not(qt.HasLen), 0)
+	for _, class := range ddltx.Classes() {
+		c.Run(string(class), func(c *qt.C) {
+			c.Assert(covered[class], qt.Not(qt.HasLen), 0)
 		})
 	}
-	c.Assert(covered, qt.HasLen, 3)
+	c.Assert(covered, qt.HasLen, len(ddltx.Classes()))
 }
 
 // TestRevisionCompletionClasses_ClassMatchesTheDialect keeps a case from

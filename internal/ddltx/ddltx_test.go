@@ -10,37 +10,18 @@ import (
 	"go.5x5.cz/ptah/internal/ddltx"
 )
 
-// everyDialect lists every dialect core/platform names. It is asserted against
-// capability.ForDialect below rather than trusted: a dialect added to the
-// capability presets without being added here fails
-// TestClassOf_CoversEveryCapabilityDialect, and a dialect added here without a
-// class fails it too.
-func everyDialect() []string {
-	return []string{
-		platform.ClickHouse,
-		platform.CockroachDB,
-		platform.MariaDB,
-		platform.MySQL,
-		platform.Postgres,
-		platform.SQLServer,
-		platform.SQLite,
-		platform.Spanner,
-		platform.YugabyteDB,
-	}
-}
-
 // TestClassOf_CoversEveryCapabilityDialect is the guard that makes the
 // revision-completion matrix honest. The matrix can only cover the classes
 // that exist, so a dialect with no class would drop out of it silently — a
 // matrix reading as complete while a target has no stated contract is worse
 // than no matrix at all (issue #999).
 //
-// capability.ForDialect is the authority for "a dialect Ptah has a preset
-// for": it returns nil for anything it does not know.
+// capability.DefaultDialects is the authority for "a dialect Ptah has a
+// default preset for": adding a dialect there without a class fails here.
 func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
 	c := qt.New(t)
 
-	for _, dialect := range everyDialect() {
+	for _, dialect := range capability.DefaultDialects() {
 		c.Run(dialect, func(c *qt.C) {
 			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
 			c.Assert(ddltx.ClassOf(dialect), qt.Not(qt.Equals), ddltx.Unclassified)
@@ -155,7 +136,7 @@ func TestAllStatementsDurable(t *testing.T) {
 func TestAllStatementsDurableImpliesBodySurvives(t *testing.T) {
 	c := qt.New(t)
 
-	for _, dialect := range everyDialect() {
+	for _, dialect := range capability.DefaultDialects() {
 		c.Run(dialect, func(c *qt.C) {
 			class := ddltx.ClassOf(dialect)
 			c.Assert(

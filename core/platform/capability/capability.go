@@ -41,6 +41,7 @@ package capability
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -816,32 +817,33 @@ func SpannerPostgres() Capabilities {
 		With(ForeignKeysCreateBackingIndex, true)
 }
 
+var defaultDialectPresets = map[string]func() Capabilities{
+	platform.ClickHouse:  ClickHouse24,
+	platform.CockroachDB: CockroachDB23,
+	platform.MariaDB:     MariaDB1011,
+	platform.MySQL:       MySQL84,
+	platform.Postgres:    Postgres17,
+	platform.Spanner:     SpannerPostgres,
+	platform.SQLite:      SQLite3,
+	platform.SQLServer:   SQLServer2022,
+	platform.YugabyteDB:  YugabyteDB25,
+}
+
+// DefaultDialects returns the normalized dialect names for which [ForDialect]
+// has a default capability preset.
+func DefaultDialects() []string {
+	return slices.Sorted(maps.Keys(defaultDialectPresets))
+}
+
 // ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
 // dialect. Unknown dialects get nil — the conservative empty set.
 func ForDialect(dialect string) Capabilities {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
-		return Postgres17()
-	case platform.MySQL:
-		return MySQL84()
-	case platform.MariaDB:
-		return MariaDB1011()
-	case platform.ClickHouse:
-		return ClickHouse24()
-	case platform.SQLite:
-		return SQLite3()
-	case platform.SQLServer:
-		return SQLServer2022()
-	case platform.CockroachDB:
-		return CockroachDB23()
-	case platform.YugabyteDB:
-		return YugabyteDB25()
-	case platform.Spanner:
-		return SpannerPostgres()
-	default:
+	preset := defaultDialectPresets[platform.NormalizeDialect(dialect)]
+	if preset == nil {
 		return nil
 	}
+	return preset()
 }
 
 // Newest measured major version line per refined dialect.

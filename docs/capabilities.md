@@ -256,6 +256,9 @@ planner := mysql.NewWithCapabilities(caps)
 
 ### Resolving a preset
 
+- `capability.DefaultDialects()` — normalized dialect names with a default
+  preset. Use this when a guard or UI needs to cover every dialect Ptah routes
+  through `ForDialect` without maintaining a second list.
 - `capability.ForDialect("mariadb")` — default preset for a dialect name
   (aliases like `pgx`/`postgresql`, `crdb`/`cockroachdb`,
   `ysql`/`yugabytedb`, and `cloudspanner`/`spanner` normalize first). Used by

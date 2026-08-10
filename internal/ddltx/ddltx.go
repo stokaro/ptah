@@ -55,6 +55,11 @@ const (
 	NoTransaction Class = "no_transaction"
 )
 
+// Classes returns every non-zero DDL transaction contract [ClassOf] can assign.
+func Classes() []Class {
+	return []Class{Transactional, ImplicitCommit, NoTransaction}
+}
+
 // ClassOf returns the DDL transaction contract Ptah's migrator implements for
 // a dialect. The dialect is normalized through platform.NormalizeDialect, so
 // every accepted spelling of a target answers the same.
