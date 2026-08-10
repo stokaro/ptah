@@ -26,7 +26,7 @@ func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 	result := exercisePostgresFamilyReader(c, t, dsn, sourceURL, fixture)
 
 	assertPostgresFamilyReaderCatalog(c, result.schema, fixture)
-	c.Assert(postgresFamilyCatalogHasSequence(result.schema, fixture.catalogSchema, fixture.sequence), qt.IsFalse)
+	c.Assert(postgresFamilyCatalogHasSequence(result.schema, fixture.catalogSchema, fixture.sequence), qt.IsTrue)
 }
 
 func TestPostgresFamilyReader_YugabyteDBCatalogObjects(t *testing.T) {
@@ -50,6 +50,7 @@ type postgresFamilyReaderFixture struct {
 	view             string
 	materializedView string
 	sequence         string
+	policy           string
 	cleanup          []string
 	setup            []string
 }
@@ -65,6 +66,7 @@ func cockroachReaderFixture() postgresFamilyReaderFixture {
 		view             = "ptah_1381_crdb_active_users"
 		materializedView = "ptah_1381_crdb_user_emails"
 		sequence         = "ptah_1381_crdb_ticket_seq"
+		policy           = "ptah_1381_crdb_active_users_policy"
 	)
 	return postgresFamilyReaderFixture{
 		databaseName:     "CockroachDB",
@@ -75,6 +77,7 @@ func cockroachReaderFixture() postgresFamilyReaderFixture {
 		view:             view,
 		materializedView: materializedView,
 		sequence:         sequence,
+		policy:           policy,
 		cleanup: []string{
 			`DROP MATERIALIZED VIEW IF EXISTS public.` + materializedView,
 			`DROP VIEW IF EXISTS public.` + view,
@@ -89,6 +92,8 @@ func cockroachReaderFixture() postgresFamilyReaderFixture {
 				`active BOOL NOT NULL DEFAULT true` +
 				`)`,
 			`CREATE INDEX ` + index + ` ON public.` + table + ` (email)`,
+			`ALTER TABLE public.` + table + ` ENABLE ROW LEVEL SECURITY`,
+			`CREATE POLICY ` + policy + ` ON public.` + table + ` FOR SELECT USING (active)`,
 			`CREATE VIEW public.` + view + ` AS ` +
 				`SELECT id, email FROM public.` + table + ` WHERE active`,
 			`CREATE MATERIALIZED VIEW public.` + materializedView + ` AS ` +
@@ -105,6 +110,7 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 		view             = "active_users"
 		materializedView = "user_emails"
 		sequence         = "ticket_seq"
+		policy           = "active_users_policy"
 	)
 	return postgresFamilyReaderFixture{
 		databaseName:     "YugabyteDB",
@@ -115,6 +121,7 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 		view:             view,
 		materializedView: materializedView,
 		sequence:         sequence,
+		policy:           policy,
 		cleanup: []string{
 			`DROP SCHEMA IF EXISTS ` + schema + ` CASCADE`,
 		},
@@ -127,6 +134,8 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 				`active BOOLEAN NOT NULL DEFAULT true` +
 				`)`,
 			`CREATE INDEX ` + index + ` ON ` + schema + `.` + table + ` (email)`,
+			`ALTER TABLE ` + schema + `.` + table + ` ENABLE ROW LEVEL SECURITY`,
+			`CREATE POLICY ` + policy + ` ON ` + schema + `.` + table + ` FOR SELECT USING (active)`,
 			`CREATE VIEW ` + schema + `.` + view + ` AS ` +
 				`SELECT id, email FROM ` + schema + `.` + table + ` WHERE active`,
 			`CREATE MATERIALIZED VIEW ` + schema + `.` + materializedView + ` AS ` +
@@ -247,6 +256,8 @@ func assertPostgresFamilyReaderCatalog(
 	c.Assert(postgresFamilyCatalogHasView(schema, fixture.catalogSchema, fixture.view), qt.IsTrue)
 	c.Assert(postgresFamilyCatalogHasMaterializedView(schema, fixture.catalogSchema, fixture.materializedView), qt.IsTrue)
 	c.Assert(postgresFamilyCatalogHasIndex(schema, fixture.catalogSchema, fixture.table, fixture.index), qt.IsTrue)
+	c.Assert(postgresFamilyCatalogHasRLSEnabledTable(schema, fixture.catalogSchema, fixture.table), qt.IsTrue)
+	c.Assert(postgresFamilyCatalogHasRLSPolicy(schema, fixture.catalogSchema, fixture.table, fixture.policy), qt.IsTrue)
 }
 
 func assertPostgresFamilyReaderOutput(c *qt.C, output string, fixture postgresFamilyReaderFixture) {
@@ -305,6 +316,30 @@ func postgresFamilyCatalogHasIndex(
 func postgresFamilyCatalogHasSequence(schema *dbschematypes.DBSchema, schemaName, sequenceName string) bool {
 	for _, sequence := range schema.Sequences {
 		if sequence.Schema == schemaName && sequence.Name == sequenceName {
+			return true
+		}
+	}
+	return false
+}
+
+func postgresFamilyCatalogHasRLSEnabledTable(schema *dbschematypes.DBSchema, schemaName, tableName string) bool {
+	for _, table := range schema.Tables {
+		if table.Schema == schemaName && table.Name == tableName && table.RLSEnabled {
+			return true
+		}
+	}
+	return false
+}
+
+func postgresFamilyCatalogHasRLSPolicy(
+	schema *dbschematypes.DBSchema,
+	schemaName string,
+	tableName string,
+	policyName string,
+) bool {
+	wantTable := dbschematypes.QualifyTableName(schemaName, tableName)
+	for _, policy := range schema.RLSPolicies {
+		if policy.Table == wantTable && policy.Name == policyName && policy.ToRoles == "PUBLIC" {
 			return true
 		}
 	}

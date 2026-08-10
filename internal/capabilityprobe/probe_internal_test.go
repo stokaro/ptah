@@ -154,9 +154,17 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		},
 		want: registered - 2,
 	}, {
-		name: "a banner-refined line owes nothing, because no observation there can be credited to it",
+		name: "a directly measured release line owes the plan even when its resolver is banner-based",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
+			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
+			Refinement: RefinedByMeasuredLine,
+		},
+		want: registered,
+	}, {
+		name: "a banner-refined line owes nothing, because no observation there can be credited to it",
+		cell: Cell{
+			Dialect: platform.CockroachDB, Line: "25.4",
 			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
 			Refinement: RefinedByBanner,
 		},
@@ -279,8 +287,9 @@ func TestAssemble_UndecidableRowsAreNotCountedAsDecided(t *testing.T) {
 	c.Assert(report.Err(), qt.ErrorMatches, `(?s).*decided 0 of \d+ capability rows.*`)
 }
 
-// TestAssemble_AnUnattributableLineKeepsTheObservation covers the six dialects
-// whose preset is not selected by a version.
+// TestAssemble_AnUnattributableLineKeepsTheObservation covers banner-refined
+// lines whose preset is not selected by a version and whose release line has
+// not been measured directly.
 //
 // The rows must be undecidable — an observation on one CockroachDB release is
 // being credited to every other release, which is not a measurement of this
@@ -290,7 +299,7 @@ func TestAssemble_AnUnattributableLineKeepsTheObservation(t *testing.T) {
 	c := qt.New(t)
 
 	bannerCell := Cell{
-		Dialect: platform.CockroachDB, Line: "26.2",
+		Dialect: platform.CockroachDB, Line: "25.4",
 		Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
 		Refinement: RefinedByBanner,
 	}
@@ -305,22 +314,22 @@ func TestAssemble_AnUnattributableLineKeepsTheObservation(t *testing.T) {
 	report.Resolution.VersionSpecific = true
 	report.Resolution.Capabilities = capability.CockroachDB23()
 	report.Rows = assemble(report, map[capability.Capability]observation{
-		capability.Sequences: decided(true), // CockroachDB23 says false.
-		capability.Views:     decided(true), // CockroachDB23 says true.
+		capability.AdvisoryLocks: decided(true), // CockroachDB23 says false.
+		capability.Views:         decided(true), // CockroachDB23 says true.
 	}, nil)
 
-	sequences := rowFor(c, report.Rows, capability.Sequences)
-	c.Assert(sequences.Outcome, qt.Equals, Undecidable)
-	c.Assert(sequences.Observed, qt.IsTrue)
-	c.Assert(sequences.ServerDoes, qt.IsTrue)
-	c.Assert(sequences.Reason, qt.Contains, "banner substring")
+	advisoryLocks := rowFor(c, report.Rows, capability.AdvisoryLocks)
+	c.Assert(advisoryLocks.Outcome, qt.Equals, Undecidable)
+	c.Assert(advisoryLocks.Observed, qt.IsTrue)
+	c.Assert(advisoryLocks.ServerDoes, qt.IsTrue)
+	c.Assert(advisoryLocks.Reason, qt.Contains, "banner substring")
 
 	views := rowFor(c, report.Rows, capability.Views)
 	c.Assert(views.Outcome, qt.Equals, Undecidable)
 
 	c.Assert(report.Mismatches(), qt.HasLen, 1)
-	c.Assert(report.Mismatches()[0].Capability, qt.Equals, capability.Sequences)
-	c.Assert(report.Err(), qt.ErrorMatches, `(?s).*sequences: preset says false, server does true.*`)
+	c.Assert(report.Mismatches()[0].Capability, qt.Equals, capability.AdvisoryLocks)
+	c.Assert(report.Err(), qt.ErrorMatches, `(?s).*advisory_locks: preset says false, server does true.*`)
 }
 
 // TestReportErr covers the ways a run must refuse to report success.

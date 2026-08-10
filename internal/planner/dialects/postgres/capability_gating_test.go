@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -55,9 +56,9 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.NewWithCapabilities(capability.CockroachDB23()).GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQLWithCapabilities("cockroachdb", capability.CockroachDB23(), nodes...)
+	sql, err := renderer.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE ROLE")

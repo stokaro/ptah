@@ -216,15 +216,19 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(cockroach.Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.AdvisoryLocks), qt.IsFalse)
-	c.Assert(cockroach.Has(capability.RoleManagement), qt.IsFalse)
-	c.Assert(cockroach.Has(capability.Sequences), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.RoleManagement), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.RowLevelSecurity), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.Sequences), qt.IsTrue)
 
 	yugabyte := capability.YugabyteDB25()
 	c.Assert(yugabyte.Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.ForeignKeys), qt.IsTrue)
-	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.DropIndexConcurrently), qt.IsFalse)
 	c.Assert(yugabyte.Has(capability.RoleManagement), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.RowLevelSecurity), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.Sequences), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.AdvisoryLocks), qt.IsTrue)
 
 	spanner := capability.SpannerPostgres()
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
@@ -348,7 +352,7 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("sqlite").Has(capability.EnumInlineColumn), qt.IsFalse)
 	c.Assert(capability.ForDialect("sqlite").Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(capability.ForDialect("crdb").Has(capability.CreateIndexConcurrently), qt.IsFalse)
-	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsTrue)
 	c.Assert(capability.ForDialect("mssql").Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.ForDialect("sql-server").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
@@ -403,7 +407,7 @@ func TestForServerVersion(t *testing.T) {
 		{"postgres 13 still concurrent-capable", "postgres", "13.14", capability.CreateIndexConcurrently, true},
 		{"cockroach banner disables concurrent indexes", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.CreateIndexConcurrently, false},
 		{"cockroach banner disables XML", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.XMLType, false},
-		{"yugabytedb banner disables concurrent indexes", "postgres", "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang", capability.CreateIndexConcurrently, false},
+		{"yugabytedb banner keeps concurrent indexes", "postgres", "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang", capability.CreateIndexConcurrently, true},
 		{"spanner banner supports foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, true},
 		{"unparseable falls back to dialect default", "mysql", "who knows", capability.DropConstraintGeneric, true},
 	}

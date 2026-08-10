@@ -347,9 +347,10 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 //
 // On a line no observation can be credited to it is zero rather than that
 // count. Every row there is undecidable by construction — the resolver hands
-// each release of the engine the same preset — so demanding decisions would
-// turn a correctly reported limitation into a permanent failure and teach
-// readers to ignore the exit code.
+// each release of the engine the same preset and the line has not been
+// measured directly — so demanding decisions would turn a correctly reported
+// limitation into a permanent failure and teach readers to ignore the exit
+// code.
 func decidable(report *Report, p plan) int {
 	if lineReason(report) != "" {
 		return 0
@@ -483,9 +484,9 @@ func outcomeFor(row Row, unattributable string) Outcome {
 //
 // This is the mechanism issue #1339 predicts will produce whole columns of
 // undecidable rows, and that first output is the correct result rather than a
-// defect to paper over: for six of the nine dialects the resolver hands every
-// release the same set, so an observation taken on one release is being
-// attributed to releases it was never taken from.
+// defect to paper over: for several dialects the resolver hands every release
+// the same set, so an observation taken on one release can be credited only
+// when the matrix cell explicitly records that release-line measurement.
 func lineReason(report *Report) string {
 	if !report.Matched {
 		return fmt.Sprintf(
@@ -506,7 +507,7 @@ func lineReason(report *Report) string {
 			"the %s dialect has no version ladder: the resolver parses the version and discards it, so "+
 				"every release receives %s and an observation on one release cannot be credited to this line",
 			report.Dialect, report.Cell.PresetName)
-	case RefinedByVersion:
+	case RefinedByVersion, RefinedByMeasuredLine:
 		return ""
 	default:
 		return fmt.Sprintf("unknown refinement %q for matrix cell %s", report.Cell.Refinement, report.Cell)

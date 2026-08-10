@@ -80,4 +80,9 @@ See [PostgreSQL Role Management](./POSTGRESQL_ROLES.md) for the full grant model
 
 ## Other dialects
 
-Standalone sequences are PostgreSQL-only. MySQL, MariaDB, and SQL Server render a "not supported" comment (or, in the case of the planner, reject the change for SQLite), because these targets do not have a standalone sequence object.
+Standalone sequences are enabled for PostgreSQL-family presets with a complete
+emit/read/plan path, currently PostgreSQL, CockroachDB, and YugabyteDB. MySQL,
+MariaDB, ClickHouse, and Spanner name standalone sequence declarations as
+skipped or unsupported in rendered plans. SQLite rejects the change in the
+planner. SQL Server has engine-level sequence support, but Ptah does not yet
+model standalone SQL Server sequence objects in the portable schema path.

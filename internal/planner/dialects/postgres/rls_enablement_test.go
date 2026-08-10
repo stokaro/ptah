@@ -190,16 +190,15 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 }
 
 // TestPlannerNamesRLSItCannotCarry records that a PostgreSQL-family target
-// without the row-level security capability (CockroachDB, YugabyteDB, Spanner)
-// receives no PostgreSQL-only RLS DDL, and is TOLD so by name.
+// without the row-level security capability (currently Spanner) receives no
+// PostgreSQL-only RLS DDL, and is TOLD so by name.
 //
 // This test used to assert `nodes, qt.HasLen, 0` — the planner skipped the RLS
 // phases outright when the capability was absent, and the plan came back with
 // no statement and no diagnostic about the tables it had dropped. Meanwhile
-// `schema render --dialect cockroachdb` reached the renderer's RLS gate, which
-// returned an error, and exited 2 rendering nothing at all. Two commands, one
-// desired schema, one target, two different answers (stokaro/ptah#929 items 1
-// and 4).
+// `schema render` reached the renderer's RLS gate, which returned an error,
+// and exited 2 rendering nothing at all. Two commands, one desired schema, one
+// target, two different answers (stokaro/ptah#929 items 1 and 4).
 //
 // The planner now emits the node and the renderer answers, so the assertion is
 // on the rendered plan rather than on an empty slice: the objects are still not
@@ -213,20 +212,20 @@ func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 		RLSEnabledTablesRemoved: []string{"public.p"},
 	}
 
-	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
+	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
 		GenerateMigrationASTChecked(diff, &goschema.Database{})
 	c.Assert(err, qt.IsNil)
 
-	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
+	sql, err := renderer.RenderSQL(platform.Spanner, nodes...)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(strings.Split(strings.TrimRight(sql, "\n"), "\n"), qt.DeepEquals, []string{
-		"-- COCKROACHDB: row-level security on other.secured is not supported by this target; skipped.",
-		"-- COCKROACHDB: row-level security on public.p is not supported by this target; skipped.",
+		"-- SPANNER: row-level security on other.secured is not supported by this target; skipped.",
+		"-- SPANNER: row-level security on public.p is not supported by this target; skipped.",
 	})
 	// The DDL itself must be absent, not merely accompanied by a comment: a
 	// renderer that wrote the skip line and then the statement would satisfy a
-	// "names the object" assertion while still sending CockroachDB an
-	// ALTER TABLE ... ENABLE ROW LEVEL SECURITY it cannot run.
+	// "names the object" assertion while still sending Spanner an ALTER TABLE
+	// ... ENABLE ROW LEVEL SECURITY it cannot run.
 	c.Assert(sql, qt.Not(qt.Contains), "ROW LEVEL SECURITY;")
 }
