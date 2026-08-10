@@ -37,6 +37,9 @@ jobs:
           ! grep -F "All operations wrapped in transactions" README.md
           ! grep -F "locking prevents double-apply" README.md
 
+      - name: Check repository-local path leaks
+        run: scripts/check-repository-local-paths.sh
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 

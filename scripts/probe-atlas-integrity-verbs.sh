@@ -29,18 +29,12 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ATLAS="${1:-${PTAH_ATLAS_ORACLE:-$HOME/Work/denis/ptah-atlas-conformance/bin/atlas}}"
 COMPAT="$ROOT/bin/ptah-compat"
 
 # shellcheck source=scripts/lib/atlas-ce-oracle.sh
 source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
 atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
-
-if [ ! -x "$ATLAS" ]; then
-	echo "probe: oracle not found or not executable: $ATLAS" >&2
-	echo "probe: pass the path to the pinned Atlas CE binary as \$1" >&2
-	exit 1
-fi
+ATLAS="$(atlas_ce_resolve_binary "${1:-}")" || exit 1
 atlas_ce_verify_binary "$ATLAS" >/dev/null || exit 1
 
 if [ ! -x "$COMPAT" ]; then
