@@ -52,7 +52,7 @@ func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(output.String(), qt.Equals, "")
 	migrations, globErr := filepath.Glob(filepath.Join(root, "migrations", "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 1)

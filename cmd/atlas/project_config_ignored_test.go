@@ -112,7 +112,7 @@ func TestCompatConvertedMigrateNewReportsIgnoredAtlasConstructs(t *testing.T) {
 	stdout, stderr, err := runCompatExit("migrate", "new", "add_users", "--env", "local")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Generated empty migration file:")
+	c.Assert(stdout, qt.Equals, "")
 	c.Assert(
 		stderr,
 		qt.Equals,
