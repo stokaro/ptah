@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/atlashash"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -248,18 +249,19 @@ func ComputeAtlasFiles(fsys fs.FS, names []string) (*SumFile, error) {
 	}
 
 	entries := make([]Entry, 0, len(names))
-	h := sha256.New()
+	chain := atlashash.NewChain()
 	for _, name := range names {
 		data, err := readCoveredEntry(fsys, name)
 		if err != nil {
 			return nil, err
 		}
-		_, _ = h.Write([]byte(name))
-		if atlasSumIgnored(data) {
+		ignored := atlashash.IsSumIgnored(data)
+		if ignored {
+			chain.AddName(name)
 			continue
 		}
-		_, _ = h.Write(data)
-		entries = append(entries, Entry{Name: name, Hash: hashPrefix + base64.StdEncoding.EncodeToString(h.Sum(nil))})
+		hash := chain.Add(name, data)
+		entries = append(entries, Entry{Name: name, Hash: hash})
 	}
 
 	return &SumFile{DirHash: atlasDirHash(entries), Entries: entries}, nil
@@ -278,41 +280,6 @@ func checkDuplicateNames(names []string) error {
 		seen[name] = struct{}{}
 	}
 	return nil
-}
-
-func atlasSumIgnored(data []byte) bool {
-	name, args, ok := atlasDirective(data)
-	return ok && name == "sum" && args == "ignore"
-}
-
-func atlasDirective(data []byte) (name, args string, ok bool) {
-	content := string(data)
-	prefix, rest, ok := strings.Cut(content, "atlas:")
-	if !ok {
-		return "", "", false
-	}
-	for _, r := range prefix {
-		if r < ' ' || r > '~' {
-			return "", "", false
-		}
-	}
-
-	line, _, _ := strings.Cut(rest, "\n")
-	nameEnd := 0
-	for nameEnd < len(line) && isDirectiveNameChar(line[nameEnd]) {
-		nameEnd++
-	}
-	if nameEnd == 0 {
-		return "", "", false
-	}
-	if nameEnd < len(line) && line[nameEnd] == ' ' {
-		args = strings.TrimLeft(line[nameEnd+1:], " ")
-	}
-	return line[:nameEnd], args, true
-}
-
-func isDirectiveNameChar(b byte) bool {
-	return b == '_' || ('0' <= b && b <= '9') || ('A' <= b && b <= 'Z') || ('a' <= b && b <= 'z')
 }
 
 func atlasDirHash(entries []Entry) string {

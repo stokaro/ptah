@@ -321,6 +321,13 @@ current high-water mark. Use `WithExecOrder(migrator.ExecOrderNonLinear)` or
 logs a warning for each skipped version and `migrations status` continues to report it as
 pending and out of order.
 
+For an Atlas-format directory, revision hashes keep the cumulative `atlas.sum`
+encoding. Verification projects that chain from applied migrations, so adding
+an earlier pending migration does not make an unchanged later file look edited.
+After a non-linear insertion succeeds, the migrator reconciles clean applied
+rows under the migration lock. Dry runs and failed migrations leave those rows
+unchanged.
+
 ### Migration Providers
 
 - **`RegisteredMigrationProvider`**: In-memory provider for programmatically registered migrations
@@ -569,8 +576,11 @@ Rows are written as `pending` before migration SQL executes, then marked
 `applied` after success. Failed or interrupted runs leave a dirty row with
 statement progress and error details; later migration operations refuse to
 continue until `RepairMigration` or the `migrations repair` CLI resolves it.
-Applied rows store an up-SQL checksum, so editing an already-applied migration
-file is detected before new work starts.
+Applied Ptah migrations store an up-SQL checksum. Atlas-format migrations store
+the cumulative `atlas.sum` value in either revision-table layout. Both encodings
+detect an edited already-applied migration before new work starts; the Atlas
+verification path also distinguishes an unchanged file whose chain position
+moved because an earlier pending migration was inserted.
 
 A row written while rolling back stores its direction alongside the state, as
 `pending:down` or `failed:down`. The `state` column is free-form text and is

@@ -487,6 +487,29 @@ revision rows and include only migrations that a real apply would select. They
 also run the same dirty-state, checksum, execution-order, and transaction-mode
 validations as a real apply.
 
+### Apply an inserted migration out of order
+
+The default `--exec-order linear` refuses a pending migration below the current
+version. Use non-linear order when the insertion is intentional:
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --exec-order non-linear
+```
+
+An `atlas.sum` entry is a running hash over the files before it. Adding an
+earlier migration changes later entries even when those later files are
+byte-identical. Ptah verifies them against the chain projected from applied
+migrations, excluding the pending insertion.
+
+After the insertion succeeds, Ptah reconciles clean revision rows to the new
+chain while it still holds the migration lock. A dry run, execution failure, or
+process stop before the revision is applied never rewrites later clean rows.
+Editing an applied file remains a checksum mismatch because the projected chain
+includes its changed bytes.
+
 An env `for_each` can select several database targets. `migrate apply` runs
 them sequentially in stable expansion order and stops at the first failure.
 Formatted output contains one document per attempted target with one newline

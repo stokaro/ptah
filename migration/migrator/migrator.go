@@ -1397,7 +1397,8 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		currentVersionKey = strconv.FormatInt(assumedCurrent, 10)
 	}
 
-	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 
@@ -1439,6 +1440,11 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
+			return err
+		}
+	}
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
@@ -1594,8 +1600,10 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		return &CheckpointRollbackError{TargetVersion: targetVersion, CheckpointVersion: boundary}
 	}
 
-	migrationMap := migrationsByVersion(m.migrationProvider.Migrations())
-	if err := m.verifyAppliedMigrationChecksums(ctx, m.migrationProvider.Migrations()); err != nil {
+	migrations := m.migrationProvider.Migrations()
+	migrationMap := migrationsByVersion(migrations)
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
@@ -1629,6 +1637,11 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 
 	for _, migration := range migrationsToRollback {
 		if err := m.rollbackMigration(ctx, migration, deleteSQL); err != nil {
+			return err
+		}
+	}
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
 			return err
 		}
 	}
@@ -1698,7 +1711,8 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
-	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, targetVersion)
@@ -1719,6 +1733,11 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
 	if _, err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
 		return err
+	}
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
+			return err
+		}
 	}
 
 	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)

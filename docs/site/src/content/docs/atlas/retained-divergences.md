@@ -121,58 +121,14 @@ index. Discarding the row automatically in that mode would hand the next run a
 clean slate over a database that is not clean. `--allow-dirty` remains the way
 through, and the operator, unlike the tool, can look first.
 
-## An out-of-order insert, and a diagnostic that is not retained
-
-**Type.** Product behavior, tracked rather than argued
-
-Inserting a migration whose version sorts below an already applied one is
-refused by `ptah-compat` and is exit `0` on that binary. The refusal is
-defensible. The message it prints is not, and this entry exists so that
-distinction is written down rather than assumed.
-
-The per-file `h1` entry in an integrity file is chained over the entries before
-it, not computed from the file alone. Two directories were authored and hashed
-by that binary; one holds only `20240102000000_b.sql`, the other holds an
-earlier `20240101000000_a.sql` and a byte-identical copy of that same file.
-`diff` between the two copies reports no difference, and the two integrity
-files still disagree about it:
-
-```text
-dirA:  20240102000000_b.sql h1:DYNKQS6GeTazipONZLq7+IhAl/67sJqipvGfoLz/fPU=
-dirB:  20240102000000_b.sql h1:QeKXUEPrs5mM3XbCdSiRc6R/tUDmX4otsW0tB5L0Mmc=
-```
-
-A third directory built independently with the same two files in the same order
-reproduces `dirB`'s pair exactly, which is the control that says this is
-ordering rather than noise. Both binaries store the chained value in the
-revision table's `hash` column and the stored strings are identical; only Ptah
-compares it on the next apply.
-
-So inserting any earlier migration changes the stored checksum of every applied
-migration above it, and the refusal names a file whose bytes did not change.
-Ptah already has a gate that describes the situation correctly — with the
-checksum comparison mutated, the refusal becomes
-
-```text
-out-of-order pending migrations below current version 20240102000000:
-[20240101000000] (use --exec-order=non-linear to apply or
---exec-order=linear-skip to ignore)
-```
-
-which is true and names the flag that resolves it. The checksum gate answers
-first because `verifyAppliedMigrationChecksums` runs before `migrationsToApply`
-in `migrateUpLocked`. Either the comparison needs a content identity, or the
-out-of-order insert needs to be detected and reported as one; until then this
-is a gap rather than a decision.
-
 ## What holds these
 
 Each entry above is pinned by a test in
 `cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
-`cmd/atlas/compat_overstrict_test.go`. The out-of-order entry pins the refusal
-and records today's message as a characterization row, so closing the gap
-changes that row rather than deleting the test.
+`cmd/atlas/compat_overstrict_test.go`. The same focused file also pins the
+resolved out-of-order insertion behavior: the default order refuses, while
+`--exec-order non-linear` applies and remains idempotent.
 
 Every case here is SQLite-measured; the two noted as also measured on
 PostgreSQL 17.10 were re-run against a live server. The rest carry the

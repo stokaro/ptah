@@ -5,18 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// The migrator treats atlas.sum hashes as opaque identities (content
-// validation lives in internal/migratesum), so fixture values stand in for
-// real h1 hashes.
+// Static fixture values cover the compatibility path for old callers that
+// provide atlas.sum identities without asking Ptah to project the chain.
 const (
 	atlasSumFixtureVersion  = int64(20240101120000)
 	atlasSumFixtureFileHash = "h1:widgetsfixturehash="
@@ -57,6 +59,384 @@ func storedRevisionChecksum(t *testing.T, conn *dbschema.DatabaseConnection, ver
 	err := conn.QueryRow("SELECT checksum FROM schema_migrations WHERE version = ?", version).Scan(&checksum)
 	qt.Assert(t, err, qt.IsNil)
 	return checksum
+}
+
+const (
+	atlasChainOneVersion   = int64(20240101000000)
+	atlasChainTwoVersion   = int64(20240101500000)
+	atlasChainThreeVersion = int64(20240102000000)
+	atlasChainOneFile      = "20240101000000_one.sql"
+	atlasChainTwoFile      = "20240101500000_two.sql"
+	atlasChainMiddleFile   = "20240101750000_middle.sql"
+	atlasChainThreeFile    = "20240102000000_three.sql"
+	atlasChainOneSQL       = "CREATE TABLE atlas_chain_one (id INTEGER PRIMARY KEY);\n"
+	atlasChainTwoSQL       = "CREATE TABLE atlas_chain_two (id INTEGER PRIMARY KEY);\n"
+	atlasChainMiddleSQL    = "CREATE TABLE atlas_chain_middle (id INTEGER PRIMARY KEY);\n"
+	atlasChainThreeSQL     = "CREATE TABLE atlas_chain_three (id INTEGER PRIMARY KEY);\n"
+)
+
+func atlasChainFS(t *testing.T, files map[string]string) fstest.MapFS {
+	t.Helper()
+	fsys := make(fstest.MapFS, len(files)+1)
+	for name, body := range files {
+		fsys[name] = &fstest.MapFile{Data: []byte(body)}
+	}
+	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	qt.Assert(t, err, qt.IsNil)
+	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
+	return fsys
+}
+
+func newSQLiteAtlasChainMigrator(
+	t *testing.T,
+	dbPath string,
+	fsys fstest.MapFS,
+) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	t.Helper()
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+dbPath)
+	qt.Assert(t, err, qt.IsNil)
+	t.Cleanup(func() { _ = conn.Close() })
+	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	qt.Assert(t, err, qt.IsNil)
+	return conn, m
+}
+
+func atlasChainInitialFS(t *testing.T) fstest.MapFS {
+	t.Helper()
+	return atlasChainFS(t, map[string]string{
+		atlasChainOneFile:   atlasChainOneSQL,
+		atlasChainThreeFile: atlasChainThreeSQL,
+	})
+}
+
+func atlasChainExpandedFS(t *testing.T, twoSQL string) fstest.MapFS {
+	t.Helper()
+	return atlasChainFS(t, map[string]string{
+		atlasChainOneFile:   atlasChainOneSQL,
+		atlasChainTwoFile:   twoSQL,
+		atlasChainThreeFile: atlasChainThreeSQL,
+	})
+}
+
+func atlasChainEntryHash(t *testing.T, fsys fstest.MapFS, name string) string {
+	t.Helper()
+	sum, err := migratesum.Parse(fsys[migratesum.AtlasFileName].Data)
+	qt.Assert(t, err, qt.IsNil)
+	entries := make(map[string]string, len(sum.Entries))
+	for _, entry := range sum.Entries {
+		entries[entry.Name] = strings.TrimPrefix(entry.Hash, "h1:")
+	}
+	return entries[name]
+}
+
+func atlasChainTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
+	t.Helper()
+	var count int
+	err := conn.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+		table,
+	).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count == 1
+}
+
+func installSuccessfulAtlasChainTwoRevision(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	fsys fstest.MapFS,
+	appliedAt any,
+) {
+	t.Helper()
+	_, err := conn.Exec(atlasChainTwoSQL)
+	qt.Assert(t, err, qt.IsNil)
+	_, err = conn.Exec(
+		`INSERT INTO schema_migrations
+(version, description, applied_at, state, applied, total, execution_time_ms, checksum)
+VALUES (?, ?, ?, 'applied', 1, 1, 0, ?)`,
+		atlasChainTwoVersion,
+		"two",
+		appliedAt,
+		atlasChainEntryHash(t, fsys, atlasChainTwoFile),
+	)
+	qt.Assert(t, err, qt.IsNil)
+}
+
+func setAtlasChainAppliedAt(
+	t *testing.T,
+	conn *dbschema.DatabaseConnection,
+	version int64,
+	appliedAt time.Time,
+) {
+	t.Helper()
+	_, err := conn.Exec(
+		"UPDATE schema_migrations SET applied_at = ? WHERE version = ?",
+		appliedAt,
+		version,
+	)
+	qt.Assert(t, err, qt.IsNil)
+}
+
+func TestAtlasSumPtahRevisions_OutOfOrderInsertionReconcilesTheAppliedChain(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "out-of-order.db")
+	initialFS := atlasChainInitialFS(t)
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, initialFS)
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(ctx), qt.IsNil)
+	lateBefore := storedRevisionChecksum(t, conn, atlasChainThreeVersion)
+
+	expandedFS := atlasChainExpandedFS(t, atlasChainTwoSQL)
+	_, linear := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	var outOfOrder *migrator.OutOfOrderError
+	err := linear.MigrateUp(ctx)
+	c.Assert(err, qt.ErrorAs, &outOfOrder)
+	c.Assert(outOfOrder.Versions, qt.DeepEquals, []int64{atlasChainTwoVersion})
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsFalse)
+
+	_, linearSkip := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	linearSkip = linearSkip.WithExecOrder(migrator.ExecOrderLinearSkip)
+	c.Assert(linearSkip.MigrateUp(ctx), qt.IsNil)
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsFalse)
+
+	_, nonLinear := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	nonLinear = nonLinear.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(nonLinear.MigrateUp(ctx), qt.IsNil)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsTrue)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainOneVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, expandedFS, atlasChainOneFile),
+	)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainTwoVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, expandedFS, atlasChainTwoFile),
+	)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainThreeVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, expandedFS, atlasChainThreeFile),
+	)
+	c.Assert(nonLinear.MigrateUp(ctx), qt.IsNil)
+}
+
+func TestAtlasSumPtahRevisions_DryRunDoesNotApplyOrReconcileAnInsertion(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "dry-run.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	lateBefore := storedRevisionChecksum(t, conn, atlasChainThreeVersion)
+
+	dryConn, dryRun := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainExpandedFS(t, atlasChainTwoSQL))
+	t.Cleanup(func() { _ = dryConn.Close() })
+	dryConn.SchemaWriter().SetDryRun(true)
+	dryRun = dryRun.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(dryRun.MigrateUp(t.Context()), qt.IsNil)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsFalse)
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+}
+
+func TestAtlasSumPtahRevisions_AmountExcludesUnselectedPendingContributions(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "amount.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	expandedFS := atlasChainFS(t, map[string]string{
+		atlasChainOneFile:    atlasChainOneSQL,
+		atlasChainTwoFile:    atlasChainTwoSQL,
+		atlasChainMiddleFile: atlasChainMiddleSQL,
+		atlasChainThreeFile:  atlasChainThreeSQL,
+	})
+	selectedProjectionFS := atlasChainFS(t, map[string]string{
+		atlasChainOneFile:   atlasChainOneSQL,
+		atlasChainTwoFile:   atlasChainTwoSQL,
+		atlasChainThreeFile: atlasChainThreeSQL,
+	})
+
+	_, limited := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	limited = limited.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(limited.MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{Amount: 1}), qt.IsNil)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsTrue)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_middle"), qt.IsFalse)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainThreeVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, selectedProjectionFS, atlasChainThreeFile),
+	)
+
+	c.Assert(limited.MigrateUp(t.Context()), qt.IsNil)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_middle"), qt.IsTrue)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainThreeVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, expandedFS, atlasChainThreeFile),
+	)
+}
+
+func TestAtlasSumPtahRevisions_AnEditBesideAnInsertionStillFailsClosed(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "edited.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	lateBefore := storedRevisionChecksum(t, conn, atlasChainThreeVersion)
+	editedFS := atlasChainFS(t, map[string]string{
+		atlasChainOneFile:   "CREATE TABLE atlas_chain_one (id INTEGER PRIMARY KEY, edited TEXT);\n",
+		atlasChainTwoFile:   atlasChainTwoSQL,
+		atlasChainThreeFile: atlasChainThreeSQL,
+	})
+
+	_, edited := newSQLiteAtlasChainMigrator(t, dbPath, editedFS)
+	edited = edited.WithExecOrder(migrator.ExecOrderNonLinear)
+	var mismatch *migrator.ChecksumMismatchError
+	err := edited.MigrateUp(t.Context())
+	c.Assert(err, qt.ErrorAs, &mismatch)
+	c.Assert(mismatch.Version, qt.Equals, atlasChainOneVersion)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsFalse)
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+}
+
+func TestAtlasSumPtahRevisions_TransactionalFailureDoesNotProspectivelyReconcile(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "transaction-failure.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	lateBefore := storedRevisionChecksum(t, conn, atlasChainThreeVersion)
+	failingFS := atlasChainExpandedFS(t, "THIS IS NOT SQL;\n")
+
+	_, failing := newSQLiteAtlasChainMigrator(t, dbPath, failingFS)
+	failing = failing.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(failing.MigrateUp(t.Context()), qt.IsNotNil)
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsFalse)
+}
+
+func TestAtlasSumPtahRevisions_NoTransactionFailureDoesNotProspectivelyReconcile(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "no-transaction-failure.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	lateBefore := storedRevisionChecksum(t, conn, atlasChainThreeVersion)
+	failingFS := atlasChainExpandedFS(t, "-- atlas:txmode none\n\n"+atlasChainTwoSQL+"THIS IS NOT SQL;\n")
+
+	_, failing := newSQLiteAtlasChainMigrator(t, dbPath, failingFS)
+	failing = failing.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(failing.MigrateUp(t.Context()), qt.IsNotNil)
+	c.Assert(storedRevisionChecksum(t, conn, atlasChainThreeVersion), qt.Equals, lateBefore)
+	c.Assert(atlasChainTableExists(t, conn, "atlas_chain_two"), qt.IsTrue)
+}
+
+func TestAtlasSumPtahRevisions_StrictHistoryRecoversAfterSuccessfulInsert(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "historical-recovery.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	setAtlasChainAppliedAt(t, conn, atlasChainOneVersion, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	setAtlasChainAppliedAt(t, conn, atlasChainThreeVersion, time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC))
+	expandedFS := atlasChainExpandedFS(t, atlasChainTwoSQL)
+	installSuccessfulAtlasChainTwoRevision(
+		t,
+		conn,
+		expandedFS,
+		time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC),
+	)
+
+	_, recovering := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	recovering = recovering.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(recovering.MigrateUp(t.Context()), qt.IsNil)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainThreeVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, expandedFS, atlasChainThreeFile),
+	)
+}
+
+func TestAtlasSumPtahRevisions_InteroperatesWithALaterExternalInsertion(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "external-insertion.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	setAtlasChainAppliedAt(t, conn, atlasChainOneVersion, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	setAtlasChainAppliedAt(t, conn, atlasChainThreeVersion, time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC))
+
+	firstInsertionFS := atlasChainExpandedFS(t, atlasChainTwoSQL)
+	_, firstInsertion := newSQLiteAtlasChainMigrator(t, dbPath, firstInsertionFS)
+	firstInsertion = firstInsertion.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(firstInsertion.MigrateUp(t.Context()), qt.IsNil)
+
+	secondInsertionFS := atlasChainFS(t, map[string]string{
+		atlasChainOneFile:    atlasChainOneSQL,
+		atlasChainTwoFile:    atlasChainTwoSQL,
+		atlasChainMiddleFile: atlasChainMiddleSQL,
+		atlasChainThreeFile:  atlasChainThreeSQL,
+	})
+	_, err := conn.Exec(atlasChainMiddleSQL)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.Exec(
+		`INSERT INTO schema_migrations
+(version, description, applied_at, state, applied, total, execution_time_ms, checksum)
+VALUES (?, ?, ?, 'applied', 1, 1, 0, ?)`,
+		int64(20240101750000),
+		"middle",
+		time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		atlasChainEntryHash(t, secondInsertionFS, atlasChainMiddleFile),
+	)
+	c.Assert(err, qt.IsNil)
+
+	_, interoperating := newSQLiteAtlasChainMigrator(t, dbPath, secondInsertionFS)
+	interoperating = interoperating.WithExecOrder(migrator.ExecOrderNonLinear)
+	c.Assert(interoperating.MigrateUp(t.Context()), qt.IsNil)
+	c.Assert(
+		storedRevisionChecksum(t, conn, atlasChainThreeVersion),
+		qt.Equals,
+		atlasChainEntryHash(t, secondInsertionFS, atlasChainThreeFile),
+	)
+}
+
+func TestAtlasSumPtahRevisions_EqualHistoricalTimestampsFailClosed(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "equal-time.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	setAtlasChainAppliedAt(t, conn, atlasChainOneVersion, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	equalTime := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
+	setAtlasChainAppliedAt(t, conn, atlasChainThreeVersion, equalTime)
+	expandedFS := atlasChainExpandedFS(t, atlasChainTwoSQL)
+	installSuccessfulAtlasChainTwoRevision(t, conn, expandedFS, equalTime)
+
+	_, ambiguous := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	ambiguous = ambiguous.WithExecOrder(migrator.ExecOrderNonLinear)
+	var mismatch *migrator.ChecksumMismatchError
+	err := ambiguous.MigrateUp(t.Context())
+	c.Assert(err, qt.ErrorAs, &mismatch)
+	c.Assert(mismatch.Version, qt.Equals, atlasChainThreeVersion)
+}
+
+func TestAtlasSumPtahRevisions_ZeroHistoricalTimestampFailsClosed(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "zero-time.db")
+	conn, initial := newSQLiteAtlasChainMigrator(t, dbPath, atlasChainInitialFS(t))
+	t.Cleanup(func() { _ = conn.Close() })
+	c.Assert(initial.MigrateUp(t.Context()), qt.IsNil)
+	setAtlasChainAppliedAt(t, conn, atlasChainOneVersion, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	setAtlasChainAppliedAt(t, conn, atlasChainThreeVersion, time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC))
+	expandedFS := atlasChainExpandedFS(t, atlasChainTwoSQL)
+	installSuccessfulAtlasChainTwoRevision(t, conn, expandedFS, time.Time{})
+
+	_, ambiguous := newSQLiteAtlasChainMigrator(t, dbPath, expandedFS)
+	ambiguous = ambiguous.WithExecOrder(migrator.ExecOrderNonLinear)
+	var mismatch *migrator.ChecksumMismatchError
+	err := ambiguous.MigrateUp(t.Context())
+	c.Assert(err, qt.ErrorAs, &mismatch)
+	c.Assert(mismatch.Version, qt.Equals, atlasChainThreeVersion)
 }
 
 func TestAtlasSumPtahRevisions_UpThenDownRoundTrip(t *testing.T) {

@@ -694,6 +694,7 @@ type Migration struct {
 	Checksum               string
 	atlasRevisionVersion   string
 	atlasOrderKey          string
+	atlasSumContributions  []atlasSumContribution
 	revisionDescription    string
 	hasRevisionDescription bool
 	Up                     MigrationFunc
@@ -733,6 +734,16 @@ type Migration struct {
 	// directories mark them with a first-line `-- atlas:checkpoint` file
 	// directive.
 	IsCheckpoint bool
+}
+
+// atlasSumContribution retains the exact source bytes that fed atlas.sum.
+// One logical migration can own more than one contribution when it uses
+// directional .up.sql/.down.sql files.
+type atlasSumContribution struct {
+	name          string
+	data          []byte
+	includeData   bool
+	revisionEntry bool
 }
 
 // RevisionVersion returns the version token this migration records in revision
