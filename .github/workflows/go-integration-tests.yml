@@ -135,7 +135,7 @@ jobs:
         run: |
           docker run --detach --name ptah-cockroachdb \
             --publish 26257:26257 \
-            cockroachdb/cockroach:v26.2.4 \
+            cockroachdb/cockroach:v26.2.5 \
             start-single-node --insecure --advertise-addr=localhost:26257
 
           docker run --detach --name ptah-yugabytedb \
@@ -200,6 +200,18 @@ jobs:
             sleep 2
           done
           echo "OCI registry is ready!"
+
+      - name: Run distributed SQL reader coverage
+        env:
+          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+        run: |
+          sh scripts/require-tests-ran.sh --package ./integration/gonative --tags integration \
+            --pattern '^TestPostgresFamilyReader_' \
+            --declared-in integration/gonative/postgres_family_reader_integration_test.go \
+            --timeout 8m
       
       - name: Run executor integration tests with live databases
         env:

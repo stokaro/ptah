@@ -34,24 +34,28 @@ import (
 // database URL to a single schema.
 const searchPathParam = "search_path"
 
-// PostgresNonSystemSchemas is the WHERE predicate that keeps the schemas a
-// realm describes and drops the server's own, over a `pg_namespace n`.
-//
-// CockroachDB exposes crdb_internal through the PostgreSQL catalog surface, but
-// its virtual relations are not ordinary user tables and PostgreSQL readers
-// cannot inspect them as comparison input.
+// PostgresNonSystemSchemasPredicate returns the WHERE predicate that keeps the
+// schemas a PostgreSQL-family realm describes and drops the server's own, over
+// a `pg_namespace n`.
 //
 // The ESCAPE clause matters: in LIKE, `_` matches any single character, so an
 // unescaped 'pg\_%' would also hide a user schema named `pgapp` and describe
 // less of the database than is there.
 //
-// It is one string rather than two because two callers ask about the same set
-// — this package's [RealmSchemas] and the not-clean gate's realm probe in
-// go.5x5.cz/ptah/internal/migrateclean, which needs each schema's tables as
-// well. Those two questions differ; "which schemas is the realm" does not.
-const PostgresNonSystemSchemas = `n.nspname <> 'information_schema'
-			  AND n.nspname <> 'crdb_internal'
-			  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`
+// The predicate is derived from the normalized dialect because PostgreSQL,
+// CockroachDB and YugabyteDB share a reader but not an identical system
+// namespace set. CockroachDB exposes crdb_internal through the PostgreSQL
+// catalog surface, but its virtual relations are not ordinary user tables and
+// PostgreSQL readers cannot inspect them as comparison input.
+func PostgresNonSystemSchemasPredicate(dialect string) string {
+	predicates := []string{`n.nspname <> 'information_schema'`}
+	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+		predicates = append(predicates, `n.nspname <> 'crdb_internal'`)
+	}
+	predicates = append(predicates, `n.nspname NOT LIKE 'pg\_%' ESCAPE '\'`)
+	return strings.Join(predicates, `
+			  AND `)
+}
 
 // RowQuerier is the part of *sql.DB and *sql.Tx [Selection.Resolve] needs.
 // Taking the narrow interface keeps this package off the connection layer,
@@ -270,7 +274,7 @@ func RealmSchemas(ctx context.Context, dialect string, q RowsQuerier) ([]string,
 	rows, err := q.QueryContext(ctx, `
 		SELECT n.nspname
 		FROM pg_namespace n
-		WHERE `+PostgresNonSystemSchemas)
+		WHERE `+PostgresNonSystemSchemasPredicate(dialect))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
 	}

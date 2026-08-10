@@ -136,8 +136,12 @@ matching preset automatically.
   rendering.
 
 CockroachDB and YugabyteDB run in integration coverage against live
-open-source containers; Spanner coverage is offline (capability, planning,
-rendering, URL, and detection), so review generated SQL before relying on it.
+open-source containers. Their reader coverage seeds a table, index, view,
+materialized view, and sequence, then verifies both `ptah db read` and
+`ptah-compat schema inspect`; CockroachDB still keeps standalone sequences out
+of Ptah's portable modeled subset. Spanner coverage is offline (capability,
+planning, rendering, URL, and detection), so review generated SQL before
+relying on it.
 PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects before dev-database cleanup. PostgreSQL additionally
