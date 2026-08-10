@@ -26,7 +26,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.56.0
 	oras.land/oras-go/v2 v2.6.2
 )
