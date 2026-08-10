@@ -119,12 +119,13 @@ with its own capability preset instead of treating the server as a drop-in
 PostgreSQL server. A live connection reads the server banner and selects the
 matching preset automatically.
 
-- **CockroachDB**: the preset excludes concurrent index creation, standalone
-  sequences, `XML` columns, advisory locks, role management, and row-level
-  security.
-- **YugabyteDB**: the preset excludes concurrent index creation because
-  regular `CREATE INDEX` is already asynchronous in YSQL; role management,
-  standalone sequences, and `XML` columns are included.
+- **CockroachDB**: the preset excludes concurrent index creation and drops,
+  `XML` columns, and advisory locks. Live CockroachDB v26.2.5 accepts role
+  management, row-level security, standalone sequences, and `SERIAL` columns.
+- **YugabyteDB**: the preset includes concurrent index creation, role
+  management, row-level security, standalone sequences, `XML` columns, and
+  advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
+  remains excluded because that server line rejects it.
 - **Spanner**: foreign keys are included, including composite and circular
   relationships rendered in two phases. Spanner manages the referenced-key
   backing index, so Ptah does not require an input unique/index declaration.
@@ -137,11 +138,10 @@ matching preset automatically.
 
 CockroachDB and YugabyteDB run in integration coverage against live
 open-source containers. Their reader coverage seeds a table, index, view,
-materialized view, and sequence, then verifies both `ptah db read` and
-`ptah-compat schema inspect`; CockroachDB still keeps standalone sequences out
-of Ptah's portable modeled subset. Spanner coverage is offline (capability,
-planning, rendering, URL, and detection), so review generated SQL before
-relying on it.
+materialized view, sequence, and row-level security policy, then verifies both
+`ptah db read` and `ptah-compat schema inspect`. Spanner coverage is offline
+(capability, planning, rendering, URL, and detection), so review generated SQL
+before relying on it.
 PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects before dev-database cleanup. PostgreSQL additionally

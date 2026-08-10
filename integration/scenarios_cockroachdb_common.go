@@ -14,9 +14,9 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 )
 
-// testCockroachDBCommonSubset validates the PostgreSQL-family common subset
-// that CockroachDB accepts without relying on PostgreSQL-only features such as
-// SERIAL, XML, foreign keys, advisory locks, or CREATE INDEX CONCURRENTLY.
+// testCockroachDBCommonSubset validates a PostgreSQL-family subset that
+// CockroachDB accepts without relying on target-specific features such as XML,
+// advisory locks, or CREATE INDEX CONCURRENTLY.
 func testCockroachDBCommonSubset(ctx context.Context, conn *dbschema.DatabaseConnection, _ fs.FS, recorder *StepRecorder) error {
 	if conn.Info().Dialect != platform.CockroachDB {
 		return recorder.RecordStep("Skip Non-CockroachDB", "Common subset scenario is CockroachDB-only", func() error {
@@ -73,15 +73,6 @@ func testPostgresDistributedCommonSubset(
 		info := conn.Info()
 		if !maps.Equal(info.Capabilities, expectedCapabilities) {
 			return fmt.Errorf("%s connection capabilities must match the expected preset", label)
-		}
-		if info.Capabilities.Has(capability.RowLevelSecurity) {
-			return fmt.Errorf("%s connection capabilities must disable RLS", label)
-		}
-		if !expectedCapabilities.Has(capability.Sequences) && info.Capabilities.Has(capability.Sequences) {
-			return fmt.Errorf("%s connection capabilities must disable sequences", label)
-		}
-		if info.Capabilities.Has(capability.CreateIndexConcurrently) {
-			return fmt.Errorf("%s connection capabilities must disable concurrent indexes", label)
 		}
 		sqlText, err = renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
 		if err != nil {

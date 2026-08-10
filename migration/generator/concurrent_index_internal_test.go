@@ -47,6 +47,34 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
 }
 
+func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedYugabyteTable(t *testing.T) {
+	c := qt.New(t)
+
+	specs, assessments, err := planGeneratedMigrationSpecs(
+		indexOnlyDiff(),
+		indexOnlyGeneratedSchema(),
+		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
+		dbschematypes.DBInfo{
+			Dialect:      platform.YugabyteDB,
+			Capabilities: capability.YugabyteDB25(),
+		},
+		100,
+		"add_user_email_index",
+		DiffPolicy{},
+		atlasmigrate.Qualifier{},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 1)
+	c.Assert(len(assessments) > 0, qt.IsTrue)
+	c.Assert(specs[0].NoTransaction, qt.IsTrue)
+	c.Assert(specs[0].UpSQL, qt.Contains, "-- +ptah no_transaction")
+	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(specs[0].DownSQL, qt.Contains, "-- +ptah no_transaction")
+	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email";`)
+	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "DROP INDEX CONCURRENTLY")
+}
+
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePostgres(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -67,14 +95,6 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePost
 			name:     "capability-disabled postgres family stays transactional",
 			dbSchema: &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
 			info:     postgresInfo(capability.Postgres16().With(capability.CreateIndexConcurrently, false)),
-		},
-		{
-			name:     "yugabyte stays transactional",
-			dbSchema: &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
-			info: dbschematypes.DBInfo{
-				Dialect:      platform.YugabyteDB,
-				Capabilities: capability.YugabyteDB25(),
-			},
 		},
 	}
 

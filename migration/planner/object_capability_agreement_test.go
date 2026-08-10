@@ -485,19 +485,18 @@ func TestObjectKinds_EveryGateIsExercised(t *testing.T) {
 	c.Assert(refusingDialects(capability.MaterializedViews), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.Functions), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.Triggers), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.Sequences), qt.DeepEquals, []string{platform.CockroachDB, platform.Spanner})
-	c.Assert(refusingDialects(capability.RoleManagement), qt.DeepEquals, []string{platform.CockroachDB, platform.Spanner})
-	c.Assert(refusingDialects(capability.RowLevelSecurity), qt.DeepEquals,
-		[]string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner})
+	c.Assert(refusingDialects(capability.Sequences), qt.DeepEquals, []string{platform.Spanner})
+	c.Assert(refusingDialects(capability.RoleManagement), qt.DeepEquals, []string{platform.Spanner})
+	c.Assert(refusingDialects(capability.RowLevelSecurity), qt.DeepEquals, []string{platform.Spanner})
 
 	// And each has accepting members, or "refuses everything" would pass as
 	// well as "consults the preset".
 	c.Assert(acceptingDialects(capability.MaterializedViews), qt.HasLen, 3)
 	c.Assert(acceptingDialects(capability.Functions), qt.HasLen, 3)
 	c.Assert(acceptingDialects(capability.Triggers), qt.HasLen, 3)
-	c.Assert(acceptingDialects(capability.Sequences), qt.HasLen, 2)
-	c.Assert(acceptingDialects(capability.RoleManagement), qt.HasLen, 2)
-	c.Assert(acceptingDialects(capability.RowLevelSecurity), qt.HasLen, 1)
+	c.Assert(acceptingDialects(capability.Sequences), qt.HasLen, 3)
+	c.Assert(acceptingDialects(capability.RoleManagement), qt.HasLen, 3)
+	c.Assert(acceptingDialects(capability.RowLevelSecurity), qt.HasLen, 3)
 
 	// Plain views are the deliberate control: no family member refuses one, so
 	// that row asserts the gate stays out of the way of an object every one of
