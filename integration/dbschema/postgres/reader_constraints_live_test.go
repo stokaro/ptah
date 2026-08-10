@@ -46,9 +46,7 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 		{
 			name:           "CockroachDB",
 			environmentKey: "COCKROACHDB_URL",
-			// CockroachDB exposes the CHECK expression but not its column key
-			// vector through the PostgreSQL-compatible constraint catalog.
-			want: expectedConstraints(nil),
+			want:           expectedConstraints([]string{"amount"}),
 		},
 		{
 			name:           "YugabyteDB",
