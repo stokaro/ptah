@@ -26,7 +26,15 @@ func TestShadowIdentifierSemanticsMatch_SQLServerLive(t *testing.T) {
 	target := connectShadowCollationDatabase(t, targetURL)
 	mismatchedShadow := connectShadowCollationDatabase(t, mismatchedShadowURL)
 
-	migrationSQL := "CREATE TABLE ptah_shadow_semantics (id INT NOT NULL, CONSTRAINT pk_ptah_shadow_semantics PRIMARY KEY (id));\n"
+	migrationSQL := `CREATE TABLE ptah_shadow_semantics (
+	id INT NOT NULL,
+	CONSTRAINT pk_ptah_shadow_semantics PRIMARY KEY (id)
+);
+-- Turkish case-insensitive catalogs keep I and i distinct, while the Latin
+-- shadow collation folds them into one identifier-equivalence class.
+CREATE TABLE [ptah_shadow_I] (id INT NOT NULL);
+CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
+`
 	_, err := target.ExecContext(t.Context(), migrationSQL)
 	c.Assert(err, qt.IsNil)
 	_, err = mismatchedShadow.ExecContext(t.Context(), "CREATE TABLE preserve_before_semantics_check (id INT NOT NULL)")
@@ -34,7 +42,11 @@ func TestShadowIdentifierSemanticsMatch_SQLServerLive(t *testing.T) {
 
 	migrationsDir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_init.up.sql"), []byte(migrationSQL), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_init.down.sql"), []byte("DROP TABLE ptah_shadow_semantics;\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_init.down.sql"),
+		[]byte("DROP TABLE [ptah_shadow_i]; DROP TABLE [ptah_shadow_I]; DROP TABLE ptah_shadow_semantics;\n"),
+		0o600,
+	), qt.IsNil)
 	info := target.Info()
 
 	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{

@@ -54,7 +54,7 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		})
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, `shadow check failed: missing column users\.name`)
+		c.Assert(err, qt.ErrorMatches, `shadow check failed: missing column users\.name: .*`)
 		var shadowErr *generator.ShadowVerificationError
 		c.Assert(err, qt.ErrorAs, &shadowErr)
 		c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")

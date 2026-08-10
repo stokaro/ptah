@@ -1508,17 +1508,20 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 	// same-named constraints on different tables. Anchor the row in
 	// pg_constraint by owning relation and pair conkey/confkey by ordinality so
 	// every local column, referenced column, and action comes from one object.
+	// Unnest the arrays separately because CockroachDB returns no key rows for
+	// the multi-array form when confkey is NULL, which hides PRIMARY KEY and
+	// UNIQUE columns.
 	constraintsQuery := `
 			SELECT
 				tc.table_schema,
 				tc.table_name,
 				tc.constraint_name,
 				tc.constraint_type,
-				COALESCE(string_agg(local_column.attname, ',' ORDER BY key_columns.ordinality)
+				COALESCE(string_agg(local_column.attname, ',' ORDER BY local_key_columns.ordinality)
 					FILTER (WHERE local_column.attname IS NOT NULL), ''),
 				COALESCE(max(foreign_schema.nspname), ''),
 				COALESCE(max(foreign_table.relname), ''),
-				COALESCE(string_agg(foreign_column.attname, ',' ORDER BY key_columns.ordinality)
+				COALESCE(string_agg(foreign_column.attname, ',' ORDER BY local_key_columns.ordinality)
 					FILTER (WHERE foreign_column.attname IS NOT NULL), ''),
 				COALESCE(max(CASE pc.confdeltype
 					WHEN 'a' THEN 'NO ACTION'
@@ -1548,19 +1551,22 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			ON pc.connamespace = constraint_schema.oid
 			AND pc.conrelid = constraint_table.oid
 			AND pc.conname = tc.constraint_name
-		LEFT JOIN LATERAL unnest(pc.conkey, pc.confkey)
-			WITH ORDINALITY AS key_columns(local_attnum, foreign_attnum, ordinality)
+		LEFT JOIN LATERAL unnest(pc.conkey)
+			WITH ORDINALITY AS local_key_columns(local_attnum, ordinality)
 			ON true
+		LEFT JOIN LATERAL unnest(pc.confkey)
+			WITH ORDINALITY AS foreign_key_columns(foreign_attnum, ordinality)
+			ON foreign_key_columns.ordinality = local_key_columns.ordinality
 		LEFT JOIN pg_attribute AS local_column
 			ON local_column.attrelid = pc.conrelid
-			AND local_column.attnum = key_columns.local_attnum
+			AND local_column.attnum = local_key_columns.local_attnum
 		LEFT JOIN pg_class AS foreign_table
 			ON foreign_table.oid = pc.confrelid
 		LEFT JOIN pg_namespace AS foreign_schema
 			ON foreign_schema.oid = foreign_table.relnamespace
 		LEFT JOIN pg_attribute AS foreign_column
 			ON foreign_column.attrelid = pc.confrelid
-			AND foreign_column.attnum = key_columns.foreign_attnum
+			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
 		WHERE tc.table_schema = $1
 		AND tc.table_name NOT IN ('schema_migrations')
 		GROUP BY
