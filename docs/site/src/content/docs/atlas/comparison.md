@@ -967,10 +967,11 @@ parent-traversal path, and a plain relative name that resolves out of the
 directory through a symbolic link. The refusal names which of the three applies
 and points at `getenv()` for passing a value in from outside.
 
-This is one of two places `ptah-compat` is deliberately stricter than the binary
-it replaces — the other is the invalid-index refusal below — and it is stricter
-rather than looser, so it cannot exit 0 where the binary exits 1. The reason is
-that an `atlas.hcl` is usually repository-controlled
+This is one of the deliberate stricter refusals `ptah-compat` keeps. The wider
+retained set is listed on [Retained divergences](../retained-divergences/);
+every entry is stricter rather than looser, so it cannot exit `0` where the
+binary exits `1`. The reason here is that an `atlas.hcl` is usually
+repository-controlled
 and `file()` is evaluated before anything is applied: without confinement, a
 config file arriving in a pull request can read any file the process can and
 place the contents somewhere observable, such as a database URL or an error

@@ -16,10 +16,12 @@ import (
 // it.
 //
 // Every expectation here was measured against the pinned community binary
-// v1.3.0 on 2026-08-09, on SQLite and again on a live PostgreSQL 17.10, each
-// exit status read on its own line rather than through a pipe. The binary's
-// side of each row is stated in the comment above it, because a divergence
-// nobody re-measured is a claim rather than a decision.
+// v1.3.0 on 2026-08-09, each exit status read on its own line rather than
+// through a pipe. SQLite covers every row below. The edited-file and tx-mode
+// rows were re-run on PostgreSQL 17.10; trailing positional arguments and the
+// out-of-order insert remain SQLite-only. The binary's side of each row is
+// stated in the comment above it, because a divergence nobody re-measured is a
+// claim rather than a decision.
 //
 //   - item 6, an already-applied file whose bytes changed: binary 0
 //     ("No migration files to execute"), ptah 1. Retained; see
