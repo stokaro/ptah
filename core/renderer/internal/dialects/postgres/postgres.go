@@ -1556,40 +1556,26 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 	return parts
 }
 
-// writeObjectSkipped records that a schema object the desired schema declares
-// is not emitted for this target, naming both the object kind and the object.
+// writeObjectSkipped records that a declared object is not emitted for this
+// target, naming both the object kind and the object.
 //
-// One renderer serves the whole PostgreSQL family, and both the offline
-// converter and the migration planner hand their nodes to it, so writing the
-// omission here is what makes `schema render` and `schema apply` say the same
-// thing about the same object instead of one of them dropping it in silence
-// (stokaro/ptah#929).
+// Both the offline renderer and the migration planner pass through this
+// renderer, so the skip diagnostic is the shared answer shape for a target that
+// cannot host an object kind (stokaro/ptah#929).
 func (r *Renderer) writeObjectSkipped(kind, name string) {
-	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.", r.dialectUpper, kind, name)
+	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.",
+		r.dialectUpper, commentFragment(kind), commentFragment(name))
+}
+
+// commentFragment keeps diagnostic-only text inside one SQL line comment.
+func commentFragment(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 // refuses reports whether this target cannot host the named object, and writes
-// the skip comment when it cannot. It is the ONLY way this renderer is allowed
-// to answer the question "does this target host this object kind?", and every
-// capability-gated visitor below opens with it.
-//
-// One question, one answer shape. This renderer used to hold two: sequences,
-// enums, views, materialized views, functions and triggers wrote a named skip
-// comment, while roles, grants and row-level security returned an error. The
-// migration planner then compensated for the erroring half by dropping those
-// same objects from the plan before they could reach a visitor, silently — so
-// `ptah schema render --dialect cockroachdb` exited 2 with
-// `cockroachdb does not support role management` and no statements, while
-// `ptah schema apply --dry-run` against a live CockroachDB exited 0 and planned
-// the schema minus the role, the grant and the policies, naming none of them.
-// Two commands, one desired schema, one target, two different answers
-// (stokaro/ptah#929 items 1 and 4).
-//
-// Returning an error is what made the two paths diverge, because an error is
-// not something a plan can carry: it aborts the whole render, so the only way
-// for the plan path to survive an unsupported object was to remove it before
-// rendering. A comment is carryable, so both paths can carry the same one, and
-// atlasschema.SplitApplyStatements strips it before anything reaches a server.
+// a skip comment when it cannot. Capability-gated visitors use this helper so
+// `schema render` and `schema apply --dry-run` cannot disagree by returning an
+// error on one path and silently dropping the same object on the other.
 func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 	if r.capabilities().Has(key) {
 		return false
@@ -2060,13 +2046,6 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 
 // VisitGrantPrivilege renders a GRANT statement for PostgreSQL.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	if r.refuses(capability.RoleManagement, "grant", grantIdentity("on", node.ObjectName, "to", node.Role)) {
-		return nil
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("GRANT requires at least one privilege")
@@ -2076,6 +2055,13 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	}
 	if node.ObjectType == "" || node.ObjectName == "" {
 		return fmt.Errorf("GRANT requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "grant", grantIdentity("on", node.ObjectName, "to", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
 	grantOption := ""
@@ -2089,13 +2075,6 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // VisitRevokePrivilege renders a REVOKE statement for PostgreSQL.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	if r.refuses(capability.RoleManagement, "revoke", grantIdentity("on", node.ObjectName, "from", node.Role)) {
-		return nil
-	}
-
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
 	privileges := strings.Join(node.Privileges, ", ")
 	if privileges == "" {
 		return fmt.Errorf("REVOKE requires at least one privilege")
@@ -2105,6 +2084,13 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	}
 	if node.ObjectType == "" || node.ObjectName == "" {
 		return fmt.Errorf("REVOKE requires an object type and object name")
+	}
+	if r.refuses(capability.RoleManagement, "revoke", grantIdentity("on", node.ObjectName, "from", node.Role)) {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
 	prefix := "REVOKE"

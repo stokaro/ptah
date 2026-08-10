@@ -494,6 +494,7 @@ func applyStatements(
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
+	statements = executableStatements(statements, conn.Info().Dialect)
 	switch txMode {
 	case migrator.MigrationTxModeNone:
 		return executeApplyStatements(ctx, conn.Writer(), statements)
@@ -513,6 +514,16 @@ func applyStatements(
 	default:
 		return fmt.Errorf("invalid tx-mode %q", txMode)
 	}
+}
+
+func executableStatements(statements []string, dialect string) []string {
+	filtered := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)) != "" {
+			filtered = append(filtered, statement)
+		}
+	}
+	return filtered
 }
 
 func SplitApplyStatements(sqlText, dialect string) []string {

@@ -393,8 +393,9 @@ value or wants to pin a specific server version in tests/CI.
   `cockroachdb does not support role management` and rendered nothing, while
   `ptah schema apply --dry-run` against a live CockroachDB exited 0 and planned
   the schema minus the role, the grant, and the policies, naming none of them.
-  Both now exit 0 and write the same named skip comment, which
-  `SplitApplyStatements` strips before anything reaches a server.
+  Both now exit 0 and write the same named skip comment. Printed plans keep
+  that diagnostic; the apply execution path drops comment-only statements
+  before target or dev-database execution.
 
   Note the consequence: because the comment is not a change the database can
   absorb, a schema declaring an object its target cannot host is reported

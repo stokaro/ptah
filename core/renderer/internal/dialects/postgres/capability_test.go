@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
+	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
 func TestPostgreSQLRenderer_NilCapabilitiesAreConservative(t *testing.T) {
@@ -175,6 +176,71 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 			c.Assert(strings.TrimSpace(sql), qt.Equals, tt.skipped)
 		})
 	}
+}
+
+func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t *testing.T) {
+	tests := []struct {
+		name    string
+		node    ast.Node
+		wantErr string
+	}{
+		{
+			name:    "grant without privileges",
+			node:    ast.NewGrantPrivilege("app_role", "TABLE", "users", nil),
+			wantErr: "GRANT requires at least one privilege",
+		},
+		{
+			name:    "grant without role",
+			node:    ast.NewGrantPrivilege("", "TABLE", "users", []string{"SELECT"}),
+			wantErr: "GRANT requires a role",
+		},
+		{
+			name:    "grant without object",
+			node:    ast.NewGrantPrivilege("app_role", "TABLE", "", []string{"SELECT"}),
+			wantErr: "GRANT requires an object type and object name",
+		},
+		{
+			name:    "revoke without privileges",
+			node:    ast.NewRevokePrivilege("app_role", "TABLE", "users", nil),
+			wantErr: "REVOKE requires at least one privilege",
+		},
+		{
+			name:    "revoke without role",
+			node:    ast.NewRevokePrivilege("", "TABLE", "users", []string{"SELECT"}),
+			wantErr: "REVOKE requires a role",
+		},
+		{
+			name:    "revoke without object",
+			node:    ast.NewRevokePrivilege("app_role", "TABLE", "", []string{"SELECT"}),
+			wantErr: "REVOKE requires an object type and object name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+			sql, err := renderer.Render(tt.node)
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			c.Assert(sql, qt.Equals, "")
+		})
+	}
+}
+
+func TestPostgreSQLRenderer_SkipCommentNamesStayCommentOnly(t *testing.T) {
+	c := qt.New(t)
+
+	renderer := postgres.NewWithCapabilities(capability.CockroachDB23(), platform.CockroachDB)
+	role := ast.NewCreateRole("app_role\nDROP TABLE users")
+
+	sql, err := renderer.Render(role)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "-- COCKROACHDB: role app_role DROP TABLE users is not supported by this target; skipped.")
+	c.Assert(sql, qt.Not(qt.Contains), "\nDROP TABLE users")
+	c.Assert(atlasschema.SplitApplyStatements(sql, platform.CockroachDB), qt.HasLen, 0)
 }
 
 // noForeignKeys is a PostgreSQL preset with foreign keys switched off.

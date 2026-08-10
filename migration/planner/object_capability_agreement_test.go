@@ -214,7 +214,7 @@ var objectKindGates = []objectKindGate{
 	{"trigger", capability.Triggers, "trigger", "users_touch", `CREATE TRIGGER "users_touch"`},
 	{"sequence", capability.Sequences, "sequence", "order_number_seq", `CREATE SEQUENCE "order_number_seq"`},
 	{"role", capability.RoleManagement, "role", "app_user", `CREATE ROLE "app_user"`},
-	{"grant", capability.RoleManagement, "grant", "on users to app_user", `TO "app_user"`},
+	{"grant", capability.RoleManagement, "grant", "on users to app_user", `GRANT SELECT ON TABLE "users" TO "app_user"`},
 	{"row-level security", capability.RowLevelSecurity, "row-level security", "on users", "ENABLE ROW LEVEL SECURITY"},
 	{"policy", capability.RowLevelSecurity, "policy", "users_self on users", `POLICY "users_self"`},
 }

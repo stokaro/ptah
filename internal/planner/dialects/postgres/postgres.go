@@ -1499,19 +1499,9 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 // No phase below asks whether the target hosts the object kind it emits. The
 // planner emits the node and the renderer answers, because the renderer is the
 // one component both this path and the offline `schema render` converter pass
-// through, and a question answered in two places is a question that gets two
-// answers.
-//
-// It used to be asked here as well, for roles, grants and row-level security,
-// by skipping those phases outright when the capability was absent. That is
-// what made `ptah schema render --dialect cockroachdb` and
-// `ptah schema apply --dry-run` against a live CockroachDB disagree about the
-// same desired schema: render reached the renderer's role gate and exited 2
-// with `cockroachdb does not support role management`, while the plan never
-// built a role node at all and exited 0 having said nothing about the role, the
-// grant or the policies it dropped (stokaro/ptah#929 items 1 and 4). Now both
-// paths hand the node to the renderer and the renderer writes one named skip
-// comment, which atlasschema.SplitApplyStatements strips before execution.
+// through. Keeping that answer in one place prevents the plan path from
+// silently dropping an unsupported object while `schema render` reports it
+// differently (stokaro/ptah#929).
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 	if generated == nil {
