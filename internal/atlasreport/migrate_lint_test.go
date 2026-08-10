@@ -270,6 +270,30 @@ func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T
 	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 2 changes on dev database")
 }
 
+func TestNewMigrateLint_IncludesAtlasRepeatableFiles(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		Dialect:       "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 2)
+	c.Assert(report.Files[0].Name, qt.Equals, "1_create_users.sql")
+	c.Assert(report.Files[1].Name, qt.Equals, "2R_drop_users.sql")
+	c.Assert(report.Files[1].Findings, qt.HasLen, 1)
+	c.Assert(report.Files[1].Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Steps[0].Text, qt.Equals, "Found 2 new migration files (from 2 total)")
+	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 2 changes on dev database")
+}
+
 func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 	c := qt.New(t)
 	redactionURL := "postgres://app:" + "secret" + "@db.local/app?token=" + "secret" +

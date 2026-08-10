@@ -710,6 +710,75 @@ func TestWriteMigrateLintText_NilAnalysisErrors(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "")
 }
 
+func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		Dialect:       "sqlite",
+		Selection: migrationlint.VersionSelection{
+			Versions:   []int64{2},
+			Restricted: true,
+		},
+	})
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals,
+		"Analyzing changes from version 1 to 2R (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version 2R\n"+
+			"    -- destructive changes detected:\n"+
+			"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n"+
+			"  -- ok (0s)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- 0s\n"+
+			"  -- 1 version with errors\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
+func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"R__drop_users.sql": {Data: []byte("DROP TABLE users;\n")},
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		Dialect:       "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals,
+		"Analyzing changes until version R (1 migration in total):\n"+
+			"\n"+
+			"  -- analyzing version R\n"+
+			"    -- destructive changes detected:\n"+
+			"      -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n"+
+			"    -- suggested fix:\n"+
+			"      -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n"+
+			"  -- ok (0s)\n"+
+			"\n"+
+			"  -------------------------\n"+
+			"  -- 0s\n"+
+			"  -- 1 version with errors\n"+
+			"  -- 1 schema change\n"+
+			"  -- 1 diagnostic\n")
+}
+
 // TestMigrateLintProseIsAtlasCompatible pins the ptah-compat boundary rather
 // than only one snapshot. Native `ptah migrations lint` owns Ptah's richer
 // prose; this renderer must remain suitable for drop-in Atlas scripts.

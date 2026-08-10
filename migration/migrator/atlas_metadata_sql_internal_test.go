@@ -17,8 +17,9 @@ import (
 
 // atlasMetadataNullGuard restates the expected CASE arm as a literal rather
 // than referencing the production constant, so rewriting that constant is
-// itself a test failure instead of a silently-agreeing tautology.
-const atlasMetadataNullGuard = `CASE WHEN version LIKE '.%' THEN NULL ELSE version END`
+// itself a test failure instead of a silently-agreeing tautology. It excludes
+// metadata rows and Atlas repeatable version tokens from numeric casts.
+const atlasMetadataNullGuard = `CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END`
 
 func TestAtlasVersionNumberExpression_GuardsEveryDialectBranch(t *testing.T) {
 	tests := []struct {

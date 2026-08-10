@@ -274,7 +274,7 @@ Cleanup report changes cover the object kinds the target dialect's cleanup reall
 
 `ptah-compat migrate apply` executes Atlas-format migration directories with Atlas revision-table metadata by default, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`, and supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, and Go-template `--format` output over a Ptah apply result that mirrors Atlas's public apply-template fields.
 
-External `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate` formats are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import` ([`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742)); unknown formats and Flyway repeatable migrations still fail before the target database is opened.
+External `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate` formats are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import` ([`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742)); native Atlas directories preserve `R`/`<number>R` repeatable migration tokens and execute them once. Converted Flyway repeatables are represented as one-time versioned migrations. Unknown formats still fail before the target database is opened.
 
 `ptah-compat migrate validate` verifies `atlas.sum`, emits Atlas-compatible exit-1 checksum diagnostics across stdout and stderr, and, with `--dev-url`, cleans the dev database and replays the migration directory to validate SQL execution. `ptah-compat migrate apply` runs the same `atlas.sum` verification before applying anything from a hashed directory and refuses tampered directories with the identical checksum-mismatch output, matching official Atlas apply-time enforcement ([`stokaro/ptah#955`](https://github.com/stokaro/ptah/issues/955)).
 
@@ -301,7 +301,7 @@ Docker dev databases remain a gap.
 
 `ptah-compat migrate down` executes Ptah's pre-planned down-file rollback path, maps Atlas-compatible flags, and renders Atlas Go-template reports with `--format`. Dynamic down planning remains a recorded gap and fails explicitly.
 
-`ptah-compat migrate import` imports local `file://` directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`, but rejects Flyway repeatable migrations until Ptah can execute Atlas R-suffixed imported migrations.
+`ptah-compat migrate import` imports local `file://` directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations are converted to one-time versioned files instead of Atlas `R`-suffixed files.
 
 **Atlas OSS.** Atlas OSS includes versioned migrations and documents `atlas migrate apply`, `atlas migrate diff`, `atlas migrate down`, and `atlas migrate import` for applying, generating, reverting, and importing local migration directories.
 
@@ -484,7 +484,7 @@ These are compatibility boundaries, not implemented Ptah features. `migrate test
 
 **Ptah.** Ptah ships first-party migration linting and the `ptah-compat migrate lint` compatibility path.
 
-`--latest N` limits the run to the latest N migration versions; `--git-base` and `--git-dir` select migrations changed against a Git base branch; `--dev-url` infers the lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations to validate SQL execution.
+`--latest N` limits the run to the latest N migration revision keys; `--git-base` and `--git-dir` select migrations changed against a Git base branch; Atlas `R` and `<number>R` repeatable files are selected by those string tokens rather than by numeric projection. `--dev-url` infers the lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations to validate SQL execution.
 
 Atlas Go-template `--format` output is supported over `.Env`, `.Steps`, and `.Files`, including `{{ json .Files }}`. `atlas.hcl` can configure the lint changeset selectors, `format.migrate.lint`, and the supported analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx` where those analyzers map to Ptah rule families.
 

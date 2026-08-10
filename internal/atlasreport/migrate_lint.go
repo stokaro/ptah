@@ -198,12 +198,13 @@ func (i MigrateLintIntegrity) Failed() bool {
 // several changes.
 func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile, total, changes int) {
 	prepared := analysis.Files()
+	maxVersion := migrateLintMaxVersion(prepared)
 	slices.SortStableFunc(prepared, func(a, b migrationlint.File) int {
-		return cmp.Or(cmp.Compare(a.Version, b.Version), strings.Compare(a.Name, b.Name))
+		return migrateLintFileOrder(a, b, maxVersion)
 	})
 	files = make([]MigrateLintFile, 0, len(prepared))
 	for _, file := range prepared {
-		if file.Repeatable || file.Direction != "up" || file.Ignored {
+		if file.Direction != "up" || file.Ignored {
 			continue
 		}
 		total++
@@ -218,6 +219,43 @@ func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile,
 		})
 	}
 	return files, total, changes
+}
+
+func migrateLintVersionKey(file migrationlint.File) string {
+	if file.RevisionVersion != "" {
+		return file.RevisionVersion
+	}
+	if file.Repeatable {
+		if file.Version > 0 {
+			return strconv.FormatInt(file.Version, 10) + "R"
+		}
+		return "R"
+	}
+	return strconv.FormatInt(file.Version, 10)
+}
+
+func migrateLintFileOrder(a, b migrationlint.File, maxVersion int64) int {
+	return cmp.Or(
+		cmp.Compare(migrateLintVersionRank(a, maxVersion), migrateLintVersionRank(b, maxVersion)),
+		strings.Compare(a.Name, b.Name),
+	)
+}
+
+func migrateLintMaxVersion(files []migrationlint.File) int64 {
+	var maxVersion int64
+	for _, file := range files {
+		if file.Version > maxVersion {
+			maxVersion = file.Version
+		}
+	}
+	return maxVersion
+}
+
+func migrateLintVersionRank(file migrationlint.File, maxVersion int64) int64 {
+	if file.Repeatable && file.Version == 0 {
+		return maxVersion + 1
+	}
+	return file.Version
 }
 
 func attachMigrateLintFindings(

@@ -152,6 +152,9 @@ type File struct {
 	// Version is the parsed migration version, or zero when the name is not
 	// recognized.
 	Version int64
+	// RevisionVersion is the revision-table token for parsed migration files.
+	// Atlas repeatables use string keys such as "3R" and "R".
+	RevisionVersion string
 	// Repeatable reports whether the migrator classifies this as an imported
 	// repeatable migration rather than an ordered version.
 	Repeatable bool
@@ -222,8 +225,11 @@ type File struct {
 type VersionSelection struct {
 	// Versions lists selected migration versions.
 	Versions []int64
+	// VersionKeys lists selected revision-table tokens. It is used for
+	// Atlas-style repeatable files whose identity is not only numeric.
+	VersionKeys []string
 	// Restricted reports whether Versions is an explicit selection. When true,
-	// an empty Versions slice selects no migrations.
+	// empty version selectors select no migrations.
 	Restricted bool
 }
 
@@ -552,25 +558,28 @@ func prepareFile(
 	base := path.Base(name)
 	direction := ""
 	var version int64
+	revisionVersion := ""
 	hasVersion := false
 	atlasFormat := false
 	repeatable := false
 	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil {
 		direction = parsed.Direction
 		version = parsed.Version
+		revisionVersion = parsed.RevisionVersion()
 		hasVersion = true
 		atlasFormat = parsed.Format == migrator.MigrationDirFormatAtlas
 		repeatable = parsed.Repeatable
 	}
 	file := File{
-		Path:       path.Join(pathPrefix, name),
-		Name:       name,
-		Source:     raw,
-		SQL:        raw,
-		Version:    version,
-		Repeatable: repeatable,
-		Selected:   selectionIncludes(selection, version, hasVersion),
-		Direction:  direction,
+		Path:            path.Join(pathPrefix, name),
+		Name:            name,
+		Source:          raw,
+		SQL:             raw,
+		Version:         version,
+		RevisionVersion: revisionVersion,
+		Repeatable:      repeatable,
+		Selected:        selectionIncludes(selection, version, revisionVersion, hasVersion),
+		Direction:       direction,
 		// The migrator executes whatever its parser classifies as up, so
 		// lint must follow it; the suffix check keeps hazard scanning for
 		// .up.sql files whose version prefix is malformed.
@@ -638,9 +647,12 @@ func prepareFile(
 	return file, nil
 }
 
-func selectionIncludes(selection VersionSelection, version int64, hasVersion bool) bool {
+func selectionIncludes(selection VersionSelection, version int64, revisionVersion string, hasVersion bool) bool {
 	if !selection.Restricted {
 		return true
+	}
+	if len(selection.VersionKeys) > 0 {
+		return revisionVersion != "" && slices.Contains(selection.VersionKeys, revisionVersion)
 	}
 	return hasVersion && slices.Contains(selection.Versions, version)
 }

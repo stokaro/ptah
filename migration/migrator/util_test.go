@@ -264,7 +264,8 @@ func TestParseAtlasMigrationFileName(t *testing.T) {
 
 	migrationFile, err = ParseAtlasMigrationFileName("3R_views.sql")
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationFile.Version, qt.Equals, int64(0))
+	c.Assert(migrationFile.Version, qt.Equals, int64(3))
+	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "3R")
 	c.Assert(migrationFile.Name, qt.Equals, "Views")
 	c.Assert(migrationFile.Direction, qt.Equals, "up")
 	c.Assert(migrationFile.Format, qt.Equals, MigrationDirFormatAtlas)
@@ -272,6 +273,8 @@ func TestParseAtlasMigrationFileName(t *testing.T) {
 
 	migrationFile, err = ParseAtlasMigrationFileName("R__refresh_views.sql")
 	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(0))
+	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "R")
 	c.Assert(migrationFile.Name, qt.Equals, "Refresh Views")
 	c.Assert(migrationFile.Repeatable, qt.IsTrue)
 
@@ -390,11 +393,12 @@ func TestDiscoverMigrationFilesRecognizesAtlasImportedFlywayRepeatables(t *testi
 	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 3)
-	c.Assert(files[0].Path, qt.Equals, "3R_views.sql")
-	c.Assert(files[0].Repeatable, qt.IsTrue)
-	c.Assert(files[0].Version, qt.Equals, int64(0))
-	c.Assert(files[1].Path, qt.Equals, "2_baseline.sql")
-	c.Assert(files[1].Version, qt.Equals, int64(2))
+	c.Assert(files[0].Path, qt.Equals, "2_baseline.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(2))
+	c.Assert(files[1].Path, qt.Equals, "3R_views.sql")
+	c.Assert(files[1].Repeatable, qt.IsTrue)
+	c.Assert(files[1].Version, qt.Equals, int64(3))
+	c.Assert(files[1].RevisionVersion(), qt.Equals, "3R")
 	c.Assert(files[2].Path, qt.Equals, "3_third_migration.sql")
 	c.Assert(files[2].Version, qt.Equals, int64(3))
 }

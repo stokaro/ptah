@@ -406,16 +406,16 @@ func runAtlasMigrateApplyTarget(
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
 	out := cmd.OutOrStdout()
-	emitApplyStart := func([]int64) {}
+	emitApplyStart := func([]int64, []string) {}
 	if !formatOutput {
-		emitApplyStart = func(selectedVersions []int64) {
-			emitAtlasMigrateApplyStart(out, opts, runOpts.baselineVersion, selectedVersions)
+		emitApplyStart = func(selectedVersions []int64, selectedKeys []string) {
+			emitAtlasMigrateApplyStart(out, opts, runOpts.baselineVersion, selectedVersions, selectedKeys)
 		}
 	}
 	result, err := plan.ExecuteWithPreflight(
 		cmd.Context(),
 		func(_ context.Context, lockedPlan migrator.MigrationPlan) error {
-			emitApplyStart(lockedPlan.Versions)
+			emitApplyStart(lockedPlan.Versions, lockedPlan.VersionKeys)
 			return nil
 		},
 	)
@@ -447,7 +447,7 @@ func runAtlasMigrateApplyTarget(
 	if formatOutput {
 		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 	}
-	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
+	fmt.Fprintf(out, "Migration complete. Current version: %s\n", atlasApplyCurrentVersionLabel(result.FinalStatus))
 	return formatOutput, nil
 }
 
@@ -540,6 +540,7 @@ func emitAtlasMigrateApplyStart(
 	opts atlasMigrateApplyOptions,
 	baselineVersion int64,
 	selectedVersions []int64,
+	selectedKeys []string,
 ) {
 	if opts.dryRun {
 		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
@@ -548,11 +549,25 @@ func emitAtlasMigrateApplyStart(
 		fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
 	}
 	if len(selectedVersions) > 0 {
-		fmt.Fprintf(out, "Migrating to version %d from %d pending migrations.\n",
-			selectedVersions[len(selectedVersions)-1],
+		fmt.Fprintf(out, "Migrating to version %s from %d pending migrations.\n",
+			atlasApplyVersionKeyAt(selectedVersions, selectedKeys, len(selectedVersions)-1),
 			len(selectedVersions),
 		)
 	}
+}
+
+func atlasApplyVersionKeyAt(versions []int64, keys []string, index int) string {
+	if index < len(keys) && keys[index] != "" {
+		return keys[index]
+	}
+	return strconv.FormatInt(versions[index], 10)
+}
+
+func atlasApplyCurrentVersionLabel(status *migrator.MigrationStatus) string {
+	if status.CurrentVersionKey != "" {
+		return status.CurrentVersionKey
+	}
+	return strconv.FormatInt(status.CurrentVersion, 10)
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the

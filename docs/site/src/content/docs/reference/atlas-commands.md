@@ -290,8 +290,8 @@ fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 
 | Flag | Behavior |
 | --- | --- |
-| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. |
-| `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. |
+| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. Atlas `R` and `<number>R` repeatable files are selected by their revision token; bare `R` sorts after numeric files. |
+| `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. Changed Atlas repeatable files are selected by `R` or `<number>R`, not by a lossy numeric version. |
 | `--dev-url` | Required. Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
 | `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
 
@@ -487,8 +487,9 @@ Native twin: [`ptah migrations generate`](../native-commands/).
 
 Imports local `file://` migration directories from `atlas`, `golang-migrate`,
 `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas
-single-file directory and writes `atlas.sum`. Flyway repeatable migrations
-fail explicitly until Ptah can execute Atlas R-suffixed imported migrations.
+single-file directory and writes `atlas.sum`. Flyway repeatable migrations are
+converted to one-time versioned Atlas files rather than emitted with an `R`
+suffix, so the imported directory remains stable under Ptah's revision model.
 A successful compatibility import is silent; inspect the destination directory
 and its `atlas.sum` instead of relying on a progress message. Failures are still
 reported on stderr. The native `ptah migrations import` converts the same source

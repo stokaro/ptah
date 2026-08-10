@@ -32,9 +32,9 @@ type Options struct {
 	AtlasTemplateData any
 	// ObserveVersion, when set, runs before each migration is replayed, with the
 	// connection bound to the schema state that migration starts from. It is how
-	// a caller reads the before-state of one version without replaying the
-	// directory once per version. An error from it aborts the replay.
-	ObserveVersion func(ctx context.Context, version int64, conn *dbschema.DatabaseConnection) error
+	// a caller reads the before-state of one migration without replaying the
+	// directory once per migration. An error from it aborts the replay.
+	ObserveVersion func(ctx context.Context, migration *migrator.Migration, conn *dbschema.DatabaseConnection) error
 	// ObserveReplayed, when set, runs once after every migration has been
 	// replayed and before the dev database realm is cleaned. It is the
 	// after-state counterpart of ObserveVersion. An error from it aborts the
@@ -169,7 +169,7 @@ func WithReplayedSnapshotLocked(
 type replayHooks struct {
 	// observeVersion runs before each migration, with the connection bound to
 	// the state that migration starts from.
-	observeVersion func(context.Context, int64, *dbschema.DatabaseConnection) error
+	observeVersion func(context.Context, *migrator.Migration, *dbschema.DatabaseConnection) error
 	// consume runs once after every migration, before the realm is cleaned.
 	consume func(*dbschema.DatabaseConnection) error
 }
@@ -261,12 +261,12 @@ func replayMigrations(
 	}
 	for _, migration := range migrations {
 		if hooks.observeVersion != nil {
-			if err := hooks.observeVersion(ctx, migration.Version, conn); err != nil {
-				return fmt.Errorf("observe dev database before migration %d: %w", migration.Version, err)
+			if err := hooks.observeVersion(ctx, migration, conn); err != nil {
+				return fmt.Errorf("observe dev database before migration %s: %w", migration.RevisionVersion(), err)
 			}
 		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
-			return fmt.Errorf("replay migration %d on dev database: %w", migration.Version, err)
+			return fmt.Errorf("replay migration %s on dev database: %w", migration.RevisionVersion(), err)
 		}
 	}
 	if hooks.consume != nil {

@@ -162,10 +162,11 @@ Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`,
 `ptah-compat migrate apply` executes all of them.
 
 The native `atlas` format is read from disk unchanged (preserving `atlas.sum`
-verification and down migrations); every other format is converted in memory
-to Atlas single-file, up-only migrations, so apply runs only the source tool's
-forward (up) SQL. Unknown formats and, currently, Flyway repeatable migrations
-still fail before the target database is opened.
+verification, down migrations, and Atlas `R`/`<number>R` repeatable migration
+tokens); every other format is converted in memory to Atlas single-file,
+up-only migrations, so apply runs only the source tool's forward (up) SQL.
+Flyway repeatables in converted directories are treated as one-time migrations.
+Unknown formats still fail before the target database is opened.
 
 An explicit `?format=` query on the effective directory URL, whether declared
 by `migration.dir` or passed with CLI `--dir`, overrides this project default,

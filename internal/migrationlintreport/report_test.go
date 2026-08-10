@@ -5,6 +5,7 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -27,6 +28,14 @@ func writeWarningMigration(c *qt.C, dir string) {
 	c.Helper()
 	writeLintTestFile(c, dir, "0000000001_index.up.sql", "CREATE INDEX idx_users_id ON users (id);\n")
 	writeLintTestFile(c, dir, "0000000001_index.down.sql", "DROP INDEX idx_users_id;\n")
+}
+
+func runGit(c *qt.C, dir string, args ...string) {
+	c.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
 }
 
 // findingRules lists the reported rule codes in report order. The pair above
@@ -186,6 +195,67 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 		"1_old.sql": 1,
 		"2_new.sql": 1,
 	})
+}
+
+func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing.T) {
+	c := qt.New(t)
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir: t.TempDir(),
+		FS: fstest.MapFS{
+			"1_create_users.sql": {Data: []byte("CREATE TABLE users (id int);\n")},
+			"R__drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
+		},
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		FailOn:    migrationlintreport.FailOnNone,
+		Latest:    1,
+		Changed:   migrationlintreport.ChangedOptions{Latest: true},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Versions, qt.DeepEquals, []int64{0})
+	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"R"})
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].File, qt.Contains, "R__drop_users.sql")
+}
+
+func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
+	c := qt.New(t)
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	c.Assert(err, qt.IsNil)
+	migrationsDir := filepath.Join(repo, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o700), qt.IsNil)
+	runGit(c, repo, "init")
+	runGit(c, repo, "config", "commit.gpgsign", "false")
+	runGit(c, repo, "config", "user.email", "ptah@example.com")
+	runGit(c, repo, "config", "user.name", "Ptah Test")
+	writeLintTestFile(c, migrationsDir, "1_create_users.sql", "CREATE TABLE users (id int);\n")
+	writeLintTestFile(c, migrationsDir, "2_create_accounts.sql", "CREATE TABLE accounts (id int);\n")
+	runGit(c, repo, "add", "migrations")
+	runGit(c, repo, "commit", "-m", "baseline")
+	writeLintTestFile(c, migrationsDir, "2R_drop_users.sql", "DROP TABLE users;\n")
+	runGit(c, repo, "add", "migrations/2R_drop_users.sql")
+	runGit(c, repo, "commit", "-m", "repeatable")
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       migrationsDir,
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		Dialect:   "sqlite",
+		GitBase:   "HEAD~1",
+		GitDir:    repo,
+		FailOn:    migrationlintreport.FailOnNone,
+		Changed: migrationlintreport.ChangedOptions{
+			GitBase: true,
+			GitDir:  true,
+		},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
+	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"2R"})
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].File, qt.Contains, "2R_drop_users.sql")
 }
 
 func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {

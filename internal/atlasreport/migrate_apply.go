@@ -29,7 +29,9 @@ type MigrateApplyResultOptions struct {
 	Status           *migrator.MigrationStatus
 	Migrations       []*migrator.Migration
 	SelectedVersions []int64
+	SelectedKeys     []string
 	CurrentVersion   int64
+	CurrentKey       string
 	ErrorText        string
 	ApplyError       error
 	Applied          bool
@@ -107,7 +109,7 @@ func validateMigrateApplyResultOptions(opts MigrateApplyResultOptions) error {
 	if opts.FS == nil {
 		return errors.New("migrate apply format requires migration filesystem")
 	}
-	if opts.Status == nil && opts.CurrentVersion <= 0 {
+	if opts.Status == nil && opts.CurrentVersion <= 0 && opts.CurrentKey == "" {
 		return errors.New("migrate apply format requires migration status or current version")
 	}
 	return nil
@@ -127,9 +129,9 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	result := atlasMigrateApplyResult{
 		atlasMigrateApplyEnv: env,
 		Env:                  env,
-		Pending:              atlasMigrateApplyPendingFiles(filesByVersion, opts.SelectedVersions),
-		Current:              atlasMigrateApplyVersionString(atlasMigrateApplyCurrentVersion(opts)),
-		Target:               atlasMigrateApplyTargetVersion(atlasMigrateApplyCurrentVersion(opts), opts.SelectedVersions),
+		Pending:              atlasMigrateApplyPendingFiles(filesByVersion, opts.SelectedVersions, opts.SelectedKeys),
+		Current:              atlasMigrateApplyCurrentVersion(opts),
+		Target:               atlasMigrateApplyTargetVersion(atlasMigrateApplyCurrentVersion(opts), opts.SelectedVersions, opts.SelectedKeys),
 		Start:                opts.StartedAt,
 		End:                  opts.EndedAt,
 		Error:                opts.ErrorText,
@@ -139,6 +141,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 			filesByVersion,
 			migrationsByVersion,
 			opts.SelectedVersions,
+			opts.SelectedKeys,
 			opts.Conn.Info().Dialect,
 			opts.ApplyError,
 			opts.StartedAt,
@@ -148,43 +151,44 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	return result, nil
 }
 
-func atlasMigrateApplyFilesByVersion(fsys fs.FS) (map[int64]atlasMigrateApplyFile, error) {
+func atlasMigrateApplyFilesByVersion(fsys fs.FS) (map[string]atlasMigrateApplyFile, error) {
 	discovered, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
 	if err != nil {
 		return nil, fmt.Errorf("discover Atlas migration files: %w", err)
 	}
-	files := make(map[int64]atlasMigrateApplyFile, len(discovered))
+	files := make(map[string]atlasMigrateApplyFile, len(discovered))
 	for _, file := range discovered {
-		if file.Repeatable || file.Direction != "up" {
+		if file.Direction != "up" {
 			continue
 		}
-		files[file.Version] = atlasMigrateApplyFile{
+		files[file.RevisionVersion()] = atlasMigrateApplyFile{
 			Name:        file.Path,
-			Version:     atlasMigrateApplyVersionString(file.Version),
+			Version:     file.RevisionVersion(),
 			Description: atlasMigrationFileDescription(file.Path),
 		}
 	}
 	return files, nil
 }
 
-func atlasMigrateApplyMigrationsByVersion(input []*migrator.Migration) map[int64]*migrator.Migration {
-	migrations := make(map[int64]*migrator.Migration, len(input))
+func atlasMigrateApplyMigrationsByVersion(input []*migrator.Migration) map[string]*migrator.Migration {
+	migrations := make(map[string]*migrator.Migration, len(input))
 	for _, migration := range input {
 		if migration == nil {
 			continue
 		}
-		migrations[migration.Version] = migration
+		migrations[migration.RevisionVersion()] = migration
 	}
 	return migrations
 }
 
 func atlasMigrateApplyPendingFiles(
-	files map[int64]atlasMigrateApplyFile,
+	files map[string]atlasMigrateApplyFile,
 	versions []int64,
+	keys []string,
 ) []atlasMigrateApplyFile {
 	pending := make([]atlasMigrateApplyFile, 0, len(versions))
-	for _, version := range versions {
-		if file, ok := files[version]; ok {
+	for index := range versions {
+		if file, ok := files[atlasMigrateApplyVersionKeyAt(versions, keys, index)]; ok {
 			pending = append(pending, file)
 		}
 	}
@@ -192,17 +196,19 @@ func atlasMigrateApplyPendingFiles(
 }
 
 func atlasMigrateApplyAppliedFiles(
-	files map[int64]atlasMigrateApplyFile,
-	migrations map[int64]*migrator.Migration,
+	files map[string]atlasMigrateApplyFile,
+	migrations map[string]*migrator.Migration,
 	versions []int64,
+	keys []string,
 	dialect string,
 	applyErr error,
 	startedAt time.Time,
 	endedAt time.Time,
 ) []*atlasMigrateApplyAppliedFile {
 	applied := make([]*atlasMigrateApplyAppliedFile, 0, len(versions))
-	failedVersion := atlasMigrateApplyFailedVersion(applyErr, versions)
-	for _, version := range versions {
+	failedVersion := atlasMigrateApplyFailedVersion(applyErr, versions, keys)
+	for index := range versions {
+		version := atlasMigrateApplyVersionKeyAt(versions, keys, index)
 		file, ok := files[version]
 		if !ok {
 			continue
@@ -236,18 +242,18 @@ func atlasMigrateApplyAppliedFiles(
 	return applied
 }
 
-func atlasMigrateApplyFailedVersion(err error, versions []int64) int64 {
+func atlasMigrateApplyFailedVersion(err error, versions []int64, keys []string) string {
 	if err == nil || len(versions) == 0 {
-		return 0
+		return ""
 	}
 	matches := atlasMigrateApplyFailedVersionRe.FindStringSubmatch(err.Error())
 	if len(matches) == 2 {
 		version, parseErr := strconv.ParseInt(matches[1], 10, 64)
 		if parseErr == nil {
-			return version
+			return strconv.FormatInt(version, 10)
 		}
 	}
-	return versions[len(versions)-1]
+	return atlasMigrateApplyVersionKeyAt(versions, keys, len(versions)-1)
 }
 
 func atlasMigrateApplyExecutionError(err error) *migrator.MigrationExecutionError {
@@ -285,18 +291,24 @@ func atlasMigrateApplySplitStatements(sql, dialect string) []string {
 	return filtered
 }
 
-func atlasMigrateApplyCurrentVersion(opts MigrateApplyResultOptions) int64 {
-	if opts.CurrentVersion > 0 {
-		return opts.CurrentVersion
+func atlasMigrateApplyCurrentVersion(opts MigrateApplyResultOptions) string {
+	if opts.CurrentKey != "" {
+		return opts.CurrentKey
 	}
-	return opts.Status.CurrentVersion
+	if opts.CurrentVersion > 0 {
+		return atlasMigrateApplyVersionString(opts.CurrentVersion)
+	}
+	if opts.Status.CurrentVersionKey != "" {
+		return opts.Status.CurrentVersionKey
+	}
+	return atlasMigrateApplyVersionString(opts.Status.CurrentVersion)
 }
 
-func atlasMigrateApplyTargetVersion(current int64, selectedVersions []int64) string {
+func atlasMigrateApplyTargetVersion(current string, selectedVersions []int64, selectedKeys []string) string {
 	if len(selectedVersions) == 0 {
-		return atlasMigrateApplyVersionString(current)
+		return current
 	}
-	return atlasMigrateApplyVersionString(selectedVersions[len(selectedVersions)-1])
+	return atlasMigrateApplyVersionKeyAt(selectedVersions, selectedKeys, len(selectedVersions)-1)
 }
 
 func atlasMigrateApplyVersionString(version int64) string {
@@ -304,6 +316,13 @@ func atlasMigrateApplyVersionString(version int64) string {
 		return ""
 	}
 	return strconv.FormatInt(version, 10)
+}
+
+func atlasMigrateApplyVersionKeyAt(versions []int64, keys []string, index int) string {
+	if index < len(keys) && keys[index] != "" {
+		return keys[index]
+	}
+	return atlasMigrateApplyVersionString(versions[index])
 }
 
 func renderAtlasGoTemplate(w io.Writer, name, format string, data any) error {

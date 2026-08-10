@@ -51,9 +51,10 @@ func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 
 	migrations := testMigrations(1, 2, 3, 5)
 	applied := []int64{1, 2, 5}
+	appliedIdentities := newMigrationIdentitySet(applied, nil)
 
 	linear := NewMigrator(nil, NewRegisteredMigrationProvider(migrations...))
-	_, err := linear.migrationsToApply(migrations, applied, 0)
+	_, err := linear.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNotNil)
 	var outOfOrderErr *OutOfOrderError
 	c.Assert(err, qt.ErrorAs, &outOfOrderErr)
@@ -61,12 +62,12 @@ func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	c.Assert(outOfOrderErr.Versions, qt.DeepEquals, []int64{3})
 
 	linearSkip := linear.WithExecOrder(ExecOrderLinearSkip)
-	got, err := linearSkip.migrationsToApply(migrations, applied, 0)
+	got, err := linearSkip.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{})
 
 	nonLinear := linear.WithExecOrder(ExecOrderNonLinear)
-	got, err = nonLinear.migrationsToApply(migrations, applied, 0)
+	got, err = nonLinear.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{3})
 }
