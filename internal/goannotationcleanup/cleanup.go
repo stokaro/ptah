@@ -48,11 +48,14 @@ type Annotation struct {
 }
 
 type removedLine struct {
-	number     int
-	annotation Annotation
-	scope      annotationmeta.Scope
-	namedField bool
-	values     map[string]string
+	number           int
+	annotation       Annotation
+	scope            annotationmeta.Scope
+	structName       string
+	fieldNames       []string
+	namedField       bool
+	embeddedTypeName string
+	values           map[string]string
 }
 
 type filePlan struct {
@@ -807,9 +810,12 @@ func annotationLineNumbers(path string, data []byte, lines [][]byte) (map[int]re
 					Directive:  directive.Name,
 					Attributes: attributes,
 				},
-				scope:      placements[comment].Scope,
-				namedField: placements[comment].NamedField,
-				values:     values,
+				scope:            placements[comment].Scope,
+				structName:       placements[comment].StructName,
+				fieldNames:       placements[comment].FieldNames,
+				namedField:       placements[comment].NamedField,
+				embeddedTypeName: placements[comment].EmbeddedTypeName,
+				values:           values,
 			}
 		}
 	}

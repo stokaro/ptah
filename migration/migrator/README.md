@@ -650,11 +650,11 @@ Atlas-compatible values:
   transaction may use migration timeouts. Failed non-transactional runs record
   statement-level dirty progress.
 
-Atlas file modes use a leading line-comment header followed by a blank line:
+Atlas file modes use a leading line-comment header. A blank line after the
+header is accepted but not required:
 
 ```sql
 -- atlas:txmode file
-
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 
