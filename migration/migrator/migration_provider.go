@@ -227,64 +227,29 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 	return nil
 }
 
-// refuseAtlasRepeatables refuses a migration directory that carries Atlas
-// repeatable (Flyway R-suffixed) migration files, naming every one of them.
-//
-// Discovery recognizes `R__name.sql` and `<digits>R_name.sql` (stokaro/ptah#846,
-// PR #326) so lint and the integrity file can see them, but the migrator has no
-// executable representation for one: Ptah's migration identity is an int64
-// version, an Atlas repeatable's version is the opaque string the file name
-// spells ("2R", "R"), and no int64 sorts where the community binary runs it —
-// `1R_x.sql` executes before `1_init.sql`, and versions are required to be
-// greater than zero. Synthesizing a version would execute the file but record a
-// revision no other tool matches.
-//
-// Loading the directory minus those files is the one answer that must not be
-// given: it applied a strict subset of an atlas.sum-covered directory, reported
-// "Database is up to date" and exited 0, which is how a repeatable imported by
-// the community binary's own `migrate import` (it writes `1R_name.sql`) was
-// dropped without a diagnostic.
-func refuseAtlasRepeatables(files []MigrationFile) error {
-	var repeatable []string
-	for i := range files {
-		if files[i].Repeatable {
-			repeatable = append(repeatable, files[i].Path)
-		}
-	}
-	if len(repeatable) == 0 {
-		return nil
-	}
-	slices.Sort(repeatable)
-	return fmt.Errorf(
-		"migration directory contains Atlas repeatable migrations Ptah cannot execute: %s; "+
-			"rename each one to a versioned Atlas migration (<version>_<name>.sql) and re-run `migrate hash`, "+
-			"or move it out of the migration directory",
-		strings.Join(repeatable, ", "),
-	)
-}
-
 func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
-	if err := refuseAtlasRepeatables(files); err != nil {
-		return err
-	}
 	hashes, err := readAtlasSumHashes(p.fsys)
 	if err != nil {
 		return err
 	}
-	partsByVersion := make(map[int64]*atlasParts)
+	maxVersion := atlasMaxNumericVersion(files)
+	partsByRevision := make(map[string]*atlasParts)
 	for i := range files {
 		migrationFile := files[i]
-		parts := partsByVersion[migrationFile.Version]
+		revisionVersion := migrationFile.RevisionVersion()
+		parts := partsByRevision[revisionVersion]
 		if parts == nil {
 			parts = &atlasParts{
 				migration: &Migration{
-					Version:                migrationFile.Version,
+					Version:                atlasRuntimeVersion(migrationFile, maxVersion),
 					Description:            migrationFile.Name,
+					atlasRevisionVersion:   revisionVersion,
+					atlasOrderKey:          migrationFile.Path,
 					revisionDescription:    migrationFile.revisionDescription,
 					hasRevisionDescription: true,
 				},
 			}
-			partsByVersion[migrationFile.Version] = parts
+			partsByRevision[revisionVersion] = parts
 		}
 		if hash := hashes[migrationFile.Path]; hash != "" && migrationFile.Direction == "up" {
 			parts.migration.Checksum = hash
@@ -294,17 +259,18 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 		}
 	}
 
-	migrations := make([]*Migration, 0, len(partsByVersion))
-	for _, parts := range partsByVersion {
+	migrations := make([]*Migration, 0, len(partsByRevision))
+	for _, parts := range partsByRevision {
 		if !parts.hasUp {
-			return fmt.Errorf("Atlas migration version %d has down migration but no up migration", parts.migration.Version)
+			return fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
 		}
 		if !parts.hasDown {
 			parts.migration.downUnavailable = true
 			parts.migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
 				return &AtlasDownNotImplementedError{
-					Version:     parts.migration.Version,
-					Description: parts.migration.Description,
+					Version:         parts.migration.Version,
+					revisionVersion: parts.migration.RevisionVersion(),
+					Description:     parts.migration.Description,
 				}
 			}
 		}
@@ -316,16 +282,33 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 	return nil
 }
 
+func atlasMaxNumericVersion(files []MigrationFile) int64 {
+	var maxVersion int64
+	for _, file := range files {
+		if !file.Repeatable && file.Version > maxVersion {
+			maxVersion = file.Version
+		}
+	}
+	return maxVersion
+}
+
+func atlasRuntimeVersion(file MigrationFile, maxVersion int64) int64 {
+	if !file.Repeatable || file.Version > 0 {
+		return file.Version
+	}
+	return maxVersion + 1
+}
+
 func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile MigrationFile) error {
 	switch migrationFile.Direction {
 	case "up":
 		if parts.hasUp {
-			return fmt.Errorf("duplicate Atlas up migration for version %d", migrationFile.Version)
+			return fmt.Errorf("duplicate Atlas up migration for version %s", migrationFile.RevisionVersion())
 		}
 		return p.loadAtlasUp(parts, migrationFile)
 	case "down":
 		if parts.hasDown {
-			return fmt.Errorf("duplicate Atlas down migration for version %d", migrationFile.Version)
+			return fmt.Errorf("duplicate Atlas down migration for version %s", migrationFile.RevisionVersion())
 		}
 		return p.loadAtlasDown(parts, migrationFile)
 	default:
@@ -458,6 +441,9 @@ func readAtlasSumHashes(fsys fs.FS) (map[string]string, error) {
 
 func sortMigrations(migrations []*Migration) {
 	sort.Slice(migrations, func(i, j int) bool {
+		if migrations[i].atlasOrderKey != "" || migrations[j].atlasOrderKey != "" {
+			return migrations[i].atlasOrderKey < migrations[j].atlasOrderKey
+		}
 		return migrations[i].Version < migrations[j].Version
 	})
 }

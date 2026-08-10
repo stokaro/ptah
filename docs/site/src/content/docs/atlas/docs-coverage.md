@@ -290,7 +290,7 @@ retry, and ignored-name warnings.
 
 `ptah-compat migrate apply` executes Atlas-format migration directories with Atlas revision-table metadata by default, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`, and supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`, `--skip-lock`, `--to-version`, `--dry-run`, and Go-template `--format` output over a Ptah apply result that mirrors Atlas's public apply-template fields.
 
-External Atlas OSS directory formats (`golang-migrate`, `goose`, `flyway`, `liquibase`, `dbmate`) are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import`; unknown formats and Flyway repeatable migrations still fail before the target database is opened.
+External Atlas OSS directory formats (`golang-migrate`, `goose`, `flyway`, `liquibase`, `dbmate`) are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import`; native Atlas directories preserve `R`/`<number>R` repeatable migration tokens and execute them once, while converted Flyway repeatables are represented as one-time versioned migrations. Unknown formats still fail before the target database is opened.
 
 Directory URL `?format=` overrides `migration.format` whether the URL comes from project config or CLI.
 
@@ -358,7 +358,7 @@ writes Atlas-style migration files. It:
 
 **Implementation status.** Partial.
 
-Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`; `--dir-format` defaults to `atlas`, `--latest`, `--git-base`, `--git-dir`, and matching `atlas.hcl` defaults select the linted changeset; `--dev-url` infers lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations; `--format`, `format.migrate.lint`, and Atlas `lint { log = "…" }` render Atlas-style Go templates over `.Env`, `.Steps`, and `.Files`, and the no-template default reproduces measured Atlas wording, analyzer links, wrapping, and suggested-fix layout for mapped diagnostics while visibly labeling Ptah-only findings without fabricated Atlas links; native `ptah migrations lint` retains Ptah's fuller diagnostic prose; supported `atlas.hcl` analyzer policy maps severity for matching Ptah lint rule families.
+Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`; `--dir-format` defaults to `atlas`, `--latest`, `--git-base`, `--git-dir`, and matching `atlas.hcl` defaults select the linted changeset, including Atlas repeatable keys `R` and `<number>R`; `--dev-url` infers lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations; `--format`, `format.migrate.lint`, and Atlas `lint { log = "…" }` render Atlas-style Go templates over `.Env`, `.Steps`, and `.Files`, and the no-template default reproduces measured Atlas wording, analyzer links, wrapping, and suggested-fix layout for mapped diagnostics while visibly labeling Ptah-only findings without fabricated Atlas links; native `ptah migrations lint` retains Ptah's fuller diagnostic prose; supported `atlas.hcl` analyzer policy maps severity for matching Ptah lint rule families.
 
 Atlas check-level policy, custom rules, force/allow-list analyzer options, Docker dev databases, web reports, and external migration-tool `--dir-format` execution remain gaps.
 
@@ -386,7 +386,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Ptah documentation.** [Atlas migrate commands](../migrate-commands/), [Comparison](../comparison/)
 
-**Implementation status.** Partial. Ptah imports local `file://` directories into an Atlas single-file directory and writes `atlas.sum`; Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed migrations.
+**Implementation status.** Partial. Ptah imports local `file://` directories into an Atlas single-file directory and writes `atlas.sum`; Flyway repeatable migrations are converted to one-time versioned files rather than emitted as Atlas `R`-suffixed files.
 
 **Conformance status.** Partially measured.
 

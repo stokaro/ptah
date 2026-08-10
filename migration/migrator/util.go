@@ -57,16 +57,16 @@ func ParseMigrationDirFormat(value string) (MigrationDirFormat, error) {
 
 // MigrationFile represents the parsed components of a migration file name
 type MigrationFile struct {
-	Path                string
-	Version             int64
-	Name                string
-	Direction           string
-	Extension           string
-	Format              MigrationDirFormat
-	revisionDescription string
+	Path                 string
+	Version              int64
+	Name                 string
+	Direction            string
+	Extension            string
+	Format               MigrationDirFormat
+	atlasRevisionVersion string
+	revisionDescription  string
 	// Repeatable marks Flyway-style repeatable migrations imported by Atlas.
-	// They are visible to discovery and linting, but they are not part of
-	// Ptah's ordered versioned execution model.
+	// Atlas records them under an opaque string token such as "R" or "2R".
 	Repeatable bool
 	// IsCheckpoint marks a checkpoint migration whose up body is the full
 	// cumulative schema at its version. A fresh database bootstraps from the
@@ -78,6 +78,17 @@ type MigrationFile struct {
 	// FSMigrationProvider detects it from file content when loading, so this
 	// field stays false for Atlas files parsed by name alone.
 	IsCheckpoint bool
+}
+
+// RevisionVersion returns the token this file uses as its revision-table
+// identity. Native Ptah files and ordinary Atlas files return the decimal
+// numeric version. Atlas repeatable files return Atlas's opaque R-suffixed
+// token.
+func (f MigrationFile) RevisionVersion() string {
+	if f.atlasRevisionVersion != "" {
+		return f.atlasRevisionVersion
+	}
+	return strconv.FormatInt(f.Version, 10)
 }
 
 // ParseMigrationFileName parses a migration filename into its components
@@ -197,48 +208,72 @@ func parseAtlasMigrationFileName(filename string, mode atlasParseMode) (*Migrati
 	name = cases.Title(language.English).String(name)
 
 	return &MigrationFile{
-		Version:             version,
-		Name:                name,
-		Direction:           direction,
-		Extension:           ".sql",
-		Format:              MigrationDirFormatAtlas,
-		revisionDescription: rawName,
+		Version:              version,
+		Name:                 name,
+		Direction:            direction,
+		Extension:            ".sql",
+		Format:               MigrationDirFormatAtlas,
+		atlasRevisionVersion: strconv.FormatInt(version, 10),
+		revisionDescription:  rawName,
 	}, nil
 }
 
 func parseAtlasRepeatableMigrationStem(stem string) (*MigrationFile, bool) {
-	repeatableName, ok := atlasRepeatableName(stem)
+	repeatable, ok := atlasRepeatableMigration(stem)
 	if !ok {
 		return nil, false
 	}
 	return &MigrationFile{
-		Name:       repeatableName,
-		Direction:  "up",
-		Extension:  ".sql",
-		Format:     MigrationDirFormatAtlas,
-		Repeatable: true,
+		Version:              repeatable.version,
+		Name:                 repeatable.name,
+		Direction:            "up",
+		Extension:            ".sql",
+		Format:               MigrationDirFormatAtlas,
+		atlasRevisionVersion: repeatable.revisionVersion,
+		revisionDescription:  repeatable.rawName,
+		Repeatable:           true,
 	}, true
 }
 
-func atlasRepeatableName(stem string) (string, bool) {
+type atlasRepeatableParts struct {
+	version         int64
+	revisionVersion string
+	rawName         string
+	name            string
+}
+
+func atlasRepeatableMigration(stem string) (atlasRepeatableParts, bool) {
 	if strings.HasSuffix(stem, ".up") || strings.HasSuffix(stem, ".down") {
-		return "", false
+		return atlasRepeatableParts{}, false
 	}
 	switch {
 	case strings.HasPrefix(stem, "R__"):
 		rawName := strings.TrimPrefix(stem, "R__")
 		if rawName == "" {
-			return "", false
+			return atlasRepeatableParts{}, false
 		}
-		return titleAtlasName(rawName), true
+		return atlasRepeatableParts{
+			revisionVersion: "R",
+			rawName:         rawName,
+			name:            titleAtlasName(rawName),
+		}, true
 	case strings.Contains(stem, "R_"):
 		prefix, rawName, _ := strings.Cut(stem, "R_")
 		if prefix == "" || !allDigits(prefix) || rawName == "" {
-			return "", false
+			return atlasRepeatableParts{}, false
 		}
-		return titleAtlasName(rawName), true
+		version, err := strconv.ParseInt(prefix, 10, 64)
+		if err != nil {
+			return atlasRepeatableParts{}, false
+		}
+		return atlasRepeatableParts{
+			version:         version,
+			revisionVersion: prefix + "R",
+			rawName:         rawName,
+			name:            titleAtlasName(rawName),
+		}, true
 	default:
-		return "", false
+		return atlasRepeatableParts{}, false
 	}
 }
 

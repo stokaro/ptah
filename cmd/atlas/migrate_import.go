@@ -25,9 +25,10 @@ Ptah currently imports local file:// directories only. The destination directory
 must be different from the source directory and must not already contain SQL
 migration files or atlas.sum.
 
-Flyway repeatable migrations are converted, on a reserved version slot above
+Flyway repeatable migrations are converted on a reserved version slot above
 every versioned migration. The destination file name carries that slot rather
-than an R suffix, because Ptah cannot execute an R-suffixed Atlas migration.`,
+than an R suffix, so the imported directory keeps one-time migration semantics
+instead of Flyway-style reapply semantics.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasMigrateImport(cmd, opts)
 		},

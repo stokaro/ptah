@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -88,10 +87,10 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 		},
 		Available:  files,
 		Applied:    migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
-		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
-		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, ""),
-		Current:    migrateStatusCurrent(opts.Status.CurrentVersion),
-		Next:       migrateStatusNext(opts.Status.PendingMigrations),
+		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys, ""),
+		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, opts.Status.OutOfOrderMigrationKeys, ""),
+		Current:    migrateStatusCurrent(opts.Status),
+		Next:       migrateStatusNext(opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys),
 		Status:     migrateStatusLabel(opts.Status),
 	}
 	applyMigrateStatusPartial(&result, opts.AppliedRevisions)
@@ -147,8 +146,8 @@ func migrateStatusAppliedRevisions(
 	out := make([]MigrateStatusRevision, 0, len(revisions))
 	descriptions := migrateStatusFileDescriptions(files)
 	for _, revision := range revisions {
-		version := strconv.FormatInt(revision.Version, 10)
-		description := descriptions[revision.Version]
+		version := revision.RevisionVersion()
+		description := descriptions[version]
 		if description == "" {
 			description = revision.Description
 		}
@@ -168,10 +167,10 @@ func migrateStatusAppliedRevisions(
 	return out
 }
 
-func migrateStatusFileDescriptions(files []MigrateStatusFile) map[int64]string {
-	descriptions := make(map[int64]string, len(files))
+func migrateStatusFileDescriptions(files []MigrateStatusFile) map[string]string {
+	descriptions := make(map[string]string, len(files))
 	for _, file := range files {
-		descriptions[migrateStatusFileVersion(file)] = file.Description
+		descriptions[file.Version] = file.Description
 	}
 	return descriptions
 }
@@ -183,12 +182,12 @@ func migrateStatusFiles(fsys fs.FS) ([]MigrateStatusFile, error) {
 	}
 	files := make([]MigrateStatusFile, 0, len(discovered))
 	for _, file := range discovered {
-		if file.Repeatable || file.Direction == "down" {
+		if file.Direction == "down" {
 			continue
 		}
 		files = append(files, MigrateStatusFile{
 			Name:        file.Path,
-			Version:     strconv.FormatInt(file.Version, 10),
+			Version:     file.RevisionVersion(),
 			Description: atlasMigrationFileDescription(file.Path),
 		})
 	}
@@ -198,11 +197,13 @@ func migrateStatusFiles(fsys fs.FS) ([]MigrateStatusFile, error) {
 func selectedMigrateStatusFiles(
 	files []MigrateStatusFile,
 	versions []int64,
+	keys []string,
 	fileType string,
 ) []MigrateStatusFile {
 	out := make([]MigrateStatusFile, 0, len(versions))
+	selected := migrateStatusVersionKeySet(versions, keys)
 	for _, file := range files {
-		if !slices.Contains(versions, migrateStatusFileVersion(file)) {
+		if _, ok := selected[file.Version]; !ok {
 			continue
 		}
 		file.Type = fileType
@@ -211,24 +212,34 @@ func selectedMigrateStatusFiles(
 	return out
 }
 
-func migrateStatusFileVersion(file MigrateStatusFile) int64 {
-	version, err := strconv.ParseInt(file.Version, 10, 64)
-	if err != nil {
-		return 0
+func migrateStatusVersionKeySet(versions []int64, keys []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(versions))
+	for index, version := range versions {
+		key := strconv.FormatInt(version, 10)
+		if index < len(keys) && keys[index] != "" {
+			key = keys[index]
+		}
+		set[key] = struct{}{}
 	}
-	return version
+	return set
 }
 
-func migrateStatusCurrent(version int64) string {
-	if version <= 0 {
+func migrateStatusCurrent(status *migrator.MigrationStatus) string {
+	if status.CurrentVersionKey != "" {
+		return status.CurrentVersionKey
+	}
+	if status.CurrentVersion <= 0 {
 		return "No migration applied yet"
 	}
-	return strconv.FormatInt(version, 10)
+	return strconv.FormatInt(status.CurrentVersion, 10)
 }
 
-func migrateStatusNext(pending []int64) string {
+func migrateStatusNext(pending []int64, keys []string) string {
 	if len(pending) == 0 {
 		return "Already at latest version"
+	}
+	if len(keys) > 0 && keys[0] != "" {
+		return keys[0]
 	}
 	return strconv.FormatInt(pending[0], 10)
 }

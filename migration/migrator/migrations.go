@@ -337,14 +337,19 @@ const (
 // embedded down.sql section. Ptah does not yet synthesize Atlas dynamic down
 // plans from the current database state and a dev database.
 type AtlasDownNotImplementedError struct {
-	Version     int64
-	Description string
+	Version         int64
+	revisionVersion string
+	Description     string
 }
 
 func (e *AtlasDownNotImplementedError) Error() string {
+	version := e.revisionVersion
+	if version == "" {
+		version = strconv.FormatInt(e.Version, 10)
+	}
 	return fmt.Sprintf(
-		"migration %d has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually",
-		e.Version,
+		"migration %s has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually",
+		version,
 	)
 }
 
@@ -687,6 +692,8 @@ type Migration struct {
 	Version                int64
 	Description            string
 	Checksum               string
+	atlasRevisionVersion   string
+	atlasOrderKey          string
 	revisionDescription    string
 	hasRevisionDescription bool
 	Up                     MigrationFunc
@@ -726,6 +733,21 @@ type Migration struct {
 	// directories mark them with a first-line `-- atlas:checkpoint` file
 	// directive.
 	IsCheckpoint bool
+}
+
+// RevisionVersion returns the version token this migration records in revision
+// metadata. Native Ptah migrations and ordinary Atlas migrations use their
+// numeric version. Atlas repeatable migrations use Atlas's opaque token, such
+// as "R" or "2R".
+func (m *Migration) RevisionVersion() string {
+	if m.atlasRevisionVersion != "" {
+		return m.atlasRevisionVersion
+	}
+	return strconv.FormatInt(m.Version, 10)
+}
+
+func (m *Migration) isAtlasRepeatable() bool {
+	return m.atlasRevisionVersion == "R" || strings.HasSuffix(m.atlasRevisionVersion, "R")
 }
 
 // atlasFilenameDescription preserves Atlas's raw filename description in

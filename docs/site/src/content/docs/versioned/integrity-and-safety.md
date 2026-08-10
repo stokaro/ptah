@@ -564,9 +564,10 @@ transaction restriction whichever direction asked for it:
 
 Useful controls, all designed for CI:
 
-- `--latest N` lints only the newest N versions — the changeset of a pull
-  request rather than all of history. `--git-base <branch>` selects the
-  changeset from Git instead.
+- `--latest N` lints only the newest N migration revision keys — the changeset
+  of a pull request rather than all of history. Atlas-format repeatables keep
+  their string keys (`R` or `<number>R`), and bare `R` sorts after numeric
+  files. `--git-base <branch>` selects the changeset from Git instead.
 - `--fail-on error` (default) fails only on error-severity findings;
   `--fail-on any` fails on warnings too; `--fail-on none` always exits `0`.
 - `--format json`, `--format sarif`, and `--format github-actions` feed code

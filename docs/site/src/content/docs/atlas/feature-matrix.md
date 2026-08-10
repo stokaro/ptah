@@ -76,13 +76,13 @@ Across the 178 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 107 |
+| Ptah supports it fully | 108 |
 | Ptah supports it with a stated limitation | 49 |
-| Ptah does not implement it | 22 |
-| Ptah and Atlas CE both support it | 33 |
+| Ptah does not implement it | 21 |
+| Ptah and Atlas CE both support it | 34 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
-| Atlas CE has it and Ptah does not, or only in part | 24 |
+| Atlas CE has it and Ptah does not, or only in part | 23 |
 | An Atlas column is ❔ — not established by this page's evidence | 9 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -168,7 +168,7 @@ seven of them as open capabilities regardless.
 | `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
 | An empty migration directory is not a checksum error | ✅ | ✅ | ✅ | `ptah-compat migrate validate` and `migrate lint --latest` exit 0 on a directory holding no migration files. Native `ptah migrations validate` and `ptah migrations lint` keep their refusals. |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format revision tables are covered. |
-| Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah refuses an Atlas directory holding one, naming every such file; CE executes it keyed on the version string the name spells. Dropping it at exit 0 was stokaro/ptah#846. |
+| Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah executes native Atlas `R` and `<number>R` files once, records the opaque version token, and does not implement Flyway-style reapply on checksum changes. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❌ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❌ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. CE runs every section as plain SQL. |
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
@@ -252,7 +252,7 @@ seven of them as open capabilities regardless.
 | env:// desired-state references | 🟡 | ✅ | ✅ | Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; native `--schema-file` refuses it by name; elsewhere (`--exclude`) the literal string is used silently. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❌ | ❌ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable. |
-| Remote and template directory sources | ❌ | ✅ | ✅ | An atlas.hcl data-source question, not a registry one: ptah-compat migration.dir takes file:// only. Native oci:// distribution is a separate ptah path. |
+| Remote and template directory sources | ✅ | ✅ | ✅ | An atlas.hcl data-source question, not a registry one: ptah-compat migration.dir takes file:// only. Native oci:// distribution is a separate ptah path. |
 | Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | file, fileset, format, getenv, jsonencode, and toset evaluate. Variables add map(string). Env `for_each` exposes atlas.env, each.key, and each.value. |
 
 ## Databases and schema objects

@@ -164,13 +164,14 @@ Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
 without changing Atlas syntax. `ptah-compat migrate apply` executes all of
 them. The native `atlas` format is read from disk unchanged, preserving
-`atlas.sum` verification and down migrations.
+`atlas.sum` verification, down migrations, and Atlas `R`/`<number>R`
+repeatable migration tokens.
 
 Every other format is read and converted in memory to Atlas single-file,
 up-only migrations, so applying it runs only the source tool's forward (up)
-SQL and never its rollback, undo, or metadata section. Unknown formats and,
-currently, Flyway repeatable migrations still fail before the target database
-is opened.
+SQL and never its rollback, undo, or metadata section. Flyway repeatables in
+converted directories are represented as one-time versioned migrations. Unknown
+formats still fail before the target database is opened.
 
 An explicit `?format=` query on the effective directory URL, whether it comes
 from `migration.dir` or CLI `--dir`, takes precedence over the
@@ -249,8 +250,10 @@ SQLSTATE `0A000` at execution time. The error names the index and the table.
 
 `lint.latest` and `lint.git` configure the migration changeset selected by
 `migrations lint` and `ptah-compat migrate lint`. These selectors are mutually
-exclusive. `lint.git.dir` matches Atlas's working-directory option for Git
-changeset detection and defaults to the current directory when omitted.
+exclusive. On Atlas-format directories they select repeatable migrations by
+their revision token (`R` or `<number>R`), and bare `R` sorts after numeric
+migration files. `lint.git.dir` matches Atlas's working-directory option for
+Git changeset detection and defaults to the current directory when omitted.
 
 The supported lint policy analyzer blocks map the Atlas `error` boolean to
 Ptah lint severity only where the analyzer has a matching Ptah rule family.
