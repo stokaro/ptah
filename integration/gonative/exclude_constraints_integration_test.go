@@ -156,7 +156,7 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			diff := schemadiff.Compare(tt.generated, tt.database)
 
 			// Step 2: Verify that constraints are detected as added
-			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expectedSQL))
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expectedSQL))
 
 			// Step 3: Generate migration AST using PostgreSQL planner
 			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, "postgres")
@@ -184,7 +184,7 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			}
 
 			// Step 6: Verify generated SQL matches expected (order-independent)
-			c.Assert(len(actualSQL), qt.Equals, len(tt.expectedSQL))
+			c.Assert(actualSQL, qt.HasLen, len(tt.expectedSQL))
 			for _, expected := range tt.expectedSQL {
 				c.Assert(actualSQL, qt.Contains, expected)
 			}
@@ -238,9 +238,9 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Step 4: Verify that a warning is generated for EXCLUDE constraints
-	c.Assert(strings.Contains(sql, "WARNING"), qt.IsTrue)
-	c.Assert(strings.Contains(sql, "EXCLUDE constraint"), qt.IsTrue)
-	c.Assert(strings.Contains(sql, "not supported in MySQL"), qt.IsTrue)
+	c.Assert(sql, qt.Contains, "WARNING")
+	c.Assert(sql, qt.Contains, "EXCLUDE constraint")
+	c.Assert(sql, qt.Contains, "not supported in MySQL")
 }
 
 func TestExcludeConstraints_SchemaComparison(t *testing.T) {
@@ -274,7 +274,7 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 	diff := schemadiff.Compare(generated, database)
 
 	// Verify that both constraints are detected as additions
-	c.Assert(len(diff.ConstraintsAdded), qt.Equals, 2)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 2)
 	c.Assert(diff.ConstraintsAdded, qt.Contains, "no_overlapping_bookings")
 	c.Assert(diff.ConstraintsAdded, qt.Contains, "positive_price")
 
@@ -295,12 +295,12 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	diff := schemadiff.Compare(generated, database)
 
 	// Verify no changes detected
-	c.Assert(len(diff.ConstraintsAdded), qt.Equals, 0)
-	c.Assert(len(diff.ConstraintsRemoved), qt.Equals, 0)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	// Generate migration AST - should be empty
 	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(nodes), qt.Equals, 0)
+	c.Assert(nodes, qt.HasLen, 0)
 }

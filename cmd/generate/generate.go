@@ -11,9 +11,9 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/internal/schemaload"
 )
 
 const (

@@ -30,7 +30,18 @@ func TriggersWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	semantics := identifier.ForDialect(dialect)
+	TriggersWithSemantics(generated, database, diff, identifier.ForDialect(dialect))
+}
+
+// TriggersWithSemantics compares trigger identity using the live database's
+// resolved default schema and identifier rules.
+func TriggersWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	semantics = semantics.Normalize("")
 	generatedTriggers := make(map[tableMemberKey]goschema.Trigger)
 	for _, trigger := range generated.Triggers {
 		trigger.Canonicalize()

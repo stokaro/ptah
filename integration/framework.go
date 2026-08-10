@@ -16,6 +16,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/integrationfixture"
+	"go.5x5.cz/ptah/internal/testsummary"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -220,7 +222,13 @@ func (tr *TestRunner) RunAll(ctx context.Context) error {
 	}
 
 	tr.report.EndTime = time.Now()
-	tr.generateSummary()
+	tr.report.Summary = testsummary.Format(
+		tr.report.StartTime,
+		tr.report.EndTime,
+		tr.report.PassedTests,
+		tr.report.FailedTests,
+		tr.report.SkippedTests,
+	)
 
 	return nil
 }
@@ -577,26 +585,6 @@ func (vem *VersionedEntityManager) MigrateToVersion(ctx context.Context, conn *d
 	return vem.ApplyMigrationFromEntities(ctx, conn, description)
 }
 
-// generateSummary creates a summary of the test results
-func (tr *TestRunner) generateSummary() {
-	duration := tr.report.EndTime.Sub(tr.report.StartTime)
-	executedTests := tr.report.PassedTests + tr.report.FailedTests
-	successRate := 0.0
-	if executedTests > 0 {
-		successRate = float64(tr.report.PassedTests) / float64(executedTests) * 100
-	}
-
-	tr.report.Summary = fmt.Sprintf(
-		"Executed %d tests in %v. %d passed, %d failed, %d skipped (%.1f%% success rate)",
-		executedTests,
-		duration.Round(time.Millisecond),
-		tr.report.PassedTests,
-		tr.report.FailedTests,
-		tr.report.SkippedTests,
-		successRate,
-	)
-}
-
 // GetReport returns the current test report
 func (tr *TestRunner) GetReport() *TestReport {
 	return tr.report
@@ -708,7 +696,7 @@ func (dh *DatabaseHelper) IsDryRun() bool {
 // GetMigrationsFS returns the appropriate migrations filesystem for the database dialect
 func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migrationType string) (fs.FS, error) {
 	// Try database-specific migrations first
-	migrationPath := migrationPathForDialect(conn.Info().Dialect, migrationType)
+	migrationPath := integrationfixture.MigrationPath(conn.Info().Dialect, migrationType)
 	// Check if database-specific migrations exist
 	if _, err := fs.Stat(fixtures, migrationPath); err == nil {
 		return fs.Sub(fixtures, migrationPath)
@@ -717,17 +705,4 @@ func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migratio
 	// Fallback to default migrations
 	defaultPath := fmt.Sprintf("migrations/%s", migrationType)
 	return fs.Sub(fixtures, defaultPath)
-}
-
-func migrationPathForDialect(dialect, migrationType string) string {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return fmt.Sprintf("migrations/%s_mysql", migrationType)
-	case platform.ClickHouse:
-		return fmt.Sprintf("migrations/%s_clickhouse", migrationType)
-	case platform.SQLServer:
-		return fmt.Sprintf("migrations/%s_sqlserver", migrationType)
-	default:
-		return fmt.Sprintf("migrations/%s", migrationType)
-	}
 }

@@ -453,7 +453,7 @@ func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
 		}
 	}
 	for _, policy := range schema.RLSPolicies {
-		for _, role := range strings.Split(policy.ToRoles, ",") {
+		for role := range strings.SplitSeq(policy.ToRoles, ",") {
 			named = append(named, strings.TrimSpace(role))
 		}
 	}

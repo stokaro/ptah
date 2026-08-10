@@ -3,16 +3,9 @@ name: testkit
 on:
   push:
     branches: [master]
+  # testkit uses `replace go.5x5.cz/ptah => ..` and exercises root behavior, so
+  # no root path subset can safely determine that a pull request is irrelevant.
   pull_request:
-    paths:
-      - "testkit/**"
-      # The testkit module depends on the root module via `replace => ..`, so a
-      # root dependency change (e.g. a Renovate bump of go.mod/go.sum) can leave
-      # testkit/go.mod out of sync. Re-run testkit on those PRs so the module
-      # inconsistency is caught before it reaches master.
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/testkit.yml"
 
 env:
   GOWORK: off
@@ -37,8 +30,11 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Test testkit container helpers
-        working-directory: testkit
-        run: go test -tags=testkitcontainers ./...
+        run: >-
+          go run ./internal/cmd/testcontour
+          --dir ./testkit
+          --tags integration
+          --timeout 10m
 
   published-pin:
     name: Resolve the published root module without replace

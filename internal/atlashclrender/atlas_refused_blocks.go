@@ -2,6 +2,7 @@ package atlashclrender
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -102,6 +103,24 @@ func KeepAtlasRefusedBlocks() (bool, error) {
 // unnoticed.
 var atlasRefusedBlockTypes = map[string][]string{
 	platform.Postgres: {blockExtension, blockPolicy, blockSequence},
+}
+
+// AtlasRefusedBlockDialects returns the dialects for which the pinned Atlas
+// community binary has measured whole-document block refusals.
+func AtlasRefusedBlockDialects() []string {
+	return slices.Sorted(maps.Keys(atlasRefusedBlockTypes))
+}
+
+// AtlasRefusedBlockTypes returns the measured top-level block refusals for a
+// dialect. The returned slice is independent of internal state.
+func AtlasRefusedBlockTypes(dialect string) []string {
+	return slices.Clone(atlasRefusedBlockTypes[platform.NormalizeDialect(dialect)])
+}
+
+// AtlasRefusesBlock reports whether the pinned Atlas community binary refuses
+// a whole document containing the block type for the dialect.
+func AtlasRefusesBlock(dialect, block string) bool {
+	return atlasRefusesBlock(platform.NormalizeDialect(dialect), block)
 }
 
 // atlasRefusesBlock reports whether the pinned binary refuses a whole file for

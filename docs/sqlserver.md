@@ -172,12 +172,11 @@ The SQL Server support is deliberately conservative:
 
 ## Live Tests
 
-The live SQL Server introspection and identifier-collation tests are opt-in:
-
-```bash
-PTAH_SQLSERVER_TEST_URL='sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable' \
-  go test ./dbschema ./migration/migrator ./migration/generator -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)|TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive'
-```
+SQL Server coverage is part of the repository's single tagged integration
+contour. Follow the service and environment matrix in the
+[integration test guide](../integration/README.md), then run the recursive
+`./integration/...` contour. Do not select the old production package paths or
+the removed `ptah_live_*` tags.
 
 The test creates a temporary schema, tables with `IDENTITY`, a reserved-word
 table name, computed columns, CHECK/UNIQUE/FK constraints, and an index, then
@@ -205,9 +204,11 @@ Filtered-index coverage creates a filtered index from a natural-spelling
 `CREATE INDEX ... WHERE`, and re-introspects to a zero diff against the
 canonical `filter_definition` spelling.
 
-The generator contour replays the prior schema on a separate SQL Server shadow
+The generator coverage replays the prior schema on a separate SQL Server shadow
 database, then applies the generated ASC-to-DESC migration up, down, and up
-again while re-introspecting the index direction after every transition.
+again while re-introspecting the index direction after every transition. The
+repository workflow runs that coverage through the same recursive tagged
+contour and rejects every missing service as a skipped test.
 
 The integration runner also has an opt-in SQL Server contour:
 

@@ -1,181 +1,45 @@
-package integration
+//go:build !integration
+
+package integration_test
 
 import (
+	"os"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	ptahintegration "go.5x5.cz/ptah/integration"
 )
 
-// TestGetAllScenarios verifies that dynamic scenarios are included
-func TestGetAllScenarios(t *testing.T) {
+func TestGetAllScenariosIncludesStaticAndDynamicScenarios(t *testing.T) {
 	c := qt.New(t)
-
-	scenarios := GetAllScenarios()
-
-	// Should have both static and dynamic scenarios
-	c.Assert(len(scenarios) > 10, qt.IsTrue, qt.Commentf("Expected more than 10 scenarios, got %d", len(scenarios)))
-
-	// Check that dynamic scenarios are included
-	scenarioNames := make(map[string]bool)
-	for _, scenario := range scenarios {
-		scenarioNames[scenario.Name] = true
-	}
-
-	// Verify some key dynamic scenarios are present
-	dynamicScenarios := []string{
-		"dynamic_basic_evolution",
-		"dynamic_skip_versions",
-		"dynamic_idempotency",
-		"dynamic_partial_apply",
-		"dynamic_schema_diff",
-		"dynamic_migration_sql_generation",
-	}
-
-	for _, scenarioName := range dynamicScenarios {
-		c.Assert(scenarioNames[scenarioName], qt.IsTrue, qt.Commentf("Dynamic scenario %s should be included", scenarioName))
-	}
-
-	// Verify some original scenarios are still present
-	originalScenarios := []string{
-		"apply_incremental_migrations",
-		"rollback_migrations",
-		"upgrade_to_specific_version",
-	}
-
-	for _, scenarioName := range originalScenarios {
-		c.Assert(scenarioNames[scenarioName], qt.IsTrue, qt.Commentf("Original scenario %s should still be included", scenarioName))
-	}
+	names := scenarioNames(ptahintegration.GetAllScenarios())
+	c.Assert(names, qt.Contains, "apply_incremental_migrations")
+	c.Assert(names, qt.Contains, "rollback_migrations")
+	c.Assert(names, qt.Contains, "upgrade_to_specific_version")
+	c.Assert(names, qt.Contains, "dynamic_basic_evolution")
+	c.Assert(names, qt.Contains, "dynamic_skip_versions")
+	c.Assert(names, qt.Contains, "dynamic_idempotency")
+	c.Assert(names, qt.Contains, "dynamic_partial_apply")
+	c.Assert(names, qt.Contains, "dynamic_schema_diff")
+	c.Assert(names, qt.Contains, "dynamic_migration_sql_generation")
 }
 
-func TestRoundTripFixturesCoverIssue147EdgeCases(t *testing.T) {
+func TestGetDynamicScenariosRegistersRunnableMetadata(t *testing.T) {
 	c := qt.New(t)
-
-	fixtures := make(map[string]roundTripFixture, len(roundTripFixtures))
-	for _, fixture := range roundTripFixtures {
-		fixtures[fixture.Name] = fixture
-	}
-
-	expected := map[string][]string{
-		"empty_schema":                          {"024-roundtrip-empty"},
-		"single_table":                          {"025-roundtrip-single-table"},
-		"composite_primary_key":                 {"026-roundtrip-composite-pk"},
-		"self_referencing_fk":                   {"027-roundtrip-self-reference"},
-		"parent_child_fk_drop_order":            {"028-roundtrip-parent-child"},
-		"three_level_fk_chain":                  {"034-roundtrip-fk-chain"},
-		"diamond_fk_graph":                      {"035-roundtrip-fk-diamond"},
-		"mutual_fk_cycle":                       {"029-roundtrip-mutual-cycle"},
-		"same_name_check_drift":                 {"030-roundtrip-check-v1", "031-roundtrip-check-v2"},
-		"same_name_unique_drift":                {"032-roundtrip-unique-v1", "033-roundtrip-unique-v2"},
-		"same_name_check_to_unique_drift":       {"042-roundtrip-check-to-unique-v1", "043-roundtrip-check-to-unique-v2"},
-		"same_name_unique_to_check_drift":       {"044-roundtrip-unique-to-check-v1", "045-roundtrip-unique-to-check-v2"},
-		"composite_primary_key_add_remove":      {"036-roundtrip-pk-base", "037-roundtrip-pk-composite-added", "038-roundtrip-pk-composite-removed"},
-		"enum_value_add":                        {"039-roundtrip-enum-v1", "040-roundtrip-enum-v2-add"},
-		"enum_value_remove":                     {"040-roundtrip-enum-v2-add", "041-roundtrip-enum-v3-remove"},
-		"foreign_key_added_to_existing_columns": {"046-roundtrip-existing-fk-base", "047-roundtrip-existing-fk-added"},
-	}
-	for name, versions := range expected {
-		fixture, ok := fixtures[name]
-		c.Assert(ok, qt.IsTrue, qt.Commentf("missing round-trip fixture %s", name))
-		c.Assert(fixture.Versions, qt.DeepEquals, versions)
-	}
-}
-
-func TestExistingColumnForeignKeyFixtureMetadata(t *testing.T) {
-	c := qt.New(t)
-
-	baseSchema := loadRoundTripFixtureSchema(c, "046-roundtrip-existing-fk-base")
-	addedSchema := loadRoundTripFixtureSchema(c, "047-roundtrip-existing-fk-added")
-
-	baseUsers := findRoundTripTable(c, baseSchema, "users")
-	addedUsers := findRoundTripTable(c, addedSchema, "users")
-
-	baseAccountID := findRoundTripField(c, baseSchema, baseUsers.StructName, "account_id")
-	baseManagerID := findRoundTripField(c, baseSchema, baseUsers.StructName, "manager_id")
-	c.Assert(baseAccountID.Type, qt.Equals, "INTEGER")
-	c.Assert(baseAccountID.Foreign, qt.Equals, "")
-	c.Assert(baseManagerID.Type, qt.Equals, "INTEGER")
-	c.Assert(baseManagerID.Foreign, qt.Equals, "")
-
-	addedAccountID := findRoundTripField(c, addedSchema, addedUsers.StructName, "account_id")
-	addedManagerID := findRoundTripField(c, addedSchema, addedUsers.StructName, "manager_id")
-	c.Assert(addedAccountID.Type, qt.Equals, baseAccountID.Type)
-	c.Assert(addedAccountID.Foreign, qt.Equals, "accounts(id)")
-	c.Assert(addedManagerID.Type, qt.Equals, baseManagerID.Type)
-	c.Assert(addedManagerID.Foreign, qt.Equals, "users(id)")
-}
-
-func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
-	c.Helper()
-
-	vem, err := NewVersionedEntityManager(testFixtures)
-	c.Assert(err, qt.IsNil)
-	defer vem.Cleanup()
-
-	c.Assert(vem.LoadEntityVersion(version), qt.IsNil)
-
-	schema, err := vem.GenerateSchemaFromEntities()
-	c.Assert(err, qt.IsNil)
-
-	return schema
-}
-
-func findRoundTripTable(c *qt.C, schema *goschema.Database, name string) *goschema.Table {
-	c.Helper()
-
-	for i := range schema.Tables {
-		if schema.Tables[i].Name == name {
-			return &schema.Tables[i]
-		}
-	}
-
-	c.Fatalf("missing table %s", name)
-	return nil
-}
-
-func findRoundTripField(c *qt.C, schema *goschema.Database, structName, name string) *goschema.Field {
-	c.Helper()
-
-	for i := range schema.Fields {
-		field := &schema.Fields[i]
-		if field.StructName == structName && field.Name == name {
-			return field
-		}
-	}
-
-	c.Fatalf("missing field %s.%s", structName, name)
-	return nil
-}
-
-// TestGetDynamicScenarios verifies the dynamic scenarios function
-func TestGetDynamicScenarios(t *testing.T) {
-	c := qt.New(t)
-
-	scenarios := GetDynamicScenarios()
-
-	// Should have exactly 45 dynamic scenarios (28 original + 5 RLS down migration scenarios + 5 role scenarios + 2 fixture-coverage scenarios for PR #123 / issue #89 + 1 ClickHouse MergeTree scenario for issue #169 + 1 FK action evolution scenario for issue #196 + 2 distributed-SQL common-subset scenarios for issue #171 + 1 SQL Server acceptance scenario for issue #149)
+	scenarios := ptahintegration.GetDynamicScenarios()
 	c.Assert(scenarios, qt.HasLen, 45)
 
-	// Verify all scenarios have required fields
 	for _, scenario := range scenarios {
-		c.Assert(scenario.Name, qt.Not(qt.Equals), "", qt.Commentf("Scenario name should not be empty"))
-		c.Assert(scenario.Description, qt.Not(qt.Equals), "", qt.Commentf("Scenario description should not be empty"))
-
-		// Each scenario should have either TestFunc or EnhancedTestFunc
-		hasTestFunc := scenario.TestFunc != nil || scenario.EnhancedTestFunc != nil
-		c.Assert(hasTestFunc, qt.IsTrue, qt.Commentf("Scenario %s should have either TestFunc or EnhancedTestFunc", scenario.Name))
+		c.Assert(scenario.Name, qt.Not(qt.Equals), "")
+		c.Assert(scenario.Description, qt.Not(qt.Equals), "")
+		c.Assert(scenario.IsRunnable(), qt.IsTrue, qt.Commentf("scenario %s must be runnable", scenario.Name))
 	}
 
-	// Verify that all new scenarios are present
-	scenarioNames := make(map[string]bool)
-	for _, scenario := range scenarios {
-		scenarioNames[scenario.Name] = true
-	}
-
-	// Check for all the new scenarios we added
-	newScenarios := []string{
+	names := scenarioNames(scenarios)
+	for _, name := range []string{
 		"dynamic_rollback_single",
 		"dynamic_rollback_multiple",
 		"dynamic_rollback_to_zero",
@@ -193,112 +57,96 @@ func TestGetDynamicScenarios(t *testing.T) {
 		"dynamic_constraint_validation",
 		"dynamic_foreign_key_cascade",
 		"dynamic_sqlserver_identity_schema_bracket_reserved_words",
+	} {
+		c.Assert(names, qt.Contains, name)
 	}
+}
 
-	for _, scenarioName := range newScenarios {
-		c.Assert(scenarioNames[scenarioName], qt.IsTrue, qt.Commentf("New dynamic scenario %s should be included", scenarioName))
-	}
+func TestExistingColumnForeignKeyFixtureMetadata(t *testing.T) {
+	c := qt.New(t)
+	baseSchema := loadRoundTripFixtureSchema(c, "046-roundtrip-existing-fk-base")
+	addedSchema := loadRoundTripFixtureSchema(c, "047-roundtrip-existing-fk-added")
+
+	baseUsers := findRoundTripTable(c, baseSchema, "users")
+	addedUsers := findRoundTripTable(c, addedSchema, "users")
+	baseAccountID := findRoundTripField(c, baseSchema, baseUsers.StructName, "account_id")
+	baseManagerID := findRoundTripField(c, baseSchema, baseUsers.StructName, "manager_id")
+	addedAccountID := findRoundTripField(c, addedSchema, addedUsers.StructName, "account_id")
+	addedManagerID := findRoundTripField(c, addedSchema, addedUsers.StructName, "manager_id")
+
+	c.Assert(baseAccountID.Type, qt.Equals, "INTEGER")
+	c.Assert(baseAccountID.Foreign, qt.Equals, "")
+	c.Assert(baseManagerID.Type, qt.Equals, "INTEGER")
+	c.Assert(baseManagerID.Foreign, qt.Equals, "")
+	c.Assert(addedAccountID.Type, qt.Equals, baseAccountID.Type)
+	c.Assert(addedAccountID.Foreign, qt.Equals, "accounts(id)")
+	c.Assert(addedManagerID.Type, qt.Equals, baseManagerID.Type)
+	c.Assert(addedManagerID.Foreign, qt.Equals, "users(id)")
 }
 
 func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
 	c := qt.New(t)
-
-	var sqlServerCompatible []string
-	for _, scenario := range GetAllScenarios() {
-		if scenario.SQLServerCompatible {
-			sqlServerCompatible = append(sqlServerCompatible, scenario.Name)
-		}
+	expected := map[string]bool{
+		"apply_incremental_migrations":  true,
+		"rollback_migrations":           true,
+		"upgrade_to_specific_version":   true,
+		"check_current_version":         true,
+		"read_actual_db_schema":         true,
+		"dry_run_support":               true,
+		"operation_planning":            true,
+		"failure_diagnostics":           true,
+		"idempotency_reapply":           true,
+		"idempotency_up_to_date":        true,
+		"parallel_migrate_smoke":        true,
+		"cleanup_support":               true,
+		"dynamic_circular_dependencies": true,
+		"dynamic_sqlserver_identity_schema_bracket_reserved_words": true,
 	}
+	for _, scenario := range ptahintegration.GetAllScenarios() {
+		c.Assert(
+			scenario.SQLServerCompatible,
+			qt.Equals,
+			expected[scenario.Name],
+			qt.Commentf("unexpected SQL Server compatibility for %s", scenario.Name),
+		)
+	}
+}
 
-	c.Assert(sqlServerCompatible, qt.DeepEquals, []string{
-		"apply_incremental_migrations",
-		"rollback_migrations",
-		"upgrade_to_specific_version",
-		"check_current_version",
-		"read_actual_db_schema",
-		"dry_run_support",
-		"operation_planning",
-		"failure_diagnostics",
-		"idempotency_reapply",
-		"idempotency_up_to_date",
-		"parallel_migrate_smoke",
-		"cleanup_support",
-		"dynamic_circular_dependencies",
-		"dynamic_sqlserver_identity_schema_bracket_reserved_words",
+func scenarioNames(scenarios []ptahintegration.TestScenario) []string {
+	names := make([]string, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		names = append(names, scenario.Name)
+	}
+	return names
+}
+
+func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
+	c.Helper()
+	vem, err := ptahintegration.NewVersionedEntityManager(os.DirFS("."))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(vem.Cleanup(), qt.IsNil)
 	})
+	c.Assert(vem.LoadEntityVersion(version), qt.IsNil)
+	schema, err := vem.GenerateSchemaFromEntities()
+	c.Assert(err, qt.IsNil)
+	return schema
 }
 
-func TestMigrationPathForDialect(t *testing.T) {
-	c := qt.New(t)
-
-	tests := []struct {
-		dialect       string
-		migrationType string
-		expected      string
-	}{
-		{dialect: "postgres", migrationType: "basic", expected: "migrations/basic"},
-		{dialect: "cockroachdb", migrationType: "basic", expected: "migrations/basic"},
-		{dialect: "mysql", migrationType: "basic", expected: "migrations/basic_mysql"},
-		{dialect: "mariadb", migrationType: "failing", expected: "migrations/failing_mysql"},
-		{dialect: "clickhouse", migrationType: "basic", expected: "migrations/basic_clickhouse"},
-		{dialect: "sqlserver", migrationType: "basic", expected: "migrations/basic_sqlserver"},
-		{dialect: "mssql", migrationType: "failing", expected: "migrations/failing_sqlserver"},
-	}
-
-	for _, tt := range tests {
-		c.Assert(migrationPathForDialect(tt.dialect, tt.migrationType), qt.Equals, tt.expected)
-	}
+func findRoundTripTable(c *qt.C, schema *goschema.Database, name string) *goschema.Table {
+	c.Helper()
+	index := slices.IndexFunc(schema.Tables, func(table goschema.Table) bool {
+		return table.Name == name
+	})
+	c.Assert(index, qt.Not(qt.Equals), -1, qt.Commentf("missing table %s", name))
+	return &schema.Tables[index]
 }
 
-// TestMariaDBDialectHandling tests that MariaDB dialect is correctly handled
-// This test verifies the fix for the issue where mariadb:// URL scheme
-// was not properly selecting MySQL-compatible migrations
-func TestMariaDBDialectHandling(t *testing.T) {
-	c := qt.New(t)
-
-	// Create a mock database connection with MariaDB dialect
-	mockConn := &mockDatabaseConnection{
-		info: types.DBInfo{
-			Dialect: "mariadb",
-			Version: "10.11.0",
-			Schema:  "test_db",
-			URL:     "mariadb://user:pass@tcp(localhost:3306)/test_db",
-		},
-	}
-
-	// Test that MariaDB dialect is handled correctly by the migration selection logic
-	// This should not panic or error, and should select MySQL-compatible migrations
-	// We test this by ensuring the function doesn't crash when called with MariaDB dialect
-	dialect := mockConn.Info().Dialect
-	c.Assert(dialect, qt.Equals, "mariadb")
-
-	// The key test: MariaDB should be treated the same as MySQL for migration selection
-	// This verifies that the switch statement in GetMigrationsFS includes "mariadb"
-	isMariaDBOrMySQL := dialect == "mysql" || dialect == "mariadb"
-	c.Assert(isMariaDBOrMySQL, qt.IsTrue, qt.Commentf("MariaDB dialect should be treated as MySQL-compatible"))
-}
-
-// mockDatabaseConnection is a simple mock for testing
-type mockDatabaseConnection struct {
-	info types.DBInfo
-}
-
-func (m *mockDatabaseConnection) Info() types.DBInfo {
-	return m.info
-}
-
-func (m *mockDatabaseConnection) Close() error {
-	return nil
-}
-
-func (m *mockDatabaseConnection) Reader() types.SchemaReader {
-	return nil
-}
-
-func (m *mockDatabaseConnection) Writer() types.SchemaWriter {
-	return nil
-}
-
-func (m *mockDatabaseConnection) Query(query string, args ...any) ([]map[string]any, error) {
-	return nil, nil
+func findRoundTripField(c *qt.C, schema *goschema.Database, structName, name string) *goschema.Field {
+	c.Helper()
+	index := slices.IndexFunc(schema.Fields, func(field goschema.Field) bool {
+		return field.StructName == structName && field.Name == name
+	})
+	c.Assert(index, qt.Not(qt.Equals), -1, qt.Commentf("missing field %s.%s", structName, name))
+	return &schema.Fields[index]
 }

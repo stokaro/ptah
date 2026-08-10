@@ -57,12 +57,12 @@ func TestPgxDriverValidation(t *testing.T) {
 		err = conn.QueryRow("SELECT version()").Scan(&version)
 		c.Assert(err, qt.IsNil)
 		c.Assert(version, qt.Not(qt.Equals), "")
-		c.Assert(strings.Contains(version, "PostgreSQL"), qt.IsTrue)
+		c.Assert(version, qt.Contains, "PostgreSQL")
 
 		// Verify connection info shows correct dialect
 		info := conn.Info()
 		c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
-		c.Assert(info.Capabilities, qt.Not(qt.IsNil))
+		c.Assert(info.Capabilities, qt.IsNotNil)
 		c.Assert(info.Capabilities.Validate(), qt.IsNil)
 		c.Assert(info.Capabilities.Has(capability.EnumCustomType), qt.IsTrue)
 	})
@@ -81,11 +81,11 @@ func TestPgxDriverValidation(t *testing.T) {
 		err = db.QueryRow("SELECT version()").Scan(&version)
 		c.Assert(err, qt.IsNil)
 		c.Assert(version, qt.Not(qt.Equals), "")
-		c.Assert(strings.Contains(version, "PostgreSQL"), qt.IsTrue)
+		c.Assert(version, qt.Contains, "PostgreSQL")
 
 		// Test that we can handle PostgreSQL-specific types correctly
 		// This tests that pgx's type handling is working
-		var jsonData interface{}
+		var jsonData any
 		err = db.QueryRow("SELECT '{\"test\": \"value\"}'::jsonb").Scan(&jsonData)
 		c.Assert(err, qt.IsNil)
 		c.Assert(jsonData, qt.IsNotNil)
@@ -133,7 +133,7 @@ func TestPgxDriverValidation(t *testing.T) {
 				// Verify connection info shows correct dialect
 				info := conn.Info()
 				c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
-				c.Assert(info.Capabilities, qt.Not(qt.IsNil))
+				c.Assert(info.Capabilities, qt.IsNotNil)
 				c.Assert(info.Capabilities.Validate(), qt.IsNil)
 				c.Assert(info.Capabilities.Has(capability.EnumCustomType), qt.IsTrue)
 			})
@@ -163,7 +163,7 @@ func TestDriverMigrationCompleteness(t *testing.T) {
 			// This might happen if pgx registers itself under multiple names
 		} else {
 			// This is the expected behavior - lib/pq should not be available
-			c.Assert(strings.Contains(err.Error(), "unknown driver"), qt.IsTrue,
+			c.Assert(err.Error(), qt.Contains, "unknown driver",
 				qt.Commentf("Expected 'unknown driver' error, got: %v", err))
 		}
 	})

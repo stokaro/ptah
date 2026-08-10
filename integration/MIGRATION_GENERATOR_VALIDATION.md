@@ -65,23 +65,22 @@ export MYSQL_TEST_URL="mysql://user:password@localhost:3306/test_db"
 ### Run Specific Test
 
 ```bash
-# Run only the migration generator validation test
-go run ./cmd/integration-test run migration_generator_validation
+# Run only the migration generator validation scenario
+go run ./cmd/integration-test --scenarios=migration_generator_validation --databases=postgres
 
 # Run with verbose output
-go run ./cmd/integration-test run migration_generator_validation --verbose
+go run ./cmd/integration-test --scenarios=migration_generator_validation --databases=postgres --verbose
 
 # Run with specific database
-POSTGRES_TEST_URL="postgres://..." go run ./cmd/integration-test run migration_generator_validation
+POSTGRES_URL="postgres://..." go run ./cmd/integration-test --scenarios=migration_generator_validation --databases=postgres
 ```
 
-### Run Unit Tests
+### Run The Tagged Integration Contour
 
 ```bash
-# Run the unit tests for the validation functions
-go test ./integration -run TestMigrationGeneratorValidation -v
-go test ./integration -run TestValidateSchemaConsistency -v  
-go test ./integration -run TestValidateEmptySchema -v
+go run ./internal/cmd/testcontour \
+  --tags integration \
+  --timeout 45m
 ```
 
 ## Test Architecture
@@ -139,7 +138,7 @@ The test uses the following components:
 Enable verbose logging to see detailed migration SQL:
 
 ```bash
-go run ./cmd/integration-test run migration_generator_validation --verbose
+go run ./cmd/integration-test --scenarios=migration_generator_validation --databases=postgres --verbose
 ```
 
 This will show:

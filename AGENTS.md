@@ -682,17 +682,39 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
 
 - Unit tests are ordinary `*_test.go` files that need no server.
   `go test ./... -count=1` runs the whole set.
-- Integration tests live in `integration/gonative/` behind the `integration`
-  build tag, which is why `go test ./...` does not compile them. Check the
-  constraint line when adding a file there: a misspelled `//go:build` is not a
-  build constraint at all, and the file lands in the ordinary unit run without
-  saying so.
-- Live-database tests elsewhere in the tree skip when their DSN environment
-  variable is unset. **A skip reads as a pass.** A test that needs a server is
-  not covered until it is named in a workflow with the environment that lets it
-  connect, and guarded so a rename cannot pass silently.
-  [`.github/workflows/go-integration-tests.yml`](.github/workflows/go-integration-tests.yml)
-  encodes that discipline with `-list ... | grep -q` guards; keep it.
+- Every integration test lives in its module's dedicated `integration/`
+  package or one of its subpackages. The root module uses `integration/`; the
+  separate testkit module uses `testkit/integration/`. Do not place a
+  live-database or external-process test beside production code. A test that
+  does not cross a process, filesystem, network, or database boundary is a unit
+  or pipeline test and belongs beside the production package instead.
+- Every integration test file uses `//go:build integration`. Build constraints
+  apply to whole files, so split mixed unit/integration files. Test-only helpers
+  used by integration tests carry the same tag. Unit tests for the integration
+  harness use `//go:build !integration` when they share a package directory, so
+  the two contours stay disjoint.
+- An integration test is never white-box. Every test file under
+  `integration/**` and `testkit/integration/**`, including harness unit tests
+  selected by `!integration`, uses `package <name>_test` and exercises only
+  exported APIs. `*_internal_test.go` and same-package tests are forbidden
+  anywhere in those trees. If a behavior can only be reached through an
+  unexported symbol, move the deterministic logic behind a package boundary and
+  cover it with a black-box unit test outside the integration trees, or
+  introduce the real public/application boundary the integration test should
+  exercise. Never use white-box access as an integration shortcut.
+- A missing database environment variable causes a test skip, and a skip reads
+  as a pass to ordinary `go test`. CI therefore runs the complete recursive
+  package contour through
+  `go run ./internal/cmd/testcontour --tags integration`.
+  The canonical root workflow also passes `--race`. The runner serializes
+  packages, derives expected top-level tests from Go source, and fails on an
+  empty contour, a missing or incomplete result, or any skipped test or
+  subtest. It also scans the repository and rejects an
+  integration-tagged test outside a dedicated integration tree. Do not add
+  domain-specific build tags, package loops, package selectors, test names, or
+  regular expressions to select integration tests. The CLI intentionally has
+  no package-selection flag. The separate testkit module uses the same runner
+  with `--dir ./testkit`.
 - The Docker suite in `cmd/integration-test` covers apply, rollback,
   idempotency, parallel-execution smoke, partial-failure recovery, and schema
   diff, and writes reports in stdout, text, JSON, or HTML form into the
@@ -1007,7 +1029,9 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 ### White-Box Testing As An Exception
 
 White-box testing, meaning same-package tests with access to unexported symbols,
-is permitted only when:
+is permitted only for unit tests. An integration test is never white-box.
+
+For unit tests, white-box testing is permitted only when:
 
 1. Testing unexported functions critical for correctness.
 2. Testing internal state that cannot be observed through exported API.

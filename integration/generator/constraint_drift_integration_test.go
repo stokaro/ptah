@@ -1,0 +1,188 @@
+//go:build integration
+
+package generator_test
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/schemadiff"
+)
+
+func TestConstraintDriftGenerateRoundTrip_Integration(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	conn := requireGeneratorDatabaseConnection(t, "POSTGRES_URL")
+
+	cleanupConstraintDriftTable(conn)
+	t.Cleanup(func() { cleanupConstraintDriftTable(conn) })
+
+	_, err := conn.ExecContext(ctx, `
+CREATE TABLE ptah_constraint_drift (
+  id integer PRIMARY KEY,
+  price integer NOT NULL,
+  sku text NOT NULL,
+  region text NOT NULL,
+  category text NOT NULL,
+  CONSTRAINT ptah_constraint_price_check CHECK (price > 0),
+  CONSTRAINT ptah_constraint_unique UNIQUE (sku, region)
+)`)
+	c.Assert(err, qt.IsNil)
+
+	root := c.TempDir()
+	entitiesDir := filepath.Join(root, "entities")
+	migrationsDir := filepath.Join(root, "migrations")
+	c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(`package entities
+
+//ptah:schema:table name="ptah_constraint_drift"
+//ptah:schema:constraint name="ptah_constraint_price_check" type="CHECK" check="price >= 0"
+//ptah:schema:constraint name="ptah_constraint_unique" type="UNIQUE" columns="sku,region,category"
+type Product struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+
+	//ptah:schema:field name="price" type="INTEGER" not_null="true"
+	Price int
+
+	//ptah:schema:field name="sku" type="TEXT" not_null="true"
+	SKU string
+
+	//ptah:schema:field name="region" type="TEXT" not_null="true"
+	Region string
+
+	//ptah:schema:field name="category" type="TEXT" not_null="true"
+	Category string
+}
+`), 0600), qt.IsNil)
+
+	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir,
+		DBConn:        conn,
+		MigrationName: "constraint_drift",
+		OutputDir:     migrationsDir,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+
+	upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
+	c.Assert(err, qt.IsNil)
+	upSQL := string(upSQLBytes)
+	c.Assert(upSQL, qt.Contains, "DROP CONSTRAINT")
+	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote("postgres", "ptah_constraint_price_check")), qt.Equals, 1)
+	c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote("postgres", "ptah_constraint_unique")), qt.Equals, 1)
+
+	execScript(c, conn, upSQL, "UP")
+
+	desired, err := goschema.ParseFS(os.DirFS(root), "entities")
+	c.Assert(err, qt.IsNil)
+	dbAfter, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(desired, dbAfter, "postgres")
+	c.Assert(diff.HasChanges(), qt.IsFalse,
+		qt.Commentf("post-migration diff must be clean; added=%v removed=%v modified=%v",
+			diff.ConstraintsAdded, diff.ConstraintsRemoved, diff.TablesModified))
+}
+
+func TestUniqueConstraintDriftGenerateRoundTrip_Integration(t *testing.T) {
+	cases := []struct {
+		dialect string
+		envKey  string
+	}{
+		{"postgres", "POSTGRES_URL"},
+		{"mysql", "MYSQL_URL"},
+		{"mariadb", "MARIADB_URL"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := context.Background()
+			conn := requireGeneratorDatabaseConnection(t, tc.envKey)
+
+			dialect := conn.Info().Dialect
+			cleanupUniqueConstraintDriftTable(conn, dialect)
+			t.Cleanup(func() { cleanupUniqueConstraintDriftTable(conn, dialect) })
+
+			_, err := conn.ExecContext(ctx, `
+CREATE TABLE ptah_unique_constraint_drift (
+  id integer PRIMARY KEY,
+  sku varchar(255) NOT NULL,
+  region varchar(255) NOT NULL,
+  category varchar(255) NOT NULL,
+  CONSTRAINT ptah_unique_constraint_unique UNIQUE (sku, region)
+)`)
+			c.Assert(err, qt.IsNil)
+
+			root := c.TempDir()
+			entitiesDir := filepath.Join(root, "entities")
+			migrationsDir := filepath.Join(root, "migrations")
+			c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
+			c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(`package entities
+
+//ptah:schema:table name="ptah_unique_constraint_drift"
+//ptah:schema:constraint name="ptah_unique_constraint_unique" type="UNIQUE" columns="sku,region,category"
+type Product struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+
+	//ptah:schema:field name="sku" type="VARCHAR(255)" not_null="true"
+	SKU string
+
+	//ptah:schema:field name="region" type="VARCHAR(255)" not_null="true"
+	Region string
+
+	//ptah:schema:field name="category" type="VARCHAR(255)" not_null="true"
+	Category string
+}
+`), 0600), qt.IsNil)
+
+			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
+				GoEntitiesDir: entitiesDir,
+				DBConn:        conn,
+				MigrationName: "unique_constraint_drift",
+				OutputDir:     migrationsDir,
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(files, qt.IsNotNil)
+			c.Assert(files.Files, qt.HasLen, 1)
+
+			upSQLBytes, err := os.ReadFile(files.Files[0].UpFile)
+			c.Assert(err, qt.IsNil)
+			upSQL := string(upSQLBytes)
+			c.Assert(strings.Count(upSQL, "ADD CONSTRAINT "+sqlident.Quote(dialect, "ptah_unique_constraint_unique")), qt.Equals, 1,
+				qt.Commentf("[%s] generated UP must re-add the changed UNIQUE constraint:\n%s", dialect, upSQL))
+
+			execScript(c, conn, upSQL, "UP")
+
+			desired, err := goschema.ParseFS(os.DirFS(root), "entities")
+			c.Assert(err, qt.IsNil)
+			dbAfter, err := conn.Reader().ReadSchema()
+			c.Assert(err, qt.IsNil)
+			diff := schemadiff.CompareWithDialect(desired, dbAfter, dialect)
+			c.Assert(diff.HasChanges(), qt.IsFalse,
+				qt.Commentf("[%s] post-migration diff must be clean; added=%v removed=%v modified=%v",
+					dialect, diff.ConstraintsAdded, diff.ConstraintsRemoved, diff.TablesModified))
+		})
+	}
+}
+
+func cleanupConstraintDriftTable(conn *dbschema.DatabaseConnection) {
+	_, _ = conn.Exec("DROP TABLE IF EXISTS ptah_constraint_drift CASCADE")
+}
+
+func cleanupUniqueConstraintDriftTable(conn *dbschema.DatabaseConnection, dialect string) {
+	_, _ = conn.Exec(dropTableSQL(dialect, "ptah_unique_constraint_drift"))
+}

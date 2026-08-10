@@ -1,4 +1,4 @@
-//go:buildx integration
+//go:build integration
 
 package gonative_test
 

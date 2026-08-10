@@ -201,20 +201,20 @@ func CompareReportingUndecidedAdditions(
 	compare.Extensions(generated, database, diff, opts, cov)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
-	compare.Functions(generated, database, diff)
+	compare.FunctionsWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
-	compare.Sequences(generated, database, diff, cov)
+	compare.SequencesWithSemantics(generated, database, diff, cov, identifierSemantics)
 
 	// Compare PostgreSQL user-defined types (domains, composites, ranges)
-	compare.Domains(generated, database, diff, cov)
-	compare.CompositeTypes(generated, database, diff, cov)
-	compare.Ranges(generated, database, diff, cov)
+	compare.DomainsWithSemantics(generated, database, diff, cov, identifierSemantics)
+	compare.CompositeTypesWithSemantics(generated, database, diff, cov, identifierSemantics)
+	compare.RangesWithSemantics(generated, database, diff, cov, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
-	compare.ViewsWithDialect(generated, database, diff, opts.Dialect)
-	compare.MaterializedViews(generated, database, diff)
-	compare.TriggersWithDialect(generated, database, diff, opts.Dialect)
+	compare.ViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
+	compare.MaterializedViewsWithSemantics(generated, database, diff, identifierSemantics)
+	compare.TriggersWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics, cov)
