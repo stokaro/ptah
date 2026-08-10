@@ -41,7 +41,7 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
 	status, err := mig.GetMigrationStatus(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(status.CurrentVersion, qt.Equals, 1)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 
 	cmd := migratedown.NewMigrateDownCommand()
 	cmd.SetArgs([]string{
@@ -54,7 +54,7 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 
 	finalStatus, err := mig.GetMigrationStatus(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(finalStatus.CurrentVersion, qt.Equals, 0)
+	c.Assert(finalStatus.CurrentVersion, qt.Equals, int64(0))
 }
 
 func requiredMigrateDownDatabaseURL(t *testing.T) string {

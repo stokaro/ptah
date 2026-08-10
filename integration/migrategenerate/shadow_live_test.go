@@ -5,15 +5,19 @@ package migrate_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -22,6 +26,8 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 	ctx := t.Context()
 	dbURL, conn := requireMigrateGeneratePostgresTestConnection(t, ctx)
 	defer dbschema.CloseAndWarn(conn)
+	shadowURL, shadowDatabase := createMigrateGenerateShadowDatabase(c, ctx, conn, dbURL)
+	defer dropMigrateGenerateShadowDatabase(c, conn, shadowDatabase)
 	releaseLock := acquireMigrateGenerateTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
@@ -44,7 +50,7 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
 			"--name", "add_email",
-			"--shadow-db", dbURL,
+			"--shadow-db", shadowURL,
 		})
 		err := cmd.Execute()
 
@@ -76,7 +82,7 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
 			"--name", "add_email",
-			"--shadow-db", dbURL,
+			"--shadow-db", shadowURL,
 		})
 		c.Assert(cmd.Execute(), qt.IsNil)
 		c.Assert(out.String(), qt.Contains, "Generated migration files")
@@ -84,6 +90,41 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 4)
 	})
+}
+
+func createMigrateGenerateShadowDatabase(
+	c *qt.C,
+	ctx context.Context,
+	admin *dbschema.DatabaseConnection,
+	baseURL string,
+) (shadowURL, database string) {
+	c.Helper()
+	database = fmt.Sprintf("ptah_migrate_generate_shadow_%d", time.Now().UnixNano())
+	_, err := admin.ExecContext(ctx, "CREATE DATABASE "+sqlident.Quote(platform.Postgres, database))
+	c.Assert(err, qt.IsNil)
+	parsed, err := url.Parse(baseURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Path = "/" + database
+	parsed.RawPath = ""
+	return parsed.String(), database
+}
+
+func dropMigrateGenerateShadowDatabase(
+	c *qt.C,
+	admin *dbschema.DatabaseConnection,
+	database string,
+) {
+	c.Helper()
+	_, _ = admin.ExecContext(
+		context.Background(),
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+		database,
+	)
+	_, err := admin.ExecContext(
+		context.Background(),
+		"DROP DATABASE IF EXISTS "+sqlident.Quote(platform.Postgres, database),
+	)
+	c.Assert(err, qt.IsNil)
 }
 
 func requireMigrateGeneratePostgresTestConnection(

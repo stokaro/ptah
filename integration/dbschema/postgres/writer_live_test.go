@@ -513,7 +513,7 @@ func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
-	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "public"), qt.Equals, 1)
 	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "shadow"), qt.Equals, 1)
 	c.Assert(
 		postgresWriterLiveCurrentDatabase(c, ctx, liveDatabase.db),

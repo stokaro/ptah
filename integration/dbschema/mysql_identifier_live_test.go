@@ -3,14 +3,13 @@
 package dbschema_test
 
 import (
-	"net/url"
 	"os"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
 // TestMySQLLiveConnection_DefaultSchemaIsTheConnectedDatabase pins that a
@@ -71,16 +70,12 @@ func requireLiveMySQLURL(c *qt.C, environmentKey string) string {
 	return databaseURL
 }
 
-// databaseNameFromURL reads the database the URL selects. A MySQL URL without a
-// path leaves the connection to resolve it with SELECT DATABASE(), which this
-// test cannot predict, so it is skipped rather than guessed at.
+// databaseNameFromURL reads the database through the same semantic URL API used
+// by the product. In particular, it supports the driver's tcp(host:port) form,
+// which net/url rejects before it reaches the database path.
 func databaseNameFromURL(c *qt.C, rawURL string) string {
 	c.Helper()
-	parsed, err := url.Parse(rawURL)
-	c.Assert(err, qt.IsNil)
-	name := strings.TrimPrefix(parsed.Path, "/")
-	if name == "" {
-		c.Skip("the configured URL names no database")
-	}
+	name, limited := schemaselection.URLScope(rawURL)
+	c.Assert(limited, qt.IsTrue, qt.Commentf("the configured URL must name a database"))
 	return name
 }

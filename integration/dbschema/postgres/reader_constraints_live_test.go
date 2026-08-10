@@ -36,10 +36,25 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 	tests := []struct {
 		name           string
 		environmentKey string
+		want           []observedConstraint
 	}{
-		{name: "PostgreSQL", environmentKey: "POSTGRES_URL"},
-		{name: "CockroachDB", environmentKey: "COCKROACHDB_URL"},
-		{name: "YugabyteDB", environmentKey: "YUGABYTEDB_URL"},
+		{
+			name:           "PostgreSQL",
+			environmentKey: "POSTGRES_URL",
+			want:           expectedConstraints([]string{"amount"}),
+		},
+		{
+			name:           "CockroachDB",
+			environmentKey: "COCKROACHDB_URL",
+			// CockroachDB exposes the CHECK expression but not its column key
+			// vector through the PostgreSQL-compatible constraint catalog.
+			want: expectedConstraints(nil),
+		},
+		{
+			name:           "YugabyteDB",
+			environmentKey: "YUGABYTEDB_URL",
+			want:           expectedConstraints([]string{"amount"}),
+		},
 	}
 
 	for _, test := range tests {
@@ -49,7 +64,7 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.environmentKey)
 			gotSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 			c.Assert(err, qt.IsNil)
-			c.Assert(observeConstraints(gotSchema.Constraints), qt.DeepEquals, expectedConstraints())
+			c.Assert(observeConstraints(gotSchema.Constraints), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -146,7 +161,7 @@ func observeConstraints(constraints []dbschematypes.DBConstraint) []observedCons
 	return observed
 }
 
-func expectedConstraints() []observedConstraint {
+func expectedConstraints(checkColumns []string) []observedConstraint {
 	constraints := make([]observedConstraint, 0, 12)
 	for _, table := range []struct {
 		name       string
@@ -161,7 +176,7 @@ func expectedConstraints() []observedConstraint {
 				Table:          table.name,
 				Name:           "ck_entity_amount",
 				Type:           "CHECK",
-				Columns:        []string{"amount"},
+				Columns:        slices.Clone(checkColumns),
 				HasCheckClause: true,
 			},
 			observedConstraint{
