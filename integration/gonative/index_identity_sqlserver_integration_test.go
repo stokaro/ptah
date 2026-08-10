@@ -50,7 +50,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 
 	ordersTarget := sqlServerIndexIdentityOrdersTarget()
-	live, diff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
+	_, diff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: sqlServerIndexIdentityName, TableName: sqlServerIndexIdentitySchema + ".users"},

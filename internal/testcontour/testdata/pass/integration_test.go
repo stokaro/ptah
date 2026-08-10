@@ -1,9 +1,7 @@
-//go:build integration
+//go:build testcontour_fixture
 
 package pass_test
 
 import "testing"
 
-func TestIntegrationOnlyMustNotRun(t *testing.T) {
-	t.Fatal("integration-only test ran inside a narrower live contour")
-}
+func TestIntegrationPackagePass(_ *testing.T) {}

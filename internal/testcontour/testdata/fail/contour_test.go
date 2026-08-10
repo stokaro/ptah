@@ -1,4 +1,4 @@
-//go:build ptah_live_fail
+//go:build testcontour_fixture
 
 package fail_test
 

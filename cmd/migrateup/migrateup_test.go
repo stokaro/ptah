@@ -7,11 +7,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
@@ -244,76 +241,6 @@ migration:
 	c.Assert(sqliteMigrateUpTableExists(c, dbURL, tableName), qt.IsFalse)
 }
 
-func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
-	c := qt.New(t)
-	ctx := context.Background()
-	skipWindowsForFakeShell(t)
-	dbURL := requiredPostgresTestURL(t)
-	tableName := fmt.Sprintf("ptah_preflight_pg_dump_%d", time.Now().UnixNano())
-
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	cleanupPostgresObjects(t, conn, tableName)
-	defer cleanupPostgresObjects(t, conn, tableName)
-
-	dir := t.TempDir()
-	writeMigrateUpFile(c, dir, "0000000001_create_dump_guarded.up.sql", fmt.Sprintf("CREATE TABLE %s (id BIGINT);\n", tableName))
-	writeMigrateUpFile(c, dir, "0000000001_create_dump_guarded.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
-
-	argsLog := filepath.Join(t.TempDir(), "pg_dump_args.log")
-	fakeBin := filepath.Join(t.TempDir(), "pg_dump")
-	fakeScript := fmt.Appendf(nil, `#!/bin/sh
-out=""
-: > %[1]q
-while [ "$#" -gt 0 ]; do
-  printf '%%s\n' "$1" >> %[1]q
-  if [ "$1" = "--file" ]; then
-    shift
-    out="$1"
-    printf '%%s\n' "$1" >> %[1]q
-  fi
-  shift
-done
-if [ -z "$out" ]; then
-  echo "missing --file" >&2
-  exit 64
-fi
-printf 'fake custom dump\n' > "$out"
-`, argsLog)
-	c.Assert(os.WriteFile(fakeBin, fakeScript, 0o600), qt.IsNil)
-	c.Assert(os.Chmod(fakeBin, 0o700), qt.IsNil)
-	t.Setenv("PATH", filepath.Dir(fakeBin)+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	dumpDir := t.TempDir()
-	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
-	cmd.SetArgs([]string{
-		"--db-url", dbURL,
-		"--migrations-dir", dir,
-		"--pg-dump-to", dumpDir,
-	})
-
-	err = cmd.Execute()
-
-	c.Assert(err, qt.IsNil)
-	matches, err := filepath.Glob(filepath.Join(dumpDir, "ptah_pre_v0_to_v1_*.dump"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(matches, qt.HasLen, 1)
-	dumpData, err := os.ReadFile(matches[0])
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(dumpData), qt.Equals, "fake custom dump\n")
-
-	argsData, err := os.ReadFile(argsLog)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(argsData), qt.Contains, "--format=custom\n")
-	c.Assert(string(argsData), qt.Contains, "--file\n"+matches[0]+"\n")
-	for _, password := range databaseURLPasswordsForTest(dbURL) {
-		c.Assert(string(argsData), qt.Not(qt.Contains), password)
-	}
-}
-
 func TestMigrateUpCommandDryRunSkipsPreflightSideEffects(t *testing.T) {
 	c := qt.New(t)
 
@@ -347,33 +274,6 @@ func TestDatabaseURLPasswordsForTest(t *testing.T) {
 	c.Assert(databaseURLPasswordsForTest("postgres://user:@example.test/db"), qt.IsNil)
 	c.Assert(databaseURLPasswordsForTest("postgres://user@example.test/db"), qt.IsNil)
 	c.Assert(databaseURLPasswordsForTest(":"), qt.IsNil)
-}
-
-func postgresTestURL() string {
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func requiredPostgresTestURL(t *testing.T) string {
-	t.Helper()
-
-	dbURL := postgresTestURL()
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
-	return dbURL
-}
-
-func skipWindowsForFakeShell(t *testing.T) {
-	t.Helper()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("fake pg_dump shell script requires a POSIX shell")
-	}
 }
 
 func writeMigrateUpFile(c *qt.C, dir, name, content string) {
@@ -444,19 +344,4 @@ func setMigrateUpFlagForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag },
 	c.Assert(flag, qt.IsNotNil, qt.Commentf("flag %s", name))
 	c.Assert(flag.Value.Set(value), qt.IsNil)
 	flag.Changed = false
-}
-
-func cleanupPostgresObjects(t *testing.T, conn *dbschema.DatabaseConnection, names ...string) {
-	t.Helper()
-	ctx := context.Background()
-	for _, name := range names {
-		if !safePostgresIdentifier(name) {
-			t.Fatalf("unsafe test identifier %q", name)
-		}
-		_, _ = conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", name))
-	}
-}
-
-func safePostgresIdentifier(name string) bool {
-	return name != "" && strings.Trim(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == ""
 }

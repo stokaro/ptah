@@ -1,3 +1,5 @@
+//go:build integration
+
 package gonative_test
 
 import "regexp"

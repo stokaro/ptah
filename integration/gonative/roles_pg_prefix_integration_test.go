@@ -75,14 +75,14 @@ func TestPostgreSQLReaderDescribesRolesNamedPgSomething(t *testing.T) {
 	for _, role := range schema.Roles {
 		roleNames = append(roleNames, role.Name)
 	}
-	c.Assert(slices.Contains(roleNames, pgPrefixRole), qt.IsTrue,
+	c.Assert(roleNames, qt.Contains, pgPrefixRole,
 		qt.Commentf("reader described %d roles and none of them is %q", len(roleNames), pgPrefixRole))
 
 	grantRefs := make([]string, 0, len(schema.Grants))
 	for _, grant := range schema.Grants {
 		grantRefs = append(grantRefs, grant.Role+" -> "+grant.ObjectName)
 	}
-	c.Assert(slices.Contains(grantRefs, pgPrefixRole+" -> "+pgPrefixTable), qt.IsTrue,
+	c.Assert(grantRefs, qt.Contains, pgPrefixRole+" -> "+pgPrefixTable,
 		qt.Commentf("reader described %d grants and none is %q on %q: %v",
 			len(grantRefs), pgPrefixRole, pgPrefixTable, grantRefs))
 

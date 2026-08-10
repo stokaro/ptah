@@ -1,4 +1,4 @@
-//go:build integration || ptah_live_realm_cleanup
+//go:build integration
 
 package integration_test
 

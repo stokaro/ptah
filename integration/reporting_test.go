@@ -1,36 +1,47 @@
-package integration
+//go:build !integration
+
+package integration_test
 
 import (
-	"bytes"
+	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/dbschema"
+	ptahintegration "go.5x5.cz/ptah/integration"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
-func TestGenerateSummaryExcludesSkippedFromSuccessRate(t *testing.T) {
+func TestTestRunnerSummaryUsesExecutedTestsForSuccessRate(t *testing.T) {
 	c := qt.New(t)
-
-	runner := NewTestRunner(nil)
-	runner.report.StartTime = time.Now()
-	runner.report.EndTime = runner.report.StartTime.Add(time.Second)
-	runner.report.TotalTests = 3
-	runner.report.PassedTests = 1
-	runner.report.FailedTests = 0
-	runner.report.SkippedTests = 2
-
-	runner.generateSummary()
-
-	c.Assert(runner.report.Summary, qt.Contains, "Executed 1 tests")
-	c.Assert(runner.report.Summary, qt.Contains, "1 passed, 0 failed, 2 skipped")
-	c.Assert(runner.report.Summary, qt.Contains, "100.0% success rate")
+	runner := ptahintegration.NewTestRunner(nil)
+	runner.AddDatabase("sqlite", atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "report.db")))
+	runner.AddScenario(ptahintegration.TestScenario{
+		Name:        "passes",
+		Description: "A successful public runner scenario",
+		TestFunc: func(context.Context, *dbschema.DatabaseConnection, fs.FS) error {
+			return nil
+		},
+	})
+	c.Assert(runner.RunAll(t.Context()), qt.IsNil)
+	report := runner.GetReport()
+	c.Assert(report.TotalTests, qt.Equals, 1)
+	c.Assert(report.PassedTests, qt.Equals, 1)
+	c.Assert(report.FailedTests, qt.Equals, 0)
+	c.Assert(report.SkippedTests, qt.Equals, 0)
+	c.Assert(report.Summary, qt.Contains, "Executed 1 tests")
+	c.Assert(report.Summary, qt.Contains, "100.0% success rate")
 }
 
-func TestTextReportShowsSkippedAndExecutedSuccessRate(t *testing.T) {
+func TestReporterTextOutputShowsSkippedAndExecutedSuccessRate(t *testing.T) {
 	c := qt.New(t)
-
 	now := time.Now()
-	report := &TestReport{
+	report := &ptahintegration.TestReport{
 		StartTime:    now,
 		EndTime:      now.Add(time.Second),
 		TotalTests:   3,
@@ -38,17 +49,19 @@ func TestTextReportShowsSkippedAndExecutedSuccessRate(t *testing.T) {
 		FailedTests:  0,
 		SkippedTests: 2,
 		Summary:      "Executed 1 tests in 1s. 1 passed, 0 failed, 2 skipped (100.0% success rate)",
-		Results: []TestResult{
+		Results: []ptahintegration.TestResult{
 			{Name: "runs_postgres", Database: "postgres", Success: true},
 			{Name: "skips_clickhouse", Database: "clickhouse", Skipped: true, SkipReason: "not compatible"},
 		},
 	}
-
-	var buf bytes.Buffer
-	err := NewReporter(report).generateTextStreamReport(&buf)
+	outputDir := c.TempDir()
+	c.Assert(ptahintegration.NewReporter(report).GenerateReport(ptahintegration.FormatTXT, outputDir), qt.IsNil)
+	files, err := filepath.Glob(filepath.Join(outputDir, "*-report.txt"))
 	c.Assert(err, qt.IsNil)
-
-	out := buf.String()
+	c.Assert(files, qt.HasLen, 1)
+	content, err := os.ReadFile(files[0])
+	c.Assert(err, qt.IsNil)
+	out := string(content)
 	c.Assert(out, qt.Contains, "Total Tests: 3")
 	c.Assert(out, qt.Contains, "Passed: 1")
 	c.Assert(out, qt.Contains, "Failed: 0")

@@ -52,7 +52,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:           []string{"ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"},
+		TablesAdded: []string{"ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "ptah_ms_users_visible", TableName: "ptah_ms_auth.ptah_ms_users"},
 		},

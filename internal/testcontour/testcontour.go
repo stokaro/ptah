@@ -1,8 +1,10 @@
-// Package testcontour discovers and runs build-tagged live test contours.
+// Package testcontour runs build-tagged integration packages and rejects
+// skipped or incomplete tests.
 package testcontour
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,10 +14,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -24,27 +26,34 @@ import (
 	"unicode/utf8"
 )
 
-// Config describes one live test contour invocation.
+// Config describes one integration package contour invocation.
 type Config struct {
 	Package string
-	Tag     string
 	Tags    []string
 	Timeout time.Duration
+	Race    bool
 	Dir     string
 	Stdout  io.Writer
 	Stderr  io.Writer
 }
 
+type testEvent struct {
+	Action  string
+	Package string
+	Test    string
+	Output  string
+}
+
 type packageFiles struct {
+	ImportPath   string
 	Dir          string
 	TestGoFiles  []string
 	XTestGoFiles []string
 }
 
-type testEvent struct {
-	Action string
-	Test   string
-	Output string
+type testID struct {
+	Package string
+	Name    string
 }
 
 type testState struct {
@@ -52,34 +61,73 @@ type testState struct {
 	terminal bool
 }
 
-// Run discovers every test declared by the contour tag and requires all of
-// them to finish without a skipped test or subtest.
+type integrationBuildPolicy struct {
+	positive bool
+	required bool
+	excluded bool
+}
+
+type tagPolarity uint8
+
+const (
+	tagDisabled tagPolarity = iota
+	tagEnabled
+)
+
+const completeIntegrationPattern = "./integration/..."
+
+// Run executes every test selected by the package pattern and build tags. It
+// fails when the contour runs no tests or any test or subtest is skipped.
 func Run(ctx context.Context, config Config) error {
 	config, err := normalizeConfig(config)
 	if err != nil {
 		return err
 	}
-
-	tests, err := discover(ctx, config)
+	if slices.Contains(config.Tags, "integration") {
+		if err := validateRepositoryIntegrationLayout(ctx, config); err != nil {
+			return err
+		}
+	}
+	packages, err := listPackages(ctx, config, config.Package)
 	if err != nil {
 		return err
 	}
-
-	return run(ctx, config, tests)
+	var expected []testID
+	if slices.Contains(config.Tags, "integration") {
+		expected, err = validateIntegrationPackages(config, packages)
+		if err != nil {
+			return err
+		}
+	} else {
+		expected, err = declaredPackageTests(packages)
+		if err != nil {
+			return err
+		}
+	}
+	return run(ctx, config, expected)
 }
 
 func normalizeConfig(config Config) (Config, error) {
 	if config.Package == "" {
 		return Config{}, errors.New("test contour package is required")
 	}
-	if !strings.HasPrefix(config.Tag, "ptah_live_") {
-		return Config{}, fmt.Errorf("test contour tag %q must start with ptah_live_", config.Tag)
-	}
-	if !validBuildTag(config.Tag) {
-		return Config{}, fmt.Errorf("test contour tag %q is not a valid build tag", config.Tag)
-	}
 	if config.Timeout <= 0 {
 		return Config{}, errors.New("test contour timeout must be positive")
+	}
+	if len(config.Tags) == 0 {
+		return Config{}, errors.New("test contour requires at least one build tag")
+	}
+	for _, tag := range config.Tags {
+		if !validBuildTag(tag) {
+			return Config{}, fmt.Errorf("build tag %q is not valid", tag)
+		}
+	}
+	if slices.Contains(config.Tags, "integration") && config.Package != completeIntegrationPattern {
+		return Config{}, fmt.Errorf(
+			"integration contour package must be %s, got %s",
+			completeIntegrationPattern,
+			config.Package,
+		)
 	}
 	if config.Stdout == nil {
 		config.Stdout = io.Discard
@@ -90,17 +138,9 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.Dir == "" {
 		config.Dir = "."
 	}
-
-	for _, tag := range config.Tags {
-		if !validBuildTag(tag) {
-			return Config{}, fmt.Errorf("additional build tag %q is not valid", tag)
-		}
-	}
-
-	config.Tags = append(slices.Clone(config.Tags), config.Tag)
+	config.Tags = slices.Clone(config.Tags)
 	sort.Strings(config.Tags)
 	config.Tags = slices.Compact(config.Tags)
-
 	return config, nil
 }
 
@@ -119,208 +159,412 @@ func validBuildTag(tag string) bool {
 	return true
 }
 
-func discover(ctx context.Context, config Config) ([]string, error) {
-	files, err := listPackageFiles(ctx, config)
-	if err != nil {
+func validateIntegrationPackages(config Config, packages []packageFiles) ([]testID, error) {
+	expected := make([]testID, 0)
+	for _, files := range packages {
+		if len(files.TestGoFiles) != 0 {
+			return nil, fmt.Errorf(
+				"integration package %s contains white-box test files: %s",
+				files.ImportPath,
+				strings.Join(files.TestGoFiles, ", "),
+			)
+		}
+		packageTestCount := 0
+		for _, name := range files.XTestGoFiles {
+			if strings.HasSuffix(name, "_internal_test.go") {
+				return nil, fmt.Errorf("integration package %s contains internal test file %s", files.ImportPath, name)
+			}
+			path := filepath.Join(files.Dir, name)
+			policy, err := integrationTagPolicy(path)
+			if err != nil {
+				return nil, err
+			}
+			if !policy.required {
+				return nil, fmt.Errorf("integration test file %s must require //go:build integration", path)
+			}
+			declared, err := declaredTests(path, files.ImportPath)
+			if err != nil {
+				return nil, err
+			}
+			packageTestCount += len(declared)
+			expected = append(expected, declared...)
+		}
+		if len(files.XTestGoFiles) != 0 && packageTestCount == 0 {
+			return nil, fmt.Errorf("integration package %s declares no top-level tests", files.ImportPath)
+		}
+	}
+	if err := validateCompleteIntegrationSelection(config, packages); err != nil {
 		return nil, err
 	}
-
-	testFiles := append(slices.Clone(files.TestGoFiles), files.XTestGoFiles...)
-	tests := make([]string, 0)
-	for _, name := range testFiles {
-		path := filepath.Join(files.Dir, name)
-		declares, err := declaresTag(path, config.Tag)
-		if err != nil {
-			return nil, err
+	sort.Slice(expected, func(left, right int) bool {
+		if expected[left].Package == expected[right].Package {
+			return expected[left].Name < expected[right].Name
 		}
-		if !declares {
-			continue
-		}
-
-		declared, err := declaredTests(path)
-		if err != nil {
-			return nil, err
-		}
-		tests = append(tests, declared...)
-	}
-
-	sort.Strings(tests)
-	if len(tests) == 0 {
-		return nil, fmt.Errorf("test contour %q selects no tests in %s", config.Tag, config.Package)
-	}
-	if duplicate := firstDuplicate(tests); duplicate != "" {
-		return nil, fmt.Errorf("test contour %q selects duplicate test %s", config.Tag, duplicate)
-	}
-
-	return tests, nil
+		return expected[left].Package < expected[right].Package
+	})
+	return expected, nil
 }
 
-func listPackageFiles(ctx context.Context, config Config) (packageFiles, error) {
-	args := []string{"list", "-json", "-tags=" + strings.Join(config.Tags, ","), config.Package}
+func declaredPackageTests(packages []packageFiles) ([]testID, error) {
+	expected := make([]testID, 0)
+	for _, files := range packages {
+		for _, name := range append(slices.Clone(files.TestGoFiles), files.XTestGoFiles...) {
+			declared, err := declaredTests(filepath.Join(files.Dir, name), files.ImportPath)
+			if err != nil {
+				return nil, err
+			}
+			expected = append(expected, declared...)
+		}
+	}
+	return expected, nil
+}
+
+func validateCompleteIntegrationSelection(config Config, packages []packageFiles) error {
+	selected := make(map[string]struct{})
+	for _, files := range packages {
+		for _, name := range files.XTestGoFiles {
+			selected[filepath.Clean(filepath.Join(files.Dir, name))] = struct{}{}
+		}
+	}
+	integrationRoot, err := filepath.Abs(filepath.Join(config.Dir, "integration"))
+	if err != nil {
+		return fmt.Errorf("resolve complete integration root: %w", err)
+	}
+	return filepath.WalkDir(integrationRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("walk complete integration contour: %w", walkErr)
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		policy, err := integrationTagPolicy(path)
+		if err != nil {
+			return err
+		}
+		if policy.positive && !policy.required {
+			return fmt.Errorf("integration test file %s has a build constraint that can select it without integration", path)
+		}
+		if !policy.required {
+			if !policy.excluded {
+				return fmt.Errorf(
+					"test file %s under integration/ must require //go:build integration or !integration",
+					path,
+				)
+			}
+			return nil
+		}
+		if _, ok := selected[filepath.Clean(path)]; !ok {
+			return fmt.Errorf(
+				"complete integration contour did not select %s on this platform",
+				path,
+			)
+		}
+		return nil
+	})
+}
+
+func listPackages(ctx context.Context, config Config, pattern string) ([]packageFiles, error) {
+	args := []string{"list", "-json", "-tags=" + strings.Join(config.Tags, ","), pattern}
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = config.Dir
 	output, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return packageFiles{}, fmt.Errorf("list test contour package %s: %s", config.Package, strings.TrimSpace(string(exitErr.Stderr)))
+			return nil, fmt.Errorf("list integration packages %s: %s", pattern, strings.TrimSpace(string(exitErr.Stderr)))
 		}
-		return packageFiles{}, fmt.Errorf("list test contour package %s: %w", config.Package, err)
+		return nil, fmt.Errorf("list integration packages %s: %w", pattern, err)
 	}
 
-	var files packageFiles
-	if err := json.Unmarshal(output, &files); err != nil {
-		return packageFiles{}, fmt.Errorf("decode go list output for %s: %w", config.Package, err)
+	packages := make([]packageFiles, 0)
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for {
+		var files packageFiles
+		if err := decoder.Decode(&files); err != nil {
+			if errors.Is(err, io.EOF) {
+				return packages, nil
+			}
+			return nil, fmt.Errorf("decode integration package list for %s: %w", pattern, err)
+		}
+		packages = append(packages, files)
 	}
-	if files.Dir == "" {
-		return packageFiles{}, fmt.Errorf("go list returned no directory for %s", config.Package)
-	}
-
-	return files, nil
 }
 
-func declaresTag(path, tag string) (bool, error) {
+func validateRepositoryIntegrationLayout(ctx context.Context, config Config) error {
+	rootCommand := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	rootCommand.Dir = config.Dir
+	rootOutput, err := rootCommand.Output()
+	if err != nil {
+		return fmt.Errorf("resolve repository root for integration layout: %w", err)
+	}
+	root := strings.TrimSpace(string(rootOutput))
+
+	listCommand := exec.CommandContext(
+		ctx,
+		"git",
+		"-c", "core.quotePath=false",
+		"ls-files", "--full-name", "--cached", "--others", "--exclude-standard", "-z", "--", "*_test.go",
+	)
+	listCommand.Dir = config.Dir
+	output, err := listCommand.Output()
+	if err != nil {
+		return fmt.Errorf("list repository test files for integration layout: %w", err)
+	}
+	for rawPath := range bytes.SplitSeq(output, []byte{0}) {
+		if len(rawPath) == 0 {
+			continue
+		}
+		relativePath := filepath.ToSlash(string(rawPath))
+		policy, err := integrationTagPolicy(filepath.Join(root, filepath.FromSlash(relativePath)))
+		if err != nil {
+			return err
+		}
+		allowedPath := integrationTestPathAllowed(relativePath)
+		if policy.positive && !policy.required {
+			return fmt.Errorf("integration test file %s has a build constraint that can select it without integration", relativePath)
+		}
+		if policy.required && !allowedPath {
+			return fmt.Errorf("integration test file %s must live under integration/ or testkit/integration/", relativePath)
+		}
+		if allowedPath && !policy.required && !policy.excluded {
+			return fmt.Errorf(
+				"test file %s under an integration tree must require //go:build integration or !integration",
+				relativePath,
+			)
+		}
+		if allowedPath {
+			if err := validateIntegrationFilePackage(
+				filepath.Join(root, filepath.FromSlash(relativePath)),
+				relativePath,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func integrationTestPathAllowed(path string) bool {
+	return strings.HasPrefix(path, "integration/") || strings.HasPrefix(path, "testkit/integration/")
+}
+
+func validateIntegrationFilePackage(path, relativePath string) error {
+	if strings.HasSuffix(relativePath, "_internal_test.go") {
+		return fmt.Errorf("test file %s under an integration tree must not use the _internal_test.go suffix", relativePath)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.PackageClauseOnly)
+	if err != nil {
+		return fmt.Errorf("parse integration test package in %s: %w", relativePath, err)
+	}
+	if !strings.HasSuffix(parsed.Name.Name, "_test") {
+		return fmt.Errorf(
+			"test file %s under an integration tree uses white-box package %s; package name must end in _test",
+			relativePath,
+			parsed.Name.Name,
+		)
+	}
+	return nil
+}
+
+func integrationTagPolicy(path string) (integrationBuildPolicy, error) {
+	expression, err := readBuildConstraint(path)
+	if err != nil || expression == nil {
+		return integrationBuildPolicy{}, err
+	}
+	return integrationBuildPolicy{
+		positive: referencesTag(expression, "integration", tagEnabled),
+		required: !constraintCanMatch(expression, "integration", tagDisabled),
+		excluded: !constraintCanMatch(expression, "integration", tagEnabled),
+	}, nil
+}
+
+func readBuildConstraint(path string) (constraint.Expr, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return false, fmt.Errorf("open test contour file %s: %w", path, err)
+		return nil, fmt.Errorf("open integration test file %s: %w", path, err)
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "//go:build ") {
+		if constraint.IsGoBuild(line) {
 			expression, err := constraint.Parse(line)
 			if err != nil {
-				return false, fmt.Errorf("parse build constraint in %s: %w", path, err)
+				return nil, fmt.Errorf("parse build constraint in %s: %w", path, err)
 			}
-			return referencesPositiveTag(expression, tag, false), nil
+			return expression, nil
 		}
 		if line != "" && !strings.HasPrefix(line, "//") {
 			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return false, fmt.Errorf("read build constraint in %s: %w", path, err)
+		return nil, fmt.Errorf("read build constraint in %s: %w", path, err)
 	}
-
-	return false, nil
+	return nil, nil
 }
 
-func referencesPositiveTag(expression constraint.Expr, tag string, negated bool) bool {
+func referencesTag(expression constraint.Expr, tag string, polarity tagPolarity) bool {
 	switch expression := expression.(type) {
 	case *constraint.TagExpr:
-		return !negated && expression.Tag == tag
+		return polarity == tagEnabled && expression.Tag == tag
 	case *constraint.NotExpr:
-		return referencesPositiveTag(expression.X, tag, !negated)
+		return referencesTag(expression.X, tag, oppositePolarity(polarity))
 	case *constraint.AndExpr:
-		return referencesPositiveTag(expression.X, tag, negated) ||
-			referencesPositiveTag(expression.Y, tag, negated)
+		return referencesTag(expression.X, tag, polarity) ||
+			referencesTag(expression.Y, tag, polarity)
 	case *constraint.OrExpr:
-		return referencesPositiveTag(expression.X, tag, negated) ||
-			referencesPositiveTag(expression.Y, tag, negated)
+		return referencesTag(expression.X, tag, polarity) ||
+			referencesTag(expression.Y, tag, polarity)
 	default:
 		return false
 	}
 }
 
-func declaredTests(path string) ([]string, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		return nil, fmt.Errorf("parse test contour file %s: %w", path, err)
+func oppositePolarity(polarity tagPolarity) tagPolarity {
+	if polarity == tagEnabled {
+		return tagDisabled
 	}
+	return tagEnabled
+}
 
-	tests := make([]string, 0)
-	for _, declaration := range file.Decls {
+func constraintCanMatch(expression constraint.Expr, tag string, value tagPolarity) bool {
+	tags := make(map[string]struct{})
+	collectConstraintTags(expression, tag, tags)
+	variables := make([]string, 0, len(tags))
+	for variable := range tags {
+		variables = append(variables, variable)
+	}
+	sort.Strings(variables)
+	assignments := map[string]bool{tag: value == tagEnabled}
+	return anyConstraintAssignmentMatches(expression, variables, assignments, 0)
+}
+
+func collectConstraintTags(expression constraint.Expr, fixed string, tags map[string]struct{}) {
+	switch expression := expression.(type) {
+	case *constraint.TagExpr:
+		if expression.Tag != fixed {
+			tags[expression.Tag] = struct{}{}
+		}
+	case *constraint.NotExpr:
+		collectConstraintTags(expression.X, fixed, tags)
+	case *constraint.AndExpr:
+		collectConstraintTags(expression.X, fixed, tags)
+		collectConstraintTags(expression.Y, fixed, tags)
+	case *constraint.OrExpr:
+		collectConstraintTags(expression.X, fixed, tags)
+		collectConstraintTags(expression.Y, fixed, tags)
+	}
+}
+
+func anyConstraintAssignmentMatches(
+	expression constraint.Expr,
+	variables []string,
+	assignments map[string]bool,
+	index int,
+) bool {
+	if index == len(variables) {
+		return expression.Eval(func(tag string) bool {
+			return assignments[tag]
+		})
+	}
+	variable := variables[index]
+	assignments[variable] = false
+	if anyConstraintAssignmentMatches(expression, variables, assignments, index+1) {
+		return true
+	}
+	assignments[variable] = true
+	return anyConstraintAssignmentMatches(expression, variables, assignments, index+1)
+}
+
+func declaredTests(path, importPath string) ([]testID, error) {
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, fmt.Errorf("parse integration test file %s: %w", path, err)
+	}
+	declared := make([]testID, 0)
+	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Recv != nil || !isTestName(function.Name.Name) {
+		if !ok || function.Recv != nil || function.Name.Name == "TestMain" || !isTestName(function.Name.Name) {
 			continue
 		}
-		tests = append(tests, function.Name.Name)
+		declared = append(declared, testID{Package: importPath, Name: function.Name.Name})
 	}
-
-	return tests, nil
+	return declared, nil
 }
 
 func isTestName(name string) bool {
-	if name == "TestMain" {
+	const prefix = "Test"
+	if !strings.HasPrefix(name, prefix) {
 		return false
 	}
-	suffix, ok := strings.CutPrefix(name, "Test")
-	if !ok || suffix == "" {
-		return false
+	if len(name) == len(prefix) {
+		return true
 	}
-	first, _ := utf8.DecodeRuneInString(suffix)
-	return !unicode.IsLower(first)
+	character, _ := utf8.DecodeRuneInString(name[len(prefix):])
+	return !unicode.IsLower(character)
 }
 
-func firstDuplicate(values []string) string {
-	for index := 1; index < len(values); index++ {
-		if values[index] == values[index-1] {
-			return values[index]
-		}
-	}
-	return ""
-}
-
-func run(ctx context.Context, config Config, tests []string) error {
-	states := make(map[string]testState, len(tests))
-	for _, name := range tests {
-		states[name] = testState{}
-	}
-
-	pattern := exactTestPattern(tests)
+func run(ctx context.Context, config Config, expected []testID) error {
 	args := []string{
 		"test",
 		"-json",
 		"-count=1",
-		"-tags=" + strings.Join(config.Tags, ","),
-		"-run=" + pattern,
-		"-timeout=" + config.Timeout.String(),
-		config.Package,
+		"-p=1",
 	}
+	if config.Race {
+		args = append(args, "-race")
+	}
+	args = append(
+		args,
+		"-tags="+strings.Join(config.Tags, ","),
+		"-timeout="+config.Timeout.String(),
+		config.Package,
+	)
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = config.Dir
 	cmd.Stderr = config.Stderr
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("capture test contour output: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start test contour %q: %w", config.Tag, err)
+		return fmt.Errorf("start test contour %s: %w", config.Package, err)
 	}
 
-	skips := make([]string, 0)
+	states := make(map[testID]testState, len(expected))
+	for _, id := range expected {
+		states[id] = testState{}
+	}
+	skips := make([]testID, 0)
 	decodeErr := decodeEvents(stdout, config.Stdout, states, &skips)
 	waitErr := cmd.Wait()
 	if decodeErr != nil {
 		return decodeErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("test contour %q failed: %w", config.Tag, waitErr)
+		return fmt.Errorf("test contour %s failed: %w", config.Package, waitErr)
+	}
+	if len(states) == 0 {
+		return fmt.Errorf("test contour %s ran no tests", config.Package)
 	}
 	if len(skips) != 0 {
-		return fmt.Errorf("test contour %q skipped %s", config.Tag, strings.Join(skips, ", "))
+		return fmt.Errorf("test contour %s skipped %s", config.Package, formatTestIDs(skips))
 	}
-
 	missing := missingResults(states)
 	if len(missing) != 0 {
-		return fmt.Errorf("test contour %q produced no complete result for %s", config.Tag, strings.Join(missing, ", "))
+		return fmt.Errorf("test contour %s produced no complete result for %s", config.Package, formatTestIDs(missing))
 	}
-
 	return nil
 }
 
-func exactTestPattern(tests []string) string {
-	quoted := make([]string, len(tests))
-	for index, name := range tests {
-		quoted[index] = regexp.QuoteMeta(name)
-	}
-	return "^(?:" + strings.Join(quoted, "|") + ")$"
-}
-
-func decodeEvents(reader io.Reader, output io.Writer, states map[string]testState, skips *[]string) error {
+func decodeEvents(
+	reader io.Reader,
+	output io.Writer,
+	states map[testID]testState,
+	skips *[]testID,
+) error {
 	decoder := json.NewDecoder(reader)
 	var outputErr error
 	for {
@@ -341,35 +585,44 @@ func decodeEvents(reader io.Reader, output io.Writer, states map[string]testStat
 	}
 }
 
-func recordEvent(event testEvent, states map[string]testState, skips *[]string) {
-	if event.Action == "skip" {
-		name := event.Test
-		if name == "" {
-			name = "package"
-		}
-		*skips = append(*skips, name)
-	}
-
-	state, selected := states[event.Test]
-	if !selected {
+func recordEvent(event testEvent, states map[testID]testState, skips *[]testID) {
+	if event.Test == "" {
 		return
 	}
+	id := testID{Package: event.Package, Name: event.Test}
+	state := states[id]
 	switch event.Action {
 	case "run":
 		state.ran = true
 	case "pass", "fail", "skip":
 		state.terminal = true
 	}
-	states[event.Test] = state
+	states[id] = state
+	if event.Action == "skip" {
+		*skips = append(*skips, id)
+	}
 }
 
-func missingResults(states map[string]testState) []string {
-	missing := make([]string, 0)
-	for name, state := range states {
+func missingResults(states map[testID]testState) []testID {
+	missing := make([]testID, 0)
+	for id, state := range states {
 		if !state.ran || !state.terminal {
-			missing = append(missing, name)
+			missing = append(missing, id)
 		}
 	}
-	sort.Strings(missing)
+	sort.Slice(missing, func(left, right int) bool {
+		if missing[left].Package == missing[right].Package {
+			return missing[left].Name < missing[right].Name
+		}
+		return missing[left].Package < missing[right].Package
+	})
 	return missing
+}
+
+func formatTestIDs(ids []testID) string {
+	formatted := make([]string, len(ids))
+	for index, id := range ids {
+		formatted[index] = id.Package + ":" + id.Name
+	}
+	return strings.Join(formatted, ", ")
 }

@@ -6,7 +6,7 @@ schemas, GraphQL SDL, and Protobuf definitions. The parsed
 so each format is a direct projection of that intermediate representation.
 That intermediate representation is also what makes the source format
 interchangeable: `--root-dir` reads Go annotations and `--schema-file` reads a
-YAML, HCL, or SQL schema file through `cmd/internal/schemaload`, the resolver
+YAML, HCL, or SQL schema file through `internal/schemaload`, the resolver
 behind `ptah schema render`, and the two produce the same artifact for the same
 tables.
 This is contract generation, not database publication: Ptah emits no runtime

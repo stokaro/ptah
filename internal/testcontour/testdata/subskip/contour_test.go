@@ -1,4 +1,4 @@
-//go:build ptah_live_subskip
+//go:build testcontour_fixture
 
 package subskip_test
 

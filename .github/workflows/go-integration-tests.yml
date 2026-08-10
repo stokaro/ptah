@@ -1,6 +1,7 @@
 name: Integration Tests
 
 on:
+  workflow_call:
   push:
     branches:
       - master
@@ -201,115 +202,63 @@ jobs:
           done
           echo "OCI registry is ready!"
 
-      - name: Run distributed SQL reader coverage
-        env:
-          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+      - name: Install Graphviz
         run: |
-          go run ./internal/cmd/testcontour \
-            --package ./integration/gonative \
-            --tag ptah_live_postgres_family_reader \
-            --tags integration \
-            --timeout 8m
+          sudo apt-get update
+          sudo apt-get install --yes graphviz
 
-      - name: Run executor integration tests with live databases
+      - name: Create Atlas oracle development databases
+        run: |
+          PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_dev'
+          PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_realmdev'
+
+      - name: Build pinned Atlas CE oracle
+        run: scripts/build-atlas-ce-oracle.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
+
+      - name: Run tagged integration package contour
         env:
+          PTAH_ATLAS_ORACLE: "${{ runner.temp }}/ptah-atlas-ce/atlas"
+          PTAH_ATLAS_FUZZ_N: "200"
+          PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_dev?sslmode=disable&search_path=public"
+          PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_realmdev?sslmode=disable"
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          TEST_DB_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MYSQL_CLEANUP_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-          POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_CLEANUP_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test"
           MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
           MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
-          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
+          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+          SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
         run: |
-          go test -v -count=1 ./integration -tags=integration -timeout 15m
-          go test -v -count=1 ./integration/gonative -tags=integration -timeout 15m
+          command -v dot
           go run ./internal/cmd/testcontour \
-            --package ./dbschema \
-            --tag ptah_live_sqlserver \
-            --timeout 10m
-
-      - name: Run generator live contour
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-        run: |
-          go run ./internal/cmd/testcontour \
-            --package ./migration/generator \
-            --tag ptah_live_generator \
             --tags integration \
-            --timeout 25m
-
-      - name: Run database-realm cleanup and replay tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-          MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
-          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
-          MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
-          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
-          PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-          PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
-          PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-        run: |
-          for package in \
-            ./internal/dblock \
-            ./internal/devlock \
-            ./internal/dbschema/mysql \
-            ./internal/dbschema/clickhouse \
-            ./internal/dbschema/mssql \
-            ./internal/dbschema/postgres \
-            ./internal/schemaclean \
-            ./internal/migrationreplay
-          do
-            go run ./internal/cmd/testcontour \
-              --package "$package" \
-              --tag ptah_live_realm_cleanup \
-              --tags integration \
-              --timeout 5m
-          done
-          go run ./internal/cmd/testcontour \
-            --package ./integration \
-            --tag ptah_live_realm_cleanup \
-            --tags integration \
-            --timeout 15m
-
-      - name: Run compatibility apply table-spelling tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-        run: |
-          go run ./internal/cmd/testcontour \
-            --package ./cmd/atlas \
-            --tag ptah_live_compat_schema_apply \
-            --timeout 5m
+            --race \
+            --timeout 45m
 
       - name: Build integration test binary
         run: |
@@ -324,51 +273,6 @@ jobs:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=stdout,txt,json,html --output=./reports
-
-      - name: Run migrator live contour
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
-          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
-          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
-          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
-          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-        run: |
-          go run ./internal/cmd/testcontour \
-            --package ./migration/migrator \
-            --tag ptah_live_migrator \
-            --timeout 30m
-
-      - name: Run migration lint live contour
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-        run: |
-          go run ./internal/cmd/testcontour \
-            --package ./cmd/migrateup \
-            --tag ptah_live_migration_lint \
-            --timeout 5m
-
-      - name: Run migrate-baseline integration tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-        run: |
-          go run ./internal/cmd/testcontour \
-            --package ./cmd/migratebaseline \
-            --tag ptah_live_migrate_baseline \
-            --timeout 5m
 
       - name: Run all databases comprehensive test
         env:
@@ -405,20 +309,3 @@ jobs:
           path: |
             reports/
           retention-days: 7
-      
-      - name: Run dynamic integration tests
-        env:
-          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
-          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
-          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
-          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
-          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
-          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
-          SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-        run: |
-          go test -v -race -count=1 ./integration -tags=integration -timeout 30m

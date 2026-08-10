@@ -35,12 +35,7 @@ func findColumn(columns []types.DBColumn, name string) *types.DBColumn {
 	return nil
 }
 
-func tableExists(db *sql.DB, tableName string, dryRun bool) bool {
-	if dryRun {
-		// In dry run mode, assume table doesn't exist to show all operations
-		return false
-	}
-
+func tableExists(db *sql.DB, tableName string) bool {
 	var exists bool
 	checkSQL := `
 		SELECT EXISTS (
@@ -130,7 +125,6 @@ func testMySQLCompatibleReaderReadSchema(t *testing.T, dsn string) {
 func TestMySQLWriter_Integration(t *testing.T) {
 	dsn := skipIfNoMySQL(t)
 	c := qt.New(t)
-	const noDryRun = false
 
 	db, err := sql.Open("mysql", dsn)
 	c.Assert(err, qt.IsNil)
@@ -179,7 +173,7 @@ func TestMySQLWriter_Integration(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 
 		// Verify table was dropped
-		exists := tableExists(cleanupDB, "temp_test_table", noDryRun)
+		exists := tableExists(cleanupDB, "temp_test_table")
 		c.Assert(exists, qt.IsFalse)
 	})
 }

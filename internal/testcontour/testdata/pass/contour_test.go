@@ -1,4 +1,4 @@
-//go:build integration || ptah_live_fixture
+//go:build testcontour_fixture
 
 package pass_test
 

@@ -1,3 +1,5 @@
+//go:build !testcontour_fixture
+
 package empty_test
 
 import "testing"

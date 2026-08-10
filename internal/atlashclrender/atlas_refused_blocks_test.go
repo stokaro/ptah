@@ -36,6 +36,29 @@ var nativeInspectedBlockTypes = []string{
 	"view \"active_accounts\"",
 }
 
+func TestAtlasRefusedBlockCapabilities(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(
+		atlashclrender.AtlasRefusedBlockDialects(),
+		qt.DeepEquals,
+		[]string{platform.Postgres},
+	)
+	c.Assert(
+		atlashclrender.AtlasRefusedBlockTypes("pgx"),
+		qt.DeepEquals,
+		[]string{"extension", "policy", "sequence"},
+	)
+	c.Assert(atlashclrender.AtlasRefusesBlock("pgx", "extension"), qt.IsTrue)
+	c.Assert(atlashclrender.AtlasRefusesBlock(platform.SQLite, "extension"), qt.IsFalse)
+}
+
+func TestAtlasRefusedBlockTypesReturnsSnapshot(t *testing.T) {
+	c := qt.New(t)
+	blocks := atlashclrender.AtlasRefusedBlockTypes(platform.Postgres)
+	blocks[0] = "mutated"
+	c.Assert(atlashclrender.AtlasRefusedBlockTypes(platform.Postgres), qt.Not(qt.Contains), "mutated")
+}
+
 // TestRenderInspectedKeepsEveryBlockTypeOnTheNativeSurface fails if a block
 // stops being rendered natively.
 //

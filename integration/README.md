@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and opt-in SQL Server.
+This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and SQL Server.
 
 ## Overview
 
@@ -42,7 +42,7 @@ The integration test suite covers all aspects of the migration system as outline
 
 ### 🧹 Cleanup Support
 - Drop all tables and re-run from empty state on PostgreSQL, MySQL, MariaDB,
-  ClickHouse, and opt-in SQL Server
+  ClickHouse, and SQL Server
 
 The standalone integration runner reads scenario connections from
 `<DATABASE>_URL`. Set the optional matching `<DATABASE>_CLEANUP_URL` when
@@ -66,53 +66,28 @@ MARIADB_CLEANUP_URL="$MARIADB_ADMIN_URL" \
 
 The database-realm cleanup tests use dedicated scratch databases and verify
 that replay cleanup removes database-scoped artifacts without crossing into
-another database. Live Go test membership is declared by a file-level
-`ptah_live_<domain>` build tag. Run a contour through `testcontour`; it derives
-the tests from tagged files and fails if the contour is empty, a result is
-missing, or any test or subtest skips.
+another database. Every live Go test is in `integration/` or a subpackage and
+uses the file-level `integration` build tag. The contour runner executes the
+whole tree serially and fails if no test runs, a result is incomplete, or any
+test or subtest skips. Graphviz `dot` must also be installed because the
+visualization contour validates generated DOT and SVG with the real renderer.
 
-Set the matching administrative URLs, then run the cleanup contour for the
-packages you need:
+The authoritative service and environment-variable matrix is maintained in
+[the integration workflow](../.github/workflows/go-integration-tests.yml).
+Start equivalent services, export every variable from its tagged-integration
+step, install Graphviz, and then run the single recursive contour:
 
 ```bash
-PTAH_CLICKHOUSE_REALM_TEST_URL="$CLICKHOUSE_ADMIN_URL" \
-PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL="$CLICKHOUSE_24_10_ADMIN_URL" \
-  go run ./internal/cmd/testcontour \
-    --package ./internal/dbschema/clickhouse \
-    --tag ptah_live_realm_cleanup \
-    --tags integration \
-    --timeout 5m
-
-MYSQL_TEST_URL="$MYSQL_URL" \
-MYSQL_ADMIN_TEST_DSN="$MYSQL_ADMIN_DSN" \
-MARIADB_ADMIN_TEST_DSN="$MARIADB_ADMIN_DSN" \
-  go run ./internal/cmd/testcontour \
-    --package ./internal/dbschema/mysql \
-    --tag ptah_live_realm_cleanup \
-    --tags integration \
-    --timeout 5m
-
-PTAH_SQLSERVER_REALM_TEST_URL="$SQLSERVER_ADMIN_URL" \
-  go run ./internal/cmd/testcontour \
-    --package ./internal/dbschema/mssql \
-    --tag ptah_live_realm_cleanup \
-    --tags integration \
-    --timeout 5m
-
-POSTGRES_URL="$POSTGRES_ADMIN_URL" \
-COCKROACHDB_URL="$COCKROACHDB_ADMIN_URL" \
-YUGABYTEDB_URL="$YUGABYTEDB_ADMIN_URL" \
-  go run ./internal/cmd/testcontour \
-    --package ./internal/dbschema/postgres \
-    --tag ptah_live_realm_cleanup \
-    --tags integration \
-    --timeout 5m
+go run ./internal/cmd/testcontour \
+  --tags integration \
+  --race \
+  --timeout 45m
 ```
 
-Keep broad package runs separate from live contours. A file that belongs to
-both uses `//go:build integration || ptah_live_<domain>`; the broad run remains
-free to skip unavailable databases, while the targeted contour treats a skip
-as a CI failure.
+Do not run selected test names or individual packages as a CI substitute for
+this contour. An integration test is never white-box: integration tests use
+`package *_test`; tests that need package-private access are unit tests, not
+integration tests.
 
 Each URL must identify an administrative connection intended for tests. The
 success-path tests create a separate temporary database and drop it during
@@ -152,7 +127,10 @@ dependency-capable objects.
 
 ## Running Tests
 
-All integration tests are designed to run using Docker Compose, which provides isolated database environments and ensures consistent test execution across different systems.
+Docker Compose runs the standalone scenario runner with isolated databases. The
+tagged Go integration contour instead uses local services matching the
+authoritative GitHub Actions workflow and also requires the pinned Atlas CE
+oracle and Graphviz.
 
 ### Basic Usage
 

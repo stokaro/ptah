@@ -1,4 +1,4 @@
-//go:build ptah_live_topskip
+//go:build testcontour_fixture
 
 package topskip_test
 

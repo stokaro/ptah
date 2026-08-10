@@ -1,4 +1,4 @@
-//go:build integration || !ptah_live_empty
+//go:build !testcontour_fixture
 
 package empty_test
 
