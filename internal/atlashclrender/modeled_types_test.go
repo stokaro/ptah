@@ -10,6 +10,25 @@ import (
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
+func TestModeledColumnTypeCapabilities(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(
+		atlashclrender.ModeledColumnTypeDialects(),
+		qt.DeepEquals,
+		[]string{platform.Postgres, platform.SQLite},
+	)
+	c.Assert(atlashclrender.IsModeledColumnType("pgx", "NUMERIC(10,2)"), qt.IsTrue)
+	c.Assert(atlashclrender.IsModeledColumnType(platform.Postgres, "hstore"), qt.IsFalse)
+}
+
+func TestModeledColumnTypesReturnsSnapshot(t *testing.T) {
+	c := qt.New(t)
+	types := atlashclrender.ModeledColumnTypes(platform.SQLite)
+	c.Assert(types, qt.Not(qt.HasLen), 0)
+	types[0] = "mutated"
+	c.Assert(atlashclrender.ModeledColumnTypes(platform.SQLite), qt.Not(qt.Contains), "mutated")
+}
+
 // TestRenderForDialectWritesTypesTheBinaryCanRead pins how an INSPECTED column
 // type reaches HCL (stokaro/ptah#1138).
 //

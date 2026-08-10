@@ -14,7 +14,6 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
-	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
@@ -22,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/migrator"
 )

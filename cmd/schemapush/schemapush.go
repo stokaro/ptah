@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/schemaload"
 	"go.5x5.cz/ptah/internal/schemaartifact"
+	"go.5x5.cz/ptah/internal/schemaload"
 )
 
 type options struct {

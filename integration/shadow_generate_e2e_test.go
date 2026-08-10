@@ -69,7 +69,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 			"--shadow-db", shadowDBURL,
 		)
 
-		c.Assert(err, qt.Not(qt.IsNil))
+		c.Assert(err, qt.IsNotNil)
 		c.Assert(output, qt.Contains, "shadow check failed: missing column users.name")
 		matches, globErr := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 		c.Assert(globErr, qt.IsNil)

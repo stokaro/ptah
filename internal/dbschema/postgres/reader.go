@@ -1503,54 +1503,77 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 }
 
 func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBConstraint, error) {
+	// PostgreSQL scopes constraint names to their owning tables. Joining the
+	// information_schema FK views by schema and name therefore cross-products
+	// same-named constraints on different tables. Anchor the row in
+	// pg_constraint by owning relation and pair conkey/confkey by ordinality so
+	// every local column, referenced column, and action comes from one object.
+	// Unnest the arrays separately because CockroachDB returns no key rows for
+	// the multi-array form when confkey is NULL, which hides PRIMARY KEY and
+	// UNIQUE columns.
 	constraintsQuery := `
 			SELECT
 				tc.table_schema,
 				tc.table_name,
 				tc.constraint_name,
 				tc.constraint_type,
-				COALESCE(string_agg(kcu.column_name, ',' ORDER BY kcu.ordinal_position) FILTER (WHERE kcu.column_name IS NOT NULL), ''),
-				COALESCE(max(ukcu.table_schema), ''),
-				COALESCE(max(ukcu.table_name), ''),
-				COALESCE(string_agg(ukcu.column_name, ',' ORDER BY kcu.ordinal_position) FILTER (WHERE ukcu.column_name IS NOT NULL), ''),
-				COALESCE(rc.delete_rule, ''),
-			COALESCE(rc.update_rule, ''),
-			COALESCE(cc.check_clause, ''),
-			COALESCE((
-				SELECT pg_get_constraintdef(pc.oid)
-				FROM pg_constraint pc
-				JOIN pg_class pc_table ON pc_table.oid = pc.conrelid
-				JOIN pg_namespace pc_schema ON pc_schema.oid = pc_table.relnamespace
-				WHERE pc_schema.nspname = tc.table_schema
-				AND pc_table.relname = tc.table_name
-				AND pc.conname = tc.constraint_name
-				LIMIT 1
-			), '')
+				COALESCE(string_agg(local_column.attname, ',' ORDER BY local_key_columns.ordinality)
+					FILTER (WHERE local_column.attname IS NOT NULL), ''),
+				COALESCE(max(foreign_schema.nspname), ''),
+				COALESCE(max(foreign_table.relname), ''),
+				COALESCE(string_agg(foreign_column.attname, ',' ORDER BY local_key_columns.ordinality)
+					FILTER (WHERE foreign_column.attname IS NOT NULL), ''),
+				COALESCE(max(CASE pc.confdeltype
+					WHEN 'a' THEN 'NO ACTION'
+					WHEN 'r' THEN 'RESTRICT'
+					WHEN 'c' THEN 'CASCADE'
+					WHEN 'n' THEN 'SET NULL'
+					WHEN 'd' THEN 'SET DEFAULT'
+				END), ''),
+				COALESCE(max(CASE pc.confupdtype
+					WHEN 'a' THEN 'NO ACTION'
+					WHEN 'r' THEN 'RESTRICT'
+					WHEN 'c' THEN 'CASCADE'
+					WHEN 'n' THEN 'SET NULL'
+					WHEN 'd' THEN 'SET DEFAULT'
+				END), ''),
+				COALESCE(max(CASE
+					WHEN pc.contype = 'c' THEN pg_get_expr(pc.conbin, pc.conrelid)
+				END), ''),
+				COALESCE(max(pg_get_constraintdef(pc.oid)), '')
 		FROM information_schema.table_constraints AS tc
-		LEFT JOIN information_schema.key_column_usage AS kcu
-			ON tc.constraint_name = kcu.constraint_name
-			AND tc.table_schema = kcu.table_schema
-			AND tc.table_name = kcu.table_name
-		LEFT JOIN information_schema.referential_constraints AS rc
-			ON tc.constraint_name = rc.constraint_name
-			AND tc.table_schema = rc.constraint_schema
-		LEFT JOIN information_schema.key_column_usage AS ukcu
-			ON ukcu.constraint_schema = rc.unique_constraint_schema
-			AND ukcu.constraint_name = rc.unique_constraint_name
-			AND ukcu.ordinal_position = kcu.position_in_unique_constraint
-		LEFT JOIN information_schema.check_constraints AS cc
-			ON tc.constraint_name = cc.constraint_name
-			AND tc.table_schema = cc.constraint_schema
+		JOIN pg_namespace AS constraint_schema
+			ON constraint_schema.nspname = tc.table_schema
+		JOIN pg_class AS constraint_table
+			ON constraint_table.relnamespace = constraint_schema.oid
+			AND constraint_table.relname = tc.table_name
+		JOIN pg_constraint AS pc
+			ON pc.connamespace = constraint_schema.oid
+			AND pc.conrelid = constraint_table.oid
+			AND pc.conname = tc.constraint_name
+		LEFT JOIN LATERAL unnest(pc.conkey)
+			WITH ORDINALITY AS local_key_columns(local_attnum, ordinality)
+			ON true
+		LEFT JOIN LATERAL unnest(pc.confkey)
+			WITH ORDINALITY AS foreign_key_columns(foreign_attnum, ordinality)
+			ON foreign_key_columns.ordinality = local_key_columns.ordinality
+		LEFT JOIN pg_attribute AS local_column
+			ON local_column.attrelid = pc.conrelid
+			AND local_column.attnum = local_key_columns.local_attnum
+		LEFT JOIN pg_class AS foreign_table
+			ON foreign_table.oid = pc.confrelid
+		LEFT JOIN pg_namespace AS foreign_schema
+			ON foreign_schema.oid = foreign_table.relnamespace
+		LEFT JOIN pg_attribute AS foreign_column
+			ON foreign_column.attrelid = pc.confrelid
+			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
 		WHERE tc.table_schema = $1
 		AND tc.table_name NOT IN ('schema_migrations')
 		GROUP BY
 			tc.table_schema,
 			tc.table_name,
 			tc.constraint_name,
-			tc.constraint_type,
-			rc.delete_rule,
-			rc.update_rule,
-			cc.check_clause
+			tc.constraint_type
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
 
 	rows, err := r.db.Query(constraintsQuery, schemaName)

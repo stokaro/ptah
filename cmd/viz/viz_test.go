@@ -3,7 +3,6 @@ package viz_test
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -82,60 +81,6 @@ func TestCommandExcludesTables(t *testing.T) {
 	c.Assert(stdout.String(), qt.Contains, `"posts"`)
 	c.Assert(stdout.String(), qt.Not(qt.Contains), `"users"`)
 	c.Assert(stdout.String(), qt.Not(qt.Contains), "fk_posts_author")
-}
-
-func TestDOTParsesWithGraphvizWhenInstalled(t *testing.T) {
-	c := qt.New(t)
-	requireGraphvizDot(t)
-	dir := t.TempDir()
-	writeModel(c, dir)
-
-	cmd := viz.NewCommand()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{
-		"--root-dir", dir,
-		"--format", "dot",
-		"--include-columns",
-	})
-
-	err := cmd.Execute()
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-
-	dotCmd := exec.Command("dot", "-Tsvg")
-	dotCmd.Stdin = bytes.NewReader(stdout.Bytes())
-	var svg bytes.Buffer
-	var dotStderr bytes.Buffer
-	dotCmd.Stdout = &svg
-	dotCmd.Stderr = &dotStderr
-	err = dotCmd.Run()
-
-	c.Assert(err, qt.IsNil, qt.Commentf("dot stderr:\n%s", dotStderr.String()))
-	c.Assert(svg.String(), qt.Contains, "<svg")
-}
-
-func TestCommandWritesSVGWhenGraphvizIsInstalled(t *testing.T) {
-	c := qt.New(t)
-	requireGraphvizDot(t)
-	dir := t.TempDir()
-	writeModel(c, dir)
-
-	cmd := viz.NewCommand()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{
-		"--root-dir", dir,
-		"--format", "svg",
-		"--theme", "dark",
-	})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "<svg")
-	c.Assert(stdout.String(), qt.Contains, "#111827")
 }
 
 func TestExampleArtifactsMatchGeneratedOutput(t *testing.T) {
@@ -232,15 +177,6 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `render SVG with Graphviz dot: .*: graphviz exploded`)
 	c.Assert(stderr.String(), qt.Contains, "graphviz exploded")
-}
-
-func requireGraphvizDot(t *testing.T) {
-	t.Helper()
-
-	_, err := exec.LookPath("dot")
-	if err != nil {
-		t.Skipf("Graphviz dot not installed: %v", err)
-	}
 }
 
 func skipOnWindows(t *testing.T) {

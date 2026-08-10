@@ -381,15 +381,15 @@ func TestPostgreSQLRepairChecksAllAmbientSearchPathCandidatesIntegration(t *test
 	))
 	c.Assert(err, qt.IsNil)
 	fsys := fstest.MapFS{
-		"000001_index.up.sql": {Data: []byte(fmt.Sprintf(
+		"000001_index.up.sql": {Data: fmt.Appendf(nil,
 			"-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY IF NOT EXISTS %q ON %q (email);",
 			indexRecoveryIdentityName,
 			indexRecoveryIdentityTable,
-		))},
-		"000001_index.down.sql": {Data: []byte(fmt.Sprintf(
+		)},
+		"000001_index.down.sql": {Data: fmt.Appendf(nil,
 			"-- +ptah no_transaction\nDROP INDEX CONCURRENTLY IF EXISTS %q;",
 			indexRecoveryIdentityName,
-		))},
+		)},
 	}
 	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithStatementObserver(
 		migrator.StatementObserverFunc(func(context.Context, migrator.StatementEvent) error {

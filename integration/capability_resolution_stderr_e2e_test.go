@@ -68,7 +68,7 @@ func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 		// banner was actually resolved.
 		c.Assert(info.Version, qt.Not(qt.Equals), "")
 		resolution := capability.ResolveServerVersion(info.Dialect, info.Version)
-		c.Assert(resolution.Capabilities, qt.Not(qt.IsNil))
+		c.Assert(resolution.Capabilities, qt.IsNotNil)
 		c.Assert(resolution.Saturated && resolution.VersionSpecific, qt.IsFalse,
 			qt.Commentf("version %q", info.Version))
 	})

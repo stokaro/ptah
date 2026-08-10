@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -134,6 +135,61 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 	})
 }
 
+// FunctionsWithSemantics compares function identities using the target
+// database's default-schema and identifier rules. The names retained in the
+// diff remain the original desired/current spellings so downstream planners
+// can resolve the exact source objects they received.
+func FunctionsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	semantics = semantics.Normalize("")
+	if semantics.DefaultSchema == "" {
+		Functions(generated, database, diff)
+		return
+	}
+
+	generatedFunctions := make(map[tableIdentity]goschema.Function, len(generated.Functions))
+	generatedNames := make(map[tableIdentity]string, len(generated.Functions))
+	for _, function := range generated.Functions {
+		identity := newQualifiedTableIdentity(function.Name, semantics)
+		generatedFunctions[identity] = function
+		generatedNames[identity] = function.Name
+	}
+	databaseFunctions := make(map[tableIdentity]types.DBFunction, len(database.Functions))
+	databaseNames := make(map[tableIdentity]string, len(database.Functions))
+	for _, function := range database.Functions {
+		identity := newTableIdentity(function.Schema, function.Name, semantics)
+		databaseFunctions[identity] = function
+		databaseNames[identity] = function.QualifiedName()
+	}
+
+	for identity, generatedFunction := range generatedFunctions {
+		databaseFunction, exists := databaseFunctions[identity]
+		if !exists {
+			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedNames[identity])
+			continue
+		}
+		functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
+		if len(functionComparison.Changes) > 0 {
+			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+		}
+	}
+	for identity := range databaseFunctions {
+		if _, exists := generatedFunctions[identity]; !exists {
+			diff.FunctionsRemoved = append(diff.FunctionsRemoved, databaseNames[identity])
+		}
+	}
+
+	sort.Strings(diff.FunctionsAdded)
+	sort.Strings(diff.FunctionsRemoved)
+	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
+		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
+	})
+}
+
 // findDatabaseFunction resolves one generated function name against the read.
 //
 // A qualified name is matched only against the same (schema, name); a bare one
@@ -217,6 +273,60 @@ func ViewsWithDialect(generated *goschema.Database, database *types.DBSchema, di
 	})
 }
 
+// ViewsWithSemantics compares view identity with the live database's resolved
+// default schema while retaining dialect-aware SQL-body normalization.
+func ViewsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	semantics identifier.Semantics,
+) {
+	semantics = semantics.Normalize(dialect)
+	if semantics.DefaultSchema == "" {
+		ViewsWithDialect(generated, database, diff, dialect)
+		return
+	}
+
+	generatedViews := make(map[tableIdentity]goschema.View, len(generated.Views))
+	generatedNames := make(map[tableIdentity]string, len(generated.Views))
+	for _, view := range generated.Views {
+		identity := newQualifiedTableIdentity(view.Name, semantics)
+		generatedViews[identity] = view
+		generatedNames[identity] = view.Name
+	}
+	databaseViews := make(map[tableIdentity]types.DBView, len(database.Views))
+	databaseNames := make(map[tableIdentity]string, len(database.Views))
+	for _, view := range database.Views {
+		identity := newTableIdentity(view.Schema, view.Name, semantics)
+		databaseViews[identity] = view
+		databaseNames[identity] = viewNameForDiff(view)
+	}
+
+	for identity, generatedView := range generatedViews {
+		databaseView, exists := databaseViews[identity]
+		if !exists {
+			diff.ViewsAdded = append(diff.ViewsAdded, generatedNames[identity])
+			continue
+		}
+		viewDiff := ViewDefinitionsWithDialect(generatedView, databaseView, dialect)
+		if len(viewDiff.Changes) > 0 {
+			diff.ViewsModified = append(diff.ViewsModified, viewDiff)
+		}
+	}
+	for identity := range databaseViews {
+		if _, exists := generatedViews[identity]; !exists {
+			diff.ViewsRemoved = append(diff.ViewsRemoved, databaseNames[identity])
+		}
+	}
+
+	sort.Strings(diff.ViewsAdded)
+	sort.Strings(diff.ViewsRemoved)
+	sort.Slice(diff.ViewsModified, func(i, j int) bool {
+		return diff.ViewsModified[i].ViewName < diff.ViewsModified[j].ViewName
+	})
+}
+
 func findDatabaseViewForGeneratedView(
 	generatedView goschema.View,
 	databaseViewsByName map[string][]types.DBView,
@@ -268,6 +378,55 @@ func MaterializedViews(generated *goschema.Database, database *types.DBSchema, d
 			if len(viewDiff.Changes) > 0 {
 				diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
 			}
+		}
+	}
+
+	sort.Strings(diff.MaterializedViewsAdded)
+	sort.Strings(diff.MaterializedViewsRemoved)
+	sort.Slice(diff.MaterializedViewsModified, func(i, j int) bool {
+		return diff.MaterializedViewsModified[i].ViewName < diff.MaterializedViewsModified[j].ViewName
+	})
+}
+
+// MaterializedViewsWithSemantics compares materialized-view identities using
+// the same default-schema semantics as tables and ordinary views.
+func MaterializedViewsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+) {
+	semantics = semantics.Normalize("")
+	generatedViews := make(map[tableIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
+	generatedNames := make(map[tableIdentity]string, len(generated.MaterializedViews))
+	for _, view := range generated.MaterializedViews {
+		view.Canonicalize()
+		identity := newQualifiedTableIdentity(view.Name, semantics)
+		generatedViews[identity] = view
+		generatedNames[identity] = view.Name
+	}
+	databaseViews := make(map[tableIdentity]types.DBMatView, len(database.MatViews))
+	databaseNames := make(map[tableIdentity]string, len(database.MatViews))
+	for _, view := range database.MatViews {
+		identity := newTableIdentity(view.Schema, view.Name, semantics)
+		databaseViews[identity] = view
+		databaseNames[identity] = view.QualifiedName()
+	}
+
+	for identity, generatedView := range generatedViews {
+		databaseView, exists := databaseViews[identity]
+		if !exists {
+			diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, generatedNames[identity])
+			continue
+		}
+		viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
+		if len(viewDiff.Changes) > 0 {
+			diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
+		}
+	}
+	for identity := range databaseViews {
+		if _, exists := generatedViews[identity]; !exists {
+			diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, databaseNames[identity])
 		}
 	}
 

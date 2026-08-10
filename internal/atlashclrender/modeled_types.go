@@ -1,6 +1,8 @@
 package atlashclrender
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
@@ -161,6 +163,25 @@ var modeledColumnTypes = map[string]map[string]struct{}{
 		"varchar",
 		"xml",
 	),
+}
+
+// ModeledColumnTypeDialects returns the dialects with an explicitly measured
+// Atlas HCL column-type vocabulary.
+func ModeledColumnTypeDialects() []string {
+	return slices.Sorted(maps.Keys(modeledColumnTypes))
+}
+
+// ModeledColumnTypes returns the measured Atlas HCL column-type names for a
+// dialect. The returned slice is sorted and independent of internal state.
+func ModeledColumnTypes(dialect string) []string {
+	return slices.Sorted(maps.Keys(modeledColumnTypes[platform.NormalizeDialect(dialect)]))
+}
+
+// IsModeledColumnType reports whether the Atlas HCL schema models the supplied
+// column type directly for a dialect.
+func IsModeledColumnType(dialect, columnType string) bool {
+	_, modeled := modeledColumnType(dialect, columnType)
+	return modeled
 }
 
 func namesToSet(names ...string) map[string]struct{} {

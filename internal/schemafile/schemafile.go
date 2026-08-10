@@ -81,7 +81,7 @@ type Options struct {
 	// state to the scope and reporting success is a wrong answer on any surface,
 	// and the escape hatch is the run's own URL: a realm-scoped one describes
 	// every schema the document declares. Callers with no URL to derive from --
-	// a Go-annotation desired state, cmd/internal/schemaload, `ptah schema
+	// a Go-annotation desired state, internal/schemaload, `ptah schema
 	// test` -- leave it empty and are unaffected.
 	//
 	// Use [ScopeFromURLs] to derive it, so every caller picks the same flag.

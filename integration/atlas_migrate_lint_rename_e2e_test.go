@@ -5,7 +5,6 @@ package integration_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +26,7 @@ func exitStatusOf(c *qt.C, err error) int {
 		return 0
 	}
 	var exitErr *exec.ExitError
-	c.Assert(errors.As(err, &exitErr), qt.IsTrue, qt.Commentf("run failed without an exit status: %v", err))
+	c.Assert(err, qt.ErrorAs, &exitErr, qt.Commentf("run failed without an exit status: %v", err))
 	return exitErr.ExitCode()
 }
 

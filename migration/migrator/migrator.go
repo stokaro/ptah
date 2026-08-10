@@ -778,6 +778,14 @@ FROM information_schema.columns
 WHERE table_schema = COALESCE(NULLIF(?, ''), current_schema())
   AND table_name = ? AND column_name = ?`
 		schema = m.metadataTableSchemaName()
+	} else if m.isSQLServer() {
+		// Preserve the catalog's canonical identifier casing. Under Turkish
+		// collations, lowercase information_schema does not resolve to
+		// INFORMATION_SCHEMA even when the catalog is case-insensitive.
+		query = `
+SELECT COUNT(*)
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`
 	}
 	query = sqlutil.Rebind(m.conn.Info().Dialect, query)
 	var count int

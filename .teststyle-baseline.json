@@ -43,19 +43,19 @@
       "count": 2
     },
     {
-      "path": "core/goschema/field_order_integration_test.go",
+      "path": "core/goschema/field_order_pipeline_test.go",
       "function": "TestFieldOrderConsistencyInMigrationGeneration",
       "kind": "if",
       "count": 6
     },
     {
-      "path": "core/goschema/field_order_integration_test.go",
+      "path": "core/goschema/field_order_pipeline_test.go",
       "function": "TestFieldOrderWithEmbeddedFields",
       "kind": "if",
       "count": 4
     },
     {
-      "path": "core/goschema/field_order_integration_test.go",
+      "path": "core/goschema/field_order_pipeline_test.go",
       "function": "TestFieldOrderWithMultipleTables",
       "kind": "if",
       "count": 5
@@ -121,7 +121,7 @@
       "count": 2
     },
     {
-      "path": "core/goschema/pointer_embedded_integration_test.go",
+      "path": "core/goschema/pointer_embedded_pipeline_test.go",
       "function": "TestPointerEmbeddedFields_EndToEnd",
       "kind": "if",
       "count": 4
@@ -217,46 +217,10 @@
       "count": 3
     },
     {
-      "path": "dbschema/sqlserver_live_test.go",
-      "function": "TestSQLServerLiveComputedColumnZeroDiff",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "dbschema/sqlserver_live_test.go",
-      "function": "TestSQLServerLiveDropAllTablesDropsForeignKeys",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "dbschema/sqlserver_live_test.go",
-      "function": "TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "dbschema/sqlserver_live_test.go",
-      "function": "TestSQLServerLiveReadSchema",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "dbschema/sqlserver_live_test.go",
-      "function": "TestSQLServerLiveRenderedUpsertMerge",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "integration/atlas_project_config_e2e_test.go",
       "function": "TestAtlasProjectConfigMigrateStatusAndUpE2E",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "integration/dynamic_test.go",
-      "function": "TestDynamicScenariosBasic",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "integration/gonative/check_constraint_integration_test.go",
@@ -353,36 +317,6 @@
       "function": "TestRenderer_DialectSpecificSQL",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "integration/rls_integration_test.go",
-      "function": "TestRLSIntegrationFixtures",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "integration/scenarios_advanced_test.go",
-      "function": "TestMigrationGeneratorValidation",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "integration/scenarios_advanced_test.go",
-      "function": "TestValidateEmptySchema",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "integration/scenarios_advanced_test.go",
-      "function": "TestValidateSchemaConsistency",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "integration/scenarios_test.go",
-      "function": "TestSQLServerCompatibleScenariosAreExplicit",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "integration/shadow_generate_e2e_test.go",
@@ -691,72 +625,6 @@
       "count": 2
     },
     {
-      "path": "migration/generator/compare_options_test.go",
-      "function": "TestGenerateMigration_CompareOptions_Integration_AddExtension",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/generator/compare_options_test.go",
-      "function": "TestGenerateMigration_CompareOptions_Integration_CustomIgnoreList",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/generator/compare_options_test.go",
-      "function": "TestGenerateMigration_CompareOptions_Integration_NilOptions",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/generator/compare_options_test.go",
-      "function": "TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/generator/constraint_drift_integration_test.go",
-      "function": "TestConstraintDriftGenerateRoundTrip_Integration",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/constraint_drift_integration_test.go",
-      "function": "TestUniqueConstraintDriftGenerateRoundTrip_Integration",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/fk_drop_order_integration_test.go",
-      "function": "TestFKDropOrder_DownRoundTrip_Integration",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/fk_drop_order_integration_test.go",
-      "function": "TestFKDropOrder_MutualCycleDownRoundTrip_Integration",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/generator_test.go",
-      "function": "TestGenerateMigration_DatabaseConnectionFix",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/generator_test.go",
-      "function": "TestGenerateMigration_ExtensionHandling_WithRealDB",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/generator/multihost_fk_down_integration_test.go",
-      "function": "TestMultiHostMixinFKModify_DownRoundTrip_Integration",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "migration/generator/reverse_diff_test.go",
       "function": "TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily",
       "kind": "if",
@@ -795,12 +663,6 @@
     {
       "path": "migration/migrator/advisory_lock_test.go",
       "function": "TestParseMigrationLockTimeout",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/migrator/debug_test.go",
-      "function": "TestInitializeDebug",
       "kind": "if",
       "count": 1
     },
@@ -863,12 +725,6 @@
       "function": "Example_registerMigrationsCustomFilesystem",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "migration/migrator/lock_timeout_integration_test.go",
-      "function": "TestMigrateUp_PostgresLockTimeoutIntegration",
-      "kind": "if",
-      "count": 3
     },
     {
       "path": "migration/migrator/migration_provider_test.go",
@@ -949,12 +805,6 @@
       "count": 10
     },
     {
-      "path": "migration/migrator/sqlserver_live_test.go",
-      "function": "TestSQLServerMigratorHonorsURLSchemaForMetadata",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/migrator/timeouts_test.go",
       "function": "TestTimeoutStatements",
       "kind": "if",
@@ -1011,12 +861,6 @@
     {
       "path": "migration/schemadiff/internal/compare/fk_constraints_test.go",
       "function": "TestConstraints_FieldLevelForeignKey",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/seeder/seeder_integration_test.go",
-      "function": "TestApply_Integration",
       "kind": "if",
       "count": 1
     },
@@ -1083,26 +927,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "integration/dynamic_test.go",
-      "package": "integration",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "integration/reporting_test.go",
-      "package": "integration",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "integration/scenarios_advanced_test.go",
-      "package": "integration",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "integration/scenarios_test.go",
-      "package": "integration",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "internal/dbschema/clickhouse/clickhouse_test.go",
       "package": "clickhouse",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1148,17 +972,7 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "migration/generator/fk_drop_order_integration_test.go",
-      "package": "generator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "migration/generator/migration_file_generation_test.go",
-      "package": "generator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "migration/generator/multihost_fk_down_integration_test.go",
       "package": "generator",
       "reason": "same-package test file is not named *_internal_test.go"
     },
@@ -1189,11 +1003,6 @@
     },
     {
       "path": "migration/migrator/advisory_lock_test.go",
-      "package": "migrator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "migration/migrator/debug_test.go",
       "package": "migrator",
       "reason": "same-package test file is not named *_internal_test.go"
     },
@@ -1238,23 +1047,8 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "migration/schemadiff/internal/compare/issue34_integration_test.go",
-      "package": "compare",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "migration/seeder/seeder_integration_test.go",
-      "package": "seeder",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "migration/seeder/seeder_test.go",
       "package": "seeder",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "testkit/containers_test.go",
-      "package": "testkit",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {

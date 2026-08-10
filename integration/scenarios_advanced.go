@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -409,6 +410,16 @@ func testMigrationGeneratorValidation(
 			return fmt.Errorf("step 1 validation failed: %w", err)
 		}
 		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	err = recorder.RecordStep("1.3 Reject Populated Schema As Empty", "Verify empty-schema validation fails while tables exist", func() error {
+		if err := validateEmptySchema(ctx, conn); err == nil {
+			return errors.New("empty-schema validation accepted a populated schema")
+		}
+		return nil
 	})
 	if err != nil {
 		return err

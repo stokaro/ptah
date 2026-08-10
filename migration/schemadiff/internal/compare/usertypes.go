@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -20,32 +21,63 @@ func Domains(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedDomains := make(map[string]goschema.Domain, len(generated.Domains))
+	domainsWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+}
+
+// DomainsWithSemantics compares domain identity using the target database's
+// resolved default schema and identifier rules.
+func DomainsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	domainsWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+}
+
+func domainsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	generatedDomains := make(map[tableIdentity]goschema.Domain, len(generated.Domains))
+	generatedNames := make(map[tableIdentity]string, len(generated.Domains))
 	for _, domain := range generated.Domains {
-		generatedDomains[domain.QualifiedName()] = domain
+		identity := newTableIdentity(domain.Schema, domain.Name, semantics)
+		generatedDomains[identity] = domain
+		generatedNames[identity] = domain.QualifiedName()
 	}
-	databaseDomains := make(map[string]types.DBDomain, len(database.Domains))
+	databaseDomains := make(map[tableIdentity]types.DBDomain, len(database.Domains))
+	databaseNames := make(map[tableIdentity]string, len(database.Domains))
 	for _, domain := range database.Domains {
-		databaseDomains[domain.QualifiedName()] = domain
+		identity := newTableIdentity(domain.Schema, domain.Name, semantics)
+		databaseDomains[identity] = domain
+		databaseNames[identity] = domain.QualifiedName()
 	}
 
-	added, removed := compareNamedItems(generatedDomains, databaseDomains)
-	diff.DomainsAdded = append(diff.DomainsAdded, added...)
-	diff.DomainsRemoved = append(diff.DomainsRemoved, removed...)
-
-	for name, target := range generatedDomains {
-		if current, exists := databaseDomains[name]; exists {
+	for identity, target := range generatedDomains {
+		if current, exists := databaseDomains[identity]; exists {
 			if changes := domainChanges(target, current); len(changes) > 0 {
 				// CurrentBaseType is the from-side of the comparison carried as
 				// a type spelling: the recreate path's non-CASCADE DROP runs
 				// against this database, so it is these references that can
 				// block it, not the target's.
 				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{
-					DomainName:      name,
+					DomainName:      generatedNames[identity],
 					Changes:         changes,
 					CurrentBaseType: current.BaseType,
 				})
 			}
+			continue
+		}
+		diff.DomainsAdded = append(diff.DomainsAdded, generatedNames[identity])
+	}
+	for identity := range databaseDomains {
+		if _, exists := generatedDomains[identity]; !exists {
+			diff.DomainsRemoved = append(diff.DomainsRemoved, databaseNames[identity])
 		}
 	}
 
@@ -136,32 +168,62 @@ func CompositeTypes(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedTypes := make(map[string]goschema.CompositeType, len(generated.CompositeTypes))
+	compositeTypesWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+}
+
+// CompositeTypesWithSemantics compares composite-type identity using the
+// target database's resolved default schema and identifier rules.
+func CompositeTypesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	compositeTypesWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+}
+
+func compositeTypesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	generatedTypes := make(map[tableIdentity]goschema.CompositeType, len(generated.CompositeTypes))
+	generatedNames := make(map[tableIdentity]string, len(generated.CompositeTypes))
 	for _, composite := range generated.CompositeTypes {
-		generatedTypes[composite.QualifiedName()] = composite
+		identity := newTableIdentity(composite.Schema, composite.Name, semantics)
+		generatedTypes[identity] = composite
+		generatedNames[identity] = composite.QualifiedName()
 	}
-	databaseTypes := make(map[string]types.DBComposite, len(database.Composites))
+	databaseTypes := make(map[tableIdentity]types.DBComposite, len(database.Composites))
+	databaseNames := make(map[tableIdentity]string, len(database.Composites))
 	for _, composite := range database.Composites {
-		databaseTypes[composite.QualifiedName()] = composite
+		identity := newTableIdentity(composite.Schema, composite.Name, semantics)
+		databaseTypes[identity] = composite
+		databaseNames[identity] = composite.QualifiedName()
 	}
 
-	added, removed := compareNamedItems(generatedTypes, databaseTypes)
-	diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, added...)
-	diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, removed...)
-
-	for name, target := range generatedTypes {
-		current, exists := databaseTypes[name]
+	for identity, target := range generatedTypes {
+		current, exists := databaseTypes[identity]
 		if !exists {
+			diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, generatedNames[identity])
 			continue
 		}
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
 			// CurrentFieldTypes is the from-side of the comparison carried as
 			// type spellings, for the reason given on the domain branch above.
 			diff.CompositeTypesModified = append(diff.CompositeTypesModified, difftypes.CompositeTypeDiff{
-				TypeName:          name,
+				TypeName:          generatedNames[identity],
 				Changes:           map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
 				CurrentFieldTypes: dbCompositeFieldTypes(current),
 			})
+		}
+	}
+	for identity := range databaseTypes {
+		if _, exists := generatedTypes[identity]; !exists {
+			diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, databaseNames[identity])
 		}
 	}
 
@@ -226,22 +288,47 @@ func Ranges(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedRanges := make(map[string]goschema.Range, len(generated.Ranges))
+	rangesWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+}
+
+// RangesWithSemantics compares range identity using the target database's
+// resolved default schema and identifier rules.
+func RangesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	rangesWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+}
+
+func rangesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	generatedRanges := make(map[tableIdentity]goschema.Range, len(generated.Ranges))
+	generatedNames := make(map[tableIdentity]string, len(generated.Ranges))
 	for _, rangeType := range generated.Ranges {
-		generatedRanges[rangeType.QualifiedName()] = rangeType
+		identity := newTableIdentity(rangeType.Schema, rangeType.Name, semantics)
+		generatedRanges[identity] = rangeType
+		generatedNames[identity] = rangeType.QualifiedName()
 	}
-	databaseRanges := make(map[string]types.DBRange, len(database.Ranges))
+	databaseRanges := make(map[tableIdentity]types.DBRange, len(database.Ranges))
+	databaseNames := make(map[tableIdentity]string, len(database.Ranges))
 	for _, rangeType := range database.Ranges {
-		databaseRanges[rangeType.QualifiedName()] = rangeType
+		identity := newTableIdentity(rangeType.Schema, rangeType.Name, semantics)
+		databaseRanges[identity] = rangeType
+		databaseNames[identity] = rangeType.QualifiedName()
 	}
 
-	added, removed := compareNamedItems(generatedRanges, databaseRanges)
-	diff.RangesAdded = append(diff.RangesAdded, added...)
-	diff.RangesRemoved = append(diff.RangesRemoved, removed...)
-
-	for name, target := range generatedRanges {
-		current, exists := databaseRanges[name]
+	for identity, target := range generatedRanges {
+		current, exists := databaseRanges[identity]
 		if !exists {
+			diff.RangesAdded = append(diff.RangesAdded, generatedNames[identity])
 			continue
 		}
 		if changes := rangeChanges(target, current); len(changes) > 0 {
@@ -249,10 +336,15 @@ func Ranges(
 			// type spelling: the recreate path's non-CASCADE DROP runs against
 			// this database, so it is these references that can block it.
 			diff.RangesModified = append(diff.RangesModified, difftypes.RangeDiff{
-				RangeName:      name,
+				RangeName:      generatedNames[identity],
 				Changes:        changes,
 				CurrentSubtype: current.Subtype,
 			})
+		}
+	}
+	for identity := range databaseRanges {
+		if _, exists := generatedRanges[identity]; !exists {
+			diff.RangesRemoved = append(diff.RangesRemoved, databaseNames[identity])
 		}
 	}
 
