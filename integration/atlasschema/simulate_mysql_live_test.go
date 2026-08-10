@@ -18,24 +18,27 @@ package atlasschema_test
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestSimulateOnDev_MySQLFailedRehearsalLeavesTargetByteIdenticalLive(t *testing.T) {
 	c := qt.New(t)
-	baseURL := liveMySQLURLForSimulation(t)
-	targetURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_fail_target")
-	devURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_fail_dev")
+	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_fail_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_fail_dev")
 
 	targetConn := openLiveMySQL(c, targetURL)
 	c.Assert(atlasschema.ApplySQL(c.Context(), targetConn, migrator.MigrationTxModeNone,
@@ -104,9 +107,9 @@ table "sim_added" {
 
 func TestSimulateOnDev_MySQLSuccessfulRehearsalStillAppliesLive(t *testing.T) {
 	c := qt.New(t)
-	baseURL := liveMySQLURLForSimulation(t)
-	targetURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_ok_target")
-	devURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_ok_dev")
+	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_ok_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_ok_dev")
 
 	targetConn := openLiveMySQL(c, targetURL)
 	targetName := liveMySQLDatabaseName(c, targetURL)
@@ -151,10 +154,10 @@ table "sim_added" {
 
 func TestSimulateOnDev_MySQLRefusesAThirdDatabaseLive(t *testing.T) {
 	c := qt.New(t)
-	baseURL := liveMySQLURLForSimulation(t)
-	targetURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_third_target")
-	devURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_third_dev")
-	bystanderURL := createLiveMySQLDatabase(c, baseURL, "ptah1240_third_bystander")
+	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_third_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_third_dev")
+	bystanderURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_third_bystander")
 
 	bystanderConn := openLiveMySQL(c, bystanderURL)
 	bystanderName := liveMySQLDatabaseName(c, bystanderURL)
@@ -194,59 +197,111 @@ table "sim_added" {
 	c.Assert(mySQLSchemaSnapshot(c, bystanderConn, bystanderName), qt.DeepEquals, before)
 }
 
-// liveMySQLURLForSimulation gates the live simulation tests on the same
-// environment variables as the migrator's MySQL integration tests.
-func liveMySQLURLForSimulation(t *testing.T) string {
+// liveMySQLURLsForSimulation keeps the target connection restricted while
+// requiring a separate administrative connection for scratch provisioning.
+func liveMySQLURLsForSimulation(t *testing.T) (restrictedURL, adminURL string) {
 	t.Helper()
-	dbURL := os.Getenv("MYSQL_TEST_URL")
-	if dbURL == "" {
-		dbURL = os.Getenv("MYSQL_TEST_DSN")
+	restrictedURL = os.Getenv("MYSQL_TEST_URL")
+	if restrictedURL == "" {
+		restrictedURL = os.Getenv("MYSQL_TEST_DSN")
 	}
-	if dbURL == "" {
+	if restrictedURL == "" {
 		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
 	}
-	if !strings.HasPrefix(dbURL, "mysql://") {
-		dbURL = "mysql://" + dbURL
+	adminURL = os.Getenv("MYSQL_ADMIN_TEST_URL")
+	if adminURL == "" {
+		adminURL = os.Getenv("MYSQL_ADMIN_TEST_DSN")
 	}
+	if adminURL == "" {
+		t.Skip("MYSQL_ADMIN_TEST_DSN or MYSQL_ADMIN_TEST_URL not set")
+	}
+	return normalizeMySQLTestURL(restrictedURL), normalizeMySQLTestURL(adminURL)
+}
+
+func normalizeMySQLTestURL(rawURL string) string {
+	if strings.HasPrefix(rawURL, "mysql://") {
+		return rawURL
+	}
+	return "mysql://" + rawURL
+}
+
+// createLiveMySQLDatabase provisions through the administrative connection,
+// but returns a URL with the caller-selected credentials. This distinction is
+// what lets the tests exercise a restricted target and an administrative dev
+// database without granting CREATE DATABASE to the target user.
+func createLiveMySQLDatabase(c *qt.C, adminURL, connectionURL, prefix string) string {
+	c.Helper()
+	name := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano())
+	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
+
+	quotedName := sqlident.Quote(platform.MySQL, name)
+	_, err = admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quotedName)
+	c.Assert(err, qt.IsNil)
+	_, err = admin.ExecContext(context.Background(), "CREATE DATABASE "+quotedName)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, cleanupErr := admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quotedName)
+		c.Check(cleanupErr, qt.IsNil)
+	})
+	return mySQLURLForDatabase(c, connectionURL, name)
+}
+
+func createRestrictedLiveMySQLDatabase(c *qt.C, adminURL, restrictedURL, prefix string) string {
+	c.Helper()
+	dbURL := createLiveMySQLDatabase(c, adminURL, restrictedURL, prefix)
+	username, host := currentMySQLAccount(c, restrictedURL)
+	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+	_, err = admin.ExecContext(context.Background(), fmt.Sprintf(
+		"GRANT ALL PRIVILEGES ON %s.* TO %s@%s",
+		sqlident.Quote(platform.MySQL, liveMySQLDatabaseName(c, dbURL)),
+		quoteMySQLString(username),
+		quoteMySQLString(host),
+	))
+	c.Assert(err, qt.IsNil)
 	return dbURL
 }
 
-// createLiveMySQLDatabase creates a database of its own for one probe and drops
-// it again when the test ends, so probes never share scratch space.
-func createLiveMySQLDatabase(c *qt.C, baseURL, name string) string {
+func currentMySQLAccount(c *qt.C, dbURL string) (username, host string) {
 	c.Helper()
-	admin, err := dbschema.ConnectToDatabase(context.Background(), baseURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(admin)
-
-	_, err = admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS `"+name+"`")
+	defer dbschema.CloseAndWarn(conn)
+	var account string
+	err = conn.QueryRowContext(context.Background(), "SELECT CURRENT_USER()").Scan(&account)
 	c.Assert(err, qt.IsNil)
-	_, err = admin.ExecContext(context.Background(), "CREATE DATABASE `"+name+"`")
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() {
-		cleanup, err := dbschema.ConnectToDatabase(context.Background(), baseURL)
-		if err != nil {
-			return
-		}
-		defer dbschema.CloseAndWarn(cleanup)
-		_, _ = cleanup.ExecContext(context.Background(), "DROP DATABASE IF EXISTS `"+name+"`")
-	})
-	return mySQLURLForDatabase(c, baseURL, name)
+	username, host, found := strings.Cut(account, "@")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(username, qt.Not(qt.Equals), "")
+	c.Assert(host, qt.Not(qt.Equals), "")
+	return username, host
 }
 
 func mySQLURLForDatabase(c *qt.C, baseURL, name string) string {
 	c.Helper()
-	parsed, err := url.Parse(baseURL)
+	scheme, dsn, found := strings.Cut(baseURL, "://")
+	c.Assert(found, qt.IsTrue)
+	config, err := mysqldriver.ParseDSN(dsn)
 	c.Assert(err, qt.IsNil)
-	parsed.Path = "/" + name
-	return parsed.String()
+	config.DBName = name
+	return scheme + "://" + config.FormatDSN()
 }
 
 func liveMySQLDatabaseName(c *qt.C, dbURL string) string {
 	c.Helper()
-	parsed, err := url.Parse(dbURL)
+	_, dsn, found := strings.Cut(dbURL, "://")
+	c.Assert(found, qt.IsTrue)
+	config, err := mysqldriver.ParseDSN(dsn)
 	c.Assert(err, qt.IsNil)
-	return strings.TrimPrefix(parsed.Path, "/")
+	c.Assert(config.DBName, qt.Not(qt.Equals), "")
+	return config.DBName
+}
+
+func quoteMySQLString(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func openLiveMySQL(c *qt.C, dbURL string) *dbschema.DatabaseConnection {

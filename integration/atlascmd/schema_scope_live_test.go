@@ -93,6 +93,7 @@ func livePostgresTableExists(t *testing.T, dbURL, schema, table string) bool {
 func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := livePostgresURLForScope(t)
+	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_apply_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255)\n);\n"
@@ -104,6 +105,7 @@ func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "apply",
 		"--url", dbURL,
+		"--dev-url", devURL,
 		"--to", "file://" + schemaPath,
 		"--schema", appSchema,
 		"--auto-approve",
@@ -122,6 +124,7 @@ func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := livePostgresURLForScope(t)
+	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_dependency_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	// The desired state declares both tables; the schema scope selects only
@@ -137,6 +140,7 @@ func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "apply",
 		"--url", dbURL,
+		"--dev-url", devURL,
 		"--to", "file://" + schemaPath,
 		"--schema", appSchema,
 		"--dry-run",

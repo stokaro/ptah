@@ -25,7 +25,7 @@ func TestAdvancedScenariosWithRealDatabase(t *testing.T) {
 		c.Run(test.name, func(c *qt.C) {
 			runner := ptahintegration.NewTestRunner(testFixtures)
 			runner.AddDatabase("advanced", requireDynamicDatabaseURL(t))
-			runner.AddScenario(requireDynamicScenario(t, test.name))
+			runner.AddScenario(requireAdvancedScenario(t, test.name))
 			c.Assert(runner.RunAll(t.Context()), qt.IsNil)
 			report := runner.GetReport()
 			c.Assert(report.TotalTests, qt.Equals, 1)
@@ -34,4 +34,16 @@ func TestAdvancedScenariosWithRealDatabase(t *testing.T) {
 			c.Assert(report.SkippedTests, qt.Equals, 0)
 		})
 	}
+}
+
+func requireAdvancedScenario(t *testing.T, name string) ptahintegration.TestScenario {
+	t.Helper()
+
+	for _, scenario := range ptahintegration.GetAllScenarios() {
+		if scenario.Name == name {
+			return scenario
+		}
+	}
+	t.Fatalf("advanced scenario %q is not registered", name)
+	return ptahintegration.TestScenario{}
 }

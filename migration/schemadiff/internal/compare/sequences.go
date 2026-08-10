@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -30,33 +31,61 @@ func Sequences(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedSequences := make(map[string]goschema.Sequence, len(generated.Sequences))
+	sequencesWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+}
+
+// SequencesWithSemantics compares sequence identity using the target
+// database's resolved default schema and identifier rules.
+func SequencesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	sequencesWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+}
+
+func sequencesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	generatedSequences := make(map[tableIdentity]goschema.Sequence, len(generated.Sequences))
+	generatedNames := make(map[tableIdentity]string, len(generated.Sequences))
 	for _, sequence := range generated.Sequences {
-		generatedSequences[sequence.QualifiedName()] = sequence
+		identity := newTableIdentity(sequence.Schema, sequence.Name, semantics)
+		generatedSequences[identity] = sequence
+		generatedNames[identity] = sequence.QualifiedName()
 	}
 
-	databaseSequences := make(map[string]types.DBSequence, len(database.Sequences))
+	databaseSequences := make(map[tableIdentity]types.DBSequence, len(database.Sequences))
+	databaseNames := make(map[tableIdentity]string, len(database.Sequences))
 	for _, sequence := range database.Sequences {
-		databaseSequences[sequence.QualifiedName()] = sequence
+		identity := newTableIdentity(sequence.Schema, sequence.Name, semantics)
+		databaseSequences[identity] = sequence
+		databaseNames[identity] = sequence.QualifiedName()
 	}
 
-	for name, generatedSequence := range generatedSequences {
-		databaseSequence, exists := databaseSequences[name]
+	for identity, generatedSequence := range generatedSequences {
+		databaseSequence, exists := databaseSequences[identity]
 		if !exists {
-			diff.SequencesAdded = append(diff.SequencesAdded, name)
+			diff.SequencesAdded = append(diff.SequencesAdded, generatedNames[identity])
 			continue
 		}
 		if changes := sequenceChanges(generatedSequence, databaseSequence); len(changes) > 0 {
 			diff.SequencesModified = append(diff.SequencesModified, difftypes.SequenceDiff{
-				SequenceName: name,
+				SequenceName: generatedNames[identity],
 				Changes:      changes,
 			})
 		}
 	}
 
-	for name := range databaseSequences {
-		if _, exists := generatedSequences[name]; !exists {
-			diff.SequencesRemoved = append(diff.SequencesRemoved, name)
+	for identity := range databaseSequences {
+		if _, exists := generatedSequences[identity]; !exists {
+			diff.SequencesRemoved = append(diff.SequencesRemoved, databaseNames[identity])
 		}
 	}
 
@@ -69,8 +98,8 @@ func Sequences(
 	// either way. One without it is withheld and named, since `CREATE SEQUENCE`
 	// against an existing sequence fails the migration.
 	sequenceGuards := make(map[string]bool, len(generatedSequences))
-	for name, sequence := range generatedSequences {
-		sequenceGuards[name] = sequence.IfNotExists
+	for identity, sequence := range generatedSequences {
+		sequenceGuards[generatedNames[identity]] = sequence.IfNotExists
 	}
 	kept, withheld := cov.keepPlannedAdditions(
 		coverage.Sequence, diff.SequencesAdded, qualifiedName, guardedCreations(sequenceGuards),
