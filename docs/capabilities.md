@@ -362,9 +362,13 @@ value or wants to pin a specific server version in tests/CI.
   advisory locks, and concurrent indexes. Spanner accepts only `NO ACTION` and
   `CASCADE` for `ON DELETE`; any `ON UPDATE` action fails before rendering.
   CockroachDB and YugabyteDB integration coverage uses opt-in common-subset
-  scenarios that run against live OSS containers in CI. Spanner currently has
-  capability, planning, rendering, URL, and detection coverage only; there is
-  no OSS Spanner PostgreSQL-interface container in the integration suite.
+  scenarios that run against live OSS containers in CI. The distributed-SQL
+  reader gate also seeds table, index, view, materialized view, and sequence
+  objects and then exercises `ptah db read`, `ptah-compat schema inspect`, and
+  the shared pgx reader so one broken catalog query cannot be hidden by a later
+  broad integration step. Spanner currently has capability, planning,
+  rendering, URL, and detection coverage only; there is no OSS Spanner
+  PostgreSQL-interface container in the integration suite.
 - **Object kinds across the PostgreSQL family (#929).** One planner and one
   renderer serve PostgreSQL, CockroachDB, YugabyteDB, and Spanner, so the
   `views`, `materialized_views`, `functions`, and `triggers` keys are what lets
