@@ -128,8 +128,8 @@ func TestRender_PostgreSQLStillEmitsMaterializedViews(t *testing.T) {
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `CREATE MATERIALIZED VIEW "mv1"`)
 }
 
-// clickHouseSchema declares one of every object kind ClickHouse cannot host,
-// plus a table carrying a column CHECK.
+// clickHouseSchema declares a plain view alongside the object kinds Ptah's
+// ClickHouse model cannot express, plus a table carrying a column CHECK.
 func clickHouseSchema() *goschema.Database {
 	return &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pg_trgm"}},
@@ -150,15 +150,16 @@ func clickHouseSchema() *goschema.Database {
 	}
 }
 
-// TestRender_ClickHouseNamesEveryObjectItCannotHost pins that ClickHouse reports
-// the object kinds it drops.
+// TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects pins that plain
+// views are executable while the remaining unsupported object kinds stay
+// visible as diagnostics.
 //
 // The ClickHouse renderer has implemented a notSupported() diagnostic for each
 // of these kinds all along; the converter dropped the AST nodes before any of
 // them ran. A schema declaring all of them rendered one CREATE TABLE and exited
 // 0, against a PostgreSQL control that planned eight statements
 // (stokaro/ptah#931 item 7).
-func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
+func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(clickHouseSchema(), platform.ClickHouse)
@@ -173,7 +174,6 @@ func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "chk_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "chk_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "chk_f" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: CREATE VIEW "chk_v" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "chk_mv" is not supported`},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "chk_trg" is not supported`},
 	}
@@ -183,6 +183,7 @@ func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 			c.Assert(rendered, qt.Contains, test.want)
 		})
 	}
+	c.Assert(rendered, qt.Contains, "CREATE VIEW `chk_v` AS\nSELECT id FROM t")
 }
 
 // TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint pins that a column

@@ -160,6 +160,14 @@ complete catalog dependency metadata, cleanup also requires that other user
 databases contain no view-like or dictionary objects and no `Buffer`,
 `Distributed`, or `Merge` tables.
 
+Plain views participate in the complete render, plan, and introspection cycle.
+Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
+qualified names and query bodies, and reads ordinary views from
+`system.tables`. An empty query body, `WITH CHECK OPTION`, or
+`DROP VIEW ... CASCADE` fails instead of being ignored. Materialized views remain named as
+unsupported because the shared schema model cannot preserve ClickHouse `TO`,
+`ENGINE`, or refresh semantics safely.
+
 ### Atlas revision metadata on ClickHouse
 
 Ptah creates the Atlas revision table with `partial_hashes` declared as text.

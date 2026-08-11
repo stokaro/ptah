@@ -11,11 +11,13 @@ import (
 	"unicode/utf8"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// ViewLike is a PostgreSQL view-like object that can reference other view-like
-// objects in its SELECT body.
+// ViewLike is a view-like object that can reference other view-like objects in
+// its SELECT body.
 type ViewLike struct {
 	Name         string
 	Body         string
@@ -379,6 +381,18 @@ func FunctionsForCreate(schema *goschema.Database, functionNames []string) []gos
 // ViewLikesForCreate returns views and materialized views in dependency order
 // when their bodies reference other added view-like objects.
 func ViewLikesForCreate(objects []ViewLike) []ViewLike {
+	return viewLikesForCreate(objects, "")
+}
+
+// ViewLikesForCreateForDialect returns view-like objects in dependency order
+// using the target dialect's identifier quoting rules. Qualified declarations
+// are matched by their canonical qualified spelling, while an unqualified body
+// reference resolves only when exactly one declaration has that bare name.
+func ViewLikesForCreateForDialect(objects []ViewLike, dialect string) []ViewLike {
+	return viewLikesForCreate(objects, dialect)
+}
+
+func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 	if len(objects) < 2 {
 		return append([]ViewLike(nil), objects...)
 	}
@@ -392,12 +406,14 @@ func ViewLikesForCreate(objects []ViewLike) []ViewLike {
 		byID[id] = object
 		idsByName[object.Name] = append(idsByName[object.Name], id)
 	}
+	bareNameCounts := viewLikeBareNameCounts(idsByName)
 
 	dependencies := make(map[string][]string, len(objects))
 	for i, object := range objects {
 		id := viewLikeID(object, i)
 		for candidateName, candidateIDs := range idsByName {
-			if candidateName == object.Name || !ReferencesIdentifier(object.Body, candidateName) {
+			if candidateName == object.Name ||
+				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, bareNameCounts) {
 				continue
 			}
 			dependencies[id] = append(dependencies[id], candidateIDs...)
@@ -410,6 +426,133 @@ func ViewLikesForCreate(objects []ViewLike) []ViewLike {
 		ordered = append(ordered, byID[id])
 	}
 	return ordered
+}
+
+func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {
+	counts := make(map[string]int, len(idsByName))
+	for name, ids := range idsByName {
+		ref, ok := tableref.Parse(name)
+		if !ok {
+			continue
+		}
+		counts[strings.ToLower(ref.Name)] += len(ids)
+	}
+	return counts
+}
+
+func referencesViewLikeIdentifier(body, name, dialect string, bareNameCounts map[string]int) bool {
+	if dialect == "" {
+		return ReferencesIdentifier(body, name)
+	}
+
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return ReferencesIdentifier(body, name)
+	}
+	if ref.Qualified && referencesIdentifierSpellings(body, []string{
+		name,
+		tableref.Canonical(ref.Schema, ref.Name),
+		sqlident.Qualified(dialect, ref.Schema, ref.Name),
+	}, dialect) {
+		return true
+	}
+	if !ref.Qualified && referencesIdentifierSpellings(body, []string{
+		name,
+		tableref.Canonical("", ref.Name),
+		sqlident.Quote(dialect, ref.Name),
+	}, dialect) {
+		return true
+	}
+
+	if bareNameCounts[strings.ToLower(ref.Name)] != 1 {
+		return false
+	}
+	return referencesUnqualifiedIdentifier(body, ref.Name, dialect)
+}
+
+func referencesIdentifierSpellings(body string, spellings []string, dialect string) bool {
+	for _, spelling := range spellings {
+		if referencesIdentifierSpelling(body, spelling, dialect) {
+			return true
+		}
+	}
+	return false
+}
+
+func referencesUnqualifiedIdentifier(body, name, dialect string) bool {
+	return referencesUnquotedIdentifierSpelling(body, name, dialect) ||
+		referencesIdentifierSpelling(body, tableref.Canonical("", name), dialect) ||
+		referencesIdentifierSpelling(body, sqlident.Quote(dialect, name), dialect)
+}
+
+func referencesIdentifierSpelling(body, spelling, dialect string) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasStandaloneIdentifierBoundaries)
+}
+
+func referencesUnquotedIdentifierSpelling(body, spelling, dialect string) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasUnquotedIdentifierBoundaries)
+}
+
+func referencesIdentifierSpellingWithBoundary(
+	body, spelling, dialect string,
+	hasBoundaries func(string, int, int) bool,
+) bool {
+	body = strings.ToLower(body)
+	spelling = strings.ToLower(strings.TrimSpace(spelling))
+	if body == "" || spelling == "" {
+		return false
+	}
+
+	masks := sqlMasksForDialect(body, dialect)
+	for start := 0; start < len(body); {
+		index := strings.Index(body[start:], spelling)
+		if index < 0 {
+			return false
+		}
+		index += start
+		end := index + len(spelling)
+		if spanIsCode(masks.code, index, end) &&
+			hasBoundaries(body, index, end) &&
+			spanMatchesIdentifierQuoting(body, spelling, masks, index, end) {
+			return true
+		}
+		start = end
+	}
+	return false
+}
+
+func spanMatchesIdentifierQuoting(body, spelling string, masks sqlMasks, start, end int) bool {
+	if !spanHasMarkedByte(masks.quotedIdentifier, start, end) {
+		return true
+	}
+	if spelling[0] != '"' && spelling[0] != '`' {
+		return strings.ContainsAny(spelling, "\"`")
+	}
+	return masks.quoteOpen[start] && masks.quoteClose[end-1] && body[start] == body[end-1]
+}
+
+func spanHasMarkedByte(mask []bool, start, end int) bool {
+	for i := start; i < end; i++ {
+		if mask[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func hasStandaloneIdentifierBoundaries(body string, start, end int) bool {
+	return isIdentifierBoundary(body, start-1) && isIdentifierBoundary(body, end)
+}
+
+func hasUnquotedIdentifierBoundaries(body string, start, end int) bool {
+	return hasStandaloneIdentifierBoundaries(body, start, end) && isUnquotedReferenceBoundary(body, start, end)
+}
+
+func isUnquotedReferenceBoundary(body string, start, end int) bool {
+	if start > 0 && strings.ContainsRune("\"`[]", rune(body[start-1])) {
+		return false
+	}
+	return end >= len(body) || !strings.ContainsRune("\"`[]", rune(body[end]))
 }
 
 func indexNodes(nodes []string) map[string]int {
@@ -652,34 +795,63 @@ func spanIsCode(code []bool, start, end int) bool {
 // The mask is computed over the same string the caller searches, so no offset
 // can slide out from under it.
 func sqlCodeMask(body string) []bool {
-	mask := make([]bool, len(body))
+	return sqlMasksForDialect(body, "").code
+}
+
+// sqlCodeMaskForDialect adds the target's nonstandard comment forms without
+// changing the generic PostgreSQL-oriented scanner. ClickHouse recognizes #,
+// #!, and // line comments in addition to -- and /* ... */.
+func sqlMasksForDialect(body, dialect string) sqlMasks {
+	masks := sqlMasks{
+		code:             make([]bool, len(body)),
+		quotedIdentifier: make([]bool, len(body)),
+		quoteOpen:        make([]bool, len(body)),
+		quoteClose:       make([]bool, len(body)),
+	}
+	clickHouse := platform.NormalizeDialect(dialect) == platform.ClickHouse
 	for i := 0; i < len(body); {
 		switch {
+		case clickHouse && body[i] == '#':
+			i = skipLineComment(body, i)
+		case clickHouse && strings.HasPrefix(body[i:], "//"):
+			i = skipLineComment(body, i)
 		case strings.HasPrefix(body[i:], "--"):
 			i = skipLineComment(body, i)
 		case strings.HasPrefix(body[i:], "/*"):
 			i = skipBlockComment(body, i)
 		case body[i] == '\'':
-			i = skipStringLiteral(body, i)
-		case body[i] == '"':
-			end := skipQuotedIdentifier(body, i)
+			i = skipStringLiteral(body, i, dialect)
+		case body[i] == '"' || body[i] == '`':
+			end, closeAt := quotedIdentifierEnd(body, i, dialect)
+			masks.quoteOpen[i] = true
+			if closeAt >= 0 {
+				masks.quoteClose[closeAt] = true
+			}
 			for ; i < end; i++ {
-				mask[i] = true
+				masks.code[i] = true
+				masks.quotedIdentifier[i] = true
 			}
 		case body[i] == '$':
 			end, ok := skipDollarQuoted(body, i)
 			if !ok {
-				mask[i] = true
+				masks.code[i] = true
 				i++
 				continue
 			}
 			i = end
 		default:
-			mask[i] = true
+			masks.code[i] = true
 			i++
 		}
 	}
-	return mask
+	return masks
+}
+
+type sqlMasks struct {
+	code             []bool
+	quotedIdentifier []bool
+	quoteOpen        []bool
+	quoteClose       []bool
 }
 
 func skipLineComment(body string, start int) int {
@@ -711,11 +883,11 @@ func skipBlockComment(body string, start int) int {
 	return len(body)
 }
 
-// skipStringLiteral consumes a '...' literal. A doubled quote continues it, and
-// a backslash escapes the next byte only in a literal introduced by E, which is
-// the one spelling where PostgreSQL reads backslashes as escapes.
-func skipStringLiteral(body string, start int) int {
-	escapes := start > 0 && body[start-1] == 'e' &&
+// skipStringLiteral consumes a '...' literal. A doubled quote continues it.
+// PostgreSQL enables backslash escapes for E-prefixed literals; ClickHouse
+// enables them for ordinary literals, which the dialect flag carries here.
+func skipStringLiteral(body string, start int, dialect string) int {
+	escapes := platform.NormalizeDialect(dialect) == platform.ClickHouse || start > 0 && body[start-1] == 'e' &&
 		(start == 1 || !isSQLIdentifierRune(rune(body[start-2])))
 	for i := start + 1; i < len(body); {
 		switch {
@@ -732,20 +904,26 @@ func skipStringLiteral(body string, start int) int {
 	return len(body)
 }
 
-// skipQuotedIdentifier consumes a "..." identifier, including the doubled quote
-// that spells a quotation mark inside one.
-func skipQuotedIdentifier(body string, start int) int {
+// quotedIdentifierEnd consumes a standard-quoted or backtick-quoted identifier,
+// including doubled closing quotes and ClickHouse backslash escapes. It returns
+// both the exclusive end and the closing delimiter offset, or -1 when the
+// identifier is unterminated.
+func quotedIdentifierEnd(body string, start int, dialect string) (end, closeAt int) {
+	quote := body[start]
+	backslashEscapes := platform.NormalizeDialect(dialect) == platform.ClickHouse
 	for i := start + 1; i < len(body); {
 		switch {
-		case body[i] == '"' && i+1 < len(body) && body[i+1] == '"':
+		case backslashEscapes && body[i] == '\\' && i+1 < len(body):
 			i += 2
-		case body[i] == '"':
-			return i + 1
+		case body[i] == quote && i+1 < len(body) && body[i+1] == quote:
+			i += 2
+		case body[i] == quote:
+			return i + 1, i
 		default:
 			i++
 		}
 	}
-	return len(body)
+	return len(body), -1
 }
 
 // skipDollarQuoted consumes a $tag$ ... $tag$ string, reporting false when the

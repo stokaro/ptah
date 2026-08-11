@@ -328,8 +328,8 @@ func registerBuiltInPlanners() error {
 		return err
 	}
 
-	if err := registerPlannerFactory(platform.ClickHouse, func(Options) Planner {
-		return clickhouse.New()
+	if err := registerPlannerFactory(platform.ClickHouse, func(opts Options) Planner {
+		return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(platform.ClickHouse))
 	}); err != nil {
 		return err
 	}

@@ -97,9 +97,9 @@ func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []s
 	return statements
 }
 
-// TestPlan_ClickHouseNamesEveryObjectItCannotHost pins the plan path to the
-// rule the render path was already held to: neither surface may drop a declared
-// object in silence.
+// TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects pins the plan path
+// to the rule the render path is held to: executable views are planned, and no
+// unsupported object disappears in silence.
 //
 // stokaro/ptah#931 item 7 was closed on `schema render` only. The ClickHouse
 // planner ignored every PostgreSQL-shaped diff category, so measured on live
@@ -108,7 +108,7 @@ func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []s
 // trigger planned the single CREATE TABLE and said nothing about the other
 // seven, while `ptah schema render --dialect clickhouse` on the same model
 // named all of them.
-func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
+func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
@@ -121,7 +121,6 @@ func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: CREATE VIEW "v1" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls enable", want: `-- CLICKHOUSE: ALTER TABLE ENABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: CREATE POLICY "p1" is not supported`},
@@ -134,6 +133,7 @@ func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
+	c.Assert(planned, qt.Contains, "CREATE VIEW `v1` AS\nSELECT id FROM t")
 }
 
 // TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer states the governing rule
@@ -150,16 +150,13 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	c.Assert(rendered, qt.HasLen, 10)
+	c.Assert(rendered, qt.HasLen, 9)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
-// TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced covers the worst shape
-// of the same defect: a schema whose only declared object is one ClickHouse
-// cannot host produced NO statements at all, so `schema apply` printed
-// "Schema is synced, no changes to be made." and exited 0 against an empty
-// database. That is an affirmative false report, not under-generation.
-func TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced(t *testing.T) {
+// TestPlan_ClickHouseViewAloneIsNotReportedAsSynced covers the smallest
+// executable view plan against an empty database.
+func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	c := qt.New(t)
 
 	generated := &goschema.Database{
@@ -170,7 +167,7 @@ func TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced(t *testing.T) {
 	statements := planStatements(c, diff, generated, platform.ClickHouse)
 
 	c.Assert(statements, qt.HasLen, 1)
-	c.Assert(statements[0], qt.Contains, `-- CLICKHOUSE: CREATE VIEW "v_only" is not supported`)
+	c.Assert(statements[0], qt.Contains, "CREATE VIEW `v_only` AS\nSELECT 1")
 }
 
 // TestPlan_ClickHouseNamesRemovedObjectsToo pins the other direction: an object
@@ -204,7 +201,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: DROP ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: DROP VIEW "v1" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: DROP MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls disable", want: `-- CLICKHOUSE: ALTER TABLE DISABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: DROP POLICY "p1" is not supported`},
@@ -217,6 +213,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
+	c.Assert(planned, qt.Contains, "DROP VIEW IF EXISTS `v1`")
 }
 
 // TestPlan_PostgreSQLStillPlansTheObjects is the non-interference control for

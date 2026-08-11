@@ -628,10 +628,11 @@ func Postgres13() Capabilities {
 // the same reason ClickHouse's row policies read as absent from
 // RowLevelSecurity.
 //
-// Ptah's ClickHouse renderer emits neither view kind yet and says so out loud
-// ("CLICKHOUSE does not support CREATE VIEW"). That gap is stokaro/ptah#931
-// item 7; this key records the engine, not the gap, so that closing #931 is a
-// renderer change rather than a second answer to the same question.
+// Ptah renders, plans, and introspects plain views. MaterializedViews still
+// records the engine rather than Ptah's current model: ClickHouse materialized
+// views need TO, ENGINE, and refresh semantics that the shared materialized-view
+// node cannot represent, so the renderer names them as unsupported instead of
+// emitting an incomplete object.
 func ClickHouse24() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,

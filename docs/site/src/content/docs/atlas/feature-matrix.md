@@ -259,7 +259,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes and column CHECKs (as named table constraints). Every other object kind is named by a not-supported comment on both `render` and `apply`; domains, composites and ranges still drop. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views and named table CHECKs. Other modeled objects produce named not-supported comments on `render` and `apply`; domains, composites and ranges still drop. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent index creation and drops, XML and advisory locks. Roles, grants, RLS, sequences, SERIAL, views, matviews, functions and triggers are enabled on the measured v26.2 line. |
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
@@ -275,7 +275,7 @@ seven of them as open capabilities regardless.
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit CREATE SEQUENCE. MySQL, MariaDB, ClickHouse and Spanner name it as skipped; SQLite and SQL Server still drop it silently. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | Every accepted spelling of an engine renders the same trigger DDL; Spanner names it skipped. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading it. |
-| Views and materialized views | 🟡 | ❌ | ✅ | Views render everywhere but ClickHouse, which names them instead; matviews on PostgreSQL, CockroachDB and YugabyteDB, with Spanner naming it skipped. No target drops either kind in silence. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Plain views render and plan on every dialect. Materialized views render on PostgreSQL, CockroachDB and YugabyteDB; other targets refuse or name them. |
 | YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Only DROP INDEX CONCURRENTLY is gated off on measured 2026.1. |
 
 ## Go embedding and developer tooling
