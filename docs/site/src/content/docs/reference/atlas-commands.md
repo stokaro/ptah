@@ -289,7 +289,7 @@ fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 
 | Flag | Behavior |
 | --- | --- |
-| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. Atlas `R` and `<number>R` repeatable files are selected by their revision token; bare `R` sorts after numeric files. |
+| `--latest N` | Positive N selects the latest revision keys and remains exclusive with `--git-base`. Zero disables latest selection and configured `lint.latest`; explicit or configured Git may still select. With neither, the command returns `--latest or --git-base is required`. |
 | `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. Changed Atlas repeatable files are selected by `R` or `<number>R`, not by a lossy numeric version. |
 | `--dev-url` | Required. Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
 | `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
