@@ -35,7 +35,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		schemaPath := filepath.Join(dir, "schema.hcl")
 		c.Assert(os.WriteFile(schemaPath, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)
 
-		stdout, stderr, err := runSchemaApplyProcess(ctx, dir, compatBinary,
+		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
 			"schema", "apply",
 			"--url", "sqlite://"+filepath.Join(dir, "target.db"),
 			"--to", "file://"+schemaPath,
@@ -53,7 +53,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		dir := c.TempDir()
 		schemaPath := filepath.Join(dir, "missing.hcl")
 
-		stdout, stderr, err := runSchemaApplyProcess(ctx, dir, compatBinary,
+		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
 			"schema", "apply",
 			"--url", "sqlite://"+filepath.Join(dir, "target.db"),
 			"--to", "file://"+schemaPath,
@@ -72,7 +72,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		schemaPath := filepath.Join(dir, "schema.hcl")
 		c.Assert(os.WriteFile(schemaPath, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)
 
-		stdout, stderr, err := runSchemaApplyProcess(ctx, dir, nativeBinary,
+		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,
 			"schema", "apply",
 			"--db-url", "sqlite://"+filepath.Join(dir, "target.db"),
 			"--to", "file://"+schemaPath,
@@ -88,7 +88,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 	})
 }
 
-func runSchemaApplyProcess(
+func runCLIProcess(
 	ctx context.Context,
 	dir string,
 	binaryPath string,
