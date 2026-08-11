@@ -23,7 +23,7 @@ plus the flag translation rules are on the
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
 | `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
-| `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs them against the desired state, and writes Atlas-style migration files with `atlas.sum` updated atomically. |
+| `ptah-compat migrate diff` | Replays local migrations on `--dev-url`, diffs them against the desired state, and writes the selected layout with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
 | `ptah-compat migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
@@ -1451,11 +1451,17 @@ it will not do is walk past `9999999999`, the largest version its fixed-width
 `NNNNNNNNNN` name can hold. It refuses instead, because the eleven-digit name it
 used to write was one the reader silently skipped.
 
-`migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
-planned SQL, and nothing writes a migration body in a foreign tool's convention
-yet. Import the directory with `ptah-compat migrate import` before diffing into
-it. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
+`migrate diff` writes every selected layout under both spellings. It writes the
+forward and rollback pair for `golang-migrate` and `flyway`, one file with both
+directive sections for `goose` and `dbmate`, and a Liquibase changeset with
+`--rollback:` lines. The refreshed `atlas.sum` covers the selected layout's file
+set. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
 selects a converted source directory through `?format=` on `--dir`.
+
+The foreign file shape is complete, but its rollback planning is still partial.
+It does not yet carry native MySQL/MariaDB foreign-key backing-index cleanup or
+PostgreSQL concurrent-index reversal refinements into the rollback half.
+`atlas.sum` validates the written bytes, not those reverse semantics.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean
