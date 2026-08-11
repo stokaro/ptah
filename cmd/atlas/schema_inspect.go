@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -52,10 +53,14 @@ type ` + "`isbn`" + `. Every decision is reported on standard error. Set
 this surface. SQL output keeps them all, and native
 ` + "`ptah schema inspect`" + ` omits nothing.
 
-The default output is HCL. SQL output is supported with --format sql or
---format '{{ sql . }}', JSON with --format json, and custom Go templates
-through the same --format flag. Split/write exports support the documented
-Atlas split strategies — per object (default), ` + "`split \"schema\"`" + `,
+The default output is HCL. Use --format '{{ hcl . }}' for explicit rendered
+HCL, --format '{{ sql . }}' for rendered SQL, and --format '{{ json . }}' for
+rendered JSON. Atlas CE treats the bare values --format hcl, --format sql, and
+--format json as literal text; surrounding whitespace preserves those template
+bodies byte for byte. Custom Go templates use the same --format flag.
+Split/write exports support the documented
+Atlas split strategies — per object (default),
+` + "`split \"schema\"`" + `,
 and ` + "`split \"type\"`" + ` with an optional file extension — through
 ` + "`{{ hcl . | split | write \"dir\" }}`" + ` and
 ` + "`{{ sql . | split | write \"dir\" }}`" + `. The OSS --exclude filter
@@ -99,7 +104,7 @@ and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
-	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
+	flags.StringVar(&opts.format, "format", "", "Output Go template: exact hcl/sql/json and whitespace-wrapped variants are literal text")
 	flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
 	registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
@@ -155,6 +160,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if formatConfigured && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
+	opts.format = atlasSchemaInspectCompatibilityFormat(opts.format)
 	if _, err := atlasschema.NormalizeInspectFormat(opts.format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -194,6 +200,18 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+// atlasSchemaInspectCompatibilityFormat preserves the pinned Atlas CE v1.3.0
+// interpretation of shorthand-looking template text. Exact bare hcl/sql/json
+// and their whitespace-wrapped forms remain literal text, byte for byte.
+// Explicit helper calls still reach the shared renderer.
+func atlasSchemaInspectCompatibilityFormat(format string) string {
+	switch strings.TrimSpace(format) {
+	case "hcl", "sql", "json":
+		return "{{ " + strconv.Quote(format) + " }}"
+	}
+	return format
 }
 
 // atlasInspectOmitsRefusedBlocks is this surface's default for the top-level

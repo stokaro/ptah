@@ -171,8 +171,10 @@ files, migration directories, and `env://` references, and emits Atlas-shaped
 output without Ptah status banners:
 
 - HCL by default
-- SQL with `--format sql` or `--format '{{ sql . }}'`
-- JSON with `--format json` or `--format '{{ json . }}'`
+- SQL with `--format '{{ sql . }}'`
+- JSON with `--format '{{ json . }}'`
+- the literal text `hcl`, `sql`, or `json`, without a line feed, when that exact bare value is the whole `--format` template
+- the original literal bytes when surrounding whitespace wraps `hcl`, `sql`, or `json`
 - custom Go-template output using `.MarshalHCL`, `hcl`, `sql`, `json`, `base64url`, and `mermaid`
 - HCL/SQL split-write exports through `split` and `write` with the documented Atlas split strategies (per object by default with a `main.sql` `atlas:import` entry point for SQL, `split "schema"`, `split "type"`, optional file-extension argument)
 
@@ -784,7 +786,7 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah
 
 `ptah-compat schema inspect --env` reads `env.url`, `env.exclude`, `env.schema.mode`, and `format.schema.inspect`. `ptah-compat schema diff --env` reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
 
-`ptah-compat schema inspect --format` now supports HCL, SQL, JSON, custom templates, Mermaid helper output, and HCL/SQL `split | write` file exports with the documented Atlas split strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), rendered as one output plan and applied by a single writer with explicit failures for duplicate paths, traversal, and overwrite hazards; the pinned Atlas CE binary rejects `split`, `write`, and `hcl` as non-community template functions, so these exports are an open Ptah extension.
+`ptah-compat schema inspect --format` supports rendered HCL, explicit `{{ sql . }}` and `{{ json . }}` helpers, custom templates, Mermaid helper output, and HCL/SQL `split | write` file exports. Bare `hcl`, `sql`, and `json` remain literal template text; surrounding whitespace is preserved byte for byte, matching the pinned Atlas CE binary. Split/write uses the documented Atlas strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), rendered as one output plan and applied by a single writer with explicit failures for duplicate paths, traversal, and overwrite hazards. The pinned Atlas CE binary rejects `split`, `write`, and `hcl` as non-community template functions, so these exports are an open Ptah extension.
 
 `ptah-compat schema diff --format` now supports Atlas-style SQL/custom output with `sql` and `.MarshalSQL` for local schema-file diffs.
 

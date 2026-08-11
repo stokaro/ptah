@@ -666,10 +666,17 @@ without `--dev-url` fails with Atlas's `--dev-url cannot be empty` message.
 
 | Output | How to request it |
 | --- | --- |
-| HCL | The default. |
-| SQL | `--format sql` or `--format '{{ sql . }}'`. |
-| JSON | `--format json` or `{{ json . }}`. |
+| HCL | The default, or `--format '{{ hcl . }}'`. |
+| SQL | `--format '{{ sql . }}'`. |
+| JSON | `--format '{{ json . }}'`. |
 | Custom templates | `{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, `{{ mermaid . }}`. |
+
+Bare `--format hcl`, `--format sql`, and `--format json` write those literal
+words. They add no line feed, and database contents do not change the values.
+Surrounding whitespace is also preserved: `--format ' hcl '` writes hex
+`20 68 63 6c 20`, with no line feed. Those literal cases match Atlas CE v1.3.0.
+Native `ptah schema inspect --format hcl|sql|json` keeps its rendered
+shorthands.
 
 **Split-write exports.** `{{ hcl . | split | write "schema" }}` and
 `{{ sql . | split | write "schema" }}` support the documented Atlas split

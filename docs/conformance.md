@@ -743,8 +743,8 @@ against one database holding `CREATE DOMAIN positive AS integer CHECK (VALUE >
 | Surface | Atlas CE v1.3.0 | Ptah before | Ptah now |
 | --- | --- | --- | --- |
 | `schema inspect`, HCL | `type = sql("positive")` | `type = sql("positive")` | `type = sql("positive")` |
-| `schema inspect --format json` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
-| `schema inspect --format json`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
+| `schema inspect --format '{{ json . }}'` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
+| `schema inspect --format '{{ json . }}'`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
 | `schema diff --from X --to X`, one database against itself | Schemas are synced | `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive;` | Schemas are synced |
 | `schema apply` run twice against the same target | — | plans and executes the same `ALTER` on every run, exit 0 each time | second run reports the schema synced |
 
@@ -819,7 +819,7 @@ against the composite and range shapes beside them:
 | --- | --- | --- |
 | `schema diff --from X --to X`, one database against itself | Schemas are synced | Schemas are synced |
 | `schema apply` of a byte-identical twin | — | Schema is synced, no changes to be made |
-| `schema inspect --format json` | `"type":"d_enum"` | `"type":"d_enum"` |
+| `schema inspect --format '{{ json . }}'` | `"type":"d_enum"` | `"type":"d_enum"` |
 | `schema inspect`, HCL | `type = sql("d_enum")` | `type = sql("d_enum")` |
 | `schema inspect`, HCL, plain enum column beside it | `type = enum.color` | `type = enum.color` |
 | `schema diff` from empty, replayed with psql, then compared to the source by CE | — | psql exit 0, Schemas are synced |
@@ -1331,6 +1331,35 @@ and terminated stderr with a line feed. `ptah-compat` inserted the exact
 36-byte `load --to schema: parse HCL schema: ` prefix before the otherwise
 identical body. It now strips only that pair. Missing-file and other loader
 errors keep their context, and native `ptah schema apply` keeps both wrappers.
+
+### Shorthand-looking inspect format values can be literal text
+
+Finding 6.6 in the same register was measured on August 11, 2026, against the
+pinned Atlas CE v1.3.0 binary. Each invocation inspected an empty or populated
+SQLite database, and each exit code came from an unpiped process:
+
+| Format | Database | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- | --- |
+| `--format sql` | empty | `sql` (3 bytes) | 0 bytes | byte-identical |
+| `--format sql` | populated | `sql` (3 bytes) | rendered SQL | byte-identical |
+| `--format json` | empty | `json` (4 bytes) | rendered JSON | byte-identical |
+| `--format json` | populated | `json` (4 bytes) | rendered JSON | byte-identical |
+| `--format hcl` | both | `hcl` (3 bytes) | rendered HCL | byte-identical |
+| `--format ' sql '` | both | ` sql ` (hex `20 73 71 6c 20`) | rendered SQL | byte-identical |
+| `--format ' json '` | both | ` json ` (hex `20 6a 73 6f 6e 20`) | rendered JSON | byte-identical |
+| `--format ' hcl '` | both | ` hcl ` (hex `20 68 63 6c 20`) | rendered HCL | byte-identical |
+
+None of those pinned literal outputs carries a line feed. The format value is a
+Go-template body there, so a bare helper name is text and surrounding template
+whitespace remains part of the output. The explicit
+`--format '{{ hcl . }}'`, `--format '{{ sql . }}'`, and
+`--format '{{ json . }}'` controls still render the empty or populated database
+on both binaries. Omitting `--format` still renders HCL.
+
+This is a compatibility-adapter rule after CLI/project-config precedence and
+empty-value validation. Shared format normalization is unchanged. Native
+`ptah schema inspect --format hcl|sql|json` still renders the named format,
+with exact process tests guarding SQL and JSON over empty and populated SQLite.
 
 ### `migrate new` writes the name it was given
 
