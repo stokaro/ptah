@@ -137,9 +137,9 @@ func migrationRevisionHash(migration *Migration) string {
 // revisionChecksumMatches reports whether a stored revision checksum matches
 // the migration. Rows written by ptah versions that predate storing the
 // atlas.sum hash under the ptah revision table format hold the hex SHA-256 of
-// the up SQL instead, so that legacy encoding is accepted too; both encodings
-// are content hashes of the current migration, so tampering still changes
-// every accepted candidate.
+// the up SQL instead, so that legacy encoding is accepted too. The Atlas value
+// is a cumulative chain identity rather than a per-file digest, but both
+// candidates depend on the current migration bytes and reject an edit.
 func revisionChecksumMatches(stored string, migration *Migration) bool {
 	if stored == migrationRevisionHash(migration) {
 		return true
@@ -1777,33 +1777,6 @@ func (m *Migrator) failAtlasMigrationRevision(
 		atlasOperatorVersionForDirection(direction),
 		migration.RevisionVersion(),
 	)
-}
-
-func (m *Migrator) verifyAppliedMigrationChecksums(ctx context.Context, migrations []*Migration) error {
-	if !m.metadataAvailable || m.legacyRevisionTable {
-		return nil
-	}
-	for _, migration := range migrations {
-		if migration.isAtlasRepeatable() {
-			continue
-		}
-		revision, err := m.getMigrationRevision(ctx, migration)
-		if err != nil {
-			return err
-		}
-		if revision == nil || revision.State != migrationStateApplied || revision.Checksum == "" {
-			continue
-		}
-		stored := normalizeAtlasRevisionHash(revision.Checksum)
-		if !revisionChecksumMatches(stored, migration) {
-			return &ChecksumMismatchError{
-				Version:  migration.Version,
-				Stored:   stored,
-				Computed: migrationRevisionHash(migration),
-			}
-		}
-	}
-	return nil
 }
 
 // Baseline records provider migrations as already applied without executing

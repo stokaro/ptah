@@ -267,28 +267,49 @@ Atlas CE, never looser. See
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) items 6
 and 13.
 
-### The same running hash makes the gate fire on files nobody edited
+### An out-of-order insertion preserves checksum verification
 
-The property above has a second consequence, and there Ptah is the one that is
-wrong. `migration/migrator` treats the stored `atlas.sum` entry as a content
-hash of one file; it is not. Inserting a migration ahead of applied ones
-rewrites the entry of every later file, and the gate then refuses citing a file
-whose bytes never changed.
+An `atlas.sum` entry is a running hash, not a content hash for one file.
+Inserting a migration ahead of applied ones therefore changes every later
+entry, even when none of those files changed. Ptah verifies those rows against
+the chain projected from the migrations that were applied when the row was
+written.
 
-Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying `one` and `three`
-and then adding `two` between them:
+Measured on SQLite and PostgreSQL 17.10, 2026-08-10, by applying `one` and
+`three` and then adding `two` between them:
 
 | | Atlas CE v1.3.0 | Ptah |
 | --- | --- | --- |
-| `migrate apply` (default `--exec-order linear`) | 1, `migration file …_two.sql was added out of order` | 1, `migration …_three checksum mismatch` |
-| `migrate apply --exec-order non-linear` | **0**, applies `two` | **1**, same checksum mismatch |
+| `migrate apply` (default `--exec-order linear`) | 1, out-of-order migration | 1, out-of-order migration |
+| `migrate apply --exec-order non-linear` | 0, applies `two` | 0, applies `two` |
+| repeat non-linear apply | 0, no migrations execute | 0, no migrations execute |
 
-`…_three.sql` is byte-identical in both directories; only its position in the
-sum chain moved. Both binaries stored the same value, so this is Ptah reading
-its own recorded data under the wrong contract, and the second row is a
-`ptah-compat exits 1 where Atlas CE exits 0` cell. It is open and tracked as
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5; the
-repair above is the operator's route through it in the meantime.
+The default refusal happens before any checksum row changes. Non-linear apply
+excludes pending insertions from its initial proof, then reconciles clean
+applied rows to the new chain only after the insertion succeeds. Dry runs and
+failed transactional or non-transactional migrations do not reconcile rows.
+
+Ptah computes every checksum change before writing and, on transaction-capable
+databases, commits the changes in one transaction. If one row update fails,
+every affected row retains the prior hash; a later apply retries the complete
+reconciliation.
+
+Recovery tests non-zero application-time groups as candidate prior applied
+sets. Rows sharing a timestamp stay in one group, which supports databases that
+store several applications at second precision without guessing their order.
+Recovery proceeds only when exactly one candidate explains the entire history:
+the affected prior cohort must still have its prior hashes, and each later row
+must retain the projection from its own application-time group. A zero
+timestamp, ambiguous candidate, mix of prior and current hashes, or edited file
+fails closed.
+
+ClickHouse exposes no multi-statement transaction through the configured
+driver. Ptah permits one synchronous checksum mutation there, but refuses a
+reconciliation that needs two or more row updates before changing either row.
+
+This closes
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5
+without weakening the retained edited-file refusal in item 6.
 
 ### `migrate lint` does not require `--dev-url`
 

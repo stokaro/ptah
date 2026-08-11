@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlashash"
 )
 
 // MigrationProvider provides a list of migrations
@@ -254,6 +255,21 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 		if hash := hashes[migrationFile.Path]; hash != "" && migrationFile.Direction == "up" {
 			parts.migration.Checksum = hash
 		}
+		raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
+		if err != nil {
+			return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+		}
+		_, hasHashEntry := hashes[migrationFile.Path]
+		ignored := atlashash.IsSumIgnored(raw)
+		parts.migration.atlasSumContributions = append(
+			parts.migration.atlasSumContributions,
+			atlasSumContribution{
+				name:          migrationFile.Path,
+				data:          raw,
+				includeData:   !ignored,
+				revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
+			},
+		)
 		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
 			return err
 		}

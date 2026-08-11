@@ -11,9 +11,8 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// The three cells of stokaro/ptah#1241 that are retained divergences rather
-// than cells to close, plus the one that closed itself and had nothing holding
-// it.
+// The retained divergences from stokaro/ptah#1241, plus the checksum-chain cell
+// closed here and the tx-mode cell that closed itself without a focused guard.
 //
 // Every expectation here was measured against the pinned community binary
 // v1.3.0 on 2026-08-09, each exit status read on its own line rather than
@@ -26,10 +25,9 @@ import (
 //   - item 6, an already-applied file whose bytes changed: binary 0
 //     ("No migration files to execute"), ptah 1. Retained; see
 //     "An edited already-applied migration file" in the Atlas comparison page.
-//   - item 5, a migration inserted below the applied high-water mark: binary 0,
-//     ptah 1. Retained as a refusal, but the diagnostic it prints is recorded
-//     as an open product-behavior gap, so this file pins the refusal and not
-//     the wording.
+//   - item 5, a migration inserted below the applied high-water mark: the
+//     binary applies it with --exec-order non-linear. Ptah now agrees while
+//     retaining the default linear refusal.
 //   - item 1 under the default --tx-mode: binary 0 on the retry, and ptah now
 //     agrees. Closed incidentally by #1342, which never referenced #1241 and
 //     left no test tied to it. The first test below is that missing guard.
@@ -105,35 +103,20 @@ func TestCompatCommand_AnEditedAppliedFileIsRefused(t *testing.T) {
 	c.Assert(editedErr.Error(), qt.Contains, retainedVersionEarly)
 }
 
-// TestCompatCommand_AnOutOfOrderInsertIsRefused pins item 5.
+// TestCompatCommand_AnOutOfOrderInsertRequiresNonLinear pins item 5.
 //
-// The late migration is byte-identical in both directories — only its position
-// differs — and the pinned community binary v1.3.0 exits 0 with
-// "No migration files to execute", leaving the early migration unapplied. Ptah
-// refuses.
-//
-// Two independent gates refuse this, and which one answers is the open gap.
-// Measured by mutating the checksum comparison to compare lengths instead of
-// values: the refusal does not disappear, it changes to
+// The late migration is byte-identical in both directories; only a migration
+// before it was inserted. The default linear order still refuses with
 //
 //	out-of-order pending migrations below current version 20240102000000:
 //	[20240101000000] (use --exec-order=non-linear to apply or
 //	--exec-order=linear-skip to ignore)
 //
-// which is true about what happened and names the flag that resolves it. The
-// checksum gate runs first — verifyAppliedMigrationChecksums is called before
-// migrationsToApply in migrateUpLocked — so what an operator actually sees is a
-// checksum mismatch against the LATE migration, whose bytes did not change.
-//
-// The assertion below therefore records today's message on purpose, as a
-// characterization row rather than as a contract. When the gap recorded in
-// "A checksum refusal that names an unchanged file" is closed, this row should
-// flip to the out-of-order message above; it must not be deleted, because the
-// refusal itself is retained either way.
-//
-// Mutated so the checksums are compared by length instead of by value, the
-// message assertion below fails while the refusal assertions hold.
-func TestCompatCommand_AnOutOfOrderInsertIsRefused(t *testing.T) {
+// With --exec-order non-linear, Ptah proves the late row against the applied
+// directory projection, applies the insertion, and reconciles both clean rows
+// to the current Atlas chain. A second apply proves the reconciled rows are
+// stable.
+func TestCompatCommand_AnOutOfOrderInsertRequiresNonLinear(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dbPath := filepath.Join(root, "order.db")
@@ -159,10 +142,28 @@ func TestCompatCommand_AnOutOfOrderInsertIsRefused(t *testing.T) {
 		"--dir", "file://"+bothFiles,
 	)
 	c.Assert(insertErr, qt.IsNotNil)
-	c.Assert(insertErr.Error(), qt.Contains, "checksum mismatch")
-	c.Assert(insertErr.Error(), qt.Contains, retainedVersionLate)
+	c.Assert(insertErr.Error(), qt.Contains, "out-of-order pending migrations")
+	c.Assert(insertErr.Error(), qt.Contains, retainedVersionEarly)
 	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+
+	_, _, nonLinearErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "non-linear",
+	)
+	c.Assert(nonLinearErr, qt.IsNil)
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
+
+	_, _, secondErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "non-linear",
+	)
+	c.Assert(secondErr, qt.IsNil)
 }
 
 // TestCompatCommand_LintRefusesATrailingPositional pins the fourth verb of
