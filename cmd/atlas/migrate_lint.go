@@ -142,7 +142,12 @@ func runAtlasMigrateLint(
 			opts.atlasEnv,
 			projectCfg.StringValue(projectconfig.StringEnvName),
 		)
-		if !cmd.Flags().Changed("latest") {
+		// Atlas CE treats an explicit --latest 0 as no latest selector. It
+		// still suppresses lint.latest from the project, but it does not
+		// suppress a project Git selector: `--latest 0 --git-base ...` is a
+		// Git-selected run there, not a mutually-exclusive pair.
+		latestChanged := cmd.Flags().Changed("latest")
+		if !latestChanged || opts.latest == 0 {
 			opts.gitBase = dbcli.EffectiveString(
 				cmd,
 				"git-base",
@@ -399,9 +404,10 @@ func atlasMigrateLintAllVersions() (bool, error) {
 
 // atlasMigrateLintScopeGiven reports whether anything named the set of versions
 // to lint, mirroring how internal/migrationlintreport resolves the same two
-// selectors: --latest wins outright, an atlas.hcl `lint.latest` counts unless
-// --git-base was spelled, and a --git-base counts once opts.gitBase has taken
-// the project value (which the caller does only when --latest was not spelled).
+// selectors: a positive --latest wins outright, while an explicit zero clears
+// configured lint.latest and leaves Git eligible. An atlas.hcl `lint.latest`
+// counts unless --git-base was spelled, and a --git-base counts once
+// opts.gitBase has taken the project value.
 //
 // No "was a project loaded" argument is needed: a run that loaded none carries
 // the zero projectconfig.Config, whose LintLatestValue reports Present false.
@@ -410,11 +416,17 @@ func atlasMigrateLintScopeGiven(
 	opts atlasMigrateLintOptions,
 	projectCfg projectconfig.Config,
 ) bool {
-	if cmd.Flags().Changed("latest") {
+	latestChanged := cmd.Flags().Changed("latest")
+	if latestChanged && opts.latest > 0 {
 		return true
 	}
 	if strings.TrimSpace(opts.gitBase) != "" {
 		return true
+	}
+	// An explicit zero clears a configured lint.latest. With no usable Git
+	// selector it therefore names no scope, matching Atlas CE v1.3.0.
+	if latestChanged {
+		return false
 	}
 	return !cmd.Flags().Changed("git-base") && projectCfg.LintLatestValue().Present
 }

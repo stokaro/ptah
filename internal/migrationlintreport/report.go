@@ -633,9 +633,10 @@ func lintVersions(
 	cfg projectconfig.Config,
 	fsys fs.FS,
 ) (lintVersionSelection, error) {
+	atlasLatestZero := atlasExplicitLatestZero(opts)
 	projectSelectors := projectLintSelectorUse{
 		latest: !opts.Changed.GitBase,
-		git:    !opts.Changed.Latest,
+		git:    !opts.Changed.Latest || atlasLatestZero,
 	}
 	latest, latestSet := effectiveLatest(opts, cfg, projectSelectors)
 	git, err := effectiveGit(opts, cfg, projectSelectors)
@@ -739,6 +740,12 @@ func effectiveLatest(
 	cfg projectconfig.Config,
 	projectSelectors projectLintSelectorUse,
 ) (int, bool) {
+	if atlasExplicitLatestZero(opts) {
+		// Atlas CE v1.3.0 treats an explicit --latest 0 as an absent latest
+		// selector. The flag still suppresses project lint.latest, while a Git
+		// selector remains eligible to select the changeset.
+		return 0, false
+	}
 	if opts.Changed.Latest {
 		return int(opts.Latest), true
 	}
@@ -750,6 +757,12 @@ func effectiveLatest(
 		return value.Value, true
 	}
 	return 0, false
+}
+
+func atlasExplicitLatestZero(opts Options) bool {
+	return opts.Compatibility == lint.CompatibilityProfileAtlas &&
+		opts.Changed.Latest &&
+		opts.Latest == 0
 }
 
 type effectiveGitOptions struct {
