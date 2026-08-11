@@ -149,8 +149,7 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 				test.schema,
 				test.info,
 				nil,
-				false,
-				true,
+				atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 			)
 
 			output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)

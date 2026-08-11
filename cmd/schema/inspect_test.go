@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
 func TestSchemaInspectLiveDatabaseWritesSQL(t *testing.T) {
@@ -169,10 +171,10 @@ func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 	}
 }
 
-// TestSchemaInspectMatchesAtlasSchemaInspect proves the native verb and its
-// Atlas twin produce identical machine output from the same live database:
-// both wrap atlasschema.InspectSource.
-func TestSchemaInspectMatchesAtlasSchemaInspect(t *testing.T) {
+// TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent proves the native
+// verb and its compatibility twin still render the same inspected objects even
+// though the process surfaces deliberately frame their HCL differently.
+func TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
@@ -191,13 +193,15 @@ func TestSchemaInspectMatchesAtlasSchemaInspect(t *testing.T) {
 	atlasCmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--format", "hcl"})
 	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
 
-	c.Assert(nativeOut, qt.Equals, atlasOut.String())
+	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)
+	c.Assert(hasNativeFrame, qt.IsTrue)
+	c.Assert(atlasOut.String(), qt.Equals, wantCompat)
 }
 
-// TestSchemaInspectIncludeMatchesAtlasSchemaInspect pins that the two surfaces
-// resolve the same include selection to the same bytes, so the compat spelling
-// is not a second implementation of the selector engine.
-func TestSchemaInspectIncludeMatchesAtlasSchemaInspect(t *testing.T) {
+// TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent pins that the two
+// surfaces resolve the same include selection even though their HCL framing is
+// intentionally different.
+func TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
@@ -222,7 +226,14 @@ func TestSchemaInspectIncludeMatchesAtlasSchemaInspect(t *testing.T) {
 	})
 	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
 
-	c.Assert(nativeOut, qt.Equals, atlasOut.String())
-	c.Assert(nativeOut, qt.Contains, `table "users"`)
-	c.Assert(nativeOut, qt.Not(qt.Contains), `table "archive"`)
+	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)
+	c.Assert(hasNativeFrame, qt.IsTrue)
+	c.Assert(atlasOut.String(), qt.Equals, wantCompat)
+	c.Assert(wantCompat, qt.Contains, `table "users"`)
+	c.Assert(wantCompat, qt.Not(qt.Contains), `table "archive"`)
+}
+
+func compatHCLFromNative(native string) (string, bool) {
+	body, ok := strings.CutPrefix(native, atlashclrender.GeneratedCodeMarker+"\n\n")
+	return strings.TrimRight(body, "\n") + "\n", ok
 }

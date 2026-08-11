@@ -25,6 +25,10 @@ type SchemaInspectReport struct {
 	// refuses to read where nothing in the document names them; see
 	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
 	omitAtlasRefusedBlocks bool
+	// compatibilityHCLFraming applies the Atlas-compatible single-document
+	// frame independently of block omission: the Ptah generated-code marker is
+	// absent and a nonempty HCL document ends in exactly one line feed.
+	compatibilityHCLFraming bool
 	// describeSchemas renders the schema itself -- CREATE SCHEMA, its comment,
 	// its charset and collation -- into the SQL format. It is false when the
 	// connection URL chose the scope rather than the run choosing it.
@@ -46,6 +50,18 @@ type SchemaInspectReport struct {
 	describeSchemas bool
 	Realm           atlasSchemaInspectJSONRealm `json:"-"`
 	Schema          atlasSchemaInspectJSONRealm `json:"-"`
+}
+
+// SchemaInspectReportOptions selects policies for one inspect report.
+type SchemaInspectReportOptions struct {
+	// OmitAtlasRefusedBlocks selects the Atlas-compatible HCL block policy.
+	OmitAtlasRefusedBlocks bool
+	// DescribeSchemas includes schema DDL in SQL output when the caller chose
+	// its schema scope explicitly.
+	DescribeSchemas bool
+	// CompatibilityHCLFraming selects the Atlas-compatible single-document HCL
+	// frame. It does not change which blocks the document contains.
+	CompatibilityHCLFraming bool
 }
 
 type atlasSchemaInspectJSONRealm struct {
@@ -148,31 +164,31 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 
 // NewSchemaInspectReport builds the report one schema inspect renders from.
 //
-// omitAtlasRefusedBlocks selects the Atlas-compatible HCL rendering, which
+// Options.OmitAtlasRefusedBlocks selects the Atlas-compatible HCL rendering, which
 // leaves out the block types the pinned Atlas community binary refuses where
 // nothing else in the document names them, and reports every decision on
 // diagnostics. It is false on the native surface, which describes every
 // construct Ptah models.
 //
-// describeSchemas gates schema DDL out of the SQL format for a run whose scope
+// Options.DescribeSchemas gates schema DDL out of the SQL format for a run whose scope
 // came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
 	db *goschema.Database,
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diagnostics io.Writer,
-	omitAtlasRefusedBlocks bool,
-	describeSchemas bool,
+	opts SchemaInspectReportOptions,
 ) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
 	return &SchemaInspectReport{
-		db:                     db,
-		info:                   info,
-		diagnostics:            diagnostics,
-		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
-		describeSchemas:        describeSchemas,
-		Realm:                  realm,
-		Schema:                 realm,
+		db:                      db,
+		info:                    info,
+		diagnostics:             diagnostics,
+		omitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
+		compatibilityHCLFraming: opts.CompatibilityHCLFraming,
+		describeSchemas:         opts.DescribeSchemas,
+		Realm:                   realm,
+		Schema:                  realm,
 	}
 }
 
@@ -245,7 +261,25 @@ func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 			fmt.Fprintf(r.diagnostics, "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)
 		}
 	}
-	return string(rendered.Data), nil
+	document := string(rendered.Data)
+	if r.compatibilityHCLFraming {
+		document = frameCompatibilityHCL(document)
+	}
+	return document, nil
+}
+
+// frameCompatibilityHCL removes only Ptah's generated-code marker and its
+// empty separator line, when present, then gives nonempty HCL exactly one
+// trailing line feed. Coverage directives remain at the start of the document.
+func frameCompatibilityHCL(document string) string {
+	document, removedMarker := strings.CutPrefix(document, atlashclrender.GeneratedCodeMarker+"\n")
+	if removedMarker {
+		document = strings.TrimPrefix(document, "\n")
+	}
+	if document == "" {
+		return ""
+	}
+	return strings.TrimRight(document, "\n") + "\n"
 }
 
 // renderHCL picks the rendering the surface asked for. Only the HCL output is
