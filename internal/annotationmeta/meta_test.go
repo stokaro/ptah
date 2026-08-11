@@ -46,6 +46,12 @@ func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 	}
 }
 
+func TestAllowsAttribute_AcceptsIndexInclude(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(annotationmeta.AllowsAttribute("ptah:schema:index", "include"), qt.IsTrue)
+}
+
 func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 	c := qt.New(t)
 

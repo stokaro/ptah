@@ -85,6 +85,27 @@ attempts the built-in review targets and emits separate labeled sections only
 if every target can render the schema. Any unsupported feature fails atomically
 with empty standard output.
 
+### Add an INCLUDE covering index
+
+Use `include` to keep payload columns in a covering index without making them
+search keys. Ptah preserves the comma-separated order after trimming whitespace:
+
+```go
+type AccountIndexes struct {
+	//ptah:schema:index name="idx_accounts_email" fields="email" include="display_name,created_at" table="accounts"
+	_ int
+}
+```
+
+For PostgreSQL, YugabyteDB, and the Spanner PostgreSQL dialect, the annotation
+renders `INCLUDE ("display_name", "created_at")`. PostgreSQL accepts the
+default, `BTREE`, and `GIST` access methods, plus `SPGIST` on PostgreSQL 14 and
+newer. YugabyteDB accepts the default and `LSM`; `BTREE` is its documented
+alias for the default LSM and renders identically to the default. The Spanner
+PostgreSQL dialect accepts only the default. CockroachDB and every other
+dialect reject `include` before emitting SQL. Omit `include` when there are no
+payload columns; a present list with an empty element is a parse error.
+
 ## Compare before changing data
 
 For an existing database, inspect and compare first:

@@ -78,6 +78,20 @@ func postgresPlan() plan {
 			"DROP INDEX CONCURRENTLY dic_one",
 			"DROP INDEX CONCURRENTLY dic_two",
 		),
+		indexIncludeSPGiST(
+			[]string{"CREATE TABLE iis (k text, payload int)"},
+			"CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload)",
+			`SELECT COUNT(*)
+			 FROM pg_catalog.pg_index AS i
+			 JOIN pg_catalog.pg_class AS idx ON idx.oid = i.indexrelid
+			 JOIN pg_catalog.pg_am AS am ON am.oid = idx.relam
+			 JOIN pg_catalog.pg_namespace AS ns ON ns.oid = idx.relnamespace
+			 WHERE ns.nspname = current_schema()
+			   AND idx.relname = 'iis_idx'
+			   AND am.amname = 'spgist'
+			   AND i.indnkeyatts = 1
+			   AND i.indnatts = 2`,
+		),
 		acceptance(capability.Views,
 			[]string{"CREATE TABLE vsrc (n int)"},
 			"CREATE VIEW vw AS SELECT n FROM vsrc",
@@ -212,6 +226,10 @@ func mysqlFamilyPlan(dialect string) plan {
 			},
 			"DROP INDEX CONCURRENTLY dic_one ON dic",
 			"DROP INDEX CONCURRENTLY dic_two ON dic",
+		),
+		uninspectableIndexIncludeSPGiST(
+			[]string{"CREATE TABLE iis (k VARCHAR(255), payload INT)"},
+			"CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload)",
 		),
 		acceptance(capability.Views,
 			[]string{"CREATE TABLE vsrc (n int)"},

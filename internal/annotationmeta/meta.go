@@ -354,6 +354,14 @@ var directives = []Directive{
 			attr("name", "Index name.", valueString, false, false),
 			attr("fields", "Comma-separated Go field or column names.", valueList, false, false),
 			alias("columns", "fields", "Legacy synonym for fields.", valueList, false),
+			attr(
+				"include",
+				"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; "+
+					"YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
+				valueList,
+				false,
+				false,
+			),
 			attr("unique", "Creates a unique index.", valueBoolean, false, true),
 			attr("comment", "Index comment.", valueString, false, false),
 			attr("type", "Index type or method.", valueString, false, false),

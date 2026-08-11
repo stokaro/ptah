@@ -1,12 +1,14 @@
 package goschema_test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 )
 
 func TestParseExtensionComment(t *testing.T) {
@@ -136,6 +138,15 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 			},
 		},
 		{
+			name:    "covering index preserves trimmed include order",
+			comment: "//ptah:schema:index name=\"idx_name_covering\" fields=\"name\" include=\" display_name, created_at \"",
+			expected: goschema.Index{
+				Name:           "idx_name_covering",
+				Fields:         []string{"name"},
+				IncludeColumns: []string{"display_name", "created_at"},
+			},
+		},
+		{
 			name:    "cross-table index",
 			comment: "//ptah:schema:index name=\"idx_external\" fields=\"name,status\" table=\"products\"",
 			expected: goschema.Index{
@@ -184,7 +195,53 @@ type TestEntity struct {
 			c.Assert(idx.Type, qt.Equals, tt.expected.Type)
 			c.Assert(idx.Condition, qt.Equals, tt.expected.Condition)
 			c.Assert(idx.Operator, qt.Equals, tt.expected.Operator)
+			c.Assert(idx.IncludeColumns, qt.DeepEquals, tt.expected.IncludeColumns)
 			c.Assert(idx.TableName, qt.Equals, tt.expected.TableName)
+		})
+	}
+}
+
+func TestParseIndexIncludeFailurePath(t *testing.T) {
+	tests := []struct {
+		name          string
+		include       string
+		emptyPosition int
+	}{
+		{name: "empty", include: "", emptyPosition: 1},
+		{name: "whitespace", include: "   ", emptyPosition: 1},
+		{name: "commas", include: ", ,", emptyPosition: 1},
+		{name: "leading comma", include: ",display_name", emptyPosition: 1},
+		{name: "sparse", include: "display_name,,created_at", emptyPosition: 2},
+		{name: "whitespace element", include: "display_name, ,created_at", emptyPosition: 2},
+		{name: "trailing comma", include: "display_name,created_at,", emptyPosition: 3},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := `package test
+
+type TestEntity struct {
+	//ptah:schema:index name="idx_name" fields="name" include="` + test.include + `"
+	_ int
+}
+`
+
+			_, err := goschema.ParseSource("index.go", source)
+
+			var parseErr *ptaherr.ParseError
+			c.Assert(err, qt.ErrorAs, &parseErr)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:index")
+			c.Assert(parseErr.Attribute, qt.Equals, "include")
+			c.Assert(
+				err.Error(),
+				qt.Equals,
+				fmt.Sprintf(
+					`invalid include list for "include" on //ptah:schema:index at TestEntity: column %d is empty; expected non-empty comma-separated column names`,
+					test.emptyPosition,
+				),
+			)
 		})
 	}
 }

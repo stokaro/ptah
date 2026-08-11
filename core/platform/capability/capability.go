@@ -117,6 +117,11 @@ const (
 	// that already decline CREATE INDEX CONCURRENTLY decline this too.
 	DropIndexConcurrently Capability = "drop_index_concurrently"
 
+	// IndexIncludeSPGiST marks PostgreSQL versions whose SP-GiST access
+	// method accepts INCLUDE payload columns. PostgreSQL added that support in
+	// 14; PostgreSQL 12–13 support INCLUDE only with B-tree and GiST.
+	IndexIncludeSPGiST Capability = "index_include_spgist"
+
 	// Views marks support for the standalone CREATE VIEW ... AS <query>
 	// object.
 	//
@@ -258,6 +263,9 @@ var registry = map[Capability]spec{
 	},
 	DropIndexConcurrently: {
 		doc: "DROP INDEX CONCURRENTLY (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit CONCURRENTLY)",
+	},
+	IndexIncludeSPGiST: {
+		doc: "SP-GiST indexes with INCLUDE payload columns (PostgreSQL 14+)",
 	},
 	Views: {
 		doc: "standalone CREATE VIEW ... AS <query> objects",
@@ -451,6 +459,7 @@ func MySQL84() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		IndexIncludeSPGiST:                 false,
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          true,
@@ -512,6 +521,7 @@ func MariaDB1011() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		IndexIncludeSPGiST:                 false,
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          true,
@@ -570,6 +580,7 @@ func Postgres16() Capabilities {
 		EnumCustomType:                     true,
 		CreateIndexConcurrently:            true,
 		DropIndexConcurrently:              true,
+		IndexIncludeSPGiST:                 true,
 		Views:                              true,
 		MaterializedViews:                  true,
 		Functions:                          true,
@@ -593,10 +604,13 @@ func Postgres17() Capabilities {
 	return Postgres16().With(AlterGeneratedColumnExpression, true)
 }
 
-// Postgres13 is the preset for PostgreSQL 12–13: identical to Postgres16
-// except CREATE OR REPLACE TRIGGER, which arrived in PostgreSQL 14.
+// Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
+// CREATE OR REPLACE TRIGGER and SP-GiST INCLUDE columns, which both arrived in
+// PostgreSQL 14.
 func Postgres13() Capabilities {
-	return Postgres16().With(CreateOrReplaceTrigger, false)
+	return Postgres16().
+		With(CreateOrReplaceTrigger, false).
+		With(IndexIncludeSPGiST, false)
 }
 
 // ClickHouse24 is the preset for the ClickHouse 24.x line. It is deliberately
@@ -629,6 +643,7 @@ func ClickHouse24() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		IndexIncludeSPGiST:                 false,
 		Views:                              true,
 		MaterializedViews:                  true,
 		Functions:                          false,
@@ -668,6 +683,7 @@ func SQLite3() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		IndexIncludeSPGiST:                 false,
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          false,
@@ -709,6 +725,7 @@ func SQLServer2022() Capabilities {
 		EnumCustomType:                     false,
 		CreateIndexConcurrently:            false,
 		DropIndexConcurrently:              false,
+		IndexIncludeSPGiST:                 false,
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          true,
@@ -758,6 +775,7 @@ func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
+		With(IndexIncludeSPGiST, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false)
 }
@@ -777,7 +795,9 @@ func CockroachDB23() Capabilities {
 // The same probe accepted advisory lock/unlock calls and row-level security
 // policy DDL, matching the enabled keys below.
 func YugabyteDB25() Capabilities {
-	return Postgres16().With(DropIndexConcurrently, false)
+	return Postgres16().
+		With(DropIndexConcurrently, false).
+		With(IndexIncludeSPGiST, false)
 }
 
 // SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL
@@ -808,6 +828,7 @@ func SpannerPostgres() Capabilities {
 		With(EnumCustomType, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
+		With(IndexIncludeSPGiST, false).
 		With(MaterializedViews, false).
 		With(Functions, false).
 		With(Triggers, false).

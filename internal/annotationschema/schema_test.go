@@ -84,3 +84,26 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
+	c := qt.New(t)
+
+	generated, err := annotationschema.Generate()
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(json.Unmarshal(generated, &doc), qt.IsNil)
+	defs := doc["$defs"].(map[string]any)
+	index := defs["ptah.schema.index"].(map[string]any)
+	indexContainer := index["properties"].(map[string]any)
+	indexAttributes := indexContainer["attributes"].(map[string]any)
+	indexProperties := indexAttributes["properties"].(map[string]any)
+	include := indexProperties["include"].(map[string]any)
+
+	c.Assert(include["type"], qt.Equals, "string")
+	c.Assert(
+		include["description"],
+		qt.Equals,
+		"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
+	)
+}

@@ -617,7 +617,8 @@ type IndexNode struct {
 	Condition string
 	// Operator specifies the operator class (gin_trgm_ops, etc.)
 	Operator string
-	// IncludeColumns contains PostgreSQL INCLUDE columns for covering indexes.
+	// IncludeColumns contains INCLUDE payload columns for PostgreSQL,
+	// YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
 	IncludeColumns []string
 	// StorageParams contains PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.

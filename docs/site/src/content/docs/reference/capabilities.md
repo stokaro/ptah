@@ -22,6 +22,8 @@ Capabilities answer questions that a dialect name alone cannot answer:
   `enum_inline_column`, `enum_custom_type`
 - Can PostgreSQL-style concurrent indexes be emitted?
   `create_index_concurrently`, `drop_index_concurrently`
+- Can PostgreSQL emit `SPGIST` indexes with `INCLUDE` payload columns?
+  `index_include_spgist`
 - Does the target support roles, RLS, XML, or advisory locks?
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
 - Which schema objects can this target host?
@@ -95,6 +97,11 @@ names are shortened deterministically before collision checks.
 The Go API exposes `capability.DefaultDialects()` for guards and UIs that must
 cover every normalized dialect with a default `capability.ForDialect` preset
 without maintaining a second list.
+
+`capability.IndexIncludeSPGiST` records PostgreSQL's version boundary for
+`SPGIST` indexes with `INCLUDE` payload columns. It is disabled for PostgreSQL
+12–13 and enabled for PostgreSQL 14 and newer; whole-schema and direct-AST
+rendering both consume the resolved key and fail closed on older servers.
 
 ## Declarative database testing
 
