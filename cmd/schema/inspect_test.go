@@ -25,8 +25,20 @@ func TestSchemaInspectLiveDatabaseWritesSQL(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `CREATE TABLE "users"`)
-	c.Assert(out, qt.Not(qt.Contains), "Database:")
+	c.Assert(out, qt.Equals, "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n")
+}
+
+func TestSchemaInspectEmptyLiveDatabaseWritesEmptySQL(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "empty.db")
+
+	out, err := runSchema("", "inspect",
+		"--db-url", "sqlite://"+dbPath,
+		"--format", "sql",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Equals, "")
 }
 
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {

@@ -324,8 +324,8 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("render SQL: %w", err)
 	}
-	sql := strings.Join(statements, ";\n") + ";\n"
-	if len(indent) == 0 || indent[0] == "" {
+	sql := strings.Join(statements, "")
+	if sql == "" || len(indent) == 0 || indent[0] == "" {
 		return sql, nil
 	}
 	return indent[0] + strings.ReplaceAll(sql, "\n", "\n"+indent[0]), nil
