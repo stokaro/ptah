@@ -238,3 +238,27 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 		})
 	}
 }
+
+func TestPostgresRuntimeObjectTypeCoversEveryWriterOnlyKind(t *testing.T) {
+	c := qt.New(t)
+
+	tests := map[string]string{
+		"aggregate":         ObjectTypeAggregate,
+		"collation":         ObjectTypeCollation,
+		"default_privilege": ObjectTypeDefaultPrivilege,
+		"foreign_table":     ObjectTypeForeignTable,
+		"function":          ObjectTypeFunction,
+		"procedure":         ObjectTypeProcedure,
+		"sequence":          ObjectTypeSequence,
+	}
+	for kind, want := range tests {
+		got, ok := postgresRuntimeObjectType(kind)
+		c.Assert(ok, qt.IsTrue, qt.Commentf("kind %s", kind))
+		c.Assert(got, qt.Equals, want, qt.Commentf("kind %s", kind))
+	}
+
+	_, ok := postgresRuntimeObjectType("extension")
+	c.Assert(ok, qt.IsFalse)
+	qt.Assert(t, coverageFor("postgres").postgresRuntimeObjects, qt.IsTrue)
+	qt.Assert(t, coverageFor("cockroachdb").postgresRuntimeObjects, qt.IsFalse)
+}

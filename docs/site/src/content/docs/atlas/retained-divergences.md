@@ -27,9 +27,16 @@ catalog differently from Ptah's complete cleanup. Strict mode therefore
 refuses a live Pro-only object before `schema inspect`, `schema apply`, or
 `schema clean` emits output or mutates the target. Default `ptah-compat` keeps
 Ptah's complete modeled-object behavior; the refusal exists only in the CE
-oracle profile. Cleanup validates the complete catalog snapshot, so a dependent
-Pro-only object such as a trigger cannot disappear with a table merely because
-the cleanup plan does not print it as a separate line.
+oracle profile. Cleanup validates the writer's complete destruction inventory,
+including PostgreSQL procedures, aggregates, foreign tables, collations, and
+default privileges. A dependent Pro-only object such as a trigger cannot
+disappear with a table merely because the cleanup plan does not print it as a
+separate line.
+
+`PTAH_ALLOW_NONINTERACTIVE_EDIT=1` remains available in strict mode. It permits
+an already-configured scripted editor to run without a terminal; it does not
+add an editor, command, flag, or migration semantic, so it is retained as an
+execution-safety control rather than classified as a Pro capability.
 
 The same fail-closed boundary covers authored extensions. Strict schema
 workflows refuse YAML sources and a `schema apply` lint policy that the CE path

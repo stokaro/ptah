@@ -118,6 +118,7 @@ func TestStrictCEValidatesBoundFlagEnvironment(t *testing.T) {
 func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_STRICT_DIR_QUERY", "1")
+	t.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
 
 	policy, err := atlascompatpolicy.Resolve()
 
@@ -197,9 +198,13 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		})
 	}
 	for _, kind := range []string{
+		"aggregate",
+		"collation",
 		"composite",
+		"default_privilege",
 		"domain",
 		"event",
+		"foreign_table",
 		"function",
 		"materialized_view",
 		"procedure",

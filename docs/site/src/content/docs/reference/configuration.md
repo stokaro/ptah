@@ -95,9 +95,10 @@ mutation instead of copying CE behavior that could omit or destroy it. On
 pinned binary's community-abort behavior. Leave strict mode off for Ptah's
 complete cleanup, inspection, and apply capabilities.
 
-The cleanup check covers the complete catalog snapshot, including dependent
-objects such as triggers that disappear with a table without appearing as a
-separate cleanup plan line.
+The cleanup check covers the writer's complete destruction inventory. That
+includes PostgreSQL procedures, aggregates, foreign tables, collations,
+default privileges, and dependent objects such as triggers that disappear
+with a table without appearing as a separate cleanup plan line.
 
 Strict schema workflows also refuse YAML sources and an authored `schema apply`
 lint policy that the CE execution path cannot enforce. Commands that execute,
@@ -105,10 +106,12 @@ convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
 and SQL templates; checksum-only reads preserve those bytes. All inputs remain
 available in the default, complete compatibility profile.
 
-Three opt-in correctness controls remain available because they do not add an
+Four opt-in correctness controls remain available because they do not add an
 Atlas capability: `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
-`PTAH_HCL_STRICT_REDECLARATIONS`, and `PTAH_STRICT_DIR_QUERY`. Native `ptah`
-does not read `PTAH_ATLAS_STRICT_COMPAT`.
+`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`, and
+`PTAH_ALLOW_NONINTERACTIVE_EDIT`. The last one permits a scripted editor in a
+non-interactive process; it does not add an editor or migration capability.
+Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

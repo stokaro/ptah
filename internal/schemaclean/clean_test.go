@@ -237,6 +237,17 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			want:    `DROP SEQUENCE IF EXISTS "public"."users_id_seq" CASCADE`,
 		},
 		{
+			name:    "catalog command is preserved exactly",
+			dialect: "postgres",
+			object: schemaclean.Object{
+				Type:    "procedure",
+				Schema:  "public",
+				Name:    "refresh(integer)",
+				Command: `DROP PROCEDURE IF EXISTS "public"."refresh"(integer) RESTRICT`,
+			},
+			want: `DROP PROCEDURE IF EXISTS "public"."refresh"(integer) RESTRICT`,
+		},
+		{
 			name:    "sqlite view",
 			dialect: "sqlite",
 			object:  schemaclean.Object{Type: "view", Name: "v_const"},

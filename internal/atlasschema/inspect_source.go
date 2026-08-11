@@ -154,12 +154,8 @@ func inspectOnDev(
 	var migrationSnapshot fs.FS
 	switch set.Kind {
 	case atlassource.KindLocalFile:
-		for _, source := range set.Sources {
-			if opts.ValidateLocalSchemaSource != nil {
-				if err := opts.ValidateLocalSchemaSource(source.Path); err != nil {
-					return "", err
-				}
-			}
+		if err := validateInspectLocalSources(set, opts.ValidateLocalSchemaSource); err != nil {
+			return "", err
 		}
 		// The source URL is the file itself, so --dev-url is the only URL that
 		// can limit this run to a schema.
@@ -195,10 +191,8 @@ func inspectOnDev(
 	default:
 		return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
 	}
-	if desired != nil && opts.ValidateDesiredSchema != nil {
-		if err := opts.ValidateDesiredSchema(desired); err != nil {
-			return "", err
-		}
+	if err := validateInspectDesiredSchema(desired, opts.ValidateDesiredSchema); err != nil {
+		return "", err
 	}
 
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
@@ -255,6 +249,25 @@ func inspectOnDev(
 		return rendered, nil
 	}
 	return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+}
+
+func validateInspectLocalSources(set atlassource.Set, validate func(string) error) error {
+	if validate == nil {
+		return nil
+	}
+	for _, source := range set.Sources {
+		if err := validate(source.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateInspectDesiredSchema(desired *goschema.Database, validate func(*goschema.Database) error) error {
+	if desired == nil || validate == nil {
+		return nil
+	}
+	return validate(desired)
 }
 
 func prepareInspectMigrationSnapshot(

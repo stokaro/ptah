@@ -95,8 +95,9 @@ type DiffOptions struct {
 	// source is resolved and before migration-directory planning. Nil accepts
 	// every modeled object.
 	ValidateDesiredSchema func(*goschema.Database) error
-	// ValidateMigrationSource applies a caller-selected policy to a stable
-	// migration-directory desired-state snapshot before dev-database replay.
+	// ValidateMigrationSource applies a caller-selected policy to the stable,
+	// converted migration-directory snapshot before dev-database replay. The
+	// callback also revalidates the locked snapshot before publication planning.
 	ValidateMigrationSource func(fs.FS) error
 	// ValidateLocalSchemaSource applies a caller-selected policy to each local
 	// desired-schema path before parsing or dev-database work.
@@ -262,7 +263,7 @@ func generateDiff(
 	// already were one. The conversion is the same one every reading verb runs
 	// (`migrate apply`, `hash`, `validate`, `lint`), so the state this run
 	// diffs against is the state those verbs report.
-	replaySource, err := diffReplaySource(migrationSnapshot, opts)
+	replaySource, err := validatedDiffReplaySource(migrationSnapshot, opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -324,6 +325,19 @@ func generateDiff(
 		opts.PreparePublication,
 		diffWriteLayout{format: opts.dirFormat(), versionFS: replaySource},
 	)
+}
+
+func validatedDiffReplaySource(snapshot fsnapshot.Snapshot, opts DiffOptions) (fs.FS, error) {
+	replaySource, err := diffReplaySource(snapshot, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.ValidateMigrationSource != nil {
+		if err := opts.ValidateMigrationSource(replaySource); err != nil {
+			return nil, fmt.Errorf("validate current migration directory: %w", err)
+		}
+	}
+	return replaySource, nil
 }
 
 // dirFormat is the layout this run reads and writes, with the zero value

@@ -6,11 +6,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -533,6 +536,124 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testin
 	}
 }
 
+func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	strictEnv := []string{"PTAH_ATLAS_STRICT_COMPAT=1"}
+
+	t.Run("schema apply YAML before target connection", func(t *testing.T) {
+		dir := t.TempDir()
+		targetPath := filepath.Join(dir, "target.db")
+		devPath := filepath.Join(dir, "dev.db")
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			strictEnv,
+			"schema", "apply",
+			"--url", "sqlite://"+targetPath,
+			"--to", "file://"+filepath.Join(dir, "missing.yaml"),
+			"--dev-url", "sqlite://"+devPath,
+			"--auto-approve",
+		)
+
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
+		assertPathsDoNotExist(t, targetPath, devPath)
+	})
+
+	t.Run("schema diff YAML before database-backed from", func(t *testing.T) {
+		dir := t.TempDir()
+		fromPath := filepath.Join(dir, "from.db")
+		devPath := filepath.Join(dir, "dev.db")
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			strictEnv,
+			"schema", "diff",
+			"--from", "sqlite://"+fromPath,
+			"--to", "file://"+filepath.Join(dir, "missing.yaml"),
+			"--dev-url", "sqlite://"+devPath,
+		)
+
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
+		assertPathsDoNotExist(t, fromPath, devPath)
+	})
+
+	t.Run("migrate diff desired YAML before dev connection and directory lock", func(t *testing.T) {
+		dir := t.TempDir()
+		migrationsDir := filepath.Join(dir, "migrations")
+		qt.Assert(t, os.Mkdir(migrationsDir, 0o700), qt.IsNil)
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
+			"CREATE TABLE users (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+		devPath := filepath.Join(dir, "dev.db")
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			strictEnv,
+			"migrate", "diff", "next",
+			"--dir", "file://"+migrationsDir,
+			"--to", "file://"+filepath.Join(dir, "missing.yaml"),
+			"--dev-url", "sqlite://"+devPath,
+		)
+
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
+		assertPathsDoNotExist(t,
+			devPath,
+			filepath.Join(dir, ".migrations.ptah-migrate-diff.lock"),
+		)
+	})
+
+	t.Run("migrate diff current directory before dev connection and directory lock", func(t *testing.T) {
+		dir := t.TempDir()
+		migrationsDir := filepath.Join(dir, "migrations")
+		qt.Assert(t, os.Mkdir(migrationsDir, 0o700), qt.IsNil)
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
+			"-- +ptah no_transaction\nCREATE TABLE users (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+		desiredPath := filepath.Join(dir, "desired.sql")
+		qt.Assert(t, os.WriteFile(desiredPath, []byte(
+			"CREATE TABLE users (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		devPath := filepath.Join(dir, "dev.db")
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			strictEnv,
+			"migrate", "diff", "next",
+			"--dir", "file://"+migrationsDir,
+			"--to", "file://"+desiredPath,
+			"--dev-url", "sqlite://"+devPath,
+		)
+
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			"Error: validate current migration directory: Atlas Community Edition strict compatibility does not support "+
+				"Ptah migration directives in 1_init.sql\n")
+		assertPathsDoNotExist(t,
+			devPath,
+			filepath.Join(dir, ".migrations.ptah-migrate-diff.lock"),
+		)
+	})
+}
+
+func assertPathsDoNotExist(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, path := range paths {
+		_, err := os.Stat(path)
+		qt.Assert(t, err, qt.ErrorIs, os.ErrNotExist, qt.Commentf("path %s", path))
+	}
+}
+
 func TestStrictCompatRefusesExtendedMigrationContentBeforeImportWrites(t *testing.T) {
 	c := qt.New(t)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
@@ -780,6 +901,86 @@ func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 	c.Assert(objectCount, qt.Equals, 0)
 	c.Assert(rows.Close(), qt.IsNil)
 	dbschema.CloseAndWarn(conn)
+}
+
+func TestStrictCompatSchemaCleanRefusesPostgresWriterOnlyObjects(t *testing.T) {
+	c := qt.New(t)
+	dbURL := strictCompatPostgresTestURL(t)
+
+	schemaName := fmt.Sprintf("ptah_strict_clean_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	admin, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE")
+		dbschema.CloseAndWarn(admin)
+	})
+	_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+schemaName)
+	c.Assert(err, qt.IsNil)
+
+	parsed, err := url.Parse(dbURL)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", schemaName)
+	parsed.RawQuery = query.Encode()
+	scopedURL := parsed.String()
+	conn, err := dbschema.ConnectToDatabase(t.Context(), scopedURL)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(),
+		"CREATE TABLE users (id integer PRIMARY KEY); "+
+			"CREATE PROCEDURE refresh_users() LANGUAGE SQL AS $$ SELECT 1 $$;")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(conn)
+
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	args := []string{"schema", "clean", "--url", scopedURL, "--auto-approve"}
+	stdout, stderr, code := runAtlasBinary(
+		compat,
+		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+		args...,
+	)
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
+		`Error: Atlas Community Edition strict compatibility does not support cleaning live schema procedure "refresh_users()"`+"\n")
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 2)
+
+	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "Schema clean completed successfully.")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 0)
+}
+
+func strictCompatPostgresTestURL(t *testing.T) string {
+	t.Helper()
+	dbURL := os.Getenv("POSTGRES_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("TEST_DATABASE_URL")
+	}
+	if dbURL == "" {
+		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
+	}
+	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
+		t.Skip("PostgreSQL URL required for strict schema-clean runtime coverage")
+	}
+	return dbURL
+}
+
+func postgresStrictCleanObjectCount(t *testing.T, dbURL string) int {
+	t.Helper()
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err = conn.QueryRowContext(t.Context(), `
+		SELECT
+			(SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'users') +
+			(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+			 WHERE n.nspname = current_schema() AND p.proname = 'refresh_users' AND p.prokind = 'p')`,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
 }
 
 func TestStrictCompatSchemaInspectValidatesMigrationBeforeDevReset(t *testing.T) {

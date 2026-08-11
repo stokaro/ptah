@@ -293,6 +293,13 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := toSet.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

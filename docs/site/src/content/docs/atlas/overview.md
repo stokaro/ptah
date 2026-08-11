@@ -62,17 +62,18 @@ not reserve the whole `PTAH_*` namespace: values read explicitly by an
 Strict mode also refuses authored or inspected content that CE cannot represent
 safely. This includes Pro-only schema objects and extended `atlas.hcl`
 evaluation. Strict schema workflows refuse YAML sources and an authored
-`schema apply` lint policy that the CE path cannot enforce. Commands that
-execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
-directives, and SQL templates; checksum-only reads preserve those bytes. A live
-Pro-only object stops schema inspect, apply, or clean before output or mutation.
-Cleanup validates the full catalog snapshot, including dependent objects such
-as triggers that disappear with a table but are not separate plan lines.
+`schema apply` lint policy that the CE path cannot enforce.
+
+Commands that execute, convert, or replay migration bodies refuse Atlas txtar,
+Ptah directives, and SQL templates; checksum-only reads preserve those bytes.
+A live Pro-only object stops schema inspect, apply, or clean before output or
+mutation. Cleanup validates the writer's full destruction inventory, including
+dependent objects and PostgreSQL catalog kinds absent from the schema reader.
+
 Strict mode never emulates a CE behavior that would silently drop authored
 data, hide a live object, or corrupt state. Default mode retains every listed
 extension. Deliberate safety and correctness improvements remain enabled and
-are listed in
-[Retained divergences](../retained-divergences/).
+are listed in [Retained divergences](../retained-divergences/).
 
 Do not enable strict mode in ordinary migrated Pro pipelines. To verify both
 contracts, run CE parity tests with the variable set and Pro-retention tests

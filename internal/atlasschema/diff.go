@@ -63,34 +63,20 @@ type DiffOptions struct {
 // is pinned by --dev-url first, then by --from and --to database sources;
 // local files alone still require --dev-url.
 func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error) {
-	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv)
+	prepared, err := prepareDiffSources(opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if err := fromSet.EnsureDevDatabase(opts.DevURL); err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if err := toSet.EnsureDevDatabase(opts.DevURL); err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if dialect == "" {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("--dev-url is required for local schema file diffing")
-	}
+	fromSet := prepared.from
+	toSet := prepared.to
+	dialect := prepared.dialect
 
 	// Both sides are desired states here, so --dev-url is the only URL that can
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
 		Dialect:         dialect,
-		DialectFlag:     dialectFlag,
+		DialectFlag:     prepared.dialectFlag,
 		DevURL:          opts.DevURL,
 		SchemaScope:     schemaScope,
 		SchemaScopeFlag: schemaScopeFlag,
@@ -173,6 +159,51 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		}
 	}
 	return atlasreport.NewSchemaDiff(from, to, statements), nil
+}
+
+type preparedDiffSources struct {
+	from        atlassource.Set
+	to          atlassource.Set
+	dialect     string
+	dialectFlag string
+}
+
+func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
+	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	if err := fromSet.EnsureDevDatabase(opts.DevURL); err != nil {
+		return preparedDiffSources{}, err
+	}
+	if err := toSet.EnsureDevDatabase(opts.DevURL); err != nil {
+		return preparedDiffSources{}, err
+	}
+	// Validate both local sides before resolving either one. In particular, a
+	// refused --to must not be preceded by opening a database-backed --from.
+	if err := fromSet.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --from schema: %w", err)
+	}
+	if err := toSet.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	if dialect == "" {
+		return preparedDiffSources{}, fmt.Errorf("--dev-url is required for local schema file diffing")
+	}
+	return preparedDiffSources{
+		from:        fromSet,
+		to:          toSet,
+		dialect:     dialect,
+		dialectFlag: dialectFlag,
+	}, nil
 }
 
 // diffFromDBState shapes the --from side for comparison. Database-backed

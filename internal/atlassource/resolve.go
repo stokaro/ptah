@@ -114,12 +114,8 @@ type State struct {
 // is introspected; external schema programs run without a shell and their
 // standard output is parsed as the desired schema.
 func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
-	if s.Kind == KindLocalFile && opts.ValidateLocalSchemaSource != nil {
-		for _, source := range s.Sources {
-			if err := opts.ValidateLocalSchemaSource(source.Path); err != nil {
-				return State{}, err
-			}
-		}
+	if err := s.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return State{}, err
 	}
 	state, err := s.resolve(ctx, opts)
 	if err != nil {

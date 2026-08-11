@@ -117,6 +117,22 @@ type Set struct {
 	Sources []Source
 }
 
+// ValidateLocalSchemaSources applies validate to every local schema source in
+// the already-classified set. It is deliberately separate from Resolve so a
+// caller can enforce a source policy before opening an unrelated database or
+// acquiring a lock. Nil and non-local sets are no-ops.
+func (s Set) ValidateLocalSchemaSources(validate func(string) error) error {
+	if s.Kind != KindLocalFile || validate == nil {
+		return nil
+	}
+	for _, source := range s.Sources {
+		if err := validate(source.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Classify determines the source kind of one desired-state URL. env://
 // references are returned unexpanded; use ClassifySet to expand them against
 // an evaluated atlas.hcl environment.

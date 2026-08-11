@@ -18,11 +18,15 @@ import (
 // destroys — see coverageFor for the per-dialect mapping and for the writer
 // files that define each dialect's coverage.
 const (
+	ObjectTypeAggregate        = "aggregate"
+	ObjectTypeCollation        = "collation"
 	ObjectTypeComposite        = "composite"
+	ObjectTypeDefaultPrivilege = "default_privilege"
 	ObjectTypeDomain           = "domain"
 	ObjectTypeEnum             = "enum"
 	ObjectTypeEvent            = "event"
 	ObjectTypeForeignKey       = "foreign_key"
+	ObjectTypeForeignTable     = "foreign_table"
 	ObjectTypeFunction         = "function"
 	ObjectTypeMaterializedView = "materialized_view"
 	ObjectTypeProcedure        = "procedure"
@@ -62,10 +66,11 @@ type Plan struct {
 }
 
 type Object struct {
-	Type   string
-	Schema string
-	Table  string
-	Name   string
+	Type    string
+	Schema  string
+	Table   string
+	Name    string
+	Command string
 }
 
 // Change is one line of the cleanup report: an object that Apply destroys, plus
@@ -112,8 +117,8 @@ type dialectCoverage struct {
 
 	// Runtime-sourced kinds: the reader's snapshot does not carry them, so
 	// Inspect queries the live catalog for them. See inspectRuntimeObjects.
-	postgresSequences  bool
-	mysqlStoredObjects bool
+	postgresRuntimeObjects bool
+	mysqlStoredObjects     bool
 
 	// revisionTables records that this dialect's writer destroys Ptah's own
 	// migration bookkeeping tables while its reader hides them by name, so
@@ -126,7 +131,8 @@ func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
 }
 
 // InspectWithOptions returns a cleanup plan after applying caller-selected
-// validation to the exact catalog snapshot used to build it.
+// validation to the reader snapshot. The returned plan also includes the
+// writer-only live-catalog objects that the reader cannot represent.
 func InspectWithOptions(conn *dbschema.DatabaseConnection, opts InspectOptions) (Plan, error) {
 	schema, err := conn.Reader().ReadSchema()
 	if err != nil {
@@ -278,13 +284,13 @@ func coverageFor(dialect string) dialectCoverage {
 			composites:        true,
 			ranges:            true,
 			functions:         true,
-			// The standalone-sequence probe stays restricted to PostgreSQL
-			// proper because that is the only PostgreSQL-family engine this
-			// package has been measured against, and widening it is not this
-			// change's subject. The CockroachDB and YugabyteDB writers do drop
-			// sequences, so their plans still understate cleanup by that kind.
-			postgresSequences: normalized == "postgres" || normalized == "postgresql",
-			revisionTables:    true,
+			// The writer-only live-catalog inventory stays restricted to
+			// PostgreSQL proper because that is the only PostgreSQL-family engine
+			// this package has been measured against. CockroachDB and YugabyteDB
+			// plans remain conservative until their cleanup inventories are
+			// measured independently.
+			postgresRuntimeObjects: normalized == "postgres" || normalized == "postgresql",
+			revisionTables:         true,
 		}
 	case "mysql", "mariadb":
 		return dialectCoverage{
@@ -471,8 +477,8 @@ func functionObjects(schema *dbschematypes.DBSchema) []Object {
 func inspectRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
 	coverage := coverageFor(conn.Info().Dialect)
 	switch {
-	case coverage.postgresSequences:
-		return inspectPostgresSequences(conn)
+	case coverage.postgresRuntimeObjects:
+		return inspectPostgresRuntimeObjects(conn)
 	case coverage.mysqlStoredObjects:
 		return inspectMySQLStoredObjects(conn)
 	default:
@@ -480,35 +486,143 @@ func inspectRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) 
 	}
 }
 
-func inspectPostgresSequences(conn *dbschema.DatabaseConnection) ([]Object, error) {
+func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
 	schema := strings.TrimSpace(conn.Info().Schema)
 	if schema == "" {
 		schema = "public"
 	}
 	rows, err := conn.Query(`
-		SELECT sequence_name
-		FROM information_schema.sequences
-		WHERE sequence_schema = $1
-		ORDER BY sequence_name`, schema)
+		WITH runtime_objects AS (
+			SELECT
+				'sequence'::text AS object_kind,
+				n.nspname AS object_schema,
+				c.relname AS object_name,
+				format('DROP SEQUENCE IF EXISTS %I.%I RESTRICT', n.nspname, c.relname) AS drop_statement
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1 AND c.relkind = 'S'
+
+			UNION ALL
+
+			SELECT
+				'foreign_table',
+				n.nspname,
+				c.relname,
+				format('DROP FOREIGN TABLE IF EXISTS %I.%I RESTRICT', n.nspname, c.relname)
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1 AND c.relkind = 'f'
+
+			UNION ALL
+
+			SELECT
+				CASE p.prokind
+					WHEN 'p' THEN 'procedure'
+					WHEN 'a' THEN 'aggregate'
+					ELSE 'function'
+				END,
+				n.nspname,
+				format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)),
+				format(
+					'DROP %s IF EXISTS %I.%I(%s) RESTRICT',
+					CASE p.prokind
+						WHEN 'p' THEN 'PROCEDURE'
+						WHEN 'a' THEN 'AGGREGATE'
+						ELSE 'FUNCTION'
+					END,
+					n.nspname,
+					p.proname,
+					pg_get_function_identity_arguments(p.oid)
+				)
+			FROM pg_proc p
+			JOIN pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = $1
+			  AND p.prokind IN ('p', 'a', 'w')
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM pg_depend d
+				WHERE d.classid = 'pg_proc'::regclass
+				  AND d.objid = p.oid
+				  AND d.deptype = 'i'
+			  )
+
+			UNION ALL
+
+			SELECT
+				'collation',
+				n.nspname,
+				c.collname,
+				format('DROP COLLATION IF EXISTS %I.%I RESTRICT', n.nspname, c.collname)
+			FROM pg_collation c
+			JOIN pg_namespace n ON n.oid = c.collnamespace
+			WHERE n.nspname = $1
+
+			UNION ALL
+
+			SELECT DISTINCT
+				'default_privilege',
+				n.nspname,
+				format(
+					'%s/%s/%s',
+					pg_get_userbyid(d.defaclrole),
+					d.defaclobjtype,
+					CASE acl.grantee
+						WHEN 0 THEN 'PUBLIC'
+						ELSE pg_get_userbyid(acl.grantee)
+					END
+				),
+				format(
+					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
+					'REVOKE ALL PRIVILEGES ON %s FROM %s',
+					pg_get_userbyid(d.defaclrole),
+					n.nspname,
+					CASE d.defaclobjtype
+						WHEN 'r' THEN 'TABLES'
+						WHEN 'S' THEN 'SEQUENCES'
+						WHEN 'f' THEN 'FUNCTIONS'
+						WHEN 'T' THEN 'TYPES'
+					END,
+					CASE acl.grantee
+						WHEN 0 THEN 'PUBLIC'
+						ELSE format('%I', pg_get_userbyid(acl.grantee))
+					END
+				)
+			FROM pg_default_acl d
+			JOIN pg_namespace n ON n.oid = d.defaclnamespace
+			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+			WHERE n.nspname = $1
+			  AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
+		)
+		SELECT object_kind, object_schema, object_name, drop_statement
+		FROM runtime_objects
+		ORDER BY object_kind, object_name`, schema)
 	if err != nil {
-		return nil, fmt.Errorf("inspect cleanup sequences: %w", err)
+		return nil, fmt.Errorf("inspect cleanup PostgreSQL runtime objects: %w", err)
 	}
 	defer rows.Close()
 
 	objects := []Object{}
 	for rows.Next() {
+		var kind string
+		var schema string
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scan cleanup sequence: %w", err)
+		var command string
+		if err := rows.Scan(&kind, &schema, &name, &command); err != nil {
+			return nil, fmt.Errorf("scan cleanup PostgreSQL runtime object: %w", err)
+		}
+		objectType, ok := postgresRuntimeObjectType(kind)
+		if !ok {
+			return nil, fmt.Errorf("inspect cleanup PostgreSQL runtime objects: unsupported object kind %q", kind)
 		}
 		objects = append(objects, Object{
-			Type:   ObjectTypeSequence,
-			Schema: schema,
-			Name:   name,
+			Type:    objectType,
+			Schema:  schema,
+			Name:    name,
+			Command: command,
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate cleanup sequences: %w", err)
+		return nil, fmt.Errorf("iterate cleanup PostgreSQL runtime objects: %w", err)
 	}
 	return objects, nil
 }
@@ -749,6 +863,27 @@ func mysqlStoredObjectType(kind string) (string, bool) {
 	}
 }
 
+func postgresRuntimeObjectType(kind string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "aggregate":
+		return ObjectTypeAggregate, true
+	case "collation":
+		return ObjectTypeCollation, true
+	case "default_privilege":
+		return ObjectTypeDefaultPrivilege, true
+	case "foreign_table":
+		return ObjectTypeForeignTable, true
+	case "function":
+		return ObjectTypeFunction, true
+	case "procedure":
+		return ObjectTypeProcedure, true
+	case "sequence":
+		return ObjectTypeSequence, true
+	default:
+		return "", false
+	}
+}
+
 // sortObjects orders the report by (type, schema, table, name): object kind
 // first, alphabetically by the ObjectType* string, then by location within the
 // kind. That is what orders objects of different kinds relative to each other —
@@ -784,6 +919,9 @@ func sortObjects(objects []Object) {
 }
 
 func dropCommand(dialect string, object Object) string {
+	if strings.TrimSpace(object.Command) != "" {
+		return object.Command
+	}
 	name := sqlident.Qualified(dialect, object.Schema, object.Name)
 	switch object.Type {
 	case ObjectTypeComposite, ObjectTypeEnum, ObjectTypeRange:

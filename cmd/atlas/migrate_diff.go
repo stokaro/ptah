@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -218,6 +219,9 @@ func runAtlasMigrateDiff(
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir, dirFormat); err != nil {
 		return err
 	}
+	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
+	}
 	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
@@ -237,6 +241,9 @@ func runAtlasMigrateDiff(
 	desired, err := prepareAtlasMigrateDiffSource(opts, dirFormat, projectEnv)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if err := desired.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
 	qualifier, err := atlasmigrate.ParseQualifier(opts.qualifier)
 	if err != nil {
@@ -344,6 +351,33 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func validateAtlasMigrateDiffCurrentSource(
+	project atlasProject,
+	dir atlasargs.LocalDir,
+	format atlasmigrateimport.Format,
+	policy atlascompatpolicy.Policy,
+) error {
+	if !policy.IsStrictCE() {
+		return nil
+	}
+	source, err := project.captureLocal(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	fSys := source.FileSystem
+	if !atlasmigrate.ReadsNativeAtlasDir(format) {
+		loaded, err := atlasmigrateimport.LoadFS(fSys, dir.Path, format)
+		if err != nil {
+			return fmt.Errorf("read migration directory as %s: %w", format, err)
+		}
+		fSys = loaded.FS()
+	}
+	return policy.ValidateMigrationSource(fSys)
 }
 
 func compatBidirectionalPlannerForFormat(

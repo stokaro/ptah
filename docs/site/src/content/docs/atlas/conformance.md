@@ -42,10 +42,10 @@ convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
 and SQL templates; checksum-only reads preserve those bytes. Default mode keeps
 the extensions.
 
-The conformance harness keeps the two environments separate: CE parity probes
-inject strict mode into each subprocess, while Pro-retention and native Ptah
-probes leave it absent. Strict mode still keeps deliberate safety and
-correctness improvements, so a green result never depends on copying a CE
+The paired conformance-harness change keeps the two environments separate. CE
+parity probes inject strict mode into each subprocess, while Pro-retention and
+native Ptah probes leave it absent. Strict mode still keeps deliberate safety
+and correctness improvements, so a green result never depends on copying a CE
 behavior that silently drops authored content or corrupts migration state.
 
 ### SQL inspect statement terminators

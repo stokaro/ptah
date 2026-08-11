@@ -48,25 +48,31 @@ that once removed that capability in the name of parity was reverted -- see
 
 ## CE Oracle Policy
 
-The default `ptah-compat` process is the complete migration surface and retains
-implemented Atlas Pro-like and best-effort capabilities. A CE differential or
-CLI-surface probe must instead set `PTAH_ATLAS_STRICT_COMPAT=1` on each
-`ptah-compat` subprocess. The conformance harness injects that value only for
-CE comparisons; Pro-retention and native capability probes run with it absent.
+The default `ptah-compat` process is the complete migration surface. It retains
+implemented Atlas Pro-like and best-effort capabilities.
 
-Strict mode constructs the CE command and flag tree before help or dispatch,
-rejects extension environment values, and refuses extended authored schema,
-project-config, migration, and inspected live-schema content before work. A
-strict inspect, apply, or clean run refuses a live Pro-only object before it
-can be omitted from output or destroyed. A refusal is intentional where CE
-would silently discard or misinterpret that content: the strict policy narrows
-the capability inventory but does not copy a data-loss or state-corruption
-defect. In particular, strict schema workflows refuse YAML sources and an
-authored `schema apply` lint policy that the CE path cannot enforce. Commands
-that execute, convert, or replay migration bodies refuse Atlas txtar, every
-Ptah directive, and SQL templates; checksum-only reads preserve those bytes.
-Default mode retains the extensions. Such cases remain in the
-retained-divergence evidence.
+A CE differential or CLI-surface probe must set
+`PTAH_ATLAS_STRICT_COMPAT=1` on each `ptah-compat` subprocess. The paired
+conformance-harness change injects that value only for CE comparisons;
+Pro-retention and native capability probes run with it absent.
+
+Strict mode constructs the CE command and flag tree before help or dispatch.
+It rejects extension environment values and validates authored schema,
+project-config, migration, and inspected live-schema content before work.
+Local source-format and current-migration checks run before database or lock
+artifacts can be created.
+
+A strict inspect, apply, or clean run refuses a live Pro-only object before it
+can be omitted from output or destroyed. Cleanup validates the writer's full
+destruction inventory, including PostgreSQL catalog objects absent from the
+ordinary schema reader. The policy narrows the capability inventory without
+copying a data-loss or state-corruption defect.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply`
+lint policy that the CE path cannot enforce. Commands that execute, convert,
+or replay migration bodies refuse Atlas txtar, every Ptah directive, and SQL
+templates; checksum-only reads preserve those bytes. Default mode retains the
+extensions. Such cases remain in the retained-divergence evidence.
 
 ## Current Scoreboard
 
