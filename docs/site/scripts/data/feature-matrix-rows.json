@@ -770,8 +770,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Native import converts golang-migrate/Goose/Flyway/Liquibase-SQL to ptah format (`R__` becomes one-time); the compat path writes atlas format and orders `R__` last. Liquibase XML/YAML/JSON not parsed.",
-    "evidence": "Executed: `ptah-compat migrate import --from https://example.com/m` and `--from atlas://myrepo` both fail \"only local file:// migration directories are supported\"; `--dir-format liquibase` on a changelog.xml fails \"liquibase XML/YAML/JSON changelogs are not yet supported\". golang-migrate, goose and dbmate dirs import to single up-only Atlas files (down bodies dropped). Conformance PARITY.md:147 records Liquibase XML/YAML/JSON as a follow-up.; ptah migrations import --help (--from golang-migrate, goose, flyway, liquibase, dbmate); conformance cli-surface.md (atlas migrate import, class oss); do"
+    "note": "Native import writes Ptah format; compat import writes Atlas format and orders `R__` last. Conventional Liquibase SQL becomes a global numeric changeset stream. Liquibase XML/YAML/JSON is unsupported.",
+    "evidence": "Executed: `ptah-compat migrate import --from https://example.com/m` and `--from atlas://myrepo` both fail \"only local file:// migration directories are supported\"; `--dir-format liquibase` on a changelog.xml fails \"liquibase XML/YAML/JSON changelogs are not yet supported\". A mixed 1_numbered.sql plus changelog.sql formatted-SQL source emits numeric changeset files and atlas.sum that both Ptah and Atlas CE v1.3.0 validate and apply. Atlas CE also validated and applied an 11-change output named 01 through 11 in order. A headerless member refuses before destination creation. golang-migrate, Goose, and dbmate directories import to single up-only Atlas files (down bodies dropped).; ptah migrations import --help (--from golang-migrate, goose, flyway, liquibase, dbmate); conformance cli-surface.md (atlas migrate import, class oss)"
   },
   {
     "area": "Versioned migrations — revision state",

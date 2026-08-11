@@ -1,6 +1,7 @@
 package atlasmigrateimport_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -227,6 +228,166 @@ CREATE TABLE posts (id int);
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{"1_initial.sql"})
 	c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, "--changeset atlas:1-1\nCREATE TABLE posts (id int);\n")
 	assertAtlasSumOK(c, target, result.SumFile)
+}
+
+func TestImportLiquibaseConventionalChangelogSplitsChangesets(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	writeFile(c, source, "changelog.sql", `--liquibase formatted sql
+
+--changeset alice:create-users
+CREATE TABLE users (id int);
+--rollback DROP TABLE users;
+
+--changeset bob:add-email
+ALTER TABLE users ADD COLUMN email text;
+--rollback ALTER TABLE users DROP COLUMN email;
+`)
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"1_alice_create_users.sql",
+		"2_bob_add_email.sql",
+	})
+	c.Assert(readFile(c, target, "1_alice_create_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c, target, "2_bob_add_email.sql"), qt.Equals, "ALTER TABLE users ADD COLUMN email text;\n")
+	assertAtlasSumOK(c, target, result.SumFile)
+}
+
+func TestImportLiquibaseConventionalFilesUseGlobalChangesetOrder(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	writeFile(c, source, "b.sql", `--liquibase formatted sql
+--changeset bob:third
+CREATE TABLE third_table (id int);
+`)
+	writeFile(c, source, "a.sql", `--liquibase formatted sql
+--changeset alice:first
+CREATE TABLE first_table (id int);
+--changeset alice:second
+CREATE TABLE second_table (id int);
+`)
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"1_alice_first.sql",
+		"2_alice_second.sql",
+		"3_bob_third.sql",
+	})
+	assertAtlasSumOK(c, target, result.SumFile)
+}
+
+func TestImportLiquibaseConventionalNameConvertsEntireCoveredSet(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	writeFile(c, source, "1_numbered.sql", `--liquibase formatted sql
+--changeset numbered:first
+CREATE TABLE numbered_table (id int);
+`)
+	writeFile(c, source, "changelog.sql", `--liquibase formatted sql
+--changeset conventional:second
+CREATE TABLE conventional_table (id int);
+`)
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"1_numbered_first.sql",
+		"2_conventional_second.sql",
+	})
+	c.Assert(readFile(c, target, "1_numbered_first.sql"), qt.Equals, "CREATE TABLE numbered_table (id int);\n")
+	c.Assert(readFile(c, target, "2_conventional_second.sql"), qt.Equals, "CREATE TABLE conventional_table (id int);\n")
+	assertAtlasSumOK(c, target, result.SumFile)
+}
+
+func TestImportLiquibaseConventionalInputRefusesBeforeCreatingTarget(t *testing.T) {
+	tests := []struct {
+		name      string
+		files     map[string]string
+		wantError string
+	}{
+		{
+			name: "mixed formatted and headerless SQL",
+			files: map[string]string{
+				"1_legacy.sql": "CREATE TABLE skipped_table (id int);\n",
+				"changelog.sql": `--liquibase formatted sql
+--changeset alice:valid
+CREATE TABLE valid_table (id int);
+`,
+			},
+			wantError: `parse liquibase source file 1_legacy\.sql: no liquibase formatted-SQL changelogs .* found`,
+		},
+		{
+			name: "malformed changeset",
+			files: map[string]string{
+				"changelog.sql": `--liquibase formatted sql
+--changeset missing
+CREATE TABLE invalid_table (id int);
+`,
+			},
+			wantError: `parse liquibase source file changelog\.sql: liquibase changeset marker "missing" in "changelog\.sql" is missing author:id`,
+		},
+		{
+			name: "empty sanitized identity",
+			files: map[string]string{
+				"changelog.sql": `--liquibase formatted sql
+--changeset !!!:???
+CREATE TABLE invalid_table (id int);
+`,
+			},
+			wantError: `liquibase changeset identity "_" in changelog\.sql cannot be represented in an Atlas migration file name`,
+		},
+		{
+			name: "unsupported structured changelog",
+			files: map[string]string{
+				"changelog.sql": `--liquibase formatted sql
+--changeset alice:valid
+CREATE TABLE valid_table (id int);
+`,
+				"master.xml": "<databaseChangeLog></databaseChangeLog>\n",
+			},
+			wantError: `liquibase XML/YAML/JSON changelogs are not yet supported .* found master\.xml`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := t.TempDir()
+			source := filepath.Join(root, "source")
+			target := filepath.Join(root, "target")
+			c.Assert(os.Mkdir(source, 0o700), qt.IsNil)
+			for name, content := range tt.files {
+				writeFile(c, source, name, content)
+			}
+
+			_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+				FromURL: "file://" + source + "?format=liquibase",
+				ToURL:   "file://" + target,
+			})
+
+			c.Assert(err, qt.ErrorMatches, tt.wantError)
+			_, statErr := os.Stat(target)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
 }
 
 func TestImportRejectsRemoteSourceURL(t *testing.T) {

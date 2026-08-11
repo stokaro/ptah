@@ -341,39 +341,32 @@ what every one of them accepts and needs its own change with its own controls.
 Tracked as [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241)
 item 11.
 
-### `migrate import --dir-format liquibase` refuses a changelog whose name has no leading number
+### `migrate import --dir-format liquibase` preserves conventional changesets
 
-Measured 2026-08-09, one Liquibase formatted-SQL changelog carrying two
-`--changeset` markers, each cell in its own directory:
+Measured 2026-08-10 with Atlas CE v1.3.0 and Ptah, using conventional
+Liquibase formatted-SQL changelogs:
 
-| source | Atlas CE v1.3.0 | Ptah |
+| source | Atlas CE v1.3.0 import | Ptah import |
 | --- | --- | --- |
-| `src/changelog.sql` | 0, writes `dst/changelog.sql` and `atlas.sum` | 1, `no importable migration files found in src for format "liquibase"` |
-| `src/1_changelog.sql` | 0 | **0**, and the written directory is byte-identical to Atlas CE's, `atlas.sum` included |
+| `changelog.sql`, two changesets | writes one unnumbered `changelog.sql` | writes `1_<author>_<id>.sql` and `2_<author>_<id>.sql` |
+| `1_numbered.sql` plus `changelog.sql` | writes both source names | converts both files into one globally numbered changeset stream |
 
-The second row is the root cause. The converter is not missing — it runs, and
-agrees to the byte. `loadDirectiveSectionEntries` selects source files with
-`^[0-9]+_.+\.sql$`, and a Liquibase changelog is conventionally named
-`changelog.sql`.
+The output-shape divergence is deliberate. Atlas CE's unnumbered output applies
+under Atlas, but Ptah's Atlas migrator refuses it because Ptah migration versions
+are integers. Numeric changeset files are accepted by both Atlas CE and Ptah,
+and they retain the source changeset identity that one collapsed file loses.
 
-Removing that filter is not on its own the fix, because the name Atlas CE writes
-carries no version. Measured on Atlas CE's **own** import output:
-
-| | Atlas CE v1.3.0 | Ptah |
-| --- | --- | --- |
-| `migrate apply --dir file://dst` over `changelog.sql` | 0, `migrating version changelog` | 1, `no migration files matched format "atlas"; unrecognized SQL files: changelog.sql` |
-
-Ptah models a migration version as an `int64`, so matching that import writes a
-directory this tool then refuses to apply — trading a refusal at import time for
-one at apply time, after the files have been written.
-
-Ptah's own importer already reads the same changelog and produces one migration
-per `--changeset`, carrying the author and id into the name, which keeps the two
-changeset identities that Atlas CE's single-file collapse loses. Choosing
-between "match the bytes, and teach the migrator non-numeric versions" and
-"import the layout Ptah's way, and diverge on output shape" is a design decision
-rather than a parity fix. Tracked as
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 8.
+The compatibility adapter reuses Ptah's public Liquibase formatted-SQL parser.
+If any covered top-level SQL file has a conventional, unnumbered name, every
+covered SQL file must be valid formatted SQL. Files are ordered lexically,
+changesets keep appearance order within each file, and the complete set receives
+global versions `1..N`. File-name versions are left-padded to the digit width of
+`N` — `01` through `11` for an 11-changeset stream — so `atlas.sum` lexical
+order remains execution order. Atlas CE v1.3.0 validated and applied that
+11-file shape in order. A malformed or headerless member fails the whole import
+before destination creation, so the mixed layout cannot partially import. A
+directory containing only numbered SQL names keeps the established one-file
+conversion. Liquibase XML, YAML, and JSON changelogs remain unsupported.
 
 ## PostgreSQL Introspection: Index and Domain Attributes
 

@@ -589,8 +589,10 @@ down migrations.
 Every other format is captured first and then converted in memory to Atlas
 single-file, up-only migrations, so apply executes only the source tool's
 forward (up) SQL and never its down, rollback, undo, or metadata section. This
-reuses the same format-loading layer as `ptah-compat migrate import`, so apply
-and import agree on every format's semantics.
+shares format parsers and up/down semantics with `ptah-compat migrate import`.
+Conventional Liquibase import adds a persistence adapter that splits changesets
+into numeric Atlas files; direct apply retains its numbered-file requirement and
+source-file boundary.
 
 An explicit `?format=` query on the effective directory URL, from either
 `migration.dir` or CLI `--dir`, overrides the `migration.format` project
@@ -1545,6 +1547,18 @@ not in that list: they are converted onto a reserved version slot above every
 versioned migration, and the destination file name carries that slot rather than
 an R suffix, so the imported directory keeps one-time migration semantics
 instead of Flyway-style reapply semantics.
+
+For Liquibase formatted SQL, a directory containing only numbered SQL names
+keeps the one-source-file-to-one-Atlas-file conversion. If any covered SQL file
+has a conventional name such as `changelog.sql`, the importer parses the entire
+covered SQL set as formatted SQL, orders files lexically and changesets by
+appearance, and writes global versions `1..N` with the changeset author and ID
+in each file name. Version tokens are left-padded to the digit width of `N`, so
+an 11-changeset stream is named `01_...` through `11_...` and `atlas.sum` keeps
+the same order as Liquibase. A headerless or malformed member refuses the whole
+import before the destination is created. The resulting numeric Atlas directory
+and its `atlas.sum` validate and apply under both Ptah and Atlas CE. Liquibase
+XML, YAML, and JSON changelogs remain unsupported.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

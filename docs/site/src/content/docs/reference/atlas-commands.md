@@ -490,6 +490,14 @@ Imports local `file://` migration directories from `atlas`, `golang-migrate`,
 single-file directory and writes `atlas.sum`. Flyway repeatable migrations are
 converted to one-time versioned Atlas files rather than emitted with an `R`
 suffix, so the imported directory remains stable under Ptah's revision model.
+
+A conventional Liquibase formatted-SQL name such as `changelog.sql` makes the
+importer parse every covered SQL file and emit one numeric Atlas file per
+changeset, in lexical file and changeset appearance order. Versions are padded
+to the digit width of the final version so lexical checksum order stays numeric.
+Headerless or malformed members refuse the whole import before destination
+creation.
+
 A successful compatibility import is silent; inspect the destination directory
 and its `atlas.sum` instead of relying on a progress message. Failures are still
 reported on stderr. The native `ptah migrations import` converts the same source
