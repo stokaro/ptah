@@ -23,18 +23,16 @@ import (
 //	exit 1, nothing created
 //
 // Ptah accepted the bare path on every verb, which on the two verbs that create
-// a directory means materialising one somewhere the operator did not point at:
+// a directory means materializing one somewhere the operator did not point at:
 // `migrate new addcol --dir /tmp/nosuchxyz --dir-format goose` exited 0 and
-// wrote to /private/tmp/nosuchxyz. The read verbs still accept it; that half is
-// #1186 and is deliberately still open.
+// wrote to /private/tmp/nosuchxyz. That change first covered the writers; the
+// read consumers now require the scheme too and are covered below.
 //
 // The suggestion carries the URL's path component only — measured,
 // `--dir 'sub/dir?format=goose&x=1'` and `--dir 'sub/dir#frag'` both suggest
-// `"file://sub/dir"` there, while `--dir ./rel` suggests `"file://./rel"`. The
-// one measured byte Ptah does not reproduce is a trailing space: that binary
-// prints `…"file://mig"? ` where its own `checksum file not found` on the same
-// verb prints none, so the space is a slip in one format string rather than a
-// convention.
+// `"file://sub/dir"` there, while `--dir ./rel` suggests `"file://./rel"`.
+// The message terminates with one ASCII space before the line feed. In hex,
+// its final two bytes on stderr are `20 0a`.
 
 // atlasWriteVerbSpelling is one writing verb invoked with the --dir value
 // exactly as the caller spelled it. It is deliberately not
@@ -72,7 +70,7 @@ func atlasWriteVerbSpellings() []atlasWriteVerbSpelling {
 // atlasMissingSchemeError renders the community binary's message for a
 // directory URL naming no scheme.
 func atlasMissingSchemeError(path string) string {
-	return fmt.Sprintf("missing scheme for dir url. Did you mean %q?", "file://"+path)
+	return fmt.Sprintf("missing scheme for dir url. Did you mean %q? ", "file://"+path)
 }
 
 // TestCompatMigrateWrite_RefusesADirectoryNamingNoScheme is the headline test.
@@ -318,8 +316,9 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 //	status    binary 1, ptah 1, same line
 //
 // The control is below: the same directory named WITH the scheme still works on
-// every one of them, which is what separates "requires the scheme" from
-// "refuses this directory".
+// the two integrity verbs, which is what separates "requires the scheme" from
+// "refuses this directory". The tagged black-box integration contour covers
+// all six compatibility consumers and native bare-path controls.
 func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 	verbs := []struct {
 		name string
@@ -343,7 +342,7 @@ func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 
 			_, _, err := runCompat(verb.args(dir)...)
 
-			c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean ".*"\?`)
+			c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean ".*"\? `)
 		})
 	}
 
