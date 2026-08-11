@@ -159,9 +159,10 @@ func runAtlasMigrateDiff(
 	// creates nothing, measured on the pinned v1.3.0 on 2026-08-06. The flag's
 	// own default carries `file://`, so an omitted --dir passes.
 	//
-	// The read verbs still accept a scheme-less --dir, and so does a directory
-	// named by atlas.hcl on either writing verb; that half is stokaro/ptah#1186
-	// and is deliberately not closed here.
+	// Hash, validate, status and lint apply the same requirement to their
+	// command-line --dir. A directory named by atlas.hcl on either writing verb
+	// remains separate work in stokaro/ptah#1186 and is deliberately not closed
+	// here.
 	if err := atlasargs.RequireDirScheme(dirURLSpelled); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

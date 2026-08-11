@@ -1285,17 +1285,18 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: seven cells from the #1235 register
+## Output shape: nine cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Seven of them are closed here. Every row was
+exit code and disagree on the bytes. Nine of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
 | Finding | Command | Pinned binary | Ptah, before | Ptah, now |
 | --- | --- | --- | --- | --- |
 | 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
+| 9.1–9.2 | `migrate validate --dir migrations`; the same on `migrate status` | The scheme hint ends with one ASCII space and a line feed (`20 0a`, 70 bytes) | The hint ended directly with a line feed (`3f 0a`, 69 bytes) | byte-identical |
 | 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
 | 9.5 | `migrate validate` with `?format=bogus`; the same under `--dir-format bogus` and on `migrate hash` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all four rows |
@@ -1342,6 +1343,13 @@ stderr.
 filesystem or database work. The invalid value stays verbatim, and the semantic
 resolver retains its detailed error in the unwrap chain. Native `ptah` and
 other Atlas-compatible errors keep their existing diagnostics.
+
+**9.1–9.2 change only the compatibility diagnostic.** The final two stderr
+bytes are `20 0a`: one ASCII space followed by the line feed. Hex makes the
+space visible without relying on Markdown trailing whitespace. The shared
+helper gives the same bytes to `hash`, `validate`, `status`, `lint`, `new` and
+`diff`; named schemes, refusal ordering, no-write behavior and native `ptah`
+commands keep their prior behavior.
 
 **9.13 changes only the compatibility error adapter.** Measured 2026-08-11
 with the file body `schema "main" {\n`, both binaries exited 1, wrote no stdout,
