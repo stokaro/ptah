@@ -851,8 +851,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "linear fails on a pending migration below the current version, linear-skip warns and leaves it pending, non-linear applies it.",
-    "evidence": "/tmp/ptah migrations up --help (--exec-order linear|linear-skip|non-linear); docs/site/src/content/docs/versioned/apply.md lines 138-141; conformance cli-surface.md `atlas migrate apply --exec-order`"
+    "note": "linear fails on a pending migration below the current version, linear-skip leaves it pending, and non-linear applies it. Atlas chained revision hashes remain valid after an insertion.",
+    "evidence": "migration/migrator/atlas_sum_checksum_sqlite_test.go covers default-linear refusal, non-linear insertion, reconciliation, crash recovery, edited-file refusal, dry-run, rollback, and failure safety; integration/migrator/atlas_checksum_chain_integration_test.go covers the PostgreSQL revision-table path; cmd/atlas/compat_1241_retained_divergence_test.go covers the compatibility command."
   },
   {
     "area": "Versioned migrations — runtime policy",
