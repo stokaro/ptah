@@ -25,7 +25,7 @@ func TestDisplayAtlasSchemaApplyError(t *testing.T) {
 		got := displayAtlasSchemaApplyError(sourceErr)
 
 		c.Assert(got.Error(), qt.Equals, "malformed schema: sentinel")
-		c.Assert(errors.Is(got, sentinel), qt.IsTrue)
+		c.Assert(got, qt.ErrorIs, sentinel)
 		c.Assert(errors.Unwrap(got), qt.Equals, sourceErr)
 	})
 
@@ -53,7 +53,7 @@ func TestDisplayAtlasSchemaApplyError(t *testing.T) {
 				got := displayAtlasSchemaApplyError(sourceErr)
 
 				c.Assert(got.Error(), qt.Equals, test.message+": sentinel")
-				c.Assert(errors.Is(got, sentinel), qt.IsTrue)
+				c.Assert(got, qt.ErrorIs, sentinel)
 				c.Assert(got, qt.Equals, sourceErr)
 			})
 		}
