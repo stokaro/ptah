@@ -14,45 +14,48 @@ import (
 )
 
 func TestDisplayAtlasSchemaApplyError(t *testing.T) {
-	tests := []struct {
-		name        string
-		message     string
-		wantDisplay string
-		wantWrapped bool
-	}{
-		{
-			name:        "exact HCL loader context is hidden",
-			message:     "load --to schema: parse HCL schema: malformed schema",
-			wantDisplay: "malformed schema",
-			wantWrapped: true,
-		},
-		{
-			name:        "unrelated loader context is preserved",
-			message:     "load --to schema: schema file does not exist",
-			wantDisplay: "load --to schema: schema file does not exist",
-		},
-		{
-			name:        "near match is preserved",
-			message:     "load --to schema: parse SQL schema: malformed schema",
-			wantDisplay: "load --to schema: parse SQL schema: malformed schema",
-		},
-	}
+	t.Run("exact HCL loader context is hidden", func(t *testing.T) {
+		c := qt.New(t)
+		sentinel := errors.New("sentinel")
+		sourceErr := fmt.Errorf(
+			"load --to schema: parse HCL schema: malformed schema: %w",
+			sentinel,
+		)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			sentinel := errors.New("sentinel")
-			sourceErr := fmt.Errorf("%s: %w", test.message, sentinel)
+		got := displayAtlasSchemaApplyError(sourceErr)
 
-			got := displayAtlasSchemaApplyError(sourceErr)
+		c.Assert(got.Error(), qt.Equals, "malformed schema: sentinel")
+		c.Assert(errors.Is(got, sentinel), qt.IsTrue)
+		c.Assert(errors.Unwrap(got), qt.Equals, sourceErr)
+	})
 
-			c.Assert(got.Error(), qt.Equals, test.wantDisplay+": sentinel")
-			c.Assert(errors.Is(got, sentinel), qt.IsTrue)
-			if test.wantWrapped {
-				c.Assert(errors.Unwrap(got), qt.Equals, sourceErr)
-				return
-			}
-			c.Assert(got, qt.Equals, sourceErr)
-		})
-	}
+	t.Run("other errors pass through", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			message string
+		}{
+			{
+				name:    "unrelated loader context",
+				message: "load --to schema: schema file does not exist",
+			},
+			{
+				name:    "near match",
+				message: "load --to schema: parse SQL schema: malformed schema",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
+				sentinel := errors.New("sentinel")
+				sourceErr := fmt.Errorf("%s: %w", test.message, sentinel)
+
+				got := displayAtlasSchemaApplyError(sourceErr)
+
+				c.Assert(got.Error(), qt.Equals, test.message+": sentinel")
+				c.Assert(errors.Is(got, sentinel), qt.IsTrue)
+				c.Assert(got, qt.Equals, sourceErr)
+			})
+		}
+	})
 }
