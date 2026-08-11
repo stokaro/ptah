@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/deporder"
 )
 
@@ -189,6 +190,98 @@ func TestViewLikesForCreate_MatchesSchemaQualifiedReferences(t *testing.T) {
 
 		c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"z_base", "a_report"}, qt.Commentf("body: %s", body))
 		c.Assert(objects[0].Materialized, qt.IsTrue)
+	}
+}
+
+func TestViewLikesForCreateForDialect_ClickHouseCanonicalReferences(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "backtick qualified", body: "SELECT id FROM `analytics`.`z_base`"},
+		{name: "unqualified", body: "SELECT id FROM z_base"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+				{Name: "analytics.a_report", Body: test.body},
+				{Name: "analytics.z_base", Body: "SELECT id FROM users"},
+			}, platform.ClickHouse)
+
+			c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.z_base", "analytics.a_report"})
+		})
+	}
+}
+
+func TestViewLikesForCreateForDialect_ClickHouseIgnoresMaskedCanonicalReferences(t *testing.T) {
+	c := qt.New(t)
+
+	objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+		{
+			Name: "analytics.a_report",
+			Body: "SELECT '`analytics`.`z_base`' AS label FROM users " +
+				"/* `analytics`.`z_base` */ -- z_base\n",
+		},
+		{Name: "analytics.z_base", Body: "SELECT id FROM users"},
+	}, platform.ClickHouse)
+
+	c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.a_report", "analytics.z_base"})
+}
+
+func TestViewLikesForCreateForDialect_ClickHouseLineCommentsDoNotCreateFalseCycles(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		comment string
+	}{
+		{name: "hash", comment: "# `analytics`.`a_report`"},
+		{name: "hash bang", comment: "#! `analytics`.`a_report`"},
+		{name: "slash slash", comment: "// `analytics`.`a_report`"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+				{
+					Name: "analytics.a_report",
+					Body: "SELECT id FROM `analytics`.`z_base`",
+				},
+				{
+					Name: "analytics.z_base",
+					Body: "SELECT 1 AS id " + test.comment + "\n",
+				},
+			}, platform.ClickHouse)
+
+			c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.z_base", "analytics.a_report"})
+		})
+	}
+}
+
+func TestViewLikesForCreateForDialect_ClickHouseEscapesDoNotCreateFalseCycles(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "ordinary string", body: `SELECT 'it\'s a_report' AS label`},
+		{name: "double quoted identifier", body: `SELECT 1 AS "odd\" a_report"`},
+		{name: "backtick quoted identifier", body: "SELECT 1 AS `odd\\` a_report`"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
+				{
+					Name: "analytics.a_report",
+					Body: "SELECT id FROM `analytics`.`z_base`",
+				},
+				{Name: "analytics.z_base", Body: test.body},
+			}, platform.ClickHouse)
+
+			c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"analytics.z_base", "analytics.a_report"})
+		})
 	}
 }
 

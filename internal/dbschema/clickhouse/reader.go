@@ -8,9 +8,9 @@ import (
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
-// Engines we consider "real data tables" for schema introspection. The
+// Engines we consider "real data tables" for table introspection. The
 // MergeTree family covers production workloads; Memory/Log/TinyLog/StripeLog
-// cover the common non-replicated developer/test workloads. Materialised
+// cover the common non-replicated developer/test workloads. Materialized
 // views and Distributed engines are intentionally excluded because they are
 // not part of the schema-as-data-shape Ptah's diff layer reasons about.
 //
@@ -35,10 +35,9 @@ func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
 	return &Reader{db: db, schema: schema}
 }
 
-// ReadSchema returns the database, columns and data-skipping indices for
-// the configured database. Constraints, RLS, functions, etc. are reported
-// as empty slices — those concepts have no direct ClickHouse equivalent
-// in the shape Ptah's diff layer understands today.
+// ReadSchema returns tables, columns, data-skipping indexes, and plain views
+// for the configured database. Constraints, RLS, functions, and other shapes
+// with no direct equivalent in Ptah's ClickHouse model remain empty.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	dbName, err := r.resolveDatabaseName()
 	if err != nil {
@@ -53,9 +52,14 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read indexes: %w", err)
 	}
+	views, err := r.readViews(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: read views: %w", err)
+	}
 	return &types.DBSchema{
 		Tables:  tables,
 		Indexes: indexes,
+		Views:   views,
 	}, nil
 }
 
@@ -110,6 +114,34 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		return nil, err
 	}
 	return tables, nil
+}
+
+func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
+	rows, err := r.db.Query(`
+		SELECT name, as_select, comment
+		FROM system.tables
+		WHERE database = ?
+		  AND is_temporary = 0
+		  AND engine = 'View'
+		ORDER BY name
+	`, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []types.DBView
+	for rows.Next() {
+		view := types.DBView{Schema: dbName, CheckOption: "NONE"}
+		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return views, nil
 }
 
 func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {

@@ -2136,7 +2136,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
-		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database)
+		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database, targetPlatform)
 	}
 
 	if supportsStandaloneViewsAndTriggers(targetPlatform) {
@@ -2253,7 +2253,11 @@ func appendPostgreSQLPreIndexFeatureStatements(statements *ast.StatementList, da
 	}
 }
 
-func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementList, database goschema.Database) {
+func appendPostgreSQLPostForeignKeyFeatureStatements(
+	statements *ast.StatementList,
+	database goschema.Database,
+	targetPlatform string,
+) {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
 	for _, sequence := range database.Sequences {
@@ -2261,12 +2265,7 @@ func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementLi
 			statements.Statements = append(statements.Statements, ownershipNode)
 		}
 	}
-	for _, view := range database.Views {
-		statements.Statements = append(statements.Statements, FromView(view))
-	}
-	for _, view := range database.MaterializedViews {
-		statements.Statements = append(statements.Statements, FromMaterializedView(view))
-	}
+	appendOrderedViewLikeStatements(statements, database, targetPlatform)
 	for _, rlsEnabled := range database.RLSEnabledTables {
 		statements.Statements = append(statements.Statements, FromRLSEnabledTable(rlsEnabled))
 	}
@@ -2281,19 +2280,43 @@ func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementLi
 	}
 }
 
+func appendOrderedViewLikeStatements(
+	statements *ast.StatementList,
+	database goschema.Database,
+	targetPlatform string,
+) {
+	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
+	viewsByName := make(map[string]goschema.View, len(database.Views))
+	materializedViewsByName := make(map[string]goschema.MaterializedView, len(database.MaterializedViews))
+	for _, view := range database.Views {
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		viewsByName[view.Name] = view
+	}
+	for _, view := range database.MaterializedViews {
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+		materializedViewsByName[view.Name] = view
+	}
+
+	for _, object := range deporder.ViewLikesForCreateForDialect(objects, targetPlatform) {
+		if object.Materialized {
+			statements.Statements = append(
+				statements.Statements,
+				FromMaterializedView(materializedViewsByName[object.Name]),
+			)
+			continue
+		}
+		statements.Statements = append(statements.Statements, FromView(viewsByName[object.Name]))
+	}
+}
+
 // supportsStandaloneViewsAndTriggers reports whether a target OUTSIDE the
 // PostgreSQL family gets view and trigger nodes appended. The family itself is
 // served by appendPostgreSQLPostForeignKeyFeatureStatements above.
 //
-// This stays a list of engines rather than a capability question, and the
-// engine it excludes is the reason. capability.ClickHouse24 says ClickHouse
-// hosts views, because it does — measured live on 24.8.14, both plain and
-// materialized. Ptah's ClickHouse renderer has no view emission and answers
-// "CLICKHOUSE does not support CREATE VIEW" instead, so asking the capability
-// here would append a node whose only rendering is that refusal. The two
-// answers converge when stokaro/ptah#931 item 7 gives the ClickHouse renderer
-// its view and trigger emissions; this predicate is the place that then
-// becomes capability.Views and capability.Triggers.
+// This stays a list of engines rather than a capability question because the
+// PostgreSQL family and ClickHouse already receive view nodes through the two
+// feature-statement phases above. Their renderers make the capability decision.
+// Only MySQL, MariaDB, SQL Server, and SQLite need this additional route.
 //
 // Within the PostgreSQL family the question is already asked by capability, in
 // the renderer, so that `schema render` and the apply planner cannot disagree
@@ -2345,16 +2368,14 @@ func emitsStandaloneSequences(targetPlatform string) bool {
 		reportsUnsupportedSchemaObjects(targetPlatform)
 }
 
-// reportsUnsupportedSchemaObjects reports whether a target that can host none of
-// the PostgreSQL-family object kinds should nonetheless receive their AST nodes,
-// so its own renderer can say so.
+// reportsUnsupportedSchemaObjects reports whether a target should receive the
+// PostgreSQL-family feature AST nodes so its own renderer can either emit a
+// supported equivalent or name what it cannot represent.
 //
-// ClickHouse implements a notSupported() diagnostic for every one of these kinds
-// -- sequences, roles, functions, views, materialized views, triggers, policies,
-// RLS and grants -- and none of them was ever reached, because this converter
-// dropped the nodes first. `ptah schema apply --dialect clickhouse --dry-run` on
-// a schema declaring all of them planned one CREATE TABLE and exited 0, while
-// the PostgreSQL control planned eight statements (stokaro/ptah#931 item 7).
+// ClickHouse emits plain views now. It keeps notSupported() diagnostics for
+// sequences, roles, functions, materialized views, triggers, policies, RLS,
+// and grants. Routing all of those nodes here prevents either executable DDL or
+// a named refusal from disappearing before rendering.
 func reportsUnsupportedSchemaObjects(targetPlatform string) bool {
 	return platform.NormalizeDialect(targetPlatform) == platform.ClickHouse
 }
