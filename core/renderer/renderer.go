@@ -123,7 +123,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.MariaDB:
 		raw = mariadb.NewWithCapabilities(caps)
 	case platform.ClickHouse:
-		raw = clickhouse.New()
+		raw = clickhouse.NewWithCapabilities(caps)
 	case platform.SQLite:
 		raw = sqlite.New()
 	case platform.SQLServer:

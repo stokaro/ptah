@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -211,6 +212,85 @@ func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 	nodes, err := p.GenerateMigrationASTChecked(&types.SchemaDiff{}, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
+}
+
+func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		diff *types.SchemaDiff
+	}{
+		{
+			name: "addition",
+			diff: &types.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
+		},
+		{
+			name: "modification",
+			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{ViewName: "analytics.missing"}}},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *testing.T) {
+	c := qt.New(t)
+	planner := clickhouse.NewWithCapabilities(capability.Capabilities{})
+	tests := []struct {
+		name        string
+		diff        *types.SchemaDiff
+		wantReplace bool
+	}{
+		{
+			name: "addition",
+			diff: &types.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
+		},
+		{
+			name:        "modification",
+			diff:        &types.SchemaDiff{ViewsModified: []types.ViewDiff{{ViewName: "analytics.missing"}}},
+			wantReplace: true,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+			view, ok := nodes[0].(*ast.CreateViewNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(view.Name, qt.Equals, "analytics.missing")
+			c.Assert(view.Body, qt.Equals, "")
+			c.Assert(view.Replace, qt.Equals, test.wantReplace)
+		})
+	}
+}
+
+func TestNewWithCapabilities_NilIsConservative(t *testing.T) {
+	c := qt.New(t)
+	planner := clickhouse.NewWithCapabilities(nil)
+
+	nodes, err := planner.GenerateMigrationASTChecked(
+		&types.SchemaDiff{ViewsAdded: []string{"analytics.report"}},
+		&goschema.Database{Views: []goschema.View{{
+			Name: "analytics.report",
+			Body: "SELECT 1",
+		}}},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	view, ok := nodes[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(view.Body, qt.Equals, "")
 }
 
 func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testing.T) {
