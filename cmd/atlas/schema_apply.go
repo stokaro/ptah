@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -46,6 +47,7 @@ type atlasSchemaApplyOptions struct {
 	lock        atlasLockOptions
 	edit        bool
 	skipLint    bool
+	policy      atlascompatpolicy.Policy
 	// formatOutput is derived at run time: true when --format was passed or
 	// atlas.hcl provides format.schema.apply.
 	formatOutput bool
@@ -73,8 +75,16 @@ func displayAtlasSchemaApplyError(err error) error {
 	return atlasSchemaApplyDisplayError{text: message, err: err}
 }
 
-func newAtlasSchemaApplyCommand() *cobra.Command {
-	opts := atlasSchemaApplyOptions{}
+func newAtlasSchemaApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	opts := atlasSchemaApplyOptions{
+		policy: policy,
+		// The pinned community binary accepts lint policy in atlas.hcl but
+		// does not run a plan-lint pass during schema apply. Full compatibility
+		// retains Ptah's Pro-like pre-apply lint gate. Strict mode has no such
+		// pass, so it refuses an authored apply policy before work instead of
+		// silently dropping the operator's safety contract.
+		skipLint: policy.IsStrictCE(),
+	}
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a desired schema to a database",
@@ -131,8 +141,17 @@ executed, and a finding the policy rates as an error refuses the apply.
 --skip-lint runs the apply without that check. A project with no lint policy
 has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.policy.IsStrictCE() && cmd.Flags().Changed("plan") {
+				return failAtlasCommunityGate(cmd, "atlas schema apply --plan")
+			}
+			if opts.policy.IsStrictCE() && cmd.Flags().Changed("include") {
+				return failAtlasCommunityGate(cmd, "atlas schema apply --include")
+			}
 			return runAtlasSchemaApply(cmd, opts)
 		},
+	}
+	if policy.IsStrictCE() {
+		cmd.Long = strictAtlasSchemaApplyLong()
 	}
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply to")
@@ -149,9 +168,11 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
-	registerAtlasLockNameFlag(flags, &opts.lock)
-	registerAtlasSkipLockFlag(flags, &opts.lock)
-	flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
+	if !policy.IsStrictCE() {
+		registerAtlasLockNameFlag(flags, &opts.lock)
+		registerAtlasSkipLockFlag(flags, &opts.lock)
+		flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
+	}
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -184,6 +205,20 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	return cmd
 }
 
+func strictAtlasSchemaApplyLong() string {
+	return `Atlas OSS ` + "`atlas schema apply`" + ` command path.
+
+Compares the live database from --url with the --to desired state and applies
+the generated changes. A local desired schema or migration directory requires
+--dev-url so the plan can be rehearsed before the target is touched. --dry-run
+prints the plan without applying it, and --auto-approve skips the prompt.
+
+Strict compatibility exposes only the pinned Community Edition command and
+flag surface. The Pro-only --plan execution path is community-gated, and the
+default ptah-compat policy retains Ptah's complete plan, lint, and lock
+capabilities.`
+}
+
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
@@ -196,6 +231,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
+		if err := opts.policy.ValidateSchemaApplyConfig(projectCfg); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 		opts.url = dbcli.EffectiveString(
 			cmd,
 			"url",
@@ -311,8 +349,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 
 		// Atlas-compatible surface: a schema file written for another tool
 		// must not be refused over a name this parser does not model.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateCurrentSchema:     opts.policy.ValidateInspectedSchema,
+		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		Vars:                      schemaVars,
 	})
 	if err != nil {
 		// The pinned community binary v1.3.0 reports the HCL diagnostic itself
@@ -495,12 +537,15 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.url, "url")
 		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
-			IgnoreUnknownHCLNames: true,
+			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
 			SchemaScope:           schemaScope,
 			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  schemaVars,
 		})
 		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		if err := opts.policy.ValidateDesiredSchema(desired); err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 		}
 	}

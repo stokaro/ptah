@@ -16,6 +16,29 @@ gap register lives in [Comparison](../comparison/); these entries are the
 subset that came out of
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241).
 
+These boundaries also remain active under
+`PTAH_ATLAS_STRICT_COMPAT=1`. Strict mode limits the CE capability inventory;
+it does not reproduce an acceptance that discards an argument, hides an edited
+migration, or loses recoverable state.
+
+The same rule protects richer live schemas. The pinned community inspector can
+omit object kinds outside its edition, and its cleanup can leave or handle a
+catalog differently from Ptah's complete cleanup. Strict mode therefore
+refuses a live Pro-only object before `schema inspect`, `schema apply`, or
+`schema clean` emits output or mutates the target. Default `ptah-compat` keeps
+Ptah's complete modeled-object behavior; the refusal exists only in the CE
+oracle profile. Cleanup validates the complete catalog snapshot, so a dependent
+Pro-only object such as a trigger cannot disappear with a table merely because
+the cleanup plan does not print it as a separate line.
+
+The same fail-closed boundary covers authored extensions. Strict schema
+workflows refuse YAML sources and a `schema apply` lint policy that the CE path
+cannot enforce. Commands that execute, convert, or replay migration bodies
+refuse Atlas txtar, Ptah directives, and SQL templates; checksum-only reads
+preserve those bytes. Default mode retains and executes the extensions. The
+strict profile never turns an authored safety contract into an ignored comment
+or configuration block merely to copy an edition limit.
+
 Every measurement below was taken on 2026-08-09 against that binary, each exit
 status read on its own line rather than through a pipe. Where a fixture needed
 a hashed migration directory, that binary authored and hashed it, so no
@@ -49,9 +72,10 @@ is the reasoning the `--dir` defaults landed under, where a default that
 silently swallowed a typo would have migrated the wrong directory at exit `0`.
 
 The refusal is not carried behind an environment variable. A variable that
-restored the acceptance would have to default to the permissive side, and every
-boolean `PTAH_*` variable opts in to the more permissive side so that a typo
-lands on the strict default.
+restored the acceptance would have to default to the permissive side. Feature
+toggles instead opt in to more permissive behavior so that a typo lands on the
+strict default. The separate `PTAH_ATLAS_STRICT_COMPAT` policy selector narrows
+the command inventory for CE oracle runs and does not relax this refusal.
 
 `migrate hash` takes no positional either and refuses through the same helper,
 `cmdutil.NoPositionalArgsHint`. No reading of that binary was taken for it: the

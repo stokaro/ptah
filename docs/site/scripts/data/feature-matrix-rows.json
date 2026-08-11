@@ -1026,6 +1026,15 @@
     "evidence": "docs/site/src/content/docs/reference/exit-codes.md; docs/site/src/content/docs/reference/test-cases.md (Exit contract)"
   },
   {
+    "area": "Verification and contracts",
+    "feature": "Atlas CE strict oracle profile",
+    "ptah": "yes",
+    "atlas_oss": "na",
+    "atlas_pro": "na",
+    "note": "Strict mode builds the CE tree and refuses unsafe YAML, lint policy, migration-extension, and live-object interpretation before work. Default mode retains the full surface.",
+    "evidence": "internal/atlascompatpolicy policy and tests; internal/atlassource pre-parse validation; cmd/atlas strict policy wiring; integration/atlascmd/strict_compat_process_test.go exact strict/default/native process controls, including collateral-trigger cleanup refusal; docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode; pinned Atlas CE v1.3.0 YAML-source measurement; stokaro/ptah#1421"
+  },
+  {
     "area": "Database engines",
     "feature": "PostgreSQL 12+ (postgres, postgresql)",
     "ptah": "yes",

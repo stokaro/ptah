@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
@@ -52,7 +53,7 @@ type atlasMigrateApplyRunOptions struct {
 	skipChecks      bool
 }
 
-func newAtlasMigrateApplyCommand() *cobra.Command {
+func newAtlasMigrateApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasMigrateApplyOptions{
 		// `--dir` defaults to the same directory `migrate status` and
 		// `migrate set` already default to (stokaro/ptah#1241 item 2).
@@ -80,7 +81,7 @@ limits the run to the first N pending migrations.
 
 Native Ptah equivalent: ptah migrations up.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAtlasMigrateApply(cmd, opts, args)
+			return runAtlasMigrateApply(cmd, policy, opts, args)
 		},
 	}
 
@@ -97,11 +98,13 @@ Native Ptah equivalent: ptah migrations up.`,
 	// parsed like --baseline instead of as a typed integer flag: a
 	// non-numeric value must fail with Ptah's version diagnostic, not with
 	// pflag's "invalid argument" for an int flag.
-	flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
-	registerAtlasLockNameFlag(flags, &opts.lock)
-	registerAtlasSkipLockFlag(flags, &opts.lock)
+	if !policy.IsStrictCE() {
+		flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
+		registerAtlasLockNameFlag(flags, &opts.lock)
+		registerAtlasSkipLockFlag(flags, &opts.lock)
+	}
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 
 	cmdutil.ConfigureCommandArgs(cmd, atlasMigrateApplyArgs)
@@ -143,6 +146,7 @@ func resolveAtlasMigrateApplyDirFormat(
 
 func runAtlasMigrateApply(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
@@ -193,7 +197,7 @@ func runAtlasMigrateApply(
 	cmd.SetOut(io.MultiWriter(out, &targetOutput))
 	defer cmd.SetOut(out)
 	for index, project := range targets {
-		formatted, err := runAtlasMigrateApplyTarget(cmd, project, opts, runOpts)
+		formatted, err := runAtlasMigrateApplyTarget(cmd, policy, project, opts, runOpts)
 		if err != nil {
 			return err
 		}
@@ -209,6 +213,7 @@ func runAtlasMigrateApply(
 
 func runAtlasMigrateApplyTarget(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	project atlasProject,
 	opts atlasMigrateApplyOptions,
 	runOpts atlasMigrateApplyRunOptions,
@@ -347,6 +352,9 @@ func runAtlasMigrateApplyTarget(
 	// unhashed directory can execute or create the target database — CE emits
 	// the checksum refusal even when --url is unreachable.
 	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
+		return formatOutput, err
+	}
+	if err := policy.ValidateMigrationSource(captured); err != nil {
 		return formatOutput, err
 	}
 

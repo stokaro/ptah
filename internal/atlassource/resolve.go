@@ -75,6 +75,19 @@ type ResolveOptions struct {
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
 	// `--var` spells them. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
+	// ValidateSchema applies a caller-selected policy after any source kind is
+	// fully materialized and before the resolved state is returned. Nil accepts
+	// every schema. The callback is interface-neutral: compatibility adapters
+	// select policy without making this shared resolver depend on a CLI layer.
+	ValidateSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies a caller-selected policy to the stable,
+	// checksum-verified snapshot of a migration-directory source before the dev
+	// database is connected to or reset. Nil accepts every migration body.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// schema path before it is parsed or a dev database is opened. Nil accepts
+	// every source format supported by schemafile.
+	ValidateLocalSchemaSource func(string) error
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -101,6 +114,26 @@ type State struct {
 // is introspected; external schema programs run without a shell and their
 // standard output is parsed as the desired schema.
 func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
+	if s.Kind == KindLocalFile && opts.ValidateLocalSchemaSource != nil {
+		for _, source := range s.Sources {
+			if err := opts.ValidateLocalSchemaSource(source.Path); err != nil {
+				return State{}, err
+			}
+		}
+	}
+	state, err := s.resolve(ctx, opts)
+	if err != nil {
+		return State{}, err
+	}
+	if opts.ValidateSchema != nil {
+		if err := opts.ValidateSchema(state.Schema); err != nil {
+			return State{}, err
+		}
+	}
+	return state, nil
+}
+
+func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 	switch s.Kind {
 	case KindLocalFile:
 		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{
@@ -206,12 +239,14 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
-	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(source.Path))
+	snapshot, err := CaptureVerifiedMigrationDir(source.Path)
 	if err != nil {
-		return State{}, fmt.Errorf("capture migration directory: %w", err)
-	}
-	if err := verifyMigrationFS(snapshot); err != nil {
 		return State{}, err
+	}
+	if opts.ValidateMigrationSource != nil {
+		if err := opts.ValidateMigrationSource(snapshot); err != nil {
+			return State{}, err
+		}
 	}
 
 	conn, err := connectDatabase(ctx, devURL, opts.ConnectTimeout)
@@ -291,6 +326,21 @@ func connectDatabase(
 // atlas.sum is tolerated, an invalid one fails before replay.
 func VerifyMigrationDir(dir string) error {
 	return verifyMigrationFS(os.DirFS(dir))
+}
+
+// CaptureVerifiedMigrationDir returns one stable migration-directory snapshot
+// after applying the same checksum policy as [VerifyMigrationDir]. Callers that
+// inspect policy and then replay the directory use the returned filesystem so
+// both operations see the same bytes.
+func CaptureVerifiedMigrationDir(dir string) (fs.FS, error) {
+	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory: %w", err)
+	}
+	if err := verifyMigrationFS(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func verifyMigrationFS(fsys fs.FS) error {

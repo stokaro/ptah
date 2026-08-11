@@ -227,13 +227,28 @@ through native `ptah` does not help someone porting a Pro pipeline.
 
 The shape that satisfies both:
 
-- the compatibility surface **defaults** to what the community binary accepts,
-  so drop-in output stays drop-in;
-- the fuller behavior stays reachable on that same surface behind a `PTAH_*`
-  environment variable -- never a new flag, because the conformance
-  `cli-surface` tier asserts flag parity with the pinned binary and an
-  environment variable is invisible to the help surface. Precedent:
-  `PTAH_ALLOW_EXTERNAL_SCHEMA`;
+- the normal compatibility surface keeps every implemented Atlas Pro-like and
+  best-effort capability reachable. This is the default, because
+  `ptah-compat` is also the migration path for those pipelines;
+- `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas CE-only policy for
+  oracle and conformance runs. It constructs the CE command and flag tree
+  before Cobra dispatch, refuses extension environment values, and rejects
+  authored or inspected content whose semantics CE cannot represent instead of
+  silently dropping it. A strict inspect, apply, or clean run refuses a live
+  Pro-only object before output or mutation. Strict schema workflows also
+  refuse YAML sources and an authored `schema apply` lint policy that their CE
+  execution path cannot enforce. Commands that execute, convert, or replay
+  migration bodies refuse Atlas txtar, Ptah directives, and SQL templates;
+  checksum-only migration reads preserve those bytes. The default profile
+  retains every extension;
+- strict mode rejects the known `PTAH_<FLAG>` twins and Ptah feature toggles
+  that would otherwise be ignored or restore an extension. It must not reject
+  an arbitrary `PTAH_*` name merely because of its prefix: `atlas.hcl` may read
+  ordinary user inputs through `getenv`, and those values are not product
+  feature switches;
+- the strict selector is an environment variable, never a new flag, because
+  the conformance `cli-surface` tier asserts flag parity with the pinned binary
+  and an environment variable is invisible to the help surface;
 - what the default leaves out is reported, not dropped in silence, so an
   operator is never told less than the truth about their database;
 - the capability is written down -- feature matrix row, user documentation, and
@@ -271,10 +286,13 @@ healthy pipeline. Validate on every invocation of the command or subsystem that
 recognizes the variable, and on no others: an invalid PostgreSQL-inspection
 variable must not break an unrelated SQLite command.
 
-Every boolean `PTAH_*` variable today opts IN to the more permissive side, so a
-typo lands on the strict default and fails closed. If one ever defaults to the
-permissive side, a typo on it fails OPEN and this stops being a usability rule.
-Do not add one.
+Boolean feature toggles opt in to the more permissive side, so a typo lands on
+the strict default and fails closed. `PTAH_ATLAS_STRICT_COMPAT` is the one
+policy selector that intentionally opts in to a narrower surface; it still
+defaults to the complete compatibility surface and malformed values fail
+before help, version, argument handling, configuration, filesystem, or database
+work. Do not add another restrictive boolean without documenting why it cannot
+be expressed as a capability gate.
 
 ### Compatibility with older Ptah is a different axis, and it is not owed
 

@@ -14,8 +14,11 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
@@ -34,16 +37,15 @@ func (o atlasSchemaCleanOptions) scoped() bool {
 	return len(o.include) > 0 || len(o.exclude) > 0
 }
 
-func newAtlasSchemaCleanCommand() *cobra.Command {
+func newAtlasSchemaCleanCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasSchemaCleanOptions{}
-	cmd := &cobra.Command{
-		Use:   "clean",
-		Short: "Clean database schema objects",
-		Long: `Atlas OSS ` + "`atlas schema clean`" + ` command path.
+	long := `Atlas OSS ` + "`atlas schema clean`" + ` command path.
 
 Cleans user-owned schema objects through Ptah's destructive database cleanup
 runtime. The implementation supports direct database URLs, dry-run planning,
-explicit auto-approval, and Atlas Go-template output over the cleanup plan.
+explicit auto-approval, and Atlas Go-template output over the cleanup plan.`
+	if !policy.IsStrictCE() {
+		long += `
 
 --include and --exclude narrow the cleanup to part of the database, using the
 same selectors as ` + "`schema apply`" + `, ` + "`schema diff`" + ` and
@@ -53,9 +55,20 @@ ride along with their parent. A narrowed run executes exactly the changes it
 printed, one statement at a time, instead of the whole-database drop an
 unflagged run performs — so what the plan lists is what is destroyed. Drop
 statements still carry the dialect's cascade behavior, so removing a selected
-object can take dependent objects with it whether or not they were selected.`,
+object can take dependent objects with it whether or not they were selected.`
+	}
+	cmd := &cobra.Command{
+		Use:   "clean",
+		Short: "Clean database schema objects",
+		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAtlasSchemaClean(cmd, opts)
+			if policy.IsStrictCE() && cmd.Flags().Changed("dry-run") {
+				return failAtlasCommunityGate(cmd, "atlas schema clean --dry-run")
+			}
+			if policy.IsStrictCE() && cmd.Flags().Changed("format") {
+				return failAtlasCommunityGate(cmd, "atlas schema clean --format")
+			}
+			return runAtlasSchemaClean(cmd, opts, policy)
 		},
 	}
 	flags := cmd.Flags()
@@ -63,8 +76,10 @@ object can take dependent objects with it whether or not they were selected.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned cleanup without applying it")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
-	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in the cleanup")
-	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from the cleanup")
+	if !policy.IsStrictCE() {
+		flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in the cleanup")
+		flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from the cleanup")
+	}
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -72,7 +87,11 @@ object can take dependent objects with it whether or not they were selected.`,
 	return cmd
 }
 
-func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error {
+func runAtlasSchemaClean(
+	cmd *cobra.Command,
+	opts atlasSchemaCleanOptions,
+	policy atlascompatpolicy.Policy,
+) error {
 	formatOutput := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if err != nil {
@@ -93,6 +112,9 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		// an operator who excluded a table from their schema workflow would
 		// still watch this command drop it.
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+	}
+	if policy.IsStrictCE() && formatOutput {
+		return failAtlasCommunityGate(cmd, "atlas schema clean --format")
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -122,9 +144,20 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := schemaclean.Inspect(conn)
+	inspectOpts := schemaclean.InspectOptions{}
+	if policy.IsStrictCE() {
+		inspectOpts.ValidateSchema = func(schema *dbschematypes.DBSchema) error {
+			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(schema))
+		}
+	}
+	plan, err := schemaclean.InspectWithOptions(conn, inspectOpts)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	for _, object := range plan.Objects {
+		if err := policy.ValidateSchemaCleanObject(object.Type, object.Name); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if opts.scoped() {
 		plan, err = scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"time"
 
 	"go.5x5.cz/ptah/config"
@@ -45,6 +46,15 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// ValidateSchema applies a caller-selected policy to both fully resolved
+	// states before comparison. Nil accepts every modeled object.
+	ValidateSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies a caller-selected policy to each stable
+	// migration-directory snapshot before dev-database replay.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// schema path before parsing or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -89,10 +99,13 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		// projection below filters a universe that never contained the
 		// requested schema, so the diff answers "synced" for a database it
 		// never looked at.
-		Schemas:               opts.Schemas,
-		ConnectTimeout:        opts.ConnectTimeout,
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
+		Schemas:                   opts.Schemas,
+		ConnectTimeout:            opts.ConnectTimeout,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		Vars:                      opts.Vars,
+		ValidateSchema:            opts.ValidateSchema,
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}
 	fromState, err := fromSet.Resolve(ctx, resolveOpts)
 	if err != nil {

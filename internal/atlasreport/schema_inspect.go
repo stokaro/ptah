@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"text/template/parse"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -196,6 +197,65 @@ func ValidateSchemaInspectTemplate(format string) error {
 	var files []SchemaInspectFile
 	_, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, nil, &files)
 	return err
+}
+
+// SchemaInspectTemplateFunctions returns the named functions referenced by a
+// valid schema-inspect template. String literals, fields, variables, and text
+// are not function references, so callers can apply a helper policy without
+// substring matching authored template text.
+func SchemaInspectTemplateFunctions(format string) ([]string, error) {
+	var files []SchemaInspectFile
+	tmpl, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, nil, &files)
+	if err != nil {
+		return nil, err
+	}
+	functions := make(map[string]struct{})
+	collectTemplateFunctions(tmpl.Tree.Root, functions)
+	names := make([]string, 0, len(functions))
+	for name := range functions {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
+func collectTemplateFunctions(node parse.Node, functions map[string]struct{}) {
+	switch current := node.(type) {
+	case *parse.ListNode:
+		for _, child := range current.Nodes {
+			collectTemplateFunctions(child, functions)
+		}
+	case *parse.ActionNode:
+		collectTemplateFunctions(current.Pipe, functions)
+	case *parse.PipeNode:
+		for _, command := range current.Cmds {
+			collectTemplateFunctions(command, functions)
+		}
+	case *parse.CommandNode:
+		for _, argument := range current.Args {
+			collectTemplateFunctions(argument, functions)
+		}
+	case *parse.IdentifierNode:
+		functions[current.Ident] = struct{}{}
+	case *parse.ChainNode:
+		collectTemplateFunctions(current.Node, functions)
+	case *parse.IfNode:
+		collectTemplateBranch(&current.BranchNode, functions)
+	case *parse.RangeNode:
+		collectTemplateBranch(&current.BranchNode, functions)
+	case *parse.WithNode:
+		collectTemplateBranch(&current.BranchNode, functions)
+	case *parse.TemplateNode:
+		collectTemplateFunctions(current.Pipe, functions)
+	}
+}
+
+func collectTemplateBranch(branch *parse.BranchNode, functions map[string]struct{}) {
+	collectTemplateFunctions(branch.Pipe, functions)
+	collectTemplateFunctions(branch.List, functions)
+	if branch.ElseList != nil {
+		collectTemplateFunctions(branch.ElseList, functions)
+	}
 }
 
 func NormalizeSchemaInspectFormat(format string) (string, error) {

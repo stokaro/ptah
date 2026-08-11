@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 	"time"
@@ -57,6 +58,20 @@ type InspectSourceOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// ValidateDesiredSchema applies a caller-selected policy to authored local
+	// schema sources before the dev database is reset. Live database and
+	// migration-directory inspection are descriptions, not authored desired
+	// schema documents, and do not use this hook.
+	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateInspectedSchema applies after live or dev-database introspection,
+	// before output or file exports.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies to the stable migration-directory
+	// snapshot before the dev database is connected to or reset.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies to each local schema path before parsing
+	// or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 	// OmitAtlasRefusedBlocks is the Atlas-compatible surface's block-type
 	// policy for rendered HCL; see [InspectOptions].
 	OmitAtlasRefusedBlocks bool
@@ -98,6 +113,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 		Diagnostics:             opts.Diagnostics,
 		OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 		CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
+		ValidateSchema:          opts.ValidateInspectedSchema,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)
@@ -135,8 +151,16 @@ func inspectOnDev(
 	// Load and verify the source before the dev database is touched, so bad
 	// sources fail without a destructive reset.
 	var desired *goschema.Database
+	var migrationSnapshot fs.FS
 	switch set.Kind {
 	case atlassource.KindLocalFile:
+		for _, source := range set.Sources {
+			if opts.ValidateLocalSchemaSource != nil {
+				if err := opts.ValidateLocalSchemaSource(source.Path); err != nil {
+					return "", err
+				}
+			}
+		}
 		// The source URL is the file itself, so --dev-url is the only URL that
 		// can limit this run to a schema.
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
@@ -152,19 +176,29 @@ func inspectOnDev(
 		}
 	case atlassource.KindExternalSchema:
 		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-			Dialect:     dialect,
-			DialectFlag: "--dev-url",
+			Dialect:                   dialect,
+			DialectFlag:               "--dev-url",
+			ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 		})
 		if err != nil {
 			return "", err
 		}
 		desired = state.Schema
 	case atlassource.KindMigrationDir:
-		if err := atlassource.VerifyMigrationDir(set.Sources[0].Path); err != nil {
+		migrationSnapshot, err = prepareInspectMigrationSnapshot(
+			set.Sources[0].Path,
+			opts.ValidateMigrationSource,
+		)
+		if err != nil {
 			return "", err
 		}
 	default:
 		return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+	}
+	if desired != nil && opts.ValidateDesiredSchema != nil {
+		if err := opts.ValidateDesiredSchema(desired); err != nil {
+			return "", err
+		}
 	}
 
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
@@ -177,10 +211,10 @@ func inspectOnDev(
 	switch set.Kind {
 	case atlassource.KindMigrationDir:
 		var rendered string
-		err := migrationreplay.WithReplayedDirectory(
+		err := migrationreplay.WithReplayedSnapshot(
 			ctx,
 			devConn,
-			set.Sources[0].Path,
+			migrationSnapshot,
 			migrator.MigrationDirFormatAtlas,
 			func(replayConn *dbschema.DatabaseConnection) error {
 				schema, err := readInspectDevSchema(ctx, replayConn, opts.Schemas)
@@ -221,6 +255,22 @@ func inspectOnDev(
 		return rendered, nil
 	}
 	return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+}
+
+func prepareInspectMigrationSnapshot(
+	dir string,
+	validate func(fs.FS) error,
+) (fs.FS, error) {
+	snapshot, err := atlassource.CaptureVerifiedMigrationDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	if validate != nil {
+		if err := validate(snapshot); err != nil {
+			return nil, err
+		}
+	}
+	return snapshot, nil
 }
 
 func withMaterializedDevSchema(

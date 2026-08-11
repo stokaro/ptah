@@ -55,6 +55,10 @@ through that filesystem. Use `ParseAtlasFSCollectionWithOptions`,
 `ParseAtlasCollectionWithOptions`, or `LoadCollection` when an env `for_each`
 can select several independent configs. The singular functions require exactly
 one selected instance and return an error rather than discarding the others.
+
+`AtlasLoadOptions.RejectListMapForEach` lets a compatibility adapter retain
+tuple, object, and set expansion while refusing Ptah's list/map extension. Its
+zero value keeps the complete dynamic-environment capability.
 `Config.IgnoredConstructs` identifies names that
 Atlas CE accepts without acting on, with kind and source location. `Merge`
 preserves this diagnostic metadata from both inputs. Ptah's command layer warns

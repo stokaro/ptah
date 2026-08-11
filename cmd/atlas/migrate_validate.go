@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -22,8 +23,8 @@ import (
 // Atlas directory forwards to `ptah migrations validate` unchanged; a directory
 // in a foreign tool's layout, named with either spelling Atlas accepts, is
 // verified against that tool's file set here.
-func newAtlasMigrateValidateCommand() *cobra.Command {
-	return newAtlasMigrateIntegrityCommand(atlasMigrateValidateVerb(), runAtlasMigrateValidate)
+func newAtlasMigrateValidateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	return newAtlasMigrateIntegrityCommand(policy, atlasMigrateValidateVerb(), runAtlasMigrateValidate)
 }
 
 func atlasMigrateValidateVerb() atlasVerb {
@@ -57,7 +58,11 @@ func atlasMigrateValidateVerb() atlasVerb {
 // Integrity is checked before the directory is parsed, matching Atlas CE:
 // a tampered file that the source tool can no longer parse is still reported as
 // a checksum mismatch rather than as a conversion failure.
-func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) error {
+func runAtlasMigrateValidate(
+	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
+	source atlasMigrateSource,
+) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {
 		return cmdutil.Fail(cmd, migratevalidate.AtlasDirectoryError(source.dir, err))
 	}
@@ -93,6 +98,9 @@ func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) erro
 
 	if source.devURL == "" {
 		return nil
+	}
+	if err := policy.ValidateMigrationSource(fsys); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	return replayAtlasMigrateSource(cmd, source, fsys)
 }

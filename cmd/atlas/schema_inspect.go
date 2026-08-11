@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -23,10 +24,11 @@ type atlasSchemaInspectOptions struct {
 	exclude []string
 	format  string
 	output  string
+	policy  atlascompatpolicy.Policy
 }
 
-func newAtlasSchemaInspectCommand() *cobra.Command {
-	opts := atlasSchemaInspectOptions{}
+func newAtlasSchemaInspectCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	opts := atlasSchemaInspectOptions{policy: policy}
 	cmd := &cobra.Command{
 		Use:   "inspect",
 		Short: "Inspect a database schema",
@@ -98,17 +100,37 @@ and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 			return runAtlasSchemaInspect(cmd, opts)
 		},
 	}
+	if policy.IsStrictCE() {
+		cmd.Long = strictAtlasSchemaInspectLong()
+	}
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL, schema file, migration directory, or env:// reference to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to evaluate non-database inspection sources")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
-	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringVar(&opts.format, "format", "", "Output Go template: exact hcl/sql/json and whitespace-wrapped variants are literal text")
-	flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
-	registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
+	if !policy.IsStrictCE() {
+		flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
+		flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
+		registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
+	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
 	return cmd
+}
+
+func strictAtlasSchemaInspectLong() string {
+	return `Atlas OSS ` + "`atlas schema inspect`" + ` command path.
+
+Inspects the --url source and writes Atlas-compatible schema output to stdout
+without Ptah status banners. The source is a live database URL, a local schema
+file, a migration directory, or an env:// reference. Non-database sources
+require --dev-url and are validated before that dev database is reset.
+
+The default output is HCL. Atlas CE treats the bare values --format hcl,
+--format sql, and --format json as literal text. Rendered SQL and JSON remain
+available through explicit ` + "`{{ sql . }}`" + ` and ` + "`{{ json . }}`" + ` templates.
+Strict compatibility refuses the Pro-only hcl, split, and write helpers before
+source or database work. The default ptah-compat policy retains all three.`
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
@@ -161,7 +183,11 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
 	opts.format = atlasSchemaInspectCompatibilityFormat(opts.format)
-	if _, err := atlasschema.NormalizeInspectFormat(opts.format); err != nil {
+	normalizedFormat, err := atlasschema.NormalizeInspectFormat(opts.format)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := opts.policy.ValidateSchemaInspectFormat(normalizedFormat); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
@@ -184,10 +210,14 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames:   true,
-		OmitAtlasRefusedBlocks:  omitRefusedBlocks,
-		CompatibilityHCLFraming: true,
-		Vars:                    schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
+		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
+		CompatibilityHCLFraming:   true,
+		Vars:                      schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

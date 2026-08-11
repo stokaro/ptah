@@ -156,6 +156,18 @@ The `ptah-compat` binary is the binary-level drop-in replacement for scripts
 that need Atlas-style root commands, invoked as `ptah-compat <command> ...`.
 The main `ptah` binary has no Atlas command paths.
 
+By default, `ptah-compat` retains the Atlas Pro-like and best-effort
+capabilities Ptah implements. Set `PTAH_ATLAS_STRICT_COMPAT=1` only for Atlas
+Community Edition oracle or conformance runs. Strict mode presents the pinned
+CE command and flag surface and refuses richer authored content rather than
+discarding it. It also refuses a live Pro-only object before an inspect,
+apply, or clean run could omit or destroy it. Strict schema workflows refuse
+YAML sources and an apply lint policy that the CE path cannot enforce. Commands
+that execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
+directives, and SQL templates. Checksum-only migration reads preserve the
+bytes. Default mode keeps all of those Ptah extensions. See
+[Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode).
+
 Do not use root-level Atlas spellings such as `ptah migrate apply`; those
 paths are intentionally absent from the native `ptah` binary, whose migration
 verbs live under `ptah migrations ...`.

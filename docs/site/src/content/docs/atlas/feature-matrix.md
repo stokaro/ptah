@@ -72,11 +72,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 178 capabilities below:
+Across the 179 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 108 |
+| Ptah supports it fully | 109 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 34 |
@@ -231,6 +231,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
+| Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe YAML, lint policy, migration-extension, and live-object interpretation before work. Default mode retains the full surface. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose `--report` and `--seed-dir` and name a docker:// `--dev-url` refusal. schema test takes `-s/--schema`, a Go directory, a .sql or .hcl file, or a database URL; env:// stays refused. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |

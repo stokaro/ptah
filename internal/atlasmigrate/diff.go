@@ -88,6 +88,19 @@ type DiffOptions struct {
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
+	// IgnoreUnknownHCLNames selects the desired-state HCL unknown-name policy;
+	// see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
+	// ValidateDesiredSchema applies a caller-selected policy after the desired
+	// source is resolved and before migration-directory planning. Nil accepts
+	// every modeled object.
+	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies a caller-selected policy to a stable
+	// migration-directory desired-state snapshot before dev-database replay.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// desired-schema path before parsing or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 	// PreparePublication may edit the staged migration files before they are
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
@@ -432,17 +445,18 @@ func resolveDesiredState(
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:         conn.Info().Dialect,
-		DialectFlag:     "--dev-url",
-		DevURL:          devURL,
-		SchemaScope:     schemaScope,
-		SchemaScopeFlag: schemaScopeFlag,
-		ConnectTimeout:  opts.SourceConnectTimeout,
-		DevLockHeld:     true,
-		// `migrate diff` is registered on the Atlas-compatible command tree
-		// only, so this surface always reads files written for another tool.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  opts.Vars,
+		Dialect:                   conn.Info().Dialect,
+		DialectFlag:               "--dev-url",
+		DevURL:                    devURL,
+		SchemaScope:               schemaScope,
+		SchemaScopeFlag:           schemaScopeFlag,
+		ConnectTimeout:            opts.SourceConnectTimeout,
+		DevLockHeld:               true,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		Vars:                      opts.Vars,
+		ValidateSchema:            opts.ValidateDesiredSchema,
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)

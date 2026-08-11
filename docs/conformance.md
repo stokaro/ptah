@@ -46,6 +46,28 @@ stay out of and the migration fails partway through. Ptah honors it. A change
 that once removed that capability in the name of parity was reverted -- see
 `AGENTS.md`, "Compatibility Policy".
 
+## CE Oracle Policy
+
+The default `ptah-compat` process is the complete migration surface and retains
+implemented Atlas Pro-like and best-effort capabilities. A CE differential or
+CLI-surface probe must instead set `PTAH_ATLAS_STRICT_COMPAT=1` on each
+`ptah-compat` subprocess. The conformance harness injects that value only for
+CE comparisons; Pro-retention and native capability probes run with it absent.
+
+Strict mode constructs the CE command and flag tree before help or dispatch,
+rejects extension environment values, and refuses extended authored schema,
+project-config, migration, and inspected live-schema content before work. A
+strict inspect, apply, or clean run refuses a live Pro-only object before it
+can be omitted from output or destroyed. A refusal is intentional where CE
+would silently discard or misinterpret that content: the strict policy narrows
+the capability inventory but does not copy a data-loss or state-corruption
+defect. In particular, strict schema workflows refuse YAML sources and an
+authored `schema apply` lint policy that the CE path cannot enforce. Commands
+that execute, convert, or replay migration bodies refuse Atlas txtar, every
+Ptah directive, and SQL templates; checksum-only reads preserve those bytes.
+Default mode retains the extensions. Such cases remain in the
+retained-divergence evidence.
+
 ## Current Scoreboard
 
 As of Ptah `18ae5f9d4d63136248986263732524e2314f9d7c`:

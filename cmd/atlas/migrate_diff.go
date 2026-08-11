@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -36,6 +37,7 @@ type atlasMigrateDiffOptions struct {
 	dryRun      bool
 	qualifier   string
 	edit        bool
+	policy      atlascompatpolicy.Policy
 }
 
 type atlasMigrateDiffRunner func(
@@ -44,12 +46,22 @@ type atlasMigrateDiffRunner func(
 	atlasmigrate.DiffOptions,
 ) (atlasmigrate.DiffResult, error)
 
-func newAtlasMigrateDiffCommand() *cobra.Command {
-	return newAtlasMigrateDiffCommandWithRunner(atlasmigrate.GenerateDiff)
+func newAtlasMigrateDiffCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	return newAtlasMigrateDiffCommandWithPolicyAndRunner(
+		policy,
+		atlasmigrate.GenerateDiff,
+	)
 }
 
 func newAtlasMigrateDiffCommandWithRunner(run atlasMigrateDiffRunner) *cobra.Command {
-	opts := atlasMigrateDiffOptions{}
+	return newAtlasMigrateDiffCommandWithPolicyAndRunner(atlascompatpolicy.Full(), run)
+}
+
+func newAtlasMigrateDiffCommandWithPolicyAndRunner(
+	policy atlascompatpolicy.Policy,
+	run atlasMigrateDiffRunner,
+) *cobra.Command {
+	opts := atlasMigrateDiffOptions{policy: policy}
 	cmd := &cobra.Command{
 		Use:   "diff [flags] [name]",
 		Short: "Compute migration diff against a desired schema",
@@ -286,15 +298,19 @@ func runAtlasMigrateDiff(
 		// identity. The native Atlas layout omits this hook because it publishes
 		// no rollback half; its valid forward plan must not be refused for a
 		// capability an unpublished reverse would require.
-		PlanBidirectional:  compatBidirectionalPlannerForFormat(dirFormat),
-		Schemas:            opts.schemas,
-		LockTimeout:        lockTimeout,
-		Policy:             policy,
-		Qualifier:          qualifier,
-		DryRun:             opts.dryRun,
-		Diagnostics:        cmd.ErrOrStderr(),
-		Vars:               schemaVars,
-		PreparePublication: preparePublication,
+		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat),
+		Schemas:                   opts.schemas,
+		LockTimeout:               lockTimeout,
+		Policy:                    policy,
+		Qualifier:                 qualifier,
+		DryRun:                    opts.dryRun,
+		Diagnostics:               cmd.ErrOrStderr(),
+		Vars:                      schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		PreparePublication:        preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
 		// the locked snapshot. Passing it in is what keeps this verb from
 		// carrying a second definition of a verified directory: without it the

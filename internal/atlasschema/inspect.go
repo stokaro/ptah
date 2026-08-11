@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -45,6 +46,9 @@ type InspectOptions struct {
 	// `ptah-compat` sets it; native inspection keeps Ptah's generated marker and
 	// native terminal spacing.
 	CompatibilityHCLFraming bool
+	// ValidateSchema applies a caller-selected policy to the fully introspected
+	// schema before any template renders or file export is published.
+	ValidateSchema func(*goschema.Database) error
 }
 
 // NormalizeInspectFormat returns and validates the executable Atlas schema
@@ -100,6 +104,11 @@ func renderInspectSchema(
 	format, err := NormalizeInspectFormat(opts.Format)
 	if err != nil {
 		return "", err
+	}
+	if opts.ValidateSchema != nil {
+		if err := opts.ValidateSchema(dbschematogo.ConvertDBSchemaToGoSchema(schema)); err != nil {
+			return "", err
+		}
 	}
 	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)
 	// Inspection is read-only and its documented answer for an empty selection

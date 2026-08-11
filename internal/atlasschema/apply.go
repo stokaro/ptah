@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -60,6 +62,18 @@ type ApplyOptions struct {
 	// protected nothing means the plan is free to change the object the user
 	// wrote it for.
 	RefuseUnmatchedExclude bool
+	// ValidateDesiredSchema applies a caller-selected desired-schema policy
+	// after loading and before planning. Nil accepts every modeled object.
+	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateCurrentSchema applies a caller-selected policy to the fully
+	// introspected target before planning. Nil accepts every modeled object.
+	ValidateCurrentSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies a caller-selected policy to a stable
+	// migration-directory desired-state snapshot before dev-database replay.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// desired-schema path before parsing or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 }
 
 type ApplyPlan struct {
@@ -92,6 +106,18 @@ type ApplyRuntimeOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
+	// ValidateDesiredSchema applies a caller-selected desired-schema policy;
+	// see [ApplyOptions.ValidateDesiredSchema].
+	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateCurrentSchema applies a caller-selected current-schema policy;
+	// see [ApplyOptions.ValidateCurrentSchema].
+	ValidateCurrentSchema func(*goschema.Database) error
+	// ValidateMigrationSource applies a caller-selected migration-source policy;
+	// see [ApplyOptions.ValidateMigrationSource].
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected local-source policy;
+	// see [ApplyOptions.ValidateLocalSchemaSource].
+	ValidateLocalSchemaSource func(string) error
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -163,13 +189,9 @@ func computeApplyPlan(
 	// hide the typo on every run whose --exclude selectors all matched -- the
 	// healthy pipeline -- and surface it only on the run it was set to govern.
 	// See stokaro/ptah#1334.
-	allowUnmatched := false
-	if opts.RefuseUnmatchedExclude {
-		allowed, err := atlasfilter.AllowUnmatchedExclude()
-		if err != nil {
-			return applyComputation{}, err
-		}
-		allowUnmatched = allowed
+	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
+	if err != nil {
+		return applyComputation{}, err
 	}
 
 	scope := atlasfilter.Scope{
@@ -184,6 +206,9 @@ func computeApplyPlan(
 	}
 	current, readScope, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
+		return applyComputation{}, err
+	}
+	if err := validateCurrentApplySchema(current, opts.ValidateCurrentSchema); err != nil {
 		return applyComputation{}, err
 	}
 	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
@@ -242,6 +267,23 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return computation, nil
+}
+
+func resolveApplyAllowUnmatched(opts ApplyOptions) (bool, error) {
+	if !opts.RefuseUnmatchedExclude {
+		return false, nil
+	}
+	return atlasfilter.AllowUnmatchedExclude()
+}
+
+func validateCurrentApplySchema(
+	current *types.DBSchema,
+	validate func(*goschema.Database) error,
+) error {
+	if validate == nil {
+		return nil
+	}
+	return validate(dbschematogo.ConvertDBSchemaToGoSchema(current))
 }
 
 // applyCurrentState reads the database side of an apply and reports the scope
@@ -355,32 +397,39 @@ func loadDesiredApplySchema(
 	opts ApplyOptions,
 ) (*goschema.Database, error) {
 	if opts.Desired != nil {
-		return opts.Desired, nil
+		return validateDesiredApplySchema(opts.Desired, opts.ValidateDesiredSchema)
 	}
 	// Both the dev database and the target can limit an apply to one schema, and
 	// the target's URL is the one this connection was opened from.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
-		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{
+		desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			SchemaScope:           schemaScope,
 			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,
 		})
+		if err != nil {
+			return nil, err
+		}
+		return validateDesiredApplySchema(desired, opts.ValidateDesiredSchema)
 	}
 	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
 	if err != nil {
 		return nil, err
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:               conn.Info().Dialect,
-		DialectFlag:           "--url",
-		DevURL:                opts.DevURL,
-		SchemaScope:           schemaScope,
-		SchemaScopeFlag:       schemaScopeFlag,
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
+		Dialect:                   conn.Info().Dialect,
+		DialectFlag:               "--url",
+		DevURL:                    opts.DevURL,
+		SchemaScope:               schemaScope,
+		SchemaScopeFlag:           schemaScopeFlag,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		Vars:                      opts.Vars,
+		ValidateSchema:            opts.ValidateDesiredSchema,
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
 	if err != nil {
 		return nil, err
@@ -403,14 +452,18 @@ func PrepareApply(
 	}
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
-		ToURLs:     opts.ToURLs,
-		Exclude:    opts.Exclude,
-		Schemas:    opts.Schemas,
-		Include:    opts.Include,
-		Policy:     opts.Policy,
-		DevURL:     opts.DevURL,
-		ProjectEnv: opts.ProjectEnv,
-		Desired:    opts.Desired,
+		ToURLs:                    opts.ToURLs,
+		Exclude:                   opts.Exclude,
+		Schemas:                   opts.Schemas,
+		Include:                   opts.Include,
+		Policy:                    opts.Policy,
+		DevURL:                    opts.DevURL,
+		ProjectEnv:                opts.ProjectEnv,
+		Desired:                   opts.Desired,
+		ValidateDesiredSchema:     opts.ValidateDesiredSchema,
+		ValidateCurrentSchema:     opts.ValidateCurrentSchema,
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 
 		Diagnostics:            opts.Diagnostics,
 		RefuseUnmatchedExclude: true,
@@ -427,6 +480,18 @@ func PrepareApply(
 		txMode:  opts.TxMode,
 		current: computation.current,
 	}, nil
+}
+
+func validateDesiredApplySchema(
+	desired *goschema.Database,
+	validator func(*goschema.Database) error,
+) (*goschema.Database, error) {
+	if validator != nil {
+		if err := validator(desired); err != nil {
+			return nil, err
+		}
+	}
+	return desired, nil
 }
 
 func (p ApplyRuntimePlan) HasChanges() bool {

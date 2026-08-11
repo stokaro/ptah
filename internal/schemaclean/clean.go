@@ -36,6 +36,15 @@ type Options struct {
 	DryRun bool
 }
 
+// InspectOptions configures policy checks over the same catalog snapshot that
+// cleanup planning consumes.
+type InspectOptions struct {
+	// ValidateSchema runs after catalog inspection and before the plan is built.
+	// Nil accepts every schema. A validator can refuse dependent objects that
+	// disappear with a listed parent but are intentionally absent from Plan.
+	ValidateSchema func(*dbschematypes.DBSchema) error
+}
+
 // Plan is the report an operator reviews before approving a destructive
 // cleanup. Its contract is: it names every object for which
 // SchemaWriter.DropAllTables issues its own drop statement on this dialect.
@@ -113,9 +122,20 @@ type dialectCoverage struct {
 }
 
 func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
+	return InspectWithOptions(conn, InspectOptions{})
+}
+
+// InspectWithOptions returns a cleanup plan after applying caller-selected
+// validation to the exact catalog snapshot used to build it.
+func InspectWithOptions(conn *dbschema.DatabaseConnection, opts InspectOptions) (Plan, error) {
 	schema, err := conn.Reader().ReadSchema()
 	if err != nil {
 		return Plan{}, fmt.Errorf("inspect schema before cleanup: %w", err)
+	}
+	if opts.ValidateSchema != nil {
+		if err := opts.ValidateSchema(schema); err != nil {
+			return Plan{}, err
+		}
 	}
 	dialect := conn.Info().Dialect
 	objects := cleanupObjects(schema, dialect)

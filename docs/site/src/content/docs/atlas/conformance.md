@@ -28,6 +28,26 @@ results. They do not, by themselves, prove every Atlas OSS command, flag,
 dialect feature, and output mode. Use the comparison gap register for product
 and coverage gaps that are outside the current measured corpus.
 
+## CE oracle policy
+
+Atlas CE comparisons run the compatibility binary with
+`PTAH_ATLAS_STRICT_COMPAT=1`. That opt-in policy constructs the CE command and
+flag tree and refuses extension inputs or inspected live objects before output
+or mutation. The normal `ptah-compat` surface does not set it and retains
+implemented Atlas Pro-like and best-effort capabilities.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply` lint
+policy that the CE execution path cannot enforce. Commands that execute,
+convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
+and SQL templates; checksum-only reads preserve those bytes. Default mode keeps
+the extensions.
+
+The conformance harness keeps the two environments separate: CE parity probes
+inject strict mode into each subprocess, while Pro-retention and native Ptah
+probes leave it absent. Strict mode still keeps deliberate safety and
+correctness improvements, so a green result never depends on copying a CE
+behavior that silently drops authored content or corrupts migration state.
+
 ### SQL inspect statement terminators
 
 Finding 4.6 in

@@ -2,6 +2,8 @@ package atlassource_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -173,6 +175,47 @@ func TestResolve_MigrationDirRejectsChecksumDrift(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)migration directory checksum verification failed:.*`)
+}
+
+func TestResolve_MigrationDirValidatesStableSnapshotBeforeDevConnection(t *testing.T) {
+	c := qt.New(t)
+	dir := writeMigrationDir(t)
+	devPath := filepath.Join(t.TempDir(), "dev.db")
+	set := classifySingle(t, "--to", "file://"+dir)
+	wantErr := errors.New("strict migration policy")
+
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect: "sqlite",
+		DevURL:  "sqlite://" + devPath,
+		ValidateMigrationSource: func(snapshot fs.FS) error {
+			contents, readErr := fs.ReadFile(snapshot, "1_init.sql")
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(string(contents), qt.Equals,
+				"CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
+			return wantErr
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, wantErr)
+	_, statErr := os.Stat(devPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+func TestResolve_LocalFileValidatesSourceBeforeParsing(t *testing.T) {
+	c := qt.New(t)
+	wantErr := errors.New("strict local-source policy")
+	set := classifySingle(t, "--to", "file://missing-schema.yaml")
+
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect: "sqlite",
+		DevURL:  "sqlite://dev.db",
+		ValidateLocalSchemaSource: func(source string) error {
+			c.Assert(filepath.Base(source), qt.Equals, "missing-schema.yaml")
+			return wantErr
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, wantErr)
 }
 
 func TestResolve_MigrationDirWithoutSumViaEnvReplays(t *testing.T) {

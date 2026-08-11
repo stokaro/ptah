@@ -188,6 +188,12 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 type AtlasLoadOptions struct {
     EnvName string
     Vars    []string
+    // RejectListMapForEach refuses dynamic env expansion over list and map
+    // values. Atlas Community Edition accepts tuple, object and set values but
+    // refuses list and map values; compatibility adapters select this option
+    // when they need that exact boundary. The default retains Ptah's complete
+    // dynamic-env capability.
+    RejectListMapForEach bool
 }
     AtlasLoadOptions selects Atlas project config evaluation settings.
 

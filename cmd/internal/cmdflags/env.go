@@ -237,6 +237,16 @@ func EnvName(prefix, flagName string) string {
 	return strings.ToUpper(prefix + "_" + name)
 }
 
+// EnvBindingName returns the environment variable bound to flag when generic
+// binding is installed with prefix. Explicit-only flags and help have no
+// binding.
+func EnvBindingName(prefix string, flag *pflag.Flag) (string, bool) {
+	if flag == nil || flag.Name == "help" || envBindingDisabled(flag) {
+		return "", false
+	}
+	return EnvName(prefix, flag.Name), true
+}
+
 func usageContainsEnv(usage string) bool {
 	return strings.Contains(usage, " [env: ")
 }

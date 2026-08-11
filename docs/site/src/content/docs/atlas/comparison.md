@@ -47,6 +47,22 @@ and the migration fails partway through. Ptah honors it.
 Differences of this kind are listed in the [gap register](#gap-register) with
 the measurement behind them, so you can see which way each one goes.
 
+`ptah-compat` therefore has two explicit policy profiles. The default profile
+retains every implemented Atlas Pro-like and best-effort capability on the
+drop-in surface. `PTAH_ATLAS_STRICT_COMPAT=1` is an oracle profile: it exposes
+the pinned CE command and flag inventory and rejects extended authored or live
+schema content before output or mutation. The strict profile is for CE
+conformance testing, not a replacement for the default migration surface. It
+still preserves the deliberate correctness differences listed under
+[Retained divergences](../retained-divergences/).
+
+The authored-content boundary makes strict schema workflows refuse YAML sources
+and a `schema apply` lint policy that the CE path cannot enforce. Commands that
+execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
+directives, and SQL templates; checksum-only reads preserve those bytes. The
+default profile continues to support the extensions instead of silently
+dropping their semantics.
+
 ### Capability parity, not interface parity
 
 Ptah's Atlas compatibility layer does not define a separate feature set.
