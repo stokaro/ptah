@@ -58,6 +58,23 @@ type atlasMigrateSource struct {
 	projectArgs []string
 }
 
+// atlasMigrateIntegrityUnknownDirFormatDisplayError adapts the shared semantic
+// resolver's unknown-format error to the Atlas-compatible integrity surface.
+// Unwrap keeps the original command, spelling, and semantic context available
+// to callers that inspect the error chain.
+type atlasMigrateIntegrityUnknownDirFormatDisplayError struct {
+	value string
+	err   error
+}
+
+func (e atlasMigrateIntegrityUnknownDirFormatDisplayError) Error() string {
+	return fmt.Sprintf("unknown dir format %q", e.value)
+}
+
+func (e atlasMigrateIntegrityUnknownDirFormatDisplayError) Unwrap() error {
+	return e.err
+}
+
 // newAtlasMigrateIntegrityCommand wraps the table-driven adapter command for an
 // Atlas integrity verb with a converted-source-format path.
 //
@@ -93,6 +110,13 @@ func newAtlasMigrateIntegrityCommand(
 		}()
 		source, err := resolveAtlasMigrateSource(cmd, verb, args, cleanup)
 		if err != nil {
+			var unknownFormat *atlasmigrate.UnknownDirFormatError
+			if errors.As(err, &unknownFormat) {
+				return atlasMigrateIntegrityUnknownDirFormatDisplayError{
+					value: unknownFormat.Value,
+					err:   err,
+				}
+			}
 			return err
 		}
 		// Both verbs reaching this wrapper -- `migrate hash` and

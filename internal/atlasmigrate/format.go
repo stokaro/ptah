@@ -17,6 +17,21 @@ import (
 // [IgnoredDirQueryKeys] reports the complement of.
 const DirFormatQueryKey = "format"
 
+// UnknownDirFormatError reports a migration directory format the Atlas
+// semantic resolver does not recognize. Value is retained verbatim so a
+// compatibility adapter can reproduce the external surface's diagnostic
+// without parsing this error's semantic context.
+type UnknownDirFormatError struct {
+	Value string
+}
+
+func (e *UnknownDirFormatError) Error() string {
+	return fmt.Sprintf(
+		"unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate",
+		e.Value,
+	)
+}
+
 // ResolveApplySourceForFormat returns the immutable filesystem the Atlas apply
 // migrator should read for an already-resolved directory format. The native
 // Atlas format preserves atlas.sum and down migrations. Every other supported
@@ -155,10 +170,7 @@ func parseApplyDirFormat(value string) (atlasmigrateimport.Format, error) {
 		atlasmigrateimport.FormatDBMate:
 		return atlasmigrateimport.Format(value), nil
 	default:
-		return "", fmt.Errorf(
-			"unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate",
-			value,
-		)
+		return "", &UnknownDirFormatError{Value: value}
 	}
 }
 

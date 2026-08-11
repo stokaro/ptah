@@ -1,6 +1,7 @@
 package atlasmigrate_test
 
 import (
+	"errors"
 	"io/fs"
 	"net/url"
 	"os"
@@ -348,8 +349,13 @@ func TestResolveApplyDirFormat(t *testing.T) {
 
 	c.Run("unknown format reports the resolve error", func(c *qt.C) {
 		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
+		var unknownFormat *atlasmigrate.UnknownDirFormatError
 
-		c.Assert(err, qt.ErrorMatches, `unknown Atlas migration directory format "sqitch".*`)
+		c.Assert(err, qt.ErrorAs, &unknownFormat)
+		c.Assert(err.Error(), qt.Equals,
+			`unknown Atlas migration directory format "sqitch": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`)
+		c.Assert(unknownFormat.Value, qt.Equals, "sqitch")
+		c.Assert(errors.Unwrap(err), qt.IsNil)
 		c.Assert(string(got), qt.Equals, "")
 	})
 }
