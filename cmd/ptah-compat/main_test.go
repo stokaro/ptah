@@ -223,6 +223,61 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 	})
 }
 
+// TestCompatBinaryMigrateNewSuccessIsSilent pins the real process boundary for
+// stokaro/ptah#1235 findings 3.1 and 3.2: exit 0, byte-empty stdout and stderr,
+// and the Atlas migration plus atlas.sum still written and valid.
+func TestCompatBinaryMigrateNewSuccessIsSilent(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	dir := c.TempDir()
+	run := newCompatProcess(
+		binPath,
+		"migrate", "new", "manual_hotfix",
+		"--dir", "file://"+dir,
+	)
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr.String()))
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Equals, "")
+	migrations, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(migrations, qt.HasLen, 1)
+	result, verifyErr := migratesum.VerifyDirWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(verifyErr, qt.IsNil)
+	c.Assert(result.OK(), qt.IsTrue)
+}
+
+func TestCompatBinaryMigrateNewFailureStaysLoud(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+	dir := c.TempDir()
+	run := newCompatProcess(
+		binPath,
+		"migrate", "new", "manual_hotfix",
+		"--dir", "file://"+dir,
+		"--edit",
+	)
+	run.Env = append(os.Environ(), "VISUAL=", "EDITOR=")
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+	var exitErr *exec.ExitError
+
+	c.Assert(err, qt.ErrorAs, &exitErr)
+	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Equals,
+		"Error: no editor configured: set $EDITOR or $VISUAL, or pass --editor\n",
+	)
+}
+
 func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)

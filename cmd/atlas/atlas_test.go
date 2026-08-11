@@ -1390,7 +1390,7 @@ func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
@@ -1413,7 +1413,7 @@ func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
@@ -3994,7 +3994,7 @@ func TestCompatCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)

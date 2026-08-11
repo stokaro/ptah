@@ -3,6 +3,7 @@ package atlas
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 
 	"github.com/spf13/cobra"
@@ -69,6 +70,21 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 	return cmd
 }
 
+// newSilentNativeMigrateCreateCommand keeps the native create capability and
+// its editor, checksum, and error behavior intact while removing its success
+// report from the Atlas-compatible adapter. The adapter creates this target for
+// each execution, so the discarded writer cannot leak into native Ptah or a
+// later help run.
+func newSilentNativeMigrateCreateCommand() *cobra.Command {
+	cmd := migrate.NewMigrateCreateCommand()
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SetOut(io.Discard)
+		return run(cmd, args)
+	}
+	return cmd
+}
+
 // checkAtlasMigrateNewName refuses a migration name that cannot become a file,
 // after the atlas.sum gate and before anything is written.
 //
@@ -98,7 +114,7 @@ func atlasMigrateNewVerb() atlasVerb {
 		short:      "Create a new migration file",
 		native:     "migrations create",
 		writesDir:  true,
-		factory:    migrate.NewMigrateCreateCommand,
+		factory:    newSilentNativeMigrateCreateCommand,
 		flags: []atlasargs.Flag{
 			// `ptah migrations create` registers no default for its own
 			// --migrations-dir, so before this default was declared here the
@@ -203,7 +219,7 @@ func runAtlasMigrateNewConverted(cmd *cobra.Command, verb atlasVerb, source atla
 	if err := verifyAtlasWriteDirCoveredChecksum(cmd, source); err != nil {
 		return err
 	}
-	written, err := atlasmigrate.WriteSkeletonMigration(
+	_, err = atlasmigrate.WriteSkeletonMigration(
 		migrateDiffWriterRoot(source.project, source.localDir),
 		source.localDir.Path,
 		source.format,
@@ -212,7 +228,6 @@ func runAtlasMigrateNewConverted(cmd *cobra.Command, verb atlasVerb, source atla
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate %s: %w", verb.use, err))
 	}
-	reportAtlasMigrateNewFiles(cmd, written)
 	return nil
 }
 
@@ -236,24 +251,4 @@ func verifyAtlasWriteDirCoveredChecksum(cmd *cobra.Command, source atlasMigrateS
 		return err
 	}
 	return verifyCoveredAtlasDirChecksum(cmd, captured.FileSystem, source.format, requireAtlasSum)
-}
-
-// reportAtlasMigrateNewFiles prints the created files the way the forwarded
-// `ptah migrations create` prints them, so naming a directory's layout does not
-// change how this verb reports what it made.
-//
-// The community binary prints nothing at all on success here. That divergence
-// is older than this path — it is what `migrate new --dir-format atlas` already
-// does on the forwarding branch — and matching it on the converted branch alone
-// would make one verb report two ways.
-func reportAtlasMigrateNewFiles(cmd *cobra.Command, written []string) {
-	out := cmd.OutOrStdout()
-	if len(written) == 1 {
-		fmt.Fprintf(out, "Generated empty migration file:\n")
-		fmt.Fprintf(out, "SQL:  %s\n", written[0])
-		return
-	}
-	fmt.Fprintf(out, "Generated empty migration files:\n")
-	fmt.Fprintf(out, "UP:   %s\n", written[0])
-	fmt.Fprintf(out, "DOWN: %s\n", written[1])
 }
