@@ -325,8 +325,15 @@ For an Atlas-format directory, revision hashes keep the cumulative `atlas.sum`
 encoding. Verification projects that chain from applied migrations, so adding
 an earlier pending migration does not make an unchanged later file look edited.
 After a non-linear insertion succeeds, the migrator reconciles clean applied
-rows under the migration lock. Dry runs and failed migrations leave those rows
-unchanged.
+rows under the migration lock. It computes the full update set before writing
+and commits transaction-capable databases as one transaction. A failed update
+therefore leaves every affected hash on the prior chain, and a later run can
+retry the whole reconciliation. Dry runs and failed migrations leave those
+rows unchanged.
+
+ClickHouse has no multi-statement transaction through its configured driver.
+The migrator permits one synchronous checksum mutation, but refuses a
+reconciliation that needs two or more row updates before changing either row.
 
 ### Migration Providers
 

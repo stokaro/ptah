@@ -505,10 +505,20 @@ byte-identical. Ptah verifies them against the chain projected from applied
 migrations, excluding the pending insertion.
 
 After the insertion succeeds, Ptah reconciles clean revision rows to the new
-chain while it still holds the migration lock. A dry run, execution failure, or
-process stop before the revision is applied never rewrites later clean rows.
-Editing an applied file remains a checksum mismatch because the projected chain
-includes its changed bytes.
+chain while it still holds the migration lock. It computes the full update set
+first, then commits every affected row in one transaction where the driver
+supports transactions. A failed row update leaves the whole set on the prior
+chain, so the next apply can retry it. A dry run, execution failure, or process
+stop before the revision is applied never rewrites later clean rows.
+
+Equal non-zero application timestamps remain one candidate group. Ptah retries
+only when exactly one prior applied-set projection explains every affected row
+and each later row still matches the projection from its own application-time
+group. Mixed old and new hashes, ambiguous groups, and edited files fail closed.
+
+ClickHouse permits one synchronous checksum mutation. A reconciliation that
+needs multiple row updates fails before the first mutation because the
+configured driver has no multi-statement transaction.
 
 An env `for_each` can select several database targets. `migrate apply` runs
 them sequentially in stable expansion order and stops at the first failure.

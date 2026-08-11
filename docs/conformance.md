@@ -289,11 +289,23 @@ excludes pending insertions from its initial proof, then reconciles clean
 applied rows to the new chain only after the insertion succeeds. Dry runs and
 failed transactional or non-transactional migrations do not reconcile rows.
 
-If a process stops after recording the inserted revision but before
-reconciliation, Ptah can reconstruct the earlier chain only from non-zero,
-strictly ordered application timestamps. Missing or duplicate timestamps fail
-closed. Editing an applied file still fails the checksum comparison; the
-projection changes with the edited bytes and cannot prove the stored hash.
+Ptah computes every checksum change before writing and, on transaction-capable
+databases, commits the changes in one transaction. If one row update fails,
+every affected row retains the prior hash; a later apply retries the complete
+reconciliation.
+
+Recovery tests non-zero application-time groups as candidate prior applied
+sets. Rows sharing a timestamp stay in one group, which supports databases that
+store several applications at second precision without guessing their order.
+Recovery proceeds only when exactly one candidate explains the entire history:
+the affected prior cohort must still have its prior hashes, and each later row
+must retain the projection from its own application-time group. A zero
+timestamp, ambiguous candidate, mix of prior and current hashes, or edited file
+fails closed.
+
+ClickHouse exposes no multi-statement transaction through the configured
+driver. Ptah permits one synchronous checksum mutation there, but refuses a
+reconciliation that needs two or more row updates before changing either row.
 
 This closes
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5

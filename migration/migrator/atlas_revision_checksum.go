@@ -2,10 +2,12 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/atlashash"
 )
@@ -39,6 +41,7 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 	}
 
 	needsReconcile := false
+	var mismatch *ChecksumMismatchError
 	for _, migration := range migrations {
 		if migration.isAtlasRepeatable() {
 			continue
@@ -55,24 +58,26 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 			needsReconcile = true
 			continue
 		}
-		if atlasHistoricalProjectionMatches(
-			migrations,
-			revisionsByKey,
-			implicitFloor,
-			migration,
-			revision,
-			stored,
-		) {
-			needsReconcile = true
-			continue
-		}
-		return false, &ChecksumMismatchError{
-			Version:  migration.Version,
-			Stored:   stored,
-			Computed: migrationRevisionHash(migration),
+		if mismatch == nil {
+			mismatch = &ChecksumMismatchError{
+				Version:  migration.Version,
+				Stored:   stored,
+				Computed: migrationRevisionHash(migration),
+			}
 		}
 	}
-	return needsReconcile, nil
+	if mismatch == nil {
+		return needsReconcile, nil
+	}
+	if atlasCoherentHistoricalProjectionMatches(
+		migrations,
+		revisionsByKey,
+		implicitFloor,
+		currentProjection,
+	) {
+		return true, nil
+	}
+	return false, mismatch
 }
 
 func appliedRevisionsByKey(revisions []MigrationRevision) map[string]MigrationRevision {
@@ -113,32 +118,42 @@ func atlasAppliedProjectionHashes(
 	})
 }
 
-// atlasHistoricalProjectionMatches tries each provable applied-history cutoff
-// from the target's own application through the newest row. A later cutoff is
-// needed when Ptah reconciled this target after one insertion and Atlas then
-// applied another insertion without rewriting the target row.
-func atlasHistoricalProjectionMatches(
+// atlasCoherentHistoricalProjectionMatches tries each applied-time cutoff as
+// one prior applied-set projection. Duplicate non-zero timestamps stay in the
+// same cutoff group, which preserves MySQL-family second-precision histories
+// without guessing an order inside the group.
+//
+// A projection matches only when every row whose hash would change still has
+// the prior hash. This whole-cohort requirement distinguishes an atomic
+// reconciliation rollback from a partially committed or edited history. Rows
+// applied after the candidate cutoff must retain the projection from their own
+// application-time group; a current hash alone is not historical evidence.
+func atlasCoherentHistoricalProjectionMatches(
 	migrations []*Migration,
 	revisionsByKey map[string]MigrationRevision,
 	implicitFloor int64,
-	target *Migration,
-	targetRevision MigrationRevision,
-	stored string,
+	currentProjection map[string]string,
 ) bool {
-	if !atlasAppliedOrderIsProvable(revisionsByKey) || targetRevision.AppliedAt.IsZero() {
-		return false
-	}
-
 	cutoffs := make([]time.Time, 0, len(revisionsByKey))
+	seen := make(map[string]struct{}, len(revisionsByKey))
 	for _, revision := range revisionsByKey {
-		if !revision.AppliedAt.Before(targetRevision.AppliedAt) {
-			cutoffs = append(cutoffs, revision.AppliedAt)
+		if revision.AppliedAt.IsZero() {
+			return false
 		}
+		key := revision.AppliedAt.UTC().Format(time.RFC3339Nano)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		cutoffs = append(cutoffs, revision.AppliedAt)
 	}
 	sort.Slice(cutoffs, func(i, j int) bool { return cutoffs[i].Before(cutoffs[j]) })
-	for _, cutoff := range cutoffs {
-		hashes, err := atlasProjectionHashes(migrations, func(migration *Migration) bool {
-			if migration.Version <= implicitFloor || migration.RevisionVersion() == target.RevisionVersion() {
+
+	projections := make([]map[string]string, len(cutoffs))
+	projectionsByAppliedAt := make(map[string]map[string]string, len(cutoffs))
+	for index, cutoff := range cutoffs {
+		projection, err := atlasProjectionHashes(migrations, func(migration *Migration) bool {
+			if migration.Version <= implicitFloor {
 				return true
 			}
 			revision, applied := revisionsByKey[migration.RevisionVersion()]
@@ -147,33 +162,71 @@ func atlasHistoricalProjectionMatches(
 		if err != nil {
 			return false
 		}
-		if hashes[target.RevisionVersion()] == stored {
-			return true
+		projections[index] = projection
+		projectionsByAppliedAt[cutoff.UTC().Format(time.RFC3339Nano)] = projection
+	}
+
+	matches := 0
+	for _, previousProjection := range projections {
+		if atlasStoredChecksumsMatchProjectionCohort(
+			migrations,
+			revisionsByKey,
+			previousProjection,
+			currentProjection,
+			projectionsByAppliedAt,
+		) {
+			matches++
 		}
 	}
-	return false
+	return matches == 1
 }
 
-// atlasAppliedOrderIsProvable rejects historical reconstruction when the
-// revision rows do not establish a strict order. The current applied-set
-// projection does not need timestamps; this guard applies only to recovery
-// after a migration was recorded successfully but checksum reconciliation did
-// not finish, including a later insertion by an interoperating Atlas process.
-// Guessing through a zero or duplicate timestamp could turn an edited applied
-// file into an accepted history.
-func atlasAppliedOrderIsProvable(revisionsByKey map[string]MigrationRevision) bool {
-	seen := make(map[string]struct{}, len(revisionsByKey))
-	for _, revision := range revisionsByKey {
-		if revision.AppliedAt.IsZero() {
+func atlasStoredChecksumsMatchProjectionCohort(
+	migrations []*Migration,
+	revisionsByKey map[string]MigrationRevision,
+	previousProjection map[string]string,
+	currentProjection map[string]string,
+	projectionsByAppliedAt map[string]map[string]string,
+) bool {
+	evidence := false
+	for _, migration := range migrations {
+		if migration.isAtlasRepeatable() || migration.Checksum == "" {
+			continue
+		}
+		revision := revisionsByKey[migration.RevisionVersion()]
+		if revision.State != migrationStateApplied || revision.Checksum == "" {
+			continue
+		}
+		stored := normalizeAtlasRevisionHash(revision.Checksum)
+		if stored == migrationChecksum(migration.UpSQL) {
+			continue
+		}
+		current, currentOK := currentProjection[migration.RevisionVersion()]
+		if !currentOK {
 			return false
 		}
-		key := revision.AppliedAt.UTC().Format(time.RFC3339Nano)
-		if _, duplicate := seen[key]; duplicate {
+		previous, previouslyApplied := previousProjection[migration.RevisionVersion()]
+		if !previouslyApplied {
+			appliedAtKey := revision.AppliedAt.UTC().Format(time.RFC3339Nano)
+			applicationProjection := projectionsByAppliedAt[appliedAtKey]
+			atApplication, ok := applicationProjection[migration.RevisionVersion()]
+			if !ok || stored != atApplication {
+				return false
+			}
+			continue
+		}
+		if previous == current {
+			if stored != current && !revisionChecksumMatches(stored, migration) {
+				return false
+			}
+			continue
+		}
+		if stored != previous {
 			return false
 		}
-		seen[key] = struct{}{}
+		evidence = true
 	}
-	return true
+	return evidence
 }
 
 func atlasProjectionHashes(
@@ -236,7 +289,62 @@ func (m *Migrator) reconcileAppliedMigrationChecksums(
 	if err != nil {
 		return err
 	}
+	updates, err := m.planAppliedMigrationChecksumReconciliation(migrations, revisionsByKey, projection)
+	if err != nil {
+		return err
+	}
+	if len(updates) == 0 {
+		return nil
+	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.updateRevisionChecksumSQL())
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.ClickHouse {
+		if len(updates) > 1 {
+			return fmt.Errorf(
+				"cannot atomically reconcile %d Atlas checksums on ClickHouse: multi-row transactions are unavailable",
+				len(updates),
+			)
+		}
+		update := updates[0]
+		if err := executeSQLOn(ctx, m.conn, query, update.checksum, update.revisionArg); err != nil {
+			return fmt.Errorf("failed to reconcile checksum for migration %s: %w", update.version, err)
+		}
+		return nil
+	}
+
+	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin checksum reconciliation transaction: %w", err)
+	}
+	for _, update := range updates {
+		if err := tx.ExecuteSQL(ctx, query, update.checksum, update.revisionArg); err != nil {
+			updateErr := fmt.Errorf("failed to reconcile checksum for migration %s: %w", update.version, err)
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return errors.Join(
+					updateErr,
+					fmt.Errorf("failed to roll back checksum reconciliation transaction: %w", rollbackErr),
+				)
+			}
+			return updateErr
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit checksum reconciliation transaction: %w", err)
+	}
+	return nil
+}
+
+type atlasChecksumUpdate struct {
+	version     string
+	checksum    string
+	revisionArg any
+}
+
+func (m *Migrator) planAppliedMigrationChecksumReconciliation(
+	migrations []*Migration,
+	revisionsByKey map[string]MigrationRevision,
+	projection map[string]string,
+) ([]atlasChecksumUpdate, error) {
+	updates := make([]atlasChecksumUpdate, 0)
 	for _, migration := range migrations {
 		if migration.isAtlasRepeatable() || migration.Checksum == "" {
 			continue
@@ -251,22 +359,18 @@ func (m *Migrator) reconcileAppliedMigrationChecksums(
 		}
 		desired, ok := projection[migration.RevisionVersion()]
 		if !ok {
-			return fmt.Errorf("cannot reconcile Atlas checksum for migration %s: applied projection is unavailable", migration.RevisionVersion())
+			return nil, fmt.Errorf("cannot reconcile Atlas checksum for migration %s: applied projection is unavailable", migration.RevisionVersion())
 		}
 		if stored == desired {
 			continue
 		}
-		if err := executeSQLOutsideTransaction(
-			ctx,
-			m.conn,
-			query,
-			desired,
-			m.migrationRevisionVersionArg(migration),
-		); err != nil {
-			return fmt.Errorf("failed to reconcile checksum for migration %s: %w", migration.RevisionVersion(), err)
-		}
+		updates = append(updates, atlasChecksumUpdate{
+			version:     migration.RevisionVersion(),
+			checksum:    desired,
+			revisionArg: m.migrationRevisionVersionArg(migration),
+		})
 	}
-	return nil
+	return updates, nil
 }
 
 func (m *Migrator) updateRevisionChecksumSQL() string {
