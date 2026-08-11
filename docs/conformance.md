@@ -1285,11 +1285,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: five cells from the #1235 register
+## Output shape: six cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Five of them are closed here. Every row was
+exit code and disagree on the bytes. Six of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1298,6 +1298,7 @@ unpiped invocation.
 | 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
 | 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
+| 9.5 | `migrate validate` with `?format=bogus`; the same under `--dir-format bogus` and on `migrate hash` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all four rows |
 | 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
 | 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context | the same body prefixed by `load --to schema: parse HCL schema: ` | byte-identical |
 
@@ -1334,6 +1335,12 @@ files, and unrelated errors keep their prior diagnostics. Native
 stdout, and
 `error: migrations directory nope: stat nope: no such file or directory\n` on
 stderr.
+
+**9.5 changes only the shared integrity adapter.** Both format spellings on
+`migrate hash` and `migrate validate` now print the pinned diagnostic before
+filesystem or database work. The invalid value stays verbatim, and the semantic
+resolver retains its detailed error in the unwrap chain. Native `ptah` and
+other Atlas-compatible errors keep their existing diagnostics.
 
 **9.13 changes only the compatibility error adapter.** Measured 2026-08-11
 with the file body `schema "main" {\n`, both binaries exited 1, wrote no stdout,
