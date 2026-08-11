@@ -60,6 +60,9 @@ type InspectSourceOptions struct {
 	// OmitAtlasRefusedBlocks is the Atlas-compatible surface's block-type
 	// policy for rendered HCL; see [InspectOptions].
 	OmitAtlasRefusedBlocks bool
+	// CompatibilityHCLFraming is the Atlas-compatible surface's independent
+	// single-document HCL framing policy; see [InspectOptions].
+	CompatibilityHCLFraming bool
 }
 
 // InspectSource classifies the --url inspection source and renders it with
@@ -87,13 +90,14 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	}
 
 	inspectOpts := InspectOptions{
-		DevURL:                 opts.DevURL,
-		Schemas:                opts.Schemas,
-		Include:                opts.Include,
-		Exclude:                opts.Exclude,
-		Format:                 opts.Format,
-		Diagnostics:            opts.Diagnostics,
-		OmitAtlasRefusedBlocks: opts.OmitAtlasRefusedBlocks,
+		DevURL:                  opts.DevURL,
+		Schemas:                 opts.Schemas,
+		Include:                 opts.Include,
+		Exclude:                 opts.Exclude,
+		Format:                  opts.Format,
+		Diagnostics:             opts.Diagnostics,
+		OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
+		CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)

@@ -40,6 +40,11 @@ type InspectOptions struct {
 	// models. See
 	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
 	OmitAtlasRefusedBlocks bool
+	// CompatibilityHCLFraming selects the Atlas-compatible single-document HCL
+	// frame without changing which blocks the document contains. Only
+	// `ptah-compat` sets it; native inspection keeps Ptah's generated marker and
+	// native terminal spacing.
+	CompatibilityHCLFraming bool
 }
 
 // NormalizeInspectFormat returns and validates the executable Atlas schema
@@ -116,8 +121,11 @@ func renderInspectSchema(
 		schema,
 		info,
 		opts.Diagnostics,
-		opts.OmitAtlasRefusedBlocks,
-		describesSchemas(info, opts),
+		atlasreport.SchemaInspectReportOptions{
+			OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
+			DescribeSchemas:         describesSchemas(info, opts),
+			CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
+		},
 	))
 	if err != nil {
 		return "", err

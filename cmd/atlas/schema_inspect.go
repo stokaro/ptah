@@ -178,9 +178,10 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames:  true,
-		OmitAtlasRefusedBlocks: omitRefusedBlocks,
-		Vars:                   schemaVars,
+		IgnoreUnknownHCLNames:   true,
+		OmitAtlasRefusedBlocks:  omitRefusedBlocks,
+		CompatibilityHCLFraming: true,
+		Vars:                    schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

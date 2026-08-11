@@ -89,8 +89,7 @@ func TestSchemaInspectJSONNeverInventsTheConnectedSchema(t *testing.T) {
 				test.schema,
 				test.info,
 				nil,
-				false,
-				true,
+				atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 			)
 			output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)
 
@@ -167,8 +166,7 @@ func TestSchemaInspectJSONReportsABackedUniqueConstraintOnce(t *testing.T) {
 				},
 				types.DBInfo{Dialect: "sqlite", Schema: "main"},
 				nil,
-				false,
-				true,
+				atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 			)
 			output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)
 
