@@ -644,7 +644,7 @@ func TestRenderSQL_TypedNilGenericASTNode_FailurePath(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", index)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, "invalid foreign key: AST node is nil")
+	c.Assert(err, qt.ErrorMatches, "index node is nil")
 	c.Assert(sql, qt.Equals, "")
 }
 

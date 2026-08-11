@@ -173,10 +173,12 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(capability.MySQL84().Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(capability.MySQL8016().Has(capability.DropConstraintGeneric), qt.IsFalse)
 	c.Assert(capability.MySQL8016().Has(capability.CheckConstraintsEnforced), qt.IsTrue)
+	c.Assert(capability.Postgres13().Has(capability.IndexIncludeSPGiST), qt.IsFalse)
+	c.Assert(capability.Postgres16().Has(capability.IndexIncludeSPGiST), qt.IsTrue)
 	c.Assert(capability.MySQLLegacy().Has(capability.CheckConstraintsEnforced), qt.IsFalse)
 
-	// Postgres version presets gate CREATE OR REPLACE TRIGGER (PG 14+) and
-	// generated-column SET EXPRESSION (PG 17+).
+	// Postgres version presets gate CREATE OR REPLACE TRIGGER and SP-GiST
+	// INCLUDE (PG 14+), plus generated-column SET EXPRESSION (PG 17+).
 	c.Assert(capability.Postgres17().Has(capability.AlterGeneratedColumnExpression), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.AlterGeneratedColumnExpression), qt.IsFalse)
 	c.Assert(capability.Postgres16().Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
@@ -214,6 +216,7 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(cockroach.Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(cockroach.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(cockroach.Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.IndexIncludeSPGiST), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.AdvisoryLocks), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.RoleManagement), qt.IsTrue)
@@ -225,12 +228,14 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(yugabyte.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.DropIndexConcurrently), qt.IsFalse)
+	c.Assert(yugabyte.Has(capability.IndexIncludeSPGiST), qt.IsFalse)
 	c.Assert(yugabyte.Has(capability.RoleManagement), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.RowLevelSecurity), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.Sequences), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.AdvisoryLocks), qt.IsTrue)
 
 	spanner := capability.SpannerPostgres()
+	c.Assert(spanner.Has(capability.IndexIncludeSPGiST), qt.IsFalse)
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(spanner.Has(capability.ForeignKeysCreateBackingIndex), qt.IsTrue)

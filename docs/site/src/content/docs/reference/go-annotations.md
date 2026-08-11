@@ -185,6 +185,7 @@ Declares an index for a table.
 | `condition` | No | Partial index condition. |
 | `fields` | No | Comma-separated Go field or column names. |
 | `granularity` | No | ClickHouse data-skipping index granularity. |
+| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, or the Spanner PostgreSQL dialect. Order is preserved. |
 | `name` | No | Index name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior where supported. `true`/`false`. |
 | `ops` | No | PostgreSQL operator class. |
@@ -192,6 +193,17 @@ Declares an index for a table.
 | `type` | No | Index type or method. |
 | `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
+
+Omit `include` when the index has no payload columns. A present value with any
+empty element fails parsing instead of silently removing that element. This
+includes empty, whitespace-only, comma-only, sparse, and trailing-comma lists.
+
+The accepted access methods depend on the target: PostgreSQL accepts the
+default, `BTREE`, and `GIST`, plus `SPGIST` on PostgreSQL 14 and newer;
+YugabyteDB accepts the default and `LSM`, with `BTREE` normalized to its
+documented default-LSM alias; and the Spanner PostgreSQL dialect accepts only
+the default. CockroachDB and every other dialect reject `include` before
+emitting SQL.
 
 ### `//ptah:schema:constraint`
 

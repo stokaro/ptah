@@ -49,6 +49,9 @@ func Render(db *goschema.Database, opts Options) ([]File, error) {
 	if err := validatePackageName(opts.PackageName); err != nil {
 		return nil, err
 	}
+	if err := validateIndexIncludeColumns(db.Indexes); err != nil {
+		return nil, err
+	}
 
 	ctx := newRenderContext(db, opts)
 	if opts.SingleFile {
@@ -59,6 +62,32 @@ func Render(db *goschema.Database, opts Options) ([]File, error) {
 		return []File{file}, nil
 	}
 	return ctx.renderPerTableFiles()
+}
+
+func validateIndexIncludeColumns(indexes []goschema.Index) error {
+	for _, index := range indexes {
+		for i, column := range index.IncludeColumns {
+			switch {
+			case column == "":
+				return fmt.Errorf("index %q INCLUDE column %d is empty and cannot be represented in a Go annotation", index.Name, i+1)
+			case strings.TrimSpace(column) != column:
+				return fmt.Errorf(
+					"index %q INCLUDE column %d %q cannot be represented in a Go annotation: leading or trailing whitespace is not allowed",
+					index.Name,
+					i+1,
+					column,
+				)
+			case strings.Contains(column, ","):
+				return fmt.Errorf(
+					"index %q INCLUDE column %d %q cannot be represented in a Go annotation: commas delimit column names",
+					index.Name,
+					i+1,
+					column,
+				)
+			}
+		}
+	}
+	return nil
 }
 
 // WriteDir writes generated files to outDir.
@@ -409,6 +438,7 @@ func indexAttrs(index goschema.Index) []attr {
 	return []attr{
 		{name: "name", value: index.Name, set: true},
 		{name: "fields", value: strings.Join(index.Fields, ","), set: len(index.Fields) > 0},
+		{name: "include", value: strings.Join(index.IncludeColumns, ","), set: len(index.IncludeColumns) > 0},
 		{name: "unique", value: strconv.FormatBool(index.Unique), set: index.Unique},
 		{name: "type", value: index.Type, set: index.Type != ""},
 		{name: "condition", value: index.Condition, set: index.Condition != ""},

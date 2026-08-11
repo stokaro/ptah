@@ -311,7 +311,8 @@ type Index struct {
 	Condition string
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
-	// IncludeColumns carries PostgreSQL INCLUDE columns for covering indexes.
+	// IncludeColumns carries INCLUDE payload columns for PostgreSQL,
+	// YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
 	IncludeColumns []string
 	// StorageParams carries PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.

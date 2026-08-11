@@ -152,7 +152,7 @@ func (r *Report) Mismatches() []Row {
 // reads as a passed check is how a matrix comes to certify lines nobody ever
 // probed, and this repository has been bitten by that shape before. Failing on
 // "decided less than the plan promised" is the same argument one step further
-// in: a floor of one row lets twenty-three of twenty-four go quietly
+// in: a floor of one row lets twenty-four of twenty-five go quietly
 // unmeasured while the run still exits zero, and coverage that can erode
 // without turning anything red is coverage nobody is holding.
 func (r *Report) Err() error {
