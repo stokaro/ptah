@@ -3,6 +3,8 @@ package migratevalidate_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,6 +109,73 @@ func TestValidate_MissingDirectoryExitsTwo(t *testing.T) {
 	// The message surfaces the directory and the underlying stat error.
 	c.Assert(stderr, qt.Contains, "migrations directory")
 	c.Assert(err, qt.ErrorMatches, ".*does-not-exist.*")
+}
+
+func TestAtlasDirectoryError_MissingStatPreservesPathCause(t *testing.T) {
+	c := qt.New(t)
+	pathErr := &os.PathError{Op: "stat", Path: "nope", Err: fs.ErrNotExist}
+	original := fmt.Errorf("migrations directory nope: %w", pathErr)
+
+	got := migratevalidate.AtlasDirectoryError("nope", original)
+
+	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat nope: file does not exist")
+	c.Assert(got, qt.ErrorIs, original)
+	c.Assert(got, qt.ErrorIs, fs.ErrNotExist)
+	var gotPathErr *os.PathError
+	c.Assert(got, qt.ErrorAs, &gotPathErr)
+	c.Assert(gotPathErr, qt.Equals, pathErr)
+}
+
+func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		dir  string
+		err  error
+	}{
+		{
+			name: "regular file",
+			dir:  "migrations",
+			err:  errors.New("migrations directory migrations: not a directory"),
+		},
+		{
+			name: "stat permission denied",
+			dir:  "migrations",
+			err: fmt.Errorf("migrations directory migrations: %w", &os.PathError{
+				Op: "stat", Path: "migrations", Err: fs.ErrPermission,
+			}),
+		},
+		{
+			name: "missing open",
+			dir:  "migrations",
+			err: fmt.Errorf("open migrations directory: %w", &os.PathError{
+				Op: "open", Path: "migrations", Err: fs.ErrNotExist,
+			}),
+		},
+		{
+			name: "missing stat with unrelated context",
+			dir:  "migrations",
+			err: fmt.Errorf("read config: %w", &os.PathError{
+				Op: "stat", Path: "migrations", Err: fs.ErrNotExist,
+			}),
+		},
+		{
+			name: "missing stat for another directory",
+			dir:  "migrations",
+			err: fmt.Errorf("migrations directory other: %w", &os.PathError{
+				Op: "stat", Path: "other", Err: fs.ErrNotExist,
+			}),
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got := migratevalidate.AtlasDirectoryError(test.dir, test.err)
+
+			c.Assert(got, qt.Equals, test.err)
+		})
+	}
 }
 
 func TestValidate_PositionalArgExitsTwoWithMessage(t *testing.T) {
