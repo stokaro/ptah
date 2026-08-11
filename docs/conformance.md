@@ -1285,11 +1285,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: six cells from the #1235 register
+## Output shape: seven cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Six of them are closed here. Every row was
+exit code and disagree on the bytes. Seven of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1300,6 +1300,7 @@ unpiped invocation.
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
 | 9.5 | `migrate validate` with `?format=bogus`; the same under `--dir-format bogus` and on `migrate hash` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all four rows |
 | 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
+| 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
 | 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context | the same body prefixed by `load --to schema: parse HCL schema: ` | byte-identical |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
