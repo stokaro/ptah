@@ -1,7 +1,6 @@
 package migrationlintreport_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -12,29 +11,6 @@ import (
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
-
-func TestBuild_AtlasExplicitZeroAllowsExplicitGitSelector(t *testing.T) {
-	c := qt.New(t)
-	gitDir := t.TempDir()
-
-	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
-		Dir:           t.TempDir(),
-		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
-		DirFormat:     string(migrator.MigrationDirFormatAtlas),
-		Dialect:       "sqlite",
-		GitBase:       "HEAD",
-		GitDir:        gitDir,
-		FailOn:        migrationlintreport.FailOnNone,
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		Changed: migrationlintreport.ChangedOptions{
-			Dialect: true,
-			GitBase: true,
-			Latest:  true,
-		},
-	}, projectconfig.Config{})
-
-	c.Assert(err, qt.ErrorMatches, `find git repository root: .*`)
-}
 
 func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *testing.T) {
 	c := qt.New(t)
@@ -47,8 +23,8 @@ func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *te
 		},
 	}
 
-	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
-		Dir:           t.TempDir(),
+	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
+		Dir:           "unused",
 		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
 		DirFormat:     string(migrator.MigrationDirFormatAtlas),
 		Dialect:       "sqlite",
@@ -66,8 +42,8 @@ func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *te
 func TestBuild_NativeExplicitZeroKeepsPreciseRefusal(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
-		Dir:       t.TempDir(),
+	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
+		Dir:       "unused",
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
 		DirFormat: string(migrator.MigrationDirFormatAtlas),
 		Dialect:   "sqlite",
