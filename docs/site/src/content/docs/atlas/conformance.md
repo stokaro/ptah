@@ -28,6 +28,26 @@ results. They do not, by themselves, prove every Atlas OSS command, flag,
 dialect feature, and output mode. Use the comparison gap register for product
 and coverage gaps that are outside the current measured corpus.
 
+### SQL inspect statement terminators
+
+Finding 4.6 in
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) was measured
+on August 7, 2026, against the pinned Atlas CE v1.3.0 binary:
+
+| Result | Empty SQLite database | Populated SQLite database |
+| --- | --- | --- |
+| Atlas CE v1.3.0 | 0 bytes | no semicolon-only lines |
+| Ptah before | `;\n` | a semicolon-only line after every statement |
+| Ptah now | 0 bytes | no semicolon-only lines |
+
+The shared report serializer now keeps each renderer-produced statement
+verbatim instead of adding another terminator. An indent argument still
+prefixes every line of nonempty SQL, while empty SQL stays empty. Exact tests
+cover `ptah schema inspect --format sql`, the Atlas-compatible
+`ptah-compat schema inspect --format '{{ sql . }}'`, and HCL and JSON controls.
+This closes only finding 4.6; the issue's comment, indentation, view, and object
+ordering findings remain separate.
+
 ## How to read green and red checks
 
 The conformance repository separates regression budgets from full parity:

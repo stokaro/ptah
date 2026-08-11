@@ -25,6 +25,27 @@ func runSchemaInspectOutput(c *qt.C, dbPath string, extra ...string) (string, er
 	return out.String(), err
 }
 
+func TestSchemaInspectExplicitSQLTemplateWritesExactTerminatedStatement(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "inspect-sql.db")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
+
+	out, err := runSchemaInspectOutput(c, dbPath, "--format", `{{ sql . }}`)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Equals, "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n")
+}
+
+func TestSchemaInspectExplicitSQLTemplateWritesNoBytesForEmptyDatabase(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "empty.db")
+
+	out, err := runSchemaInspectOutput(c, dbPath, "--format", `{{ sql . }}`)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Equals, "")
+}
+
 // TestSchemaInspectOutputWritesTheFile pins where the rendered schema goes.
 //
 // Reverted, every row fails with `unknown flag: --output` (or `-o`).
