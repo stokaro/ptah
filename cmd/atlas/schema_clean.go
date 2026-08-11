@@ -160,7 +160,7 @@ func runAtlasSchemaClean(
 		return cmdutil.Fail(cmd, err)
 	}
 	for _, object := range plan.Objects {
-		if err := policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+		if err := policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 			Kind:             object.Type,
 			Name:             object.Name,
 			ImplicitSequence: object.Implicit,

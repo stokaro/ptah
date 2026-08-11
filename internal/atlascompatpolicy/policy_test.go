@@ -195,7 +195,7 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 	policy := atlascompatpolicy.StrictCE()
 	for _, kind := range []string{"table", "foreign_key", "enum"} {
 		t.Run("accepts "+kind, func(t *testing.T) {
-			qt.Assert(t, policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+			qt.Assert(t, policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 				Kind: kind,
 				Name: "kept",
 			}), qt.IsNil)
@@ -217,7 +217,7 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		"view",
 	} {
 		t.Run("refuses "+kind, func(t *testing.T) {
-			err := policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+			err := policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 				Kind: kind,
 				Name: "pro_object",
 			})
@@ -228,7 +228,7 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		})
 	}
 	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+		atlascompatpolicy.Full().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 			Kind: "view",
 			Name: "retained_by_full_mode",
 		}),
@@ -238,10 +238,34 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 
 func TestStrictCEAcceptsImplicitSchemaCleanSequence(t *testing.T) {
 	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+		atlascompatpolicy.StrictCE().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 			Kind:             "sequence",
 			Name:             "users_id_seq",
 			ImplicitSequence: true,
+		}),
+		qt.IsNil,
+	)
+}
+
+func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
+	policy := atlascompatpolicy.StrictCE()
+
+	qt.Assert(t, policy.ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+		Kind:             "sequence",
+		Name:             "users_id_seq",
+		ImplicitSequence: true,
+	}), qt.IsNil)
+	err := policy.ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+		Kind: "procedure",
+		Name: "refresh_users()",
+	})
+
+	qt.Assert(t, err, qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users\(\)"`)
+	qt.Assert(t,
+		atlascompatpolicy.Full().ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+			Kind: "procedure",
+			Name: "retained_by_full_mode()",
 		}),
 		qt.IsNil,
 	)

@@ -1032,7 +1032,7 @@ func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 	dbschema.CloseAndWarn(conn)
 }
 
-func TestStrictCompatSchemaCleanRefusesPostgresWriterOnlyObjects(t *testing.T) {
+func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *testing.T) {
 	c := qt.New(t)
 	dbURL := strictCompatPostgresTestURL(t)
 
@@ -1055,14 +1055,38 @@ func TestStrictCompatSchemaCleanRefusesPostgresWriterOnlyObjects(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(t.Context(), scopedURL)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(),
-		"CREATE TABLE users (id SERIAL PRIMARY KEY); "+
-			"CREATE PROCEDURE refresh_users() LANGUAGE SQL AS $$ SELECT 1 $$;")
+		"CREATE PROCEDURE refresh_users() LANGUAGE SQL AS $$ SELECT 1 $$;")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
-	args := []string{"schema", "clean", "--url", scopedURL, "--auto-approve"}
+	inspectArgs := []string{"schema", "inspect", "--url", scopedURL, "--format", "{{ json . }}"}
 	stdout, stderr, code := runAtlasBinary(
+		compat,
+		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+		inspectArgs...,
+	)
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
+		`Error: Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`+"\n")
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)
+
+	stdout, stderr, code = runAtlasBinary(compat, nil, inspectArgs...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Not(qt.Equals), "")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)
+
+	conn, err = dbschema.ConnectToDatabase(t.Context(), scopedURL)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), "CREATE TABLE users (id SERIAL PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(conn)
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 3)
+
+	args := []string{"schema", "clean", "--url", scopedURL, "--auto-approve"}
+	stdout, stderr, code = runAtlasBinary(
 		compat,
 		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 		args...,

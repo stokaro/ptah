@@ -67,8 +67,10 @@ evaluation. Strict schema workflows refuse YAML sources and an authored
 Commands that execute, convert, or replay migration bodies refuse Atlas txtar,
 Ptah directives, and SQL templates; checksum-only reads preserve those bytes.
 A live Pro-only object stops schema inspect, apply, or clean before output or
-mutation. Cleanup validates the writer's full destruction inventory, including
-dependent objects and PostgreSQL catalog kinds absent from the schema reader.
+mutation. Inspect supplements the ordinary reader with a read-only inventory
+of catalog-only kinds in the selected schema scope. Cleanup validates the
+writer's full destruction inventory, including dependent objects and the same
+PostgreSQL catalog kinds absent from the schema reader.
 
 Strict mode never emulates a CE behavior that would silently drop authored
 data, hide a live object, or corrupt state. Default mode retains every listed

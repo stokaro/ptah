@@ -66,6 +66,9 @@ type InspectSourceOptions struct {
 	// ValidateInspectedSchema applies after live or dev-database introspection,
 	// before output or file exports.
 	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateLiveObject applies to catalog-only live or dev-database objects
+	// before output or file exports. Nil avoids supplemental catalog reads.
+	ValidateLiveObject func(LiveSchemaObject) error
 	// ValidateMigrationSource applies to the stable migration-directory
 	// snapshot before the dev database is connected to or reset.
 	ValidateMigrationSource func(fs.FS) error
@@ -114,6 +117,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 		OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 		CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
 		ValidateSchema:          opts.ValidateInspectedSchema,
+		ValidateLiveObject:      opts.ValidateLiveObject,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)
@@ -211,14 +215,17 @@ func inspectOnDev(
 			migrationSnapshot,
 			migrator.MigrationDirFormatAtlas,
 			func(replayConn *dbschema.DatabaseConnection) error {
-				schema, err := readInspectDevSchema(ctx, replayConn, opts.Schemas)
+				schema, validatedOpts, err := readValidatedInspectDevSchema(ctx, replayConn, inspectDevReadOptions{
+					inspect:         inspectOpts,
+					withoutRevision: true,
+				})
 				if err != nil {
 					return err
 				}
 				rendered, err = renderInspectSchema(
-					atlassource.WithoutRevisionTable(schema),
+					schema,
 					replayConn.Info(),
-					inspectOpts,
+					validatedOpts,
 				)
 				return err
 			},
@@ -235,11 +242,13 @@ func inspectOnDev(
 			desired,
 			opts.Diagnostics,
 			func(materializedConn *dbschema.DatabaseConnection) error {
-				schema, err := readInspectDevSchema(ctx, materializedConn, opts.Schemas)
+				schema, validatedOpts, err := readValidatedInspectDevSchema(ctx, materializedConn, inspectDevReadOptions{
+					inspect: inspectOpts,
+				})
 				if err != nil {
 					return err
 				}
-				rendered, err = renderInspectSchema(schema, materializedConn.Info(), inspectOpts)
+				rendered, err = renderInspectSchema(schema, materializedConn.Info(), validatedOpts)
 				return err
 			},
 		)
@@ -407,16 +416,32 @@ func devMaterializableSchema(
 // database. It resolves scope exactly the way a database source does, so
 // `schema inspect -u file://…` describes the same set of schemas the same URL
 // would describe as a target.
-func readInspectDevSchema(
+type inspectDevReadOptions struct {
+	inspect         InspectOptions
+	withoutRevision bool
+}
+
+func readValidatedInspectDevSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	schemas []string,
-) (*dbschematypes.DBSchema, error) {
-	schema, err := readInspectSchema(ctx, devConn, schemas)
+	opts inspectDevReadOptions,
+) (*dbschematypes.DBSchema, InspectOptions, error) {
+	schema, names, err := readInspectSchemaWithNames(ctx, devConn, opts.inspect.Schemas)
 	if err != nil {
-		return nil, fmt.Errorf("read dev database schema: %w", err)
+		return nil, InspectOptions{}, fmt.Errorf("read dev database schema: %w", err)
 	}
-	return schema, nil
+	if opts.withoutRevision {
+		schema = atlassource.WithoutRevisionTable(schema)
+	}
+	if err := validateInspectSchema(schema, opts.inspect.ValidateSchema); err != nil {
+		return nil, InspectOptions{}, err
+	}
+	if err := validateInspectLiveObjects(devConn, names, opts.inspect.ValidateLiveObject); err != nil {
+		return nil, InspectOptions{}, err
+	}
+	validatedOpts := opts.inspect
+	validatedOpts.ValidateSchema = nil
+	return schema, validatedOpts, nil
 }
 
 func sourceRawURLs(set atlassource.Set) []string {

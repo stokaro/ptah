@@ -95,11 +95,11 @@ func (p Policy) validateSchemaObjects(database *goschema.Database, source string
 	return nil
 }
 
-// SchemaCleanObject describes the live cleanup identity relevant to Atlas
+// LiveSchemaObject describes the live catalog identity relevant to Atlas
 // compatibility policy. ImplicitSequence distinguishes a sequence owned by a
 // table column from a standalone sequence the Community Edition surface does
 // not model.
-type SchemaCleanObject struct {
+type LiveSchemaObject struct {
 	Kind             string
 	Name             string
 	ImplicitSequence bool
@@ -110,21 +110,39 @@ type SchemaCleanObject struct {
 // inspection but before confirmation or SQL execution: strict mode must not
 // turn an OSS-parity run into a destructive Pro-like cleanup. Full mode keeps
 // Ptah's complete cleanup coverage unchanged.
-func (p Policy) ValidateSchemaCleanObject(object SchemaCleanObject) error {
-	if !p.strictCE {
+func (p Policy) ValidateSchemaCleanObject(object LiveSchemaObject) error {
+	if !p.strictCE || strictCEAcceptsLiveSchemaObject(object) {
 		return nil
-	}
-	switch object.Kind {
-	case "table", "foreign_key", "enum":
-		return nil
-	case "sequence":
-		if object.ImplicitSequence {
-			return nil
-		}
-	default:
 	}
 	return fmt.Errorf(
 		"Atlas Community Edition strict compatibility does not support cleaning live schema %s %q",
+		object.Kind,
+		object.Name,
+	)
+}
+
+func strictCEAcceptsLiveSchemaObject(object LiveSchemaObject) bool {
+	switch object.Kind {
+	case "table", "foreign_key", "enum":
+		return true
+	case "sequence":
+		return object.ImplicitSequence
+	default:
+		return false
+	}
+}
+
+// ValidateSchemaInspectObject refuses live catalog objects that Atlas
+// Community Edition does not model during schema inspection. The ordinary
+// schema reader cannot represent every catalog kind, so callers apply this
+// check to the supplemental read-only inventory before publishing output.
+// Full mode remains a no-op and keeps Ptah's best-effort inspection behavior.
+func (p Policy) ValidateSchemaInspectObject(object LiveSchemaObject) error {
+	if !p.strictCE || strictCEAcceptsLiveSchemaObject(object) {
+		return nil
+	}
+	return fmt.Errorf(
+		"Atlas Community Edition strict compatibility does not support inspecting live schema %s %q",
 		object.Kind,
 		object.Name,
 	)

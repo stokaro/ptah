@@ -67,10 +67,12 @@ Local source-format and current-migration checks run before database or lock
 artifacts can be created.
 
 A strict inspect, apply, or clean run refuses a live Pro-only object before it
-can be omitted from output or destroyed. Cleanup validates the writer's full
-destruction inventory, including PostgreSQL catalog objects absent from the
-ordinary schema reader. The policy narrows the capability inventory without
-copying a data-loss or state-corruption defect.
+can be omitted from output or destroyed. Inspection supplements the ordinary
+schema reader with a read-only catalog inventory in the selected schema scope;
+cleanup validates the writer's full destruction inventory. Both inventories
+include PostgreSQL catalog objects absent from the ordinary reader. The policy
+narrows the capability inventory without copying a data-loss or
+state-corruption defect.
 
 Strict schema workflows refuse YAML sources and an authored `schema apply`
 lint policy that the CE path cannot enforce. Commands that execute, convert,

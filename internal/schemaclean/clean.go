@@ -538,19 +538,56 @@ func functionObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 // inspectRuntimeObjects enumerates the object kinds a dialect's writer destroys
 // that the dbschema reader's snapshot does not carry.
 func inspectRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
-	coverage := coverageFor(conn.Info().Dialect)
-	switch {
-	case coverage.postgresRuntimeObjects:
-		return inspectPostgresRuntimeObjects(conn)
-	case coverage.mysqlStoredObjects:
-		return inspectMySQLStoredObjects(conn)
-	default:
-		return nil, nil
-	}
+	return InspectRuntimeObjects(conn, nil)
 }
 
-func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
-	schema := strings.TrimSpace(conn.Info().Schema)
+// InspectRuntimeObjects returns catalog objects that the ordinary schema
+// reader cannot model but which remain relevant to live-schema policy. When
+// schemas is non-empty, only those schema scopes are inventoried; nil uses the
+// connection's cleanup scope. The query is read-only and does not build or
+// execute a cleanup plan.
+func InspectRuntimeObjects(conn *dbschema.DatabaseConnection, schemas []string) ([]Object, error) {
+	coverage := coverageFor(conn.Info().Dialect)
+	if !coverage.postgresRuntimeObjects && !coverage.mysqlStoredObjects {
+		return nil, nil
+	}
+	objects := []Object{}
+	for _, schema := range runtimeObjectSchemas(conn, schemas) {
+		var scoped []Object
+		var err error
+		if coverage.postgresRuntimeObjects {
+			scoped, err = inspectPostgresRuntimeObjects(conn, schema)
+		} else {
+			scoped, err = inspectMySQLStoredObjects(conn, schema)
+		}
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, scoped...)
+	}
+	return objects, nil
+}
+
+func runtimeObjectSchemas(conn *dbschema.DatabaseConnection, schemas []string) []string {
+	if len(schemas) == 0 {
+		return []string{strings.TrimSpace(conn.Info().Schema)}
+	}
+	result := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		schema = strings.TrimSpace(schema)
+		if schema == "" || slices.Contains(result, schema) {
+			continue
+		}
+		result = append(result, schema)
+	}
+	if len(result) == 0 {
+		return []string{strings.TrimSpace(conn.Info().Schema)}
+	}
+	return result
+}
+
+func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
+	schema = strings.TrimSpace(schema)
 	if schema == "" {
 		schema = "public"
 	}
@@ -715,7 +752,7 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 		FROM runtime_objects
 		ORDER BY object_kind, object_name`, schema)
 	if err != nil {
-		return nil, fmt.Errorf("inspect cleanup PostgreSQL runtime objects: %w", err)
+		return nil, fmt.Errorf("inspect PostgreSQL runtime objects: %w", err)
 	}
 	defer rows.Close()
 
@@ -729,11 +766,11 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 		var table sql.NullString
 		var command string
 		if err := rows.Scan(&kind, &schema, &name, &selectorName, &implicit, &table, &command); err != nil {
-			return nil, fmt.Errorf("scan cleanup PostgreSQL runtime object: %w", err)
+			return nil, fmt.Errorf("scan PostgreSQL runtime object: %w", err)
 		}
 		objectType, ok := postgresRuntimeObjectType(kind)
 		if !ok {
-			return nil, fmt.Errorf("inspect cleanup PostgreSQL runtime objects: unsupported object kind %q", kind)
+			return nil, fmt.Errorf("inspect PostgreSQL runtime objects: unsupported object kind %q", kind)
 		}
 		objects = append(objects, Object{
 			Type:         objectType,
@@ -746,7 +783,7 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate cleanup PostgreSQL runtime objects: %w", err)
+		return nil, fmt.Errorf("iterate PostgreSQL runtime objects: %w", err)
 	}
 	return objects, nil
 }
@@ -758,8 +795,8 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 //
 // The scope mirrors mysql.Writer.cleanupSchema: the configured schema when the
 // connection pins one, otherwise the session's current database.
-func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection) ([]Object, error) {
-	schema := strings.TrimSpace(conn.Info().Schema)
+func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection, schema string) ([]Object, error) {
+	schema = strings.TrimSpace(schema)
 	rows, err := conn.Query(`
 		SELECT object_name, object_kind
 		FROM (
@@ -784,7 +821,7 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection) ([]Object, err
 		schema, schema, schema,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("inspect cleanup stored objects: %w", err)
+		return nil, fmt.Errorf("inspect stored objects: %w", err)
 	}
 	defer rows.Close()
 
@@ -793,11 +830,11 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection) ([]Object, err
 		var name string
 		var kind string
 		if err := rows.Scan(&name, &kind); err != nil {
-			return nil, fmt.Errorf("scan cleanup stored object: %w", err)
+			return nil, fmt.Errorf("scan stored object: %w", err)
 		}
 		objectType, ok := mysqlStoredObjectType(kind)
 		if !ok {
-			return nil, fmt.Errorf("inspect cleanup stored objects: unsupported object kind %q", kind)
+			return nil, fmt.Errorf("inspect stored objects: unsupported object kind %q", kind)
 		}
 		objects = append(objects, Object{
 			Type: objectType,
@@ -805,7 +842,7 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection) ([]Object, err
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate cleanup stored objects: %w", err)
+		return nil, fmt.Errorf("iterate stored objects: %w", err)
 	}
 	return objects, nil
 }
