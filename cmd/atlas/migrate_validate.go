@@ -59,7 +59,7 @@ func atlasMigrateValidateVerb() atlasVerb {
 // a checksum mismatch rather than as a conversion failure.
 func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, migratevalidate.AtlasDirectoryError(source.dir, err))
 	}
 	fsys := os.DirFS(source.dir)
 	names, err := atlasmigrateimport.SumFileNames(fsys, source.format)

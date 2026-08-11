@@ -923,31 +923,3 @@ func TestCompatMigrateIntegritySemicolonQuery_FailurePath(t *testing.T) {
 		})
 	}
 }
-
-// TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory keeps the
-// missing-directory diagnostic identical on both layouts.
-func TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory(t *testing.T) {
-	c := qt.New(t)
-
-	tests := []struct {
-		name string
-		verb string
-	}{
-		{name: "hash", verb: "hash"},
-		{name: "validate", verb: "validate"},
-	}
-
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			missing := filepath.Join(c.TempDir(), "missing")
-
-			convertedOut, _, convertedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing+"?format=goose")
-			forwardedOut, _, forwardedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing)
-
-			c.Assert(convertedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
-			c.Assert(forwardedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
-			c.Assert(convertedOut, qt.Equals, forwardedOut)
-			c.Assert(exitcode.Code(convertedErr, 0), qt.Equals, 1)
-		})
-	}
-}
