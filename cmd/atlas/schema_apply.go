@@ -63,6 +63,16 @@ type atlasSchemaApplyDisplayError struct {
 func (e atlasSchemaApplyDisplayError) Error() string { return e.text }
 func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
 
+func displayAtlasSchemaApplyError(err error) error {
+	const hclContext = "load --to schema: parse HCL schema: "
+
+	message, found := strings.CutPrefix(err.Error(), hclContext)
+	if !found {
+		return err
+	}
+	return atlasSchemaApplyDisplayError{text: message, err: err}
+}
+
 func newAtlasSchemaApplyCommand() *cobra.Command {
 	opts := atlasSchemaApplyOptions{}
 	cmd := &cobra.Command{
@@ -310,10 +320,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		// native surface, but they are extra bytes on the compatibility boundary.
 		// Strip only that measured pair so every unrelated apply error retains
 		// its existing context (stokaro/ptah#1235 cell 9.13).
-		if message, found := strings.CutPrefix(err.Error(), "load --to schema: parse HCL schema: "); found {
-			err = atlasSchemaApplyDisplayError{text: message, err: err}
-		}
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err))
 	}
 	if !plan.HasChanges() {
 		if formatOutput {
