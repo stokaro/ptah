@@ -222,8 +222,7 @@ refuse any query on it — `migration directory URL query parameters are not
 supported for this command` — so neither the note nor the variable applies
 there. The pinned community binary answers `unknown flag: --dir` on all six, so
 this is stricter than a CLI with no contract on those verbs rather than a parity
-gap; it is tracked in
-[#1013](https://github.com/stokaro/ptah/issues/1013).
+gap.
 
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
@@ -408,9 +407,9 @@ refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
 
 ### `ptah-compat migrate diff`
 
-Verifies the directory's `atlas.sum`, replays a local Atlas migration directory
-on `--dev-url`, diffs it against `--to`, and writes new Atlas-style migration
-files. `atlas.sum` updates only after every file was written; a failed write
+Verifies the directory's `atlas.sum`, replays the selected migration layout on
+`--dev-url`, diffs it against `--to`, and writes new migration files in that
+layout. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
 
 The checksum refusal comes first — before the dev database is connected to and
@@ -419,8 +418,15 @@ before `--to` and `--dev-url` are required at all, which is the order Atlas uses
 been hashed and already holds a migration is refused; one that does not exist
 yet, or holds no top-level `*.sql`, is not, which is how a project's first
 migration gets written. An unrecognized `--dir` query key is ignored; a
-`?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
-nothing writes planned migration SQL in a foreign tool's convention yet.
+`?format=` or `--dir-format` naming a non-`atlas` layout selects that layout for
+replay, file composition, and the refreshed `atlas.sum`. The directory is
+verified over that layout's covered file set before the dev database is opened.
+
+Layout selection and file composition do not make the foreign rollback
+semantically identical to native down generation yet. The rollback half omits
+native MySQL/MariaDB foreign-key backing-index cleanup and PostgreSQL
+concurrent-index reversal refinements. `atlas.sum` validates the emitted bytes,
+not those reverse semantics.
 
 Both spellings of the layout are read the way the other verbs that accept a
 `--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`
@@ -586,11 +592,8 @@ an Atlas CE stub.
 `?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
 aborts every `migrate checkpoint` invocation, so there is no CE behavior to
 diverge from here and refusing an unimplemented spelling loudly is the intended
-outcome. `migrate diff` is now the only other verb that refuses it, and there
-the refusal **is** a parity defect rather than a deliberate choice: CE exits 0
-and writes the migration in the named layout, reverse SQL included. It is
-tracked in the feature matrix and its linked issues. `migrate lint`, `new`,
-`set` and `status` honor the parameter today.
+outcome. The eight verbs that accept a `--dir` query honor the parameter today;
+`migrate diff` writes forward and reverse SQL in the selected layout.
 
 ### `ptah-compat migrate test [paths]`
 
