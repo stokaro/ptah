@@ -135,7 +135,7 @@ type MigrationFilePair struct {
 	DownFile      string // Path to the down migration file
 	ReportFile    string // Path to the safety report file, when requested
 	Version       int64  // Migration version (timestamp)
-	NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
+	NoTransaction bool   // Whether either direction requires +ptah no_transaction
 }
 
 // MigrationFiles represents the generated migration files. Files is the
@@ -927,37 +927,28 @@ func planGeneratedMigrationSpecs(
 		diff, skipped = diffpolicy.ApplyForDialect(diff, skipSet, info.Dialect)
 	}
 
-	concurrentIndexRefs, err := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
+	bidirectional, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: generated,
+		CurrentSchema: dbSchema,
+		Dialect:       info.Dialect,
+		Capabilities:  info.Capabilities,
+		Policy:        bidirectionalPlanPolicy(policy),
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	concurrentIndexDropRefs, err := concurrentIndexDropRefsForPolicy(diff, dbSchema, info, policy)
-	if err != nil {
-		return nil, nil, err
-	}
-	plannerOpts := planner.Options{
-		Capabilities:            info.Capabilities,
-		ConcurrentIndexRefs:     concurrentIndexRefs,
-		ConcurrentIndexDropRefs: concurrentIndexDropRefs,
-	}
-	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error generating up migration plan: %w", err)
-	}
+	upNodes := bidirectional.Forward.Nodes
 	if len(upNodes) == 0 {
 		return nil, nil, nil
 	}
-	requiresNoTransaction := planner.RequiresNoTransaction(info.Dialect, upNodes)
+	requiresNoTransaction := bidirectional.Forward.RequiresNoTransaction
 	if !requiresNoTransaction {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:         diff,
-			Qualifier:    qualifier,
-			Generated:    generated,
-			DBSchema:     dbSchema,
-			Dialect:      info.Dialect,
-			Capabilities: info.Capabilities,
-			Version:      version,
-			Name:         migrationName,
+			Plan:      bidirectional,
+			Qualifier: qualifier,
+			Version:   version,
+			Name:      migrationName,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -968,17 +959,10 @@ func planGeneratedMigrationSpecs(
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
 	if len(nodeGroups.transactional) == 0 {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                    diff,
-			Qualifier:               qualifier,
-			Generated:               generated,
-			DBSchema:                dbSchema,
-			Dialect:                 info.Dialect,
-			Capabilities:            info.Capabilities,
-			Version:                 version,
-			Name:                    migrationName,
-			ConcurrentIndexRefs:     concurrentIndexRefs,
-			ConcurrentIndexDropRefs: concurrentIndexDropRefs,
-			NoTransaction:           true,
+			Plan:      bidirectional,
+			Qualifier: qualifier,
+			Version:   version,
+			Name:      migrationName,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -989,19 +973,23 @@ func planGeneratedMigrationSpecs(
 		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
 	}
 
-	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexRefs, concurrentIndexDropRefs)
+	diffGroups := splitConcurrentIndexDiff(
+		diff,
+		bidirectional.Forward.ConcurrentIndexRefs,
+		bidirectional.Forward.ConcurrentIndexDropRefs,
+	)
 	specs := make([]generatedMigrationSpec, 0, 2)
 	allAssessments := make([]safety.StatementAssessment, 0)
 	if diffGroups.transactional.HasChanges() {
+		transactionalPlan, err := bidirectionalSubplan(bidirectional, diffGroups.transactional)
+		if err != nil {
+			return nil, nil, err
+		}
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:         diffGroups.transactional,
-			Qualifier:    qualifier,
-			Generated:    generated,
-			DBSchema:     dbSchema,
-			Dialect:      info.Dialect,
-			Capabilities: info.Capabilities,
-			Version:      version,
-			Name:         migrationName + "_transactional",
+			Plan:      transactionalPlan,
+			Qualifier: qualifier,
+			Version:   version,
+			Name:      migrationName + "_transactional",
 		})
 		if err != nil {
 			return nil, nil, err
@@ -1013,18 +1001,15 @@ func planGeneratedMigrationSpecs(
 		}
 	}
 	if diffGroups.noTransaction.HasChanges() {
+		noTransactionPlan, err := bidirectionalSubplan(bidirectional, diffGroups.noTransaction)
+		if err != nil {
+			return nil, nil, err
+		}
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                    diffGroups.noTransaction,
-			Qualifier:               qualifier,
-			Generated:               generated,
-			DBSchema:                dbSchema,
-			Dialect:                 info.Dialect,
-			Capabilities:            info.Capabilities,
-			Version:                 version,
-			Name:                    migrationName + "_concurrent_indexes",
-			ConcurrentIndexRefs:     concurrentIndexRefs,
-			ConcurrentIndexDropRefs: concurrentIndexDropRefs,
-			NoTransaction:           true,
+			Plan:      noTransactionPlan,
+			Qualifier: qualifier,
+			Version:   version,
+			Name:      migrationName + "_concurrent_indexes",
 		})
 		if err != nil {
 			return nil, nil, err
@@ -1035,6 +1020,18 @@ func planGeneratedMigrationSpecs(
 		}
 	}
 	return withSkipComments(specs, skipped), allAssessments, nil
+}
+
+func bidirectionalPlanPolicy(policy DiffPolicy) BidirectionalPlanPolicy {
+	createMode := ConcurrentIndexAutomatic
+	if policy.ConcurrentIndex {
+		createMode = ConcurrentIndexAll
+	}
+	dropMode := ConcurrentIndexDisabled
+	if policy.ConcurrentIndexDrop {
+		dropMode = ConcurrentIndexAll
+	}
+	return BidirectionalPlanPolicy{Create: createMode, Drop: dropMode}
 }
 
 // withSkipComments prepends the diff-policy omission comments to the first
@@ -1056,68 +1053,51 @@ func withSkipComments(specs []generatedMigrationSpec, skipped []diffpolicy.Skipp
 }
 
 type generatedMigrationSpecOptions struct {
-	Diff                    *types.SchemaDiff
-	Generated               *goschema.Database
-	DBSchema                *dbschematypes.DBSchema
-	Dialect                 string
-	Capabilities            capability.Capabilities
-	Version                 int64
-	Name                    string
-	ConcurrentIndexRefs     []types.IndexRef
-	ConcurrentIndexDropRefs []types.IndexRef
-	NoTransaction           bool
-	Qualifier               atlasmigrate.Qualifier
+	Plan      *BidirectionalSchemaPlan
+	Version   int64
+	Name      string
+	Qualifier atlasmigrate.Qualifier
 }
 
 func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
-	plannerOpts := planner.Options{
-		Capabilities:            opts.Capabilities,
-		ConcurrentIndexRefs:     opts.ConcurrentIndexRefs,
-		ConcurrentIndexDropRefs: opts.ConcurrentIndexDropRefs,
+	if opts.Plan == nil {
+		return generatedMigrationSpec{}, nil, fmt.Errorf("bidirectional migration plan is nil")
 	}
-	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
-	if err != nil {
-		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating up migration plan: %w", err)
-	}
-	if err := opts.Qualifier.ApplyToPlan(opts.Dialect, opts.Generated, upNodes); err != nil {
+	upNodes := opts.Plan.Forward.Nodes
+	if err := opts.Qualifier.ApplyToPlan(opts.Plan.Dialect, opts.Plan.DesiredSchema, upNodes); err != nil {
 		return generatedMigrationSpec{}, nil, err
 	}
-	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, opts.Dialect, opts.Capabilities)
+	assessments, err := safety.AssessRenderedWithCapabilities(
+		upNodes,
+		opts.Plan.Dialect,
+		opts.Plan.Capabilities,
+	)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error assessing migration safety: %w", err)
 	}
-	directiveOpts := generatedDirectiveOptions{skipTimeouts: opts.NoTransaction}
-	upSQL, err := renderGeneratedMigrationSQL(upNodes, opts.Dialect, opts.Capabilities, "UP", directiveOpts)
+	upDirectiveOpts := generatedDirectiveOptions{skipTimeouts: opts.Plan.Forward.RequiresNoTransaction}
+	upSQL, err := renderGeneratedMigrationSQL(
+		upNodes,
+		opts.Plan.Dialect,
+		opts.Plan.Capabilities,
+		"UP",
+		upDirectiveOpts,
+	)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating up migration SQL: %w", err)
 	}
 	if upSQL == "" {
 		return generatedMigrationSpec{}, assessments, nil
 	}
-	if opts.NoTransaction {
+	if opts.Plan.Forward.RequiresNoTransaction {
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
-	// opts.Diff is already diff-policy filtered by planGeneratedMigrationSpecs,
-	// so the down migration reverses only what the up migration actually did: a
-	// skipped destructive change is absent from the diff, so its inverse (e.g. a
-	// CREATE TABLE that would collide with the kept table) is never emitted.
-	// The rollback of a concurrent build must itself be non-blocking, so the
-	// two ref sets swap with the direction: an index the up file BUILT
-	// concurrently is DROPPED concurrently by the down file, and an index the
-	// up file DROPPED concurrently is REBUILT concurrently.
-	downOpts := downMigrationOptions{
-		directives:              directiveOpts,
-		qualifier:               opts.Qualifier,
-		capabilities:            opts.Capabilities,
-		concurrentIndexRefs:     opts.ConcurrentIndexDropRefs,
-		concurrentIndexDropRefs: opts.ConcurrentIndexRefs,
-	}
-	downSQL, err := generateDownMigrationSQLQualified(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, downOpts)
+	downSQL, err := renderGeneratedDownMigrationSQL(opts.Plan, opts.Qualifier)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
-	if opts.NoTransaction {
+	if opts.Plan.Reverse.RequiresNoTransaction {
 		downSQL = withNoTransactionDirective(downSQL)
 	}
 
@@ -1127,8 +1107,62 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 		UpSQL:         upSQL,
 		DownSQL:       downSQL,
 		Assessments:   assessments,
-		NoTransaction: opts.NoTransaction,
+		NoTransaction: opts.Plan.Forward.RequiresNoTransaction || opts.Plan.Reverse.RequiresNoTransaction,
 	}, assessments, nil
+}
+
+func bidirectionalSubplan(
+	full *BidirectionalSchemaPlan,
+	diff *types.SchemaDiff,
+) (*BidirectionalSchemaPlan, error) {
+	createRefs := selectIndexRefOccurrences(
+		diff.IndexAdditions(),
+		indexRefSet(full.Forward.ConcurrentIndexRefs),
+	)
+	dropRefs := selectIndexRefOccurrences(
+		diff.IndexRemovals(),
+		indexRefSet(full.Forward.ConcurrentIndexDropRefs),
+	)
+	return planBidirectionalSchemaDiffWithRefs(BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: full.DesiredSchema,
+		CurrentSchema: full.CurrentSchema,
+		Dialect:       full.Dialect,
+		Capabilities:  full.Capabilities,
+		Policy:        full.Policy,
+	}, full.Dialect, full.Capabilities, createRefs, dropRefs)
+}
+
+func renderGeneratedDownMigrationSQL(
+	plan *BidirectionalSchemaPlan,
+	qualifier atlasmigrate.Qualifier,
+) (string, error) {
+	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(plan.CurrentSchema)
+	nodes := plan.Reverse.Nodes
+	if err := qualifier.ApplyToPlan(plan.Dialect, priorSchema, nodes); err != nil {
+		return "", err
+	}
+	output, err := renderer.RenderSQLWithCapabilities(plan.Dialect, plan.Capabilities, nodes...)
+	if err != nil {
+		return "", err
+	}
+	statements := sqlutil.SplitSQLStatements(output)
+	if len(statements) == 0 {
+		return fmt.Sprintf(
+			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
+			time.Now().Format(time.RFC3339),
+		), nil
+	}
+	header := fmt.Sprintf(
+		"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
+		time.Now().Format(time.RFC3339),
+	)
+	directives := generatedDirectiveOptions{skipTimeouts: plan.Reverse.RequiresNoTransaction}
+	return withGeneratedTimeoutDirectivesForOptions(
+		header+strings.Join(statements, ";\n")+";",
+		plan.Dialect,
+		directives,
+	), nil
 }
 
 func renderGeneratedMigrationSQL(
@@ -1560,7 +1594,17 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.ConstraintsAddedWithTables = slices.Clone(diff.ConstraintsAddedWithTables)
 	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
 	clone.ConstraintsRemovedWithTables = slices.Clone(diff.ConstraintsRemovedWithTables)
+	clone.ForeignKeysRemovedWithTables = cloneForeignKeyRemovalInfos(diff.ForeignKeysRemovedWithTables)
 	return &clone
+}
+
+func cloneForeignKeyRemovalInfos(values []types.ForeignKeyRemovalInfo) []types.ForeignKeyRemovalInfo {
+	cloned := slices.Clone(values)
+	for position := range cloned {
+		cloned[position].Columns = slices.Clone(cloned[position].Columns)
+		cloned[position].ForeignColumns = slices.Clone(cloned[position].ForeignColumns)
+	}
+	return cloned
 }
 
 func cloneIdentifierSemantics(
@@ -1715,8 +1759,27 @@ func generateDownMigrationSQLQualified(
 	// introspected database schema so the reversed constraint additions can
 	// rebuild the full prior body from the pre-change DB state — that is exactly
 	// the definition the down must restore.
-	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
-	addMySQLFamilyForeignKeyBackingIndexRemovals(reverseDiff, diff, dbSchema, dialect)
+	reverseDiff := reverseSchemaDiffWithSchemaForDialect(diff, generated, dbSchema, dialect)
+	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
+		forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
+			diff,
+			generated,
+			dialect,
+			planner.Options{Capabilities: opts.capabilities},
+		)
+		if err != nil {
+			return "", fmt.Errorf("error planning forward migration: %w", err)
+		}
+		if err := addMySQLFamilyForeignKeyBackingIndexRemovals(
+			reverseDiff,
+			diff,
+			dbSchema,
+			dialect,
+			forwardNodes,
+		); err != nil {
+			return "", err
+		}
+	}
 
 	plannerOpts := planner.Options{
 		Capabilities:            opts.capabilities,
@@ -1804,55 +1867,6 @@ func supportsGeneratedTimeoutDirectives(dialect string) bool {
 	return slices.Contains([]string{platform.Postgres, platform.MySQL, platform.MariaDB}, normalized)
 }
 
-func addMySQLFamilyForeignKeyBackingIndexRemovals(
-	reverseDiff *types.SchemaDiff,
-	upDiff *types.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
-	dialect string,
-) {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-	default:
-		return
-	}
-
-	priorIndexes := dbIndexRefs(dbSchema)
-	removals := reverseDiff.IndexRemovals()
-	removed := indexRefSet(removals)
-	for _, add := range upDiff.ConstraintsAddedWithTables {
-		if add.TableName == "" || add.Name == "" || !strings.EqualFold(add.Type, "FOREIGN KEY") {
-			continue
-		}
-		ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
-		if _, exists := priorIndexes[ref]; exists {
-			continue
-		}
-		if _, exists := removed[ref]; exists {
-			continue
-		}
-		removals = append(removals, ref)
-		removed[ref] = struct{}{}
-	}
-	reverseDiff.SetIndexRemovals(removals)
-}
-
-func dbIndexRefs(dbSchema *dbschematypes.DBSchema) map[types.IndexRef]struct{} {
-	out := make(map[types.IndexRef]struct{})
-	if dbSchema == nil {
-		return out
-	}
-	for _, index := range dbSchema.Indexes {
-		out[types.IndexRef{Name: index.Name, TableName: index.TableName}] = struct{}{}
-		if index.Schema != "" {
-			out[types.IndexRef{
-				Name:      index.Name,
-				TableName: dbschematypes.QualifyTableName(index.Schema, index.TableName),
-			}] = struct{}{}
-		}
-	}
-	return out
-}
-
 // reverseSchemaDiff creates a reverse diff for generating down migrations
 //
 // Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
@@ -1894,7 +1908,10 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 //     direction. The table-qualified constraint collections are rebuilt from
 //     the pre-change database schema by reverseConstraintAdditions and
 //     reverseConstraintRemovals rather than swapped, because a down migration
-//     must restore the prior body, not the new one. ConstraintBackedIndexRemovals
+//     must restore the prior body, not the new one.
+//     ForeignKeysRemovedWithTables is supplemental input for forward removal
+//     ordering and is likewise rebuilt from the reversed FK additions rather
+//     than itself creating a reverse operation. ConstraintBackedIndexRemovals
 //     is derived too, and it redirects rather than reverses: it names the subset
 //     of the index removals whose object is really a UNIQUE constraint, so
 //     reverseIndexRemovals turns exactly that subset into constraint additions
@@ -1906,6 +1923,15 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // that by reflection: it zeroes one field of a fully populated diff at a time
 // and fails when doing so leaves the reverse plan unchanged.
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
+	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
+}
+
+func reverseSchemaDiffWithSchemaForDialect(
+	diff *types.SchemaDiff,
+	schema *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	dialect string,
+) *types.SchemaDiff {
 	reversed := &types.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
@@ -2008,6 +2034,7 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsAdded:             diff.ConstraintsRemoved,
 		ConstraintsRemoved:           diff.ConstraintsAdded,
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
+		ForeignKeysRemovedWithTables: reverseForeignKeyRemovals(diff, schema, dialect),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
 	// A re-created table brings its own primary key and field-level foreign keys
@@ -2320,13 +2347,12 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 			continue
 		}
 		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
-			Name:      add.Name,
-			TableName: add.TableName,
-			Type:      add.Type,
+			Name: add.Name, TableName: add.TableName, Type: add.Type,
 		})
 		handled[add.Name] = struct{}{}
 	}
 	infos = appendAddedTableForeignKeyRemovals(infos, seen, diff.TablesAdded, schema)
+	infos = appendAddedColumnForeignKeyRemovals(infos, seen, diff.TablesModified, schema)
 
 	// Index field-level constraint names to their owning table for the names
 	// that did not arrive with table-qualified info.
@@ -2368,9 +2394,242 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 			c := tableConstraints[name]
 			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
 		case fkTables[name] != "":
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: fkTables[name], Type: "FOREIGN KEY"})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+				Name: name, TableName: fkTables[name], Type: "FOREIGN KEY",
+			})
 		case checkTables[name] != "":
 			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK"})
+		}
+	}
+	return infos
+}
+
+func reverseForeignKeyRemovals(
+	diff *types.SchemaDiff,
+	schema *goschema.Database,
+	dialect string,
+) []types.ForeignKeyRemovalInfo {
+	if diff == nil || schema == nil {
+		return nil
+	}
+	collector := newReverseForeignKeyRemovalCollector(diff, dialect)
+	collector.addQualifiedAdditions(diff.ConstraintsAddedWithTables)
+	collector.addFieldForeignKeys(schema)
+	collector.addTableForeignKeys(schema)
+	return collector.result()
+}
+
+type reverseForeignKeyRemovalCollector struct {
+	diff        *types.SchemaDiff
+	semantics   identifier.Semantics
+	removals    map[tableMemberKey]types.ForeignKeyRemovalInfo
+	addedNames  map[string]struct{}
+	addedHosts  map[tableMemberKey]struct{}
+	addedTables map[string]struct{}
+}
+
+func newReverseForeignKeyRemovalCollector(
+	diff *types.SchemaDiff,
+	dialect string,
+) *reverseForeignKeyRemovalCollector {
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	collector := &reverseForeignKeyRemovalCollector{
+		diff:        diff,
+		semantics:   semantics,
+		removals:    make(map[tableMemberKey]types.ForeignKeyRemovalInfo),
+		addedNames:  make(map[string]struct{}, len(diff.ConstraintsAdded)),
+		addedHosts:  make(map[tableMemberKey]struct{}, len(diff.ConstraintsAddedWithTables)),
+		addedTables: stringSet(diff.TablesAdded),
+	}
+	for _, name := range diff.ConstraintsAdded {
+		collector.addedNames[semantics.IndexIdentityKey(name)] = struct{}{}
+	}
+	return collector
+}
+
+func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
+	constraints []types.ConstraintAdditionInfo,
+) {
+	for _, constraint := range constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		c.addedHosts[canonicalTableMemberKey(c.semantics, constraint.TableName, constraint.Name)] = struct{}{}
+		foreignColumns := slices.Clone(constraint.ForeignColumns)
+		if len(foreignColumns) == 0 && constraint.ForeignColumn != "" {
+			foreignColumns = []string{constraint.ForeignColumn}
+		}
+		c.add(types.ForeignKeyRemovalInfo{
+			Name: constraint.Name, TableName: constraint.TableName,
+			Columns: slices.Clone(constraint.Columns), ForeignTable: constraint.ForeignTable,
+			ForeignColumns: foreignColumns,
+		})
+	}
+}
+
+func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *goschema.Database) {
+	for _, field := range schema.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, field.StructName)
+		if table == nil {
+			continue
+		}
+		name := field.ForeignKeyName
+		if name == "" {
+			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+		}
+		if !c.selectedFieldForeignKey(*table, name, field.Name) {
+			continue
+		}
+		ref := fromschema.ParseForeignKeyReference(field.Foreign)
+		if ref == nil {
+			continue
+		}
+		c.add(types.ForeignKeyRemovalInfo{
+			Name: name, TableName: table.QualifiedName(), Columns: []string{field.Name},
+			ForeignTable: ref.Table, ForeignColumns: slices.Clone(ref.ReferencedColumns()),
+		})
+	}
+}
+
+func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema.Database) {
+	for _, constraint := range schema.Constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
+		if table == nil {
+			continue
+		}
+		name := constraint.Name
+		if name == "" {
+			name = defaultForeignKeyConstraintName(table.Name, constraint.Columns)
+		}
+		tableName := table.QualifiedName()
+		if constraint.Table != "" {
+			tableName = constraint.Table
+		}
+		if !c.selectedTableForeignKey(*table, tableName, name) {
+			continue
+		}
+		c.add(types.ForeignKeyRemovalInfo{
+			Name: name, TableName: tableName, Columns: slices.Clone(constraint.Columns),
+			ForeignTable:   constraint.ForeignTable,
+			ForeignColumns: slices.Clone(constraint.ForeignColumnsOrDefault()),
+		})
+	}
+}
+
+func (c *reverseForeignKeyRemovalCollector) selectedFieldForeignKey(
+	table goschema.Table,
+	name string,
+	column string,
+) bool {
+	return c.namedOrHostedAddition(table.QualifiedName(), name) ||
+		generatedTableInSet(table, c.addedTables) ||
+		tableDiffAddsColumn(c.diff.TablesModified, table, column)
+}
+
+func (c *reverseForeignKeyRemovalCollector) selectedTableForeignKey(
+	table goschema.Table,
+	tableName string,
+	name string,
+) bool {
+	return c.namedOrHostedAddition(tableName, name) || generatedTableInSet(table, c.addedTables)
+}
+
+func (c *reverseForeignKeyRemovalCollector) namedOrHostedAddition(table, name string) bool {
+	_, named := c.addedNames[c.semantics.IndexIdentityKey(name)]
+	_, hosted := c.addedHosts[canonicalTableMemberKey(c.semantics, table, name)]
+	return named || hosted
+}
+
+func (c *reverseForeignKeyRemovalCollector) add(info types.ForeignKeyRemovalInfo) {
+	if !completeForeignKeyRemovalInfo(info) {
+		return
+	}
+	key := canonicalTableMemberKey(c.semantics, info.TableName, info.Name)
+	c.removals[key] = info
+}
+
+func (c *reverseForeignKeyRemovalCollector) result() []types.ForeignKeyRemovalInfo {
+	result := make([]types.ForeignKeyRemovalInfo, 0, len(c.removals))
+	for _, removal := range c.removals {
+		result = append(result, removal)
+	}
+	slices.SortFunc(result, func(a, b types.ForeignKeyRemovalInfo) int {
+		if order := strings.Compare(a.TableName, b.TableName); order != 0 {
+			return order
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return result
+}
+
+func canonicalTableMemberKey(
+	semantics identifier.Semantics,
+	table string,
+	member string,
+) tableMemberKey {
+	return tableMemberKey{
+		table:  semantics.QualifiedTableIdentityKey(table),
+		member: semantics.IndexIdentityKey(member),
+	}
+}
+
+func completeForeignKeyRemovalInfo(info types.ForeignKeyRemovalInfo) bool {
+	return info.Name != "" && info.TableName != "" && len(info.Columns) > 0 &&
+		info.ForeignTable != "" && len(info.ForeignColumns) > 0
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func tableDiffAddsColumn(tableDiffs []types.TableDiff, table goschema.Table, column string) bool {
+	for _, tableDiff := range tableDiffs {
+		if (tableDiff.TableName == table.Name || tableDiff.TableName == table.QualifiedName() ||
+			tableDiff.TableName == table.StructName) && slices.Contains(tableDiff.ColumnsAdded, column) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendAddedColumnForeignKeyRemovals(
+	infos []types.ConstraintRemovalInfo,
+	seen map[tableMemberKey]struct{},
+	tableDiffs []types.TableDiff,
+	schema *goschema.Database,
+) []types.ConstraintRemovalInfo {
+	for _, tableDiff := range tableDiffs {
+		if len(tableDiff.ColumnsAdded) == 0 {
+			continue
+		}
+		table := generatedTableReference(schema.Tables, "", tableDiff.TableName)
+		if table == nil {
+			continue
+		}
+		for _, field := range schema.Fields {
+			if field.StructName != table.StructName ||
+				field.Foreign == "" ||
+				!slices.Contains(tableDiff.ColumnsAdded, field.Name) {
+				continue
+			}
+			name := field.ForeignKeyName
+			if name == "" {
+				name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+			}
+			info := types.ConstraintRemovalInfo{
+				Name: name, TableName: table.QualifiedName(), Type: "FOREIGN KEY",
+			}
+			infos = appendConstraintRemovalInfo(infos, seen, info)
 		}
 	}
 	return infos
@@ -2403,11 +2662,8 @@ func appendAddedTableForeignKeyRemovals(
 		if name == "" {
 			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
 		}
-		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
-			Name:      name,
-			TableName: tableName,
-			Type:      "FOREIGN KEY",
-		})
+		info := types.ConstraintRemovalInfo{Name: name, TableName: tableName, Type: "FOREIGN KEY"}
+		infos = appendConstraintRemovalInfo(infos, seen, info)
 	}
 
 	for _, constraint := range schema.Constraints {
@@ -2427,9 +2683,7 @@ func appendAddedTableForeignKeyRemovals(
 			name = defaultForeignKeyConstraintName(table.Name, constraint.Columns)
 		}
 		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
-			Name:      name,
-			TableName: tableName,
-			Type:      "FOREIGN KEY",
+			Name: name, TableName: tableName, Type: "FOREIGN KEY",
 		})
 	}
 

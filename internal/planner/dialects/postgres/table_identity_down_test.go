@@ -49,9 +49,19 @@ func downColumnDatabase(tableSchema string) *dbtypes.DBSchema {
 func planDownStatements(c *qt.C, generated *goschema.Database, database *dbtypes.DBSchema) []string {
 	c.Helper()
 	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
-	reversed := generator.ReverseSchemaDiff(diff, generated, database)
+	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: generated,
+		CurrentSchema: database,
+		Dialect:       "postgres",
+		Policy: generator.BidirectionalPlanPolicy{
+			Create: generator.ConcurrentIndexDisabled,
+			Drop:   generator.ConcurrentIndexDisabled,
+		},
+	})
+	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		reversed,
+		plan.Reverse.Diff,
 		dbschematogo.ConvertDBSchemaToGoSchema(database),
 		"postgres",
 	)

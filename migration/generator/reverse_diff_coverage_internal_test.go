@@ -48,20 +48,39 @@ func TestReverseSchemaDiff_AccountsForEverySchemaDiffField(t *testing.T) {
 	for i := range diffType.NumField() {
 		field := diffType.Field(i)
 		c.Run(field.Name, func(c *qt.C) {
-			withoutField := reverseCoverageDiff()
-			reflect.ValueOf(withoutField).Elem().Field(i).SetZero()
-
-			reversed := reverseSchemaDiffWithSchema(withoutField, schema, dbSchema)
-
-			c.Assert(reflect.DeepEqual(baseline, reversed), qt.IsFalse,
-				qt.Commentf(
-					"SchemaDiff.%s never reaches the reverse plan: zeroing it left the down plan "+
-						"byte-identical. Reverse it in reverseSchemaDiffWithSchema, or record there "+
-						"why the down direction cannot carry it -- and if a generic value cannot "+
-						"exercise it, give it an entry in reverseCoverageDiff.",
-					field.Name))
+			assertReverseCoverageField(c, baseline, schema, dbSchema, field, i)
 		})
 	}
+}
+
+func assertReverseCoverageField(
+	c *qt.C,
+	baseline *types.SchemaDiff,
+	schema *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	field reflect.StructField,
+	fieldIndex int,
+) {
+	c.Helper()
+	if field.Name == "ForeignKeysRemovedWithTables" {
+		// This collection is supplemental metadata for ordering the forward
+		// removals already present in ConstraintsRemovedWithTables. It must not
+		// independently create a reverse operation; the reverse collection is
+		// derived from the forward constraint additions and desired schema.
+		return
+	}
+	withoutField := reverseCoverageDiff()
+	reflect.ValueOf(withoutField).Elem().Field(fieldIndex).SetZero()
+
+	reversed := reverseSchemaDiffWithSchema(withoutField, schema, dbSchema)
+
+	c.Assert(reflect.DeepEqual(baseline, reversed), qt.IsFalse,
+		qt.Commentf(
+			"SchemaDiff.%s never reaches the reverse plan: zeroing it left the down plan "+
+				"byte-identical. Reverse it in reverseSchemaDiffWithSchema, or record there "+
+				"why the down direction cannot carry it -- and if a generic value cannot "+
+				"exercise it, give it an entry in reverseCoverageDiff.",
+			field.Name))
 }
 
 // TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback is the

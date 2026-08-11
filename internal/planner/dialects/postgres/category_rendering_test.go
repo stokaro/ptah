@@ -19,6 +19,10 @@ type categoryFixture struct {
 	generated *goschema.Database
 }
 
+var supplementalDiffCategories = map[string]string{
+	"ForeignKeysRemovedWithTables": "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
+}
+
 // TestEveryDiffCategoryRendersSQL walks the change categories of SchemaDiff and
 // asserts the PostgreSQL planner emits at least one node for each.
 //
@@ -60,9 +64,18 @@ func uncoveredDiffCategories(fixtures []categoryFixture) []string {
 		if covered[field.Name] {
 			continue
 		}
+		if _, supplemental := supplementalDiffCategories[field.Name]; supplemental {
+			continue
+		}
 		uncovered = append(uncovered, field.Name)
 	}
 	return uncovered
+}
+
+func TestSupplementalDiffCategoriesAreDocumented(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(supplementalDiffCategories["ForeignKeysRemovedWithTables"], qt.Not(qt.Equals), "")
 }
 
 func diffCategoryFixtures() []categoryFixture {

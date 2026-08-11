@@ -366,7 +366,10 @@ value or wants to pin a specific server version in tests/CI.
   row-level security, standalone sequences, and `SERIAL` columns. YugabyteDB
   enables `CREATE INDEX CONCURRENTLY`, roles, grants, row-level security,
   standalone sequences, `XML`, and advisory locks on the measured 2026.1 line;
-  only `DROP INDEX CONCURRENTLY` remains disabled. Spanner supports foreign
+  only `DROP INDEX CONCURRENTLY` remains disabled. Bidirectional generation
+  therefore keeps a concurrent YugabyteDB create and uses ordinary `DROP INDEX`
+  for its rollback; only the forward file requires no-transaction execution.
+  Spanner supports foreign
   keys, including circular and composite relationships, while disabling enums,
   sequences, RLS, XML, advisory locks, and concurrent indexes. Spanner accepts
   only `NO ACTION` and `CASCADE` for `ON DELETE`; any `ON UPDATE` action fails

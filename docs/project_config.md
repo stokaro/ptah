@@ -232,22 +232,24 @@ or reconcile the retained objects out of band.
 
 **`diff.concurrent_index: true`** requests `CREATE INDEX CONCURRENTLY` for every
 newly added index, superseding the built-in heuristic (which otherwise only
-builds indexes on already-populated tables concurrently). It remains gated on
-the target's capabilities: a PostgreSQL-compatible engine without concurrent
-index support keeps plain `CREATE INDEX`. Concurrent index builds cannot run
-inside a transaction, so the affected statements are split into a
-`+ptah no_transaction` migration file automatically.
+builds indexes on already-populated tables concurrently). The request fails
+when the target lacks concurrent create support. Concurrent index builds cannot
+run inside a transaction, so the affected statements are split into a
+`-- +ptah no_transaction` migration file automatically.
 
 **`diff.concurrent_index_drop: true`** requests `DROP INDEX CONCURRENTLY` for
-standalone index removals, under the same capability gate and the same
-`+ptah no_transaction` split. An index that is dropped and recreated under the
+standalone index removals, under the same bidirectional capability gate and the
+same `-- +ptah no_transaction` split. The explicit request fails when the target
+lacks concurrent drop support. An index that is dropped and recreated under the
 same identity is a redefinition rather than a standalone removal, and keeps the
 blocking drop the planner pairs with the rebuild.
 
-The setting governs the up direction only. The rollback of a concurrent index
-build is always emitted as `DROP INDEX CONCURRENTLY` where the target supports
-it, whatever this setting says: a blocking drop on rollback would take the very
-write lock the build was written to avoid.
+Each setting governs the up direction only. The rollback uses the matching
+concurrent operation when the target supports it and otherwise uses an ordinary
+blocking statement. For example, YugabyteDB emits a concurrent forward create
+and a blocking reverse drop because its measured capability set lacks `DROP
+INDEX CONCURRENTLY`. Only the direction carrying `CONCURRENTLY` requires
+`no_transaction` execution.
 
 Both settings **fail generation** when the index they name belongs to a
 PostgreSQL declaratively partitioned parent. PostgreSQL has no concurrent form

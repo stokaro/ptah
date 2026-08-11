@@ -98,13 +98,23 @@ func generateCheckpointFromDiff(
 	if err != nil {
 		return "", "", err
 	}
+	plan, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: schema,
+		CurrentSchema: empty,
+		Dialect:       info.Dialect,
+		Capabilities:  capabilities,
+		Policy: BidirectionalPlanPolicy{
+			Create: ConcurrentIndexAutomatic,
+			Drop:   ConcurrentIndexDisabled,
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("generate checkpoint: %w", err)
+	}
 	spec, _, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-		Diff:         diff,
-		Generated:    schema,
-		DBSchema:     empty,
-		Dialect:      info.Dialect,
-		Capabilities: capabilities,
-		Qualifier:    qualifier,
+		Plan:      plan,
+		Qualifier: qualifier,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)

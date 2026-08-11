@@ -43,6 +43,25 @@ type ConstraintRemovalInfo struct {
 	Type string `json:"type"`
 }
 
+// ForeignKeyRemovalInfo supplies the local and referenced columns needed to
+// order a foreign-key removal around column changes. It is supplemental to a
+// matching ConstraintRemovalInfo, correlated by table and constraint name; it
+// does not independently describe a schema change and is ignored without that
+// base removal. The separate collection keeps ConstraintRemovalInfo a
+// comparable three-field identity value.
+type ForeignKeyRemovalInfo struct {
+	// Name is the foreign-key constraint name.
+	Name string `json:"name"`
+	// TableName is the local table that owns the foreign key.
+	TableName string `json:"table_name"`
+	// Columns are the local columns in constraint order.
+	Columns []string `json:"columns,omitempty"`
+	// ForeignTable is the referenced table.
+	ForeignTable string `json:"foreign_table"`
+	// ForeignColumns are the referenced columns in constraint order.
+	ForeignColumns []string `json:"foreign_columns,omitempty"`
+}
+
 // ConstraintAdditionInfo contains the table-qualified definition of a
 // constraint that needs to be added, in parallel to the bare ConstraintsAdded
 // name list (mirroring ConstraintsRemovedWithTables).
@@ -348,6 +367,14 @@ type SchemaDiff struct {
 	// (ConstraintsRemoved by name, this one by table then name), so consumers must
 	// correlate entries by constraint name, never by position.
 	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+
+	// ForeignKeysRemovedWithTables carries the local and referenced column
+	// definitions needed to order foreign-key drops before column removals. It
+	// is a table-qualified subset of ConstraintsRemovedWithTables, correlated by
+	// table and constraint name rather than slice position. It is supplemental:
+	// an entry without a matching ConstraintsRemovedWithTables value is ignored
+	// and does not independently make the diff non-empty.
+	ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables"`
 }
 
 // EffectiveIdentifierSemantics returns live semantics stored on the diff, or

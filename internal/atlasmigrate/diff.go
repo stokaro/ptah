@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
@@ -62,30 +64,24 @@ type DiffOptions struct {
 	// from that converted view, the files are named and composed in that
 	// layout, and atlas.sum is computed over that layout's covered set.
 	DirFormat atlasmigrateimport.Format
-	// PlanReverse computes the diff that undoes a forward diff, so the layouts
-	// carrying a rollback half can be given one.
+	// PlanBidirectional plans the forward diff and the rollback that restores
+	// its pre-change state through one shared semantic capability.
 	//
 	// It is a hook rather than a call because of an import edge:
-	// [go.5x5.cz/ptah/migration/generator] — which owns the reverse rule and
-	// has since long before this verb existed — imports THIS package in ten
-	// places, so this package cannot import it back. The compatibility surface
-	// imports both and supplies
-	// [go.5x5.cz/ptah/migration/generator.ReverseSchemaDiff] here, the same way
-	// it already supplies VerifyDir and PreparePublication.
+	// [go.5x5.cz/ptah/migration/generator] owns bidirectional planning but
+	// imports this package for migration-directory and qualifier primitives, so
+	// this package cannot import it back. The compatibility surface imports both
+	// and adapts the exported result into BidirectionalPlan.
 	//
-	// Leaving it nil plans no reverse. Every rollback half is then empty, which
-	// is exactly right for the native Atlas layout: its migration files carry
-	// no rollback half at all.
-	PlanReverse func(
-		diff *difftypes.SchemaDiff,
-		desired *goschema.Database,
-		current *dbschematypes.DBSchema,
-	) *difftypes.SchemaDiff
-	Schemas     []string
-	LockTimeout time.Duration
-	Policy      atlasschema.DiffPolicy
-	Qualifier   Qualifier
-	DryRun      bool
+	// Leaving it nil preserves the native Atlas behavior: this package plans the
+	// forward direction directly and no rollback half, because that layout's
+	// migration files do not carry one.
+	PlanBidirectional func(BidirectionalPlanInput) (BidirectionalPlan, error)
+	Schemas           []string
+	LockTimeout       time.Duration
+	Policy            atlasschema.DiffPolicy
+	Qualifier         Qualifier
+	DryRun            bool
 	// Diagnostics receives non-fatal notices about desired objects whose
 	// creation cannot be planned safely from the replayed directory's coverage.
 	Diagnostics io.Writer
@@ -120,6 +116,27 @@ type DiffOptions struct {
 	// where it accepts, which is the direction compatibility forbids in both
 	// senses.
 	VerifyName func(string) error
+}
+
+// BidirectionalPlanInput is the primitive planning state passed through the
+// injected compatibility adapter. It deliberately contains no generator type,
+// preserving the dependency direction between the packages.
+type BidirectionalPlanInput struct {
+	Diff                  *difftypes.SchemaDiff
+	DesiredSchema         *goschema.Database
+	CurrentSchema         *dbschematypes.DBSchema
+	Dialect               string
+	Capabilities          capability.Capabilities
+	ConcurrentIndexCreate bool
+	ConcurrentIndexDrop   bool
+}
+
+// BidirectionalPlan is the primitive output internal migrate-diff rendering
+// consumes from the injected shared planner.
+type BidirectionalPlan struct {
+	ForwardNodes                 []ast.Node
+	ReverseNodes                 []ast.Node
+	ReverseRequiresNoTransaction bool
 }
 
 type DiffResult struct {
@@ -443,63 +460,71 @@ func planDiffFileContents(
 	format string,
 	opts DiffOptions,
 ) ([]MigrationFileContent, error) {
-	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
-		Capabilities:         info.Capabilities,
-		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("generate migration SQL: %w", err)
+	var planned BidirectionalPlan
+	if opts.PlanBidirectional == nil {
+		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
+			Capabilities:         info.Capabilities,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("generate migration SQL: %w", err)
+		}
+		planned.ForwardNodes = upNodes
+	} else {
+		var err error
+		planned, err = opts.PlanBidirectional(BidirectionalPlanInput{
+			Diff:                  diff,
+			DesiredSchema:         desired,
+			CurrentSchema:         current,
+			Dialect:               info.Dialect,
+			Capabilities:          info.Capabilities,
+			ConcurrentIndexCreate: opts.Policy.ConcurrentIndexCreate,
+			ConcurrentIndexDrop:   opts.Policy.ConcurrentIndexDrop,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("generate migration plan: %w", err)
+		}
 	}
-	if err := opts.Qualifier.ApplyToPlan(info.Dialect, desired, upNodes); err != nil {
+	if err := opts.Qualifier.ApplyToPlan(info.Dialect, desired, planned.ForwardNodes); err != nil {
 		return nil, err
 	}
-	contents, err := BuildMigrationFileContents(info.Dialect, info.Capabilities, format, upNodes)
+	contents, err := BuildMigrationFileContents(
+		info.Dialect,
+		info.Capabilities,
+		format,
+		planned.ForwardNodes,
+	)
 	if err != nil {
 		return nil, err
 	}
-	reverse, err := planDiffReverseStatements(diff, desired, current, info, opts)
-	if err != nil {
-		return nil, err
-	}
-	return attachReversePlan(contents, reverse, format)
-}
-
-// planDiffReverseStatements renders the statements that undo this run, or none
-// when the caller supplied no reverse rule.
-//
-// The reverse is planned against the PRE-CHANGE state — the replayed database
-// converted back to a schema — and not against the desired one, because that is
-// the state a rollback restores. Planning it against `desired` would describe
-// the world the up file creates and produce a rollback that undoes nothing.
-func planDiffReverseStatements(
-	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
-	opts DiffOptions,
-) ([]string, error) {
-	if opts.PlanReverse == nil || current == nil {
-		return nil, nil
-	}
-	reverseDiff := opts.PlanReverse(diff, desired, current)
-	if reverseDiff == nil {
-		return nil, nil
+	if len(planned.ReverseNodes) == 0 {
+		if err := validateMigrationFileContentsTransactionModes(opts.dirFormat(), contents); err != nil {
+			return nil, err
+		}
+		return contents, nil
 	}
 	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(current)
-	downNodes, err := planner.GenerateSchemaDiffASTWithOptions(
-		reverseDiff,
-		priorSchema,
-		info.Dialect,
-		planner.Options{Capabilities: info.Capabilities},
-	)
+	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, planned.ReverseNodes); err != nil {
+		return nil, err
+	}
+	reverse, err := renderMigrationStatements(info.Dialect, info.Capabilities, planned.ReverseNodes)
 	if err != nil {
 		return nil, fmt.Errorf("generate rollback SQL: %w", err)
 	}
-	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, downNodes); err != nil {
+	contents, err = attachReversePlan(
+		contents,
+		reverse,
+		format,
+		planned.ReverseRequiresNoTransaction,
+	)
+	if err != nil {
 		return nil, err
 	}
-	return renderMigrationStatements(info.Dialect, info.Capabilities, downNodes)
+	if err := validateMigrationFileContentsTransactionModes(opts.dirFormat(), contents); err != nil {
+		return nil, err
+	}
+	return contents, nil
 }
 
 func joinFileContentSQL(contents []MigrationFileContent) string {
