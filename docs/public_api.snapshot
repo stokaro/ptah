@@ -6614,14 +6614,19 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
-func ReverseSchemaDiff(diff *types.SchemaDiff, desired *goschema.Database, ...) *types.SchemaDiff
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error)
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 type BaselineShadowVerifyOptions struct{ ... }
+type BidirectionalPlanPolicy struct{ ... }
+type BidirectionalSchemaPlan struct{ ... }
+    func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
+type BidirectionalSchemaPlanOptions struct{ ... }
 type CheckpointFromShadowOptions struct{ ... }
+type ConcurrentIndexMode uint8
+    const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
@@ -6632,6 +6637,7 @@ type MigrationFiles struct{ ... }
 type MigrationPlan struct{ ... }
     func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
 type RollbackFromShadowOptions struct{ ... }
+type SchemaDirectionPlan struct{ ... }
 type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
 type ShadowVerificationResult struct{ ... }
@@ -6654,6 +6660,59 @@ type BaselineShadowVerifyOptions struct {
 }
     BaselineShadowVerifyOptions configures shadow verification before metadata
     baselining.
+
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalPlanPolicy
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalPlanPolicy struct {
+    Create ConcurrentIndexMode
+    Drop   ConcurrentIndexMode
+}
+    BidirectionalPlanPolicy selects concurrent-index behavior for the forward
+    migration. The reverse keeps the exact table-qualified index identities but
+    selects each concurrent modifier independently from the capability available
+    for that reverse operation. A valid rollback therefore falls back to an
+    ordinary statement when only the counterpart concurrent operation is absent.
+
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalSchemaPlan
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalSchemaPlan struct {
+    Dialect       string
+    Capabilities  capability.Capabilities
+    DesiredSchema *goschema.Database
+    CurrentSchema *dbschematypes.DBSchema
+    Policy        BidirectionalPlanPolicy
+    Forward       SchemaDirectionPlan
+    Reverse       SchemaDirectionPlan
+}
+    BidirectionalSchemaPlan is one validated forward and reverse schema plan.
+
+    DesiredSchema and CurrentSchema are the exact inputs the two directions were
+    planned against. They are retained so adapters can apply the same qualifier
+    or rendering policy without reconstructing either side. Treat them and both
+    direction plans as read-only.
+
+func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalSchemaPlanOptions
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalSchemaPlanOptions struct {
+    Diff          *types.SchemaDiff
+    DesiredSchema *goschema.Database
+    CurrentSchema *dbschematypes.DBSchema
+    Dialect       string
+    Capabilities  capability.Capabilities
+    Policy        BidirectionalPlanPolicy
+}
+    BidirectionalSchemaPlanOptions contains the complete state needed to plan a
+    schema change and the rollback that restores its pre-change state.
 
 
 ### go.5x5.cz/ptah/migration/generator.CheckpointFromShadowOptions
@@ -6688,6 +6747,16 @@ type CheckpointFromShadowOptions struct {
 }
     CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
 
+
+### go.5x5.cz/ptah/migration/generator.ConcurrentIndexMode
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type ConcurrentIndexMode uint8
+    ConcurrentIndexMode selects which index changes one direction plans with
+    PostgreSQL's CONCURRENTLY modifier.
+
+const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 
 ### go.5x5.cz/ptah/migration/generator.DiffPolicy
 
@@ -6802,7 +6871,7 @@ type MigrationFilePair struct {
     DownFile      string // Path to the down migration file
     ReportFile    string // Path to the safety report file, when requested
     Version       int64  // Migration version (timestamp)
-    NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
+    NoTransaction bool   // Whether either direction requires +ptah no_transaction
 }
     MigrationFilePair represents one generated up/down migration file pair.
 
@@ -6859,6 +6928,21 @@ type RollbackFromShadowOptions struct {
     ConnectTimeout time.Duration
 }
     RollbackFromShadowOptions configures VerifyRollbackFromShadow.
+
+
+### go.5x5.cz/ptah/migration/generator.SchemaDirectionPlan
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type SchemaDirectionPlan struct {
+    Diff                    *types.SchemaDiff
+    Nodes                   []ast.Node
+    ConcurrentIndexRefs     []types.IndexRef
+    ConcurrentIndexDropRefs []types.IndexRef
+    RequiresNoTransaction   bool
+}
+    SchemaDirectionPlan is one half of a bidirectional schema migration plan.
+    Its slices and diff are planning inputs and must be treated as read-only.
 
 
 ### go.5x5.cz/ptah/migration/generator.ShadowMismatch
@@ -6974,16 +7058,19 @@ func Parsers() []Parser
 package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type SourceMigration struct {
-    Version    int64
-    Name       string
-    UpSQL      string
-    DownSQL    string
-    Repeatable bool
+    Version       int64
+    Name          string
+    UpSQL         string
+    DownSQL       string
+    Repeatable    bool
+    NoTransaction bool
 }
     SourceMigration is one migration read from a source tool's directory,
     normalized to Ptah's up/down model. Version is the source tool's numeric
     version (integer counter or timestamp); it is preserved so ordering and
     collisions are detectable. DownSQL is empty when the source has no rollback.
+    NoTransaction reports a source-level whole-migration directive that applies
+    to both directions and must be translated to Ptah's native file directives.
 
 func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 
@@ -8673,6 +8760,7 @@ type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
 type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
+type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
 type IndexRef struct{ ... }
@@ -8898,6 +8986,30 @@ type EnumDiff struct {
             ValuesAdded: []string{"pending", "archived"},
             ValuesRemoved: []string{"deprecated"},
         }
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ForeignKeyRemovalInfo
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ForeignKeyRemovalInfo struct {
+    // Name is the foreign-key constraint name.
+    Name string `json:"name"`
+    // TableName is the local table that owns the foreign key.
+    TableName string `json:"table_name"`
+    // Columns are the local columns in constraint order.
+    Columns []string `json:"columns,omitempty"`
+    // ForeignTable is the referenced table.
+    ForeignTable string `json:"foreign_table"`
+    // ForeignColumns are the referenced columns in constraint order.
+    ForeignColumns []string `json:"foreign_columns,omitempty"`
+}
+    ForeignKeyRemovalInfo supplies the local and referenced columns needed to
+    order a foreign-key removal around column changes. It is supplemental to a
+    matching ConstraintRemovalInfo, correlated by table and constraint name;
+    it does not independently describe a schema change and is ignored without
+    that base removal. The separate collection keeps ConstraintRemovalInfo a
+    comparable three-field identity value.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.FunctionDiff
@@ -9354,6 +9466,14 @@ type SchemaDiff struct {
     // (ConstraintsRemoved by name, this one by table then name), so consumers must
     // correlate entries by constraint name, never by position.
     ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+
+    // ForeignKeysRemovedWithTables carries the local and referenced column
+    // definitions needed to order foreign-key drops before column removals. It
+    // is a table-qualified subset of ConstraintsRemovedWithTables, correlated by
+    // table and constraint name rather than slice position. It is supplemental:
+    // an entry without a matching ConstraintsRemovedWithTables value is ignored
+    // and does not independently make the diff non-empty.
+    ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables"`
 }
     SchemaDiff represents comprehensive differences between two database
     schemas.

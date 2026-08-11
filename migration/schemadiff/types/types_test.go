@@ -20,6 +20,14 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "supplemental foreign key removal metadata is not a change",
+			diff: &types.SchemaDiff{ForeignKeysRemovedWithTables: []types.ForeignKeyRemovalInfo{{
+				Name: "fk_parent", TableName: "children", Columns: []string{"parent_id"},
+				ForeignTable: "parents", ForeignColumns: []string{"id"},
+			}}},
+			expected: false,
+		},
+		{
 			name: "tables added",
 			diff: &types.SchemaDiff{
 				TablesAdded: []string{"users"},

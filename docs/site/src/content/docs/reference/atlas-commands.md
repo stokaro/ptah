@@ -417,16 +417,17 @@ before `--to` and `--dev-url` are required at all, which is the order Atlas uses
 — so nothing is created on a directory it refuses. A directory that has never
 been hashed and already holds a migration is refused; one that does not exist
 yet, or holds no top-level `*.sql`, is not, which is how a project's first
-migration gets written. An unrecognized `--dir` query key is ignored; a
-`?format=` or `--dir-format` naming a non-`atlas` layout selects that layout for
-replay, file composition, and the refreshed `atlas.sum`. The directory is
-verified over that layout's covered file set before the dev database is opened.
+migration gets written. An unrecognized `--dir` query key is ignored;
+`?format=` and `--dir-format` select any of the six writable layouts. The
+directory is verified over that layout's covered file set before the dev
+database is opened.
 
-Layout selection and file composition do not make the foreign rollback
-semantically identical to native down generation yet. The rollback half omits
-native MySQL/MariaDB foreign-key backing-index cleanup and PostgreSQL
-concurrent-index reversal refinements. `atlas.sum` validates the emitted bytes,
-not those reverse semantics.
+Goose carries a whole-file `-- +goose NO TRANSACTION` directive when either the
+forward or exact reverse plan requires no-transaction execution. The directive
+governs both sections. golang-migrate, Flyway, dbmate, and Liquibase remain
+fail-closed for those plans because their safe transaction metadata has not
+been proven. The Atlas layout remains forward-only and carries `-- atlas:txmode
+none` on its own file when required.
 
 Both spellings of the layout are read the way the other verbs that accept a
 `--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`

@@ -79,11 +79,12 @@ func atlasDirFormatSpelling(query url.Values) string {
 // reverse SQL as well as forward SQL, in five different shapes, and planned no
 // reverse at all.
 //
-// stokaro/ptah#1013 closed that. `migration/generator.ReverseSchemaDiff` is now
-// injected into the writer as [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanReverse],
-// the plan carries both directions, and each layout composes its own files. The
-// refusal is gone because the capability it stood in for arrived, which is the
-// only reason to remove a refusal of this kind.
+// stokaro/ptah#1013 closed that. The shared bidirectional generator plan is now
+// injected into the writer as
+// [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanBidirectional], the plan
+// carries both directions, and each layout composes its own files. The refusal
+// is gone because the capability it stood in for arrived, which is the only
+// reason to remove a refusal of this kind.
 //
 // What did NOT change is the position of the two checks around it:
 // [resolveWritingVerbDirFormat] still refuses an unparsable value ahead of the

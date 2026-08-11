@@ -120,6 +120,57 @@ func TestComposeMigrationArtifactsCarriesTheRollbackHalf(t *testing.T) {
 	}
 }
 
+func TestComposeMigrationArtifacts_GooseRepresentsWholeFileNoTransaction(t *testing.T) {
+	tests := []struct {
+		name                 string
+		sql                  string
+		noTransaction        bool
+		reverseNoTransaction bool
+		want                 string
+	}{
+		{
+			name: "ordinary file has no no-transaction directive",
+			sql:  "CREATE TABLE widgets (id INTEGER);",
+			want: "-- +goose Up\nCREATE TABLE widgets (id INTEGER);\n\n" +
+				"-- +goose Down\nDROP TABLE widgets;\n",
+		},
+		{
+			name:          "forward requirement marks the whole file",
+			sql:           "-- atlas:txmode none\n\nCREATE TABLE widgets (id INTEGER);",
+			noTransaction: true,
+			want: "-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE widgets (id INTEGER);\n\n" +
+				"-- +goose Down\nDROP TABLE widgets;\n",
+		},
+		{
+			name:                 "rollback requirement marks the whole file",
+			sql:                  "CREATE TABLE widgets (id INTEGER);",
+			reverseNoTransaction: true,
+			want: "-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE widgets (id INTEGER);\n\n" +
+				"-- +goose Down\nDROP TABLE widgets;\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			artifacts, err := composeMigrationArtifacts(
+				atlasmigrateimport.FormatGoose,
+				"widgets",
+				20240102030405,
+				[]MigrationFileContent{{
+					SQL: test.sql, DownSQL: "DROP TABLE widgets;",
+					NoTransaction: test.noTransaction, ReverseNoTransaction: test.reverseNoTransaction,
+				}},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(artifacts, qt.HasLen, 1)
+			c.Assert(string(artifacts[0].Contents), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestComposeMigrationArtifactsKeepsTheAtlasLayoutUnchanged is the control on
 // the whole file: the native layout's file name and bytes are what they were
 // before any of this existed.
@@ -136,13 +187,20 @@ func TestComposeMigrationArtifactsKeepsTheAtlasLayoutUnchanged(t *testing.T) {
 		20240102030405,
 		[]MigrationFileContent{
 			{SQL: "SELECT 1;", NameSuffix: "_transactional"},
-			{SQL: "SELECT 2;", NameSuffix: "_concurrent_indexes", DownSQL: "SELECT 3;"},
+			{
+				SQL: "-- atlas:txmode none\n\nSELECT 2;", NameSuffix: "_concurrent_indexes", DownSQL: "SELECT 3;",
+				NoTransaction:        true,
+				ReverseNoTransaction: true,
+			},
 		},
 	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(artifacts, qt.DeepEquals, []PublicationArtifact{
 		{Name: "20240102030405_add_col_transactional.sql", Contents: []byte("SELECT 1;")},
-		{Name: "20240102030406_add_col_concurrent_indexes.sql", Contents: []byte("SELECT 2;")},
+		{
+			Name:     "20240102030406_add_col_concurrent_indexes.sql",
+			Contents: []byte("-- atlas:txmode none\n\nSELECT 2;"),
+		},
 	})
 }

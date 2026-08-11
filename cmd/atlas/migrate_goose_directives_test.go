@@ -296,3 +296,40 @@ func TestMigrateApplyGooseNoDirectivesReallyExecutesTheBody(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out.String(), qt.Contains, "THIS")
 }
+
+// TestMigrateApplyGooseNoTransactionRunsOutsideATransaction proves that the
+// source-layout conversion carries Goose's whole-file execution metadata, not
+// only its SQL body. The second statement fails; the first table remains only
+// when apply honored NO TRANSACTION.
+func TestMigrateApplyGooseNoTransactionRunsOutsideATransaction(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyProjectMigration(
+		c,
+		migrationsDir,
+		"1_init.sql",
+		"-- +goose NO TRANSACTION\n"+
+			"-- +goose Up\n"+
+			"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"+
+			"INSERT INTO missing_table (id) VALUES (1);\n",
+	)
+	hashConvertedApplyDir(c, migrationsDir, "goose")
+	dbPath := filepath.Join(dir, "apply.db")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir + "?format=goose",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out.String(), qt.Contains, "missing_table")
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+}
