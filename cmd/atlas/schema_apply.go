@@ -55,6 +55,24 @@ type atlasSchemaApplyOptions struct {
 	lintPolicy projectconfig.LintConfig
 }
 
+type atlasSchemaApplyDisplayError struct {
+	text string
+	err  error
+}
+
+func (e atlasSchemaApplyDisplayError) Error() string { return e.text }
+func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
+
+func displayAtlasSchemaApplyError(err error) error {
+	const hclContext = "load --to schema: parse HCL schema: "
+
+	message, found := strings.CutPrefix(err.Error(), hclContext)
+	if !found {
+		return err
+	}
+	return atlasSchemaApplyDisplayError{text: message, err: err}
+}
+
 func newAtlasSchemaApplyCommand() *cobra.Command {
 	opts := atlasSchemaApplyOptions{}
 	cmd := &cobra.Command{
@@ -297,7 +315,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		Vars:                  schemaVars,
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		// The pinned community binary v1.3.0 reports the HCL diagnostic itself
+		// for this command. The loader's two context wrappers are useful on the
+		// native surface, but they are extra bytes on the compatibility boundary.
+		// Strip only that measured pair so every unrelated apply error retains
+		// its existing context (stokaro/ptah#1235 cell 9.13).
+		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err))
 	}
 	if !plan.HasChanges() {
 		if formatOutput {
