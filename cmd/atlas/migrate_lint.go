@@ -234,7 +234,7 @@ func runAtlasMigrateLint(
 	}
 	source, err := project.captureLocal(localDir)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+		return cmdutil.Fail(cmd, atlasMigrateLintDirCaptureError(localDir.Path, localDir.AllowedRoot, err))
 	}
 	dir := source.Display
 	lintOptions := migrationlintreport.Options{
