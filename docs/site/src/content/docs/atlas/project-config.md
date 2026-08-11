@@ -179,8 +179,10 @@ ptah-compat migrate apply --env local \
   --dir "file://migrations?format=goose"
 ```
 
-Apply and `ptah-compat migrate import` share one format-loading implementation,
-so they agree on every format's up/down semantics. See
+Apply and `ptah-compat migrate import` share the format parsers and up/down
+semantics. Conventional Liquibase import adds a persistence adapter that emits
+one numeric Atlas file per changeset; direct apply retains its numbered-file
+requirement and source-file boundary. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.src` and `env.schema.src` provide local schema-file defaults for
