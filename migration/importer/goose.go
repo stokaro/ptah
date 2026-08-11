@@ -173,15 +173,26 @@ const (
 	gooseStatementEndMarker   = "statement_end"
 	gooseNoTxMarker           = "notx"
 	gooseOtherMarker          = "other"
+	gooseNoTxDirective        = "-- +goose NO TRANSACTION"
 )
 
 // gooseMarker classifies a line as a goose annotation: the up/down section
 // markers, the StatementBegin/End and NO TRANSACTION directives (not SQL), or ""
 // for an ordinary SQL line.
 func gooseMarker(line string) string {
+	if strings.TrimSuffix(line, "\r") == gooseNoTxDirective {
+		return gooseNoTxMarker
+	}
+
 	trimmed := strings.TrimSpace(line)
 	directive, ok := strings.CutPrefix(trimmed, "-- +goose")
 	if !ok {
+		return ""
+	}
+	// Goose recognizes NO TRANSACTION only in the exact spelling above. Keep
+	// whitespace- or case-normalized lookalikes in the SQL body instead of
+	// silently changing the migration's transaction mode.
+	if strings.EqualFold(strings.Join(strings.Fields(directive), " "), "no transaction") {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(directive)) {
@@ -193,8 +204,6 @@ func gooseMarker(line string) string {
 		return gooseStatementBeginMarker
 	case "statementend":
 		return gooseStatementEndMarker
-	case "no transaction":
-		return gooseNoTxMarker
 	default:
 		return gooseOtherMarker
 	}

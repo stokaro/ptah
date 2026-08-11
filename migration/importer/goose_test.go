@@ -116,7 +116,7 @@ func TestGooseParseStatementBlockConsumesNoTransaction(t *testing.T) {
 -- +goose StatementBegin
 CREATE FUNCTION f() RETURNS int AS $$
 BEGIN
-  -- +goose NO TRANSACTION
+-- +goose NO TRANSACTION
   -- +goose NO TRANSACTION extra
   -- +goose Down
   RETURN 1;
@@ -153,6 +153,67 @@ $$ LANGUAGE plpgsql;`
 	down, err := os.ReadFile(filepath.Join(out, "0000000001_fn.down.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(down), qt.Equals, "-- +ptah no_transaction\nDROP FUNCTION f();")
+}
+
+func TestGooseParseNoTransactionRequiresExactMarker(t *testing.T) {
+	tests := []struct {
+		name          string
+		marker        string
+		noTransaction bool
+		wantSQL       string
+	}{
+		{
+			name:          "exact",
+			marker:        "-- +goose NO TRANSACTION",
+			noTransaction: true,
+			wantSQL:       "SELECT 0;\nSELECT 1;",
+		},
+		{
+			name:          "exact CRLF line",
+			marker:        "-- +goose NO TRANSACTION\r",
+			noTransaction: true,
+			wantSQL:       "SELECT 0;\nSELECT 1;",
+		},
+		{
+			name:    "lowercase",
+			marker:  "-- +goose no transaction",
+			wantSQL: "SELECT 0;\n-- +goose no transaction\nSELECT 1;",
+		},
+		{
+			name:    "space after prefix",
+			marker:  "-- +goose  NO TRANSACTION",
+			wantSQL: "SELECT 0;\n-- +goose  NO TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "space between words",
+			marker:  "-- +goose NO  TRANSACTION",
+			wantSQL: "SELECT 0;\n-- +goose NO  TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "leading space",
+			marker:  " -- +goose NO TRANSACTION",
+			wantSQL: "SELECT 0;\n -- +goose NO TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "trailing space",
+			marker:  "-- +goose NO TRANSACTION ",
+			wantSQL: "SELECT 0;\n-- +goose NO TRANSACTION \nSELECT 1;",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			parser, err := importer.ParserByName("goose")
+			c.Assert(err, qt.IsNil)
+
+			sql := "-- +goose Up\nSELECT 0;\n" + tt.marker + "\nSELECT 1;\n"
+			migrations, err := parser.Parse(fstest.MapFS{"1_marker.sql": {Data: []byte(sql)}})
+			c.Assert(err, qt.IsNil)
+			c.Assert(migrations, qt.HasLen, 1)
+			c.Assert(migrations[0].NoTransaction, qt.Equals, tt.noTransaction)
+			c.Assert(migrations[0].UpSQL, qt.Equals, tt.wantSQL)
+		})
+	}
 }
 
 func TestGooseParseErrors(t *testing.T) {

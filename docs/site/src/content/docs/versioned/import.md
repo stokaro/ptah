@@ -93,7 +93,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | Tool | Notes |
 | --- | --- |
 | golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. |
-| Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); a whole-file `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
+| Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
 | Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`); XML, YAML, and JSON changelogs are rejected with a message. |
 | dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); directive options such as `transaction:false` are dropped from the SQL. |
