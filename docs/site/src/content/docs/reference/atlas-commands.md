@@ -346,11 +346,12 @@ as it is on the other seven verbs that accept a `--dir` query — `apply`,
 `checkpoint`, `down`, `edit`, `rebase`, `rm` or `test`: those refuse a `--dir`
 query outright, as the shared rules above record.
 
-`--dir` must name a scheme on this verb and on `migrate diff`, as it must on
-every Atlas verb: `--dir migrations` is refused with
+`--dir` must name a scheme on `migrate new`, `diff`, `hash`, `validate`,
+`status`, and `lint`: `--dir migrations` is refused on those consumers with
 `missing scheme for dir url. Did you mean "file://migrations"?` and creates
-nothing. The same applies to its `PTAH_DIR` twin. The verbs that only read a
-directory still accept a bare path, as does `atlas.hcl` `migration.dir`
+nothing. The stderr line ends with the bytes `20 0a`: one ASCII space followed
+by the line feed. The same applies to its `PTAH_DIR` twin. A directory selected
+by `atlas.hcl` `migration.dir` still accepts a bare path
 ([#1186](https://github.com/stokaro/ptah/issues/1186)).
 
 Omitted entirely, `--dir` defaults to `file://migrations`, so

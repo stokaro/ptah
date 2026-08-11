@@ -52,11 +52,10 @@ type atlasVerb struct {
 	// Atlas flags. When nil, the generic applyAtlasProjectConfigToArgs is used.
 	projectConfig atlasProjectArgsApplier
 	// writesDir marks a verb that can CREATE the migration directory it was
-	// pointed at. It selects the scheme requirement in resolveAtlasMigrateSource
-	// (stokaro/ptah#1186): the community binary refuses a --dir naming no scheme
-	// on every verb, and the verbs that merely read one still accept it here,
-	// but a verb that writes turns that leniency into a directory materialised
-	// somewhere the operator did not name.
+	// pointed at. New uses this marker for its command-line scheme gate; diff
+	// owns the same gate separately, as do the read-only hash, validate, status
+	// and lint adapters. A directory named by atlas.hcl remains separate work in
+	// stokaro/ptah#1186.
 	writesDir bool
 }
 

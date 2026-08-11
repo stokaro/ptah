@@ -1517,20 +1517,23 @@ is rewritten, on a directory the gate refuses. A `--dir` naming a directory that
 does not exist yet is not a checksum error on either tool — both verbs create
 it, which is how the first migration of a project gets written.
 
-Because they create it, those same two verbs require `--dir` to name a scheme,
-which is what Atlas requires on every verb:
+The six shared scheme-hint consumers — `hash`, `validate`, `status`, `lint`,
+`new`, and `diff` — require their command-line `--dir` to name a scheme:
 
 ```bash
 ptah-compat migrate new add_users --dir migrations
 # Error: missing scheme for dir url. Did you mean "file://migrations"?
 ```
 
-Nothing is created. Ptah still accepts a bare path on the verbs that only read a
-directory, and on a directory named by `atlas.hcl` `migration.dir` — both remain
-looser than Atlas and are tracked in
-[#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
-`PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
-native `--migrations-dir` under its environment name, still takes a plain path.
+The stderr line ends with the bytes `20 0a`: one ASCII space followed by the
+line feed. Nothing is created. The requirement applies to `PTAH_DIR` as well as
+the flag.
+
+A directory named by `atlas.hcl` `migration.dir` still accepts a bare path and
+remains looser than Atlas, as tracked in
+[#1186](https://github.com/stokaro/ptah/issues/1186). `PTAH_MIGRATIONS_DIR`,
+which is the native `--migrations-dir` under its environment name, still takes a
+plain path.
 
 ### A migration name cannot contain a path separator
 

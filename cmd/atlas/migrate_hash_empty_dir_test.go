@@ -31,7 +31,7 @@ func TestMigrateHashRejectsExplicitEmptyDirectoryWithoutWritingSum(t *testing.T)
 	// stat and report `migrations directory : stat : no such file or directory`
 	// (stokaro/ptah#1186). What the test is really about is below: nothing is
 	// written either way.
-	c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean "file://"\?`)
+	c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean "file://"\? `)
 	_, statErr := os.Stat(filepath.Join(root, "atlas.sum"))
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
