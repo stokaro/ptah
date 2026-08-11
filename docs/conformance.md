@@ -1285,11 +1285,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output Shape: Three Cells From The #1235 Register
+## Output shape: four cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Three of them are closed here. Every row was
+exit code and disagree on the bytes. Four of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1298,6 +1298,7 @@ unpiped invocation.
 | 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
 | 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
+| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context | the same body prefixed by `load --to schema: parse HCL schema: ` | byte-identical |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1323,6 +1324,13 @@ connection's.
 `Schemas are synced, no changes to be made.`, does carry a period and already
 matched; only the `apply` spelling grew one. The native `ptah schema apply`
 sentence is untouched: no parity is owed on that surface.
+
+**9.13 changes only the compatibility error adapter.** Measured 2026-08-11
+with the file body `schema "main" {\n`, both binaries exited 1, wrote no stdout,
+and terminated stderr with a line feed. `ptah-compat` inserted the exact
+36-byte `load --to schema: parse HCL schema: ` prefix before the otherwise
+identical body. It now strips only that pair. Missing-file and other loader
+errors keep their context, and native `ptah schema apply` keeps both wrappers.
 
 ### `migrate new` writes the name it was given
 
