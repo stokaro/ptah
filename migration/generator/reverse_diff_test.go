@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -816,6 +817,21 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 		{Name: "fk_project_owner_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 		{Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 	})
+	c.Assert(result.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{
+		{
+			Name: "fk_project_owner_id", TableName: "app.projects",
+			Columns: []string{"owner_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
+		},
+		{
+			Name: "fk_projects_account_id", TableName: "app.projects",
+			Columns: []string{"account_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
+		},
+		{
+			Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects",
+			Columns: []string{"tenant_id", "reviewer_id"}, ForeignTable: "app.accounts",
+			ForeignColumns: []string{"tenant_id", "id"},
+		},
+	})
 }
 
 func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
@@ -835,6 +851,35 @@ func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionCol
 	c.Assert(info.Columns, qt.DeepEquals, []string{"tenant_id"})
 	c.Assert(info.ForeignColumns, qt.DeepEquals, []string{"id"})
 	c.Assert(info.ForeignColumn, qt.Equals, "id")
+}
+
+func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchemaBody(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
+		}},
+	}
+	desired := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []goschema.Field{{
+			StructName: "Child", Name: "parent_code", Type: "VARCHAR(36)",
+			Foreign: "parents(code)", ForeignKeyName: "FK_PARENT_CODE",
+		}},
+	}
+
+	reversed := reverseSchemaDiffWithSchemaForDialect(diff, desired, nil, platform.MySQL)
+
+	c.Assert(reversed.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{{
+		Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
+	}})
+	c.Assert(reversed.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{{
+		Name: "FK_PARENT_CODE", TableName: "children", Columns: []string{"parent_code"},
+		ForeignTable: "parents", ForeignColumns: []string{"code"},
+	}})
 }
 
 func fkOrderSchema() *goschema.Database {
@@ -1100,7 +1145,10 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 			name: "pre-change DB already had that index",
 			dbSchema: &dbschematypes.DBSchema{
 				Indexes: []dbschematypes.DBIndex{
-					{Name: "fk_users_account_id", TableName: "users"},
+					{
+						Name: "fk_users_account_id", TableName: "users",
+						Columns: []string{"account_id"},
+					},
 				},
 			},
 			wantIndex: false,

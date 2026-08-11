@@ -691,8 +691,13 @@ the accepted set matches Atlas. Directive names are case- and space-sensitive
 exactly as Atlas matches them: `-- +goose Up` is a directive, `-- +goose up`,
 `-- +goose  Up` and `-- +Goose Up` are not. A name may carry trailing text
 (`-- +goose Up extra` is still `Up`). Lines Atlas does not recognize as
-section directives — including `-- +goose NO TRANSACTION` — stay in the
-migration body and are executed with it.
+section directives stay in the migration body and are executed with it. The
+exact whole-file `-- +goose NO TRANSACTION` line becomes Atlas
+transaction-mode metadata in Ptah's converted view, so a direct `migrate apply`
+runs that source migration outside a transaction. Ptah consumes the exact
+annotation as metadata even inside `StatementBegin`; it does not leak into the
+SQL body. Near-matches and unrecognized annotation-like lines inside a statement
+block remain literal SQL; recognized section-changing directives still refuse.
 
 A goose file that contains **no** section directive at all is executed in full:
 the whole file is the migration. Such a file has no rollback section that could
@@ -949,6 +954,25 @@ splits it: a `<name>_transactional` file with the transactional statements
 followed by a `<name>_concurrent_indexes` file tagged `-- atlas:txmode none`;
 mixes that cannot be split automatically (for example enum value additions
 alongside table changes) are refused.
+
+The rollback is planned through the same dialect and capability set. Each
+reverse index operation selects concurrency independently. A concurrent create
+becomes the exact table-qualified concurrent drop when supported and a blocking
+drop otherwise; the same rule applies to the reverse create after a concurrent
+drop. An explicitly requested unsupported forward operation still fails before
+a migration or `atlas.sum` is published. On MySQL and MariaDB, the rollback
+also removes a backing index the forward foreign-key addition caused the server
+to create. It preserves any prior or same-run covering index, even under a
+different name, and refuses a plan that later removes every such index.
+
+All five foreign directory layouts carry the ordinary rollback. Goose can also
+represent a no-transaction requirement from either direction with its
+whole-file `-- +goose NO TRANSACTION` directive. That directive makes both
+sections non-transactional, including when only one direction requires it. The
+other four layouts remain fail-closed when either direction requires
+no-transaction execution because their safe transaction metadata has not been
+proven. The native Atlas layout remains forward-only and carries `--
+atlas:txmode none` on its own file when required.
 
 Docker dev databases fail explicitly until their provisioning semantics are
 implemented.
@@ -1458,10 +1482,12 @@ directive sections for `goose` and `dbmate`, and a Liquibase changeset with
 set. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
 selects a converted source directory through `?format=` on `--dir`.
 
-The foreign file shape is complete, but its rollback planning is still partial.
-It does not yet carry native MySQL/MariaDB foreign-key backing-index cleanup or
-PostgreSQL concurrent-index reversal refinements into the rollback half.
-`atlas.sum` validates the written bytes, not those reverse semantics.
+Goose writes `-- +goose NO TRANSACTION` when either direction requires
+no-transaction execution; its directive governs the whole file and therefore
+both directions. golang-migrate, Flyway, dbmate, and Liquibase remain
+fail-closed for those plans because their safe transaction metadata has not
+been proven. Their refusal happens before any migration file or `atlas.sum` is
+written.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean

@@ -20,12 +20,15 @@ import (
 // normalized to Ptah's up/down model. Version is the source tool's numeric
 // version (integer counter or timestamp); it is preserved so ordering and
 // collisions are detectable. DownSQL is empty when the source has no rollback.
+// NoTransaction reports a source-level whole-migration directive that applies
+// to both directions and must be translated to Ptah's native file directives.
 type SourceMigration struct {
-	Version    int64
-	Name       string
-	UpSQL      string
-	DownSQL    string
-	Repeatable bool
+	Version       int64
+	Name          string
+	UpSQL         string
+	DownSQL       string
+	Repeatable    bool
+	NoTransaction bool
 }
 
 // Parser reads a specific source tool's migration directory.

@@ -47,7 +47,38 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
 }
 
-func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedYugabyteTable(t *testing.T) {
+func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{EnumsModified: []types.EnumDiff{{
+		EnumName: "status", ValuesRemoved: []string{"retired"},
+	}}}
+	desired := &goschema.Database{Enums: []goschema.Enum{{
+		Name: "status", Values: []string{"active"},
+	}}}
+	current := &dbschematypes.DBSchema{Enums: []dbschematypes.DBEnum{{
+		Name: "status", Values: []string{"active", "retired"},
+	}}}
+
+	specs, _, err := planGeneratedMigrationSpecs(
+		diff,
+		desired,
+		current,
+		postgresInfo(capability.Postgres17()),
+		100,
+		"remove_retired_status",
+		DiffPolicy{},
+		atlasmigrate.Qualifier{},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 1)
+	c.Assert(specs[0].NoTransaction, qt.IsTrue)
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "-- +ptah no_transaction")
+	c.Assert(specs[0].DownSQL, qt.Contains, "-- +ptah no_transaction")
+	c.Assert(specs[0].DownSQL, qt.Contains, `ALTER TYPE "status" ADD VALUE 'retired'`)
+}
+
+func TestPlanGeneratedMigrationSpecs_YugabyteConcurrentCreateUsesBlockingRollback(t *testing.T) {
 	c := qt.New(t)
 
 	specs, assessments, err := planGeneratedMigrationSpecs(
@@ -69,10 +100,11 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedYugabyteTable(t 
 	c.Assert(len(assessments) > 0, qt.IsTrue)
 	c.Assert(specs[0].NoTransaction, qt.IsTrue)
 	c.Assert(specs[0].UpSQL, qt.Contains, "-- +ptah no_transaction")
-	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
-	c.Assert(specs[0].DownSQL, qt.Contains, "-- +ptah no_transaction")
+	c.Assert(specs[0].UpSQL, qt.Contains,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "-- +ptah no_transaction")
 	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email";`)
-	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "DROP INDEX CONCURRENTLY")
+	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "CONCURRENTLY")
 }
 
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePostgres(t *testing.T) {
@@ -280,14 +312,6 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 			wantUpSQL:         `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`,
 			wantDownSQL:       `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
 		},
-		{
-			name:              "capability withheld keeps the blocking drop",
-			policy:            DiffPolicy{ConcurrentIndexDrop: true},
-			info:              postgresInfo(capability.Postgres16().With(capability.DropIndexConcurrently, false)),
-			wantNoTransaction: false,
-			wantUpSQL:         `DROP INDEX IF EXISTS "idx_users_email";`,
-			wantDownSQL:       `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
-		},
 	}
 
 	for _, tt := range tests {
@@ -312,6 +336,24 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 			c.Assert(specs[0].DownSQL, qt.Contains, tt.wantDownSQL)
 		})
 	}
+}
+
+func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropRequiresCapability(t *testing.T) {
+	c := qt.New(t)
+
+	specs, _, err := planGeneratedMigrationSpecs(
+		indexRemovalOnlyDiff(),
+		indexOnlyGeneratedSchema(),
+		indexRemovalDBSchema(),
+		postgresInfo(capability.Postgres16().With(capability.DropIndexConcurrently, false)),
+		100,
+		"drop_user_email_index",
+		DiffPolicy{ConcurrentIndexDrop: true},
+		atlasmigrate.Qualifier{},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `DROP INDEX CONCURRENTLY requested by diff\.concurrent_index\.drop cannot be generated for dialect "postgres": target capability drop_index_concurrently is unavailable`)
+	c.Assert(specs, qt.HasLen, 0)
 }
 
 // TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional

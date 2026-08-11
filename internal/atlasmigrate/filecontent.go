@@ -2,12 +2,14 @@ package atlasmigrate
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/migration/planner"
 )
 
@@ -38,7 +40,7 @@ type MigrationFileContent struct {
 	// is. It is empty when the run planned no reverse — which is every run on
 	// the native Atlas layout, whose migration files carry no rollback half at
 	// all, and any run whose caller supplied no
-	// [DiffOptions.PlanReverse].
+	// [DiffOptions.PlanBidirectional].
 	DownSQL string
 	// Statements are the forward statements SQL renders, in apply order, each
 	// carrying whatever leading comment the planner emitted for it.
@@ -51,6 +53,9 @@ type MigrationFileContent struct {
 	// ReverseStatements are the statements that undo Statements, in the order
 	// they must run. Empty exactly when DownSQL is.
 	ReverseStatements []string
+	// ReverseNoTransaction reports that the rollback contains statements the
+	// database refuses inside a transaction block.
+	ReverseNoTransaction bool
 	// NoTransaction reports whether the file carries the
 	// `-- atlas:txmode none` directive.
 	NoTransaction bool
@@ -153,6 +158,7 @@ func attachReversePlan(
 	contents []MigrationFileContent,
 	reverse []string,
 	format string,
+	requiresNoTransaction bool,
 ) ([]MigrationFileContent, error) {
 	if len(contents) == 0 || len(reverse) == 0 {
 		return contents, nil
@@ -164,7 +170,47 @@ func attachReversePlan(
 	last := len(contents) - 1
 	contents[last].DownSQL = sql
 	contents[last].ReverseStatements = reverse
+	contents[last].ReverseNoTransaction = requiresNoTransaction
 	return contents, nil
+}
+
+// validateForeignTransactionMode refuses a foreign artifact unless its source
+// format can represent the planned execution requirement. Goose is the one
+// proven foreign format here: `-- +goose NO TRANSACTION` governs its whole file,
+// which contains both the up and down sections. The other formats remain
+// fail-closed until their directional metadata is measured and implemented.
+func validateForeignTransactionMode(
+	format atlasmigrateimport.Format,
+	content MigrationFileContent,
+) error {
+	if ReadsNativeAtlasDir(format) || format == atlasmigrateimport.FormatGoose {
+		return nil
+	}
+	if content.NoTransaction {
+		return fmt.Errorf(
+			"migration directory format %q cannot safely express a forward migration that requires no-transaction execution; no migration files or atlas.sum were written",
+			format,
+		)
+	}
+	if !content.ReverseNoTransaction {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration directory format %q cannot safely express a rollback that requires no-transaction execution; no migration files or atlas.sum were written",
+		format,
+	)
+}
+
+func validateMigrationFileContentsTransactionModes(
+	format atlasmigrateimport.Format,
+	contents []MigrationFileContent,
+) error {
+	for _, content := range contents {
+		if err := validateForeignTransactionMode(format, content); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // withTxModeNoneDirective tags one planned file with the Atlas

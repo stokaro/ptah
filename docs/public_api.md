@@ -248,6 +248,39 @@ plan records the migration-directory snapshot used during planning and refuses
 publication with `generator.ErrMigrationDirectoryChanged` if that history
 changed.
 
+`migration/generator.PlanBidirectionalSchemaDiff` is the lower-level planning
+boundary for callers that already hold a schema diff. Its input binds the diff,
+desired and current schemas, normalized dialect capabilities, and concurrent
+index policy into one result with forward and reverse diffs, AST nodes, exact
+table-qualified concurrent-index references, and an independent
+`RequiresNoTransaction` classification for each direction. The reverse restores
+the introspected current schema rather than only exchanging structural lists.
+On MySQL and MariaDB, that includes removing a foreign-key backing index created
+by the forward migration while preserving any prior or same-run index whose
+leading key columns cover the foreign key. Planning refuses an ambiguous
+incomplete-index shape or a plan that later removes every covering index.
+
+`SchemaDiff.ForeignKeysRemovedWithTables` carries the local and referenced
+columns needed for that ordering as supplemental metadata keyed by table and
+constraint name. It does not independently represent a removal and is ignored
+without a matching `ConstraintsRemovedWithTables` entry, leaving the existing
+comparable `ConstraintRemovalInfo` value unchanged.
+
+`ConcurrentIndexAutomatic` uses the native populated-table heuristic,
+`ConcurrentIndexDisabled` selects ordinary index statements, and
+`ConcurrentIndexAll` requires the requested forward target capability. The
+reverse selects its concurrent modifier independently: it uses the matching
+concurrent capability when available and an ordinary blocking statement when
+the reverse-only capability is absent. An explicitly requested unsupported
+forward operation still fails. This bidirectional API replaces the pre-v1
+structural-only `ReverseSchemaDiff` function; no compatibility wrapper is
+retained.
+
+For generated pairs, `MigrationFilePair.NoTransaction` is true when either the
+forward or reverse file requires non-transactional execution; inspect the two
+directional `RequiresNoTransaction` values when a caller needs to distinguish
+which side carries the requirement.
+
 `WriteFilesContext` additionally lets an embedder cancel waiting for the
 cross-process publication lock and rejects concurrent use of one plan with
 `generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience

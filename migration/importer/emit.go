@@ -54,7 +54,9 @@ type plannedFile struct {
 // carrying the original version into the description so history stays traceable.
 // A source name that sanitizes to empty falls back to "migration". A repeatable
 // source migration (Ptah has no such concept) is imported as a one-time
-// migration ordered after every versioned one, named "repeatable_<name>".
+// migration ordered after every versioned one, named "repeatable_<name>". A
+// source whole-migration no-transaction mode is translated onto both Ptah
+// directions so importing never loses its execution semantics.
 //
 // The whole plan is validated (every generated file name round-trips through
 // Ptah's reader) BEFORE any file is written, and a mid-write failure removes the
@@ -105,8 +107,13 @@ func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResul
 		if downSQL == "" {
 			downSQL = emptyDownSQL
 		}
+		upSQL := migration.UpSQL
+		if migration.NoTransaction {
+			upSQL = addImportedNoTransactionDirective(upSQL)
+			downSQL = addImportedNoTransactionDirective(downSQL)
+		}
 		planned = append(planned,
-			plannedFile{upName, []byte(migration.UpSQL)},
+			plannedFile{upName, []byte(upSQL)},
 			plannedFile{downName, []byte(downSQL)},
 		)
 		result.Files = append(result.Files, upName, downName)
@@ -144,6 +151,10 @@ func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResul
 	}
 	result.SumFile = sumName
 	return result, nil
+}
+
+func addImportedNoTransactionDirective(sql string) string {
+	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
 }
 
 // needsVersionRemap reports whether any non-repeatable version falls outside

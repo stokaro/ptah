@@ -554,7 +554,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 	return result, nil
 }
 
-// affectedForeignKey identifies a foreign key that a MySQL/MariaDB column-type
+// affectedForeignKey identifies a foreign key that a MySQL/MariaDB column
 // change forces the planner to drop before the column modifications and,
 // depending on ownership, recreate afterward (issue #694).
 //
@@ -584,7 +584,7 @@ type constraintHostKey struct {
 }
 
 // columnTypeForeignKeyPlan holds the foreign-key statements the planner emits
-// around column-type changes on MySQL/MariaDB (issue #694).
+// around column changes on MySQL/MariaDB (issue #694).
 //
 //   - drops are the DROP FOREIGN KEY statements emitted BEFORE the column
 //     modifications, for every affected foreign key that already exists.
@@ -601,14 +601,16 @@ type columnTypeForeignKeyPlan struct {
 	dropped map[constraintHostKey]struct{}
 }
 
-// planColumnTypeForeignKeyChanges determines which foreign keys a column-type
-// change forces the planner to drop before the modifications and recreate
-// afterward (issue #694), and how ownership of the drop and re-add is split with
-// the constraint machinery.
+// planColumnTypeForeignKeyChanges determines which foreign keys a column change
+// forces the planner to drop before the modifications and recreate afterward
+// (issue #694), and how ownership of the drop and re-add is split with the
+// constraint machinery.
 //
 // A foreign key is affected when one of its referencing or referenced columns is
-// changing type. Only column *type* changes matter; a nullability or default
-// change keeps the referential type match and is left to a bare MODIFY.
+// changing type, or when the forward plan removes a column from the key's host
+// table. MySQL/MariaDB require the FK to be dropped before either operation. A
+// nullability or default change keeps the referential type match and is left to
+// a bare MODIFY.
 //
 // Ownership is resolved per (table, name) — never the bare name, which a foreign
 // key shared across host tables would conflate (issue #197/#207):
@@ -628,13 +630,21 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *types.SchemaDiff, genera
 	if diff == nil || generated == nil {
 		return plan
 	}
-	typeChanged := columnTypeChangesByTable(diff)
-	if len(typeChanged) == 0 {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	blockingChanges := foreignKeyBlockingColumnChangesByTable(diff, semantics)
+	if len(blockingChanges) == 0 {
 		return plan
 	}
 
-	addedHosts, removedHosts := foreignKeyConstraintDiffHosts(diff)
-	drops, readds := collectColumnTypeForeignKeyActions(generated, diff, typeChanged, addedHosts, removedHosts)
+	addedHosts, removedHosts := foreignKeyConstraintDiffHosts(diff, semantics)
+	drops, readds := collectColumnTypeForeignKeyActions(
+		generated,
+		diff,
+		blockingChanges,
+		addedHosts,
+		removedHosts,
+		semantics,
+	)
 
 	for _, fk := range drops {
 		plan.drops = append(plan.drops, p.dropConstraintNode(types.ConstraintRemovalInfo{
@@ -642,7 +652,7 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *types.SchemaDiff, genera
 			TableName: fk.table,
 			Type:      "FOREIGN KEY",
 		}))
-		plan.dropped[constraintHostKey{table: fk.table, name: fk.name}] = struct{}{}
+		plan.dropped[canonicalConstraintHostKey(fk.table, fk.name, semantics)] = struct{}{}
 	}
 	for _, fk := range readds {
 		plan.readds = append(plan.readds, p.createForeignKeyAlterStatement(fk.table, fk.name, fk.columns, fk.ref))
@@ -659,18 +669,20 @@ func collectColumnTypeForeignKeyActions(
 	diff *types.SchemaDiff,
 	typeChanged map[string]map[string]struct{},
 	addedHosts, removedHosts map[constraintHostKey]struct{},
+	semantics identifier.Semantics,
 ) (drops, readds []affectedForeignKey) {
 	seen := make(map[constraintHostKey]struct{})
+	foreignKeyRemovalDetails := foreignKeyRemovalDetailsByHost(diff, semantics)
 
 	// Existing foreign keys drawn from the schema handed to the planner: the
 	// target schema on the up path, the introspected pre-change schema on the
 	// down path. This covers unchanged and modified keys. Added-only keys are
 	// not in the database yet, so they are not pre-dropped here.
 	for _, fk := range candidateForeignKeys(generated) {
-		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged) {
+		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged, semantics) {
 			continue
 		}
-		hostKey := constraintHostKey{table: fk.table, name: fk.name}
+		hostKey := canonicalConstraintHostKey(fk.table, fk.name, semantics)
 		if _, done := seen[hostKey]; done {
 			continue
 		}
@@ -695,14 +707,19 @@ func collectColumnTypeForeignKeyActions(
 		if !strings.EqualFold(info.Type, "FOREIGN KEY") {
 			continue
 		}
-		hostKey := constraintHostKey{table: info.TableName, name: info.Name}
+		hostKey := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
 		if _, added := addedHosts[hostKey]; added {
 			continue // MODIFY: handled from the schema above
 		}
 		if _, done := seen[hostKey]; done {
 			continue
 		}
-		if _, changed := typeChanged[info.TableName]; !changed {
+		details, detailed := foreignKeyRemovalDetails[canonicalConstraintHostKey(
+			info.TableName,
+			info.Name,
+			semantics,
+		)]
+		if detailed && !foreignKeyRemovalTouchesBlockingChange(details, typeChanged, semantics) {
 			continue
 		}
 		seen[hostKey] = struct{}{}
@@ -736,17 +753,20 @@ func sortAffectedForeignKeys(fks []affectedForeignKey) {
 // inline-relation mixin, issue #197/#207) can be a modification on one host and
 // untouched on another, and only the modified host defers its re-add to the
 // constraint machinery.
-func foreignKeyConstraintDiffHosts(diff *types.SchemaDiff) (added, removed map[constraintHostKey]struct{}) {
+func foreignKeyConstraintDiffHosts(
+	diff *types.SchemaDiff,
+	semantics identifier.Semantics,
+) (added, removed map[constraintHostKey]struct{}) {
 	added = make(map[constraintHostKey]struct{})
 	removed = make(map[constraintHostKey]struct{})
 	for _, info := range diff.ConstraintsAddedWithTables {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
-			added[constraintHostKey{table: info.TableName, name: info.Name}] = struct{}{}
+			added[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = struct{}{}
 		}
 	}
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
-			removed[constraintHostKey{table: info.TableName, name: info.Name}] = struct{}{}
+			removed[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = struct{}{}
 		}
 	}
 	return added, removed
@@ -863,19 +883,33 @@ func appendTableLevelForeignKeys(candidates []affectedForeignKey, generated *gos
 // this diff, keyed table -> set of column names. Only "type" changes are
 // collected; nullability, default, uniqueness, and similar changes do not
 // disturb a foreign key's referential type match.
-func columnTypeChangesByTable(diff *types.SchemaDiff) map[string]map[string]struct{} {
+func foreignKeyBlockingColumnChangesByTable(
+	diff *types.SchemaDiff,
+	semantics identifier.Semantics,
+) map[string]map[string]struct{} {
 	result := make(map[string]map[string]struct{})
 	for _, tableDiff := range diff.TablesModified {
+		tableIdentity := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
 		for _, colDiff := range tableDiff.ColumnsModified {
 			if strings.TrimSpace(colDiff.Changes["type"]) == "" {
 				continue
 			}
-			columns := result[tableDiff.TableName]
+			columns := result[tableIdentity]
 			if columns == nil {
 				columns = make(map[string]struct{})
-				result[tableDiff.TableName] = columns
+				result[tableIdentity] = columns
 			}
-			columns[colDiff.ColumnName] = struct{}{}
+			columns[semantics.ColumnIdentityKey(colDiff.ColumnName)] = struct{}{}
+		}
+		if len(tableDiff.ColumnsRemoved) > 0 {
+			columns := result[tableIdentity]
+			if columns == nil {
+				columns = make(map[string]struct{})
+				result[tableIdentity] = columns
+			}
+			for _, column := range tableDiff.ColumnsRemoved {
+				columns[semantics.ColumnIdentityKey(column)] = struct{}{}
+			}
 		}
 	}
 	return result
@@ -883,18 +917,69 @@ func columnTypeChangesByTable(diff *types.SchemaDiff) map[string]map[string]stru
 
 // foreignKeyTouchesTypeChange reports whether any of the foreign key's local or
 // referenced columns is changing type.
-func foreignKeyTouchesTypeChange(fk affectedForeignKey, typeChanged map[string]map[string]struct{}) bool {
+func foreignKeyTouchesTypeChange(
+	fk affectedForeignKey,
+	typeChanged map[string]map[string]struct{},
+	semantics identifier.Semantics,
+) bool {
+	localChanges := typeChanged[semantics.QualifiedTableIdentityKey(fk.table)]
 	for _, column := range fk.columns {
-		if _, ok := typeChanged[fk.table][column]; ok {
+		if _, ok := localChanges[semantics.ColumnIdentityKey(column)]; ok {
 			return true
 		}
 	}
+	referencedChanges := typeChanged[semantics.QualifiedTableIdentityKey(fk.ref.Table)]
 	for _, column := range fk.ref.ReferencedColumns() {
-		if _, ok := typeChanged[fk.ref.Table][column]; ok {
+		if _, ok := referencedChanges[semantics.ColumnIdentityKey(column)]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+func foreignKeyRemovalTouchesBlockingChange(
+	info types.ForeignKeyRemovalInfo,
+	changes map[string]map[string]struct{},
+	semantics identifier.Semantics,
+) bool {
+	localChanges := changes[semantics.QualifiedTableIdentityKey(info.TableName)]
+	for _, column := range info.Columns {
+		if _, changed := localChanges[semantics.ColumnIdentityKey(column)]; changed {
+			return true
+		}
+	}
+	referencedChanges := changes[semantics.QualifiedTableIdentityKey(info.ForeignTable)]
+	for _, column := range info.ForeignColumns {
+		if _, changed := referencedChanges[semantics.ColumnIdentityKey(column)]; changed {
+			return true
+		}
+	}
+	return false
+}
+
+func foreignKeyRemovalDetailsByHost(
+	diff *types.SchemaDiff,
+	semantics identifier.Semantics,
+) map[constraintHostKey]types.ForeignKeyRemovalInfo {
+	details := make(map[constraintHostKey]types.ForeignKeyRemovalInfo, len(diff.ForeignKeysRemovedWithTables))
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		if len(info.Columns) == 0 || info.ForeignTable == "" || len(info.ForeignColumns) == 0 {
+			continue
+		}
+		details[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = info
+	}
+	return details
+}
+
+func canonicalConstraintHostKey(
+	table string,
+	name string,
+	semantics identifier.Semantics,
+) constraintHostKey {
+	return constraintHostKey{
+		table: semantics.QualifiedTableIdentityKey(table),
+		name:  semantics.IndexIdentityKey(name),
+	}
 }
 
 func (p *Planner) addNewIndexes(
@@ -1343,7 +1428,7 @@ func (p *Planner) addNewConstraints(
 		structToTable[t.StructName] = t.Name
 	}
 
-	state := newConstraintPlanState(diff)
+	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
 	// A foreign key whose column also changes type was already dropped before
 	// the column modifications (issue #694, step 4). Seeding those (table, name)
@@ -1361,6 +1446,7 @@ func (p *Planner) addNewConstraints(
 		state.handled,
 		state.droppedForModify,
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+		state.semantics,
 	)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
@@ -1376,6 +1462,7 @@ const (
 )
 
 type constraintPlanState struct {
+	semantics          identifier.Semantics
 	removedNames       map[string]struct{}
 	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo
 	removalsByName     map[string][]types.ConstraintRemovalInfo
@@ -1384,7 +1471,10 @@ type constraintPlanState struct {
 	droppedForModify   map[constraintHostKey]struct{}
 }
 
-func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
+func newConstraintPlanState(
+	diff *types.SchemaDiff,
+	semantics identifier.Semantics,
+) constraintPlanState {
 	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
 	// is a modification (the comparator expresses a changed constraint as
 	// remove + add of the same name — e.g. an on_delete change on a field-level
@@ -1393,7 +1483,7 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// name (errno 1826 for FKs / 3822 for CHECKs).
 	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
 	for _, name := range diff.ConstraintsRemoved {
-		removedNames[name] = struct{}{}
+		removedNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
 
 	// Removal info keyed by (table, name) so a same-name modification can be
@@ -1409,7 +1499,7 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// to exactly one entry, so #189 stays byte-identical (one DROP + one ADD).
 	removalByTableName := make(map[constraintHostKey]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByTableName[constraintHostKey{table: info.TableName, name: info.Name}] = info
+		removalByTableName[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = info
 	}
 
 	// Removal info grouped by bare name, so the name-only ConstraintsAdded loop
@@ -1420,7 +1510,8 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// the bare loop iterates names alone.
 	removalsByName := make(map[string][]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalsByName[info.Name] = append(removalsByName[info.Name], info)
+		name := semantics.IndexIdentityKey(info.Name)
+		removalsByName[name] = append(removalsByName[name], info)
 	}
 
 	// Hosts actually being re-ADDED under each name. A modified constraint's
@@ -1440,15 +1531,17 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 			// recorded addition hosts at all.
 			continue
 		}
-		hosts := addedHostsByName[add.Name]
+		name := semantics.IndexIdentityKey(add.Name)
+		hosts := addedHostsByName[name]
 		if hosts == nil {
 			hosts = make(map[string]struct{})
-			addedHostsByName[add.Name] = hosts
+			addedHostsByName[name] = hosts
 		}
-		hosts[add.TableName] = struct{}{}
+		hosts[semantics.QualifiedTableIdentityKey(add.TableName)] = struct{}{}
 	}
 
 	return constraintPlanState{
+		semantics:          semantics,
 		removedNames:       removedNames,
 		removalByTableName: removalByTableName,
 		removalsByName:     removalsByName,
@@ -1473,14 +1566,18 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if _, modified := state.removalByTableName[constraintHostKey{table: add.TableName, name: add.Name}]; modified {
+		if _, modified := state.removalByTableName[canonicalConstraintHostKey(
+			add.TableName,
+			add.Name,
+			state.semantics,
+		)]; modified {
 			continue
 		}
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
 		})
-		state.handled[add.Name] = struct{}{}
+		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
 	return result
 }
@@ -1497,7 +1594,8 @@ func (p *Planner) addNamedConstraintsByKind(
 	// Fallback for added constraints with no table-qualified FK entry above
 	// (table-level CHECK/UNIQUE, or field-level synthesis resolved by name).
 	for _, constraintName := range diff.ConstraintsAdded {
-		if _, done := state.handled[constraintName]; done {
+		constraintIdentity := state.semantics.IndexIdentityKey(constraintName)
+		if _, done := state.handled[constraintIdentity]; done {
 			continue
 		}
 		if p.constraintNameIsForeignKey(constraintName, generated, structToTable) != wantForeignKey {
@@ -1508,13 +1606,14 @@ func (p *Planner) addNamedConstraintsByKind(
 		// re-add, scoped to the constraint's concrete host table(s) — never a
 		// name-keyed single-winner lookup, which collapses multiple removal
 		// hosts onto one arbitrary table (issue #207).
-		if _, modified := state.removedNames[constraintName]; modified {
+		if _, modified := state.removedNames[constraintIdentity]; modified {
 			result = p.emitModifyDropForName(
 				result,
-				constraintName,
+				constraintIdentity,
 				state.removalsByName,
-				state.addedHostsByName[constraintName],
+				state.addedHostsByName[constraintIdentity],
 				state.droppedForModify,
+				state.semantics,
 			)
 		}
 
@@ -1535,12 +1634,12 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 		// For a modification, emit the DROP FOREIGN KEY from this exact host
 		// table before its re-add — only when this host's (table, name) is in
 		// the removal set; a pure-add host gets no phantom drop.
-		key := constraintHostKey{table: add.TableName, name: add.Name}
+		key := canonicalConstraintHostKey(add.TableName, add.Name, state.semantics)
 		if info, modified := state.removalByTableName[key]; modified {
-			result = p.appendScopedDrop(result, info, state.droppedForModify)
+			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
-		state.handled[add.Name] = struct{}{}
+		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
 	return result
 }
@@ -1573,22 +1672,23 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	handled map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
 	rebuiltIndexes map[types.IndexRef]struct{},
+	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := p.constraintAdditionNode(add)
 		if constraint == nil {
 			continue
 		}
-		key := constraintHostKey{table: add.TableName, name: add.Name}
+		key := canonicalConstraintHostKey(add.TableName, add.Name, semantics)
 		if info, modified := removalByTableName[key]; modified {
-			result = p.appendScopedDrop(result, info, droppedForModify)
+			result = p.appendScopedDrop(result, info, droppedForModify, semantics)
 		}
 		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
 		})
-		handled[add.Name] = struct{}{}
+		handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
 	return result
 }
@@ -1679,17 +1779,18 @@ func (p *Planner) emitModifyDropForName(
 	removalsByName map[string][]types.ConstraintRemovalInfo,
 	addedHosts map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
+	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, info := range removalsByName[name] {
 		if info.TableName == "" {
 			continue
 		}
 		if len(addedHosts) > 0 {
-			if _, reAdded := addedHosts[info.TableName]; !reAdded {
+			if _, reAdded := addedHosts[semantics.QualifiedTableIdentityKey(info.TableName)]; !reAdded {
 				continue
 			}
 		}
-		result = p.appendScopedDrop(result, info, droppedForModify)
+		result = p.appendScopedDrop(result, info, droppedForModify, semantics)
 	}
 	return result
 }
@@ -1704,8 +1805,9 @@ func (p *Planner) appendScopedDrop(
 	result []ast.Node,
 	info types.ConstraintRemovalInfo,
 	dropped map[constraintHostKey]struct{},
+	semantics identifier.Semantics,
 ) []ast.Node {
-	dedupKey := constraintHostKey{table: info.TableName, name: info.Name}
+	dedupKey := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
 	if _, done := dropped[dedupKey]; done {
 		return result
 	}
@@ -1913,6 +2015,7 @@ func (p *Planner) removeConstraints(
 	diff *types.SchemaDiff,
 	bracketDropped map[constraintHostKey]struct{},
 ) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	// (table, name) pairs being re-added — modifications owned by
 	// addNewConstraints — plus, per name, how many hosts were recorded at all.
 	modifyHosts := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAddedWithTables))
@@ -1925,17 +2028,17 @@ func (p *Planner) removeConstraints(
 			// skipping the hosts the add side already dropped.
 			continue
 		}
-		modifyHosts[constraintHostKey{table: add.TableName, name: add.Name}] = struct{}{}
-		addedHostCounts[add.Name]++
+		modifyHosts[canonicalConstraintHostKey(add.TableName, add.Name, semantics)] = struct{}{}
+		addedHostCounts[semantics.IndexIdentityKey(add.Name)]++
 	}
 	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range diff.ConstraintsAdded {
-		addedBareNames[name] = struct{}{}
+		addedBareNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
 
 	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
 	for _, t := range diff.TablesRemoved {
-		droppedTables[t] = struct{}{}
+		droppedTables[semantics.QualifiedTableIdentityKey(t)] = struct{}{}
 	}
 
 	dropped := make(map[constraintHostKey]struct{})
@@ -1946,7 +2049,7 @@ func (p *Planner) removeConstraints(
 			// always carries the host.
 			continue
 		}
-		key := constraintHostKey{table: info.TableName, name: info.Name}
+		key := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
 		if _, modified := modifyHosts[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
 			continue
@@ -1956,15 +2059,17 @@ func (p *Planner) removeConstraints(
 			// column modifications (issue #694); do not drop it a second time.
 			continue
 		}
-		if _, added := addedBareNames[info.Name]; added && addedHostCounts[info.Name] == 0 {
+		nameIdentity := semantics.IndexIdentityKey(info.Name)
+		if _, added := addedBareNames[nameIdentity]; added && addedHostCounts[nameIdentity] == 0 {
 			// Hostless re-add: addNewConstraints already dropped every
 			// recorded removal host for this name.
 			continue
 		}
-		if _, droppedTable := droppedTables[info.TableName]; droppedTable && !strings.EqualFold(info.Type, "FOREIGN KEY") {
+		if _, droppedTable := droppedTables[semantics.QualifiedTableIdentityKey(info.TableName)]; droppedTable &&
+			!strings.EqualFold(info.Type, "FOREIGN KEY") {
 			continue
 		}
-		result = p.appendScopedDrop(result, info, dropped)
+		result = p.appendScopedDrop(result, info, dropped, semantics)
 	}
 	return result
 }

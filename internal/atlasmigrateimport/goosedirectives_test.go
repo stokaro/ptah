@@ -79,13 +79,28 @@ func TestLoadFSDirectiveSectionParsing(t *testing.T) {
 			assert: body("CREATE TABLE pre (id INTEGER PRIMARY KEY);\n" + widgets),
 		},
 		{
-			// NO TRANSACTION cannot open or close a section, so the community
-			// binary leaves it in the executed SQL. Recognizing it would change
-			// nothing, so the parser deliberately does not.
-			name:   "goose keeps a NO TRANSACTION directive in the body",
+			// NO TRANSACTION cannot open or close a section, so its source line
+			// is consumed as metadata. The Atlas header is the execution metadata
+			// the converted view needs to honor that whole-file requirement.
+			name:   "goose translates a NO TRANSACTION directive",
 			format: atlasmigrateimport.FormatGoose,
 			file:   "-- +goose NO TRANSACTION\n-- +goose Up\n" + widgets,
-			assert: body("-- +goose NO TRANSACTION\n" + widgets),
+			assert: body("-- atlas:txmode none\n\n" + widgets),
+		},
+		{
+			name:   "goose translates NO TRANSACTION without section markers",
+			format: atlasmigrateimport.FormatGoose,
+			file:   "-- +goose NO TRANSACTION\n" + widgets,
+			assert: body("-- atlas:txmode none\n\n" + widgets),
+		},
+		{
+			// Goose recognizes its whole-file execution annotation before
+			// statement-block handling. Ptah must consume it as metadata here too.
+			name:   "goose translates NO TRANSACTION inside a statement block",
+			format: atlasmigrateimport.FormatGoose,
+			file: "-- +goose Up\n-- +goose StatementBegin\n" +
+				"-- +goose NO TRANSACTION\nSELECT 1;\n-- +goose StatementEnd\n",
+			assert: body("-- atlas:txmode none\n\nSELECT 1;\n"),
 		},
 		{
 			name:   "goose keeps an unrecognized +goose line in the body",

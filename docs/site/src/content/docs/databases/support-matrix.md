@@ -125,7 +125,9 @@ matching preset automatically.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
-  remains excluded because that server line rejects it.
+  remains excluded because that server line rejects it. A generated concurrent
+  create therefore rolls back with ordinary `DROP INDEX`; only the forward
+  migration requires no-transaction execution.
 - **Spanner**: foreign keys are included, including composite and circular
   relationships rendered in two phases. Spanner manages the referenced-key
   backing index, so Ptah does not require an input unique/index declaration.

@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
@@ -276,13 +277,15 @@ func runAtlasMigrateDiff(
 		// The writer converts the existing directory through it, names and
 		// composes the new files in it, and hashes its covered set.
 		DirFormat: dirFormat,
-		// The reverse rule `migration/generator` has always applied to its own
-		// `.down.sql` half, injected rather than imported: that package imports
-		// this command tree's library half in ten places, so the dependency
-		// cannot be pointed the other way (stokaro/ptah#1013). Every layout but
-		// the native Atlas one carries a rollback half, and this is what fills
-		// it.
-		PlanReverse:        generator.ReverseSchemaDiff,
+		// The shared bidirectional planner is injected rather than imported by
+		// internal/atlasmigrate: migration/generator already imports that package
+		// for its directory and qualifier primitives. The adapter below preserves
+		// that dependency direction while making every layout that publishes a
+		// rollback share native reverse refinements and exact concurrent-index
+		// identity. The native Atlas layout omits this hook because it publishes
+		// no rollback half; its valid forward plan must not be refused for a
+		// capability an unpublished reverse would require.
+		PlanBidirectional:  compatBidirectionalPlannerForFormat(dirFormat),
 		Schemas:            opts.schemas,
 		LockTimeout:        lockTimeout,
 		Policy:             policy,
@@ -324,6 +327,47 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func compatBidirectionalPlannerForFormat(
+	format atlasmigrateimport.Format,
+) func(atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return nil
+	}
+	return planCompatBidirectionalSchemaDiff
+}
+
+func planCompatBidirectionalSchemaDiff(
+	input atlasmigrate.BidirectionalPlanInput,
+) (atlasmigrate.BidirectionalPlan, error) {
+	createMode := generator.ConcurrentIndexDisabled
+	if input.ConcurrentIndexCreate && platform.IsPostgresFamily(input.Dialect) {
+		createMode = generator.ConcurrentIndexAll
+	}
+	dropMode := generator.ConcurrentIndexDisabled
+	if input.ConcurrentIndexDrop && platform.IsPostgresFamily(input.Dialect) {
+		dropMode = generator.ConcurrentIndexAll
+	}
+	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+		Diff:          input.Diff,
+		DesiredSchema: input.DesiredSchema,
+		CurrentSchema: input.CurrentSchema,
+		Dialect:       input.Dialect,
+		Capabilities:  input.Capabilities,
+		Policy: generator.BidirectionalPlanPolicy{
+			Create: createMode,
+			Drop:   dropMode,
+		},
+	})
+	if err != nil {
+		return atlasmigrate.BidirectionalPlan{}, err
+	}
+	return atlasmigrate.BidirectionalPlan{
+		ForwardNodes:                 plan.Forward.Nodes,
+		ReverseNodes:                 plan.Reverse.Nodes,
+		ReverseRequiresNoTransaction: plan.Reverse.RequiresNoTransaction,
+	}, nil
 }
 
 // resolveAtlasMigrateDiffDir parses the --dir value into the directory this run

@@ -373,7 +373,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Ptah documentation.** [Integrity and safety](../../versioned/integrity-and-safety/), [Atlas migrate commands](../migrate-commands/), [Exit codes](../../reference/exit-codes/)
 
-**Implementation status.** Documented. Ptah supports `ptah.sum`, Atlas-compatible `atlas.sum`, hash, validate, and `migrate validate --dev-url` SQL replay paths. `ptah-compat migrate hash` and `validate` register Atlas `--dir-format` with default `atlas`; external migration-tool formats fail explicitly outside import. Remaining parity depends on exact Atlas edge cases.
+**Implementation status.** Documented. Ptah supports `ptah.sum`, Atlas-compatible `atlas.sum`, hash, validate, and `migrate validate --dev-url` SQL replay paths. `ptah-compat migrate hash` and `validate` register Atlas `--dir-format` with default `atlas`; external migration-tool formats are read directly, and `migrate new` plus `migrate diff` write them. Goose represents either direction's no-transaction requirement with its whole-file directive. The other four foreign layouts refuse those plans before publication. Remaining parity depends on exact Atlas edge cases.
 
 **Conformance status.** Measured for selected directory fixtures, Atlas-default hash output, and live SQLite dev-database replay.
 

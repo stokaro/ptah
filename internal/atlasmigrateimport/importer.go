@@ -1377,10 +1377,14 @@ func readRawImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
 //
 // "NO TRANSACTION" is deliberately absent, and so is every other "-- +goose ..."
 // line. Goose leaves them in the migration body, and because they cannot open or
-// close a section, recognizing them would change nothing: measured on the
-// community binary v1.3.0, both "-- +goose NO TRANSACTION" and the meaningless
-// "-- +goose Frobnicate" survive into the SQL it executes, whether they sit above
-// the Up directive or inside the up section.
+// close a section, recognizing them here would change the section state:
+// measured on the community binary v1.3.0, both "-- +goose NO TRANSACTION" and
+// the meaningless "-- +goose Frobnicate" survive into the SQL it executes,
+// whether they sit above the Up directive or inside the up section. gooseUpSQL
+// separately translates the exact whole-file NO TRANSACTION directive into an
+// Atlas txmode header while preserving the Goose line in that body, so direct
+// apply honors the source execution semantics rather than treating it as only a
+// comment.
 type goosePragma string
 
 const (
@@ -1400,6 +1404,18 @@ var goosePragmas = []goosePragma{
 	goosePragmaStatementBegin,
 	goosePragmaStatementEnd,
 }
+
+const (
+	gooseNoTransactionDirective = "-- +goose NO TRANSACTION"
+	atlasTxModeNoneDirective    = "-- atlas:txmode none"
+)
+
+type gooseTransactionMode uint8
+
+const (
+	gooseTransactionModeDefault gooseTransactionMode = iota
+	gooseTransactionModeNone
+)
 
 // gooseSection is which directive section the parser is currently inside.
 type gooseSection int
@@ -1504,23 +1520,22 @@ func gooseNearMissPragma(line string) (goosePragma, bool) {
 // binary executes it, records it honestly, and drops nothing.
 func gooseUpSQL(name string, data []byte) ([]byte, error) {
 	var body []string
+	bodyTarget := &body
 	section := gooseSectionNone
 	inStatement := false
-	collecting := true
+	transactionMode := gooseTransactionModeDefault
 
 	for i, line := range strings.Split(string(data), "\n") {
 		lineNo := i + 1
+		lineTransactionMode := gooseTransactionModeOfLine(line)
+		transactionMode = max(transactionMode, lineTransactionMode)
+		if lineTransactionMode == gooseTransactionModeNone {
+			continue
+		}
 		pragma, ok := goosePragmaOf(line)
 		if !ok {
-			if near, isNear := gooseNearMissPragma(line); isNear {
-				return nil, fmt.Errorf(
-					"migration file %s line %d: %q is not a goose directive because directive names are case- and space-sensitive; "+
-						"as written it is an ordinary comment and the SQL below it would be executed as part of the up migration. Write %q instead",
-					name, lineNo, strings.TrimSpace(line), goosePragmaPrefix+string(near),
-				)
-			}
-			if collecting {
-				body = append(body, line)
+			if err := appendGooseBodyLine(name, lineNo, line, bodyTarget); err != nil {
+				return nil, err
 			}
 			continue
 		}
@@ -1544,7 +1559,7 @@ func gooseUpSQL(name string, data []byte) ([]byte, error) {
 				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
 			}
 			section = gooseSectionDown
-			collecting = false
+			bodyTarget = nil
 		case goosePragmaStatementBegin:
 			if section == gooseSectionNone {
 				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
@@ -1555,14 +1570,56 @@ func gooseUpSQL(name string, data []byte) ([]byte, error) {
 		}
 	}
 
+	var converted []byte
 	if section == gooseSectionNone {
 		// No section directive appeared anywhere: the file IS the migration.
 		// Reached only when nothing errored above, and Down, StatementBegin and
 		// StatementEnd all error while the section is None, so this really does
 		// mean "carries no goose directives" rather than "carries a broken set".
-		return trimSQL(data), nil
+		if transactionMode == gooseTransactionModeNone {
+			converted = normalizeSQL([]byte(strings.Join(body, "\n")))
+		} else {
+			converted = trimSQL(data)
+		}
+	} else {
+		converted = normalizeSQL([]byte(strings.Join(body, "\n")))
 	}
-	return normalizeSQL([]byte(strings.Join(body, "\n"))), nil
+	return applyGooseTransactionMode(converted, transactionMode), nil
+}
+
+func appendGooseBodyLine(name string, lineNo int, line string, body *[]string) error {
+	if near, isNear := gooseNearMissPragma(line); isNear {
+		return fmt.Errorf(
+			"migration file %s line %d: %q is not a goose directive because directive names are case- and space-sensitive; "+
+				"as written it is an ordinary comment and the SQL below it would be executed as part of the up migration. Write %q instead",
+			name, lineNo, strings.TrimSpace(line), goosePragmaPrefix+string(near),
+		)
+	}
+	if body != nil {
+		*body = append(*body, line)
+	}
+	return nil
+}
+
+func gooseTransactionModeOfLine(line string) gooseTransactionMode {
+	if strings.TrimSpace(line) != gooseNoTransactionDirective {
+		return gooseTransactionModeDefault
+	}
+	return gooseTransactionModeNone
+}
+
+func applyGooseTransactionMode(data []byte, mode gooseTransactionMode) []byte {
+	if mode != gooseTransactionModeNone {
+		return data
+	}
+	return addAtlasNoTransactionDirective(data)
+}
+
+func addAtlasNoTransactionDirective(data []byte) []byte {
+	out := make([]byte, 0, len(atlasTxModeNoneDirective)+2+len(data))
+	out = append(out, atlasTxModeNoneDirective...)
+	out = append(out, '\n', '\n')
+	return append(out, data...)
 }
 
 // gooseUnexpectedPragma reports a directive that cannot appear where it does.
