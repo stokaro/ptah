@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -22,17 +23,40 @@ func CompareWithDatabase(
 	database *dbschematypes.DBSchema,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, error) {
+	diff, _, err := CompareWithDatabaseReportingUndecidedAdditions(
+		ctx, conn, generated, database, opts,
+	)
+	return diff, err
+}
+
+// CompareWithDatabaseReportingUndecidedAdditions performs the same
+// database-aware comparison as [CompareWithDatabase] and also reports desired
+// additions that the current state's coverage record makes undecidable.
+//
+// The comparison resolves live catalog identifier semantics before comparing
+// and applies [config.DefaultCompareOptions] when opts is nil, just as
+// [CompareWithDatabase] does. See [CompareReportingUndecidedAdditions] for the
+// meaning and ordering of the second return.
+func CompareWithDatabaseReportingUndecidedAdditions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+	opts *config.CompareOptions,
+) (*difftypes.SchemaDiff, []coverage.Object, error) {
 	if conn == nil {
-		return nil, fmt.Errorf("compare schemas: database connection is nil")
+		return nil, nil, fmt.Errorf("compare schemas: database connection is nil")
 	}
 	info := conn.Info()
 	names := collectIdentifierNames(generated, database, info.Schema)
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {
-		return nil, fmt.Errorf("compare schemas: %w", err)
+		return nil, nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	info.IdentifierSemantics = semantics
-	return CompareWithDatabaseInfo(generated, database, info, opts)
+	return compareWithDatabaseInfoReportingUndecidedAdditions(
+		generated, database, info, opts,
+	)
 }
 
 func collectIdentifierNames(

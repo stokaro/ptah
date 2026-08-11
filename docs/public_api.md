@@ -80,6 +80,13 @@ comparison it got before the field existed. Set it when a reader was asked about
 less than the whole database, or a projection left something out on purpose;
 leaving it zero there is how an object nobody looked at becomes a `DROP`.
 
+`schemadiff.CompareReportingUndecidedAdditions` exposes desired additions that
+an offline comparison could not plan safely, and
+`schemadiff.CompareWithDatabaseReportingUndecidedAdditions` provides the same
+report while resolving the connected catalog's identifier semantics and
+default comparison options. Command adapters use that report for warnings;
+embedders can choose their own diagnostic policy.
+
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
 caller can mutate the source fields or embedded declarations and finalize the

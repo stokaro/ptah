@@ -8659,6 +8659,7 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 func CompareReportingUndecidedAdditions(generated *goschema.Database, database *types.DBSchema, ...) (*difftypes.SchemaDiff, []coverage.Object)
 func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSchema, info types.DBInfo, ...) (*difftypes.SchemaDiff, error)
+func CompareWithDatabaseReportingUndecidedAdditions(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, []coverage.Object, error)
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, ...) *difftypes.SchemaDiff
 

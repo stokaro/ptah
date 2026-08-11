@@ -146,7 +146,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = dialect
 	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromDB, compareOpts)
-	reportUndecidedAdditions(opts.Diagnostics, undecided)
+	ReportUndecidedAdditions(opts.Diagnostics, undecided, "--from", "--to")
 
 	diff := applyDiffPolicy(compared, opts.Policy)
 	var statements []string

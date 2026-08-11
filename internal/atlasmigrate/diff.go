@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"strings"
 	"time"
@@ -85,6 +86,9 @@ type DiffOptions struct {
 	Policy      atlasschema.DiffPolicy
 	Qualifier   Qualifier
 	DryRun      bool
+	// Diagnostics receives non-fatal notices about desired objects whose
+	// creation cannot be planned safely from the replayed directory's coverage.
+	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -244,6 +248,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection) error {
 			replayed, compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
+				opts.Diagnostics,
 			)
 			if err != nil {
 				return err
@@ -529,6 +534,7 @@ func compareReplayedState(
 	schemas []string,
 	defaultSchema string,
 	desired *goschema.Database,
+	diagnostics io.Writer,
 ) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {
@@ -538,10 +544,18 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, err
 	}
-	diff, err := schemadiff.CompareWithDatabase(ctx, replayConn, desired, replayed, nil)
+	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
+		ctx, replayConn, desired, replayed, nil,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
 	}
+	atlasschema.ReportUndecidedAdditions(
+		diagnostics,
+		undecided,
+		"the replayed migration directory",
+		"--to",
+	)
 	return replayed, diff, nil
 }
 
