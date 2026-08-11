@@ -448,10 +448,9 @@ carries the fact itself, in its header:
 
 A comparator reading that document has three states for an object instead of
 two: present, absent, and **not described**. Only the middle one is a removal.
-The four commands that consume a desired-state document — `schema diff`,
-`schema apply`, `migrate diff`, and `migrate diff` writing its migration file —
-each resolve that document separately, and all four now report the database
-above as synced.
+The four commands that consume a desired-schema document — `schema diff`,
+`schema apply`, `schema plan`, and `migrate diff` — each resolve that document
+separately, and all four now report the database above as synced.
 
 The lines are HCL comments, so they change nothing for any other reader: the
 pinned Atlas community binary v1.3.0 reads a document carrying them at exit 0

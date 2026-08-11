@@ -5,6 +5,7 @@ package atlasmigrate
 // GenerateDiff API.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
@@ -29,6 +32,151 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
+	" the replayed migration directory records `ptah:not-described sequence`," +
+	" so this comparison cannot tell it apart from one that already exists," +
+	" and the creation Ptah renders for it has no IF NOT EXISTS guard.\n"
+
+func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
+	}
+	desired := &goschema.Database{
+		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed, qt.Equals, current)
+	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+}
+
+func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+
+	_, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema,
+		&goschema.Database{}, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+}
+
+func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+	diagnostics := &bytes.Buffer{}
+
+	_, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema,
+		&goschema.Database{Sequences: []goschema.Sequence{{Name: "order_seq"}}},
+		diagnostics,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
+}
+
+func connectDiffComparisonSQLite(c *qt.C) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		atlasurl.SQLiteURLFromPath(c.TempDir()+"/catalog.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
+
+func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	desiredPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(
+		desiredPath,
+		[]byte("sequence \"order_seq\" {}\n"),
+		0o600,
+	), qt.IsNil)
+	desired, err := atlassource.ClassifySet(
+		"--to",
+		[]string{"file://" + desiredPath},
+		atlassource.ProjectEnv{},
+	)
+	c.Assert(err, qt.IsNil)
+	conn := connectDiffComparisonSQLite(c)
+	diagnostics := &bytes.Buffer{}
+
+	result, err := generateDiff(c.Context(), conn, DiffOptions{
+		Dir:         migrationsDir,
+		Desired:     desired,
+		Name:        "undecided_sequence",
+		Diagnostics: diagnostics,
+	}, diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return &dbschematypes.DBSchema{
+				NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+			}, nil
+		},
+		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
+	})
+	artifacts, readErr := os.ReadDir(migrationsDir)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Synced, qt.IsTrue)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	c.Assert(result.SumPath, qt.Equals, "")
+	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(artifacts, qt.HasLen, 0)
+}
 
 func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 	c := qt.New(t)
