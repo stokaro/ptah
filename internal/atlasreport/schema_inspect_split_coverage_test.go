@@ -211,12 +211,11 @@ func coverageSplitReport() *atlasreport.SchemaInspectReport {
 		&types.DBSchema{},
 		types.DBInfo{Dialect: platform.Postgres, Schema: "public"},
 		nil,
-		true,
 		// The run did not choose its own scope, so the SQL format would leave the
 		// schema row out. These cases render HCL and split it, which carries the
 		// schema block either way; the value is the connected-schema one the
 		// fixture represents.
-		false,
+		atlasreport.SchemaInspectReportOptions{OmitAtlasRefusedBlocks: true},
 	)
 }
 

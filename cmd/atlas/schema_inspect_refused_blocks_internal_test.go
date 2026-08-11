@@ -83,8 +83,10 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 				&types.DBSchema{},
 				types.DBInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
-				omit,
-				true,
+				atlasreport.SchemaInspectReportOptions{
+					OmitAtlasRefusedBlocks: omit,
+					DescribeSchemas:        true,
+				},
 			)
 
 			hcl, err := report.MarshalHCL()
@@ -131,8 +133,10 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 				&types.DBSchema{},
 				types.DBInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
-				omit,
-				true,
+				atlasreport.SchemaInspectReportOptions{
+					OmitAtlasRefusedBlocks: omit,
+					DescribeSchemas:        true,
+				},
 			)
 
 			hcl, err := report.MarshalHCL()
