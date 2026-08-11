@@ -46,6 +46,32 @@ claim is limited to the corpus represented by the generated reports. Expanding
 live and differential coverage is tracked in
 [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167).
 
+## `migrate new` success streams
+
+Findings 3.1 and 3.2 in
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) were measured
+against the pinned Atlas CE v1.3.0 binary on August 11, 2026. Both tools exit 0
+and write the same migration and `atlas.sum` artifacts; only their process
+output differed.
+
+| Directory layout | Pinned binary | Ptah before | Ptah now |
+| --- | --- | --- | --- |
+| Atlas | Stdout and stderr are byte-empty | Stdout names the migration by absolute path | Both streams are byte-empty |
+| Converted | Stdout and stderr are byte-empty | Stdout names one or two migrations by absolute path | Both streams are byte-empty |
+
+The change is limited to the `ptah-compat migrate new` adapter. Migration
+names, file contents, `atlas.sum`, editor execution, warnings, and failure
+diagnostics remain unchanged. Native `ptah migrations create` still reports the
+paths it creates.
+
+Re-run the focused evidence from the Ptah repository:
+
+```bash
+go test ./cmd/atlas -run '^TestCompatMigrateNew' -count=1
+go test ./cmd/ptah-compat -run '^TestCompatBinaryMigrateNew' -count=1
+go test ./cmd/ptah -run '^TestPtahNativeMigrationsCreateKeepsSuccessReport$' -count=1
+```
+
 ## Workflow parity
 
 Each workflow below states the native Ptah command, the Atlas-compatible

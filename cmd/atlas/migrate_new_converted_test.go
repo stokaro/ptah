@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/migratesum"
 )
 
 // These tests pin stokaro/ptah#845 on `ptah-compat migrate new`: an empty
@@ -136,6 +138,35 @@ func newConvertedBodies(c *qt.C, dir string, names []string) map[string]string {
 	return bodies
 }
 
+// assertMigrateNewArtifacts pins every byte the command writes. The expected
+// checksum is computed over the exact covered names after the generated
+// version is known, so the assertion remains deterministic across clock ticks
+// while still catching a wrong file set, order, name, or body.
+func assertMigrateNewArtifacts(c *qt.C, dir string, layout newConvertedLayout) {
+	c.Helper()
+	c.Assert(newConvertedNames(c, dir), qt.DeepEquals, layout.files)
+	c.Assert(newConvertedSumEntries(c, dir), qt.DeepEquals, layout.covered)
+	c.Assert(newConvertedBodies(c, dir, layout.files), qt.DeepEquals, layout.body)
+
+	entries, err := os.ReadDir(dir)
+	c.Assert(err, qt.IsNil)
+	actualNames := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		normalized := newConvertedVersionRe.ReplaceAllString(entry.Name(), "<V>")
+		actualNames[normalized] = entry.Name()
+	}
+	covered := make([]string, len(layout.covered))
+	for i, normalized := range layout.covered {
+		covered[i] = actualNames[normalized]
+		c.Assert(covered[i], qt.Not(qt.Equals), "")
+	}
+	wantSum, err := migratesum.ComputeAtlasFiles(os.DirFS(dir), covered)
+	c.Assert(err, qt.IsNil)
+	gotSum, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
+	c.Assert(err, qt.IsNil)
+	c.Assert(gotSum, qt.DeepEquals, wantSum.Bytes())
+}
+
 // TestCompatMigrateNewConverted_WritesTheSelectedLayout is the discriminator for
 // #845 on `migrate new`: the created file names, their bytes, and the covered
 // set of the atlas.sum written beside them all follow the selected layout.
@@ -159,13 +190,13 @@ func TestCompatMigrateNewConverted_WritesTheSelectedLayout(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 
-			_, stderr, err := runCompatExit("migrate", "new", "addcol",
+			stdout, stderr, err := runCompatExit("migrate", "new", "addcol",
 				"--dir", "file://"+dir, "--dir-format", layout.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, layout.files)
-			c.Assert(newConvertedSumEntries(c, dir), qt.DeepEquals, layout.covered)
-			c.Assert(newConvertedBodies(c, dir, layout.files), qt.DeepEquals, layout.body)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+			assertMigrateNewArtifacts(c, dir, layout)
 		})
 	}
 }
@@ -189,12 +220,13 @@ func TestCompatMigrateNewConverted_QuerySpellingWritesTheSelectedLayout(t *testi
 			c := qt.New(t)
 			dir := c.TempDir()
 
-			_, stderr, err := runCompatExit("migrate", "new", "addcol",
+			stdout, stderr, err := runCompatExit("migrate", "new", "addcol",
 				"--dir", "file://"+dir+"?format="+layout.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, layout.files)
-			c.Assert(newConvertedSumEntries(c, dir), qt.DeepEquals, layout.covered)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+			assertMigrateNewArtifacts(c, dir, layout)
 		})
 	}
 }
@@ -239,10 +271,12 @@ func TestCompatMigrateNewConverted_QueryFormatOutranksDirFormatFlag(t *testing.T
 			c := qt.New(t)
 			dir := c.TempDir()
 
-			_, stderr, err := runCompatExit("migrate", "new", "addcol",
+			stdout, stderr, err := runCompatExit("migrate", "new", "addcol",
 				"--dir", "file://"+dir+tt.query, "--dir-format", tt.dirFormat)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
 			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, tt.want)
 		})
 	}
@@ -446,20 +480,17 @@ func TestCompatMigrateNewConverted_RefusesWhatItCannotReadBack(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateNewConverted_NativeAtlasLayoutIsUnchanged is the
-// non-interference control for #845's "native Atlas directory behavior remains
-// unchanged" criterion.
+// TestCompatMigrateNew_NativeAtlasLayoutWritesSameArtifactsSilently is the
+// native-layout half of stokaro/ptah#1235 findings 3.1 and 3.2. The migration
+// and atlas.sum stay unchanged while the compatibility-only success report is
+// removed.
 //
-// It is not proved by reverting the change — that only shows the old refusal
-// comes back. It is proved by the INVERSE: the atlas layout, and the two
-// spellings that select it, must still take the forwarding branch and produce
-// the single empty `<V>_<name>.sql` plus an atlas.sum covering it, with the
-// forwarded command's own report on stdout. A dispatcher that sent the atlas
-// layout down the converted path would fail here, because
+// The atlas layout, and the two spellings that select it, must still take the
+// forwarding branch and produce the single empty `<V>_<name>.sql` plus an
+// atlas.sum covering it. A dispatcher that sent the atlas layout down the
+// converted path would fail here, because
 // [atlasmigrateimport.SkeletonFiles] refuses that format outright.
-//
-// Reverted, every row passes unchanged; that is the point of a control.
-func TestCompatMigrateNewConverted_NativeAtlasLayoutIsUnchanged(t *testing.T) {
+func TestCompatMigrateNew_NativeAtlasLayoutWritesSameArtifactsSilently(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
@@ -495,9 +526,14 @@ func TestCompatMigrateNewConverted_NativeAtlasLayoutIsUnchanged(t *testing.T) {
 			stdout, stderr, err := runCompatExit(args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-			c.Assert(stdout, qt.Contains, "Generated empty migration file:")
-			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, []string{"<V>_addcol.sql"})
-			c.Assert(newConvertedSumEntries(c, dir), qt.DeepEquals, []string{"<V>_addcol.sql"})
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, "")
+			assertMigrateNewArtifacts(c, dir, newConvertedLayout{
+				format:  "atlas",
+				files:   []string{"<V>_addcol.sql"},
+				covered: []string{"<V>_addcol.sql"},
+				body:    map[string]string{"<V>_addcol.sql": ""},
+			})
 		})
 	}
 }

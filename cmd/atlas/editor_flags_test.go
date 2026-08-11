@@ -32,7 +32,7 @@ func TestCompatCommand_MigrateNewEditOpensEditor(t *testing.T) {
 	// Atlas-format file opens in $EDITOR and atlas.sum is refreshed afterwards
 	// so the directory still validates.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	created, globErr := filepath.Glob(filepath.Join(dir, "*_add_users.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(created, qt.HasLen, 1)
