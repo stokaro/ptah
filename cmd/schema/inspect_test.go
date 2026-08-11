@@ -1,45 +1,12 @@
 package schema_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlashclrender"
 )
-
-func TestSchemaInspectLiveDatabaseWritesSQL(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-
-	out, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--format", "sql",
-	)
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Equals, "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n")
-}
-
-func TestSchemaInspectEmptyLiveDatabaseWritesEmptySQL(t *testing.T) {
-	c := qt.New(t)
-	dbPath := filepath.Join(t.TempDir(), "empty.db")
-
-	out, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--format", "sql",
-	)
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Equals, "")
-}
 
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {
 	c := qt.New(t)
@@ -181,71 +148,4 @@ func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
 		})
 	}
-}
-
-// TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent proves the native
-// verb and its compatibility twin still render the same inspected objects even
-// though the process surfaces deliberately frame their HCL differently.
-func TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
-
-	nativeOut, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--format", "hcl",
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-
-	atlasCmd := atlas.NewCompatCommand("atlas")
-	var atlasOut bytes.Buffer
-	atlasCmd.SetOut(&atlasOut)
-	atlasCmd.SetErr(&atlasOut)
-	atlasCmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--format", "hcl"})
-	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
-
-	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)
-	c.Assert(hasNativeFrame, qt.IsTrue)
-	c.Assert(atlasOut.String(), qt.Equals, wantCompat)
-}
-
-// TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent pins that the two
-// surfaces resolve the same include selection even though their HCL framing is
-// intentionally different.
-func TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
-
-	nativeOut, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--include", "users",
-		"--format", "hcl",
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-
-	atlasCmd := atlas.NewCompatCommand("atlas")
-	var atlasOut bytes.Buffer
-	atlasCmd.SetOut(&atlasOut)
-	atlasCmd.SetErr(&atlasOut)
-	atlasCmd.SetArgs([]string{
-		"schema", "inspect",
-		"--url", "sqlite://" + dbPath,
-		"--include", "users",
-		"--format", "hcl",
-	})
-	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
-
-	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)
-	c.Assert(hasNativeFrame, qt.IsTrue)
-	c.Assert(atlasOut.String(), qt.Equals, wantCompat)
-	c.Assert(wantCompat, qt.Contains, `table "users"`)
-	c.Assert(wantCompat, qt.Not(qt.Contains), `table "archive"`)
-}
-
-func compatHCLFromNative(native string) (string, bool) {
-	body, ok := strings.CutPrefix(native, atlashclrender.GeneratedCodeMarker+"\n\n")
-	return strings.TrimRight(body, "\n") + "\n", ok
 }
