@@ -92,6 +92,46 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	}
 }
 
+func TestIndexIncludeVisitorPathFailsClosedAndResetsOutput(t *testing.T) {
+	c := qt.New(t)
+	r, err := renderer.NewRenderer(platform.MySQL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ast.NewIndex("idx_seed", "accounts", "email").Accept(r), qt.IsNil)
+	c.Assert(r.Output(), qt.Not(qt.Equals), "")
+
+	err = indexIncludeNode("").Accept(r)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(r.Output(), qt.Equals, "")
+}
+
+func TestIndexIncludeVisitorPathRendersSupportedDialect(t *testing.T) {
+	c := qt.New(t)
+	r, err := renderer.NewRenderer(platform.Postgres)
+	c.Assert(err, qt.IsNil)
+
+	err = indexIncludeNode("GIST").Accept(r)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(r.Output(), qt.Contains, `USING GIST ("email") INCLUDE ("display_name");`)
+}
+
+func TestIndexIncludeVisitorPathDelegateFailureResetsOutput(t *testing.T) {
+	c := qt.New(t)
+	r, err := renderer.NewRenderer(platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ast.NewIndex("idx_seed", "accounts", "email").Accept(r), qt.IsNil)
+	c.Assert(r.Output(), qt.Not(qt.Equals), "")
+
+	nullsDistinct := true
+	invalid := indexIncludeNode("")
+	invalid.NullsDistinct = &nullsDistinct
+	err = invalid.Accept(r)
+
+	c.Assert(err, qt.ErrorMatches, "postgresql NULLS DISTINCT is only valid for unique indexes")
+	c.Assert(r.Output(), qt.Equals, "")
+}
+
 func TestIndexIncludeYugabyteBTREEAliasMatchesDefaultLSM(t *testing.T) {
 	c := qt.New(t)
 

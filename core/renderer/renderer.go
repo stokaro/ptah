@@ -231,6 +231,19 @@ func (r *validatingRenderer) VisitConstraint(node *ast.ConstraintNode) error {
 	return nil
 }
 
+func (r *validatingRenderer) VisitIndex(node *ast.IndexNode) error {
+	prepared, err := prepareIndexNode(r.dialect, r.capabilities, node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if err := r.RenderVisitor.VisitIndex(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
 //
 // This function is useful for one-off SQL generation where you don't need to reuse the renderer.
