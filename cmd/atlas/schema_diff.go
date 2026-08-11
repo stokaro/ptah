@@ -162,7 +162,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateSchema:            opts.policy.ValidateDesiredSchema,
-		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		Vars:                      schemaVars,
 	})

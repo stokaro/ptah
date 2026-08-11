@@ -388,10 +388,11 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 
 func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.upTxModeErr != nil {
-			return migration.upTxModeErr
+		txMode := migration.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return txMode.err
 		}
-		return up.fn(ctx, conn, migration.upExecutionMode())
+		return up.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	migration.upSQLFunc = up.fn
 	migration.upHasStatementInterceptor = up.statementIntercepted
@@ -399,6 +400,8 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts
 	migration.UpTxMode = up.txMode
+	migration.upParsedTxMode = up.txMode
+	migration.upTxModeFromSQL = true
 	migration.upTxModeSource = up.txModeSource
 	migration.upTxModeErr = up.txModeErr
 	migration.upSourcePath = up.sourcePath
@@ -411,16 +414,19 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 
 func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.downTxModeErr != nil {
-			return migration.downTxModeErr
+		txMode := migration.parsedDownTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return txMode.err
 		}
-		return down.fn(ctx, conn, migration.downExecutionMode())
+		return down.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	migration.downSQLFunc = down.fn
 	migration.downHasStatementInterceptor = down.statementIntercepted
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.DownTxMode = down.txMode
+	migration.downParsedTxMode = down.txMode
+	migration.downTxModeFromSQL = true
 	migration.downTxModeSource = down.txModeSource
 	migration.downTxModeErr = down.txModeErr
 	migration.downSourcePath = down.sourcePath

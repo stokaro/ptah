@@ -1,12 +1,15 @@
 package migrator
 
-// White-box testing required: parseAtlasFileTxMode is an internal parser whose
-// exact clean-room grammar and diagnostics are not exposed through a public API.
+// White-box testing required: transaction-mode source precedence, conservative
+// loading, and target-dialect deferral are internal decisions whose exact
+// source classification is not exposed through the public execution API.
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/platform"
 )
 
 func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
@@ -309,4 +312,55 @@ func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
 			c.Assert(got.source, qt.Equals, test.wantSource)
 		})
 	}
+}
+
+func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T) {
+	c := qt.New(t)
+	invalidForPostgres := "SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\nsuffix';\n"
+
+	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(loaded.txMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(loaded.txModeErr, qt.IsNil)
+
+	migration := &Migration{Description: "ambiguous"}
+	setMigrationUp(migration, loaded)
+	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
+	c.Assert(mysqlMode.err, qt.IsNil)
+	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
+	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
+	c.Assert(postgresMode.err, qt.ErrorMatches, `invalid \+ptah no_transaction value "maybe": expected true or false`)
+
+	parsed, err := ParseMigrationUp("1_ambiguous.sql", invalidForPostgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
+}
+
+func TestMigrationTxModeParsingUsesTargetDialectForActualMarker(t *testing.T) {
+	c := qt.New(t)
+	markerForPostgres := "SELECT 'prefix \\'\n-- +ptah no_transaction\nsuffix';\n"
+	migration := CreateMigrationFromSQL(1, "target-aware", markerForPostgres, markerForPostgres)
+
+	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
+	c.Assert(mysqlMode.err, qt.IsNil)
+	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
+	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
+	c.Assert(postgresMode.err, qt.IsNil)
+	c.Assert(postgresMode.mode, qt.Equals, MigrationFileTxModeNone)
+	c.Assert(postgresMode.source, qt.Equals, migrationFileTxModeSourcePtah)
+	mysqlDownMode := migration.parsedDownTxModeForDialect(platform.MySQL)
+	c.Assert(mysqlDownMode.err, qt.IsNil)
+	c.Assert(mysqlDownMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
+	postgresDownMode := migration.parsedDownTxModeForDialect(platform.Postgres)
+	c.Assert(postgresDownMode.err, qt.IsNil)
+	c.Assert(postgresDownMode.mode, qt.Equals, MigrationFileTxModeNone)
+
+	migration.UpTxMode = MigrationFileTxModeFile
+	migration.DownTxMode = MigrationFileTxModeFile
+	overridden := migration.parsedUpTxModeForDialect(platform.Postgres)
+	c.Assert(overridden.mode, qt.Equals, MigrationFileTxModeFile)
+	c.Assert(overridden.err, qt.IsNil)
+	overriddenDown := migration.parsedDownTxModeForDialect(platform.Postgres)
+	c.Assert(overriddenDown.mode, qt.Equals, MigrationFileTxModeFile)
+	c.Assert(overriddenDown.err, qt.IsNil)
 }

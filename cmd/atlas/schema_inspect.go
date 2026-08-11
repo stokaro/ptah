@@ -213,7 +213,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
-		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
 		CompatibilityHCLFraming:   true,

@@ -219,7 +219,7 @@ func runAtlasMigrateDiff(
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir, dirFormat); err != nil {
 		return err
 	}
-	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy); err != nil {
+	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy, opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
 	}
 	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
@@ -242,10 +242,11 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
 	if err := desired.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
-	desired, err = desired.PrepareMigrationSource(opts.policy.ValidateMigrationSource)
+	desired, err = desired.PrepareMigrationSource(migrationSourceValidator)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
@@ -319,7 +320,7 @@ func runAtlasMigrateDiff(
 		Vars:                      schemaVars,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
-		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateMigrationSource:   migrationSourceValidator,
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		PreparePublication:        preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
@@ -362,6 +363,7 @@ func validateAtlasMigrateDiffCurrentSource(
 	dir atlasargs.LocalDir,
 	format atlasmigrateimport.Format,
 	policy atlascompatpolicy.Policy,
+	devURL string,
 ) error {
 	if !policy.IsStrictCE() {
 		return nil
@@ -381,7 +383,7 @@ func validateAtlasMigrateDiffCurrentSource(
 		}
 		fSys = loaded.FS()
 	}
-	return policy.ValidateMigrationSource(fSys)
+	return policy.MigrationSourceValidator(devURL)(fSys)
 }
 
 func compatBidirectionalPlannerForFormat(

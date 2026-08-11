@@ -126,7 +126,7 @@ func runAtlasSchemaClean(
 	}
 	// Selector syntax is checked before the database is contacted, so a
 	// malformed pattern cannot half-clean a database on its way to failing.
-	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+	if err := atlasfilter.ValidateResourceIncludeSelectors(opts.include); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := atlasfilter.ValidateExcludeSelectors(opts.exclude); err != nil {

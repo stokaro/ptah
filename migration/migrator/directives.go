@@ -1,9 +1,10 @@
 package migrator
 
 import (
+	"iter"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
 )
 
@@ -22,8 +23,24 @@ import (
 // ordinary trailing comment after a statement is not treated as a directive
 // either.
 func ParseFileDirectives(sql string) map[string]string {
+	return parseFileDirectivesForDialect(sql, "")
+}
+
+func parseFileDirectivesForDialect(sql, dialect string) map[string]string {
+	return parseFileDirectives(ptahdirective.Bodies(sql, dialectlexer.Options(dialect)))
+}
+
+// parseFileDirectivesConservatively extracts only directives whose token
+// boundaries agree across every supported dialect. Callers use it while a
+// migration has no target connection yet; dialect-specific strings remain SQL
+// until the execution dialect can make the final decision.
+func parseFileDirectivesConservatively(sql string) map[string]string {
+	return parseFileDirectives(ptahdirective.ConservativeBodies(sql))
+}
+
+func parseFileDirectives(bodies iter.Seq[string]) map[string]string {
 	directives := map[string]string{}
-	for body := range ptahdirective.Bodies(sql, lexer.Options{StandardStrings: true}) {
+	for body := range bodies {
 		if isCheckDirectiveBody(body) {
 			continue // `-- +ptah check ...` is an ordered check, parsed by ParseChecks
 		}

@@ -6,6 +6,7 @@ package atlascompatpolicy
 import (
 	"fmt"
 	"io/fs"
+	"iter"
 	"net/url"
 	"os"
 	"path"
@@ -18,8 +19,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -290,6 +291,26 @@ func (p Policy) ValidateDialect(dialect string) error {
 // Ptah's richer meaning nor copy CE's behavior of treating the authored
 // metadata as ordinary SQL or an inert comment.
 func (p Policy) ValidateMigrationSource(fsys fs.FS) error {
+	return p.ValidateMigrationSourceForDialect(fsys, "")
+}
+
+// MigrationSourceValidator returns a stable-snapshot callback bound to the
+// target database URL. URL parsing is deliberately best-effort here: the
+// owning command retains its established URL diagnostic and ordering, while a
+// URL whose dialect is not yet available falls back to conservative scanning.
+func (p Policy) MigrationSourceValidator(databaseURL string) func(fs.FS) error {
+	dialect, _ := atlasurl.DialectFromURL(databaseURL)
+	return func(fsys fs.FS) error {
+		return p.ValidateMigrationSourceForDialect(fsys, dialect)
+	}
+}
+
+// ValidateMigrationSourceForDialect applies the strict migration-content gate
+// with the target engine's lexical rules. An empty dialect uses the
+// conservative cross-dialect intersection for commands such as import that do
+// not yet have a target, avoiding both false extension markers and silent
+// acceptance of an unambiguous marker.
+func (p Policy) ValidateMigrationSourceForDialect(fsys fs.FS, dialect string) error {
 	if !p.strictCE {
 		return nil
 	}
@@ -308,17 +329,14 @@ func (p Policy) ValidateMigrationSource(fsys fs.FS) error {
 		if firstNonemptyLine(source) == "-- atlas:txtar" {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Atlas txtar migration %s", name)
 		}
-		checks, err := migrator.ParseChecks(source, "")
+		hasCheck, hasOtherDirective, err := migrationDirectiveKinds(source, dialect)
 		if err != nil {
 			return fmt.Errorf("inspect migration %s for Atlas CE strict compatibility: %w", name, err)
 		}
-		if len(checks) > 0 {
+		if hasCheck {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah pre-migration checks in %s", name)
 		}
-		if len(migrator.ParseFileDirectives(source)) > 0 {
-			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah migration directives in %s", name)
-		}
-		if ptahdirective.HasMarker(source, lexer.Options{StandardStrings: true}) {
+		if hasOtherDirective {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah migration directives in %s", name)
 		}
 		if migrator.LooksAtlasTemplateSQL(source) {
@@ -326,6 +344,35 @@ func (p Policy) ValidateMigrationSource(fsys fs.FS) error {
 		}
 		return nil
 	})
+}
+
+func migrationDirectiveKinds(source, dialect string) (hasCheck, hasOther bool, err error) {
+	if strings.TrimSpace(dialect) == "" {
+		hasCheck, hasOther = classifyPtahDirectiveBodies(ptahdirective.ConservativeBodies(source))
+		return hasCheck, hasOther, nil
+	}
+	hasCheck, hasOther = classifyPtahDirectiveBodies(
+		ptahdirective.Bodies(source, dialectlexer.Options(dialect)),
+	)
+	if hasCheck {
+		if _, err := migrator.ParseChecks(source, dialect); err != nil {
+			return false, false, err
+		}
+	}
+	return hasCheck, hasOther, nil
+}
+
+func classifyPtahDirectiveBodies(bodies iter.Seq[string]) (hasCheck, hasOther bool) {
+	for body := range bodies {
+		body = strings.TrimSpace(body)
+		after, check := strings.CutPrefix(body, "check")
+		if check && (after == "" || after[0] == ' ' || after[0] == '\t') {
+			hasCheck = true
+			continue
+		}
+		hasOther = true
+	}
+	return hasCheck, hasOther
 }
 
 func firstNonemptyLine(source string) string {

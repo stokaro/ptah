@@ -131,6 +131,15 @@ var additionalResourceSelectableTypes = map[string]struct{}{
 	"procedure":         {},
 }
 
+// ValidateResourceIncludeSelectors validates include selectors for arbitrary
+// writer-owned top-level resources. It is the pre-connect counterpart of
+// [ScopeResources]; the ordinary schema validator intentionally remains
+// narrower because a DBSchema cannot represent these additional catalog kinds.
+func ValidateResourceIncludeSelectors(values []string) error {
+	_, err := parseResourceIncludeSelectors(values)
+	return err
+}
+
 func parseResourceIncludeSelectors(values []string) ([]resourcePattern, error) {
 	allowed := maps.Clone(includeSelectableTypes)
 	maps.Copy(allowed, additionalResourceSelectableTypes)

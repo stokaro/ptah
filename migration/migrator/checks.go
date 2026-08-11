@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
 )
@@ -84,26 +85,7 @@ func ParseChecks(source, dialect string) ([]Check, error) {
 }
 
 func checkLexerOptions(dialect string) lexer.Options {
-	normalized := platform.NormalizeDialect(dialect)
-	options := lexer.Options{StandardStrings: true}
-	switch normalized {
-	case platform.MySQL:
-		options.BackslashEscapes = true
-		options.RequireWhitespaceAfterDashDash = true
-		options.ExecutableComments = lexer.ExecutableCommentsMySQL
-	case platform.MariaDB:
-		options.BackslashEscapes = true
-		options.RequireWhitespaceAfterDashDash = true
-		options.ExecutableComments = lexer.ExecutableCommentsMariaDB
-	case platform.ClickHouse:
-		options.BackslashEscapes = true
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		options.PostgreSQLEscapeStrings = true
-	case platform.SQLServer:
-		options.BracketIdentifiers = true
-		options.DisableHashComments = true
-	}
-	return options
+	return dialectlexer.Options(dialect)
 }
 
 // isCheckDirectiveBody reports whether a +ptah directive body (the text after

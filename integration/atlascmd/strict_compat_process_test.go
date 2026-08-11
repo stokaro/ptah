@@ -75,6 +75,34 @@ func TestStrictCompatProcessMatchesCommunityGates(t *testing.T) {
 			qt.Assert(t, stderr, qt.Equals, test.wantStderr)
 		})
 	}
+
+	t.Run("migrate diff desired snapshot uses target dialect", func(t *testing.T) {
+		fixture := newStrictMigrationPreflightFixture(t)
+		qt.Assert(t, os.WriteFile(filepath.Join(fixture.desired, "1_init.sql"), []byte(
+			"SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\n;\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(fixture.desired, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"migrate", "diff", "next",
+			"--dir", "file://"+fixture.current,
+			"--to", "file://"+fixture.desired,
+			"--dev-url", "sqlite://"+fixture.dev,
+		)
+
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			"Error: load --to schema: Atlas Community Edition strict compatibility does not support "+
+				"Ptah migration directives in 1_init.sql\n")
+		assertPathsDoNotExist(t,
+			fixture.dev,
+			filepath.Join(fixture.root, ".current.ptah-migrate-diff.lock"),
+		)
+	})
 }
 
 func TestFullCompatProcessRetainsExtensionsByDefault(t *testing.T) {

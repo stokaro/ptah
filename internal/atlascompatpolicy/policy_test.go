@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -476,4 +477,22 @@ func TestStrictCEMigrationContentValidationIgnoresDirectiveLookalikes(t *testing
 			qt.Assert(t, err, qt.IsNil)
 		})
 	}
+}
+
+func TestStrictCEMigrationContentValidationUsesTargetDialect(t *testing.T) {
+	mysqlString := "SELECT 'prefix \\'\n-- +ptah check name=\"fake\"\nsuffix';\n"
+	fsys := fstest.MapFS{"1_users.sql": {Data: []byte(mysqlString)}}
+
+	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(fsys, platform.MySQL), qt.IsNil)
+	qt.Assert(t, atlascompatpolicy.StrictCE().MigrationSourceValidator("mysql://localhost/app")(fsys), qt.IsNil)
+	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys), qt.IsNil)
+
+	actualDirective := fstest.MapFS{"1_users.sql": {Data: []byte(
+		"SELECT 'prefix \\'suffix';\n-- +ptah no_transaction\nSELECT 1;\n",
+	)}}
+	qt.Assert(t,
+		atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(actualDirective, platform.MySQL),
+		qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+	)
 }

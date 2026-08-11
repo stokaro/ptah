@@ -300,7 +300,8 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := toSet.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
-	toSet, err = toSet.PrepareMigrationSource(opts.policy.ValidateMigrationSource)
+	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
+	toSet, err = toSet.PrepareMigrationSource(migrationSourceValidator)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
@@ -364,7 +365,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
 		ValidateCurrentSchema:     opts.policy.ValidateInspectedSchema,
-		ValidateMigrationSource:   opts.policy.ValidateMigrationSource,
+		ValidateMigrationSource:   migrationSourceValidator,
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		Vars:                      schemaVars,
 	})

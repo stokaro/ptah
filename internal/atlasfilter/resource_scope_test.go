@@ -98,3 +98,19 @@ func TestDatabaseIncludeValidationDoesNotClaimWriterOnlyKinds(t *testing.T) {
 	qt.Assert(t, err, qt.ErrorMatches,
 		`unsupported Atlas include resource type "procedure" in selector "refresh_users\[type=procedure\]"`)
 }
+
+func TestValidateResourceIncludeSelectorsAcceptsWriterOnlyKinds(t *testing.T) {
+	qt.Assert(t,
+		atlasfilter.ValidateResourceIncludeSelectors([]string{
+			"refresh_users[type=procedure]",
+			"archive_users[type=foreign_table]",
+			"*[type=default_privilege]",
+		}),
+		qt.IsNil,
+	)
+	qt.Assert(t,
+		atlasfilter.ValidateResourceIncludeSelectors([]string{"users[type=widget]"}),
+		qt.ErrorMatches,
+		`unsupported Atlas include resource type "widget" in selector "users\[type=widget\]"`,
+	)
+}

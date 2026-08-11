@@ -1,6 +1,7 @@
 package ptahdirective_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -55,4 +56,12 @@ func TestHasMarkerDistinguishesDirectiveCommentsFromSQLLookalikes(t *testing.T) 
 			qt.Assert(t, got, qt.Equals, test.want)
 		})
 	}
+}
+
+func TestConservativeBodiesKeepsOnlyCrossDialectMarkers(t *testing.T) {
+	sql := "SELECT 'prefix \\'\n-- +ptah check name=\"fake\"\nsuffix';\n"
+
+	got := slices.Collect(ptahdirective.ConservativeBodies(sql))
+
+	qt.Assert(t, got, qt.HasLen, 0)
 }
