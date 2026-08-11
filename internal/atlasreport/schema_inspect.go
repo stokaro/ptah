@@ -210,7 +210,11 @@ func SchemaInspectTemplateFunctions(format string) ([]string, error) {
 		return nil, err
 	}
 	functions := make(map[string]struct{})
-	collectTemplateFunctions(tmpl.Tree.Root, functions)
+	for _, associated := range tmpl.Templates() {
+		if associated.Tree != nil {
+			collectTemplateFunctions(associated.Tree.Root, functions)
+		}
+	}
 	names := make([]string, 0, len(functions))
 	for name := range functions {
 		names = append(names, name)

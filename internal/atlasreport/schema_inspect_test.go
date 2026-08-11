@@ -60,11 +60,12 @@ func TestValidateSchemaInspectTemplate_FailurePath(t *testing.T) {
 
 func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T) {
 	functions, err := atlasreport.SchemaInspectTemplateFunctions(
-		`literal hcl {{ "split" }} {{ if sql . }}{{ write (hcl .) }}{{ end }}`,
+		`literal hcl {{ "split" }} {{ if sql . }}{{ write (hcl .) }}{{ end }}` +
+			`{{ define "nested" }}{{ split (hcl .) }}{{ end }}{{ template "nested" . }}`,
 	)
 
 	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, functions, qt.DeepEquals, []string{"hcl", "sql", "write"})
+	qt.Assert(t, functions, qt.DeepEquals, []string{"hcl", "split", "sql", "write"})
 }
 
 func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
