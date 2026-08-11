@@ -37,15 +37,37 @@ directory containing `atlas.sum`), or an `env://` reference into the evaluated
 
 ```bash
 ptah-compat schema inspect --url "$DATABASE_URL" > schema.hcl
-ptah-compat schema inspect --url "$DATABASE_URL" --format sql > schema.sql
-ptah-compat schema inspect --url "$DATABASE_URL" --format json > schema.json
+ptah-compat schema inspect --url "$DATABASE_URL" --format '{{ sql . }}' > schema.sql
+ptah-compat schema inspect --url "$DATABASE_URL" --format '{{ json . }}' > schema.json
 ```
+
+### Inspect output formats
+
+The Atlas-compatible `--format` value is a Go-template body. The helper call,
+not the helper's bare name, renders HCL, SQL, or JSON:
+
+| Request | Standard output |
+| --- | --- |
+| no `--format` | rendered HCL |
+| `--format '{{ hcl . }}'` | rendered HCL |
+| `--format '{{ sql . }}'` | rendered SQL |
+| `--format '{{ json . }}'` | rendered JSON |
+| `--format hcl` | literal `hcl` (3 bytes, no line feed) |
+| `--format sql` | literal `sql` (3 bytes, no line feed) |
+| `--format json` | literal `json` (4 bytes, no line feed) |
+| `--format ' sql '` | literal ` sql ` (hex `20 73 71 6c 20`, no line feed) |
+| `--format ' json '` | literal ` json ` (hex `20 6a 73 6f 6e 20`, no line feed) |
+| `--format ' hcl '` | literal ` hcl ` (hex `20 68 63 6c 20`, no line feed) |
+
+The literal rows match Atlas CE v1.3.0 for empty and populated SQLite databases.
+Native `ptah schema inspect --format hcl|sql|json` keeps its rendered
+shorthands.
 
 ### HCL document framing
 
 Single-document HCL output carries no Ptah generated-code marker. A nonempty
 HCL document ends with exactly one line feed, whether you use the default
-format, `--format hcl`, the `hcl` or `.MarshalHCL` template path, or
+format, the `hcl` or `.MarshalHCL` template path, or
 `--output`. An empty SQLite database therefore produces these exact visible
 lines, followed by one line feed:
 
@@ -416,10 +438,10 @@ warning: rls_policies.accounts_all: omitted from ...
 ```
 
 The omission is scoped as narrowly as the measurement is. It applies to HCL
-output on PostgreSQL only: `--format sql` still writes the extension, the
-sequence, and the policy, because SQL output is read by a database rather than
-by that binary. On SQLite the same three blocks are accepted, so nothing is
-omitted there. Every other block Ptah renders — `role`, `function`, `view`,
+output on PostgreSQL only: `--format '{{ sql . }}'` still writes the extension,
+the sequence, and the policy, because SQL output is read by a database rather
+than by that binary. On SQLite the same three blocks are accepted, so nothing
+is omitted there. Every other block Ptah renders — `role`, `function`, `view`,
 `materialized`, `trigger`, `permission` — is kept, because that binary drops a
 block type it does not model and reads the file anyway.
 

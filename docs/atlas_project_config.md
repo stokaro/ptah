@@ -56,7 +56,7 @@ env "local" {
 
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
       apply   = "{{ sql . \"  \" }}"
       diff    = "{{ sql . \"\" }}"
     }
@@ -116,6 +116,13 @@ The supported attributes map to Ptah settings as follows:
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 | `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
 | `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
+
+`format.schema.inspect` follows the Atlas-compatible command's template
+semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
+literal bytes with no line feed. Surrounding whitespace is also preserved; for
+example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
+`"{{ sql . }}"`, or `"{{ json . }}"` to render the inspected schema. The native
+`ptah schema inspect --format hcl|sql|json` shorthands continue to render.
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
 The nested `schema.src` form matches Atlas project config syntax. Ptah

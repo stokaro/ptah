@@ -136,7 +136,18 @@ the index; the sections carry the detail.
 
 **Implementation status.** Partial. `ptah db read` remains the native Ptah schema-read path.
 
-`ptah-compat schema inspect` now emits Atlas-shaped output without Ptah status banners: HCL by default, SQL with `--format sql` or `--format '{{ sql . }}'`, JSON with `--format json` or `--format '{{ json . }}'`, custom templates using the supported inspect helpers, HCL/SQL split-write file exports with the documented Atlas split strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), and OSS `--exclude` resource filters including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs.
+`ptah-compat schema inspect` emits Atlas-shaped output without Ptah status
+banners: HCL by default, or HCL, SQL, and JSON through their explicit helper
+templates. Bare `--format hcl`, `--format sql`, and `--format json` write the
+literal value with no line feed. Surrounding whitespace is also preserved byte
+for byte. Those literal cases match Atlas CE v1.3.0.
+
+Custom templates use the supported inspect helpers. HCL/SQL split-write file
+exports use the documented Atlas split strategies: per object by default,
+`split "schema"`, `split "type"`, and an optional file-extension argument. The
+command also supports OSS `--exclude` resource filters, including the
+Atlas-documented `*[type=extension].version` field selector with
+schema-qualified globs.
 
 Local schema files, migration directories, and `env://` references are inspected through required `--dev-url` dev-database evaluation (reset, materialize, introspect). Other field-level exclude selectors fail explicitly; exporter blocks remain tracked gaps.
 
