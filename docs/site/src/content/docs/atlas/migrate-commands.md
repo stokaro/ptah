@@ -1066,19 +1066,22 @@ community binary v1.3.0 byte for byte:
 | invocation | exit | message |
 | --- | --- | --- |
 | no `--dev-url` | 1 | `required flag(s) "dev-url" not set` |
-| no `--latest` and no `--git-base` | 1 | `--latest or --git-base is required` |
+| no usable selector, including `--latest 0` without `--git-base` | 1 | `--latest or --git-base is required` |
 
 An argv missing both answers the `--dev-url` sentence, because that is the one
 the pinned binary answers on the same argv.
 
 A **scope** may come from the selected `atlas.hcl` environment instead of the
 command line: a `lint { latest = 1 }` or a `lint { git { base = … } }` satisfies
-the requirement with nothing spelled on the command line. `--latest N` with an N
-larger than the directory analyzes every migration. The scope refusal comes
-before the migration directory is read and before `--dev-url` is contacted,
-which is the part that matters: `--dev-url` is scratch space and the run
-**cleans** it, so an unscoped invocation that answered would drop tables in a
-database the pinned binary never connects to.
+the requirement with nothing spelled on the command line. An explicit
+`--latest 0` clears configured `lint.latest` but leaves an explicit or
+configured Git selector eligible. With `--git-base`, zero follows Git selection
+instead of conflicting with it. Positive `--latest N` remains exclusive with
+Git, and an N larger than the directory analyzes every migration. The scope
+refusal comes before the migration directory is read and before `--dev-url` is
+contacted, which is the part that matters: `--dev-url` is scratch space and the
+run **cleans** it, so an unscoped invocation that answered would drop tables in
+a database the pinned binary never connects to.
 
 Two environment variables relax these requirements. They relax **different**
 ones, and neither implies the other:
