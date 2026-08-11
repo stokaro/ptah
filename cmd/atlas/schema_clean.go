@@ -147,7 +147,12 @@ func runAtlasSchemaClean(
 	inspectOpts := schemaclean.InspectOptions{}
 	if policy.IsStrictCE() {
 		inspectOpts.ValidateSchema = func(schema *dbschematypes.DBSchema) error {
-			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(schema))
+			owned := schemaclean.SnapshotWithinWriterScope(
+				schema,
+				conn.Info().Dialect,
+				conn.Info().Schema,
+			)
+			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned))
 		}
 	}
 	plan, err := schemaclean.InspectWithOptions(conn, inspectOpts)
@@ -155,7 +160,11 @@ func runAtlasSchemaClean(
 		return cmdutil.Fail(cmd, err)
 	}
 	for _, object := range plan.Objects {
-		if err := policy.ValidateSchemaCleanObject(object.Type, object.Name); err != nil {
+		if err := policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+			Kind:             object.Type,
+			Name:             object.Name,
+			ImplicitSequence: object.Implicit,
+		}); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}

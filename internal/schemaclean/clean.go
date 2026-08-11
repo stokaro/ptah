@@ -3,6 +3,7 @@ package schemaclean
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"slices"
 	"strings"
@@ -63,32 +64,65 @@ type InspectOptions struct {
 type Plan struct {
 	Objects []Object
 	Changes []Change
+
+	// executionChanges is kept separate from Changes because Changes is a
+	// stable, alphabetical report while a scoped cleanup must drop known
+	// dependents before the objects they depend on.
+	executionChanges []Change
 }
 
 type Object struct {
-	Type    string
-	Schema  string
-	Table   string
-	Name    string
-	Command string
+	Type         string
+	Schema       string
+	Table        string
+	Name         string
+	SelectorName string
+	Parameters   string
+	Implicit     bool
+	Command      string
+}
+
+// SnapshotWithinWriterScope returns the reader snapshot restricted where the
+// cleanup writer itself is restricted. PostgreSQL extensions are database-wide
+// reader inventory, while schema cleanup can only reason about extensions
+// owned by its configured schema; global extensions must not veto an otherwise
+// schema-local clean.
+func SnapshotWithinWriterScope(
+	schema *dbschematypes.DBSchema,
+	dialect string,
+	writerSchema string,
+) *dbschematypes.DBSchema {
+	if schema == nil || !isPostgresFamily(dialect) {
+		return schema
+	}
+	writerSchema = strings.TrimSpace(writerSchema)
+	if writerSchema == "" {
+		writerSchema = "public"
+	}
+	owned := *schema
+	owned.Extensions = slices.DeleteFunc(
+		slices.Clone(schema.Extensions),
+		func(extension dbschematypes.DBExtension) bool {
+			return strings.TrimSpace(extension.Schema) != writerSchema
+		},
+	)
+	return &owned
 }
 
 // Change is one line of the cleanup report: an object that Apply destroys, plus
 // a rendered DROP statement describing that destruction.
 //
-// Cmd is documentation, not the statement Apply runs. Apply delegates to
-// SchemaWriter.DropAllTables, which builds its own statements from a live
-// catalog query; those differ in detail (the PostgreSQL writer, for instance,
-// emits RESTRICT where this report renders CASCADE, and drops overloaded
-// functions by full signature where this report renders the bare name). Cmd
-// exists so an operator can read what a plan line means before approving a
-// destructive command.
+// An unscoped Apply delegates to SchemaWriter.DropAllTables, which rebuilds its
+// own statements from the live catalog. ApplyPlan executes Cmd for a scoped
+// cleanup, but in a separate dependency-safe order rather than this report's
+// alphabetical order.
 type Change struct {
-	Type   string
-	Schema string
-	Table  string
-	Name   string
-	Cmd    string
+	Type       string
+	Schema     string
+	Table      string
+	Name       string
+	Parameters string
+	Cmd        string
 }
 
 // dialectCoverage records which object kinds a dialect's
@@ -180,7 +214,8 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	return nil
 }
 
-// ApplyPlan executes exactly the changes plan carries, in plan order.
+// ApplyPlan executes exactly the changes plan carries, in the plan's
+// dependency-safe execution order.
 //
 // It is the execution half of a narrowed plan. [Apply] hands the whole database
 // to the writer's DropAllTables, which is correct only when the plan describes
@@ -190,7 +225,13 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan) error {
 	conn.SchemaWriter().SetDryRun(false)
 	executor := conn.Writer()
-	for _, change := range plan.Changes {
+	changes := plan.executionChanges
+	if changes == nil {
+		// A literal Plan remains executable for internal callers, but plans built
+		// by PlanFromObjects always carry the dependency-safe order.
+		changes = plan.Changes
+	}
+	for _, change := range changes {
 		if strings.TrimSpace(change.Cmd) == "" {
 			continue
 		}
@@ -209,22 +250,32 @@ func PlanFromSchema(schema *dbschematypes.DBSchema, dialect string) Plan {
 }
 
 func PlanFromObjects(objects []Object, dialect string) Plan {
-	objects = append([]Object(nil), objects...)
+	executionObjects := slices.Clone(objects)
+	sortExecutionObjects(executionObjects, dialect)
+	executionChanges := changesFromObjects(executionObjects, dialect)
+
+	objects = slices.Clone(objects)
 	sortObjects(objects)
+	return Plan{
+		Objects:          objects,
+		Changes:          changesFromObjects(objects, dialect),
+		executionChanges: executionChanges,
+	}
+}
+
+func changesFromObjects(objects []Object, dialect string) []Change {
 	changes := make([]Change, 0, len(objects))
 	for _, object := range objects {
 		changes = append(changes, Change{
-			Type:   object.Type,
-			Schema: object.Schema,
-			Table:  object.Table,
-			Name:   object.Name,
-			Cmd:    dropCommand(dialect, object),
+			Type:       object.Type,
+			Schema:     object.Schema,
+			Table:      object.Table,
+			Name:       object.Name,
+			Parameters: object.Parameters,
+			Cmd:        dropCommand(dialect, object),
 		})
 	}
-	return Plan{
-		Objects: objects,
-		Changes: changes,
-	}
+	return changes
 }
 
 // coverageFor maps a dialect onto the object kinds its writer destroys.
@@ -341,12 +392,14 @@ func cleanupObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 		{coverage.domains, domainObjects},
 		{coverage.composites, compositeObjects},
 		{coverage.ranges, rangeObjects},
-		{coverage.functions, functionObjects},
 	} {
 		if !kind.covered {
 			continue
 		}
 		objects = append(objects, kind.collect(schema)...)
+	}
+	if coverage.functions {
+		objects = append(objects, functionObjects(schema, dialect)...)
 	}
 	return objects
 }
@@ -458,15 +511,25 @@ func rangeObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-// functionObjects reports PostgreSQL functions. DBFunction carries neither a
-// schema nor a signature, so overloads appear as repeated rows sharing one
-// name. Each row is still one function the writer destroys.
-func functionObjects(schema *dbschematypes.DBSchema) []Object {
+// functionObjects reports PostgreSQL functions. Parameters remains the full
+// declaration form that inspect and report consumers expect, while the
+// pre-rendered command uses PostgreSQL's distinct overload identity. Older or
+// synthetic snapshots without identity metadata retain the former Parameters
+// fallback instead of losing their executable cleanup capability.
+func functionObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 	objects := make([]Object, 0, len(schema.Functions))
 	for _, function := range schema.Functions {
+		identityArguments := function.Parameters
+		if function.IdentityArguments != nil {
+			identityArguments = *function.IdentityArguments
+		}
+		name := sqlident.Qualified(dialect, function.Schema, function.Name)
 		objects = append(objects, Object{
-			Type: ObjectTypeFunction,
-			Name: function.Name,
+			Type:       ObjectTypeFunction,
+			Schema:     function.Schema,
+			Name:       function.Name,
+			Parameters: function.Parameters,
+			Command:    dropRoutineCommand(dialect, "FUNCTION", name, identityArguments),
 		})
 	}
 	return objects
@@ -492,15 +555,50 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 		schema = "public"
 	}
 	rows, err := conn.Query(`
-		WITH runtime_objects AS (
+		WITH sequence_objects AS (
 			SELECT
-				'sequence'::text AS object_kind,
-				n.nspname AS object_schema,
-				c.relname AS object_name,
-				format('DROP SEQUENCE IF EXISTS %I.%I RESTRICT', n.nspname, c.relname) AS drop_statement
+				c.oid,
+				n.nspname,
+				c.relname,
+				owner_tbl.relname AS owner_table,
+				CASE
+					WHEN dep.refobjid IS NULL THEN false
+					WHEN dep.deptype = 'i' THEN true
+					WHEN owner_col_type.typtype = 'd' THEN false
+					ELSE EXISTS (
+						SELECT 1
+						FROM pg_attrdef ad
+						JOIN pg_depend dd ON dd.classid = 'pg_attrdef'::regclass
+							AND dd.objid = ad.oid
+							AND dd.refclassid = 'pg_class'::regclass
+							AND dd.refobjid = c.oid
+							AND dd.deptype = 'n'
+						WHERE ad.adrelid = dep.refobjid AND ad.adnum = dep.refobjsubid
+					)
+				END AS is_implicit
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
+			LEFT JOIN pg_depend dep ON dep.objid = c.oid
+				AND dep.classid = 'pg_class'::regclass
+				AND dep.refclassid = 'pg_class'::regclass
+				AND dep.deptype IN ('a', 'i')
+				AND dep.refobjsubid > 0
+			LEFT JOIN pg_class owner_tbl ON owner_tbl.oid = dep.refobjid
+			LEFT JOIN pg_attribute owner_col ON owner_col.attrelid = dep.refobjid
+				AND owner_col.attnum = dep.refobjsubid
+			LEFT JOIN pg_type owner_col_type ON owner_col_type.oid = owner_col.atttypid
 			WHERE n.nspname = $1 AND c.relkind = 'S'
+		),
+		runtime_objects AS (
+			SELECT
+				'sequence'::text AS object_kind,
+				nspname AS object_schema,
+				relname AS object_name,
+				relname AS selector_name,
+				is_implicit,
+				COALESCE(owner_table, '') AS owner_table,
+				format('DROP SEQUENCE IF EXISTS %I.%I RESTRICT', nspname, relname) AS drop_statement
+			FROM sequence_objects
 
 			UNION ALL
 
@@ -508,6 +606,9 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 				'foreign_table',
 				n.nspname,
 				c.relname,
+				c.relname,
+				false,
+				'',
 				format('DROP FOREIGN TABLE IF EXISTS %I.%I RESTRICT', n.nspname, c.relname)
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -523,6 +624,9 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 				END,
 				n.nspname,
 				format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)),
+				p.proname,
+				false,
+				'',
 				format(
 					'DROP %s IF EXISTS %I.%I(%s) RESTRICT',
 					CASE p.prokind
@@ -552,6 +656,9 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 				'collation',
 				n.nspname,
 				c.collname,
+				c.collname,
+				false,
+				'',
 				format('DROP COLLATION IF EXISTS %I.%I RESTRICT', n.nspname, c.collname)
 			FROM pg_collation c
 			JOIN pg_namespace n ON n.oid = c.collnamespace
@@ -571,6 +678,17 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 						ELSE pg_get_userbyid(acl.grantee)
 					END
 				),
+				format(
+					'%s:%s:%s',
+					pg_get_userbyid(d.defaclrole),
+					d.defaclobjtype,
+					CASE acl.grantee
+						WHEN 0 THEN 'PUBLIC'
+						ELSE pg_get_userbyid(acl.grantee)
+					END
+				),
+				false,
+				'',
 				format(
 					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
 					'REVOKE ALL PRIVILEGES ON %s FROM %s',
@@ -593,7 +711,7 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 			WHERE n.nspname = $1
 			  AND d.defaclobjtype IN ('r', 'S', 'f', 'T')
 		)
-		SELECT object_kind, object_schema, object_name, drop_statement
+		SELECT object_kind, object_schema, object_name, selector_name, is_implicit, owner_table, drop_statement
 		FROM runtime_objects
 		ORDER BY object_kind, object_name`, schema)
 	if err != nil {
@@ -606,8 +724,11 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 		var kind string
 		var schema string
 		var name string
+		var selectorName string
+		var implicit bool
+		var table sql.NullString
 		var command string
-		if err := rows.Scan(&kind, &schema, &name, &command); err != nil {
+		if err := rows.Scan(&kind, &schema, &name, &selectorName, &implicit, &table, &command); err != nil {
 			return nil, fmt.Errorf("scan cleanup PostgreSQL runtime object: %w", err)
 		}
 		objectType, ok := postgresRuntimeObjectType(kind)
@@ -615,10 +736,13 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection) ([]Object,
 			return nil, fmt.Errorf("inspect cleanup PostgreSQL runtime objects: unsupported object kind %q", kind)
 		}
 		objects = append(objects, Object{
-			Type:    objectType,
-			Schema:  schema,
-			Name:    name,
-			Command: command,
+			Type:         objectType,
+			Schema:       schema,
+			Table:        table.String,
+			Name:         name,
+			SelectorName: selectorName,
+			Implicit:     implicit,
+			Command:      command,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -884,20 +1008,20 @@ func postgresRuntimeObjectType(kind string) (string, bool) {
 	}
 }
 
-// sortObjects orders the report by (type, schema, table, name): object kind
-// first, alphabetically by the ObjectType* string, then by location within the
-// kind. That is what orders objects of different kinds relative to each other —
-// nothing else does, and in particular nothing about dependency direction does.
+// sortObjects orders the report by (type, schema, table, name, parameters):
+// object kind first, alphabetically by the ObjectType* string, then by location
+// within the kind. That is what orders objects of different kinds relative to
+// each other — nothing else does, and in particular nothing about dependency
+// direction does.
 //
 // This is a REPORT ORDER, NOT AN EXECUTION ORDER. Reading it top to bottom does
-// not describe the sequence Apply performs, and replaying the rendered Cmd
+// not describe the sequence cleanup performs, and replaying the rendered Cmd
 // strings in this order would fail: "table" sorts before "view", so a view's
-// backing table is listed first even though the writer drops views first. Apply
-// delegates to SchemaWriter.DropAllTables, whose execution order comes from the
-// writer's own dependency-aware catalog query — for PostgreSQL, `ORDER BY
-// priority, dependency_depth DESC, ...` in internal/dbschema/postgres/writer.go.
-// This package cannot reproduce that order because the reader's snapshot
-// carries no dependency depth.
+// backing table is listed first even though cleanup drops views first. An
+// unscoped Apply delegates to SchemaWriter.DropAllTables. A scoped ApplyPlan
+// uses sortExecutionObjects below; it preserves the writer's known cross-kind
+// dependencies but cannot reproduce catalog dependency depth because the
+// reader's snapshot does not carry it.
 //
 // Alphabetical-by-kind is chosen because it is dialect independent, stable
 // across releases, and diffs cleanly when a schema gains or loses one object.
@@ -914,8 +1038,79 @@ func sortObjects(objects []Object) {
 		if cmp := strings.Compare(a.Table, b.Table); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(a.Name, b.Name)
+		if cmp := strings.Compare(a.Name, b.Name); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Parameters, b.Parameters)
 	})
+}
+
+// sortExecutionObjects orders known dependents before the objects they can
+// depend on. The writer's catalog query remains authoritative for an unscoped
+// cleanup; this order is for ApplyPlan, whose selected object set cannot be
+// handed to DropAllTables without widening the destructive scope.
+//
+// PostgreSQL is the discriminating case: views depend on tables, tables own
+// implicit SERIAL and identity sequences, and routines can depend on types.
+// Foreign keys are removed before every relation. MySQL and MariaDB use the
+// same broad relation order but destroy stored programs after tables, matching
+// their cleanup writer.
+func sortExecutionObjects(objects []Object, dialect string) {
+	slices.SortFunc(objects, func(a, b Object) int {
+		if cmp := executionPriority(dialect, a.Type) - executionPriority(dialect, b.Type); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Schema, b.Schema); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Table, b.Table); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Name, b.Name); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Parameters, b.Parameters)
+	})
+}
+
+func executionPriority(dialect, objectType string) int {
+	if isMySQLFamily(dialect) {
+		switch objectType {
+		case ObjectTypeView, ObjectTypeMaterializedView:
+			return 0
+		case ObjectTypeForeignKey:
+			return 10
+		case ObjectTypeTable, ObjectTypeForeignTable:
+			return 20
+		case ObjectTypeEvent, ObjectTypeFunction, ObjectTypeProcedure, ObjectTypeAggregate:
+			return 30
+		case ObjectTypeSequence:
+			return 40
+		default:
+			return 100
+		}
+	}
+
+	switch objectType {
+	case ObjectTypeForeignKey:
+		return 0
+	case ObjectTypeView, ObjectTypeMaterializedView:
+		return 10
+	case ObjectTypeTable, ObjectTypeForeignTable:
+		return 20
+	case ObjectTypeSequence:
+		return 30
+	case ObjectTypeEvent, ObjectTypeFunction, ObjectTypeProcedure, ObjectTypeAggregate:
+		return 40
+	case ObjectTypeComposite, ObjectTypeDomain, ObjectTypeEnum, ObjectTypeRange:
+		return 50
+	case ObjectTypeCollation:
+		return 60
+	case ObjectTypeDefaultPrivilege:
+		return 70
+	default:
+		return 100
+	}
 }
 
 func dropCommand(dialect string, object Object) string {
@@ -935,11 +1130,11 @@ func dropCommand(dialect string, object Object) string {
 	case ObjectTypeForeignKey:
 		return dropForeignKeyCommand(dialect, object)
 	case ObjectTypeFunction:
-		return dropRoutineCommand(dialect, "FUNCTION", name)
+		return dropRoutineCommand(dialect, "FUNCTION", name, object.Parameters)
 	case ObjectTypeMaterializedView:
 		return "DROP MATERIALIZED VIEW IF EXISTS " + name + " CASCADE"
 	case ObjectTypeProcedure:
-		return dropRoutineCommand(dialect, "PROCEDURE", name)
+		return dropRoutineCommand(dialect, "PROCEDURE", name, object.Parameters)
 	case ObjectTypeSequence:
 		return dropSequenceCommand(dialect, name)
 	case ObjectTypeTable:
@@ -960,9 +1155,9 @@ func dropForeignKeyCommand(dialect string, object Object) string {
 	return "ALTER TABLE " + table + " DROP CONSTRAINT " + constraint
 }
 
-func dropRoutineCommand(dialect, keyword, name string) string {
+func dropRoutineCommand(dialect, keyword, name, parameters string) string {
 	if isPostgresFamily(dialect) {
-		return "DROP " + keyword + " IF EXISTS " + name + " CASCADE"
+		return "DROP " + keyword + " IF EXISTS " + name + "(" + parameters + ") CASCADE"
 	}
 	return "DROP " + keyword + " IF EXISTS " + name
 }

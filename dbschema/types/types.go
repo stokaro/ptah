@@ -651,13 +651,21 @@ type DBFunction struct {
 	// default. Without it a schema-qualified `--exclude app.fn_app` matched
 	// nothing and silently kept the function (stokaro/ptah#933).
 	Schema     string `json:"schema,omitempty"`
-	Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
-	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
-	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
-	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
-	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	Body       string `json:"body"`       // Function body/implementation
-	Comment    string `json:"comment"`    // Function comment/description
+	Parameters string `json:"parameters"` // Full declaration parameters (e.g., "tenant_id_param TEXT DEFAULT 'public'")
+	// IdentityArguments is PostgreSQL's canonical input-argument type list for
+	// identifying an overload in ALTER or DROP FUNCTION. It deliberately stays
+	// separate from Parameters: declaration parameters may contain names,
+	// defaults, and OUT-only arguments that are not part of a function's drop
+	// identity. Nil means a reader did not capture the identity; a non-nil empty
+	// string is the valid identity of a zero-input or OUT-only function. This
+	// reader-only execution fact is not part of serialized schema descriptions.
+	IdentityArguments *string `json:"-"`
+	Returns           string  `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+	Language          string  `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+	Security          string  `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility        string  `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Body              string  `json:"body"`       // Function body/implementation
+	Comment           string  `json:"comment"`    // Function comment/description
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

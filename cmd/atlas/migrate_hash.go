@@ -65,7 +65,6 @@ func atlasMigrateHashVerb() atlasVerb {
 // with, so a directory this writes is one that verifies.
 func runAtlasMigrateHash(
 	cmd *cobra.Command,
-	_ atlascompatpolicy.Policy,
 	source atlasMigrateSource,
 ) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {

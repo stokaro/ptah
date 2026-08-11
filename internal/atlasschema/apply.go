@@ -38,6 +38,9 @@ type ApplyOptions struct {
 	DevURL string
 	// ProjectEnv expands env:// desired-state references.
 	ProjectEnv atlassource.ProjectEnv
+	// PreparedTo carries a classified desired source whose migration-directory
+	// bytes were captured and policy-checked before the target was opened.
+	PreparedTo *atlassource.Set
 	// LocalFilesOnly restricts ToURLs to local schema files, preserving the
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
@@ -95,6 +98,9 @@ type ApplyRuntimeOptions struct {
 	DryRun  bool
 	// ProjectEnv expands env:// desired-state references in ToURLs.
 	ProjectEnv atlassource.ProjectEnv
+	// PreparedTo is the command-bound desired source prepared before target
+	// connection and lock acquisition; see [ApplyOptions.PreparedTo].
+	PreparedTo *atlassource.Set
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired].
 	Desired *goschema.Database
@@ -415,9 +421,15 @@ func loadDesiredApplySchema(
 		}
 		return validateDesiredApplySchema(desired, opts.ValidateDesiredSchema)
 	}
-	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
-	if err != nil {
-		return nil, err
+	var set atlassource.Set
+	if opts.PreparedTo != nil {
+		set = *opts.PreparedTo
+	} else {
+		var err error
+		set, err = atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+		if err != nil {
+			return nil, err
+		}
 	}
 	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
 		Dialect:                   conn.Info().Dialect,
@@ -459,6 +471,7 @@ func PrepareApply(
 		Policy:                    opts.Policy,
 		DevURL:                    opts.DevURL,
 		ProjectEnv:                opts.ProjectEnv,
+		PreparedTo:                opts.PreparedTo,
 		Desired:                   opts.Desired,
 		ValidateDesiredSchema:     opts.ValidateDesiredSchema,
 		ValidateCurrentSchema:     opts.ValidateCurrentSchema,

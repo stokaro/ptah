@@ -33,6 +33,20 @@ func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
 	}
 }
 
+func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
+	schema := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
+		{Name: "plpgsql", Schema: "pg_catalog"},
+		{Name: "pgcrypto", Schema: "app"},
+	}}
+
+	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
+
+	qt.Assert(t, got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
+		{Name: "pgcrypto", Schema: "app"},
+	})
+	qt.Assert(t, schema.Extensions, qt.HasLen, 2)
+}
+
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's
 // plan coverage to what that dialect's SchemaWriter.DropAllTables really drops.
 //
@@ -55,7 +69,11 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 				{Type: "domain", Schema: "public", Name: "d_email"},
 				{Type: "enum", Name: "mood"},
 				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
-				{Type: "function", Name: "f_touch"},
+				{
+					Type:    "function",
+					Name:    "f_touch",
+					Command: `DROP FUNCTION IF EXISTS "f_touch"() CASCADE`,
+				},
 				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 				{Type: "range", Schema: "public", Name: "r_int"},
 				{Type: "table", Schema: "public", Name: "posts"},
@@ -71,7 +89,11 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 				{Type: "domain", Schema: "public", Name: "d_email"},
 				{Type: "enum", Name: "mood"},
 				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
-				{Type: "function", Name: "f_touch"},
+				{
+					Type:    "function",
+					Name:    "f_touch",
+					Command: `DROP FUNCTION IF EXISTS "f_touch"() CASCADE`,
+				},
 				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 				{Type: "range", Schema: "public", Name: "r_int"},
 				{Type: "table", Schema: "public", Name: "posts"},
@@ -163,7 +185,7 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			name:    "postgres function",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "function", Name: "f_touch"},
-			want:    `DROP FUNCTION IF EXISTS "f_touch" CASCADE`,
+			want:    `DROP FUNCTION IF EXISTS "f_touch"() CASCADE`,
 		},
 		{
 			name:    "postgres domain",
@@ -276,6 +298,82 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 	}
 }
 
+func TestPlanFromSchemaPreservesOverloadedFunctionIdentity(t *testing.T) {
+	c := qt.New(t)
+	integerIdentity := "integer"
+	textIdentity := "text"
+	emptyIdentity := ""
+	schema := &dbschematypes.DBSchema{Functions: []dbschematypes.DBFunction{
+		{
+			Name:              "normalize",
+			Schema:            "app",
+			Parameters:        "value integer DEFAULT 1",
+			IdentityArguments: &integerIdentity,
+		},
+		{
+			Name:              "normalize",
+			Schema:            "app",
+			Parameters:        "value text",
+			IdentityArguments: &textIdentity,
+		},
+		{
+			Name:              "out_only",
+			Schema:            "app",
+			Parameters:        "OUT value integer",
+			IdentityArguments: &emptyIdentity,
+		},
+	}}
+
+	plan := schemaclean.PlanFromSchema(schema, "postgres")
+
+	c.Assert(plan.Objects, qt.DeepEquals, []schemaclean.Object{
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value integer DEFAULT 1",
+			Command:    `DROP FUNCTION IF EXISTS "app"."normalize"(integer) CASCADE`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value text",
+			Command:    `DROP FUNCTION IF EXISTS "app"."normalize"(text) CASCADE`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "out_only",
+			Parameters: "OUT value integer",
+			Command:    `DROP FUNCTION IF EXISTS "app"."out_only"() CASCADE`,
+		},
+	})
+	c.Assert(plan.Changes, qt.DeepEquals, []schemaclean.Change{
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value integer DEFAULT 1",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."normalize"(integer) CASCADE`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value text",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."normalize"(text) CASCADE`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "out_only",
+			Parameters: "OUT value integer",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."out_only"() CASCADE`,
+		},
+	})
+}
+
 // TestPlanFromObjectsOrdersReportByKindThenLocation pins the documented report
 // order: kind alphabetically, then schema, table, and name. It is deliberately
 // not the order Apply executes in — "table" sorting before "view" puts a view's
@@ -369,5 +467,6 @@ func TestPlanFromSchemaAcceptsNilSchema(t *testing.T) {
 
 	plan := schemaclean.PlanFromSchema(nil, "sqlite")
 
-	c.Assert(plan, qt.DeepEquals, schemaclean.Plan{})
+	c.Assert(plan.Objects, qt.IsNil)
+	c.Assert(plan.Changes, qt.IsNil)
 }

@@ -26,6 +26,7 @@ package atlassource
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -115,6 +116,30 @@ type Set struct {
 	Kind Kind
 	// Sources are the classified URLs.
 	Sources []Source
+	// migrationSnapshot is the checksum-verified directory image captured by
+	// PrepareMigrationSource. Keeping it on the immutable classified value lets
+	// a command validate before unrelated database or lock work and then replay
+	// those exact bytes instead of reopening the pathname.
+	migrationSnapshot fs.FS
+}
+
+// PrepareMigrationSource captures and validates a migration-directory source
+// before a caller starts unrelated database or lock work. The returned Set
+// retains the stable snapshot for Resolve. Nil validators and non-migration
+// sources are no-ops, preserving the full compatibility policy's behavior.
+func (s Set) PrepareMigrationSource(validate func(fs.FS) error) (Set, error) {
+	if s.Kind != KindMigrationDir || validate == nil {
+		return s, nil
+	}
+	snapshot, err := CaptureVerifiedMigrationDir(s.Sources[0].Path)
+	if err != nil {
+		return Set{}, err
+	}
+	if err := validate(snapshot); err != nil {
+		return Set{}, err
+	}
+	s.migrationSnapshot = snapshot
+	return s, nil
 }
 
 // ValidateLocalSchemaSources applies validate to every local schema source in

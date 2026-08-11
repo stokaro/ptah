@@ -245,6 +245,10 @@ func runAtlasMigrateDiff(
 	if err := desired.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
+	desired, err = desired.PrepareMigrationSource(opts.policy.ValidateMigrationSource)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+	}
 	qualifier, err := atlasmigrate.ParseQualifier(opts.qualifier)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

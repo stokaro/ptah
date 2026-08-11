@@ -52,9 +52,13 @@ The default `ptah-compat` process is the complete migration surface. It retains
 implemented Atlas Pro-like and best-effort capabilities.
 
 A CE differential or CLI-surface probe must set
-`PTAH_ATLAS_STRICT_COMPAT=1` on each `ptah-compat` subprocess. The paired
-conformance-harness change injects that value only for CE comparisons;
-Pro-retention and native capability probes run with it absent.
+`PTAH_ATLAS_STRICT_COMPAT=1` on each `ptah-compat` subprocess. A required
+companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must inject that value only for CE comparisons; Pro-retention and native
+capability probes must run with it absent. Until that companion change lands,
+run CE probes with the variable injected per subprocess and do not enable it
+for the whole harness.
 
 Strict mode constructs the CE command and flag tree before help or dispatch.
 It rejects extension environment values and validates authored schema,

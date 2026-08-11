@@ -1501,7 +1501,13 @@ Planned cleanup changes: 2
 The plan lists the object kinds the target dialect's cleanup really destroys —
 see the [per-dialect coverage table](../../reference/atlas-commands/#ptah-compat-schema-clean).
 Rows are ordered alphabetically by object kind; that is a report order, not the
-order the statements run in.
+order the statements run in. Scoped cleanup uses a separate deterministic
+dependency order for known relationships, including views before tables and
+tables before their implicit PostgreSQL `SERIAL` or identity sequences.
+An implicit sequence is not independently selectable: including it without its
+owning table, or excluding it while the table remains selected, is refused
+before cleanup mutates the database. Select or exclude the owning table so the
+child sequence rides with the same decision.
 
 :::danger
 Without `--dry-run`, cleanup drops the listed objects after confirmation
@@ -1516,6 +1522,9 @@ Without `--dry-run`, cleanup drops the listed objects after confirmation
 | `ptah-compat schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
 | `ptah-compat schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
 | `ptah-compat schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
+
+Function entries in `.Objects` and `.Changes` also carry `.Parameters`, and
+their `.Cmd` includes the PostgreSQL signature so overloads remain distinct.
 
 The shared report shape and URL redaction rules are described on the
 [Atlas compatibility overview](../overview/#format-reports-and-redaction).

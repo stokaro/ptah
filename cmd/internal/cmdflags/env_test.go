@@ -33,6 +33,23 @@ func TestEnvBindingNameSkipsExplicitOnlyFlags(t *testing.T) {
 	qt.Assert(t, name, qt.Equals, "")
 }
 
+func TestForwardedEnvBindingsRemainVisibleForExplicitAdapterFlags(t *testing.T) {
+	cmd := &cobra.Command{Use: "adapter"}
+	flags := cmd.Flags()
+	flags.String("dir", "", "")
+	qt.Assert(t,
+		cmdflags.AddForwardedEnvBinding(flags, "dir", "PTAH_MIGRATIONS_DIR"),
+		qt.IsNil,
+	)
+	qt.Assert(t, cmdflags.DisableEnvBinding(flags, "dir"), qt.IsNil)
+
+	qt.Assert(t,
+		cmdflags.ForwardedEnvBindings(flags.Lookup("dir")),
+		qt.DeepEquals,
+		[]string{"PTAH_MIGRATIONS_DIR"},
+	)
+}
+
 func TestInitializeEnvAppliesEnvironmentDefaults(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_DB_URL", "postgres://example")

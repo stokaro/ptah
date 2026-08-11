@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -125,6 +126,7 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	for _, assignment := range []string{
 		"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1",
+		"PTAH_MIGRATIONS_DIR=/must-not-be-read",
 		"PTAH_URL=sqlite://must-not-be-ignored",
 	} {
 		t.Run(strings.SplitN(assignment, "=", 2)[0], func(t *testing.T) {
@@ -646,6 +648,105 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 	})
 }
 
+func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	tests := []struct {
+		name string
+		args func(strictMigrationPreflightFixture) []string
+		gone func(strictMigrationPreflightFixture) []string
+	}{
+		{
+			name: "schema apply before target connection and lock",
+			args: func(f strictMigrationPreflightFixture) []string {
+				return []string{
+					"schema", "apply", "--url", "sqlite://" + f.target,
+					"--to", "file://" + f.desired, "--dev-url", "sqlite://" + f.dev,
+					"--auto-approve",
+				}
+			},
+			gone: func(f strictMigrationPreflightFixture) []string {
+				return []string{f.target, f.dev}
+			},
+		},
+		{
+			name: "schema diff before database-backed from",
+			args: func(f strictMigrationPreflightFixture) []string {
+				return []string{
+					"schema", "diff", "--from", "sqlite://" + f.from,
+					"--to", "file://" + f.desired, "--dev-url", "sqlite://" + f.dev,
+				}
+			},
+			gone: func(f strictMigrationPreflightFixture) []string {
+				return []string{f.from, f.dev}
+			},
+		},
+		{
+			name: "migrate diff before dev connection and directory lock",
+			args: func(f strictMigrationPreflightFixture) []string {
+				return []string{
+					"migrate", "diff", "next", "--dir", "file://" + f.current,
+					"--to", "file://" + f.desired, "--dev-url", "sqlite://" + f.dev,
+				}
+			},
+			gone: func(f strictMigrationPreflightFixture) []string {
+				return []string{f.dev, filepath.Join(f.root, ".current.ptah-migrate-diff.lock")}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newStrictMigrationPreflightFixture(t)
+			stdout, stderr, code := runAtlasBinary(
+				compat,
+				[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+				test.args(fixture)...,
+			)
+
+			qt.Assert(t, code, qt.Equals, 1)
+			qt.Assert(t, stdout, qt.Equals, "")
+			qt.Assert(t, stderr, qt.Equals,
+				"Error: load --to schema: Atlas Community Edition strict compatibility does not support "+
+					"Ptah migration directives in 1_init.sql\n")
+			assertPathsDoNotExist(t, test.gone(fixture)...)
+		})
+	}
+}
+
+type strictMigrationPreflightFixture struct {
+	root    string
+	current string
+	desired string
+	dev     string
+	from    string
+	target  string
+}
+
+func newStrictMigrationPreflightFixture(t *testing.T) strictMigrationPreflightFixture {
+	t.Helper()
+	root := t.TempDir()
+	desired := filepath.Join(root, "desired")
+	current := filepath.Join(root, "current")
+	qt.Assert(t, os.Mkdir(desired, 0o700), qt.IsNil)
+	qt.Assert(t, os.Mkdir(current, 0o700), qt.IsNil)
+	qt.Assert(t, os.WriteFile(filepath.Join(desired, "1_init.sql"), []byte(
+		"-- +ptah\nCREATE TABLE users (id integer PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+	qt.Assert(t, os.WriteFile(filepath.Join(current, "1_init.sql"), []byte(
+		"CREATE TABLE users (id integer PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(desired, migrator.MigrationDirFormatAtlas)
+	qt.Assert(t, err, qt.IsNil)
+	_, err = migratesum.WriteWithFormat(current, migrator.MigrationDirFormatAtlas)
+	qt.Assert(t, err, qt.IsNil)
+	return strictMigrationPreflightFixture{
+		root: root, current: current, desired: desired,
+		dev: filepath.Join(root, "dev.db"), from: filepath.Join(root, "from.db"),
+		target: filepath.Join(root, "target.db"),
+	}
+}
+
 func assertPathsDoNotExist(t *testing.T, paths ...string) {
 	t.Helper()
 	for _, path := range paths {
@@ -926,7 +1027,7 @@ func TestStrictCompatSchemaCleanRefusesPostgresWriterOnlyObjects(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(t.Context(), scopedURL)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(),
-		"CREATE TABLE users (id integer PRIMARY KEY); "+
+		"CREATE TABLE users (id SERIAL PRIMARY KEY); "+
 			"CREATE PROCEDURE refresh_users() LANGUAGE SQL AS $$ SELECT 1 $$;")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(conn)
@@ -942,9 +1043,37 @@ func TestStrictCompatSchemaCleanRefusesPostgresWriterOnlyObjects(t *testing.T) {
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals,
 		`Error: Atlas Community Edition strict compatibility does not support cleaning live schema procedure "refresh_users()"`+"\n")
-	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 2)
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 3)
 
-	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
+	sequenceArgs := append(slices.Clone(args), "--include", "users_id_seq[type=sequence]")
+	stdout, stderr, code = runAtlasBinary(compat, nil, sequenceArgs...)
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, fmt.Sprintf(
+		`owned sequence %q cannot be selected independently; select its owning table %q`,
+		schemaName+".users_id_seq", schemaName+".users",
+	))
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 3)
+
+	excludeSequenceArgs := append(slices.Clone(args), "--exclude", "users_id_seq[type=sequence]")
+	stdout, stderr, code = runAtlasBinary(compat, nil, excludeSequenceArgs...)
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, fmt.Sprintf(
+		`owned sequence %q cannot be excluded while its owning table %q is selected; exclude the table instead`,
+		schemaName+".users_id_seq", schemaName+".users",
+	))
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 3)
+
+	tableArgs := append(slices.Clone(args), "--include", "users[type=table]")
+	stdout, stderr, code = runAtlasBinary(compat, nil, tableArgs...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "Schema clean completed successfully.")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)
+
+	procedureArgs := append(slices.Clone(args), "--include", "refresh_users[type=procedure]")
+	stdout, stderr, code = runAtlasBinary(compat, nil, procedureArgs...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "Schema clean completed successfully.")
 	c.Assert(stderr, qt.Equals, "")
@@ -976,6 +1105,8 @@ func postgresStrictCleanObjectCount(t *testing.T, dbURL string) int {
 	err = conn.QueryRowContext(t.Context(), `
 		SELECT
 			(SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'users') +
+			(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			 WHERE n.nspname = current_schema() AND c.relname = 'users_id_seq' AND c.relkind = 'S') +
 			(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 			 WHERE n.nspname = current_schema() AND p.proname = 'refresh_users' AND p.prokind = 'p')`,
 	).Scan(&count)

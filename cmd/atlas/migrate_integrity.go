@@ -30,7 +30,6 @@ const atlasNativeEnvPrefix = "PTAH"
 // migration directory laid out in a foreign tool's convention.
 type atlasMigrateIntegrityRunner func(
 	*cobra.Command,
-	atlascompatpolicy.Policy,
 	atlasMigrateSource,
 ) error
 
@@ -157,7 +156,7 @@ func newAtlasMigrateIntegrityCommand(
 		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
 			return err
 		}
-		return run(cmd, policy, source)
+		return run(cmd, source)
 	}
 	return cmd
 }

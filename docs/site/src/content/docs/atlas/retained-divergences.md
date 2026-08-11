@@ -33,6 +33,14 @@ default privileges. A dependent Pro-only object such as a trigger cannot
 disappear with a table merely because the cleanup plan does not print it as a
 separate line.
 
+Cleanup validation uses the writer's schema scope: a global
+extension installed in another PostgreSQL schema does not block cleaning the
+selected schema. A sequence backing a `SERIAL` or identity column is likewise
+not treated as a forbidden standalone sequence, because it rides with the
+table that owns it. A selector cannot split that ownership: selecting the
+sequence without its table, or excluding it while the table remains selected,
+is refused before mutation.
+
 `PTAH_ALLOW_NONINTERACTIVE_EDIT=1` remains available in strict mode. It permits
 an already-configured scripted editor to run without a terminal; it does not
 add an editor, command, flag, or migration semantic, so it is retained as an
@@ -41,7 +49,8 @@ execution-safety control rather than classified as a Pro capability.
 The same fail-closed boundary covers authored extensions. Strict schema
 workflows refuse YAML sources and a `schema apply` lint policy that the CE path
 cannot enforce. Commands that execute, convert, or replay migration bodies
-refuse Atlas txtar, Ptah directives, and SQL templates; checksum-only reads
+refuse Atlas txtar, Ptah directives, and SQL templates; a bare or unknown
+`-- +ptah` directive marker is refused rather than ignored. Checksum-only reads
 preserve those bytes. Default mode retains and executes the extensions. The
 strict profile never turns an authored safety contract into an ignored comment
 or configuration block merely to copy an edition limit.

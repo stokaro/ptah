@@ -17,12 +17,79 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/schemaclean"
 	"go.5x5.cz/ptah/internal/testutils"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+func TestSchemaCleanScopeCarriesAnExplicitSchemaSequenceWithItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users[type=table]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Objects, qt.DeepEquals, []schemaclean.Object{
+		{
+			Type:         schemaclean.ObjectTypeSequence,
+			Schema:       "app",
+			Table:        "users",
+			Name:         "users_id_seq",
+			SelectorName: "users_id_seq",
+			Implicit:     true,
+			Command:      `DROP SEQUENCE IF EXISTS "app"."users_id_seq" RESTRICT`,
+		},
+		{Type: schemaclean.ObjectTypeTable, Name: "users"},
+	})
+}
+
+func TestSchemaCleanScopeRefusesAnExplicitSchemaSequenceWithoutItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users_id_seq[type=sequence]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.ErrorMatches,
+		`owned sequence "app\.users_id_seq" cannot be selected independently; select its owning table "app\.users"`)
+}
+
+func TestSchemaCleanScopeRefusesExcludingAnExplicitSchemaSequenceFromItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Exclude:       []string{"users_id_seq[type=sequence]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.ErrorMatches,
+		`owned sequence "app\.users_id_seq" cannot be excluded while its owning table "app\.users" is selected; exclude the table instead`)
+}
+
+func schemaCleanDefaultSchemaOwnershipPlan() schemaclean.Plan {
+	return schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Name: "users"},
+		{
+			Type:         schemaclean.ObjectTypeSequence,
+			Schema:       "app",
+			Table:        "users",
+			Name:         "users_id_seq",
+			SelectorName: "users_id_seq",
+			Implicit:     true,
+			Command:      `DROP SEQUENCE IF EXISTS "app"."users_id_seq" RESTRICT`,
+		},
+	}, "postgres")
+}
 
 func TestCompatCommand_OSSCommandPathsResolve(t *testing.T) {
 	paths := [][]string{

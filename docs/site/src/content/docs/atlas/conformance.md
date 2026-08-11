@@ -38,15 +38,27 @@ implemented Atlas Pro-like and best-effort capabilities.
 
 Strict schema workflows refuse YAML sources and an authored `schema apply` lint
 policy that the CE execution path cannot enforce. Commands that execute,
-convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
-and SQL templates; checksum-only reads preserve those bytes. Default mode keeps
+convert, or replay migration bodies refuse Atlas txtar, every Ptah directive —
+including malformed or bare `-- +ptah` markers — and SQL templates;
+checksum-only reads preserve those bytes. Desired migration directories are
+captured and validated before a target or dev database is opened or a migration
+lock is acquired, and replay uses that same stable snapshot. Default mode keeps
 the extensions.
 
-The paired conformance-harness change keeps the two environments separate. CE
-parity probes inject strict mode into each subprocess, while Pro-retention and
-native Ptah probes leave it absent. Strict mode still keeps deliberate safety
-and correctness improvements, so a green result never depends on copying a CE
-behavior that silently drops authored content or corrupts migration state.
+Strict process startup also rejects both Atlas-facing `PTAH_*` flag bindings
+and native aliases consumed after forwarding, such as
+`PTAH_MIGRATIONS_DIR`. Ordinary environment variables used by `getenv` in
+`atlas.hcl` remain available.
+
+A required companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must keep the two environments separate: CE parity probes inject strict mode
+into each subprocess, while Pro-retention and native Ptah probes leave it
+absent. Until that change lands, invoke CE probes with per-process injection
+rather than enabling strict mode for the whole harness. Strict mode still keeps
+deliberate safety and correctness improvements, so a green result never
+depends on copying a CE behavior that silently drops authored content or
+corrupts migration state.
 
 ### SQL inspect statement terminators
 

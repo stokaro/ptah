@@ -19,6 +19,8 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/ptahdirective"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -92,25 +94,39 @@ func (p Policy) validateSchemaObjects(database *goschema.Database, source string
 	return nil
 }
 
+// SchemaCleanObject describes the live cleanup identity relevant to Atlas
+// compatibility policy. ImplicitSequence distinguishes a sequence owned by a
+// table column from a standalone sequence the Community Edition surface does
+// not model.
+type SchemaCleanObject struct {
+	Kind             string
+	Name             string
+	ImplicitSequence bool
+}
+
 // ValidateSchemaCleanObject refuses live object kinds that Atlas Community
 // Edition does not model for schema cleanup. The refusal happens after catalog
 // inspection but before confirmation or SQL execution: strict mode must not
 // turn an OSS-parity run into a destructive Pro-like cleanup. Full mode keeps
 // Ptah's complete cleanup coverage unchanged.
-func (p Policy) ValidateSchemaCleanObject(kind, name string) error {
+func (p Policy) ValidateSchemaCleanObject(object SchemaCleanObject) error {
 	if !p.strictCE {
 		return nil
 	}
-	switch kind {
+	switch object.Kind {
 	case "table", "foreign_key", "enum":
 		return nil
+	case "sequence":
+		if object.ImplicitSequence {
+			return nil
+		}
 	default:
-		return fmt.Errorf(
-			"Atlas Community Edition strict compatibility does not support cleaning live schema %s %q",
-			kind,
-			name,
-		)
 	}
+	return fmt.Errorf(
+		"Atlas Community Edition strict compatibility does not support cleaning live schema %s %q",
+		object.Kind,
+		object.Name,
+	)
 }
 
 // ValidateSchemaCleanSnapshot refuses Pro-only objects that a cleanup plan
@@ -300,6 +316,9 @@ func (p Policy) ValidateMigrationSource(fsys fs.FS) error {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah pre-migration checks in %s", name)
 		}
 		if len(migrator.ParseFileDirectives(source)) > 0 {
+			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah migration directives in %s", name)
+		}
+		if ptahdirective.HasMarker(source, lexer.Options{StandardStrings: true}) {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah migration directives in %s", name)
 		}
 		if migrator.LooksAtlasTemplateSQL(source) {

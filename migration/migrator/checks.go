@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/ptahdirective"
 )
 
 // checkDirective is the +ptah directive keyword that introduces a pre-migration
@@ -57,7 +58,7 @@ type checkGroup struct {
 // list: multiple checks per migration run in the order written.
 //
 // The scan reuses the lexer-driven, line-anchored approach of
-// ParseFileDirectives (shared lexer walk and commentStartsLine), so a
+// ParseFileDirectives (through [ptahdirective.Bodies]), so a
 // `-- +ptah check` sequence inside a string literal, a block comment, or a
 // trailing comment is never mistaken for a check. Each check's arguments are
 // parsed with a quote-aware tokenizer so an assert predicate can contain spaces
@@ -68,26 +69,7 @@ type checkGroup struct {
 // available.
 func ParseChecks(source, dialect string) ([]Check, error) {
 	var checks []Check
-	lexr := lexer.NewLexerWithOptions(source, checkLexerOptions(dialect))
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		if tok.Type != lexer.TokenComment {
-			continue
-		}
-		body, ok := strings.CutPrefix(tok.Value, "--")
-		if !ok {
-			continue // block comment: not a directive carrier
-		}
-		if !commentStartsLine(source, tok.Start) {
-			continue // trailing comment: not a directive
-		}
-		body, ok = strings.CutPrefix(strings.TrimSpace(body), directivePrefix)
-		if !ok || (body != "" && body[0] != ' ' && body[0] != '\t') {
-			continue // not a +ptah directive
-		}
+	for body := range ptahdirective.Bodies(source, checkLexerOptions(dialect)) {
 		args, ok := strings.CutPrefix(strings.TrimSpace(body), checkDirective)
 		if !ok || (args != "" && args[0] != ' ' && args[0] != '\t') {
 			continue // a +ptah directive, but not a check

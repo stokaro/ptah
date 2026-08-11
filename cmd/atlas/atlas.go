@@ -165,15 +165,20 @@ func ValidateStrictCompatFlagEnvironment(policy atlascompatpolicy.Policy) error 
 					return
 				}
 				visited[flag] = true
-				name, bound := cmdflags.EnvBindingName("PTAH", flag)
-				if !bound {
-					return
+				bindings := cmdflags.ForwardedEnvBindings(flag)
+				if name, bound := cmdflags.EnvBindingName("PTAH", flag); bound {
+					bindings = append(bindings, name)
 				}
-				value, present := os.LookupEnv(name)
-				if !present {
-					return
+				for _, name := range slices.Compact(bindings) {
+					value, present := os.LookupEnv(name)
+					if !present {
+						continue
+					}
+					validationErr = policy.ValidateFlagEnvironment(name, value, flag.Value.Type())
+					if validationErr != nil {
+						return
+					}
 				}
-				validationErr = policy.ValidateFlagEnvironment(name, value, flag.Value.Type())
 			})
 		}
 		for _, child := range cmd.Commands() {
@@ -1081,6 +1086,15 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 			// and splits a comma-separated value, which is the behavior a
 			// pipeline passing `--schema a,b` expects.
 			cmd.Flags().StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
+		}
+		if flag.NativeName != "" {
+			if err := cmdflags.AddForwardedEnvBinding(
+				cmd.Flags(),
+				flag.Name,
+				cmdflags.EnvName("PTAH", flag.NativeName),
+			); err != nil {
+				panic(err)
+			}
 		}
 		if !flag.EnvDisabled {
 			continue

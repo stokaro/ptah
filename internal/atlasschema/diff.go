@@ -191,6 +191,14 @@ func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
 	if err := toSet.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
 		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
 	}
+	fromSet, err = fromSet.PrepareMigrationSource(opts.ValidateMigrationSource)
+	if err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --from schema: %w", err)
+	}
+	toSet, err = toSet.PrepareMigrationSource(opts.ValidateMigrationSource)
+	if err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
+	}
 	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
 	if err != nil {
 		return preparedDiffSources{}, err

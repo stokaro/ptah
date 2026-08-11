@@ -8,6 +8,9 @@ package schemaclean
 // table it never destroys, are invisible to it. Every exported-API test on
 // PostgreSQL passes whether or not the SQL Server placeholders are spelled for
 // the right driver; only the unexported builder's output distinguishes them.
+// The scoped execution order is also deliberately hidden from the alphabetical
+// report, so proving that dependency order without database I/O needs access to
+// the plan's unexported execution slice.
 
 import (
 	"testing"
@@ -16,6 +19,50 @@ import (
 
 	"go.5x5.cz/ptah/internal/revisiontable"
 )
+
+func TestPlanExecutionOrdersKnownDependentsWithoutChangingReport(t *testing.T) {
+	c := qt.New(t)
+	plan := PlanFromObjects([]Object{
+		{
+			Type:     ObjectTypeSequence,
+			Schema:   "public",
+			Table:    "users",
+			Name:     "users_id_seq",
+			Implicit: true,
+			Command:  `DROP SEQUENCE IF EXISTS "public"."users_id_seq" RESTRICT`,
+		},
+		{Type: ObjectTypeTable, Schema: "public", Name: "users"},
+		{Type: ObjectTypeView, Schema: "public", Name: "active_users"},
+		{Type: ObjectTypeForeignKey, Schema: "public", Table: "users", Name: "fk_users_team"},
+		{Type: ObjectTypeFunction, Schema: "public", Name: "normalize", Parameters: "status"},
+		{Type: ObjectTypeEnum, Schema: "public", Name: "status"},
+	}, "postgres")
+
+	c.Assert(changeTypes(plan.Changes), qt.DeepEquals, []string{
+		ObjectTypeEnum,
+		ObjectTypeForeignKey,
+		ObjectTypeFunction,
+		ObjectTypeSequence,
+		ObjectTypeTable,
+		ObjectTypeView,
+	})
+	c.Assert(changeTypes(plan.executionChanges), qt.DeepEquals, []string{
+		ObjectTypeForeignKey,
+		ObjectTypeView,
+		ObjectTypeTable,
+		ObjectTypeSequence,
+		ObjectTypeFunction,
+		ObjectTypeEnum,
+	})
+}
+
+func changeTypes(changes []Change) []string {
+	types := make([]string, 0, len(changes))
+	for _, change := range changes {
+		types = append(types, change.Type)
+	}
+	return types
+}
 
 // TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax pins the two
 // things the probe cannot get wrong without failing at runtime: the placeholder

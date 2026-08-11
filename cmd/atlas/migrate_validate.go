@@ -24,7 +24,10 @@ import (
 // in a foreign tool's layout, named with either spelling Atlas accepts, is
 // verified against that tool's file set here.
 func newAtlasMigrateValidateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
-	return newAtlasMigrateIntegrityCommand(policy, atlasMigrateValidateVerb(), runAtlasMigrateValidate)
+	run := func(cmd *cobra.Command, source atlasMigrateSource) error {
+		return runAtlasMigrateValidate(cmd, policy, source)
+	}
+	return newAtlasMigrateIntegrityCommand(policy, atlasMigrateValidateVerb(), run)
 }
 
 func atlasMigrateValidateVerb() atlasVerb {

@@ -235,13 +235,17 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
-	snapshot, err := CaptureVerifiedMigrationDir(source.Path)
-	if err != nil {
-		return State{}, err
-	}
-	if opts.ValidateMigrationSource != nil {
-		if err := opts.ValidateMigrationSource(snapshot); err != nil {
+	snapshot := s.migrationSnapshot
+	if snapshot == nil {
+		var err error
+		snapshot, err = CaptureVerifiedMigrationDir(source.Path)
+		if err != nil {
 			return State{}, err
+		}
+		if opts.ValidateMigrationSource != nil {
+			if err := opts.ValidateMigrationSource(snapshot); err != nil {
+				return State{}, err
+			}
 		}
 	}
 

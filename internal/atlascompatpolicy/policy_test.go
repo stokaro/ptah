@@ -194,7 +194,10 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 	policy := atlascompatpolicy.StrictCE()
 	for _, kind := range []string{"table", "foreign_key", "enum"} {
 		t.Run("accepts "+kind, func(t *testing.T) {
-			qt.Assert(t, policy.ValidateSchemaCleanObject(kind, "kept"), qt.IsNil)
+			qt.Assert(t, policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+				Kind: kind,
+				Name: "kept",
+			}), qt.IsNil)
 		})
 	}
 	for _, kind := range []string{
@@ -213,7 +216,10 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		"view",
 	} {
 		t.Run("refuses "+kind, func(t *testing.T) {
-			err := policy.ValidateSchemaCleanObject(kind, "pro_object")
+			err := policy.ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+				Kind: kind,
+				Name: "pro_object",
+			})
 
 			qt.Assert(t, err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support cleaning live schema `+
@@ -221,7 +227,21 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		})
 	}
 	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateSchemaCleanObject("view", "retained_by_full_mode"),
+		atlascompatpolicy.Full().ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+			Kind: "view",
+			Name: "retained_by_full_mode",
+		}),
+		qt.IsNil,
+	)
+}
+
+func TestStrictCEAcceptsImplicitSchemaCleanSequence(t *testing.T) {
+	qt.Assert(t,
+		atlascompatpolicy.StrictCE().ValidateSchemaCleanObject(atlascompatpolicy.SchemaCleanObject{
+			Kind:             "sequence",
+			Name:             "users_id_seq",
+			ImplicitSequence: true,
+		}),
 		qt.IsNil,
 	)
 }
@@ -398,6 +418,16 @@ func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
 			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
 		},
 		{
+			name:    "bare Ptah directive marker",
+			content: "-- +ptah\nSELECT 1;\n",
+			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+		},
+		{
+			name:    "unknown Ptah directive marker",
+			content: "-- +ptah future_directive\nSELECT 1;\n",
+			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+		},
+		{
 			name:    "Atlas SQL template",
 			content: "{{ if eq .Env \"production\" }}\nCREATE TABLE users (id integer);\n{{ end }}\n",
 			wantErr: `Atlas Community Edition strict compatibility does not support SQL template migration 1_users.sql`,
@@ -416,12 +446,34 @@ func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
 	}
 }
 
-func TestStrictCEMigrationContentValidationIgnoresLiteralLookalikes(t *testing.T) {
-	fsys := fstest.MapFS{"1_users.sql": {Data: []byte(
-		"SELECT '-- +ptah check name=\"fake\" assert=\"SELECT 1\"';\n",
-	)}}
+func TestStrictCEMigrationContentValidationIgnoresDirectiveLookalikes(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "same-line string literal",
+			content: "SELECT '-- +ptah check name=\"fake\" assert=\"SELECT 1\"';\n",
+		},
+		{
+			name: "multiline string literal",
+			content: "INSERT INTO notes (body) VALUES ('runbook:\n" +
+				"-- +ptah future_directive\n" +
+				"done');\n",
+		},
+		{
+			name:    "block comment",
+			content: "/*\n-- +ptah future_directive\n*/\nSELECT 1;\n",
+		},
+	}
 
-	err := atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"1_users.sql": {Data: []byte(test.content)}}
 
-	qt.Assert(t, err, qt.IsNil)
+			err := atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys)
+
+			qt.Assert(t, err, qt.IsNil)
+		})
+	}
 }
