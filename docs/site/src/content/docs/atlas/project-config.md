@@ -69,7 +69,7 @@ env "local" {
 
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
       apply   = "{{ sql . \"  \" }}"
       diff    = "{{ sql . \"\" }}"
     }
@@ -121,6 +121,13 @@ env "local" {
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+
+`format.schema.inspect` follows the Atlas-compatible command's template
+semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
+literal bytes with no line feed. Surrounding whitespace is also preserved; for
+example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
+`"{{ sql . }}"`, or `"{{ json . }}"` to render the inspected schema. Native
+`ptah schema inspect --format hcl|sql|json` keeps its rendered shorthands.
 
 `migration.tx_mode` accepts `file`, `all`, or `none`. A migration's leading
 `atlas:txmode file` or `atlas:txmode none` header overrides global `file` or

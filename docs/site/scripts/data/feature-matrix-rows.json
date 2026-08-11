@@ -473,8 +473,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Default HCL; `--format` sql|json|template. Native twin `ptah schema inspect` adds `--out-dir` and `--split` file export.",
-    "evidence": "`ptah-compat schema inspect --help`; conformance cli-surface.md row `atlas schema inspect`"
+    "note": "Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export.",
+    "evidence": "Measured 2026-08-11 against pinned Atlas CE v1.3.0 for empty and populated SQLite: exact bare --format hcl/sql/json emit only that literal with no LF; whitespace-wrapped hcl/sql/json preserve the template bytes with no extra LF; omitting --format renders HCL, and explicit {{ hcl . }}/{{ sql . }}/{{ json . }} render. Unit and tagged process coverage: cmd/atlas/schema_inspect_format_internal_test.go and integration/atlascmd/schema_inspect_format_literals_process_test.go (stokaro/ptah#1235 cell 6.6)."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -609,7 +609,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "`-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document.",
-    "evidence": "Added under #951; Atlas-side source atlasgo.io/cli-reference (`-o, --output string  output file path` on schema inspect). The pinned community binary v1.3.0 does not register it, measured by running the spelling: `schema inspect --output f.hcl` -> `unknown flag`, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: long flag and `-o` both write the file, `--format sql` decides what lands in it, stdout stays empty, an existing file is replaced rather than appended to, and an undirectory destination fails with `stage output file` instead of losing the inspection (cmd/atlas/schema_inspect_output_test.go)"
+    "evidence": "Added under #951; Atlas-side source atlasgo.io/cli-reference (`-o, --output string  output file path` on schema inspect). The pinned community binary v1.3.0 does not register it, measured by running the spelling: `schema inspect --output f.hcl` -> `unknown flag`, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: long flag and `-o` both write the file, explicit `--format '{{ sql . }}'` decides what lands in it, stdout stays empty, an existing file is replaced rather than appended to, and an undirectory destination fails with `stage output file` instead of losing the inspection (cmd/atlas/schema_inspect_output_test.go)"
   },
   {
     "area": "Declarative / direct schema workflow",

@@ -72,11 +72,12 @@ func TestSchemaInspectCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T
 	tests := []struct {
 		name string
 		args []string
+		want string
 	}{
-		{name: "default"},
-		{name: "hcl name", args: []string{"--format", "hcl"}},
-		{name: "hcl helper", args: []string{"--format", `{{ hcl . }}`}},
-		{name: "MarshalHCL method", args: []string{"--format", `{{ $.MarshalHCL }}`}},
+		{name: "default", want: "schema \"main\" {\n}\n"},
+		{name: "hcl name is literal", args: []string{"--format", "hcl"}, want: "hcl"},
+		{name: "hcl helper", args: []string{"--format", `{{ hcl . }}`}, want: "schema \"main\" {\n}\n"},
+		{name: "MarshalHCL method", args: []string{"--format", `{{ $.MarshalHCL }}`}, want: "schema \"main\" {\n}\n"},
 	}
 
 	for _, test := range tests {
@@ -87,7 +88,7 @@ func TestSchemaInspectCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T
 			out, err := runCompatInspect(dbPath, test.args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(out, qt.Equals, "schema \"main\" {\n}\n")
+			c.Assert(out, qt.Equals, test.want)
 		})
 	}
 }
@@ -139,7 +140,7 @@ func TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent(t *testing.T) {
 
 	nativeOut, err := runNativeInspect(dbPath, "--format", "hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-	compatOut, err := runCompatInspect(dbPath, "--format", "hcl")
+	compatOut, err := runCompatInspect(dbPath, "--format", `{{ hcl . }}`)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", compatOut))
 
 	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)
@@ -156,7 +157,7 @@ func TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent(t *testing.T) {
 
 	nativeOut, err := runNativeInspect(dbPath, "--include", "users", "--format", "hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-	compatOut, err := runCompatInspect(dbPath, "--include", "users", "--format", "hcl")
+	compatOut, err := runCompatInspect(dbPath, "--include", "users", "--format", `{{ hcl . }}`)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", compatOut))
 
 	wantCompat, hasNativeFrame := compatHCLFromNative(nativeOut)

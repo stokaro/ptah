@@ -495,7 +495,7 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
       apply   = "{{ sql . }}"
       clean   = "{{ json . }}"
       diff    = "{{ len .Changes }}"
-      inspect = "json"
+      inspect = "{{ json . }}"
     }
     migrate {
       apply  = "{{ json . }}"
@@ -539,7 +539,7 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
 	c.Assert(cfg.Format.Schema.Apply, qt.Equals, "{{ sql . }}")
 	c.Assert(cfg.Format.Schema.Clean, qt.Equals, "{{ json . }}")
 	c.Assert(cfg.Format.Schema.Diff, qt.Equals, "{{ len .Changes }}")
-	c.Assert(cfg.Format.Schema.Inspect, qt.Equals, "json")
+	c.Assert(cfg.Format.Schema.Inspect, qt.Equals, "{{ json . }}")
 	c.Assert(cfg.Format.Migrate.Apply, qt.Equals, "{{ json . }}")
 	c.Assert(cfg.Format.Migrate.Diff, qt.Equals, `{{ json . | json_merge "{\"EnvName\":\"local\"}" }}`)
 	c.Assert(cfg.Format.Migrate.Lint, qt.Equals, "{{ json .Files }}")

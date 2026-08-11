@@ -1027,7 +1027,7 @@ func TestCompatCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testi
 	c.Assert(out.String(), qt.Not(qt.Contains), "Connected to sqlite database successfully")
 }
 
-func TestCompatCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsExplicitHCLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-hcl.db")
@@ -1040,7 +1040,7 @@ func TestCompatCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", "hcl",
+		"--format", "{{ hcl . }}",
 	})
 
 	err := cmd.Execute()
@@ -1088,7 +1088,7 @@ func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", "json",
+		"--format", "{{ json . }}",
 	})
 
 	err := cmd.Execute()
@@ -1307,7 +1307,7 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
   }
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
     }
   }
 }
