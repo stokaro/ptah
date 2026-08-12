@@ -345,15 +345,32 @@ func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
 	return dc.writer
 }
 
-// WithExecutor returns a shallow connection copy that uses executor as the active
-// SQL executor while keeping the same database handle, reader, and metadata.
+// WithExecutor returns a shallow connection copy that uses executor as the
+// active SQL executor. When executor exposes a live transaction runner, the
+// copy's reader and direct SQL use that same execution session.
 //
 // This is used to pass transaction-scoped writers into migration callbacks
 // without storing the active transaction on the root writer.
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection {
 	cloned := *dc
 	cloned.executor = executor
+	provider, ok := executor.(schemaTransactionRunnerProvider)
+	if !ok {
+		return &cloned
+	}
+	runner := provider.SchemaQueryRunner()
+	if runner == nil {
+		return &cloned
+	}
+	cloned.runner = runner
+	if dc.newReader != nil {
+		cloned.reader = dc.newReader(runner)
+	}
 	return &cloned
+}
+
+type schemaTransactionRunnerProvider interface {
+	SchemaQueryRunner() sqlrunner.Runner
 }
 
 // WithIsolatedQuerySession runs use with a query-only handle on one physical
@@ -564,6 +581,12 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(context.Background(), query, args...)
 	}
+	if dc.executor != nil {
+		if err := dc.executor.ExecuteSQL(context.Background(), query, args...); err != nil {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
+	}
 	return dc.sqlRunner().Exec(query, args...)
 }
 
@@ -571,6 +594,12 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(ctx, query, args...)
+	}
+	if dc.executor != nil {
+		if err := dc.executor.ExecuteSQL(ctx, query, args...); err != nil {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
 	}
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
 }

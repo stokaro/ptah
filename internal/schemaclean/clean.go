@@ -235,10 +235,11 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 }
 
 // ApplyPlanOptions configures validation at the destructive execution
-// boundary. PostgreSQL runs the validator after locking every planned relation
-// that can own dependent objects and before executing any drop.
+// boundary. PostgreSQL validates through the transaction session after locking
+// every planned relation that can own dependent objects and before executing
+// any drop.
 type ApplyPlanOptions struct {
-	ValidateBeforeExecute func() error
+	ValidateBeforeExecute func(dbschematypes.SchemaExecutor) error
 }
 
 // ApplyPlanWithOptions executes exactly the changes plan carries and applies
@@ -252,7 +253,7 @@ func ApplyPlanWithOptions(
 	changes := executableChanges(plan)
 	if len(changes) == 0 {
 		if opts.ValidateBeforeExecute != nil {
-			return opts.ValidateBeforeExecute()
+			return opts.ValidateBeforeExecute(nil)
 		}
 		return nil
 	}
@@ -261,7 +262,7 @@ func ApplyPlanWithOptions(
 		return applyPostgresFamilyPlan(ctx, conn, changes, opts)
 	}
 	if opts.ValidateBeforeExecute != nil {
-		if err := opts.ValidateBeforeExecute(); err != nil {
+		if err := opts.ValidateBeforeExecute(conn.Writer()); err != nil {
 			return err
 		}
 	}
@@ -293,7 +294,7 @@ func applyPostgresFamilyPlan(
 		}
 	}
 	if opts.ValidateBeforeExecute != nil {
-		if err := opts.ValidateBeforeExecute(); err != nil {
+		if err := opts.ValidateBeforeExecute(tx); err != nil {
 			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 		}
 	}

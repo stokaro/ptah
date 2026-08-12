@@ -31,6 +31,10 @@ type InspectOptions struct {
 	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
+	// SuppressRoleCoverageNote omits only Ptah's informational note about
+	// server roles outside the rendered schema scope. Other diagnostics keep
+	// using Diagnostics.
+	SuppressRoleCoverageNote bool
 	// OmitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
 	// which leaves out the top-level block types the pinned Atlas community
 	// binary refuses as a feature -- unless something else in the document
@@ -109,7 +113,9 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// file and migration-directory sources render a dev database they were
 	// told to materialize, whose other cluster roles are not an answer to
 	// anything they asked. See stokaro/ptah#1267.
-	rolescope.ReportUndescribed(opts.Diagnostics, schema)
+	if !opts.SuppressRoleCoverageNote {
+		rolescope.ReportUndescribed(opts.Diagnostics, schema)
+	}
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
