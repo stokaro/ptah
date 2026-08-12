@@ -1280,6 +1280,15 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	t.Run("full apply classifies migration directory under lock", func(t *testing.T) {
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
+		devAdmin, err := dbschema.ConnectToDatabase(t.Context(), replayDevURL)
+		qt.Assert(t, err, qt.IsNil)
+		defer dbschema.CloseAndWarn(devAdmin)
+		_, err = devAdmin.ExecContext(t.Context(), "CREATE SCHEMA "+emptySchema)
+		qt.Assert(t, err, qt.IsNil)
+		defer func() {
+			_, _ = devAdmin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+emptySchema+" CASCADE")
+		}()
+		replayDevURL = postgresURLWithSearchPath(t, replayDevURL, emptySchema)
 		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_late.sql"), []byte(
 			"CREATE TABLE classified_under_lock (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
