@@ -132,6 +132,16 @@ tagged Go integration contour instead uses local services matching the
 authoritative GitHub Actions workflow and also requires the pinned Atlas CE
 oracle and Graphviz.
 
+Pull requests also run the focused migration-directory query contract as part
+of the Atlas CE oracle workflow. It exercises both binaries as external
+processes over every CE verb that accepts a `--dir` URL query, while the full
+tagged contour remains the required integration gate:
+
+```bash
+PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
+  go test -tags=integration ./integration/atlasoracle/migratedirquery -count=1
+```
+
 ### Basic Usage
 
 ```bash

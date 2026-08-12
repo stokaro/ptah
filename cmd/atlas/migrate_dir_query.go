@@ -107,9 +107,11 @@ func atlasDirFormatSpelling(query url.Values) string {
 // WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah refused every `--dir` query on
 // every verb until stokaro/ptah#1087 and #1135 relaxed it, on the eight verbs
 // that read the query, to match — `checkpoint`, `down`, `edit`, `rebase`, `rm`
-// and `test` register `--dir` and still refuse one, which is tracked in
-// stokaro/ptah#1013 and is why this doc says "the verbs this variable governs"
-// rather than "every verb". That refusal caught something real on its way out:
+// and `test` register `--dir` only on Ptah and still refuse one. Those richer
+// verbs are outside stokaro/ptah#1013's eight-verb CE contract; keeping their
+// generic query parsing fail closed is why this doc says "the verbs this
+// variable governs" rather than "every verb". That refusal caught something
+// real on its way out:
 // a misspelled key such as `?fromat=goose` selects nothing on either binary, so
 // the directory is read in the native Atlas layout while the operator believes
 // it is being read as Goose. Reaching parity means the default can no longer fail that run —
