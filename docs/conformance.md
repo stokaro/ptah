@@ -1335,11 +1335,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: nine cells from the #1235 register
+## Output shape: ten cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Nine of them are closed here. Every row was
+exit code and disagree on the bytes. Ten of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1349,7 +1349,8 @@ unpiped invocation.
 | 9.1–9.2 | `migrate validate --dir migrations`; the same on `migrate status` | The scheme hint ends with one ASCII space and a line feed (`20 0a`, 70 bytes) | The hint ended directly with a line feed (`3f 0a`, 69 bytes) | byte-identical |
 | 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
-| 9.5 | `migrate validate` with `?format=bogus`; the same under `--dir-format bogus` and on `migrate hash` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all four rows |
+| 9.5, 9.8 | A rejected migration-directory layout, on every verb that can name one: `new`, `hash`, `validate`, `lint`, `status`, `set`, `diff` and `import` under both `?format=bogus` and `--dir-format bogus`, and `apply` under `?format=bogus` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all 17 rows |
+| 9.8 | `migrate import --from file://nope` for a source directory that does not exist | Exit 1, stderr `Error: sql/migrate: stat nope: no such file or directory\n` | Exit 1, stderr `Error: cannot import a migration directory already in "atlas" format\n` — the format comparison ran ahead of any read of the source | byte-identical, and the format comparison still answers first for a source that exists |
 | 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
 | 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
 | 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context | the same body prefixed by `load --to schema: parse HCL schema: ` | byte-identical |
@@ -1473,6 +1474,82 @@ status` exit 1 with `Atlas migration version <version> has down migration but no
 up migration`, where it exits 0. That divergence is in the
 "Ptah exits 1, the binary exits 0" direction the register lists as unfiled, and
 it is reported here rather than closed.
+
+### A rejected directory layout is one string on every CE-comparable path
+
+Cell 9.8 was recorded as a rewording on two commands. Measured on 2026-08-12 it
+is one string on nine CE-comparable paths: `unknown dir format "bogus"` is the
+pinned binary's whole answer on `migrate new`, `hash`, `validate`, `lint`,
+`status`, `set`, `diff` and `import`, under both `?format=bogus` and
+`--dir-format bogus`, and on
+`migrate apply` under the query — that verb registers no `--dir-format` on
+either binary, and both answer `unknown flag: --dir-format` when it is passed.
+Ptah answered it on `hash` and `validate` and printed its own longer wording on
+the other seven, because the adaptation lived inside one wrapper rather than on
+the refusal. All seventeen rows are byte-identical now.
+
+The semantic diagnostic — the command, the flag that carried the value, and the
+list of accepted layouts — is not discarded. It stays reachable through the
+error chain, which is what makes this a display adapter rather than a loss of
+information.
+
+**Fuller-surface verbs deliberately keep the longer wording.** Commands such as
+`migrate checkpoint`, `test`, `edit`, `rebase`, and `rm` do not reach a
+comparable layout refusal in the pinned binary (see *Verbs Beyond the CE Pin*).
+There is no CE text to match there and nothing to gain from shortening Ptah's
+own diagnostic.
+
+### `migrate import` shares the CE directory-resolution rules
+
+Closing the cell above meant hoisting `migrate import` onto the shared
+resolution, because it was the one verb still running a private one. That
+resolver lowercased and trimmed its input, read a present-but-empty `?format=`
+as no selection at all, and never required a scheme on either directory URL.
+Measured on 2026-08-12 against the pinned binary on a Flyway source directory,
+each exit code read from an unpiped invocation:
+
+| `migrate import …` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `--dir-format FLYWAY` | Exit 1, `unknown dir format "FLYWAY"` | **Exit 0, wrote the target** | matches |
+| `--dir-format ' flyway '` | Exit 1, `unknown dir format " flyway "` | **Exit 0, wrote the target** | matches |
+| `--from 'file://src?format=FLYWAY'` | Exit 1, `unknown dir format "FLYWAY"` | **Exit 0, wrote the target** | matches |
+| `--from 'file://src?format=' --dir-format flyway` | Exit 1, the already-in-target-format refusal — an empty query value selects atlas and outranks the flag | **Exit 0, wrote the target** | matches |
+| `--from src` | Exit 1, the missing-scheme hint | **Exit 0, wrote the target** | matches |
+| `--from file://src --to dst` | Exit 1, the missing-scheme hint | **Exit 0, wrote the target** | matches |
+
+Every one of those six was `ptah-compat` exiting 0 where the pinned binary exits
+1, on the compatibility verb that WRITES a directory, and every one of them left
+a converted directory and a fresh `atlas.sum` behind. The first four are the
+same lower-and-trim coercion removed from `migrate diff` and `migrate lint`
+earlier. None of them is in the #1235 register, which records only cells where
+the two binaries agree on the exit code; they were found while measuring cell
+9.8 and are closed with it.
+
+The rows that had to stay, same fixture and same binary, all exit 0 on both:
+`--dir-format flyway`, `--from 'file://src?format=flyway'`,
+`--from 'file://src?nonsense=1' --dir-format flyway` (an unrecognized key selects
+nothing and leaves the flag deciding), and
+`--from 'file://src?format=flyway&format=goose'` (a repeated key takes the FIRST
+value). The fixture is plain SQL that no other layout can read, so those rows
+measure which layout won rather than that some layout was accepted.
+
+The refusal order is the pinned binary's, measured rather than assumed: the
+source scheme, then the layout value, then whether the source directory exists,
+then whether it is already in the target layout, then the target scheme. Only
+the third of those moved. The importer's own refusal for a source already in the
+target layout stays exactly where it was — its position is deliberate and
+documented — and the existence check is a read-only `stat` at the compatibility
+boundary in front of it. Native `ptah migrations import` takes a plain
+`--source-dir` path through a different command and is unchanged.
+
+**One `migrate import` divergence is measured and NOT closed here.** With
+`--from` and `--to` naming the same directory under an explicit non-atlas
+layout, the pinned binary answers `target migration directory must be empty` and
+Ptah answers `import --to must be different from --from for format "flyway"`.
+Both exit 1. The register's own probe for that cell uses the default layout,
+where the two are already byte-identical; this spelling is a different refusal
+with a different predicate — Ptah refuses the same directory whatever it holds —
+and folding it into the layout comparison was out of scope for this change.
 
 ## Reports
 

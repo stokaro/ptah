@@ -1393,9 +1393,19 @@ Each layout covers a different set of source files, matching Atlas; see
 per-layout rules and for the inputs that stay refused.
 
 When both spellings are given, the `?format=` query wins, which is what Atlas
-does. Values are matched verbatim on every one of those verbs: `--dir-format
-ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
-empty value selects the Atlas layout.
+does. Values are matched verbatim on every CE-comparable path that resolves a
+layout — the six above plus `diff` and `import`: `--dir-format ATLAS` and
+`--dir-format " atlas "` are refused rather than normalized, and an empty value
+selects the Atlas layout. `migrate import` resolved its own source format until
+[#1235](https://github.com/stokaro/ptah/issues/1235) cell 9.8 was closed as a
+class; it accepted `FLYWAY` and `" flyway "` and read `?format=` with an empty
+value as no selection, all three of which Atlas refuses.
+
+A rejected value is refused with the measured CE wording — `unknown dir format
+"bogus"` — on all nine CE-comparable paths, `apply` included through its
+`?format=` query. Fuller-surface commands such as `checkpoint`, `test`, `edit`,
+`rebase`, and `rm` keep Ptah's longer diagnostic, which names the accepted
+layouts.
 
 `format` is the only `--dir` query key that selects anything. On the eight verbs
 that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`,
