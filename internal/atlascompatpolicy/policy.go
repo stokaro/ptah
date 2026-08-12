@@ -544,6 +544,17 @@ var gatedBooleanEnvVars = []string{
 	"PTAH_SKIP_CHECKS",
 }
 
+// retainedBooleanEnvVars are correctness and safety controls that do not add
+// an Atlas capability. Strict mode keeps them available, but still parses
+// every present value at the process boundary so malformed configuration is
+// refused before command construction or any external work.
+var retainedBooleanEnvVars = []string{
+	"PTAH_ALLOW_NONINTERACTIVE_EDIT",
+	"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
+	"PTAH_HCL_STRICT_REDECLARATIONS",
+	"PTAH_STRICT_DIR_QUERY",
+}
+
 // gatedPresenceEnvVars select Ptah-only adapter behavior outside the generic
 // flag binding. Their presence changes the process contract, so strict mode
 // rejects them even when the raw value is empty.
@@ -563,6 +574,15 @@ func validateStrictEnvironment() error {
 		}
 		if enabled {
 			return strictEnvironmentError(name)
+		}
+	}
+	for _, name := range retainedBooleanEnvVars {
+		value, present := os.LookupEnv(name)
+		if !present {
+			continue
+		}
+		if _, err := envbool.Parse(name, value); err != nil {
+			return err
 		}
 	}
 	for _, name := range gatedPresenceEnvVars {

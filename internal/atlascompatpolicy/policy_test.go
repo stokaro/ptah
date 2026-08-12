@@ -118,6 +118,8 @@ func TestStrictCEValidatesBoundFlagEnvironment(t *testing.T) {
 
 func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "1")
+	t.Setenv("PTAH_HCL_STRICT_REDECLARATIONS", "1")
 	t.Setenv("PTAH_STRICT_DIR_QUERY", "1")
 	t.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
 
@@ -125,6 +127,25 @@ func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
+}
+
+func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
+	for _, name := range []string{
+		"PTAH_ALLOW_NONINTERACTIVE_EDIT",
+		"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
+		"PTAH_HCL_STRICT_REDECLARATIONS",
+		"PTAH_STRICT_DIR_QUERY",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+			t.Setenv(name, "maybe")
+
+			_, err := atlascompatpolicy.Resolve()
+
+			qt.Assert(t, err, qt.ErrorMatches,
+				`invalid boolean value "maybe" for `+name)
+		})
+	}
 }
 
 func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {

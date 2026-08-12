@@ -177,6 +177,25 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 	}
 }
 
+func TestStrictCompatProcessValidatesRetainedEnvironmentBeforeDispatch(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+
+	stdout, stderr, code := runAtlasBinary(
+		compat,
+		[]string{
+			"PTAH_ATLAS_STRICT_COMPAT=1",
+			"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=maybe",
+		},
+		"version",
+	)
+
+	qt.Assert(t, code, qt.Equals, 1)
+	qt.Assert(t, stdout, qt.Equals, "")
+	qt.Assert(t, stderr, qt.Equals,
+		`Error: invalid boolean value "maybe" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`+"\n")
+}
+
 func TestNativeProcessIgnoresStrictCompatEnvironment(t *testing.T) {
 	c := qt.New(t)
 	native := buildSchemaInspectBinary(c, "ptah", "go.5x5.cz/ptah/cmd/ptah")
