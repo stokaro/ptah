@@ -19,6 +19,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
@@ -108,7 +109,7 @@ func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) 
 	})
 }
 
-func TestPostgresPlanRelationsLockEveryTableOwnerBeforeValidation(t *testing.T) {
+func TestPostgresPlanRelationsLockEveryTableOwner(t *testing.T) {
 	c := qt.New(t)
 	tx := &cleanupRetryTransaction{}
 	changes := []Change{
@@ -132,7 +133,7 @@ func TestEmptyPlanStillRunsExecutionBoundaryValidation(t *testing.T) {
 	called := false
 
 	err := ApplyPlanWithOptions(t.Context(), nil, Plan{}, ApplyPlanOptions{
-		ValidateBeforeExecute: func() error {
+		ValidateBeforeExecute: func(dbschematypes.SchemaExecutor) error {
 			called = true
 			return wantErr
 		},

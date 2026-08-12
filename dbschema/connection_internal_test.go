@@ -54,14 +54,33 @@ func (w *connectionTestWriter) IsDryRun() bool {
 	return false
 }
 
-type connectionTestExecutor struct{}
+type connectionTestExecutor struct {
+	executed string
+}
 
-func (*connectionTestExecutor) ExecuteSQL(context.Context, string, ...any) error {
+func (e *connectionTestExecutor) ExecuteSQL(_ context.Context, statement string, _ ...any) error {
+	e.executed = statement
 	return nil
 }
 
 func (*connectionTestExecutor) IsDryRun() bool {
 	return false
+}
+
+type connectionQueryExecutor struct {
+	runner   sqlrunner.Runner
+	executed string
+}
+
+func (e *connectionQueryExecutor) ExecuteSQL(_ context.Context, statement string, _ ...any) error {
+	e.executed = statement
+	return nil
+}
+
+func (*connectionQueryExecutor) IsDryRun() bool { return false }
+
+func (e *connectionQueryExecutor) SchemaQueryRunner() sqlrunner.Runner {
+	return e.runner
 }
 
 func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *testing.T) {
@@ -71,8 +90,62 @@ func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *
 	conn := &DatabaseConnection{writer: root}
 
 	scoped := conn.WithExecutor(executor)
+	_, err := scoped.ExecContext(t.Context(), "DIRECT")
 
+	c.Assert(err, qt.IsNil)
+	c.Assert(executor.executed, qt.Equals, "DIRECT")
 	c.Assert(scoped.SchemaWriter(), qt.Equals, types.SchemaWriter(root))
+	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+}
+
+func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *testing.T) {
+	c := qt.New(t)
+	queried := false
+	db := dbtest.OpenWithExec(
+		t,
+		func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+			queried = true
+			return dbtest.QueryResult{
+				Columns: []string{"value"},
+				Rows:    [][]driver.Value{{int64(1)}},
+			}, nil
+		},
+		func(string, []driver.NamedValue) (driver.Result, error) {
+			return driver.RowsAffected(0), nil
+		},
+	)
+	runner := sqlrunner.Runner(db.SQL)
+	newReader := func(readerRunner sqlrunner.Runner) types.SchemaReader {
+		return &connectionSessionReader{runner: readerRunner}
+	}
+	conn := &DatabaseConnection{newReader: newReader}
+	executor := &connectionQueryExecutor{runner: runner}
+
+	scoped := conn.WithExecutor(executor)
+	_, err := scoped.Reader().ReadSchema()
+	_, execErr := scoped.ExecContext(t.Context(), "SET search_path = app")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(execErr, qt.IsNil)
+	c.Assert(queried, qt.IsTrue)
+	c.Assert(executor.executed, qt.Equals, "SET search_path = app")
+	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+}
+
+func TestDatabaseConnectionWithExecutor_DoesNotRebindUnavailableRunner(t *testing.T) {
+	c := qt.New(t)
+	root := &connectionSessionReader{}
+	conn := &DatabaseConnection{
+		reader: root,
+		newReader: func(runner sqlrunner.Runner) types.SchemaReader {
+			return &connectionSessionReader{runner: runner}
+		},
+	}
+	executor := new(connectionQueryExecutor)
+
+	scoped := conn.WithExecutor(executor)
+
+	c.Assert(scoped.Reader(), qt.Equals, types.SchemaReader(root))
 	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
 }
 

@@ -46,6 +46,9 @@ type InspectSourceOptions struct {
 	Format string
 	// Diagnostics receives non-fatal rendering diagnostics.
 	Diagnostics io.Writer
+	// SuppressRoleCoverageNote omits the Ptah-only role coverage note while
+	// preserving every other selector and safety diagnostic.
+	SuppressRoleCoverageNote bool
 	// ProjectEnv expands env:// references through the evaluated atlas.hcl
 	// environment.
 	ProjectEnv atlassource.ProjectEnv
@@ -111,17 +114,18 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	}
 
 	inspectOpts := InspectOptions{
-		DevURL:                  opts.DevURL,
-		Schemas:                 opts.Schemas,
-		Include:                 opts.Include,
-		Exclude:                 opts.Exclude,
-		Format:                  opts.Format,
-		Diagnostics:             opts.Diagnostics,
-		OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
-		CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
-		PrepareSchema:           opts.PrepareInspectedSchema,
-		ValidateSchema:          opts.ValidateInspectedSchema,
-		ValidateLiveObject:      opts.ValidateLiveObject,
+		DevURL:                   opts.DevURL,
+		Schemas:                  opts.Schemas,
+		Include:                  opts.Include,
+		Exclude:                  opts.Exclude,
+		Format:                   opts.Format,
+		Diagnostics:              opts.Diagnostics,
+		SuppressRoleCoverageNote: opts.SuppressRoleCoverageNote,
+		OmitAtlasRefusedBlocks:   opts.OmitAtlasRefusedBlocks,
+		CompatibilityHCLFraming:  opts.CompatibilityHCLFraming,
+		PrepareSchema:            opts.PrepareInspectedSchema,
+		ValidateSchema:           opts.ValidateInspectedSchema,
+		ValidateLiveObject:       opts.ValidateLiveObject,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)
