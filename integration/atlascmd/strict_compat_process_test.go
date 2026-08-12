@@ -1263,9 +1263,10 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 
 	t.Run("diff replayed migration directory", func(t *testing.T) {
 		migrationDir := t.TempDir()
+		replayDevURL := strictCompatPostgresDevURL(t)
 		collationName := prefix + "_replayed"
 		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_collation.sql"), []byte(
-			fmt.Sprintf("CREATE COLLATION %s FROM \"C\";\n", collationName),
+			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
 		qt.Assert(t, err, qt.IsNil)
@@ -1276,12 +1277,12 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"schema", "diff",
 			"--from", "file://"+migrationDir,
 			"--to", emptyURL,
-			"--dev-url", devURL,
+			"--dev-url", replayDevURL,
 		)
 		qt.Assert(t, code, qt.Equals, 1)
 		qt.Assert(t, stdout, qt.Equals, "")
 		qt.Assert(t, stderr, qt.Equals,
-			`Error: load --from schema: --from \"file://`+migrationDir+`\": `+
+			`Error: load --from schema: --from "file://`+migrationDir+`": `+
 				`Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
 				collationName+`"`+"\n")
 
@@ -1291,7 +1292,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"schema", "diff",
 			"--from", "file://"+migrationDir,
 			"--to", emptyURL,
-			"--dev-url", devURL,
+			"--dev-url", replayDevURL,
 		)
 		qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 		qt.Assert(t, stderr, qt.Equals, "")
@@ -1322,7 +1323,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		migrateDevURL := strictCompatPostgresDevURL(t)
 		collationName := prefix + "_current"
 		qt.Assert(t, os.WriteFile(filepath.Join(currentDir, "1_collation.sql"), []byte(
-			fmt.Sprintf("CREATE COLLATION %s FROM \"C\";\n", collationName),
+			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(currentDir, migrator.MigrationDirFormatAtlas)
 		qt.Assert(t, err, qt.IsNil)
