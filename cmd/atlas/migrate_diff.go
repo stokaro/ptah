@@ -385,7 +385,7 @@ func validateAtlasMigrateDiffCurrentSource(
 		}
 		fSys = loaded.FS()
 	}
-	return policy.MigrationSourceValidator(devURL)(fSys)
+	return policy.ValidateMigrationSourceForURL(fSys, devURL)
 }
 
 func compatBidirectionalPlannerForFormat(

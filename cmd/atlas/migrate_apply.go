@@ -354,7 +354,7 @@ func runAtlasMigrateApplyTarget(
 	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
 		return formatOutput, err
 	}
-	if err := policy.MigrationSourceValidator(opts.url)(captured); err != nil {
+	if err := policy.ValidateMigrationSourceForURL(captured, opts.url); err != nil {
 		return formatOutput, err
 	}
 

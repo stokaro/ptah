@@ -328,15 +328,33 @@ func (p Policy) ValidateMigrationSource(fsys fs.FS) error {
 	return p.ValidateMigrationSourceForDialect(fsys, "")
 }
 
-// MigrationSourceValidator returns a stable-snapshot callback bound to the
-// target database URL. URL parsing is deliberately best-effort here: the
-// owning command retains its established URL diagnostic and ordering, while a
-// URL whose dialect is not yet available falls back to conservative scanning.
+// MigrationSourceValidator returns a strict stable-snapshot callback bound to
+// the target database URL. Full mode returns nil so shared source preparation
+// does not capture, checksum, or reorder errors for migration directories that
+// the default compatibility surface would otherwise resolve later.
+//
+// URL parsing is deliberately best-effort here: the owning command retains its
+// established URL diagnostic and ordering, while a URL whose dialect is not
+// yet available falls back to conservative scanning.
 func (p Policy) MigrationSourceValidator(databaseURL string) func(fs.FS) error {
+	if !p.strictCE {
+		return nil
+	}
 	dialect, _ := atlasurl.DialectFromURL(databaseURL)
 	return func(fsys fs.FS) error {
 		return p.ValidateMigrationSourceForDialect(fsys, dialect)
 	}
+}
+
+// ValidateMigrationSourceForURL applies the target-aware migration policy at
+// command boundaries that already hold a captured source. Full mode is a
+// no-op; strict mode uses the same callback as stable-snapshot preflight.
+func (p Policy) ValidateMigrationSourceForURL(fsys fs.FS, databaseURL string) error {
+	validate := p.MigrationSourceValidator(databaseURL)
+	if validate == nil {
+		return nil
+	}
+	return validate(fsys)
 }
 
 // ValidateMigrationSourceForDialect applies the strict migration-content gate

@@ -743,6 +743,29 @@ func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
 	}
 }
 
+func TestFullCompatDoesNotPreflightMigrationDesiredSources(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.db")
+
+	stdout, stderr, code := runAtlasBinary(
+		compat,
+		nil,
+		"schema", "apply",
+		"--url", "sqlite://"+targetPath,
+		"--to", "file://"+filepath.Join(dir, "missing"),
+		"--tx-mode", "statement",
+		"--auto-approve",
+	)
+
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: invalid tx-mode \"statement\": expected file, all, or none\n")
+	_, err := os.Stat(targetPath)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+}
+
 type strictMigrationPreflightFixture struct {
 	root    string
 	current string

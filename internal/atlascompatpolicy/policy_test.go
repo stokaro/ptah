@@ -526,8 +526,12 @@ func TestStrictCEMigrationContentValidationUsesTargetDialect(t *testing.T) {
 	mysqlString := "SELECT 'prefix \\'\n-- +ptah check name=\"fake\"\nsuffix';\n"
 	fsys := fstest.MapFS{"1_users.sql": {Data: []byte(mysqlString)}}
 
+	strictValidator := atlascompatpolicy.StrictCE().MigrationSourceValidator("mysql://localhost/app")
+	qt.Assert(t, strictValidator, qt.IsNotNil)
+	qt.Assert(t, atlascompatpolicy.Full().MigrationSourceValidator("mysql://localhost/app"), qt.IsNil)
 	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(fsys, platform.MySQL), qt.IsNil)
-	qt.Assert(t, atlascompatpolicy.StrictCE().MigrationSourceValidator("mysql://localhost/app")(fsys), qt.IsNil)
+	qt.Assert(t, strictValidator(fsys), qt.IsNil)
+	qt.Assert(t, atlascompatpolicy.Full().ValidateMigrationSourceForURL(fsys, "mysql://localhost/app"), qt.IsNil)
 	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys), qt.IsNil)
 
 	actualDirective := fstest.MapFS{"1_users.sql": {Data: []byte(
@@ -535,6 +539,11 @@ func TestStrictCEMigrationContentValidationUsesTargetDialect(t *testing.T) {
 	)}}
 	qt.Assert(t,
 		atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(actualDirective, platform.MySQL),
+		qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+	)
+	qt.Assert(t,
+		atlascompatpolicy.StrictCE().ValidateMigrationSourceForURL(actualDirective, "mysql://localhost/app"),
 		qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
 	)

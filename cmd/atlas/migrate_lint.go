@@ -300,7 +300,7 @@ func runAtlasMigrateLint(
 		}
 		return exitcode.New(1, errors.New(integrity.Error))
 	}
-	if err := policy.MigrationSourceValidator(opts.devURL)(captured.gateFS()); err != nil {
+	if err := policy.ValidateMigrationSourceForURL(captured.gateFS(), opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 

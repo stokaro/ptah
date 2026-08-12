@@ -102,7 +102,7 @@ func runAtlasMigrateValidate(
 	if source.devURL == "" {
 		return nil
 	}
-	if err := policy.MigrationSourceValidator(source.devURL)(fsys); err != nil {
+	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	return replayAtlasMigrateSource(cmd, source, fsys)
