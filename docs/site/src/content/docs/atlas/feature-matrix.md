@@ -261,7 +261,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views and named table CHECKs. Other modeled objects produce named not-supported comments on `render` and `apply`; domains, composites and ranges still drop. |
-| CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | Preset drops concurrent index creation and drops, XML and advisory locks. Roles, grants, RLS, sequences, SERIAL, views, matviews, functions and triggers are enabled on the measured v26.2 line. |
+| CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | `CONCURRENTLY` index syntax, XML and advisory locks are disabled; Pro-like objects remain. CockroachDB 25.4 refuses generic/guarded DROP CONSTRAINT and CREATE OR REPLACE TRIGGER; 26.2 accepts them. |
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
 | Extensions | 🟡 | ❌ | ✅ | PostgreSQL-family only; `plpgsql` ignored by default on compare. Every other target names the extension it cannot host, on both `render` and `apply`. The community binary refuses extension blocks. |
