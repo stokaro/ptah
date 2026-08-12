@@ -478,6 +478,47 @@ func MySQL84() Capabilities {
 	}
 }
 
+// MySQL26 is the preset for the MySQL 26.x line and newer.
+//
+// It is measured, not inherited. The capability probe (issue #1339) ran the
+// registry against a live mysql:26.7 — the image docker-compose.yaml and
+// .github/workflows/go-integration-tests.yml pin — in the tiered matrix of
+// issue #1341; the server reported VERSION() 26.7.0 and refused the nonsense
+// control CREATE NONSENSE ptah_capability_probe_control with
+// Error 1064 (42000), so an acceptance in that run distinguishes a supported
+// statement from a connection that agrees with everything.
+//
+// 24 of the 25 registry keys were decided from a statement the server
+// accepted or refused, and every one answered as MySQL84 already claimed. The
+// preset therefore carries MySQL84's set verbatim: the equality is the
+// measurement's result, not an assumption, and writing the rows out again
+// would only invite the two copies to drift. The rows a reader is most likely
+// to expect a difference on:
+//
+//   - ALTER TABLE dcc DROP CHECK dcc_ck is ACCEPTED, so DropCheckClause stays
+//     true — still the MySQL-only spelling;
+//   - ALTER TABLE dcie DROP CONSTRAINT IF EXISTS dcie_absent is REFUSED with
+//     Error 1064 (42000) while the unguarded ALTER TABLE dcie DROP CONSTRAINT
+//     dcie_absent reaches Error 3940 (HY000) "Constraint does not exist", so
+//     the guard is a syntax error rather than a missing constraint and
+//     DropConstraintIfExists stays false;
+//   - a foreign key to a nonunique but indexed column is REFUSED with
+//     Error 6125 (HY000) "Missing unique key", so
+//     ForeignKeysRequireUniqueReference stays true — 26.x keeps 8.4's stricter
+//     policy and does not revert to 8.0's;
+//   - CREATE MATERIALIZED VIEW is ACCEPTED and then dropped: the view reports
+//     0 before an INSERT into its source and 1 after, so the result is
+//     recomputed rather than stored and MaterializedViews stays false.
+//
+// The 25th key, RoleManagement, was not decided by a statement and is carried
+// from MySQL84 unchanged. The MySQL-family probe plan declares it undecidable
+// in advance because the key names the PostgreSQL role and object privilege
+// surface that no MySQL-family code path consults; this server's own
+// CREATE ROLE and GRANT answer a different question.
+func MySQL26() Capabilities {
+	return MySQL84()
+}
+
 // MySQL8019 is the preset for MySQL 8.0.19–8.3. It permits foreign keys that
 // reference nonunique indexes, unlike MySQL 8.4 and newer.
 func MySQL8019() Capabilities {
@@ -547,6 +588,41 @@ func MariaDB1011() Capabilities {
 	}
 }
 
+// MariaDB12 is the preset for the MariaDB 12.x line and newer.
+//
+// It is measured, not inherited. The capability probe (issue #1339) ran the
+// registry against a live mariadb:12.3 in the tiered matrix of issue #1341;
+// the server reported 12.3.2-MariaDB-ubu2404 and refused the nonsense control
+// CREATE NONSENSE ptah_capability_probe_control with Error 1064 (42000).
+//
+// 23 of the 25 registry keys were decided from a statement the server accepted
+// or refused, and every one answered as MariaDB1011 already claimed, so this
+// preset carries MariaDB1011's set verbatim. The rows a reader is most likely
+// to expect a difference on:
+//
+//   - ALTER TABLE dcie DROP CONSTRAINT IF EXISTS dcie_absent and
+//     ALTER TABLE dcie DROP FOREIGN KEY IF EXISTS dcie_absent_fk are both
+//     ACCEPTED while the unguarded drop reaches Error 1091 (42000) "Can't DROP
+//     CONSTRAINT", so DropConstraintIfExists stays true for both spellings the
+//     key gates;
+//   - ALTER TABLE dcc DROP CHECK dcc_ck is REFUSED with Error 1064 (42000), so
+//     DropCheckClause stays false: 12.3 has not adopted MySQL's spelling;
+//   - a foreign key to a nonunique but indexed column is ACCEPTED while one to
+//     a bare column is REFUSED with Error 1005 (HY000) errno 150, so
+//     ForeignKeysRequireIndexedReference stays true;
+//   - CREATE MATERIALIZED VIEW is REFUSED with Error 1064 (42000) — unlike
+//     MySQL, MariaDB still does not quietly accept the keyword.
+//
+// Two keys were not decided by a statement and are carried from MariaDB1011
+// unchanged, both because the MariaDB probe plan declares them undecidable in
+// advance: RoleManagement names the PostgreSQL role and privilege surface no
+// MySQL-family code path consults, and Sequences describes Ptah's generator
+// rather than the engine (stokaro/ptah#931 item 8) — the server has had
+// SEQUENCE since 10.3, and asking it would answer a different question.
+func MariaDB12() Capabilities {
+	return MariaDB1011()
+}
+
 // MariaDBLegacy is the conservative preset for MariaDB before 10.2 (EOL
 // lines): no generic DROP CONSTRAINT, no enforced CHECK constraints, and no
 // IF EXISTS guards are assumed (a floor, deliberately below what late 10.1
@@ -599,9 +675,43 @@ func Postgres16() Capabilities {
 	}
 }
 
-// Postgres17 is the preset for PostgreSQL 17+.
+// Postgres17 is the preset for the PostgreSQL 17 line.
 func Postgres17() Capabilities {
 	return Postgres16().With(AlterGeneratedColumnExpression, true)
+}
+
+// Postgres18 is the preset for PostgreSQL 18 and newer.
+//
+// It is measured, not inherited. The capability probe (issue #1339) ran all 25
+// registry keys against a live postgres:18 — the image docker-compose.yaml and
+// .github/workflows/go-integration-tests.yml pin — in the tiered matrix of
+// issue #1341; the server reported "PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1)
+// on x86_64-pc-linux-gnu" and refused the nonsense control
+// CREATE NONSENSE ptah_capability_probe_control with SQLSTATE 42601.
+//
+// Every one of the 25 rows answered as Postgres17 already claimed, so this
+// preset carries Postgres17's set verbatim. That is the finding, not a
+// shortcut: PostgreSQL 18 accepts nothing 17 refuses and refuses nothing 17
+// accepts, across the whole registry. The rows a reader is most likely to
+// expect a difference on:
+//
+//   - ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2) is ACCEPTED, so
+//     AlterGeneratedColumnExpression stays true;
+//   - CREATE INDEX CONCURRENTLY cic_one ON cic (n) is ACCEPTED outside a
+//     transaction and REFUSED inside one with SQLSTATE 25001, which is a real
+//     concurrent build rather than a parsed no-op, so CreateIndexConcurrently
+//     stays true; DROP INDEX CONCURRENTLY answers identically;
+//   - CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload) is
+//     ACCEPTED and pg_index reports indnkeyatts 1 with indnatts 2, so
+//     IndexIncludeSPGiST stays true;
+//   - ALTER TABLE dcc DROP CHECK dcc_ck is REFUSED with SQLSTATE 42601, so
+//     DropCheckClause stays false.
+//
+// Virtual generated columns — the PostgreSQL 18 change issue #916 opens with —
+// have no registry key yet, so no row here speaks to them. Adding that key is
+// its own change and must bring its own measurement.
+func Postgres18() Capabilities {
+	return Postgres17()
 }
 
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
@@ -846,9 +956,9 @@ func SpannerPostgres() Capabilities {
 var defaultDialectPresets = map[string]func() Capabilities{
 	platform.ClickHouse:  ClickHouse24,
 	platform.CockroachDB: CockroachDB23,
-	platform.MariaDB:     MariaDB1011,
-	platform.MySQL:       MySQL84,
-	platform.Postgres:    Postgres17,
+	platform.MariaDB:     MariaDB12,
+	platform.MySQL:       MySQL26,
+	platform.Postgres:    Postgres18,
 	platform.Spanner:     SpannerPostgres,
 	platform.SQLite:      SQLite3,
 	platform.SQLServer:   SQLServer2022,
@@ -875,12 +985,12 @@ func ForDialect(dialect string) Capabilities {
 // Newest measured major version line per refined dialect.
 //
 // Each ladder in this file ends in an open-topped arm: MySQL sends everything
-// above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
-// PostgreSQL everything at or above 17 to Postgres17. That arm is a stand-in,
-// not a measurement — a server newer than the line below was never observed
-// behaving like the preset it receives. VersionResolution.Saturated is true
-// exactly there, so a caller can tell "inside a measured line" from "past the
-// newest line this package knows".
+// at or above 26 to MySQL26, MariaDB everything at or above 12 to MariaDB12,
+// and PostgreSQL everything at or above 18 to Postgres18. That arm is a
+// stand-in, not a measurement — a server newer than the line below was never
+// observed behaving like the preset it receives. VersionResolution.Saturated
+// is true exactly there, so a caller can tell "inside a measured line" from
+// "past the newest line this package knows".
 //
 // Above these numbers the preset that comes back is byte-identical to
 // ForDialect's, which is the definition of "no version-specific preset could be
@@ -891,17 +1001,26 @@ func ForDialect(dialect string) Capabilities {
 // measures that line, together with the preset it deserves — never as a side
 // effect of bumping a container tag.
 const (
-	// MySQL84 covers 8.4 LTS through the 9.x LTS line. The integration matrix
-	// already runs mysql:26.7, which therefore resolves saturated: Ptah has no
-	// measured MySQL 26 capability line yet.
-	newestMeasuredMySQLMajor = 9
-	// MariaDB1011 covers 10.2 through the 11.x lines; the integration matrix
-	// runs mariadb:10.11.
-	newestMeasuredMariaDBMajor = 11
-	// Postgres17 covers 17 only. The integration matrix already runs
-	// postgres:18, which therefore resolves saturated: Ptah has no measured
-	// PostgreSQL 18 capability line yet.
-	newestMeasuredPostgresMajor = 17
+	// MySQL26 covers the 26.x line, measured live on the mysql:26.7 the
+	// integration matrix runs (VERSION() 26.7.0). Moving this from 9 to 26
+	// asserts that a MySQL 26 server is described by a preset somebody
+	// executed against one — see MySQL26 for the statements.
+	//
+	// It asserts one thing more, because the ceiling is a single number per
+	// dialect: a major between 10 and 25 now reports version-specific onto
+	// MySQL84 through the ladder's `v.major > 8` arm, where it used to report
+	// saturated. Both booleans stay literally true there — MySQL84 was
+	// selected by a version-dependent branch, and the server is not past the
+	// newest measured line — but no release in that range was measured, and no
+	// arm of this ladder was written for one.
+	newestMeasuredMySQLMajor = 26
+	// MariaDB12 covers the 12.x line, measured live on mariadb:12.3
+	// (12.3.2-MariaDB-ubu2404). MariaDB1011 keeps 10.2 through the 11.x lines
+	// below it.
+	newestMeasuredMariaDBMajor = 12
+	// Postgres18 covers 18, measured live on the postgres:18 the integration
+	// matrix runs (PostgreSQL 18.4). Postgres17 keeps the 17 line below it.
+	newestMeasuredPostgresMajor = 18
 )
 
 // VersionResolution reports how a server version string was mapped onto a
@@ -1052,6 +1171,8 @@ func postgresResolution(v serverVersion) VersionResolution {
 
 func mysqlForVersion(v serverVersion) Capabilities {
 	switch {
+	case v.major >= 26:
+		return MySQL26()
 	case v.major > 8 || (v.major == 8 && v.minor >= 4):
 		return MySQL84()
 	case v.major == 8 && (v.minor > 0 || v.patch >= 19):
@@ -1065,6 +1186,8 @@ func mysqlForVersion(v serverVersion) Capabilities {
 
 func postgresForVersion(v serverVersion) Capabilities {
 	switch {
+	case v.major >= 18:
+		return Postgres18()
 	case v.major >= 17:
 		return Postgres17()
 	case v.major >= 14:
@@ -1081,15 +1204,19 @@ const mariaDBReplicationPrefix = "5.5.5-"
 // mariaDBForVersion picks the MariaDB preset for a server version string.
 // MariaDB servers speaking the MySQL protocol prepend a fake "5.5.5-"
 // replication-compatibility prefix ("5.5.5-10.11.6-MariaDB"); that prefix is
-// stripped before parsing so the REAL version decides. 10.2+ gets the modern
-// preset (generic DROP CONSTRAINT, enforced CHECKs, IF EXISTS guards);
-// anything older — or an unparseable string — degrades to MariaDBLegacy /
-// the modern preset respectively.
+// stripped before parsing so the REAL version decides. 12+ gets the measured
+// MariaDB12 line; 10.2 through 11.x get the modern preset (generic
+// DROP CONSTRAINT, enforced CHECKs, IF EXISTS guards); anything older — or an
+// unparseable string — degrades to MariaDBLegacy / the dialect default
+// respectively.
 func mariaDBForVersion(version string) Capabilities {
 	trimmed := strings.TrimPrefix(version, mariaDBReplicationPrefix)
 	v, ok := parseVersion(trimmed)
 	if !ok {
-		return MariaDB1011()
+		return ForDialect(platform.MariaDB)
+	}
+	if v.major >= 12 {
+		return MariaDB12()
 	}
 	if v.major > 10 || (v.major == 10 && v.minor >= 2) {
 		return MariaDB1011()

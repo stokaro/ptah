@@ -25,9 +25,9 @@ to an implementation family, and several engines deliberately share one —
 MySQL and MariaDB share a planner family, and CockroachDB, YugabyteDB, and
 Spanner ride the PostgreSQL family. What distinguishes the members is their
 **capability set**: a validated map of known capability keys, with presets per
-engine and version line (PostgreSQL 12–13, 14–16, and 17+ are three different
-presets). Unknown keys and contradictory sets are rejected outright, so a
-typo in a capability name fails fast instead of silently changing plans.
+engine and version line (PostgreSQL 12–13, 14–16, 17, and 18+ are four
+different presets). Unknown keys and contradictory sets are rejected outright,
+so a typo in a capability name fails fast instead of silently changing plans.
 
 Which set applies depends on how a command runs:
 

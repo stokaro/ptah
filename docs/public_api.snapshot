@@ -4856,7 +4856,9 @@ type Capabilities map[Capability]bool
     func ForServerVersion(dialect, version string) Capabilities
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
     func MariaDB1011() Capabilities
+    func MariaDB12() Capabilities
     func MariaDBLegacy() Capabilities
+    func MySQL26() Capabilities
     func MySQL8016() Capabilities
     func MySQL8019() Capabilities
     func MySQL84() Capabilities
@@ -4864,6 +4866,7 @@ type Capabilities map[Capability]bool
     func Postgres13() Capabilities
     func Postgres16() Capabilities
     func Postgres17() Capabilities
+    func Postgres18() Capabilities
     func SQLServer2022() Capabilities
     func SQLite3() Capabilities
     func SpannerPostgres() Capabilities
@@ -4890,7 +4893,9 @@ func ForDialect(dialect string) Capabilities
 func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
 func MariaDB1011() Capabilities
+func MariaDB12() Capabilities
 func MariaDBLegacy() Capabilities
+func MySQL26() Capabilities
 func MySQL8016() Capabilities
 func MySQL8019() Capabilities
 func MySQL84() Capabilities
@@ -4898,6 +4903,7 @@ func MySQLLegacy() Capabilities
 func Postgres13() Capabilities
 func Postgres16() Capabilities
 func Postgres17() Capabilities
+func Postgres18() Capabilities
 func SQLServer2022() Capabilities
 func SQLite3() Capabilities
 func SpannerPostgres() Capabilities

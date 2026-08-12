@@ -192,10 +192,12 @@ func getDatabaseInfoWithCapabilities(
 // run against a supported server emits nothing there; anything it does emit is
 // a diagnostic that exists nowhere else. Connecting to a server Ptah supports
 // and runs in CI is not such an event. A saturated resolution fires on every
-// single connection to that server — the integration matrix runs postgres:18,
-// which is saturated against the PostgreSQL 17 line — so reporting it at WARN
-// wrote a line to stderr on every command and broke every test that asserts a
-// clean error stream.
+// single connection to the server that provokes it — the integration matrix
+// ran postgres:18 while the newest measured PostgreSQL line was 17 — so
+// reporting it at WARN wrote a line to stderr on every command and broke every
+// test that asserts a clean error stream. Measuring PostgreSQL 18 closed that
+// particular case; the level stays where it is, because the next container
+// bump reopens it.
 //
 // The fact itself is not lost. capability.ResolveServerVersion returns
 // Saturated and NewestMeasured to any caller that wants to act on them, and

@@ -284,16 +284,18 @@ func captureResolutionReport(t *testing.T, level slog.Level, info types.DBInfo) 
 // version-aware selector.
 //
 // Every row asserts the same thing first: nothing is written at the level a
-// default command runs at. A saturated resolution is not an incident — the
-// integration matrix runs postgres:18, which is saturated against the
-// PostgreSQL 17 line, so a WARN there fires on every connection to a server
-// Ptah supports. It did, and it broke 25 subtests that assert a clean error
-// stream. cliobs.QuietDefaultLogger's contract is that a clean run emits
-// nothing at WARN or above; a supported server is a clean run.
+// default command runs at. A saturated resolution is not an incident — before
+// PostgreSQL 18 was measured, the postgres:18 the integration matrix runs was
+// saturated against the PostgreSQL 17 line, so a WARN there fired on every
+// connection to a server Ptah supports. It did, and it broke 25 subtests that
+// assert a clean error stream. cliobs.QuietDefaultLogger's contract is that a
+// clean run emits nothing at WARN or above; a supported server is a clean run.
 //
 // The debug column is the other half: the fact is recorded, not dropped, and
-// `--log-level debug` shows it. The quiet row is the non-interference control
-// — without it, a reporter that said nothing at any level would pass.
+// `--log-level debug` shows it. The quiet rows are the non-interference
+// control — without them, a reporter that said nothing at any level would
+// pass. All three servers the matrix runs are quiet rows now that their lines
+// are measured, so the saturated rows name the next major above each ceiling.
 func TestReportCapabilityResolution(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -308,19 +310,37 @@ func TestReportCapabilityResolution(t *testing.T) {
 			wantDebugQuiet: true,
 		},
 		{
+			name: "the mysql the matrix runs says nothing now that 26 is measured",
+			info: types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
+			// The integration matrix runs mysql:26.7.
+			wantDebugQuiet: true,
+		},
+		{
+			name: "the mariadb the matrix runs says nothing now that 12 is measured",
+			info: types.DBInfo{Dialect: "mariadb", Version: "12.3.2-MariaDB"},
+			// The integration matrix runs mariadb:12.3.
+			wantDebugQuiet: true,
+		},
+		{
+			name: "the postgres the matrix runs says nothing now that 18 is measured",
+			info: types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
+			// The integration matrix runs postgres:18.
+			wantDebugQuiet: true,
+		},
+		{
 			name:      "mysql past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
-			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=26.7.0", "newest_measured=9.x"},
+			info:      types.DBInfo{Dialect: "mysql", Version: "27.0.0"},
+			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=27.0.0", "newest_measured=26.x"},
 		},
 		{
 			name:      "mariadb past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
-			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=12.3.0-MariaDB", "newest_measured=11.x"},
+			info:      types.DBInfo{Dialect: "mariadb", Version: "13.0.0-MariaDB"},
+			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=13.0.0-MariaDB", "newest_measured=12.x"},
 		},
 		{
 			name:      "postgres past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
-			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=17.x"},
+			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 19.0 (Debian)"},
+			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=18.x"},
 		},
 		{
 			name:      "an unparseable version stays a debug-level fallback",

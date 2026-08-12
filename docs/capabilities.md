@@ -130,41 +130,61 @@ composed sets yourself.
 
 ## Presets
 
-| Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Capability | MySQL26 | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB12 | MariaDB1011 | MariaDBLegacy | Postgres18 | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `drop_constraint_generic` | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `check_constraints_enforced` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `drop_check_clause` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `foreign_keys_require_unique_reference` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `foreign_keys_require_indexed_reference` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-Version lines: `MySQL84()` covers MySQL 8.4+ and 9.x; `MySQL8019()` covers
-8.0.19–8.3; `MySQL8016()` covers 8.0.16–8.0.18; `MySQLLegacy()` anything
-older. `MariaDB1011()` covers the
-supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
-floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
-PostgreSQL 17; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
+Version lines: `MySQL26()` covers MySQL 26.x and newer; `MySQL84()` covers 8.4
+and 9.x; `MySQL8019()` covers 8.0.19–8.3; `MySQL8016()` covers 8.0.16–8.0.18;
+`MySQLLegacy()` anything older. `MariaDB12()` covers MariaDB 12.x and newer;
+`MariaDB1011()` covers the supported 10.6+/11.x lines; `MariaDBLegacy()` is the
+conservative floor `ForServerVersion` assigns to pre-10.2 servers.
+`Postgres18()` covers PostgreSQL 18 and newer; `Postgres17()` covers 17;
+`Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER` and no `SPGIST` indexes with `INCLUDE` columns).
+
+The three newest lines carry exactly the rows of the line beneath them, and
+that is a measurement rather than an inheritance. The capability probe ran the
+registry against a live `postgres:18`, `mysql:26.7` and `mariadb:12.3` and
+recorded, per key, a statement the server accepted or refused; every row
+answered as the line below already claimed.
+
+| Line | Rows decided from a statement | Rows carried, and why |
+| --- | --- | --- |
+| `Postgres18()` | 25 of 25 | none |
+| `MySQL26()` | 24 of 25 | `role_management` names a PostgreSQL surface no MySQL-family code path consults, so the probe declines to ask |
+| `MariaDB12()` | 23 of 25 | the same key, plus `sequences`, which describes Ptah's generator rather than the engine |
+
+PostgreSQL 18 accepts nothing 17 refuses and refuses nothing 17 accepts —
+including `ALTER TABLE ... ALTER COLUMN ... SET EXPRESSION`,
+`CREATE INDEX CONCURRENTLY` (accepted outside a transaction, refused inside
+one), and `SPGIST ... INCLUDE`. The carried keys are marked as carried, not
+measured, in `core/platform/capability/capability_measured_lines_test.go`,
+which holds each preset against the statements and verdicts it came from.
 
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
 common distributed-SQL subset; `SpannerPostgres()` is deliberately
@@ -189,42 +209,43 @@ exactly what `ForServerVersionResult`'s boolean means by "no version-specific
 preset could be selected". So the boolean is `false` there:
 
 ```go
-caps, versionSpecific := capability.ForServerVersionResult("mysql", "26.7.0")
-// caps            == capability.MySQL84() == capability.ForDialect("mysql")
-// versionSpecific == false   (26.x ran off the top of the ladder)
+caps, versionSpecific := capability.ForServerVersionResult("postgres", "PostgreSQL 19.0")
+// caps            == capability.Postgres18() == capability.ForDialect("postgres")
+// versionSpecific == false   (19 ran off the top of the ladder)
 ```
 
 `ResolveServerVersion` separates that fallback from the other one — a version
 that could not be parsed at all — and names the line the server was planned as:
 
 ```go
-resolution := capability.ResolveServerVersion("mysql", "26.7.0")
-// resolution.Capabilities    == capability.MySQL84()
+resolution := capability.ResolveServerVersion("postgres", "PostgreSQL 19.0")
+// resolution.Capabilities    == capability.Postgres18()
 // resolution.VersionSpecific == false   (the dialect default was used)
-// resolution.Saturated       == true    (26.x is past the newest measured line)
-// resolution.NewestMeasured  == "9.x"
+// resolution.Saturated       == true    (19 is past the newest measured line)
+// resolution.NewestMeasured  == "18.x"
 ```
 
 `Saturated` and `VersionSpecific` are never both true.
 
 The newest measured line per refined dialect:
 
-| Dialect | Newest measured line | Saturates above major |
-| --- | --- | --- |
-| MySQL | 9.x (`MySQL84()`) | 9 |
-| MariaDB | 11.x (`MariaDB1011()`) | 11 |
-| PostgreSQL | 17.x (`Postgres17()`) | 17 |
+| Dialect | Newest measured line | Saturates above major | Measured on |
+| --- | --- | --- | --- |
+| MySQL | 26.x (`MySQL26()`) | 26 | a live `mysql:26.7` reporting `VERSION()` 26.7.0 |
+| MariaDB | 12.x (`MariaDB12()`) | 12 | a live `mariadb:12.3` reporting 12.3.2-MariaDB-ubu2404 |
+| PostgreSQL | 18.x (`Postgres18()`) | 18 | a live `postgres:18` reporting PostgreSQL 18.4 |
 
-PostgreSQL 18 therefore resolves saturated even though the integration matrix
-already runs `postgres:18`: Ptah has no measured PostgreSQL 18 capability line
-yet, so 18 is planned with the PostgreSQL 17 preset and says so. MySQL is in the
-same position for the same reason — the matrix runs `mysql:26.7`, which is the
-`26.7.0` in the examples above — so two of the three refined dialects are
-currently described to their own CI by a stand-in.
+All three are the images `docker-compose.yaml` and
+`.github/workflows/go-integration-tests.yml` start, so the servers this
+repository runs its own suites against are now described by presets somebody
+executed against them rather than by a stand-in.
 
 Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
-that line — never as a side effect of bumping a container tag.
+that line — never as a side effect of bumping a container tag. The ceiling is
+one number per dialect, so raising it also covers any major between the old
+number and the new one: nothing between MySQL 9 and 26 was measured, and a
+server there is handed `MySQL84()` by the ladder's `major > 8` arm.
 
 Saturation is only defined where this package has a version ladder. ClickHouse,
 SQLite and SQL Server have no ladder at all, and CockroachDB, YugabyteDB and
@@ -235,13 +256,19 @@ is the remaining scope of issue #916.
 `dbschema.ConnectToDatabase` is the one production caller of the version-aware
 selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
 server version, and the line it was planned as; an unparseable version is
-recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
-deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
-emits nothing, and connecting to a supported server is a clean run. The
-integration matrix runs `postgres:18` and `mysql:26.7`, so a saturated
-resolution fires on every connection to either — a warning would be noise on
-every command rather than a diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
-`NewestMeasured` from `ResolveServerVersion` directly.
+recorded at `DEBUG` too.
+
+Neither reaches a default run's stderr, and that is deliberate. The CLI's
+default logger keeps `WARN` and above so that a clean run emits nothing, and
+connecting to a supported server is a clean run. A saturated resolution fires
+on every connection to the server that provokes it — which was every connection
+at all while the matrix ran `postgres:18` and `mysql:26.7` above their
+ceilings — so a warning would be noise on every command rather than a
+diagnostic. Measuring those lines closed that particular case; the next
+container bump reopens it, which is why the level stays where it is.
+
+Use `--log-level debug` to see it, or read `Saturated` and `NewestMeasured`
+from `ResolveServerVersion` directly.
 
 Surfacing an unrefined version to the user on a channel of its own is
 criterion 6 of issue #916 and belongs with the CLI work that owns that channel.

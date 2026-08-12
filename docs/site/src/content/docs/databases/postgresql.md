@@ -26,8 +26,12 @@ server — see
 
 ## Version-dependent behavior
 
-Three PostgreSQL preset lines exist: 12–13, 14–16, and 17+. The differences
-that reach generated SQL:
+Four PostgreSQL preset lines exist: 12–13, 14–16, 17, and 18+. The 18 line was
+measured against a live PostgreSQL 18.4 and accepts and refuses exactly what 17
+does across every capability Ptah models, so it carries the same set; it is a
+line of its own so that a server newer than 18 is reported as past the newest
+measured line rather than planned as one. The differences that reach generated
+SQL:
 
 - Trigger modification uses single-statement `CREATE OR REPLACE TRIGGER` on
   PostgreSQL 14+; older lines get an explicit drop-and-create sequence.

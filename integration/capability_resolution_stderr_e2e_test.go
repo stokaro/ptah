@@ -31,11 +31,14 @@ const capabilityReportDefaultLogLevel = slog.LevelWarn
 // It has to run against a live server because the defect is a function of the
 // banner the server reports. `postgres:18` is what
 // .github/workflows/go-integration-tests.yml and docker-compose.yaml pin, and
-// PostgreSQL 18 is past the newest measured capability line (17), so the
-// resolution is saturated on exactly the image CI runs. A diagnostic emitted
-// for that condition fires on every single connection, and every test that
-// asserts a clean error stream goes red — which is what happened: 25 subtests
-// across four migrate-lint E2E files.
+// PostgreSQL 18 used to be past the newest measured capability line (17), so
+// the resolution was saturated on exactly the image CI runs. A diagnostic
+// emitted for that condition fires on every single connection, and every test
+// that asserts a clean error stream goes red — which is what happened: 25
+// subtests across four migrate-lint E2E files. PostgreSQL 18 has since been
+// measured and has a preset of its own, so today's resolution is not
+// saturated; the next container bump puts the matrix back above the ceiling,
+// which is why this test asserts the contract rather than the current state.
 //
 // The test is written to hold on any supported PostgreSQL, not only 18: the
 // contract is "a clean run against a server Ptah supports emits nothing at the

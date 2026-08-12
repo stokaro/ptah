@@ -51,10 +51,13 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 	c := qt.New(t)
 
 	named := map[string]func() capability.Capabilities{
+		"Postgres18":      capability.Postgres18,
 		"Postgres17":      capability.Postgres17,
 		"Postgres16":      capability.Postgres16,
 		"Postgres13":      capability.Postgres13,
+		"MySQL26":         capability.MySQL26,
 		"MySQL84":         capability.MySQL84,
+		"MariaDB12":       capability.MariaDB12,
 		"MariaDB1011":     capability.MariaDB1011,
 		"ClickHouse24":    capability.ClickHouse24,
 		"SQLite3":         capability.SQLite3,
@@ -89,6 +92,64 @@ func measuredChecks(cell capabilityprobe.Cell, named map[string]func() capabilit
 			c.Assert(cell.Preset().Validate(), qt.IsNil)
 		},
 	}
+}
+
+// TestCells_TheNewestMeasuredCeilingNamesAMeasuredLine is the guard on the
+// cheapest wrong way to close a saturated matrix cell: move the ceiling
+// constant and stop there.
+//
+// Raising newestMeasuredPostgresMajor turns "this server is past the newest
+// measured line" into "this server is inside it" for every release below the
+// new number, and the constant lives in a package that cannot see the matrix,
+// so nothing there can notice that no line was measured. Here it can be
+// noticed: the ceiling is readable through the resolution a far-future version
+// gets, and a matrix cell on that major with a preset is exactly the evidence
+// the constant is claiming to have.
+//
+// The saturation assertion is the non-vacuity half. Without it a resolver that
+// stopped reporting NewestMeasured at all would leave the loop with nothing to
+// check and the test would pass having examined nothing.
+func TestCells_TheNewestMeasuredCeilingNamesAMeasuredLine(t *testing.T) {
+	c := qt.New(t)
+
+	// A version far above any ladder, so the resolution is guaranteed to be
+	// the saturated one that names the ceiling.
+	for _, tc := range []struct {
+		dialect   string
+		farFuture string
+	}{
+		{platform.Postgres, "PostgreSQL 999.0"},
+		{platform.MySQL, "999.0.0"},
+		{platform.MariaDB, "999.0.0-MariaDB"},
+	} {
+		c.Run(tc.dialect, func(c *qt.C) {
+			resolution := capability.ResolveServerVersion(tc.dialect, tc.farFuture)
+
+			comment := qt.Commentf("%s %q resolved %+v", tc.dialect, tc.farFuture, resolution)
+			c.Assert(resolution.Saturated, qt.IsTrue, comment)
+			c.Assert(resolution.NewestMeasured, qt.Not(qt.Equals), "", comment)
+
+			ceiling := majorOfVersionLine(resolution.NewestMeasured)
+			c.Assert(measuredCellsOnMajor(tc.dialect, ceiling), qt.Not(qt.HasLen), 0,
+				qt.Commentf("the %s ceiling claims %s is measured, and no matrix cell on major %s carries a "+
+					"preset; a ceiling is a claim about a line somebody probed", tc.dialect, resolution.NewestMeasured, ceiling))
+		})
+	}
+}
+
+// majorOfVersionLine reads the major out of a version-line label such as "18.x"
+// or a cell line such as "26.7".
+func majorOfVersionLine(line string) string {
+	major, _, _ := strings.Cut(line, ".")
+	return major
+}
+
+// measuredCellsOnMajor returns the cells of one dialect that sit on a major
+// version and name a preset.
+func measuredCellsOnMajor(dialect, major string) []capabilityprobe.Cell {
+	return slices.DeleteFunc(slices.Clone(capabilityprobe.Cells), func(cell capabilityprobe.Cell) bool {
+		return cell.Dialect != dialect || !cell.Measured() || majorOfVersionLine(cell.Line) != major
+	})
 }
 
 func TestCellFor(t *testing.T) {

@@ -153,19 +153,23 @@ func (c Cell) String() string {
 // MariaDB 10.6 left community support on 2026-07-06 and is absent for that
 // reason alone.
 //
-// A nil Preset is a line the matrix wants and Ptah has not measured. Those are
-// the cells PRs bumping a container tag are waiting on, and probing a server
-// on one of them fails rather than reporting a green row against a preset
-// chosen by saturation.
+// A nil Preset is a line the matrix wants and Ptah has not measured. Probing a
+// server on one of them fails rather than reporting a green row against a
+// preset chosen by saturation. No cell below carries one today: the last three
+// — PostgreSQL 18, MySQL 26.7 and MariaDB 12.3 — were measured and given
+// presets of their own. The mechanism stays because the next container bump
+// declares its line here before anything has measured it, and that window must
+// read as a gap rather than as a pass.
 var Cells = []Cell{
 	// PostgreSQL: five supported majors (postgresql.org/support/versioning,
 	// read 2026-08-09 — 18.4, 17.10, 16.14, 15.18, 14.23; the project does not
 	// use the term LTS). Postgres16's own doc covers 14 through 16.
 	{
 		Dialect: platform.Postgres, Line: "18",
-		Preset: nil, PresetName: "",
+		Preset: capability.Postgres18, PresetName: "Postgres18",
 		Refinement: RefinedByVersion, Image: "postgres:18",
-		Note: "no measured PostgreSQL 18 preset: newestMeasuredPostgresMajor is 17, so an 18 server resolves saturated onto Postgres17",
+		Note: "measured live on PostgreSQL 18.4: all 25 rows answered as the PostgreSQL 17 line does, " +
+			"so Postgres18 carries Postgres17's set and newestMeasuredPostgresMajor moved to 18",
 	},
 	{
 		Dialect: platform.Postgres, Line: "17",
@@ -204,13 +208,13 @@ var Cells = []Cell{
 	// repository actually starts.
 	{
 		Dialect: platform.MySQL, Line: "26.7",
-		Preset: nil, PresetName: "",
+		Preset: capability.MySQL26, PresetName: "MySQL26",
 		Refinement: RefinedByVersion, Image: "mysql:26.7",
-		Note: "no measured MySQL 26 preset: newestMeasuredMySQLMajor is 9, so a 26 server resolves " +
-			"saturated onto MySQL84. This is the line docker-compose.yaml and " +
-			".github/workflows/go-integration-tests.yml pin, and a live mysql:26.7 reports VERSION() " +
-			"26.7.0 — so until a preset is measured for it, the servers this repository runs its own " +
-			"MySQL suite against are described by a stand-in",
+		Note: "measured live on a server reporting VERSION() 26.7.0, the line docker-compose.yaml and " +
+			".github/workflows/go-integration-tests.yml pin: 24 of the 25 rows were decided from a " +
+			"statement and answered as MySQL84 does, so MySQL26 carries that set and " +
+			"newestMeasuredMySQLMajor moved to 26. role_management is the 25th and the plan declares " +
+			"it undecidable for this dialect",
 	},
 	{
 		Dialect: platform.MySQL, Line: "9.7",
@@ -229,9 +233,12 @@ var Cells = []Cell{
 	// long-term stable series.
 	{
 		Dialect: platform.MariaDB, Line: "12.3",
-		Preset: nil, PresetName: "",
+		Preset: capability.MariaDB12, PresetName: "MariaDB12",
 		Refinement: RefinedByVersion, Image: "mariadb:12.3",
-		Note: "no measured MariaDB 12 preset: newestMeasuredMariaDBMajor is 11, so a 12 server resolves saturated onto MariaDB1011",
+		Note: "measured live on 12.3.2-MariaDB-ubu2404: 23 of the 25 rows were decided from a statement " +
+			"and answered as MariaDB1011 does, so MariaDB12 carries that set and " +
+			"newestMeasuredMariaDBMajor moved to 12. role_management and sequences are the other two " +
+			"and the plan declares both undecidable for this dialect",
 	},
 	{
 		Dialect: platform.MariaDB, Line: "11.8",
