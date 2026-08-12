@@ -200,7 +200,7 @@ existing-directory destinations.
 
 Non-database sources require `--dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect); a missing dev database fails with Atlas's `--dev-url cannot be empty` message.
 
-The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors and type selectors on non-final pattern segments fail explicitly; exporter blocks remain a gap.
+The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector); exporter blocks remain a gap.
 
 The pinned Atlas CE binary rejects `split`, `write`, and `hcl` template functions as non-community features, so Ptah's split-write exports are an open extension beyond the pinned CE binary.
 
@@ -727,6 +727,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
 | [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
+| [Leading schema type selector](#leading-schema-type-selector) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -788,7 +789,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `schema apply --edit`, `migrate diff --edit`, and `migrate new --edit` now open the operator's `$VISUAL`/`$EDITOR`. `schema apply --plan file://<path>` executes a pre-approved local plan file — the Atlas `.plan.hcl` format or the native JSON plan — after verifying it against the target (fingerprint check, dev-database replay against `--to`, and post-apply end-state verification, per format); registry `atlas://` plan URLs are rejected.
 
-`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
+`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs. Other field selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector).
 
 `ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
@@ -1081,6 +1082,35 @@ refuses the identical pattern on a schema-bound URL as
 `too many parts in pattern: "public.public.*[type=table].comment"`, and Ptah
 applies one depth rule to every scope, so accepting it would exit `0` where that
 binary exits `1`.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
+
+### Leading schema type selector
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `--exclude '*[type=schema].*[type=table]'` means every
+table inside every schema on every Ptah schema source. The leading schema glob
+may be narrowed, as in `app[type=schema].*[type=table]`.
+
+The pinned community binary v1.3.0 gives source-dependent answers. On a live
+PostgreSQL database containing tables and enums in `public` and `app`, the
+selector removes both tables and keeps both enums. On a SQLite file diff between
+one table and the same schema plus a second table, it exits `0` but leaves the
+second table's `CREATE TABLE` plan unchanged. Removing the selector from that
+SQLite run produces byte-identical output; `*[type=table]` is the control that
+does remove the plan.
+
+Ptah keeps the literal PostgreSQL answer on both source kinds. Making the
+selector a no-op only for a file diff would make one accepted scoping instruction
+mean two things depending on its input. It would also report success while
+leaving exactly the table the selector names in the migration plan. This is a
+defect Ptah does not copy; the complete compatibility surface keeps the coherent
+behavior rather than narrowing it to this Atlas CE result.
+
+The integration contour pins the file-diff result in
+`TestAtlasCompatLeadingSchemaTypeSelectorE2E`. The filter tests separately pin
+the schema glob, the final resource type, and the surviving non-table objects.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 

@@ -211,6 +211,12 @@ on the leading one: `*[type=schema].*[type=table]` names every table in every
 schema, and `app[type=schema].*[type=table]` narrows that to one schema. A type
 selector on any other segment is refused before a database is contacted.
 
+Ptah applies that literal meaning to every schema source. The pinned community
+binary applies it to live PostgreSQL inspection but accepts it without filtering
+tables in a SQLite file diff. Ptah keeps one source-independent selector meaning
+instead of reporting that the selector succeeded while leaving its tables in
+the plan. See the measured [comparison](../comparison/#leading-schema-type-selector).
+
 A **field selector** — the `.field` suffix behind a type selector — names a
 field to subtract while the object it belongs to stays. Ptah honors:
 

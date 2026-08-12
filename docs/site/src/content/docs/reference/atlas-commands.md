@@ -730,8 +730,11 @@ non-community template functions, so these exports are an open Ptah extension.
   and report it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
-- Other field-level exclude selectors and type selectors on non-final pattern
-  segments fail explicitly; exporter blocks remain an explicit gap.
+- Other field-level exclude selectors fail explicitly. Type selectors on
+  non-final pattern segments fail too, except for the leading `[type=schema]`
+  segment documented in the
+  [Atlas comparison](../../atlas/comparison/#leading-schema-type-selector);
+  exporter blocks remain an explicit gap.
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
 `unknown flag: --include`; Atlas registers it. The measured
