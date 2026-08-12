@@ -238,8 +238,12 @@ func applyAtlasSchemaClean(
 			cmd.Context(),
 			conn,
 			plan,
-			schemaclean.ApplyPlanOptions{ValidateBeforeExecute: func() error {
-				fresh, err := inspectAtlasSchemaCleanPlan(policy, conn)
+			schemaclean.ApplyPlanOptions{ValidateBeforeExecute: func(executor dbschematypes.SchemaExecutor) error {
+				validationConn := conn
+				if executor != nil {
+					validationConn = conn.WithExecutor(executor)
+				}
+				fresh, err := inspectAtlasSchemaCleanPlan(policy, validationConn)
 				if err != nil {
 					return err
 				}

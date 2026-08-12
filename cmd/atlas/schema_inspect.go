@@ -207,6 +207,10 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		Diagnostics:    cmd.ErrOrStderr(),
 		ProjectEnv:     projectEnv,
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
+		// Strict CE owns the pinned process output contract. Suppress only the
+		// Ptah-specific role coverage note; selector and safety diagnostics keep
+		// their ordinary writer.
+		SuppressRoleCoverageNote: opts.policy.IsStrictCE(),
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),

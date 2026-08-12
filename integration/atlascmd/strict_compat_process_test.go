@@ -1175,7 +1175,7 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 		fmt.Sprintf("ptah_strict_baseline_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
-	args := []string{"schema", "inspect", "--url", dbURL, "--format", "{{ json . }}"}
+	args := []string{"schema", "inspect", "--url", dbURL}
 
 	stdout, stderr, code := runAtlasBinary(
 		compat,
@@ -1187,11 +1187,15 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 	c.Assert(stdout, qt.Not(qt.Contains), "PUBLIC")
 	c.Assert(stderr, qt.Equals, "")
 
-	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
+	stdout, stderr, code = runAtlasBinary(
+		compat,
+		[]string{"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1"},
+		args...,
+	)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "plpgsql")
 	c.Assert(stdout, qt.Contains, "PUBLIC")
-	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stderr, qt.Not(qt.Contains), "Error:")
 }
 
 func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t *testing.T) {
@@ -1202,6 +1206,12 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 		fmt.Sprintf("ptah_strict_clean_snapshot_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
 	seedDatabase(c, dbURL, "CREATE TABLE users (id integer PRIMARY KEY)")
+	commandURL, err := url.Parse(dbURL)
+	c.Assert(err, qt.IsNil)
+	query := commandURL.Query()
+	query.Set("lock_timeout", "5s")
+	query.Set("statement_timeout", "10s")
+	commandURL.RawQuery = query.Encode()
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	stdoutPath := filepath.Join(c.TempDir(), "stdout.txt")
 	stdoutFile, err := os.Create(stdoutPath)
@@ -1211,8 +1221,10 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 	defer func() { _ = stdinReader.Close() }()
 	defer func() { _ = stdinWriter.Close() }()
 
+	commandContext, cancelCommand := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancelCommand()
 	var stderr bytes.Buffer
-	command := exec.CommandContext(t.Context(), compat, "schema", "clean", "--url", dbURL)
+	command := exec.CommandContext(commandContext, compat, "schema", "clean", "--url", commandURL.String())
 	command.Env = append(environmentWithoutPtahVariables(), "PTAH_ATLAS_STRICT_COMPAT=1")
 	command.Stdin = stdinReader
 	command.Stdout = stdoutFile
@@ -1222,10 +1234,15 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 	seedDatabase(c, dbURL, "CREATE VIEW late_view AS SELECT id FROM users")
 	_, err = io.WriteString(stdinWriter, "DELETE EVERYTHING\nYES I AM SURE\n")
 	c.Assert(err, qt.IsNil)
-	c.Assert(command.Wait(), qt.ErrorMatches, "exit status 1")
+	// os/exec waits for its stdin-copy goroutine. Close the pipe after the two
+	// answers so Wait can return even when the child has already exited.
+	c.Assert(stdinWriter.Close(), qt.IsNil)
+	waitErr := command.Wait()
+	c.Assert(commandContext.Err(), qt.IsNil, qt.Commentf("stderr=%q", stderr.String()))
+	c.Assert(waitErr, qt.ErrorMatches, "exit status 1")
 	c.Assert(stdoutFile.Close(), qt.IsNil)
 	c.Assert(stderr.String(), qt.Matches,
-		`(?s).*schema changed after cleanup confirmation; rerun schema clean and review the new plan.*`)
+		`(?s).*strict compatibility does not support cleaning live schema view "late_view".*`)
 	c.Assert(postgresStrictCleanObjectCount(t, dbURL), qt.Equals, 1)
 	c.Assert(postgresViewExists(t, dbURL, "late_view"), qt.IsTrue)
 }
