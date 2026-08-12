@@ -17,8 +17,10 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/ptahdirective"
@@ -86,6 +88,42 @@ func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
 	// avoiding a false refusal on every ordinary PostgreSQL database.
 	inspected := schemaWithoutInspectedPostgresBaselines(database)
 	return p.validateSchemaObjects(&inspected, "inspected")
+}
+
+// PrepareInspectedSchema removes PostgreSQL server baselines that the pinned
+// Community Edition inspector does not expose, then validates the exact state
+// that downstream inspection renders. Full mode returns the original snapshot
+// unchanged so its richer round-trip remains available by default.
+func (p Policy) PrepareInspectedSchema(database *dbschematypes.DBSchema) (*dbschematypes.DBSchema, error) {
+	if !p.strictCE || database == nil {
+		return database, nil
+	}
+	inspected := dbSchemaWithoutInspectedPostgresBaselines(database)
+	if err := p.validateSchemaObjects(dbschematogo.ConvertDBSchemaToGoSchema(inspected), "inspected"); err != nil {
+		return nil, err
+	}
+	return inspected, nil
+}
+
+func dbSchemaWithoutInspectedPostgresBaselines(database *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+	inspected := *database
+	inspected.Extensions = slices.DeleteFunc(
+		slices.Clone(database.Extensions),
+		func(extension dbschematypes.DBExtension) bool {
+			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
+		},
+	)
+	inspected.Grants = slices.DeleteFunc(
+		slices.Clone(database.Grants),
+		func(grant dbschematypes.DBGrant) bool {
+			return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
+				strings.EqualFold(strings.TrimSpace(grant.Privilege), "USAGE") &&
+				strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") &&
+				strings.EqualFold(strings.TrimSpace(grant.ObjectName), "public") &&
+				!grant.WithOption
+		},
+	)
+	return &inspected
 }
 
 func schemaWithoutInspectedPostgresBaselines(database *goschema.Database) goschema.Database {

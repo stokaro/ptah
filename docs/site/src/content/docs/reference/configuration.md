@@ -96,6 +96,12 @@ could omit, miscompare, or destroy it. On `schema clean`, the CE-registered
 behavior. Leave strict mode off for Ptah's complete cleanup, inspection, diff,
 and apply capabilities.
 
+Strict inspection omits PostgreSQL's server-installed `plpgsql` extension and
+baseline `PUBLIC USAGE` grant from rendered output. Strict cleanup executes the
+validated plan after confirmation instead of taking a second whole-database
+inventory. Full mode preserves the complete reader output and its established
+unscoped writer path.
+
 The cleanup check covers the writer's complete destruction inventory. That
 includes PostgreSQL procedures, aggregates, foreign tables, collations,
 default privileges, and dependent objects such as triggers that disappear

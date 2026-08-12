@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -256,6 +257,33 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 	})
 	qt.Assert(t, err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema grants`)
+}
+
+func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) {
+	baseline := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "plpgsql"}},
+		Grants: []dbschematypes.DBGrant{{
+			Role:       "PUBLIC",
+			Privilege:  "USAGE",
+			ObjectType: "SCHEMA",
+			ObjectName: "public",
+			GrantedBy:  "database_owner",
+		}},
+	}
+
+	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(baseline)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, prepared, qt.Not(qt.Equals), baseline)
+	qt.Assert(t, prepared.Extensions, qt.HasLen, 0)
+	qt.Assert(t, prepared.Grants, qt.HasLen, 0)
+	qt.Assert(t, baseline.Extensions, qt.HasLen, 1)
+	qt.Assert(t, baseline.Grants, qt.HasLen, 1)
+
+	full, err := atlascompatpolicy.Full().PrepareInspectedSchema(baseline)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, full, qt.Equals, baseline)
+	qt.Assert(t, full.Extensions, qt.HasLen, 1)
+	qt.Assert(t, full.Grants, qt.HasLen, 1)
 }
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {

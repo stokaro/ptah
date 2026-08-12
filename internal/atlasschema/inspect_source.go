@@ -66,6 +66,9 @@ type InspectSourceOptions struct {
 	// ValidateInspectedSchema applies after live or dev-database introspection,
 	// before output or file exports.
 	ValidateInspectedSchema func(*goschema.Database) error
+	// PrepareInspectedSchema normalizes and validates the exact introspected
+	// database snapshot that rendering and file exports consume.
+	PrepareInspectedSchema func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error)
 	// ValidateLiveObject applies to catalog-only live or dev-database objects
 	// before output or file exports. Nil avoids supplemental catalog reads.
 	ValidateLiveObject func(LiveSchemaObject) error
@@ -116,6 +119,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 		Diagnostics:             opts.Diagnostics,
 		OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 		CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
+		PrepareSchema:           opts.PrepareInspectedSchema,
 		ValidateSchema:          opts.ValidateInspectedSchema,
 		ValidateLiveObject:      opts.ValidateLiveObject,
 	}
@@ -433,6 +437,10 @@ func readValidatedInspectDevSchema(
 	if opts.withoutRevision {
 		schema = atlassource.WithoutRevisionTable(schema)
 	}
+	schema, err = prepareInspectSchema(schema, opts.inspect.PrepareSchema)
+	if err != nil {
+		return nil, InspectOptions{}, err
+	}
 	if err := validateInspectSchema(schema, opts.inspect.ValidateSchema); err != nil {
 		return nil, InspectOptions{}, err
 	}
@@ -440,6 +448,7 @@ func readValidatedInspectDevSchema(
 		return nil, InspectOptions{}, err
 	}
 	validatedOpts := opts.inspect
+	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
 	return schema, validatedOpts, nil
 }

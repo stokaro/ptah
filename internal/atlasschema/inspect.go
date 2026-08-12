@@ -46,6 +46,11 @@ type InspectOptions struct {
 	// `ptah-compat` sets it; native inspection keeps Ptah's generated marker and
 	// native terminal spacing.
 	CompatibilityHCLFraming bool
+	// PrepareSchema applies a caller-selected normalization and validation
+	// policy to the fully introspected schema before any template renders or
+	// file export is published. A returned replacement becomes the exact state
+	// every downstream inspection surface sees.
+	PrepareSchema func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error)
 	// ValidateSchema applies a caller-selected policy to the fully introspected
 	// schema before any template renders or file export is published.
 	ValidateSchema func(*goschema.Database) error
@@ -87,6 +92,10 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
+	schema, err = prepareInspectSchema(schema, opts.PrepareSchema)
+	if err != nil {
+		return "", err
+	}
 	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
 		return "", err
 	}
@@ -102,8 +111,19 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// anything they asked. See stokaro/ptah#1267.
 	rolescope.ReportUndescribed(opts.Diagnostics, schema)
 	validatedOpts := opts
+	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
 	return renderInspectSchema(schema, conn.Info(), validatedOpts)
+}
+
+func prepareInspectSchema(
+	schema *dbschematypes.DBSchema,
+	prepare func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error),
+) (*dbschematypes.DBSchema, error) {
+	if prepare == nil {
+		return schema, nil
+	}
+	return prepare(schema)
 }
 
 func validateInspectSchema(schema *dbschematypes.DBSchema, validate func(*goschema.Database) error) error {

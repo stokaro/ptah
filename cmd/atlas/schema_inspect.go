@@ -211,7 +211,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
-		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
+		PrepareInspectedSchema:    opts.policy.PrepareInspectedSchema,
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,

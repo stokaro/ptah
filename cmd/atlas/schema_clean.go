@@ -222,7 +222,7 @@ func runAtlasSchemaClean(
 		return nil
 	}
 
-	if err := applyAtlasSchemaClean(cmd, opts, conn, plan); err != nil {
+	if err := applyAtlasSchemaClean(cmd, opts, policy, conn, plan); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {
@@ -239,18 +239,19 @@ func runAtlasSchemaClean(
 
 // applyAtlasSchemaClean destroys what the plan describes.
 //
-// An unscoped run keeps the whole-database drop, which is what it has always
-// been and what the writer's DropAllTables implements. A scoped run executes the
-// plan's own statements instead: the printed plan is the contract --include and
-// --exclude changed, and handing a narrowed plan to a routine that drops
-// everything would make both flags cosmetic.
+// A full-mode unscoped run keeps the whole-database drop, which is what it has
+// always been and what the writer's DropAllTables implements. Scoped and strict
+// runs execute the validated plan itself: selectors must not be cosmetic, and
+// strict mode must not re-inventory and destroy an object that appeared while
+// the operator was reading the confirmation prompt.
 func applyAtlasSchemaClean(
 	cmd *cobra.Command,
 	opts atlasSchemaCleanOptions,
+	policy atlascompatpolicy.Policy,
 	conn *dbschema.DatabaseConnection,
 	plan schemaclean.Plan,
 ) error {
-	if opts.scoped() {
+	if policy.IsStrictCE() || opts.scoped() {
 		return schemaclean.ApplyPlan(cmd.Context(), conn, plan)
 	}
 	return schemaclean.Apply(cmd.Context(), conn)

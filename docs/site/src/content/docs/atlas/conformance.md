@@ -36,6 +36,12 @@ flag tree and refuses extension inputs or inspected live objects before output
 or mutation. The normal `ptah-compat` surface does not set it and retains
 implemented Atlas Pro-like and best-effort capabilities.
 
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself, so an object created while the prompt is open is not
+silently included by a second whole-database inventory.
+
 Strict schema workflows refuse YAML sources and an authored `schema apply` lint
 policy that the CE execution path cannot enforce. Commands that execute,
 convert, or replay migration bodies refuse Atlas txtar, every Ptah directive —

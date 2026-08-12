@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1168,6 +1169,81 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	c.Assert(stdout, qt.Contains, "Schema clean completed successfully.")
 	c.Assert(stderr, qt.Equals, "")
 	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 0)
+}
+
+func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
+	c := qt.New(t)
+	dbURL := createDisposableDatabase(
+		c,
+		strictCompatPostgresTestURL(t),
+		fmt.Sprintf("ptah_strict_baseline_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
+	)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	args := []string{"schema", "inspect", "--url", dbURL, "--format", "{{ json . }}"}
+
+	stdout, stderr, code := runAtlasBinary(
+		compat,
+		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+		args...,
+	)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Not(qt.Contains), "plpgsql")
+	c.Assert(stdout, qt.Not(qt.Contains), "PUBLIC")
+	c.Assert(stderr, qt.Equals, "")
+
+	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "plpgsql")
+	c.Assert(stdout, qt.Contains, "PUBLIC")
+	c.Assert(stderr, qt.Equals, "")
+}
+
+func TestStrictCompatSchemaCleanExecutesConfirmedSnapshot(t *testing.T) {
+	c := qt.New(t)
+	dbURL := createDisposableDatabase(
+		c,
+		strictCompatPostgresTestURL(t),
+		fmt.Sprintf("ptah_strict_clean_snapshot_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
+	)
+	seedDatabase(c, dbURL, "CREATE TABLE users (id integer PRIMARY KEY)")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	stdoutPath := filepath.Join(c.TempDir(), "stdout.txt")
+	stdoutFile, err := os.Create(stdoutPath)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = stdoutFile.Close() }()
+	stdinReader, stdinWriter := io.Pipe()
+	defer func() { _ = stdinReader.Close() }()
+	defer func() { _ = stdinWriter.Close() }()
+
+	var stderr bytes.Buffer
+	command := exec.CommandContext(t.Context(), compat, "schema", "clean", "--url", dbURL)
+	command.Env = append(environmentWithoutPtahVariables(), "PTAH_ATLAS_STRICT_COMPAT=1")
+	command.Stdin = stdinReader
+	command.Stdout = stdoutFile
+	command.Stderr = &stderr
+	c.Assert(command.Start(), qt.IsNil)
+	waitForFileContains(t, stdoutPath, "Type 'DELETE EVERYTHING'")
+	seedDatabase(c, dbURL, "CREATE PROCEDURE late_procedure() LANGUAGE SQL AS $$ SELECT 1 $$")
+	_, err = io.WriteString(stdinWriter, "DELETE EVERYTHING\nYES I AM SURE\n")
+	c.Assert(err, qt.IsNil)
+	c.Assert(command.Wait(), qt.IsNil, qt.Commentf("stderr=%q", stderr.String()))
+	c.Assert(stdoutFile.Close(), qt.IsNil)
+	c.Assert(stderr.String(), qt.Equals, "")
+	c.Assert(postgresStrictCleanObjectCount(t, dbURL), qt.Equals, 1)
+}
+
+func waitForFileContains(t *testing.T, path, needle string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		contents, err := os.ReadFile(path)
+		qt.Assert(t, err, qt.IsNil)
+		if bytes.Contains(contents, []byte(needle)) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %q in %s", needle, path)
 }
 
 func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testing.T) {

@@ -81,6 +81,12 @@ destruction inventory. Both inventories include PostgreSQL catalog objects
 absent from the ordinary reader. The policy narrows the capability inventory
 without copying a data-loss or state-corruption defect.
 
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself, so an object created while the prompt is open is not
+silently included by a second whole-database inventory.
+
 Strict schema workflows refuse YAML sources and an authored `schema apply`
 lint policy that the CE path cannot enforce. Commands that execute, convert,
 or replay migration bodies refuse Atlas txtar, every Ptah directive, and SQL
