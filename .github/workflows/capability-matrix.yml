@@ -11,6 +11,10 @@ name: Capability Matrix
 # them and those jobs never run. An absent check reads exactly like a passing
 # one, and the pull requests this tier exists to unblock are precisely the ones
 # that change only a container tag.
+#
+# The absence of a filter is measurable and was measured: a commit touching
+# nothing but this file starts this workflow, while `release.yml` and
+# `ptah-action-smoke.yml` produce no jobs for the same commit.
 on:
   push:
     branches:
