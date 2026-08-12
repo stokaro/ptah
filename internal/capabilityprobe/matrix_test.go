@@ -58,6 +58,34 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 	}
 }
 
+// TestMatrix_IDs pins what the pipeline actually fans out over.
+//
+// The ids are the whole payload that crosses a job boundary: measured on the
+// first run of the tier 2 workflow, a job output carrying the cells themselves
+// is skipped by the runner because the throwaway container credentials in each
+// URL look like a secret, and a strategy built from the skipped output
+// produces no jobs at all. So the list must hold every runnable cell, nothing
+// that cannot run, and nothing that needs quoting.
+func TestMatrix_IDs(t *testing.T) {
+	c := qt.New(t)
+
+	matrix := capabilityprobe.CIMatrix()
+	ids := matrix.IDs()
+
+	c.Assert(ids, qt.HasLen, len(matrix.Cells))
+	for _, cell := range matrix.Cells {
+		c.Check(ids, qt.Contains, cell.ID)
+	}
+	for _, skipped := range matrix.Skipped {
+		c.Check(ids, qt.Not(qt.Contains), skipped.ID,
+			qt.Commentf("cell %s cannot run and must not appear in the fan-out", skipped.ID))
+	}
+	for _, id := range ids {
+		c.Check(id, qt.Matches, "[a-z0-9-]+",
+			qt.Commentf("an id becomes a job name, an artifact name and a file name"))
+	}
+}
+
 // TestCIMatrix_SkippedCellsSayWhy keeps a skipped line from reading as a
 // passing one.
 func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {

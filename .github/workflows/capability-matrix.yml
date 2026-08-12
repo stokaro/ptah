@@ -59,8 +59,16 @@ jobs:
             echo "the matrix produced zero runnable cells; a fan-out with no jobs must not report success" >&2
             exit 1
           fi
+          # Only the ids cross the job boundary. Measured on run 1 of this
+          # workflow: passing the whole cell objects made the runner answer
+          # "Skip output 'cells' since it may contain secret" — the throwaway
+          # container credentials in each URL are enough — and the strategy
+          # then fanned out over an empty list, producing zero jobs. The
+          # reporting job caught it as seventeen MISSING cells. Everything that
+          # carries a credential is now asked for by id inside the job that
+          # needs it.
           {
-            echo "cells=$(jq -c '.cells' "${RUNNER_TEMP}/matrix.json")"
+            echo "cells=$("${RUNNER_TEMP}/capmatrix" matrix --ids)"
             echo "count=${count}"
           } >>"${GITHUB_OUTPUT}"
           {
@@ -117,10 +125,12 @@ jobs:
         run: scripts/check-version-matrix.sh
 
   probe:
-    name: probe ${{ matrix.cell.id }}
+    name: probe ${{ matrix.cell }}
     needs: cells
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      CELL_ID: ${{ matrix.cell }}
     strategy:
       fail-fast: false
       matrix:
@@ -138,20 +148,16 @@ jobs:
       - name: Build the matrix driver
         run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
 
-      - name: Start ${{ matrix.cell.image }}
-        env:
-          CELL: ${{ toJSON(matrix.cell) }}
+      - name: Start the server for this cell
         run: |
           set -euo pipefail
-          # docker_run is one flat argument list so this step cannot assemble
-          # flags, image and container command in the wrong order.
-          mapfile -t args < <(jq -r '.docker_run[]' <<<"${CELL}")
+          # One flat argument list, printed by the driver, so this step cannot
+          # assemble flags, image and container command in the wrong order.
+          mapfile -t args < <("${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}")
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell
         id: probe
-        env:
-          CELL_ID: ${{ matrix.cell.id }}
         run: |
           # `set +e` is load-bearing: GitHub runs a `run:` block as `bash -e`,
           # so without it the step would die on the probe's non-zero exit and
@@ -178,7 +184,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: capability-cell-${{ matrix.cell.id }}
+          name: capability-cell-${{ matrix.cell }}
           path: results/
           if-no-files-found: error
           retention-days: 7
@@ -189,7 +195,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${CODE}" != "0" ]; then
-            echo "cell ${{ matrix.cell.id }} failed: the capability probe exited ${CODE}" >&2
+            echo "cell ${CELL_ID} failed: the capability probe exited ${CODE}" >&2
             exit 1
           fi
 

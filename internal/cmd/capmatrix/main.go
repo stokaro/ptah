@@ -47,6 +47,7 @@ func newCommand() *cobra.Command {
 	}
 	root.AddCommand(
 		newMatrixCommand(), newMarkdownCommand(), newPresetsCommand(),
+		newDockerArgsCommand(), newSuiteEnvCommand(),
 		newProbeCommand(), newRecordCommand(), newReportCommand(),
 	)
 	return root
@@ -75,8 +76,17 @@ func newPresetsCommand() *cobra.Command {
 }
 
 // newMatrixCommand prints the fan-out both tiers consume.
+//
+// --ids exists because of a measured refusal. The first run of this pipeline
+// passed the whole cell objects through a job output, and the runner answered
+// "Skip output 'cells' since it may contain secret" — the throwaway container
+// credentials in each cell's URL are enough to trip it. The output was silently
+// empty, the strategy produced zero jobs, and only the reporting job's census
+// caught it. So what crosses a job boundary is now a list of ids, and anything
+// carrying a credential is asked for by id inside the job that needs it.
 func newMatrixCommand() *cobra.Command {
-	return &cobra.Command{
+	var ids bool
+	cmd := &cobra.Command{
 		Use:   "matrix",
 		Short: "Print the CI matrix derived from the declared release lines",
 		Args:  cobra.NoArgs,
@@ -86,10 +96,63 @@ func newMatrixCommand() *cobra.Command {
 				return err
 			}
 			encoder := json.NewEncoder(cmd.OutOrStdout())
+			if ids {
+				return encoder.Encode(matrix.IDs())
+			}
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(matrix)
 		},
 	}
+	cmd.Flags().BoolVar(&ids, "ids", false, "print only the runnable cell ids, as the JSON array a matrix strategy consumes")
+	return cmd
+}
+
+// newDockerArgsCommand prints how to start one cell's server, one argument per
+// line, for a shell to read into an array.
+func newDockerArgsCommand() *cobra.Command {
+	var cellID string
+	cmd := &cobra.Command{
+		Use:   "docker-args",
+		Short: "Print the docker run arguments that start one cell's server",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cell, err := runnableCell(cellID)
+			if err != nil {
+				return err
+			}
+			for _, argument := range cell.DockerRun {
+				fmt.Fprintln(cmd.OutOrStdout(), argument)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cellID, "cell", "", "matrix cell id")
+	return cmd
+}
+
+// newSuiteEnvCommand prints the environment the integration runner needs for
+// one cell, in the KEY=VALUE form GITHUB_ENV accepts.
+func newSuiteEnvCommand() *cobra.Command {
+	var cellID string
+	cmd := &cobra.Command{
+		Use:   "suite-env",
+		Short: "Print the integration runner's environment for one cell",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cell, err := runnableCell(cellID)
+			if err != nil {
+				return err
+			}
+			if cell.SuiteDatabase == "" || cell.SuiteURLEnv == "" {
+				return fmt.Errorf("cell %s has no integration-runner target", cell.ID)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "PTAH_SUITE_DATABASE=%s\n", cell.SuiteDatabase)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", cell.SuiteURLEnv, cell.URL)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cellID, "cell", "", "matrix cell id")
+	return cmd
 }
 
 func newMarkdownCommand() *cobra.Command {

@@ -57,16 +57,22 @@ jobs:
             echo "the matrix produced zero runnable cells; a nightly with no jobs must not report success" >&2
             exit 1
           fi
+          # Only the ids cross the job boundary; see the comment on the same
+          # step in capability-matrix.yml. A job output carrying the cells'
+          # container credentials is skipped by the runner, and the strategy
+          # then fans out over nothing.
           {
-            echo "cells=$(jq -c '.cells' "${RUNNER_TEMP}/matrix.json")"
+            echo "cells=$("${RUNNER_TEMP}/capmatrix" matrix --ids)"
             echo "count=${count}"
           } >>"${GITHUB_OUTPUT}"
 
   suite:
-    name: suite ${{ matrix.cell.id }}
+    name: suite ${{ matrix.cell }}
     needs: cells
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      CELL_ID: ${{ matrix.cell }}
     strategy:
       fail-fast: false
       matrix:
@@ -87,17 +93,13 @@ jobs:
           go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
           go build -o "${RUNNER_TEMP}/integration-test" ./cmd/integration-test
 
-      - name: Start ${{ matrix.cell.image }}
-        env:
-          CELL: ${{ toJSON(matrix.cell) }}
+      - name: Start the server for this cell
         run: |
           set -euo pipefail
-          mapfile -t args < <(jq -r '.docker_run[]' <<<"${CELL}")
+          mapfile -t args < <("${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}")
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell
-        env:
-          CELL_ID: ${{ matrix.cell.id }}
         run: |
           # Not fatal here. The probe's verdict is recorded into the cell result
           # below and decides the cell's classification; failing the step now
@@ -113,20 +115,23 @@ jobs:
             --result "results/${CELL_ID}.json" >"results/${CELL_ID}-probe.log" 2>&1
           cat "results/${CELL_ID}-probe.log"
 
+      # The runner's own URL and its --databases name come from the same
+      # declaration the probe used, printed by the driver rather than passed
+      # through the matrix, so the suite cannot end up pointed at a different
+      # server than the one that was probed.
+      - name: Wire the integration runner to this cell
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/capmatrix" suite-env --cell "${CELL_ID}" >>"${GITHUB_ENV}"
+
       - name: Run the integration suite
         id: suite
-        env:
-          CELL_ID: ${{ matrix.cell.id }}
-          SUITE_DATABASE: ${{ matrix.cell.suite_database }}
-          SUITE_URL_ENV: ${{ matrix.cell.suite_url_env }}
-          SUITE_URL: ${{ matrix.cell.url }}
         run: |
           set +e
           set -uo pipefail
-          mkdir -p reports
-          export "${SUITE_URL_ENV}=${SUITE_URL}"
+          mkdir -p reports results
           "${RUNNER_TEMP}/integration-test" \
-            --databases="${SUITE_DATABASE}" \
+            --databases="${PTAH_SUITE_DATABASE}" \
             --report=stdout,json \
             --output=./reports >"results/${CELL_ID}-suite.log" 2>&1
           code=$?
@@ -136,7 +141,6 @@ jobs:
       - name: Record the cell result
         id: record
         env:
-          CELL_ID: ${{ matrix.cell.id }}
           SUITE_CODE: ${{ steps.suite.outputs.code }}
         run: |
           set +e
@@ -157,7 +161,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: capability-nightly-cell-${{ matrix.cell.id }}
+          name: capability-nightly-cell-${{ matrix.cell }}
           path: results/
           if-no-files-found: error
           retention-days: 14
@@ -168,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${CODE}" != "0" ]; then
-            echo "cell ${{ matrix.cell.id }} failed; the tier 3 report names which half" >&2
+            echo "cell ${CELL_ID} failed; the tier 3 report names which half" >&2
             exit 1
           fi
 
