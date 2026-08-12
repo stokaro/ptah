@@ -205,6 +205,11 @@ database that is reset destructively). `--format json` emits a stable
 `--exclude` scope both sides. Synced states print
 `Schemas are synced, no changes to be made.`
 
+An explicit `--include` selection that matches neither side is invalid. The
+command prints no diff and exits 2 instead of reporting a synced schema. This
+is outcome-based: a matching top-level identifier that contains a dot remains
+selectable with a dotted spelling.
+
 ## Failure modes
 
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —

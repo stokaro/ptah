@@ -406,6 +406,15 @@
   },
   {
     "area": "Schema inspection filters",
+    "feature": "An include selector matching neither diff side fails closed",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "The full compat and native diff surfaces retain `--include`, including real dotted top-level names, but a selector matching neither side exits nonzero with no false synced report.",
+    "evidence": "Measured 2026-08-12 against the pinned community binary v1.3.0 and ptah-compat from exact base 797335ff. The community binary refuses `schema diff --include posts.title` as non-community at exit 1, and strict Ptah gates the same full-surface flag at exit 1, so CE supplies no selector-semantic oracle. Default Ptah previously warned, printed `Schemas are synced, no changes to be made.`, and exited 0 when the desired side contained `posts(title)` but the selector named `posts.title`. After: compat exits 1 with `the --include selection matched no objects: \"posts.title\"` and empty stdout; native exits 2 under its usage-error contract. Controls: `--include posts` still plans the table, and a top-level table literally named `posts.title` is still selected by the bare dotted spelling. internal/atlasschema.Diff owns the outcome rule, so both command adapters consume one general capability; integration/atlas_compat_dotted_include_exit_e2e_test.go crosses the command and filesystem boundary."
+  },
+  {
+    "area": "Schema inspection filters",
     "feature": "Compat inspect block superset opt-in",
     "ptah": "yes",
     "atlas_oss": "no",

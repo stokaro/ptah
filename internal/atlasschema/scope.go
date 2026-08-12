@@ -75,9 +75,8 @@ func emptySelection(err error) bool {
 }
 
 // reportEmptySelection writes the selection-matched-nothing notice to the
-// command's diagnostics stream. Verbs that keep exit 0 for an empty selection
-// still have to say so: stdout is what CI compares, and an empty render there
-// is indistinguishable from an empty database.
+// command's diagnostics stream. Inspection keeps exit 0 because an empty read
+// is a legitimate result, but still says which selection produced it.
 func reportEmptySelection(diagnostics io.Writer, err error) {
 	if diagnostics == nil || err == nil {
 		return

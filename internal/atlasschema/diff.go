@@ -36,8 +36,8 @@ type DiffOptions struct {
 	// dev database) and reading their initial connection metadata. A zero
 	// value leaves the caller's context deadline unchanged.
 	ConnectTimeout time.Duration
-	// Diagnostics receives non-fatal notices, such as an --include selection
-	// that matched nothing on either side. It never receives plan output, so
+	// Diagnostics receives non-fatal notices, such as unmatched --exclude
+	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
@@ -121,13 +121,11 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if toErr != nil && !emptySelection(toErr) {
 		return atlasreport.SchemaDiff{}, toErr
 	}
-	// One empty side is how a create or a drop looks; only a selection that
-	// matched nothing anywhere is worth reporting. `schema diff` keeps exit 0
-	// and leaves stdout untouched so the CI idiom "does this selection
-	// differ?" still works, but it says on stderr that the question was asked
-	// about nothing.
+	// One empty side is how a create or a drop looks. A selection that matched
+	// neither side cannot answer the requested comparison, so fail instead of
+	// reporting a false synced result to CI.
 	if emptySelection(fromErr) && emptySelection(toErr) {
-		reportEmptySelection(opts.Diagnostics, fromErr)
+		return atlasreport.SchemaDiff{}, fromErr
 	}
 	fromDB, fromDBReport, err := diffFromDBState(fromState, from, scope, dialect)
 	if err != nil && !emptySelection(err) {

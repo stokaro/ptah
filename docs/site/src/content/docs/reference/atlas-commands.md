@@ -725,9 +725,9 @@ non-community template functions, so these exports are an open Ptah extension.
 - Whether a selector matched is decided by the projection, not by the selector
   text: `path.Match` treats `.` as an ordinary character, so `table.column`,
   `table*column`, `table?column`, and `table[.]column` all reach past a
-  top-level resource and select nothing. `schema apply` refuses an empty
-  `--include` selection; `schema diff` and `schema inspect` keep exit status 0
-  and report it on standard error.
+  top-level resource and select nothing. `schema apply` and `schema diff`
+  refuse an empty `--include` selection; `schema inspect` keeps exit status 0
+  and reports it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
 - Other field-level exclude selectors fail explicitly. Type selectors on
@@ -813,7 +813,8 @@ with the same sentence whether or not the variable is exported.
 selects top-level resources with Atlas-style glob selectors and `[type=...]`
 filters. Repeated values union deterministically, `--exclude` plus disabled
 `schema.mode` values subtract afterward, cross-scope dependencies refuse the
-plan with explicit diagnostics, and an empty selection reports a synced schema.
+plan with explicit diagnostics, and an explicit include selection matching
+nothing refuses the apply.
 
 **`--plan file://<path>`** executes a pre-approved local plan file instead of
 re-planning. Both plan formats are accepted, detected by content: the Atlas
@@ -1100,8 +1101,9 @@ schema files alone still require `--dev-url`.
 | `--env` | Reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`. |
 
 Selection order matches `schema apply`: schema universe first, include selection
-inside it, exclusion last, cross-scope dependency diagnostics, and synced output
-for empty selections.
+inside it, exclusion last, and cross-scope dependency diagnostics. An explicit
+`--include` selection that matches neither side exits 1 with no diff output,
+rather than reporting a synced schema.
 
 Native twin: [`ptah schema diff`](../native-commands/).
 

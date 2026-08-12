@@ -57,9 +57,8 @@ directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
 sides see; --exclude subtracts from the result. A selected object that
 depends on an unselected object refuses the diff with an explicit diagnostic.
-An --include selection that matches nothing on either side keeps the exit
-status and the standard-output bytes it would have had, and reports the empty
-selection on standard error.`,
+An --include selection that matches nothing on either side is refused instead
+of reporting a synced schema to a CI check.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaDiff(cmd, opts)

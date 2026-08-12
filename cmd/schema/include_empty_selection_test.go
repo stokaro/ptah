@@ -32,15 +32,14 @@ func runSchemaStreams(args ...string) (stdout, stderr string, err error) {
 
 // TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection pins the divergence on
 // the native surface, which shares one implementation with the Atlas-shaped
-// one: diff and inspect keep their exit status and report the empty selection
-// on standard error, while apply refuses.
+// one: diff and apply refuse, while inspect reports an empty result.
 //
 // The divergence is deliberate rather than copied. The pinned Atlas community
 // binary implements no --include flag, so there is no oracle for it; its
 // sibling positive selector --schema answers a zero match with exit 0 and
-// silence on every verb, which is where diff and inspect stay. Apply is the
-// one verb where silence means a target was left untouched while the command
-// claimed success.
+// silence on every verb. Ptah refuses the include miss on commands whose
+// successful answer is a plan, because a false "synced" result can green-light
+// CI; inspection keeps the empty read as a legitimate result.
 func TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection(t *testing.T) {
 	c := qt.New(t)
 
@@ -55,7 +54,7 @@ func TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "diff reports and continues",
+			name: "diff refuses",
 			run: func(_, schemaPath, devPath string) (string, string, error) {
 				emptyPath := filepath.Join(filepath.Dir(schemaPath), "empty.sql")
 				writeErr := os.WriteFile(emptyPath, []byte(""), 0o600)
@@ -67,7 +66,7 @@ func TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection(t *testing.T) {
 					"--include", "no_such_table",
 				)
 			},
-			wantStdout: "Schemas are synced, no changes to be made.\n",
+			wantErr: `the --include selection matched no objects: "no_such_table"`,
 		},
 		{
 			name: "inspect reports and continues",
