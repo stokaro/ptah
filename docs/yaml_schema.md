@@ -20,6 +20,10 @@ all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
 supported dialect. This page documents Ptah's YAML format only.
 
+Relative schema-file inputs are confined to the process working directory after
+symbolic-link resolution; pass an absolute pathname for an intentional source
+outside it.
+
 ## Minimal Example
 
 ```yaml

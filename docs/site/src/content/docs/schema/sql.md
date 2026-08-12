@@ -40,6 +40,10 @@ understood every statement, and it can retarget the schema at another dialect.
 migration commands (`ptah migrations plan` / `ptah migrations generate`), and
 the API targets of [`ptah schema export`](../export/#sources).
 
+Relative `--schema-file` inputs are confined to the process working directory
+after symbolic-link resolution; use an absolute pathname for an intentional
+source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
+
 ## Diff two SQL files locally
 
 `ptah schema diff` compares local SQL files directly. With `old.sql`
