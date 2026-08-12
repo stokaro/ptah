@@ -247,6 +247,56 @@ func TestExcludeGenerated_RemovesEnums(t *testing.T) {
 	c.Assert(got.Enums[0].Name, qt.Equals, "invoice_status")
 }
 
+func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		want    []goschema.Enum
+	}{
+		{
+			name:    "explicit schema",
+			pattern: "app.color",
+			want: []goschema.Enum{
+				{Schema: "public", Name: "color"},
+				{Name: "legacy.state"},
+			},
+		},
+		{
+			name:    "legacy qualifier in name",
+			pattern: "legacy.state",
+			want: []goschema.Enum{
+				{Schema: "app", Name: "color"},
+				{Schema: "public", Name: "color"},
+			},
+		},
+		{
+			name:    "wrong schema",
+			pattern: "other.color",
+			want: []goschema.Enum{
+				{Schema: "app", Name: "color"},
+				{Schema: "public", Name: "color"},
+				{Name: "legacy.state"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(&goschema.Database{
+				Enums: []goschema.Enum{
+					{Schema: "app", Name: "color"},
+					{Schema: "public", Name: "color"},
+					{Name: "legacy.state"},
+				},
+			}, []string{test.pattern}, "public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Enums, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestExcludeDatabase_InvalidGlob(t *testing.T) {
 	c := qt.New(t)
 

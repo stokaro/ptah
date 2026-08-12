@@ -275,6 +275,13 @@ Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the 
 
 Atlas CE aborts `--include` as a non-community feature, so Ptah's implementation is an open extension beyond the pinned CE binary. `ptah-compat schema fmt` formats local `.hcl` files with HCL canonical layout.
 
+A qualified selector matches a live PostgreSQL extension outside the default
+schema. Identical live placements compare as synced, while an asymmetric create
+or placement difference fails before SQL output: Ptah does not yet model the
+installation schema needed to render `CREATE EXTENSION ... WITH SCHEMA ...`.
+Default-schema creates and drops remain available. The complete shared model is
+tracked in [issue #1441](https://github.com/stokaro/ptah/issues/1441).
+
 `ptah-compat schema clean` plans supported cleanup objects from the live database, supports `--dry-run`, preserves destructive confirmation unless `--auto-approve` is explicit, reads `env.url` and `format.schema.clean` from `atlas.hcl`, and supports Atlas-style `--format` templates such as `{{ json . }}` over `.Env`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`.
 
 Cleanup report changes cover the object kinds the target dialect's cleanup really destroys, so the report is not narrower than the apply: foreign keys, tables, views, materialized views, enum/domain/composite/range types and functions on the PostgreSQL family (plus standalone sequences on PostgreSQL itself); foreign keys, tables, views, stored functions and procedures, events and MariaDB sequences on MySQL and MariaDB; tables and views on SQLite; foreign keys and tables on SQL Server; base tables on ClickHouse. Objects that vanish as collateral of a listed drop — indexes, triggers, non-foreign-key constraints, RLS policies, comments — are not listed separately. Scoped PostgreSQL cleanup uses catalog dependency depth and one transaction, so selected same-kind dependents run first and a later `RESTRICT` refusal rolls back the complete narrowed plan.

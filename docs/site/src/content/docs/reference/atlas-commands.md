@@ -816,6 +816,14 @@ filters. Repeated values union deterministically, `--exclude` plus disabled
 plan with explicit diagnostics, and an explicit include selection matching
 nothing refuses the apply.
 
+For a live PostgreSQL desired schema, a selected extension outside the default
+schema is safe only when the current side has the same placement. A create or
+placement difference fails before SQL output because the shared schema model
+cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...`; default-schema
+creates and extension drops remain supported. Full installation-schema
+modeling is tracked in
+[issue #1441](https://github.com/stokaro/ptah/issues/1441).
+
 **`--plan file://<path>`** executes a pre-approved local plan file instead of
 re-planning. Both plan formats are accepted, detected by content: the Atlas
 `.plan.hcl` shape and Ptah's native format_version-1 `.plan.json`.

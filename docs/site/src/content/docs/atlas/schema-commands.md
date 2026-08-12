@@ -1221,6 +1221,16 @@ it. The full Ptah surface keeps that Pro-like capability, including selectors
 that match a real dotted top-level name, while refusing only the no-match
 outcome on plan-producing verbs. `--schema` on its own is unaffected here:
 narrowing to a schema that holds nothing stays an ordinary answer.
+
+A qualified selector can match a live PostgreSQL extension installed outside
+the comparison's default schema. Identical live placements compare as synced,
+and a drop remains representable. Creating that placement or comparing two
+different installation schemas fails before SQL is emitted, because Ptah
+cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...` from its shared schema
+model. [Issue #1441](https://github.com/stokaro/ptah/issues/1441) owns the
+end-to-end model rather than silently moving the extension into the default
+schema.
+
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.

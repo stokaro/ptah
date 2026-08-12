@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -113,29 +114,33 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
-	from, fromReport, fromErr := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
-	if fromErr != nil && !emptySelection(fromErr) {
-		return atlasreport.SchemaDiff{}, fromErr
+	fromSide := scopeDiffState(fromState, scope, "--from schema", dialect)
+	if fromSide.err != nil {
+		return atlasreport.SchemaDiff{}, fromSide.err
 	}
-	to, toReport, toErr := scopeGeneratedSide(toState.Schema, scope, "--to schema")
-	if toErr != nil && !emptySelection(toErr) {
-		return atlasreport.SchemaDiff{}, toErr
+	from, fromReport, fromErr := fromSide.schema, fromSide.report, fromSide.selectionErr
+	toSide := scopeDiffState(toState, scope, "--to schema", dialect)
+	if toSide.err != nil {
+		return atlasreport.SchemaDiff{}, toSide.err
 	}
+	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
 	// One empty side is how a create or a drop looks. A selection that matched
 	// neither side cannot answer the requested comparison, so fail instead of
 	// reporting a false synced result to CI.
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		return atlasreport.SchemaDiff{}, fromErr
 	}
-	fromDB, fromDBReport, err := diffFromDBState(fromState, from, scope, dialect)
-	if err != nil && !emptySelection(err) {
-		return atlasreport.SchemaDiff{}, err
-	}
-	// A database-backed --from is filtered twice: once as the converted IR and
-	// once as the introspected state the comparison actually consumes. The
-	// second is the one whose report describes what the user's selector met.
-	if fromState.DB != nil {
-		fromReport = fromDBReport
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.Dialect = dialect
+	if toState.DB != nil {
+		if err := validateDesiredExtensionSchemas(
+			fromSide.database,
+			toSide.database,
+			scope.DefaultSchema,
+			compareOpts,
+		); err != nil {
+			return atlasreport.SchemaDiff{}, err
+		}
 	}
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
@@ -145,9 +150,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// The comparison reports what the --from document's coverage record made
 	// undecidable alongside what it decided. The list is empty for every --from
 	// that is a database, because only a document declares limits about itself.
-	compareOpts := config.DefaultCompareOptions()
-	compareOpts.Dialect = dialect
-	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromDB, compareOpts)
+	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromSide.database, compareOpts)
 	ReportUndecidedAdditions(opts.Diagnostics, undecided, "--from", "--to")
 
 	diff := applyDiffPolicy(compared, opts.Policy)
@@ -273,20 +276,160 @@ func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
 	}, nil
 }
 
-// diffFromDBState shapes the --from side for comparison. Database-backed
-// sources keep their introspected state, filtered by the same scope as every
-// other side; local files convert the already-filtered desired IR, exactly as
-// before URL sources existed.
-func diffFromDBState(
+type scopedDiffState struct {
+	schema       *goschema.Database
+	database     *types.DBSchema
+	report       atlasfilter.ExcludeReport
+	selectionErr error
+	err          error
+}
+
+// scopeDiffState projects one resolved comparison side without asking either
+// of its representations to answer questions it cannot answer. Generated
+// schema owns desired SQL and cross-scope dependency validation. For a
+// database-backed source, catalog state owns selector match truth, exclusion
+// reporting, and the current-side comparison. Catalog compensation is merged
+// only after the generated projection validates, and only for identities the
+// conversion cannot represent during selection, so it cannot reintroduce
+// unrelated support objects or replace generated dependency closure.
+func scopeDiffState(
 	state atlassource.State,
-	filtered *goschema.Database,
 	scope atlasfilter.Scope,
+	side string,
 	dialect string,
-) (*types.DBSchema, atlasfilter.ExcludeReport, error) {
-	if state.DB == nil {
-		return schemafile.ToDBSchema(filtered, dialect), atlasfilter.ExcludeReport{}, nil
+) scopedDiffState {
+	generated, generatedReport, generatedErr := scopeGeneratedSide(state.Schema, scope, side)
+	if generatedErr != nil && !emptySelection(generatedErr) {
+		return scopedDiffState{report: generatedReport, err: generatedErr}
 	}
-	return scopeDatabaseSide(state.DB, scope, "--from schema")
+	if state.DB == nil {
+		return scopedDiffState{
+			schema:       generated,
+			database:     schemafile.ToDBSchema(generated, dialect),
+			report:       generatedReport,
+			selectionErr: generatedErr,
+		}
+	}
+
+	filteredDatabase, databaseReport, databaseErr := scopeDatabaseSide(state.DB, scope, side)
+	if databaseErr != nil && !emptySelection(databaseErr) {
+		return scopedDiffState{report: databaseReport, err: databaseErr}
+	}
+	if !scope.Positive() {
+		return scopedDiffState{
+			schema:       generated,
+			database:     filteredDatabase,
+			report:       databaseReport,
+			selectionErr: databaseErr,
+		}
+	}
+
+	// A database match can be invisible after conversion, as with an extension
+	// installed outside the connection's default schema. Restore only the
+	// extension identities missing from the already-validated generated
+	// projection. Merging the whole catalog projection would also restore
+	// support objects retained from lossy type metadata, even when the selector
+	// did not name them. Conversely, an authoritative miss must not be turned
+	// back into a match by a lossy conversion.
+	if emptySelection(databaseErr) {
+		generated = dbschematogo.ConvertDBSchemaToGoSchema(filteredDatabase)
+	} else if compensation := catalogIdentityCompensation(generated, filteredDatabase); compensation != nil {
+		merged, err := goschema.Merge(generated, compensation)
+		if err != nil {
+			return scopedDiffState{
+				report: databaseReport,
+				err:    fmt.Errorf("merge scoped %s representations: %w", side, err),
+			}
+		}
+		merged.NotDescribed = generated.NotDescribed
+		generated = merged
+	}
+
+	return scopedDiffState{
+		schema:       generated,
+		database:     filteredDatabase,
+		report:       databaseReport,
+		selectionErr: databaseErr,
+	}
+}
+
+// catalogIdentityCompensation returns only identities whose qualified catalog
+// selector cannot survive the DBSchema-to-goschema conversion. Extensions are
+// database-scoped in goschema, so conversion drops their installation schema;
+// a qualified selector can therefore match the catalog while missing the
+// generated projection. Other selected catalog objects are deliberately not
+// copied here: the generated projection remains authoritative for their
+// dependency closure and desired SQL.
+func catalogIdentityCompensation(
+	generated *goschema.Database,
+	filtered *types.DBSchema,
+) *goschema.Database {
+	missing := make([]types.DBExtension, 0, len(filtered.Extensions))
+	for _, extension := range filtered.Extensions {
+		found := false
+		for _, present := range generated.Extensions {
+			if present.Name == extension.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, extension)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{Extensions: missing})
+}
+
+// validateDesiredExtensionSchemas refuses a live desired placement that the
+// generated model cannot render faithfully. Extension creation in the default
+// schema and schema-independent drops remain representable. A non-default
+// create or a placement change would otherwise render an unqualified CREATE
+// EXTENSION, or report two different placements as synced.
+func validateDesiredExtensionSchemas(
+	from, to *types.DBSchema,
+	defaultSchema string,
+	compareOpts *config.CompareOptions,
+) error {
+	current := make(map[string]string, len(from.Extensions))
+	for _, extension := range from.Extensions {
+		if compareOpts.IsExtensionIgnored(extension.Name) {
+			continue
+		}
+		current[extension.Name] = effectiveExtensionSchema(extension.Schema, defaultSchema)
+	}
+	for _, extension := range to.Extensions {
+		if compareOpts.IsExtensionIgnored(extension.Name) {
+			continue
+		}
+		desiredSchema := effectiveExtensionSchema(extension.Schema, defaultSchema)
+		currentSchema, exists := current[extension.Name]
+		switch {
+		case exists && currentSchema != desiredSchema:
+			return fmt.Errorf(
+				"cannot move extension %q from schema %q to schema %q: schema diff cannot represent PostgreSQL extension installation schemas",
+				extension.Name,
+				currentSchema,
+				desiredSchema,
+			)
+		case !exists && desiredSchema != defaultSchema:
+			return fmt.Errorf(
+				"cannot create extension %q in schema %q: schema diff cannot represent PostgreSQL extension installation schemas",
+				extension.Name,
+				desiredSchema,
+			)
+		}
+	}
+	return nil
+}
+
+func effectiveExtensionSchema(schema, defaultSchema string) string {
+	if schema == "" {
+		return defaultSchema
+	}
+	return schema
 }
 
 // diffDefaultSchema resolves the schema that owns unqualified objects for one

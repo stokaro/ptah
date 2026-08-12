@@ -60,8 +60,8 @@ func TestAtlasCompatDottedIncludeMissFailsE2E(t *testing.T) {
 }
 
 // TestAtlasCompatDottedIncludeControlsE2E proves the refusal is outcome-based:
-// an ordinary matched table and a top-level table whose identifier contains a
-// dot both remain selectable on the full Pro-like surface.
+// one-sided matches remain valid creates and drops, and a top-level table whose
+// identifier contains a dot remains selectable on the full Pro-like surface.
 func TestAtlasCompatDottedIncludeControlsE2E(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeDottedIncludeDiffFiles(c, "",
@@ -72,6 +72,14 @@ func TestAtlasCompatDottedIncludeControlsE2E(t *testing.T) {
 	c.Assert(plainErr, qt.IsNil, qt.Commentf("stderr:\n%s", plainErrOut))
 	c.Assert(plainOut, qt.Contains, "CREATE TABLE")
 	c.Assert(plainOut, qt.Contains, "posts")
+
+	dropFrom, dropTo, dropDev := writeDottedIncludeDiffFiles(c,
+		"CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n", "")
+	dropOut, dropErrOut, dropErr := runDottedIncludeDiff(dropFrom, dropTo, dropDev, "posts")
+
+	c.Assert(dropErr, qt.IsNil, qt.Commentf("stderr:\n%s", dropErrOut))
+	c.Assert(dropOut, qt.Contains, "DROP TABLE")
+	c.Assert(dropOut, qt.Contains, "posts")
 
 	dottedFrom, dottedTo, dottedDev := writeDottedIncludeDiffFiles(c, "",
 		"CREATE TABLE \"posts.title\" (id INTEGER PRIMARY KEY);\n")
