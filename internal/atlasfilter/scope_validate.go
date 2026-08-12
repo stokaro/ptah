@@ -196,8 +196,9 @@ func validateGeneratedTypes(
 		}
 	}
 	for _, enum := range original.Enums {
-		if !generatedEnumKept(final.Enums, enum.Name) {
-			report("enum", "", enum.Name)
+		schema, name := enumIdentity(enum.Schema, enum.Name)
+		if !generatedEnumKept(final.Enums, schema, name) {
+			report("enum", schema, name)
 		}
 	}
 	for _, domain := range original.Domains {
@@ -223,9 +224,10 @@ func validateGeneratedTypes(
 	}
 }
 
-func generatedEnumKept(enums []goschema.Enum, name string) bool {
+func generatedEnumKept(enums []goschema.Enum, schema, name string) bool {
 	for _, enum := range enums {
-		if enum.Name == name {
+		keptSchema, keptName := enumIdentity(enum.Schema, enum.Name)
+		if keptSchema == schema && keptName == name {
 			return true
 		}
 	}
@@ -296,8 +298,8 @@ func validateDatabaseTypes(
 		}
 	}
 	for _, enum := range original.Enums {
-		if !databaseEnumKept(final.Enums, enum.Name) {
-			report("enum", "", enum.Name)
+		if !databaseEnumKept(final.Enums, enum.Schema, enum.Name) {
+			report("enum", enum.Schema, enum.Name)
 		}
 	}
 	for _, domain := range original.Domains {
@@ -309,9 +311,9 @@ func validateDatabaseTypes(
 	}
 }
 
-func databaseEnumKept(enums []dbschematypes.DBEnum, name string) bool {
+func databaseEnumKept(enums []dbschematypes.DBEnum, schema, name string) bool {
 	for _, enum := range enums {
-		if enum.Name == name {
+		if enum.Schema == schema && enum.Name == name {
 			return true
 		}
 	}

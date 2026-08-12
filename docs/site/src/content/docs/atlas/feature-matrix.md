@@ -72,18 +72,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 179 capabilities below:
+Across the 180 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 109 |
+| Ptah supports it fully | 110 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 34 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
 | Atlas CE has it and Ptah does not, or only in part | 23 |
-| An Atlas column is ❔ — not established by this page's evidence | 9 |
+| An Atlas column is ❔ — not established by this page's evidence | 10 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -137,6 +137,7 @@ seven of them as open capabilities regardless.
 | `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. A selection matching nothing renders nothing, exits 0, and says so on stderr. |
 | `schema inspect --output` | ✅ | ❌ | ✅ | `-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document. |
+| An include selector matching neither diff side fails closed | ✅ | ❌ | ❔ | Compat and native retain `--include`; no-match exits nonzero. A non-default PostgreSQL extension create or move fails before unsafe SQL; #1441 owns full schema modeling. |
 | Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Real locks on PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server; others run unlocked with a note. `--lock-name` and `--skip-lock` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Compat inspect block superset opt-in | ✅ | ❌ | ❌ | Compat inspect omits unreferenced extension, sequence and policy blocks; an env variable restores them. |
 | Desired-state sources for `--to` and `--from` | ✅ | ✅ | ✅ | Files, a file:// directory of .sql or .hcl schema files, one DB URL, one atlas.sum dir, or env://; atlas:// fails early. |

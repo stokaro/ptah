@@ -1206,21 +1206,31 @@ purpose:
 
 | Verb | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |
-| `schema diff` | `0` | unchanged (`Schemas are synced, no changes to be made.`) | `Warning: the --include selection matched no objects: "…".` |
+| `schema diff` | `1` | empty | `Error: the --include selection matched no objects: "…"` |
 | `schema inspect` | `0` | unchanged (no objects rendered) | same warning |
 | `schema apply` | `1` | empty | `Error: the --include selection matched no objects: "…"; schema apply would change nothing` |
 
-`diff` and `inspect` are read-only and their standard output is what CI
-compares, so their bytes and exit status are left alone and the notice goes
-out of band. `apply` is the verb where an empty selection meant an untouched
-target and a success message, so it refuses instead.
+`diff` refuses because a successful synced result can green-light a CI check
+that compared nothing. `apply` refuses because the empty selection leaves its
+target untouched. `inspect` keeps exit status 0 because an empty read is a
+legitimate result, but its warning makes the cause visible.
 
 This is a deliberate choice rather than a matched behavior. Atlas CE
 implements no `--include` flag at all, so there is no measurement to copy for
-it; its sibling positive selector `--schema` answers a zero match with exit
-status 0 and silence on every verb, which is where `diff` and `inspect` stay.
-`--schema` on its own is unaffected here: narrowing to a schema that holds
-nothing stays an ordinary answer.
+it. The full Ptah surface keeps that Pro-like capability, including selectors
+that match a real dotted top-level name, while refusing only the no-match
+outcome on plan-producing verbs. `--schema` on its own is unaffected here:
+narrowing to a schema that holds nothing stays an ordinary answer.
+
+A qualified selector can match a live PostgreSQL extension installed outside
+the comparison's default schema. Identical live placements compare as synced,
+and a drop remains representable. Creating that placement or comparing two
+different installation schemas fails before SQL is emitted, because Ptah
+cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...` from its shared schema
+model. [Issue #1441](https://github.com/stokaro/ptah/issues/1441) owns the
+end-to-end model rather than silently moving the extension into the default
+schema.
+
 - `--exclude` and disabled `schema.mode` values subtract from the positive
   selection afterward. The composition order is fixed: schema universe first,
   include selection inside it, exclusion last.
