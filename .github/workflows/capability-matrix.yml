@@ -148,7 +148,15 @@ jobs:
       - name: Build the matrix driver
         run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
 
+      # continue-on-error is deliberate. A cell whose container cannot start —
+      # measured on run 2, where `yugabytedb/yugabyte:2025.2.0.0-b0` answered
+      # "manifest unknown" — must still reach the reporting job as a named
+      # result. Failing the step here skips the probe and the upload, and the
+      # cell arrives as MISSING, which says the job did not report rather than
+      # what actually happened to it. The probe below fails on the unreachable
+      # server instead, with the error in the cell's result.
       - name: Start the server for this cell
+        continue-on-error: true
         run: |
           set -euo pipefail
           # One flat argument list, printed by the driver, so this step cannot
@@ -170,7 +178,7 @@ jobs:
           "${RUNNER_TEMP}/capmatrix" probe \
             --cell "${CELL_ID}" \
             --tier 2 \
-            --wait 8m \
+            --wait 4m \
             --result "results/${CELL_ID}.json" >"results/${CELL_ID}.log" 2>&1
           code=$?
           cat "results/${CELL_ID}.log"

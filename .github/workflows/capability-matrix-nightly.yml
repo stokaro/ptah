@@ -93,7 +93,11 @@ jobs:
           go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
           go build -o "${RUNNER_TEMP}/integration-test" ./cmd/integration-test
 
+      # continue-on-error for the same reason as in capability-matrix.yml: a
+      # container that cannot start has to reach the report as a named result
+      # rather than as an absent one.
       - name: Start the server for this cell
+        continue-on-error: true
         run: |
           set -euo pipefail
           mapfile -t args < <("${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}")
@@ -111,7 +115,7 @@ jobs:
           "${RUNNER_TEMP}/capmatrix" probe \
             --cell "${CELL_ID}" \
             --tier 3 \
-            --wait 10m \
+            --wait 6m \
             --result "results/${CELL_ID}.json" >"results/${CELL_ID}-probe.log" 2>&1
           cat "results/${CELL_ID}-probe.log"
 
@@ -131,7 +135,7 @@ jobs:
           set -uo pipefail
           mkdir -p reports results
           "${RUNNER_TEMP}/integration-test" \
-            --databases="${PTAH_SUITE_DATABASE}" \
+            --databases="${CAPMATRIX_SUITE_DATABASE}" \
             --report=stdout,json \
             --output=./reports >"results/${CELL_ID}-suite.log" 2>&1
           code=$?

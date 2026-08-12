@@ -323,6 +323,11 @@ var Cells = []Cell{
 		Dialect: platform.YugabyteDB, Line: "2025.2",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
 		Refinement: RefinedByBanner, Image: "yugabytedb/yugabyte:2025.2.0.0-b0",
+		Note: "this image reference does not resolve: `docker run` answered `manifest for " +
+			"yugabytedb/yugabyte:2025.2.0.0-b0 not found: manifest unknown` on 2026-08-12, in the first " +
+			"tier 2 run that started every declared container. The line stays declared and the cell stays " +
+			"red until the tag is corrected, because a line whose server cannot be started is a line " +
+			"nothing here can measure",
 	},
 
 	// SQLite is not a server line. Its version is whatever the driver pinned

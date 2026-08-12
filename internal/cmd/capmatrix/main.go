@@ -146,7 +146,7 @@ func newSuiteEnvCommand() *cobra.Command {
 			if cell.SuiteDatabase == "" || cell.SuiteURLEnv == "" {
 				return fmt.Errorf("cell %s has no integration-runner target", cell.ID)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "PTAH_SUITE_DATABASE=%s\n", cell.SuiteDatabase)
+			fmt.Fprintf(cmd.OutOrStdout(), "CAPMATRIX_SUITE_DATABASE=%s\n", cell.SuiteDatabase)
 			fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", cell.SuiteURLEnv, cell.URL)
 			return nil
 		},
