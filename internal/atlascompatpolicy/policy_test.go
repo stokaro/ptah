@@ -175,6 +175,25 @@ func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
 	)
 }
 
+func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
+	policy := atlascompatpolicy.StrictCE()
+	qt.Assert(t, policy.ValidateInspectedSchema(&goschema.Database{
+		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	}), qt.IsNil)
+
+	err := policy.ValidateInspectedSchema(&goschema.Database{
+		Extensions: []goschema.Extension{{Name: "plpgsql"}, {Name: "citext"}},
+	})
+	qt.Assert(t, err, qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspected schema extensions`)
+
+	err = policy.ValidateDesiredSchema(&goschema.Database{
+		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	})
+	qt.Assert(t, err, qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
+}
+
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
 	database := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "citext"}},
@@ -250,12 +269,12 @@ func TestStrictCEAcceptsImplicitSchemaCleanSequence(t *testing.T) {
 func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
 	policy := atlascompatpolicy.StrictCE()
 
-	qt.Assert(t, policy.ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+	qt.Assert(t, policy.ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
 		Kind:             "sequence",
 		Name:             "users_id_seq",
 		ImplicitSequence: true,
 	}), qt.IsNil)
-	err := policy.ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+	err := policy.ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
 		Kind: "procedure",
 		Name: "refresh_users()",
 	})
@@ -263,7 +282,7 @@ func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
 	qt.Assert(t, err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users\(\)"`)
 	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
+		atlascompatpolicy.Full().ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
 			Kind: "procedure",
 			Name: "retained_by_full_mode()",
 		}),

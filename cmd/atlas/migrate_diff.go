@@ -320,6 +320,8 @@ func runAtlasMigrateDiff(
 		Vars:                      schemaVars,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   migrationSourceValidator,
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		PreparePublication:        preparePublication,

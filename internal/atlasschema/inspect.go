@@ -15,18 +15,9 @@ import (
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/fileplan"
 	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/internal/schemaclean"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
 )
-
-// LiveSchemaObject is an object found by supplemental catalog inspection that
-// the ordinary schema reader does not model completely.
-type LiveSchemaObject struct {
-	Kind             string
-	Name             string
-	ImplicitSequence bool
-}
 
 // InspectOptions configures Atlas-compatible schema inspection.
 type InspectOptions struct {
@@ -99,7 +90,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
 		return "", err
 	}
-	if err := validateInspectLiveObjects(conn, names, opts.ValidateLiveObject); err != nil {
+	if err := ValidateLiveObjects(conn, names, opts.ValidateLiveObject); err != nil {
 		return "", err
 	}
 	// A description scoped to the roles the inspected schemas use omits roles
@@ -120,30 +111,6 @@ func validateInspectSchema(schema *dbschematypes.DBSchema, validate func(*gosche
 		return nil
 	}
 	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema))
-}
-
-func validateInspectLiveObjects(
-	conn *dbschema.DatabaseConnection,
-	schemas []string,
-	validate func(LiveSchemaObject) error,
-) error {
-	if validate == nil {
-		return nil
-	}
-	objects, err := schemaclean.InspectRuntimeObjects(conn, schemas)
-	if err != nil {
-		return fmt.Errorf("inspect live schema catalog: %w", err)
-	}
-	for _, object := range objects {
-		if err := validate(LiveSchemaObject{
-			Kind:             object.Type,
-			Name:             object.Name,
-			ImplicitSequence: object.Implicit,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // renderInspectSchema is the shared inspect tail for every source kind:

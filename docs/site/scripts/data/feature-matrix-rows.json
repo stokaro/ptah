@@ -1031,8 +1031,8 @@
     "ptah": "yes",
     "atlas_oss": "na",
     "atlas_pro": "na",
-    "note": "Strict mode builds the CE tree and refuses unsafe sources, lint policy, migration extensions, and writer-only live objects before work. Default mode retains the full surface.",
-    "evidence": "internal/atlascompatpolicy policy and tests; internal/atlassource pre-parse validation; cmd/atlas strict policy wiring; internal/atlasmigrate locked current-directory validation; internal/schemaclean PostgreSQL writer-only inventory; integration/atlascmd/strict_compat_process_test.go exact strict/default/native process controls, including no-artifact source preflights and PostgreSQL cleanup preservation; docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode; pinned Atlas CE v1.3.0 YAML-source measurement; stokaro/ptah#1421"
+    "note": "Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface.",
+    "evidence": "internal/atlascompatpolicy policy and tests; internal/atlassource pre-parse and live-source validation; cmd/atlas strict policy wiring; internal/atlasmigrate locked current-directory validation; internal/schemaclean PostgreSQL writer-only inventory; integration/atlascmd/strict_compat_process_test.go exact strict/default/native process controls, including no-artifact source preflights, inspect/apply/diff live-catalog refusal, replayed-source refusal, and PostgreSQL cleanup preservation; docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode; pinned Atlas CE v1.3.0 YAML-source measurement; stokaro/ptah#1421"
   },
   {
     "area": "Database engines",

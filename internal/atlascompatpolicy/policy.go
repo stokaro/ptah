@@ -76,7 +76,22 @@ func (p Policy) ValidateDesiredSchema(database *goschema.Database) error {
 // paths that do not pass through desired-schema loading, while full mode keeps
 // Ptah's richer inspection output unchanged.
 func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
-	return p.validateSchemaObjects(database, "inspected")
+	if !p.strictCE || database == nil {
+		return nil
+	}
+	// plpgsql is installed by PostgreSQL itself in pg_catalog. The live reader
+	// reports every database extension, but that system extension is not user
+	// schema content and the pinned Community Edition inspector does not expose
+	// it. Keep authored extensions strict through ValidateDesiredSchema while
+	// avoiding a false refusal on every ordinary PostgreSQL database.
+	inspected := *database
+	inspected.Extensions = slices.DeleteFunc(
+		slices.Clone(database.Extensions),
+		func(extension goschema.Extension) bool {
+			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
+		},
+	)
+	return p.validateSchemaObjects(&inspected, "inspected")
 }
 
 func (p Policy) validateSchemaObjects(database *goschema.Database, source string) error {
@@ -132,12 +147,13 @@ func strictCEAcceptsLiveSchemaObject(object LiveSchemaObject) bool {
 	}
 }
 
-// ValidateSchemaInspectObject refuses live catalog objects that Atlas
-// Community Edition does not model during schema inspection. The ordinary
-// schema reader cannot represent every catalog kind, so callers apply this
-// check to the supplemental read-only inventory before publishing output.
-// Full mode remains a no-op and keeps Ptah's best-effort inspection behavior.
-func (p Policy) ValidateSchemaInspectObject(object LiveSchemaObject) error {
+// ValidateLiveSchemaObject refuses live catalog objects that Atlas Community
+// Edition does not model during inspection, planning, or comparison. The
+// ordinary schema reader cannot represent every catalog kind, so callers apply
+// this check to the supplemental read-only inventory before publishing output
+// or acting on an incomplete state. Full mode remains a no-op and keeps Ptah's
+// best-effort behavior.
+func (p Policy) ValidateLiveSchemaObject(object LiveSchemaObject) error {
 	if !p.strictCE || strictCEAcceptsLiveSchemaObject(object) {
 		return nil
 	}

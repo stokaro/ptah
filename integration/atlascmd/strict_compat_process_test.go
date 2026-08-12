@@ -1046,12 +1046,7 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+schemaName)
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := url.Parse(dbURL)
-	c.Assert(err, qt.IsNil)
-	query := parsed.Query()
-	query.Set("search_path", schemaName)
-	parsed.RawQuery = query.Encode()
-	scopedURL := parsed.String()
+	scopedURL := postgresURLWithSearchPath(t, dbURL, schemaName)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), scopedURL)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(),
@@ -1132,6 +1127,172 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 0)
 }
 
+func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testing.T) {
+	c := qt.New(t)
+	dbURL := strictCompatPostgresTestURL(t)
+	prefix := fmt.Sprintf("ptah_strict_sources_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	procedureSchema := prefix + "_procedure"
+	emptySchema := prefix + "_empty"
+	devSchema := prefix + "_dev"
+
+	admin, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		for _, schema := range []string{procedureSchema, emptySchema, devSchema} {
+			_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+		}
+		dbschema.CloseAndWarn(admin)
+	})
+	for _, schema := range []string{procedureSchema, emptySchema, devSchema} {
+		_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+schema)
+		c.Assert(err, qt.IsNil)
+	}
+
+	procedureURL := postgresURLWithSearchPath(t, dbURL, procedureSchema)
+	emptyURL := postgresURLWithSearchPath(t, dbURL, emptySchema)
+	devURL := postgresURLWithSearchPath(t, dbURL, devSchema)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), procedureURL)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(),
+		"CREATE PROCEDURE refresh_users() LANGUAGE SQL AS $$ SELECT 1 $$;")
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(conn)
+
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	wantPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
+
+	t.Run("apply target", func(t *testing.T) {
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "apply",
+			"--url", procedureURL,
+			"--to", emptyURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		qt.Assert(t, postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
+
+		stdout, stderr, code = runAtlasBinary(
+			compat,
+			nil,
+			"schema", "apply",
+			"--url", procedureURL,
+			"--to", emptyURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+		qt.Assert(t, postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
+	})
+
+	t.Run("diff database from", func(t *testing.T) {
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "diff",
+			"--from", procedureURL,
+			"--to", emptyURL,
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: load --from schema: "+wantPolicyError+"\n")
+	})
+
+	t.Run("diff database to", func(t *testing.T) {
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "diff",
+			"--from", emptyURL,
+			"--to", procedureURL,
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+	})
+
+	t.Run("diff replayed migration directory", func(t *testing.T) {
+		migrationDir := t.TempDir()
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_procedure.sql"), []byte(
+			"CREATE PROCEDURE refresh_replayed() LANGUAGE SQL AS $$ SELECT 1 $$;\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "diff",
+			"--from", "file://"+migrationDir,
+			"--to", emptyURL,
+			"--dev-url", devURL,
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			`Error: load --from schema: --from \"file://`+migrationDir+`\": `+
+				`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_replayed()"`+"\n")
+
+		stdout, stderr, code = runAtlasBinary(
+			compat,
+			nil,
+			"schema", "diff",
+			"--from", "file://"+migrationDir,
+			"--to", emptyURL,
+			"--dev-url", devURL,
+		)
+		qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+		qt.Assert(t, stderr, qt.Equals, "")
+	})
+
+	t.Run("migrate diff live desired source", func(t *testing.T) {
+		currentDir := t.TempDir()
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"migrate", "diff", "next",
+			"--dir", "file://"+currentDir,
+			"--to", procedureURL,
+			"--dev-url", devURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		entries, err := os.ReadDir(currentDir)
+		qt.Assert(t, err, qt.IsNil)
+		qt.Assert(t, entries, qt.HasLen, 0)
+	})
+
+	t.Run("migrate diff replayed current source", func(t *testing.T) {
+		currentDir := t.TempDir()
+		qt.Assert(t, os.WriteFile(filepath.Join(currentDir, "1_procedure.sql"), []byte(
+			"CREATE PROCEDURE refresh_current() LANGUAGE SQL AS $$ SELECT 1 $$;\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(currentDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"migrate", "diff", "next",
+			"--dir", "file://"+currentDir,
+			"--to", emptyURL,
+			"--dev-url", devURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals,
+			`Error: Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_current()"`+"\n")
+		entries, err := os.ReadDir(currentDir)
+		qt.Assert(t, err, qt.IsNil)
+		qt.Assert(t, entries, qt.HasLen, 2)
+	})
+}
+
 func strictCompatPostgresTestURL(t *testing.T) string {
 	t.Helper()
 	dbURL := os.Getenv("POSTGRES_TEST_DSN")
@@ -1145,6 +1306,16 @@ func strictCompatPostgresTestURL(t *testing.T) string {
 		t.Skip("PostgreSQL URL required for strict schema-clean runtime coverage")
 	}
 	return dbURL
+}
+
+func postgresURLWithSearchPath(t *testing.T, rawURL, schema string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	qt.Assert(t, err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func postgresStrictCleanObjectCount(t *testing.T, dbURL string) int {

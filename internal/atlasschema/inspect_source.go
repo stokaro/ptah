@@ -436,7 +436,7 @@ func readValidatedInspectDevSchema(
 	if err := validateInspectSchema(schema, opts.inspect.ValidateSchema); err != nil {
 		return nil, InspectOptions{}, err
 	}
-	if err := validateInspectLiveObjects(devConn, names, opts.inspect.ValidateLiveObject); err != nil {
+	if err := ValidateLiveObjects(devConn, names, opts.inspect.ValidateLiveObject); err != nil {
 		return nil, InspectOptions{}, err
 	}
 	validatedOpts := opts.inspect

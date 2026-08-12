@@ -161,7 +161,7 @@ capabilities Ptah implements. Set `PTAH_ATLAS_STRICT_COMPAT=1` only for Atlas
 Community Edition oracle or conformance runs. Strict mode presents the pinned
 CE command and flag surface and refuses richer authored content rather than
 discarding it. It also refuses a live Pro-only object before an inspect,
-apply, or clean run could omit or destroy it. Strict schema workflows refuse
+apply, diff, or clean run could omit, miscompare, or destroy it. Strict schema workflows refuse
 YAML sources and an apply lint policy that the CE path cannot enforce. Commands
 that execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
 directives, and SQL templates. Checksum-only migration reads preserve the

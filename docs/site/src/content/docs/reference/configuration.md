@@ -89,11 +89,12 @@ mode. Naming project inputs with that prefix does not turn them into Ptah
 features.
 
 Strict mode also applies its object inventory to live schemas. `schema inspect`,
-`schema apply`, and `schema clean` refuse a Pro-only object before rendering or
-mutation instead of copying CE behavior that could omit or destroy it. On
-`schema clean`, the CE-registered `--dry-run` and `--format` flags retain the
-pinned binary's community-abort behavior. Leave strict mode off for Ptah's
-complete cleanup, inspection, and apply capabilities.
+`schema apply`, `schema diff`, and `schema clean` refuse a Pro-only object
+before rendering, comparison, or mutation instead of copying CE behavior that
+could omit, miscompare, or destroy it. On `schema clean`, the CE-registered
+`--dry-run` and `--format` flags retain the pinned binary's community-abort
+behavior. Leave strict mode off for Ptah's complete cleanup, inspection, diff,
+and apply capabilities.
 
 The cleanup check covers the writer's complete destruction inventory. That
 includes PostgreSQL procedures, aggregates, foreign tables, collations,

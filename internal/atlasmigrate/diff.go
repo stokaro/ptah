@@ -95,6 +95,13 @@ type DiffOptions struct {
 	// source is resolved and before migration-directory planning. Nil accepts
 	// every modeled object.
 	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateInspectedSchema replaces ValidateDesiredSchema for live database
+	// and replayed migration-directory desired states.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects in live desired sources and both replayed database states.
+	// Nil performs no supplemental catalog reads.
+	ValidateLiveObject func(atlasschema.LiveSchemaObject) error
 	// ValidateMigrationSource applies a caller-selected policy to the stable,
 	// converted migration-directory snapshot before dev-database replay. The
 	// callback also revalidates the locked snapshot before publication planning.
@@ -279,7 +286,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection) error {
 			replayed, compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
-				opts.Diagnostics,
+				opts.Diagnostics, opts.ValidateLiveObject,
 			)
 			if err != nil {
 				return err
@@ -469,6 +476,8 @@ func resolveDesiredState(
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
+		ValidateInspectedDatabase: atlasschema.LiveDatabaseValidator(opts.ValidateLiveObject),
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
@@ -588,6 +597,7 @@ func compareReplayedState(
 	defaultSchema string,
 	desired *goschema.Database,
 	diagnostics io.Writer,
+	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 ) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {
@@ -595,6 +605,9 @@ func compareReplayedState(
 	}
 	replayed, err := runtime.readDevSchema(replayConn, readNames, defaultSchema)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(

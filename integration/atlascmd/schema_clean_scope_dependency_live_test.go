@@ -57,7 +57,7 @@ func TestSchemaCleanScopeRefusesUnselectedPostgresDependents(t *testing.T) {
 	)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-	c.Assert(stdout, qt.Contains, `DROP TABLE IF EXISTS "`+schemaName+`"."users" RESTRICT`)
+	c.Assert(stdout, qt.Contains, `DROP TABLE IF EXISTS "users" RESTRICT`)
 	c.Assert(stdout, qt.Not(qt.Contains), "CASCADE")
 	c.Assert(stderr, qt.Contains, "other objects depend on it")
 	c.Assert(postgresScopedDependencyObjectCount(t, scopedURL), qt.Equals, 4)

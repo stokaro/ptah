@@ -80,6 +80,15 @@ type ResolveOptions struct {
 	// every schema. The callback is interface-neutral: compatibility adapters
 	// select policy without making this shared resolver depend on a CLI layer.
 	ValidateSchema func(*goschema.Database) error
+	// ValidateInspectedSchema replaces ValidateSchema for database-backed and
+	// replayed migration-directory states. It lets an adapter distinguish
+	// authored desired content from objects supplied by the target server.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateInspectedDatabase applies a caller-selected policy while a live
+	// database source or replayed migration-directory dev database is still
+	// open. The schema list is the exact scope introspected into the returned
+	// state. Nil performs no supplemental catalog work.
+	ValidateInspectedDatabase func(*dbschema.DatabaseConnection, []string) error
 	// ValidateMigrationSource applies a caller-selected policy to the stable,
 	// checksum-verified snapshot of a migration-directory source before the dev
 	// database is connected to or reset. Nil accepts every migration body.
@@ -121,8 +130,12 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
-	if opts.ValidateSchema != nil {
-		if err := opts.ValidateSchema(state.Schema); err != nil {
+	validateSchema := opts.ValidateSchema
+	if state.DB != nil && opts.ValidateInspectedSchema != nil {
+		validateSchema = opts.ValidateInspectedSchema
+	}
+	if validateSchema != nil {
+		if err := validateSchema(state.Schema); err != nil {
 			return State{}, err
 		}
 	}
@@ -200,6 +213,11 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
+	}
+	if opts.ValidateInspectedDatabase != nil {
+		if err := opts.ValidateInspectedDatabase(conn, names); err != nil {
+			return State{}, err
+		}
 	}
 	return State{
 		Kind:          s.Kind,
@@ -279,6 +297,11 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 				return fmt.Errorf("read dev database schema: %w", err)
 			}
 			schema = WithoutRevisionTable(schema)
+			if opts.ValidateInspectedDatabase != nil {
+				if err := opts.ValidateInspectedDatabase(replayConn, names); err != nil {
+					return err
+				}
+			}
 			state = State{
 				Kind:          s.Kind,
 				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),

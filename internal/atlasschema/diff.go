@@ -47,8 +47,15 @@ type DiffOptions struct {
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
-	// states before comparison. Nil accepts every modeled object.
+	// authored states before comparison. Nil accepts every modeled object.
 	ValidateSchema func(*goschema.Database) error
+	// ValidateInspectedSchema replaces ValidateSchema for live database and
+	// replayed migration-directory states.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects in live database and replayed migration-directory sources.
+	// Nil performs no supplemental catalog reads.
+	ValidateLiveObject func(LiveSchemaObject) error
 	// ValidateMigrationSource applies a caller-selected policy to each stable
 	// migration-directory snapshot before dev-database replay.
 	ValidateMigrationSource func(fs.FS) error
@@ -90,6 +97,8 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateSchema,
+		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
+		ValidateInspectedDatabase: LiveDatabaseValidator(opts.ValidateLiveObject),
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}

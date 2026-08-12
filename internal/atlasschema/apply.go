@@ -71,6 +71,10 @@ type ApplyOptions struct {
 	// ValidateCurrentSchema applies a caller-selected policy to the fully
 	// introspected target before planning. Nil accepts every modeled object.
 	ValidateCurrentSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects in the current target and in database-backed or replayed
+	// desired sources. Nil performs no supplemental catalog reads.
+	ValidateLiveObject func(LiveSchemaObject) error
 	// ValidateMigrationSource applies a caller-selected policy to a stable
 	// migration-directory desired-state snapshot before dev-database replay.
 	ValidateMigrationSource func(fs.FS) error
@@ -118,6 +122,9 @@ type ApplyRuntimeOptions struct {
 	// ValidateCurrentSchema applies a caller-selected current-schema policy;
 	// see [ApplyOptions.ValidateCurrentSchema].
 	ValidateCurrentSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected supplemental catalog policy;
+	// see [ApplyOptions.ValidateLiveObject].
+	ValidateLiveObject func(LiveSchemaObject) error
 	// ValidateMigrationSource applies a caller-selected migration-source policy;
 	// see [ApplyOptions.ValidateMigrationSource].
 	ValidateMigrationSource func(fs.FS) error
@@ -214,7 +221,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	if err := validateCurrentApplySchema(current, opts.ValidateCurrentSchema); err != nil {
+	if err := validateCurrentApplyState(conn, current, readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
 	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
@@ -273,6 +280,18 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return computation, nil
+}
+
+func validateCurrentApplyState(
+	conn *dbschema.DatabaseConnection,
+	current *types.DBSchema,
+	readScope []string,
+	opts ApplyOptions,
+) error {
+	if err := validateCurrentApplySchema(current, opts.ValidateCurrentSchema); err != nil {
+		return err
+	}
+	return ValidateLiveObjects(conn, readScope, opts.ValidateLiveObject)
 }
 
 func resolveApplyAllowUnmatched(opts ApplyOptions) (bool, error) {
@@ -440,6 +459,8 @@ func loadDesiredApplySchema(
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.ValidateCurrentSchema,
+		ValidateInspectedDatabase: LiveDatabaseValidator(opts.ValidateLiveObject),
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
@@ -475,6 +496,7 @@ func PrepareApply(
 		Desired:                   opts.Desired,
 		ValidateDesiredSchema:     opts.ValidateDesiredSchema,
 		ValidateCurrentSchema:     opts.ValidateCurrentSchema,
+		ValidateLiveObject:        opts.ValidateLiveObject,
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 

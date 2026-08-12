@@ -24,15 +24,18 @@ migration, or loses recoverable state.
 The same rule protects richer live schemas. The pinned community inspector can
 omit object kinds outside its edition, and its cleanup can leave or handle a
 catalog differently from Ptah's complete cleanup. Strict mode therefore
-refuses a live Pro-only object before `schema inspect`, `schema apply`, or
-`schema clean` emits output or mutates the target. Default `ptah-compat` keeps
-Ptah's complete modeled-object behavior; the refusal exists only in the CE
-oracle profile. Cleanup validates the writer's complete destruction inventory,
-including PostgreSQL procedures, aggregates, foreign tables, collations, and
-default privileges. Inspection queries those catalog-only kinds in the same
-schema scope before it publishes output. A dependent Pro-only object such as a
-trigger cannot disappear with a table merely because the cleanup plan does not
-print it as a separate line.
+refuses a live Pro-only object before `schema inspect`, `schema apply`,
+`schema diff`, or `schema clean` emits output, compares incomplete states, or
+mutates the target. Default `ptah-compat` keeps Ptah's complete modeled-object
+behavior; the refusal exists only in the CE oracle profile.
+
+The command-specific inventory remains read-only. Cleanup validates the
+writer's complete destruction inventory, including PostgreSQL procedures,
+aggregates, foreign tables, collations, and default privileges. Inspection,
+apply planning, and database-backed or replayed schema- and migration-diff
+sources query those catalog-only kinds in the same schema scope. A dependent
+Pro-only object such as a trigger cannot disappear with a table merely because
+the cleanup plan does not print it as a separate line.
 
 Cleanup validation uses the writer's schema scope: a global
 extension installed in another PostgreSQL schema does not block cleaning the

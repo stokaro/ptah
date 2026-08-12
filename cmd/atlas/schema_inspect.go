@@ -197,17 +197,6 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	var validateLiveObject func(atlasschema.LiveSchemaObject) error
-	if opts.policy.IsStrictCE() {
-		validateLiveObject = func(object atlasschema.LiveSchemaObject) error {
-			return opts.policy.ValidateSchemaInspectObject(atlascompatpolicy.LiveSchemaObject{
-				Kind:             object.Kind,
-				Name:             object.Name,
-				ImplicitSequence: object.ImplicitSequence,
-			})
-		}
-	}
-
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
 		URL:            opts.url,
 		DevURL:         opts.devURL,
@@ -223,7 +212,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
-		ValidateLiveObject:        validateLiveObject,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
