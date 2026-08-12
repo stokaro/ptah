@@ -85,9 +85,10 @@ Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
 and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
 the original reader snapshot. Strict cleanup executes the validated and
 confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
-strict inventory, compares the rebuilt cleanup plan with the confirmed plan,
-and refuses catalog drift before the first drop. A trigger, policy, view, or
-foreign key created while the prompt is open cannot disappear with its table.
+strict inventory through the transaction session, compares the rebuilt cleanup
+plan with the confirmed plan, and refuses catalog drift before the first drop.
+A trigger, policy, view, or foreign key created while the prompt is open cannot
+disappear with its table.
 
 Strict schema workflows refuse YAML sources and an authored `schema apply`
 lint policy that the CE path cannot enforce. Commands that execute, convert,

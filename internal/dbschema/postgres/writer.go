@@ -179,20 +179,60 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 	return nil
 }
 
-// QueryContext exposes transaction-local catalog state to migration safety
-// probes. It is intentionally narrower than the public SchemaTransaction
-// contract: only PostgreSQL recovery checks need to observe DDL before commit.
-func (w *postgresTransactionWriter) QueryContext(
+// SchemaQueryRunner exposes the live transaction to readers and session-state
+// statements that must observe the same locked catalog snapshot. Dry-run and
+// closed transactions deliberately expose no runner.
+func (w *postgresTransactionWriter) SchemaQueryRunner() sqlrunner.Runner {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.dryRun || w.tx == nil {
+		return nil
+	}
+	return postgresTransactionRunner{tx: w.tx}
+}
+
+type postgresTransactionRunner struct {
+	tx *sql.Tx
+}
+
+func (postgresTransactionRunner) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error) {
+	return nil, errors.New("nested transaction is unavailable for a transaction-scoped schema reader")
+}
+
+func (r postgresTransactionRunner) Exec(query string, args ...any) (sql.Result, error) {
+	return r.tx.Exec(query, args...)
+}
+
+func (r postgresTransactionRunner) ExecContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (sql.Result, error) {
+	return r.tx.ExecContext(ctx, query, args...)
+}
+
+func (r postgresTransactionRunner) QueryContext(
 	ctx context.Context,
 	query string,
 	args ...any,
 ) (*sql.Rows, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.tx == nil {
-		return nil, fmt.Errorf("transaction is closed")
-	}
-	return w.tx.QueryContext(ctx, query, args...)
+	return r.tx.QueryContext(ctx, query, args...)
+}
+
+func (r postgresTransactionRunner) Query(query string, args ...any) (*sql.Rows, error) {
+	return r.tx.Query(query, args...)
+}
+
+func (r postgresTransactionRunner) QueryRow(query string, args ...any) *sql.Row {
+	return r.tx.QueryRow(query, args...)
+}
+
+func (r postgresTransactionRunner) QueryRowContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) *sql.Row {
+	return r.tx.QueryRowContext(ctx, query, args...)
 }
 
 // Commit commits the transaction.
