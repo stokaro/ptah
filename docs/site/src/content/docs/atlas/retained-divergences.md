@@ -257,6 +257,16 @@ be defended as a safety control. Resolving it changes a shared path helper used
 by native `ptah` verbs as well as the compatibility surface, so it is a decision
 recorded on the issue rather than a divergence retained here.
 
+Until that decision is taken, the two surfaces at least give the same answer.
+They did not: the native desired-schema resolver rewrote the operator's path to
+an absolute one before the guard saw it, so `ptah schema render --schema-file
+../outside/schema.sql` loaded the file while `ptah-compat migrate diff --to
+file://../outside/schema.sql` refused that identical destination through that
+identical guard. The rewrite was a canonicalization, not a decision about what
+should be reachable. The native surface now applies the relative boundary that
+the compatibility surface always applied, which narrows what native `ptah`
+accepts and leaves the absolute-pathname question exactly where it was.
+
 `migrate hash` carries the trailing-positional and `--var` cells of items 13 and
 12. No reading of the pinned binary was taken for either: the sandbox these
 sweeps ran in refuses any command containing that bare word, and the refusal was
