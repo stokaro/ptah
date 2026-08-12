@@ -2,6 +2,7 @@ package atlassource_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -173,6 +174,23 @@ func TestResolve_MigrationDirRejectsChecksumDrift(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)migration directory checksum verification failed:.*`)
+}
+
+func TestResolve_LocalFileValidatesSourceBeforeParsing(t *testing.T) {
+	c := qt.New(t)
+	wantErr := errors.New("strict local-source policy")
+	set := classifySingle(t, "--to", "file://missing-schema.yaml")
+
+	_, err := set.Resolve(t.Context(), atlassource.ResolveOptions{
+		Dialect: "sqlite",
+		DevURL:  "sqlite://dev.db",
+		ValidateLocalSchemaSource: func(source string) error {
+			c.Assert(filepath.Base(source), qt.Equals, "missing-schema.yaml")
+			return wantErr
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, wantErr)
 }
 
 func TestResolve_MigrationDirWithoutSumViaEnvReplays(t *testing.T) {

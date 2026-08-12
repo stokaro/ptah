@@ -88,6 +88,27 @@ type DiffOptions struct {
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
+	// IgnoreUnknownHCLNames selects the desired-state HCL unknown-name policy;
+	// see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	IgnoreUnknownHCLNames bool
+	// ValidateDesiredSchema applies a caller-selected policy after the desired
+	// source is resolved and before migration-directory planning. Nil accepts
+	// every modeled object.
+	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateInspectedSchema replaces ValidateDesiredSchema for live database
+	// and replayed migration-directory desired states.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects in live desired sources and both replayed database states.
+	// Nil performs no supplemental catalog reads.
+	ValidateLiveObject func(atlasschema.LiveSchemaObject) error
+	// ValidateMigrationSource applies a caller-selected policy to the stable,
+	// converted migration-directory snapshot before dev-database replay. The
+	// callback also revalidates the locked snapshot before publication planning.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// desired-schema path before parsing or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 	// PreparePublication may edit the staged migration files before they are
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
@@ -249,7 +270,7 @@ func generateDiff(
 	// already were one. The conversion is the same one every reading verb runs
 	// (`migrate apply`, `hash`, `validate`, `lint`), so the state this run
 	// diffs against is the state those verbs report.
-	replaySource, err := diffReplaySource(migrationSnapshot, opts)
+	replaySource, err := validatedDiffReplaySource(migrationSnapshot, opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -265,7 +286,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection) error {
 			replayed, compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
-				opts.Diagnostics,
+				opts.Diagnostics, opts.ValidateLiveObject,
 			)
 			if err != nil {
 				return err
@@ -311,6 +332,19 @@ func generateDiff(
 		opts.PreparePublication,
 		diffWriteLayout{format: opts.dirFormat(), versionFS: replaySource},
 	)
+}
+
+func validatedDiffReplaySource(snapshot fsnapshot.Snapshot, opts DiffOptions) (fs.FS, error) {
+	replaySource, err := diffReplaySource(snapshot, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.ValidateMigrationSource != nil {
+		if err := opts.ValidateMigrationSource(replaySource); err != nil {
+			return nil, fmt.Errorf("validate current migration directory: %w", err)
+		}
+	}
+	return replaySource, nil
 }
 
 // dirFormat is the layout this run reads and writes, with the zero value
@@ -432,17 +466,20 @@ func resolveDesiredState(
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
 	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
-		Dialect:         conn.Info().Dialect,
-		DialectFlag:     "--dev-url",
-		DevURL:          devURL,
-		SchemaScope:     schemaScope,
-		SchemaScopeFlag: schemaScopeFlag,
-		ConnectTimeout:  opts.SourceConnectTimeout,
-		DevLockHeld:     true,
-		// `migrate diff` is registered on the Atlas-compatible command tree
-		// only, so this surface always reads files written for another tool.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  opts.Vars,
+		Dialect:                   conn.Info().Dialect,
+		DialectFlag:               "--dev-url",
+		DevURL:                    devURL,
+		SchemaScope:               schemaScope,
+		SchemaScopeFlag:           schemaScopeFlag,
+		ConnectTimeout:            opts.SourceConnectTimeout,
+		DevLockHeld:               true,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		Vars:                      opts.Vars,
+		ValidateSchema:            opts.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
+		ValidateInspectedDatabase: atlasschema.LiveDatabaseValidator(opts.ValidateLiveObject),
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)
@@ -560,6 +597,7 @@ func compareReplayedState(
 	defaultSchema string,
 	desired *goschema.Database,
 	diagnostics io.Writer,
+	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 ) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {
@@ -567,6 +605,9 @@ func compareReplayedState(
 	}
 	replayed, err := runtime.readDevSchema(replayConn, readNames, defaultSchema)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(

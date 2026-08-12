@@ -599,8 +599,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--include`/`--exclude` narrow the cleanup, and a narrowed run executes only what it printed. Plan and `--dry-run` list every object kind destroyed, except the revision table outside SQLite.",
-    "evidence": "internal/schemaclean/clean.go coverageFor maps each dialect onto its writer's coverage; internal/schemaclean/clean_live_test.go compares the plan against the objects that actually disappeared on a live PostgreSQL. Measured on PostgreSQL 18 with a table, view, materialized view, enum, domain, composite, range, sequence, function and FK: the plan named 11 objects and the catalog census showed exactly those 11 destroyed, while a control schema `keepme` appeared in neither set. SQLite case from the original report now prints `DROP TABLE IF EXISTS \"users\"` and `DROP VIEW IF EXISTS \"v_const\"`. Remaining gap: `schema_migrations` is dropped by the PostgreSQL, MySQL, SQL Server and ClickHouse writers but excluded by their readers, so it never reaches the plan. CE registers schema clean per cli-surface.md:44 Selectors added under #951 with the Atlas-side source atlasgo.io/cli-reference (`--exclude strings`, `--include strings` on schema clean); the pinned community binary v1.3.0 registers neither, measured by running the spelling (`--url` present, `--frobnicate-nonsense` missing as controls). Verified: on a SQLite database holding `users` and `audit_log`, `schema clean --include users --auto-approve` drops `users` and leaves `audit_log` in place, and `--exclude audit_log` does the same (cmd/atlas/schema_clean_scope_test.go). A narrowed plan is executed statement by statement via schemaclean.ApplyPlan rather than DropAllTables, so the printed plan is what runs. The unflagged path still calls DropAllTables and is unchanged by this branch; the enumeration it prints was widened separately by #1108."
+    "note": "`--include`/`--exclude` narrow cleanup. PostgreSQL-family scoped drops are dependency-safe and transactional; `RESTRICT` cannot cascade outside the selection.",
+    "evidence": "internal/schemaclean/clean.go coverageFor maps each dialect onto its writer's coverage; internal/schemaclean/clean_live_test.go compares the plan against the objects that actually disappeared on a live PostgreSQL. Measured on PostgreSQL 18 with a table, view, materialized view, enum, domain, composite, range, sequence, function and FK: the plan named 11 objects and the catalog census showed exactly those 11 destroyed, while a control schema `keepme` appeared in neither set. SQLite case from the original report prints `DROP TABLE IF EXISTS \"users\"` and `DROP VIEW IF EXISTS \"v_const\"`. CE registers schema clean per cli-surface.md:44. Selectors were added under #951 from the Atlas-side CLI reference (`--exclude strings`, `--include strings` on schema clean); the pinned community binary v1.3.0 registers neither, measured by running the spelling (`--url` present, `--frobnicate-nonsense` missing as controls). On SQLite, selecting `users` drops it and leaves `audit_log`. On PostgreSQL, selected known dependents execute first, live catalog depth orders a selected `z_child` view before its selected `a_base` dependency, and every scoped DROP uses RESTRICT. A table selected without its dependent view or another table's foreign key fails and the scoped transaction leaves every object unchanged even when earlier selected drops ran. A narrowed plan executes only its reported statements via schemaclean.ApplyPlan rather than widening to DropAllTables. The unflagged path still calls DropAllTables and retains the full Ptah/Pro-like cleanup capability."
   },
   {
     "area": "Declarative / direct schema workflow",
@@ -1024,6 +1024,15 @@
     "atlas_pro": "na",
     "note": "Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2.",
     "evidence": "docs/site/src/content/docs/reference/exit-codes.md; docs/site/src/content/docs/reference/test-cases.md (Exit contract)"
+  },
+  {
+    "area": "Verification and contracts",
+    "feature": "Atlas CE strict oracle profile",
+    "ptah": "yes",
+    "atlas_oss": "na",
+    "atlas_pro": "na",
+    "note": "Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface.",
+    "evidence": "internal/atlascompatpolicy policy and tests; internal/atlassource pre-parse and live-source validation; cmd/atlas strict policy wiring; internal/atlasmigrate locked current-directory validation; internal/schemaclean PostgreSQL writer-only inventory; integration/atlascmd/strict_compat_process_test.go exact strict/default/native process controls, including no-artifact source preflights, inspect/apply/diff live-catalog refusal, replayed-source refusal, and PostgreSQL cleanup preservation; docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode; pinned Atlas CE v1.3.0 YAML-source measurement; stokaro/ptah#1421"
   },
   {
     "area": "Database engines",

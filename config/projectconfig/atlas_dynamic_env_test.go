@@ -128,6 +128,65 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 	}
 }
 
+func TestParseAtlasCollectionCanRejectListAndMapForEach(t *testing.T) {
+	tests := []struct {
+		name    string
+		prefix  string
+		forEach string
+		wantErr string
+	}{
+		{
+			name: "typed list",
+			prefix: `variable "targets" {
+  type    = list(string)
+  default = ["sqlite://file?mode=memory"]
+}
+`,
+			forEach: "var.targets",
+			wantErr: "schemahcl: for_each does not support list of string type",
+		},
+		{
+			name: "typed map",
+			prefix: `variable "targets" {
+  type    = map(string)
+  default = { local = "sqlite://file?mode=memory" }
+}
+`,
+			forEach: "var.targets",
+			wantErr: "schemahcl: for_each does not support map of string type",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := []byte(test.prefix + `env {
+  for_each = ` + test.forEach + `
+  name     = atlas.env
+  url      = each.value
+}
+`)
+
+			_, err := projectconfig.ParseAtlasCollectionWithOptions(
+				raw,
+				"atlas.hcl",
+				projectconfig.AtlasLoadOptions{
+					EnvName:              "local",
+					RejectListMapForEach: true,
+				},
+			)
+
+			qt.Assert(t, err, qt.ErrorMatches, test.wantErr)
+			configs, err := projectconfig.ParseAtlasCollectionWithOptions(
+				raw,
+				"atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "local"},
+			)
+			qt.Assert(t, err, qt.IsNil)
+			qt.Assert(t, configs, qt.HasLen, 1)
+		})
+	}
+}
+
 func TestParseAtlasCollectionPreservesLabeledEnvPrecedence(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env "local" {

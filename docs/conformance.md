@@ -46,6 +46,55 @@ stay out of and the migration fails partway through. Ptah honors it. A change
 that once removed that capability in the name of parity was reverted -- see
 `AGENTS.md`, "Compatibility Policy".
 
+## CE Oracle Policy
+
+The default `ptah-compat` process is the complete migration surface. It retains
+implemented Atlas Pro-like and best-effort capabilities.
+
+A CE differential or CLI-surface probe must set
+`PTAH_ATLAS_STRICT_COMPAT=1` on each `ptah-compat` subprocess. A required
+companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must inject that value only for CE comparisons; Pro-retention and native
+capability probes must run with it absent. Until that companion change lands,
+run CE probes with the variable injected per subprocess and do not enable it
+for the whole harness.
+
+Strict mode constructs the CE command and flag tree before help or dispatch.
+It rejects extension environment values and validates authored schema,
+project-config, migration, and inspected live-schema content before work.
+Local source-format and current-migration checks run before database or lock
+artifacts can be created.
+After the target connection opens, strict `schema apply` inventories an
+explicit `--schema` scope before acquiring the apply lock or replaying a
+desired migration directory on the dev database. Without an explicit scope, a
+PostgreSQL-family target inventories the user realm because desired replay may
+name a schema beyond the URL's `search_path`. Planning repeats the validation
+while the lock is held so a catalog change cannot bypass the policy.
+
+A strict inspect, apply, diff, or clean run refuses a live Pro-only object
+before it can be omitted from output, mistaken for absence, or destroyed.
+Inspection, apply planning, and live or replayed schema- and migration-diff
+sources supplement the ordinary schema reader with a read-only catalog
+inventory in the selected schema scope; cleanup validates the writer's full
+destruction inventory. Both inventories include PostgreSQL catalog objects
+absent from the ordinary reader. The policy narrows the capability inventory
+without copying a data-loss or state-corruption defect.
+
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
+strict inventory, compares the rebuilt cleanup plan with the confirmed plan,
+and refuses catalog drift before the first drop. A trigger, policy, view, or
+foreign key created while the prompt is open cannot disappear with its table.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply`
+lint policy that the CE path cannot enforce. Commands that execute, convert,
+or replay migration bodies refuse Atlas txtar, every Ptah directive, and SQL
+templates; checksum-only reads preserve those bytes. Default mode retains the
+extensions. Such cases remain in the retained-divergence evidence.
+
 ## Current Scoreboard
 
 As of Ptah `18ae5f9d4d63136248986263732524e2314f9d7c`:

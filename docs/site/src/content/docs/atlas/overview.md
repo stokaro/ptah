@@ -35,6 +35,55 @@ Use the native tree for new Ptah-authored work and the compat binary for
 existing Atlas scripts; the per-verb mapping is listed in the
 [Atlas-compatible commands reference](../../reference/atlas-commands/).
 
+## Strict Community Edition mode
+
+The normal `ptah-compat` process keeps every Atlas Pro-like and best-effort
+capability Ptah implements. That is the migration surface for existing Atlas
+pipelines, so it is also the default.
+
+For a pinned Atlas Community Edition oracle or conformance run, select the
+separate strict policy before starting the process:
+
+```bash
+PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat schema inspect --help
+```
+
+Strict mode changes command construction, not only runtime validation. Its help
+tree exposes CE commands and flags, and gated verbs use a Ptah-owned diagnostic
+that tells the operator to unset `PTAH_ATLAS_STRICT_COMPAT` for the full
+compatibility surface. It never links to an Atlas installer. Ptah's generic
+`PTAH_<FLAG>` environment twins are disabled. A present extension variable is
+rejected before help, version, argument handling, configuration, filesystem, or
+database work. The selector has no CLI flag, so it cannot change the surface
+being measured.
+
+This validation targets known Ptah flag bindings and feature toggles. It does
+not reserve the whole `PTAH_*` namespace: values read explicitly by an
+`atlas.hcl` `getenv` expression remain project inputs in strict mode.
+
+Strict mode also refuses authored or inspected content that CE cannot represent
+safely. This includes Pro-only schema objects and extended `atlas.hcl`
+evaluation. Strict schema workflows refuse YAML sources and an authored
+`schema apply` lint policy that the CE path cannot enforce.
+
+Commands that execute, convert, or replay migration bodies refuse Atlas txtar,
+Ptah directives, and SQL templates; checksum-only reads preserve those bytes.
+A live Pro-only object stops schema inspect, apply, diff, or clean before
+output, comparison, or mutation. Inspect, apply planning, and database-backed
+or replayed schema- and migration-diff sources supplement the ordinary reader
+with a read-only inventory of catalog-only kinds in the selected schema scope.
+Cleanup validates the writer's full destruction inventory, including dependent
+objects and the same PostgreSQL catalog kinds absent from the schema reader.
+
+Strict mode never emulates a CE behavior that would silently drop authored
+data, hide a live object, or corrupt state. Default mode retains every listed
+extension. Deliberate safety and correctness improvements remain enabled and
+are listed in [Retained divergences](../retained-divergences/).
+
+Do not enable strict mode in ordinary migrated Pro pipelines. To verify both
+contracts, run CE parity tests with the variable set and Pro-retention tests
+with it absent. Native `ptah` does not read this variable.
+
 ### Installing under the name `atlas`
 
 For a byte-level drop-in with existing scripts that call an executable named

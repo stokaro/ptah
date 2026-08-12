@@ -28,6 +28,54 @@ results. They do not, by themselves, prove every Atlas OSS command, flag,
 dialect feature, and output mode. Use the comparison gap register for product
 and coverage gaps that are outside the current measured corpus.
 
+## CE oracle policy
+
+Atlas CE comparisons run the compatibility binary with
+`PTAH_ATLAS_STRICT_COMPAT=1`. That opt-in policy constructs the CE command and
+flag tree and refuses extension inputs or inspected live objects before output
+or mutation. The normal `ptah-compat` surface does not set it and retains
+implemented Atlas Pro-like and best-effort capabilities.
+
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
+strict inventory, compares the rebuilt cleanup plan with the confirmed plan,
+and refuses catalog drift before the first drop. A trigger, policy, view, or
+foreign key created while the prompt is open cannot disappear with its table.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply` lint
+policy that the CE execution path cannot enforce. Commands that execute,
+convert, or replay migration bodies refuse Atlas txtar, every Ptah directive —
+including malformed or bare `-- +ptah` markers — and SQL templates;
+checksum-only reads preserve those bytes. Desired migration directories are
+captured and validated before a target or dev database is opened or a migration
+lock is acquired, and replay uses that same stable snapshot. Default mode keeps
+the extensions.
+
+After a target connection opens, strict `schema apply` inventories an explicit
+`--schema` scope before acquiring the apply lock or replaying a desired
+migration directory. Without that explicit scope, a PostgreSQL-family target
+inventories the user realm because desired replay may name a schema beyond the
+URL's `search_path`. The locked planning phase validates it again before
+producing or executing a plan. Default mode performs no supplemental
+strict-policy inventory.
+
+Strict process startup also rejects both Atlas-facing `PTAH_*` flag bindings
+and native aliases consumed after forwarding, such as
+`PTAH_MIGRATIONS_DIR`. Ordinary environment variables used by `getenv` in
+`atlas.hcl` remain available.
+
+A required companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must keep the two environments separate: CE parity probes inject strict mode
+into each subprocess, while Pro-retention and native Ptah probes leave it
+absent. Until that change lands, invoke CE probes with per-process injection
+rather than enabling strict mode for the whole harness. Strict mode still keeps
+deliberate safety and correctness improvements, so a green result never
+depends on copying a CE behavior that silently drops authored content or
+corrupts migration state.
+
 ### SQL inspect statement terminators
 
 Finding 4.6 in

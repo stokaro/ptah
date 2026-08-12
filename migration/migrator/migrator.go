@@ -1957,7 +1957,8 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 		}
 	case MigrationTxModeNone:
 		for _, migration := range migrations {
-			if migration.UpTxMode == MigrationFileTxModeFile || migration.upTxModeErr != nil {
+			fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
+			if fileMode.mode == MigrationFileTxModeFile || fileMode.err != nil {
 				continue
 			}
 			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {

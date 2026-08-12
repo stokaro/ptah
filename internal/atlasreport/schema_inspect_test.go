@@ -58,6 +58,16 @@ func TestValidateSchemaInspectTemplate_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "unknown" not defined.*`)
 }
 
+func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T) {
+	functions, err := atlasreport.SchemaInspectTemplateFunctions(
+		`literal hcl {{ "split" }} {{ if sql . }}{{ write (hcl .) }}{{ end }}` +
+			`{{ define "nested" }}{{ split (hcl .) }}{{ end }}{{ template "nested" . }}`,
+	)
+
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, functions, qt.DeepEquals, []string{"hcl", "split", "sql", "write"})
+}
+
 func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
 	c := qt.New(t)
 	report := sampleSchemaInspectReport()

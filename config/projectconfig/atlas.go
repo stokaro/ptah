@@ -25,6 +25,12 @@ import (
 type AtlasLoadOptions struct {
 	EnvName string
 	Vars    []string
+	// RejectListMapForEach refuses dynamic env expansion over list and map
+	// values. Atlas Community Edition accepts tuple, object and set values but
+	// refuses list and map values; compatibility adapters select this option
+	// when they need that exact boundary. The default retains Ptah's complete
+	// dynamic-env capability.
+	RejectListMapForEach bool
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -171,7 +177,7 @@ func ParseAtlasFSCollectionWithOptions(
 		return nil, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	p, err := newAtlasParser(fsys, opts.Vars, filename)
+	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach)
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +207,9 @@ type atlasParser struct {
 	// resolve against it so the configured program runs where the config file
 	// lives, matching how other atlas.hcl relative paths behave.
 	baseDir string
+	// rejectListMapForEach selects the narrower dynamic-env type boundary for
+	// consumers that need it without narrowing the parser's default behavior.
+	rejectListMapForEach bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
 	// sensitiveValues holds the resolved values of variables declared
@@ -246,7 +255,12 @@ type IgnoredAtlasConstruct struct {
 	Line     int
 }
 
-func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser, error) {
+func newAtlasParser(
+	fsys fs.FS,
+	rawVars []string,
+	filename string,
+	rejectListMapForEach bool,
+) (atlasParser, error) {
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err
@@ -266,9 +280,10 @@ func newAtlasParser(fsys fs.FS, rawVars []string, filename string) (atlasParser,
 				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
 			},
 		},
-		varOverride:     overrides,
-		baseDir:         filepath.Dir(filename),
-		externalSchemas: map[string]externalSchemaDataSource{},
+		varOverride:          overrides,
+		baseDir:              filepath.Dir(filename),
+		rejectListMapForEach: rejectListMapForEach,
+		externalSchemas:      map[string]externalSchemaDataSource{},
 	}, nil
 }
 
@@ -631,6 +646,9 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 		return nil, fmt.Errorf("schemahcl: for_each must be wholly known")
 	}
 	forEachType := forEach.Type()
+	if p.rejectListMapForEach && (forEachType.IsListType() || forEachType.IsMapType()) {
+		return nil, fmt.Errorf("schemahcl: for_each does not support %s type", forEachType.FriendlyName())
+	}
 	if !forEachType.IsListType() &&
 		!forEachType.IsTupleType() &&
 		!forEachType.IsMapType() &&

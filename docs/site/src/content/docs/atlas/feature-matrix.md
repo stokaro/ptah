@@ -72,11 +72,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 178 capabilities below:
+Across the 179 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 108 |
+| Ptah supports it fully | 109 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 34 |
@@ -153,7 +153,7 @@ seven of them as open capabilities regardless.
 | JSON output for native schema diff | ✅ | ➖ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
-| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow the cleanup, and a narrowed run executes only what it printed. Plan and `--dry-run` list every object kind destroyed, except the revision table outside SQLite. |
+| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL-family scoped drops are dependency-safe and transactional; `RESTRICT` cannot cascade outside the selection. |
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
@@ -231,6 +231,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
+| Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose `--report` and `--seed-dir` and name a docker:// `--dev-url` refusal. schema test takes `-s/--schema`, a Go directory, a .sql or .hcl file, or a database URL; env:// stays refused. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |

@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
@@ -27,7 +28,10 @@ const atlasNativeEnvPrefix = "PTAH"
 
 // atlasMigrateIntegrityRunner reads or writes the Atlas integrity file of a
 // migration directory laid out in a foreign tool's convention.
-type atlasMigrateIntegrityRunner func(*cobra.Command, atlasMigrateSource) error
+type atlasMigrateIntegrityRunner func(
+	*cobra.Command,
+	atlasMigrateSource,
+) error
 
 // atlasMigrateSource is the migration directory an integrity verb reads,
 // resolved once from both spellings Atlas accepts for the source layout.
@@ -95,6 +99,7 @@ func (e atlasMigrateIntegrityUnknownDirFormatDisplayError) Unwrap() error {
 // same resolver `migrate apply` uses, so the three verbs cannot drift on which
 // spelling wins.
 func newAtlasMigrateIntegrityCommand(
+	policy atlascompatpolicy.Policy,
 	verb atlasVerb,
 	run atlasMigrateIntegrityRunner,
 ) *cobra.Command {
@@ -139,7 +144,10 @@ func newAtlasMigrateIntegrityCommand(
 		if err := checkAtlasMigrateSourceArgs(cmd, verb, source.projectArgs); err != nil {
 			return err
 		}
-		if atlasmigrate.ReadsNativeAtlasDir(source.format) {
+		directStrictReplay := policy.IsStrictCE() &&
+			verb.use == atlasMigrateValidateVerb().use &&
+			source.devURL != ""
+		if atlasmigrate.ReadsNativeAtlasDir(source.format) && !directStrictReplay {
 			return forward(cmd, source.forwardArgs)
 		}
 		// Only the directly executed path can report what the project file

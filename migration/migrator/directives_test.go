@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/platform"
 )
 
 func TestParseFileDirectives(t *testing.T) {
@@ -74,4 +76,13 @@ func TestParseFileDirectives(t *testing.T) {
 			c.Assert(ParseFileDirectives(tt.sql), qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+func Test_parseFileDirectivesForDialect_KeepsMySQLStringOpaque(t *testing.T) {
+	sql := "SELECT 'prefix \\'\n-- +ptah no_transaction\nsuffix';\n" +
+		"-- +ptah online_ddl_tool=ghost\nSELECT 1;\n"
+
+	got := parseFileDirectivesForDialect(sql, platform.MySQL)
+
+	qt.Assert(t, got, qt.DeepEquals, map[string]string{"online_ddl_tool": "ghost"})
 }

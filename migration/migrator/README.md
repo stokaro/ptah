@@ -781,6 +781,12 @@ CONCURRENTLY` operations. Programmatic migrations set `UpTxMode` or
 `DownTxMode` to `MigrationFileTxModeNone`; the two directions never share an
 execution-mode value.
 
+Ptah recognizes the directive with the target database's string and comment
+rules. Before a target is available, loaders accept only marker boundaries that
+all supported dialects agree on and defer dialect-specific cases until
+execution; directive-looking text inside a valid dialect-specific string never
+changes that migration's transaction mode.
+
 Migration timeouts are rejected for `no_transaction` migrations because Ptah
 cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
 rejects that combination before running the migration body or changing its
