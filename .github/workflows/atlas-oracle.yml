@@ -90,6 +90,9 @@ jobs:
           cat "$RUNNER_TEMP/atlas-corpus-status"
           test ! -s "$RUNNER_TEMP/atlas-corpus-status"
 
+      - name: Run migrate apply interoperability controls
+        run: go test -tags integration ./integration/atlasoracle/migrateapply -count=1
+
   complete-integration:
     name: complete integration contour
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
