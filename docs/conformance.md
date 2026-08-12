@@ -1354,7 +1354,7 @@ unpiped invocation.
 | 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
 | 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
 | 9.12 | `migrate lint --git-base nosuchbranch --dir file://migrations --dev-url <SQLite>` inside a two-branch repository | Exit 1, empty stdout, stderr `Error: git diff: exit status 128\n` (33 bytes) | Exit 1, empty stdout, stderr naming the whole `git diff --name-only --diff-filter=ACMR --end-of-options nosuchbranch...HEAD -- migrations` invocation and git's own `fatal:` line (203 bytes) | byte-identical |
-| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, nested and absolute `--to` |
+| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, escaped, symlinked, directory-member and absolute `--to` |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1419,14 +1419,21 @@ resolved every form to an absolute path. Four spellings, one fixture:
 | `file://fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
 | `file://./fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` — the `./` is normalized away, not echoed | the absolute path | byte-identical |
 | `file://fx/sub/bad.hcl` | `fx/sub/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
+| `file://fx/escaped%20name.hcl` | `fx/escaped name.hcl:5,15-16: …` | the absolute decoded path | byte-identical |
+| `file://fx/linked.hcl` | `fx/linked.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
+| `file://schemas` with malformed `schemas/bad.hcl` | `schemas/bad.hcl:5,15-16: …` | the absolute member path | byte-identical |
+| `file://schemas` with `schemas/bad.hcl` linked to a malformed file elsewhere in the working tree | `schemas/bad.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
 | `file://<abs>/fx/bad.hcl` | the absolute path | the absolute path | unchanged, and it must stay so |
 
 The absolute row is the reason the rewrite is conditional rather than a blanket
 relativization: it already agreed before this adapter existed, and widening the
 rewrite to cover it would break a passing cell. The match is anchored on the
-resolved absolute path followed by the `:` that starts the HCL position, so a
-diagnostic about a different file, or one that merely mentions the path, is left
-alone. Native `ptah schema apply` keeps the resolved absolute path.
+resolved absolute path followed by the `:` that starts the HCL position. For a
+schema directory, the adapter retains the loader's filename-ordered mapping
+from each resolved HCL member to its authored entry, so a symlinked member does
+not expose its target name. A diagnostic about a different file, a path-prefix
+collision, or one that merely mentions the path is left alone. Native `ptah
+schema apply` keeps the resolved absolute path.
 
 **9.12 changes only the compatibility diagnostic.** This is one of the two cells
 the original sweep carried over unverified, because it needs a throwaway git

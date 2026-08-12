@@ -78,79 +78,139 @@ func TestAtlasSchemaApplyRelativeDiagnostic(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		toURLs  []string
+		paths   []atlasSchemaApplyDiagnosticPath
 		message string
 		want    string
 	}{
 		{
 			name:    "relative file URL is rendered relative",
-			toURLs:  []string{"file://fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join("fx", "bad.hcl") + diagnostic,
 		},
 		{
 			name:    "dot-relative file URL is normalized, matching the oracle",
-			toURLs:  []string{"file://./fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join("fx", "bad.hcl") + diagnostic,
 		},
 		{
 			name:    "nested relative path keeps its segments",
-			toURLs:  []string{"file://fx/sub/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "sub", "bad.hcl"), resolved: filepath.Join(workdir, "fx/sub/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/sub/bad.hcl") + diagnostic,
 			want:    filepath.Join("fx", "sub", "bad.hcl") + diagnostic,
 		},
 		{
+			name:    "decoded path is used for display",
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "escaped name.hcl"), resolved: filepath.Join(workdir, "fx/escaped name.hcl")}},
+			message: filepath.Join(workdir, "fx/escaped name.hcl") + diagnostic,
+			want:    filepath.Join("fx", "escaped name.hcl") + diagnostic,
+		},
+		{
+			name:    "resolved symlink target maps back to the authored path",
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "linked.hcl"), resolved: filepath.Join(workdir, "fx/target.hcl")}},
+			message: filepath.Join(workdir, "fx/target.hcl") + diagnostic,
+			want:    filepath.Join("fx", "linked.hcl") + diagnostic,
+		},
+		{
+			name: "directory member maps beneath the authored directory",
+			paths: []atlasSchemaApplyDiagnosticPath{{
+				authored:  filepath.Join("schemas"),
+				resolved:  filepath.Join(workdir, "schemas"),
+				directory: true,
+			}},
+			message: filepath.Join(workdir, "schemas", "nested", "bad.hcl") + diagnostic,
+			want:    filepath.Join("schemas", "nested", "bad.hcl") + diagnostic,
+		},
+		{
+			name: "symlinked directory member maps to its authored entry",
+			paths: []atlasSchemaApplyDiagnosticPath{{
+				authored:  filepath.Join("schemas"),
+				resolved:  filepath.Join(workdir, "schemas"),
+				directory: true,
+				members: []atlasSchemaApplyDiagnosticPath{{
+					authored: filepath.Join("schemas", "bad.hcl"),
+					resolved: filepath.Join(workdir, "fixtures", "target.hcl"),
+				}},
+			}},
+			message: filepath.Join(workdir, "fixtures", "target.hcl") + diagnostic,
+			want:    filepath.Join("schemas", "bad.hcl") + diagnostic,
+		},
+		{
+			name: "SQL-named symlink to HCL maps to its authored entry",
+			paths: []atlasSchemaApplyDiagnosticPath{{
+				authored:  filepath.Join("schemas"),
+				resolved:  filepath.Join(workdir, "schemas"),
+				directory: true,
+				members: []atlasSchemaApplyDiagnosticPath{{
+					authored: filepath.Join("schemas", "bad.sql"),
+					resolved: filepath.Join(workdir, "fixtures", "target.hcl"),
+				}},
+			}},
+			message: filepath.Join(workdir, "fixtures", "target.hcl") + diagnostic,
+			want:    filepath.Join("schemas", "bad.sql") + diagnostic,
+		},
+		{
+			name: "directory prefix collision is untouched",
+			paths: []atlasSchemaApplyDiagnosticPath{{
+				authored:  filepath.Join("schemas"),
+				resolved:  filepath.Join(workdir, "schemas"),
+				directory: true,
+			}},
+			message: filepath.Join(workdir, "schemas-other", "bad.hcl") + diagnostic,
+			want:    filepath.Join(workdir, "schemas-other", "bad.hcl") + diagnostic,
+		},
+		{
 			name:    "bare relative path with no scheme",
-			toURLs:  []string{"fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join("fx", "bad.hcl") + diagnostic,
 		},
 		{
 			name:    "the matching value is found past a non-local one",
-			toURLs:  []string{"sqlite://dev?mode=memory", "file://fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join("fx", "bad.hcl") + diagnostic,
 		},
 		{
 			name:    "absolute --to is left absolute",
-			toURLs:  []string{"file://" + filepath.Join(workdir, "fx/bad.hcl")},
+			paths:   nil,
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 		},
 		{
 			name:    "no --to at all",
-			toURLs:  nil,
+			paths:   nil,
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 		},
 		{
 			name:    "a diagnostic about a different file is untouched",
-			toURLs:  []string{"file://fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/other.hcl") + diagnostic,
 			want:    filepath.Join(workdir, "fx/other.hcl") + diagnostic,
 		},
 		{
 			name:    "the path must start the message, not merely appear in it",
-			toURLs:  []string{"file://fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: "while reading " + filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    "while reading " + filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 		},
 		{
 			name:    "the path must be followed by the position colon",
-			toURLs:  []string{"file://fx/bad.hcl"},
+			paths:   []atlasSchemaApplyDiagnosticPath{{authored: filepath.Join("fx", "bad.hcl"), resolved: filepath.Join(workdir, "fx/bad.hcl")}},
 			message: filepath.Join(workdir, "fx/bad.hcl") + "-backup:5,15-16: Unclosed.",
 			want:    filepath.Join(workdir, "fx/bad.hcl") + "-backup:5,15-16: Unclosed.",
 		},
 		{
 			name:    "a database --to names no local file",
-			toURLs:  []string{"sqlite://fx/bad.hcl"},
+			paths:   nil,
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 		},
 		{
 			name:    "an empty file URL selects nothing",
-			toURLs:  []string{"file://"},
+			paths:   nil,
 			message: filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 			want:    filepath.Join(workdir, "fx/bad.hcl") + diagnostic,
 		},
@@ -160,7 +220,7 @@ func TestAtlasSchemaApplyRelativeDiagnostic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := atlasSchemaApplyRelativeDiagnosticFrom(test.message, test.toURLs, workdir)
+			got := atlasSchemaApplyRelativeDiagnosticFrom(test.message, test.paths)
 
 			c.Check(got, qt.Equals, test.want)
 		})
@@ -183,7 +243,10 @@ func TestDisplayAtlasSchemaApplyErrorRendersRelativePath(t *testing.T) {
 		sentinel,
 	)
 
-	got := displayAtlasSchemaApplyErrorFrom(sourceErr, []string{"file://fx/bad.hcl"}, workdir)
+	got := displayAtlasSchemaApplyErrorFrom(sourceErr, []atlasSchemaApplyDiagnosticPath{{
+		authored: filepath.Join("fx", "bad.hcl"),
+		resolved: filepath.Join(workdir, "fx/bad.hcl"),
+	}})
 
 	c.Assert(got.Error(), qt.Equals,
 		filepath.Join("fx", "bad.hcl")+":5,15-16: Unclosed configuration block")

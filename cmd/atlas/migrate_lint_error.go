@@ -16,11 +16,12 @@ import (
 // the chain, so only the printed bytes change.
 type atlasMigrateLintGitDisplayError struct {
 	subcommand string
-	cause      *migrationlintreport.GitCommandError
+	gitErr     *migrationlintreport.GitCommandError
+	cause      error
 }
 
 func (e *atlasMigrateLintGitDisplayError) Error() string {
-	return fmt.Sprintf("git %s: %v", e.subcommand, e.cause.Err)
+	return fmt.Sprintf("git %s: %v", e.subcommand, e.gitErr.Err)
 }
 
 func (e *atlasMigrateLintGitDisplayError) Unwrap() error { return e.cause }
@@ -45,7 +46,11 @@ func atlasMigrateLintGitError(err error) error {
 	if !errors.As(err, &gitErr) || gitErr.Subcommand != "diff" {
 		return err
 	}
-	return &atlasMigrateLintGitDisplayError{subcommand: gitErr.Subcommand, cause: gitErr}
+	return &atlasMigrateLintGitDisplayError{
+		subcommand: gitErr.Subcommand,
+		gitErr:     gitErr,
+		cause:      err,
+	}
 }
 
 type atlasMigrateLintMissingDirectoryError struct {

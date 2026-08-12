@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -67,6 +68,15 @@ type atlasSchemaApplyDisplayError struct {
 func (e atlasSchemaApplyDisplayError) Error() string { return e.text }
 func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
 
+type atlasSchemaApplyDiagnosticPath struct {
+	authored  string
+	resolved  string
+	directory bool
+	members   []atlasSchemaApplyDiagnosticPath
+}
+
+const atlasSchemaApplyHCLContext = "load --to schema: parse HCL schema: "
+
 // displayAtlasSchemaApplyError renders a desired-schema HCL parse failure the
 // way the pinned community binary v1.3.0 renders it.
 //
@@ -81,27 +91,22 @@ func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
 // toURLs is the resolved --to set. A run with none, or one whose values are all
 // absolute or non-local, gets the prefix half alone.
 func displayAtlasSchemaApplyError(err error, toURLs []string) error {
-	workdir, getwdErr := os.Getwd()
-	if getwdErr != nil {
-		workdir = ""
+	if !strings.HasPrefix(err.Error(), atlasSchemaApplyHCLContext) {
+		return err
 	}
-	return displayAtlasSchemaApplyErrorFrom(err, toURLs, workdir)
+	return displayAtlasSchemaApplyErrorFrom(err, atlasSchemaApplyDiagnosticPaths(toURLs))
 }
 
 // displayAtlasSchemaApplyErrorFrom contains the deterministic display
-// adaptation. Keeping the working directory explicit lets the unit contour
-// exercise the composed error without changing process state or touching the
-// filesystem; the process-level integration test covers os.Getwd.
-func displayAtlasSchemaApplyErrorFrom(err error, toURLs []string, workdir string) error {
-	const hclContext = "load --to schema: parse HCL schema: "
-
-	message, found := strings.CutPrefix(err.Error(), hclContext)
+// adaptation. Keeping the authored/resolved pairs explicit lets the unit
+// contour exercise the composed error without touching the filesystem; the
+// process-level integration test covers URL decoding and symlink resolution.
+func displayAtlasSchemaApplyErrorFrom(err error, paths []atlasSchemaApplyDiagnosticPath) error {
+	message, found := strings.CutPrefix(err.Error(), atlasSchemaApplyHCLContext)
 	if !found {
 		return err
 	}
-	if workdir != "" {
-		message = atlasSchemaApplyRelativeDiagnosticFrom(message, toURLs, workdir)
-	}
+	message = atlasSchemaApplyRelativeDiagnosticFrom(message, paths)
 	return atlasSchemaApplyDisplayError{text: message, err: err}
 }
 
@@ -114,39 +119,93 @@ func displayAtlasSchemaApplyErrorFrom(err error, toURLs []string, workdir string
 // diagnostic about some other file, or one that merely mentions the path, is
 // left alone. A --to that is already absolute is skipped, because the pinned
 // binary reports an absolute path for it and this surface already agrees.
-// atlasSchemaApplyRelativeDiagnosticFrom contains the deterministic path
-// comparison used after the loader context has been removed.
-func atlasSchemaApplyRelativeDiagnosticFrom(message string, toURLs []string, workdir string) string {
-	for _, raw := range toURLs {
-		path, ok := atlasSchemaApplyLocalToPath(raw)
-		if !ok || filepath.IsAbs(path) {
+// atlasSchemaApplyRelativeDiagnosticFrom contains the deterministic comparison
+// used after the loader context has been removed.
+func atlasSchemaApplyRelativeDiagnosticFrom(message string, paths []atlasSchemaApplyDiagnosticPath) string {
+	for _, path := range paths {
+		rest, found := strings.CutPrefix(message, path.resolved+":")
+		if found {
+			return path.authored + ":" + rest
+		}
+		if !path.directory {
 			continue
 		}
-		absolute := filepath.Clean(filepath.Join(workdir, path))
-		rest, found := strings.CutPrefix(message, absolute+":")
+		if mapped := atlasSchemaApplyRelativeDiagnosticFrom(message, path.members); mapped != message {
+			return mapped
+		}
+		member, found := strings.CutPrefix(message, path.resolved+string(filepath.Separator))
 		if !found {
 			continue
 		}
-		relative, err := filepath.Rel(workdir, absolute)
-		if err != nil || relative == "" {
+		memberPath, position, found := strings.Cut(member, ":")
+		if !found || memberPath == "" {
 			continue
 		}
-		return relative + ":" + rest
+		return filepath.Join(path.authored, memberPath) + ":" + position
 	}
 	return message
 }
 
-// atlasSchemaApplyLocalToPath reports the filesystem path a --to value names,
-// and whether it names one at all. Only the file:// scheme and a bare path do;
-// a database URL or an env:// reference names no local file.
-func atlasSchemaApplyLocalToPath(raw string) (string, bool) {
-	if after, found := strings.CutPrefix(raw, "file://"); found {
-		return after, after != ""
+// atlasSchemaApplyDiagnosticPaths derives the same resolved paths used by the
+// schema loader while retaining the decoded, normalized relative spelling for
+// Atlas-compatible display. This matters for URL-escaped names and in-tree
+// symlinks: a lexical workdir join does not match the loader's diagnostic.
+func atlasSchemaApplyDiagnosticPaths(toURLs []string) []atlasSchemaApplyDiagnosticPath {
+	paths := make([]atlasSchemaApplyDiagnosticPath, 0, len(toURLs))
+	for _, raw := range toURLs {
+		authored, err := schemafile.LocalFilePath(raw)
+		if err != nil || filepath.IsAbs(authored) {
+			continue
+		}
+		resolved, err := pathguard.ResolveCLIPath(authored)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			continue
+		}
+		paths = append(paths, atlasSchemaApplyDiagnosticPath{
+			authored:  filepath.Clean(authored),
+			resolved:  resolved,
+			directory: info.IsDir(),
+			members:   atlasSchemaApplyDirectoryDiagnosticPaths(authored, resolved, info),
+		})
 	}
-	if strings.Contains(raw, "://") {
-		return "", false
+	return paths
+}
+
+// atlasSchemaApplyDirectoryDiagnosticPaths records the loader's resolved path
+// for each supported entry while retaining the authored directory-entry
+// spelling. The loader selects entries by their authored extension, then
+// selects the parser after resolving a symlink, so both .hcl and .sql names
+// can produce an HCL diagnostic.
+// os.ReadDir returns filename order, matching the loader, so two symlinks to
+// the same malformed target map to the first entry the loader attempts.
+func atlasSchemaApplyDirectoryDiagnosticPaths(authored, resolved string, info os.FileInfo) []atlasSchemaApplyDiagnosticPath {
+	if !info.IsDir() {
+		return nil
 	}
-	return raw, raw != ""
+	entries, err := os.ReadDir(resolved)
+	if err != nil {
+		return nil
+	}
+	members := make([]atlasSchemaApplyDiagnosticPath, 0, len(entries))
+	for _, entry := range entries {
+		extension := strings.ToLower(filepath.Ext(entry.Name()))
+		if entry.IsDir() || (extension != ".hcl" && extension != ".sql") {
+			continue
+		}
+		memberResolved, err := pathguard.ResolveCLIPath(filepath.Join(resolved, entry.Name()))
+		if err != nil {
+			continue
+		}
+		members = append(members, atlasSchemaApplyDiagnosticPath{
+			authored: filepath.Join(filepath.Clean(authored), entry.Name()),
+			resolved: memberResolved,
+		})
+	}
+	return members
 }
 
 func newAtlasSchemaApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {

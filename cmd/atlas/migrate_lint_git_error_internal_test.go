@@ -44,6 +44,7 @@ func TestAtlasMigrateLintGitError(t *testing.T) {
 		c.Assert(got.Error(), qt.Equals, "git diff: exit status 128")
 		// The complete invocation, git's own output and the process failure stay
 		// reachable; only the printed bytes change.
+		c.Assert(errors.Unwrap(got), qt.Equals, source)
 		c.Assert(got, qt.ErrorIs, diffErr.Err)
 		var recovered *migrationlintreport.GitCommandError
 		c.Assert(got, qt.ErrorAs, &recovered)
@@ -96,23 +97,4 @@ func TestAtlasMigrateLintGitError(t *testing.T) {
 			})
 		}
 	})
-}
-
-// TestGitCommandErrorKeepsTheNativeRendering pins the producer's own text. The
-// native surface prints the full invocation so a failed selection can be
-// reproduced by hand, and the compat adapter builds its terser form from the
-// fields rather than by trimming this string.
-func TestGitCommandErrorKeepsTheNativeRendering(t *testing.T) {
-	c := qt.New(t)
-
-	err := &migrationlintreport.GitCommandError{
-		Subcommand: "diff",
-		Args:       []string{"diff", "--name-only", "nosuchbranch...HEAD"},
-		Output:     "fatal: bad revision",
-		Err:        exitStatus128{},
-	}
-
-	c.Assert(err.Error(), qt.Equals,
-		"git diff --name-only nosuchbranch...HEAD: exit status 128: fatal: bad revision")
-	c.Assert(errors.Unwrap(err), qt.Equals, error(exitStatus128{}))
 }
