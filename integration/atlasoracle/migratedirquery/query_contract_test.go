@@ -7,6 +7,7 @@ package migratedirquery_test
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,13 +157,13 @@ func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
 func assertUnknownFormat(c *qt.C, row verbRow, binary, oracle string) {
 	c.Helper()
 	dir := writeNativeDir(c, oracle)
-	before := directoryEntries(c, dir)
+	before := directoryContents(c, dir)
 	result := runCommand(c, binary, row.args(c, dir, "?format=bogus&nonsense=1")...)
 
 	c.Assert(result.code, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
 	c.Assert(result.stdout, qt.Equals, "")
 	c.Assert(result.stderr, qt.Equals, "Error: unknown dir format \"bogus\"\n")
-	c.Assert(directoryEntries(c, dir), qt.DeepEquals, before)
+	c.Assert(directoryContents(c, dir), qt.DeepEquals, before)
 }
 
 func assertQueryPrecedence(c *qt.C, row verbRow, binary, oracle string) {
@@ -355,6 +356,31 @@ func directoryEntries(c *qt.C, dir string) []string {
 		names = append(names, entry.Name())
 	}
 	return names
+}
+
+func directoryContents(c *qt.C, dir string) map[string]string {
+	c.Helper()
+	contents := make(map[string]string)
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		contents[relative] = string(data)
+		return nil
+	})
+	c.Assert(err, qt.IsNil)
+	return contents
 }
 
 func assertWriterChangedDirectory(c *qt.C, writer bool, before, after []string) {
