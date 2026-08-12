@@ -201,6 +201,9 @@ func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
 	qt.Assert(t, policy.ValidateInspectedSchema(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}},
 	}), qt.IsNil)
+	qt.Assert(t, policy.ValidateSchemaCleanSnapshot(&goschema.Database{
+		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	}), qt.IsNil)
 
 	err := policy.ValidateInspectedSchema(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}, {Name: "citext"}},
@@ -226,6 +229,9 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 	qt.Assert(t, policy.ValidateInspectedSchema(&goschema.Database{
 		Grants: []goschema.Grant{baseline},
 	}), qt.IsNil)
+	qt.Assert(t, policy.ValidateSchemaCleanSnapshot(&goschema.Database{
+		Grants: []goschema.Grant{baseline},
+	}), qt.IsNil)
 
 	for _, grant := range []goschema.Grant{
 		{Role: "app", Privileges: []string{"USAGE"}, OnSchema: "public"},
@@ -238,6 +244,11 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 		})
 		qt.Assert(t, err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support inspected schema grants`)
+		err = policy.ValidateSchemaCleanSnapshot(&goschema.Database{
+			Grants: []goschema.Grant{grant},
+		})
+		qt.Assert(t, err, qt.ErrorMatches,
+			`Atlas Community Edition strict compatibility does not support cleaning live schema grants`)
 	}
 
 	err := policy.ValidateDesiredSchema(&goschema.Database{

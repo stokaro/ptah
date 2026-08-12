@@ -117,9 +117,9 @@ func SnapshotWithinWriterScope(
 // An unscoped Apply delegates to SchemaWriter.DropAllTables, which rebuilds its
 // own statements from the live catalog. ApplyPlan executes Cmd for a scoped
 // cleanup, but in a separate dependency-safe order rather than this report's
-// alphabetical order. PostgreSQL commands use RESTRICT: the scoped executor
-// removes selected known dependents first, and the server refuses a parent
-// whose remaining dependency was outside the selected set.
+// alphabetical order. PostgreSQL-family commands use RESTRICT: the scoped
+// executor removes selected known dependents first, and the server refuses a
+// parent whose remaining dependency was outside the selected set.
 type Change struct {
 	Type       string
 	Schema     string
@@ -236,8 +236,8 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 	if len(changes) == 0 {
 		return nil
 	}
-	if isPostgres(conn.Info().Dialect) {
-		return applyPostgresPlan(ctx, conn, changes)
+	if isPostgresFamily(conn.Info().Dialect) {
+		return applyPostgresFamilyPlan(ctx, conn, changes)
 	}
 	return applyPlanChanges(ctx, conn.Writer(), changes)
 }
@@ -251,7 +251,7 @@ func executableChanges(plan Plan) []Change {
 	return plan.Changes
 }
 
-func applyPostgresPlan(
+func applyPostgresFamilyPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	changes []Change,
@@ -260,7 +260,7 @@ func applyPostgresPlan(
 	if err != nil {
 		return fmt.Errorf("begin scoped schema cleanup: %w", err)
 	}
-	if err := applyPostgresPlanChanges(ctx, tx, changes); err != nil {
+	if err := applyPostgresFamilyPlanChanges(ctx, tx, changes); err != nil {
 		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 	}
 	if err := tx.Commit(); err != nil {
@@ -272,7 +272,7 @@ func applyPostgresPlan(
 	return nil
 }
 
-func applyPostgresPlanChanges(
+func applyPostgresFamilyPlanChanges(
 	ctx context.Context,
 	tx dbschematypes.SchemaTransaction,
 	changes []Change,
@@ -291,7 +291,7 @@ func applyPostgresPlanChanges(
 			if strings.TrimSpace(change.Cmd) == "" {
 				continue
 			}
-			dropErr, controlErr := tryApplyPostgresPlanChange(ctx, tx, change)
+			dropErr, controlErr := tryApplyPostgresFamilyPlanChange(ctx, tx, change)
 			if controlErr != nil {
 				return errors.Join(dropErr, controlErr)
 			}
@@ -314,7 +314,7 @@ func applyPostgresPlanChanges(
 	return nil
 }
 
-func tryApplyPostgresPlanChange(
+func tryApplyPostgresFamilyPlanChange(
 	ctx context.Context,
 	tx dbschematypes.SchemaTransaction,
 	change Change,

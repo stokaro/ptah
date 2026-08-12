@@ -84,6 +84,11 @@ func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
 	// schema content and the pinned Community Edition inspector does not expose
 	// it. Keep authored extensions strict through ValidateDesiredSchema while
 	// avoiding a false refusal on every ordinary PostgreSQL database.
+	inspected := schemaWithoutInspectedPostgresBaselines(database)
+	return p.validateSchemaObjects(&inspected, "inspected")
+}
+
+func schemaWithoutInspectedPostgresBaselines(database *goschema.Database) goschema.Database {
 	inspected := *database
 	inspected.Extensions = slices.DeleteFunc(
 		slices.Clone(database.Extensions),
@@ -101,7 +106,7 @@ func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
 		slices.Clone(database.Grants),
 		isPostgresPublicUsageBaseline,
 	)
-	return p.validateSchemaObjects(&inspected, "inspected")
+	return inspected
 }
 
 func isPostgresPublicUsageBaseline(grant goschema.Grant) bool {
@@ -193,7 +198,8 @@ func (p Policy) ValidateSchemaCleanSnapshot(database *goschema.Database) error {
 	if !p.strictCE || database == nil {
 		return nil
 	}
-	for _, object := range strictCEUnsupportedCleanupSnapshotObjects(database) {
+	inspected := schemaWithoutInspectedPostgresBaselines(database)
+	for _, object := range strictCEUnsupportedCleanupSnapshotObjects(&inspected) {
 		if object.present {
 			return fmt.Errorf(
 				"Atlas Community Edition strict compatibility does not support cleaning live schema %s",

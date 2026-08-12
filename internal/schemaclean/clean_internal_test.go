@@ -80,7 +80,7 @@ func TestPlanExecutionOrdersSameKindDependentsByCatalogDepth(t *testing.T) {
 	c.Assert(changeNames(plan.executionChanges), qt.DeepEquals, []string{"z_child", "a_base"})
 }
 
-func TestPostgresScopedExecutionRetriesSelectedDependencies(t *testing.T) {
+func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) {
 	c := qt.New(t)
 	tx := &cleanupRetryTransaction{
 		failQuery:         `DROP VIEW IF EXISTS "a_base" RESTRICT`,
@@ -91,7 +91,7 @@ func TestPostgresScopedExecutionRetriesSelectedDependencies(t *testing.T) {
 		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW IF EXISTS "z_child" RESTRICT`},
 	}
 
-	err := applyPostgresPlanChanges(t.Context(), tx, changes)
+	err := applyPostgresFamilyPlanChanges(t.Context(), tx, changes)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tx.queries, qt.DeepEquals, []string{
@@ -106,6 +106,23 @@ func TestPostgresScopedExecutionRetriesSelectedDependencies(t *testing.T) {
 		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
 		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
 	})
+}
+
+func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
+	for _, test := range []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: "postgres", want: true},
+		{dialect: "postgresql", want: true},
+		{dialect: "cockroachdb", want: true},
+		{dialect: "yugabytedb", want: true},
+		{dialect: "mysql", want: false},
+	} {
+		t.Run(test.dialect, func(t *testing.T) {
+			qt.Assert(t, isPostgresFamily(test.dialect), qt.Equals, test.want)
+		})
+	}
 }
 
 type cleanupRetryTransaction struct {

@@ -54,8 +54,9 @@ same selectors as ` + "`schema apply`" + `, ` + "`schema diff`" + ` and
 ride along with their parent. A narrowed run executes exactly the changes it
 printed, one statement at a time, instead of the whole-database drop an
 unflagged run performs — so what the plan lists is what is destroyed.
-PostgreSQL scoped drops use RESTRICT: selected known dependents run first, and
-the server refuses a parent when an unselected object still depends on it.`
+PostgreSQL-family scoped drops use RESTRICT and one transaction: selected known
+dependents run first, and the server refuses a parent when an unselected object
+still depends on it.`
 	}
 	cmd := &cobra.Command{
 		Use:   "clean",
