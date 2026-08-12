@@ -332,8 +332,7 @@ func TestCompatMigrateLint_RejectsNonVerbatimDirFormat(t *testing.T) {
 
 			_, _, err := runLint(c, dir, []string{"--dir-format", test.value}, "1")
 
-			c.Assert(err, qt.ErrorMatches,
-				`atlas migrate lint --dir-format: unknown Atlas migration directory format ".*": expected atlas, .*`)
+			c.Assert(err, qt.ErrorMatches, `unknown dir format ".*"`)
 		})
 	}
 }

@@ -608,7 +608,22 @@ func TestCompatMigrateIntegrityUnknownFormatAdapterLeavesOtherErrorsUnchanged(t 
 	c.Assert(err, qt.Not(qt.ErrorAs), &unknownFormat)
 }
 
-func TestCompatMigrateNewUnknownFormatKeepsVerboseDiagnostic(t *testing.T) {
+// TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable is what
+// is left of TestCompatMigrateNewUnknownFormatKeepsVerboseDiagnostic, and the
+// rename records a decision that changed.
+//
+// That test pinned `migrate new` PRINTING the semantic wording, on the reading
+// that the verb was outside the adaptation. It was not outside it — the pinned
+// community binary v1.3.0 answers `unknown dir format "bogus"` on `migrate new`
+// exactly as it does on `migrate hash` and `migrate validate`
+// (stokaro/ptah#1235 cell 9.8), and the split existed only because the adapter
+// was a block inside a wrapper this verb does not use.
+//
+// What survives is the half that is still true and is the reason the adapter is
+// a display layer: the semantic diagnostic, with the list of accepted layouts,
+// is still in the chain. The printed text is now pinned with every other verb's
+// in TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb.
+func TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable(t *testing.T) {
 	c := qt.New(t)
 
 	stdout, stderr, err := runCompatExit(
@@ -616,15 +631,17 @@ func TestCompatMigrateNewUnknownFormatKeepsVerboseDiagnostic(t *testing.T) {
 		"--dir", "file://migrations",
 		"--dir-format", "bogus",
 	)
-	const want = `atlas migrate new --dir-format: unknown Atlas migration directory format "bogus": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`
 	var unknownFormat *atlasmigrate.UnknownDirFormatError
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(err.Error(), qt.Equals, want)
+	c.Assert(err.Error(), qt.Equals, `unknown dir format "bogus"`)
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
+	c.Assert(stderr, qt.Equals, "Error: unknown dir format \"bogus\"\n")
 	c.Assert(err, qt.ErrorAs, &unknownFormat)
 	c.Assert(unknownFormat.Value, qt.Equals, "bogus")
+	c.Assert(errorChainContainsText(err,
+		`atlas migrate new --dir-format: unknown Atlas migration directory format "bogus": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`),
+		qt.IsTrue)
 }
 
 // TestCompatMigrateSourceFormatQuery_HappyPath pins the two query-parsing rules

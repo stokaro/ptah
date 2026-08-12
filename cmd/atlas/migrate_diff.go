@@ -199,8 +199,8 @@ func runAtlasMigrateDiff(
 	// [resolveWritingVerbDirFormat] for the measured table.
 	dirFormat, err := resolveWritingVerbDirFormat(opts.dirFormat, localDir.Query)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate diff %s: %w",
+		return cmdutil.Fail(cmd, atlasDirFormatError(
+			"diff",
 			atlasDirFormatSpelling(localDir.Query),
 			err,
 		))

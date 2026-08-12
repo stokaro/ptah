@@ -261,7 +261,10 @@ func TestCompatMigrateRevisionVerbs_DirFormatIsVerbatim(t *testing.T) {
 			args = append(args, "--url", revisionDBURL(c))
 			_, stderr, err := runCompatExit(append(args, revisionSetVersionArg(test.verb)...)...)
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(stderr, qt.Contains, "unknown Atlas migration directory format")
+			// The community binary's own wording, quoting the rejected value
+			// verbatim, which is what carries this row's point. See
+			// migrate_dir_format_error.go.
+			c.Assert(stderr, qt.Contains, "unknown dir format")
 		})
 	}
 }

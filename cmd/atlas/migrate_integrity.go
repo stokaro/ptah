@@ -62,23 +62,6 @@ type atlasMigrateSource struct {
 	projectArgs []string
 }
 
-// atlasMigrateIntegrityUnknownDirFormatDisplayError adapts the shared semantic
-// resolver's unknown-format error to the Atlas-compatible integrity surface.
-// Unwrap keeps the original command, spelling, and semantic context available
-// to callers that inspect the error chain.
-type atlasMigrateIntegrityUnknownDirFormatDisplayError struct {
-	value string
-	err   error
-}
-
-func (e atlasMigrateIntegrityUnknownDirFormatDisplayError) Error() string {
-	return fmt.Sprintf("unknown dir format %q", e.value)
-}
-
-func (e atlasMigrateIntegrityUnknownDirFormatDisplayError) Unwrap() error {
-	return e.err
-}
-
 // newAtlasMigrateIntegrityCommand wraps the table-driven adapter command for an
 // Atlas integrity verb with a converted-source-format path.
 //
@@ -113,15 +96,13 @@ func newAtlasMigrateIntegrityCommand(
 		defer func() {
 			runErr = errors.Join(runErr, cleanup.Close())
 		}()
+		// The unknown-format adaptation used to be an errors.As block here,
+		// which is why it reached `migrate hash` and `migrate validate` and no
+		// other verb. It now lives on the refusal itself, inside
+		// resolveAtlasMigrateSource, so `migrate new` -- which shares that
+		// resolver but not this wrapper -- gets it too.
 		source, err := resolveAtlasMigrateSource(cmd, verb, args, cleanup)
 		if err != nil {
-			var unknownFormat *atlasmigrate.UnknownDirFormatError
-			if errors.As(err, &unknownFormat) {
-				return atlasMigrateIntegrityUnknownDirFormatDisplayError{
-					value: unknownFormat.Value,
-					err:   err,
-				}
-			}
 			return err
 		}
 		// Both verbs reaching this wrapper -- `migrate hash` and
@@ -217,8 +198,7 @@ func resolveAtlasMigrateSource(
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
 	if err != nil {
-		return atlasMigrateSource{}, fmt.Errorf(
-			"atlas migrate %s %s: %w",
+		return atlasMigrateSource{}, atlasDirFormatError(
 			verb.use,
 			atlasDirFormatSpelling(localDir.Query),
 			err,

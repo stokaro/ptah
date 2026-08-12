@@ -136,7 +136,11 @@ func resolveAtlasMigrateApplyDirFormat(
 ) (atlasmigrateimport.Format, error) {
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
 	if err != nil {
-		return "", fmt.Errorf("atlas migrate apply --dir: %w", err)
+		// `migrate apply` registers no --dir-format on either binary, so the
+		// query is the only spelling that can carry a rejected value here and
+		// the blame is fixed. See migrate_dir_format_error.go for the shared
+		// display adaptation.
+		return "", atlasDirFormatError("apply", "--dir", err)
 	}
 	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "apply", query); err != nil {
 		return "", err
