@@ -34,6 +34,7 @@ type verbRow struct {
 	args            func(c *qt.C, dir, query string) []string
 	writesDirectory bool
 	assertSelected  func(c *qt.C, dir string)
+	assertNative    func(c *qt.C, dir string)
 	controlCode     int
 	assertControl   func(c *qt.C, dir string)
 }
@@ -133,6 +134,7 @@ func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 
 	c.Assert(result.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
 	assertWriterChangedDirectory(c, row.writesDirectory, before, directoryEntries(c, dir))
+	row.assertNative(c, dir)
 	assertIgnoredKeyReport(c, binary, result.stderr)
 }
 
@@ -174,18 +176,21 @@ func assertQueryPrecedence(c *qt.C, row verbRow, binary, oracle string) {
 		append(row.args(c, golangMigrateDir, "?format=golang-migrate"), "--dir-format", "atlas")...)
 	c.Assert(queryWins.code, qt.Equals, 0,
 		qt.Commentf("query-wins stdout: %s\nquery-wins stderr: %s", queryWins.stdout, queryWins.stderr))
+	row.assertSelected(c, golangMigrateDir)
 
 	nativeDir := writeNativeDir(c, oracle)
 	emptyQueryWins := runCommand(c, binary,
 		append(row.args(c, nativeDir, "?format="), "--dir-format", "golang-migrate")...)
 	c.Assert(emptyQueryWins.code, qt.Equals, 0,
 		qt.Commentf("empty-query stdout: %s\nempty-query stderr: %s", emptyQueryWins.stdout, emptyQueryWins.stderr))
+	row.assertNative(c, nativeDir)
 
 	flagDir := writeGolangMigrateDir(c, oracle)
 	ignoredKeyLeavesFlag := runCommand(c, binary,
 		append(row.args(c, flagDir, "?nonsense=1"), "--dir-format", "golang-migrate")...)
 	c.Assert(ignoredKeyLeavesFlag.code, qt.Equals, 0,
 		qt.Commentf("flag stdout: %s\nflag stderr: %s", ignoredKeyLeavesFlag.stdout, ignoredKeyLeavesFlag.stderr))
+	row.assertSelected(c, flagDir)
 	assertIgnoredKeyReport(c, binary, ignoredKeyLeavesFlag.stderr)
 }
 
@@ -199,6 +204,7 @@ func verbRows() []verbRow {
 					"--url", sqliteURL(c, "apply.db")}
 			},
 			assertSelected: noAssertion,
+			assertNative:   noAssertion,
 			controlCode:    1,
 			assertControl:  noAssertion,
 		},
@@ -208,6 +214,7 @@ func verbRows() []verbRow {
 				return []string{"migrate", "hash", "--dir", fileURL(dir, query)}
 			},
 			assertSelected: assertGolangMigrateSum,
+			assertNative:   assertAtlasSum,
 			controlCode:    0,
 			assertControl:  assertNativeSum,
 		},
@@ -217,6 +224,7 @@ func verbRows() []verbRow {
 				return []string{"migrate", "validate", "--dir", fileURL(dir, query)}
 			},
 			assertSelected: noAssertion,
+			assertNative:   noAssertion,
 			controlCode:    1,
 			assertControl:  noAssertion,
 		},
@@ -227,6 +235,7 @@ func verbRows() []verbRow {
 					"--dev-url", sqliteURL(c, "lint.db"), "--latest", "1"}
 			},
 			assertSelected: noAssertion,
+			assertNative:   noAssertion,
 			controlCode:    1,
 			assertControl:  noAssertion,
 		},
@@ -237,6 +246,7 @@ func verbRows() []verbRow {
 					"--url", sqliteURL(c, "status.db")}
 			},
 			assertSelected: noAssertion,
+			assertNative:   noAssertion,
 			controlCode:    1,
 			assertControl:  noAssertion,
 		},
@@ -247,6 +257,7 @@ func verbRows() []verbRow {
 					"--url", sqliteURL(c, "set.db")}
 			},
 			assertSelected: noAssertion,
+			assertNative:   noAssertion,
 			controlCode:    1,
 			assertControl:  noAssertion,
 		},
@@ -257,6 +268,7 @@ func verbRows() []verbRow {
 			},
 			writesDirectory: true,
 			assertSelected:  noAssertion,
+			assertNative:    noAssertion,
 			controlCode:     1,
 			assertControl:   noAssertion,
 		},
@@ -268,6 +280,7 @@ func verbRows() []verbRow {
 			},
 			writesDirectory: true,
 			assertSelected:  noAssertion,
+			assertNative:    noAssertion,
 			controlCode:     1,
 			assertControl:   noAssertion,
 		},
@@ -404,6 +417,13 @@ func assertGolangMigrateSum(c *qt.C, dir string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(sum), qt.Contains, "1_init.up.sql")
 	c.Assert(string(sum), qt.Not(qt.Contains), "1_init.down.sql")
+}
+
+func assertAtlasSum(c *qt.C, dir string) {
+	c.Helper()
+	sum, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Contains, "1_init.sql")
 }
 
 func assertNativeSum(c *qt.C, dir string) {
