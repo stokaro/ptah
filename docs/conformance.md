@@ -1335,11 +1335,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: ten cells from the #1235 register
+## Output shape: eleven cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Ten of them are closed here. Every row was
+exit code and disagree on the bytes. Eleven of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1353,7 +1353,8 @@ unpiped invocation.
 | 9.8 | `migrate import --from file://nope` for a source directory that does not exist | Exit 1, stderr `Error: sql/migrate: stat nope: no such file or directory\n` | Exit 1, stderr `Error: cannot import a migration directory already in "atlas" format\n` — the format comparison ran ahead of any read of the source | byte-identical, and the format comparison still answers first for a source that exists |
 | 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
 | 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
-| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context | the same body prefixed by `load --to schema: parse HCL schema: ` | byte-identical |
+| 9.12 | `migrate lint --git-base nosuchbranch --dir file://migrations --dev-url <SQLite>` inside a two-branch repository | Exit 1, empty stdout, stderr `Error: git diff: exit status 128\n` (33 bytes) | Exit 1, empty stdout, stderr naming the whole `git diff --name-only --diff-filter=ACMR --end-of-options nosuchbranch...HEAD -- migrations` invocation and git's own `fatal:` line (203 bytes) | byte-identical |
+| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, escaped, symlinked, directory-member and absolute `--to` |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1408,6 +1409,53 @@ and terminated stderr with a line feed. `ptah-compat` inserted the exact
 36-byte `load --to schema: parse HCL schema: ` prefix before the otherwise
 identical body. It now strips only that pair. Missing-file and other loader
 errors keep their context, and native `ptah schema apply` keeps both wrappers.
+
+The cell has a second half, found by re-measuring on 2026-08-12: the pinned
+binary echoes the `--to` path in the form it was given, and this surface
+resolved every form to an absolute path. Four spellings, one fixture:
+
+| `--to` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `file://fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
+| `file://./fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` — the `./` is normalized away, not echoed | the absolute path | byte-identical |
+| `file://fx/sub/bad.hcl` | `fx/sub/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
+| `file://fx/escaped%20name.hcl` | `fx/escaped name.hcl:5,15-16: …` | the absolute decoded path | byte-identical |
+| `file://fx/linked.hcl` | `fx/linked.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
+| `file://schemas` with malformed `schemas/bad.hcl` | `schemas/bad.hcl:5,15-16: …` | the absolute member path | byte-identical |
+| `file://schemas` with `schemas/bad.hcl` linked to a malformed file elsewhere in the working tree | `schemas/bad.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
+| `file://<abs>/fx/bad.hcl` | the absolute path | the absolute path | unchanged, and it must stay so |
+
+The absolute row is the reason the rewrite is conditional rather than a blanket
+relativization: it already agreed before this adapter existed, and widening the
+rewrite to cover it would break a passing cell. The match is anchored on the
+resolved absolute path followed by the `:` that starts the HCL position. For a
+schema directory, the adapter retains the loader's filename-ordered mapping
+from each resolved HCL member to its authored entry, so a symlinked member does
+not expose its target name. A diagnostic about a different file, a path-prefix
+collision, or one that merely mentions the path is left alone. Native `ptah
+schema apply` keeps the resolved absolute path.
+
+**9.12 changes only the compatibility diagnostic.** This is one of the two cells
+the original sweep carried over unverified, because it needs a throwaway git
+repository with two branches and two commits. Measured 2026-08-12 on exactly
+that fixture, with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` neutralized so
+the run cannot inherit host configuration. Both binaries exit 1 and write no
+stdout. The pinned binary reports the git verb and the process status alone;
+`ptah-compat` reported the full argument vector and git's own `fatal:` line,
+203 bytes against 33.
+
+A control runs alongside it: with a resolvable `--git-base main`, both binaries
+analyze the changeset and report `1 version ok`. Without that control a fixture
+whose git plumbing never worked would satisfy the failing row anyway, because an
+unreadable repository fails the same way as a bad revision.
+
+Only the `diff` invocation is adapted. A run started outside a git repository
+fails this package's `rev-parse` preflight with status 128, where the pinned
+binary reaches its own `git diff` and reports 129 — a different event, and
+rendering one as the other would print a status no process returned. That case
+keeps its own diagnostic and remains a divergence, recorded here rather than
+silently folded into the adapted one. Native `ptah migrations lint` keeps the
+full invocation, which is what makes a failed selection reproducible by hand.
 
 ### Shorthand-looking inspect format values can be literal text
 
