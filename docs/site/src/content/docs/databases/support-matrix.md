@@ -27,6 +27,89 @@ Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
 [Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/).
 
+## Supported release lines
+
+Every engine ships several versions at once, and Ptah models each release line
+with its own capability preset. This matrix is the supported set: the line, the
+preset it claims, and whether continuous integration measures that claim
+against a live server on every pull request.
+
+The table is generated from the single declaration the CI matrix also reads, so
+the supported set cannot say one thing here and another in a workflow file.
+
+<!-- BEGIN GENERATED VERSION MATRIX -->
+| Dialect | Release line | Capability preset | Refinement | Probed |
+| --- | --- | --- | --- | --- |
+| `postgres` | 18 | none yet | version-ladder | yes |
+| `postgres` | 17 | `Postgres17` | version-ladder | yes |
+| `postgres` | 16 | `Postgres16` | version-ladder | yes |
+| `postgres` | 15 | `Postgres16` | version-ladder | yes |
+| `postgres` | 14 | `Postgres16` | version-ladder | yes |
+| `postgres` | 13 | `Postgres13` | version-ladder | yes |
+| `mysql` | 26.7 | none yet | version-ladder | yes |
+| `mysql` | 9.7 | `MySQL84` | version-ladder | yes |
+| `mysql` | 8.4 | `MySQL84` | version-ladder | yes |
+| `mariadb` | 12.3 | none yet | version-ladder | yes |
+| `mariadb` | 11.8 | `MariaDB1011` | version-ladder | yes |
+| `mariadb` | 11.4 | `MariaDB1011` | version-ladder | yes |
+| `mariadb` | 10.11 | `MariaDB1011` | version-ladder | yes |
+| `cockroachdb` | 26.2 | `CockroachDB23` | measured-release-line | yes |
+| `cockroachdb` | 25.4 | `CockroachDB23` | banner-substring | yes |
+| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | yes |
+| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | yes |
+| `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | no |
+| `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | no |
+| `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | no |
+| `clickhouse` | 24.10 | `ClickHouse24` | dialect-default | no |
+| `sqlserver` | 17.0 (SQL Server 2025) | `SQLServer2022` | dialect-default | no |
+| `sqlserver` | 16.0 (SQL Server 2022) | `SQLServer2022` | dialect-default | no |
+| `sqlserver` | 15.0 (SQL Server 2019) | `SQLServer2022` | dialect-default | no |
+| `sqlite` | 3 | `SQLite3` | dialect-default | no |
+| `spanner` | 0 | `SpannerPostgres` | banner-substring | no |
+
+Declared release lines: 26. Probed on every pull request: 17.
+
+Lines that are declared and not probed, and why:
+
+- `clickhouse` 26.7 — the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing.
+- `clickhouse` 26.3 — the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing.
+- `clickhouse` 25.8 — the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing.
+- `clickhouse` 24.10 — the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing.
+- `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
+- `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
+- `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
+- `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
+- `spanner` 0 — no container image is declared for this line.
+
+Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
+
+- `cockroachdb` 26.2, pinned as `cockroachdb/cockroach:v26.2.5`.
+- `cockroachdb` 25.4, pinned as `cockroachdb/cockroach:v25.4.5`.
+- `yugabytedb` 2026.1, pinned as `yugabytedb/yugabyte:2026.1.0.0-b118`.
+- `yugabytedb` 2025.2, pinned as `yugabytedb/yugabyte:2025.2.0.0-b0`.
+- `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
+- `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
+- `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
+<!-- END GENERATED VERSION MATRIX -->
+
+`Refinement` says how a server reaches its preset. `version-ladder` selects an
+arm by parsed version, so an observation belongs to that line alone;
+`measured-release-line` reaches the preset through an engine banner but has
+been measured directly; `banner-substring` and `dialect-default` hand every
+release of the engine the same set, so an observation on one release cannot be
+credited to one line rather than its siblings.
+
+A line with no preset yet resolves onto the newest preset Ptah has, which is a
+stand-in rather than a match. Those lines are tracked in
+[issue 916](https://github.com/stokaro/ptah/issues/916), and the pipeline
+reports them as failures rather than as measured lines.
+
+Which versions a vendor supports is recorded, with its source, next to each
+block of cells in `internal/capabilityprobe/cells.go`. PostgreSQL does not
+label releases LTS, so the reading used here is the newest patch of each
+still-supported major line. The container that reproduces each line is
+recorded there too.
+
 ## PostgreSQL
 
 PostgreSQL has the broadest coverage of any engine: schemas, extensions, enum

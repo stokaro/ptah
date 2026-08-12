@@ -294,6 +294,86 @@ the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
 value or wants to pin a specific server version in tests/CI.
 
+## Supported release lines
+
+This is the version matrix: every database release line Ptah covers, the
+capability preset it claims, and whether continuous integration measures that
+claim against a live server.
+
+It is generated from `internal/capabilityprobe/cells.go`, which is the only
+place a release line is declared. The tiered pipeline of stokaro/ptah#1341
+reads the same declaration, so the workflow files carry no list of versions and
+`scripts/check-version-matrix.sh` fails the build when this table drifts from
+the declaration it was generated from.
+
+Three columns need reading carefully.
+
+**Refinement** says how a server on the line reaches its preset.
+`version-ladder` means the parsed version selects the arm that answers, so an
+observation belongs to that line alone. `measured-release-line` means the
+resolver still matches an engine banner, but this line has been measured
+directly. `banner-substring` and `dialect-default` mean every release of the
+engine receives the same set, so an observation on one release cannot be
+credited to one line rather than its siblings.
+
+**Tag names the line** answers the scoping rule: the matrix pins a line and
+lets the registry resolve the newest patch, rather than freezing a patch that
+goes stale the moment the vendor ships another. `postgres:17` names its line;
+`cockroachdb/cockroach:v26.2.5` and `yugabytedb/yugabyte:2026.1.0.0-b118`
+freeze a patch, and the SQL Server tags name a marketing year where the line is
+the product version. A `no` in this column is a line whose newest patch is not
+automatically covered.
+
+**Probed per pull request** is tier 2. A line is probed when a container
+reproduces it and the capability probe has a statement table for its dialect;
+both halves are derived, so adding a ClickHouse plan turns four skipped cells
+into four probed ones with no workflow edit.
+
+<!-- BEGIN GENERATED VERSION MATRIX -->
+| Dialect | Release line | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |
+| --- | --- | --- | --- | --- | --- | --- |
+| `postgres` | 18 | none yet | version-ladder | `postgres:18` | yes | yes |
+| `postgres` | 17 | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
+| `postgres` | 16 | `Postgres16` | version-ladder | `postgres:16` | yes | yes |
+| `postgres` | 15 | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
+| `postgres` | 14 | `Postgres16` | version-ladder | `postgres:14` | yes | yes |
+| `postgres` | 13 | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
+| `mysql` | 26.7 | none yet | version-ladder | `mysql:26.7` | yes | yes |
+| `mysql` | 9.7 | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
+| `mysql` | 8.4 | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
+| `mariadb` | 12.3 | none yet | version-ladder | `mariadb:12.3` | yes | yes |
+| `mariadb` | 11.8 | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
+| `mariadb` | 11.4 | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
+| `mariadb` | 10.11 | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
+| `cockroachdb` | 26.2 | `CockroachDB23` | measured-release-line | `cockroachdb/cockroach:v26.2.5` | no | yes |
+| `cockroachdb` | 25.4 | `CockroachDB23` | banner-substring | `cockroachdb/cockroach:v25.4.5` | no | yes |
+| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1.0.0-b118` | no | yes |
+| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | `yugabytedb/yugabyte:2025.2.0.0-b0` | no | yes |
+| `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 24.10 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:24.10` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 17.0 (SQL Server 2025) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 16.0 (SQL Server 2022) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 15.0 (SQL Server 2019) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlite` | 3 | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
+| `spanner` | 0 | `SpannerPostgres` | banner-substring | none | n/a | no: no container image is declared for this line |
+<!-- END GENERATED VERSION MATRIX -->
+
+Which versions are supported is the vendors' answer, not Ptah's, and the
+sources are recorded next to each block of cells in
+`internal/capabilityprobe/cells.go`. PostgreSQL does not label releases LTS: it
+ships major versions with a five-year window and minor releases inside them, so
+the reading here is the newest patch of each still-supported major line. The
+`postgres` 13 cell is past that window and exists only because Ptah still ships
+a `Postgres13` preset, and a preset with no cell is a claim nothing here can
+measure.
+
+Three lines name no preset yet — PostgreSQL 18, MySQL 26.7 and MariaDB 12.3.
+Each is a line this repository already starts while resolving it onto the
+newest preset it has by saturation, which stokaro/ptah#916 tracks. Until they
+are filled in, tier 2 reports them as failures rather than as measured lines.
+
 ## Current consumers
 
 - **Foreign key rendering.** Schema rendering validates every foreign key

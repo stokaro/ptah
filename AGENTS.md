@@ -55,6 +55,11 @@ Internal packages worth knowing, none of them importable from another module:
 - `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
   selects between.
 - `internal/envbool` — the one grammar for boolean `PTAH_*` variables.
+- `internal/capabilityprobe` — the declared database release lines and the
+  probe that measures a live server against the preset each line claims.
+- `internal/capmatrix` — the tiered pipeline built on that declaration: the CI
+  fan-out, one cell's result, and the aggregation that fails when a declared
+  cell reports nothing.
 
 Command tree:
 
@@ -188,6 +193,32 @@ The integration suite runs under Docker Compose through `make integration-test`
 and its per-database variants such as `make integration-test-postgres`. Those
 targets bind fixed host ports and `make docker-clean` prunes system-wide Docker
 state, so look at what is already running before invoking either.
+
+### The version matrix
+
+Which database release lines Ptah covers is declared in exactly one place,
+`internal/capabilityprobe/cells.go`. Nothing else holds a list of versions:
+
+```bash
+# What the pipeline fans out over, and which declared lines it cannot run
+go run ./internal/cmd/capmatrix matrix
+
+# Fail when a declared line has no capability preset
+go run ./internal/cmd/capmatrix presets
+
+# Probe one cell against a server already listening for it
+go run ./internal/cmd/capmatrix probe --cell postgres-17
+
+# Keep the documented matrix tied to the declaration
+scripts/check-version-matrix.sh
+scripts/check-version-matrix.sh --write
+```
+
+`.github/workflows/capability-matrix.yml` runs the capability probe once per
+cell on every pull request, and `capability-matrix-nightly.yml` runs the
+integration suite over the same cells on a schedule. Both read the declaration
+through `capmatrix matrix`, so adding a release line is a data change: one
+literal in `cells.go`, then `scripts/check-version-matrix.sh --write`.
 
 Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
 script is committed without an executable bit, so `./test-ptah.sh` cannot be

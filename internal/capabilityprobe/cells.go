@@ -346,6 +346,24 @@ var Cells = []Cell{
 	},
 }
 
+// PresetsWithoutCell names every capability preset Ptah ships that no cell
+// claims, and why that absence is deliberate.
+//
+// It exists because the four absences above are otherwise indistinguishable
+// from an oversight, and stokaro/ptah#1341 asks that a preset with no cell fail
+// the build. Written as data rather than prose, the claim is checkable in both
+// directions: a preset that loses its cell has to be added here with a reason,
+// and an entry here that a cell does claim, or that names a preset the
+// capability package no longer ships, fails too.
+var PresetsWithoutCell = map[string]string{
+	"MySQLLegacy": "describes MySQL before 8.0.16, which left vendor support on 2026-04-30; the 8.0 line " +
+		"is three presets split at 8.0.16 and 8.0.19, so no single 8.0 cell could name one of them",
+	"MySQL8016": "describes MySQL 8.0.16 to 8.0.18, inside the out-of-support 8.0 line",
+	"MySQL8019": "describes MySQL 8.0.19 to 8.3, inside the out-of-support 8.0 line",
+	"MariaDBLegacy": "describes MariaDB before 10.2, whose newest release left support in 2022; it is the " +
+		"conservative floor ForServerVersion assigns to such a server rather than a line anybody runs",
+}
+
 // CellFor returns the matrix cell a live server falls on.
 //
 // A server with no cell is a failure and not a default: it is a release line

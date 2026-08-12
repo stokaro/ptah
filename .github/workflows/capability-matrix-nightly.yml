@@ -1,0 +1,211 @@
+name: Capability Matrix Nightly
+
+# Tier 3 of stokaro/ptah#1341: the integration suite across the whole version
+# matrix, once a night.
+#
+# It fans out over the SAME declaration tier 2 uses —
+# internal/capabilityprobe/cells.go, read through `capmatrix matrix` — so the
+# two tiers cannot disagree about which release lines exist. Neither workflow
+# contains a list of versions.
+#
+# Each cell probes its capabilities BEFORE running the suite, and the report
+# classifies a failing cell as a capability disagreement or a suite defect.
+# Eighteen red cells with no indication of which capability moved is a report
+# nobody reads; a cell that says "the preset and the server disagree, see the
+# tier 2 job of the same name" is one somebody can act on.
+on:
+  schedule:
+    # 02:40 UTC, clear of the fuzz job at 02:17.
+    - cron: '40 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capability-matrix-nightly
+  cancel-in-progress: false
+
+jobs:
+  cells:
+    name: cells
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      cells: ${{ steps.emit.outputs.cells }}
+      count: ${{ steps.emit.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build the matrix driver
+        run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+
+      - name: Emit the matrix
+        id: emit
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/capmatrix" matrix >"${RUNNER_TEMP}/matrix.json"
+          count="$(jq '.cells | length' "${RUNNER_TEMP}/matrix.json")"
+          if [ "${count}" -eq 0 ]; then
+            echo "the matrix produced zero runnable cells; a nightly with no jobs must not report success" >&2
+            exit 1
+          fi
+          {
+            echo "cells=$(jq -c '.cells' "${RUNNER_TEMP}/matrix.json")"
+            echo "count=${count}"
+          } >>"${GITHUB_OUTPUT}"
+
+  suite:
+    name: suite ${{ matrix.cell.id }}
+    needs: cells
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ${{ fromJSON(needs.cells.outputs.cells) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build the matrix driver and the integration runner
+        run: |
+          set -euo pipefail
+          go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+          go build -o "${RUNNER_TEMP}/integration-test" ./cmd/integration-test
+
+      - name: Start ${{ matrix.cell.image }}
+        env:
+          CELL: ${{ toJSON(matrix.cell) }}
+        run: |
+          set -euo pipefail
+          mapfile -t args < <(jq -r '.docker_run[]' <<<"${CELL}")
+          docker run --detach --name capability-probe-server "${args[@]}"
+
+      - name: Probe the cell
+        env:
+          CELL_ID: ${{ matrix.cell.id }}
+        run: |
+          # Not fatal here. The probe's verdict is recorded into the cell result
+          # below and decides the cell's classification; failing the step now
+          # would skip the suite and lose the second half of the night's answer.
+          # `set +e` clears the errexit GitHub's default `bash -e` sets.
+          set +e
+          set -uo pipefail
+          mkdir -p results
+          "${RUNNER_TEMP}/capmatrix" probe \
+            --cell "${CELL_ID}" \
+            --tier 3 \
+            --wait 10m \
+            --result "results/${CELL_ID}.json" >"results/${CELL_ID}-probe.log" 2>&1
+          cat "results/${CELL_ID}-probe.log"
+
+      - name: Run the integration suite
+        id: suite
+        env:
+          CELL_ID: ${{ matrix.cell.id }}
+          SUITE_DATABASE: ${{ matrix.cell.suite_database }}
+          SUITE_URL_ENV: ${{ matrix.cell.suite_url_env }}
+          SUITE_URL: ${{ matrix.cell.url }}
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p reports
+          export "${SUITE_URL_ENV}=${SUITE_URL}"
+          "${RUNNER_TEMP}/integration-test" \
+            --databases="${SUITE_DATABASE}" \
+            --report=stdout,json \
+            --output=./reports >"results/${CELL_ID}-suite.log" 2>&1
+          code=$?
+          cat "results/${CELL_ID}-suite.log"
+          echo "code=${code}" >>"${GITHUB_OUTPUT}"
+
+      - name: Record the cell result
+        id: record
+        env:
+          CELL_ID: ${{ matrix.cell.id }}
+          SUITE_CODE: ${{ steps.suite.outputs.code }}
+        run: |
+          set +e
+          set -uo pipefail
+          "${RUNNER_TEMP}/capmatrix" record \
+            --cell "${CELL_ID}" \
+            --probe-result "results/${CELL_ID}.json" \
+            --suite-exit "${SUITE_CODE}" \
+            --suite-report-dir ./reports \
+            --result "results/${CELL_ID}.json"
+          echo "code=$?" >>"${GITHUB_OUTPUT}"
+
+      - name: Server log
+        if: always()
+        run: docker logs capability-probe-server 2>&1 | tail -n 50 || true
+
+      - name: Upload the cell result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: capability-nightly-cell-${{ matrix.cell.id }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report this cell's verdict
+        env:
+          CODE: ${{ steps.record.outputs.code }}
+        run: |
+          set -euo pipefail
+          if [ "${CODE}" != "0" ]; then
+            echo "cell ${{ matrix.cell.id }} failed; the tier 3 report names which half" >&2
+            exit 1
+          fi
+
+  report:
+    name: tier 3 report
+    needs: [cells, suite]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Collect the cell results
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: capability-nightly-cell-*
+          path: results
+          merge-multiple: true
+
+      - name: Build the matrix driver
+        run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+
+      - name: Aggregate the tier
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p results
+          "${RUNNER_TEMP}/capmatrix" report --tier 3 --results results >"${RUNNER_TEMP}/tier3.md" 2>&1
+          code=$?
+          cat "${RUNNER_TEMP}/tier3.md"
+          cat "${RUNNER_TEMP}/tier3.md" >>"${GITHUB_STEP_SUMMARY}"
+          exit "${code}"

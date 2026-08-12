@@ -182,20 +182,20 @@ func (r *Report) Err() error {
 		problems = append(problems, fmt.Errorf(
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
-	if r.Decided() < r.floor() {
+	if r.Decided() < r.Floor() {
 		problems = append(problems, r.coverageProblem())
 	}
 	return errors.Join(problems...)
 }
 
-// floor is the fewest rows a run may decide and still be allowed to report
+// Floor is the fewest rows a run may decide and still be allowed to report
 // success.
 //
 // On a line the matrix can credit it is every row the plan promised to answer,
 // so a run that quietly stopped deciding most of them fails. Everywhere else
 // it is one, which keeps the original guard: a probe that decided nothing must
 // never read as a probe that passed.
-func (r *Report) floor() int {
+func (r *Report) Floor() int {
 	return max(1, r.Decidable)
 }
 
