@@ -47,6 +47,22 @@ and the migration fails partway through. Ptah honors it.
 Differences of this kind are listed in the [gap register](#gap-register) with
 the measurement behind them, so you can see which way each one goes.
 
+`ptah-compat` therefore has two explicit policy profiles. The default profile
+retains every implemented Atlas Pro-like and best-effort capability on the
+drop-in surface. `PTAH_ATLAS_STRICT_COMPAT=1` is an oracle profile: it exposes
+the pinned CE command and flag inventory and rejects extended authored or live
+schema content before output or mutation. The strict profile is for CE
+conformance testing, not a replacement for the default migration surface. It
+still preserves the deliberate correctness differences listed under
+[Retained divergences](../retained-divergences/).
+
+The authored-content boundary makes strict schema workflows refuse YAML sources
+and a `schema apply` lint policy that the CE path cannot enforce. Commands that
+execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
+directives, and SQL templates; checksum-only reads preserve those bytes. The
+default profile continues to support the extensions instead of silently
+dropping their semantics.
+
 ### Capability parity, not interface parity
 
 Ptah's Atlas compatibility layer does not define a separate feature set.
@@ -245,7 +261,7 @@ policy from `atlas.hcl`, including local variable defaults, locals, `getenv`,
 `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
 references.
 
-`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target (acquired before target inspection and planning, released on every exit path; dialects without advisory locks proceed unlocked with a stderr note).
+`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target. Strict CE mode preflights an explicit `--schema` target scope before that lock or any desired-source replay; without one, PostgreSQL-family targets inventory the user realm because desired replay may extend the URL scope. The authoritative inspection and planning remain inside the lock, which is released on every exit path; dialects without advisory locks proceed unlocked with a stderr note.
 
 `ptah-compat schema diff` implements local schema-file diffs, reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`, prints migration SQL, supports Atlas-style `--format` templates with `sql` and `.MarshalSQL`, and applies the same Atlas-style filters to local `--from` and `--to` inputs.
 
@@ -261,7 +277,7 @@ Atlas CE aborts `--include` as a non-community feature, so Ptah's implementation
 
 `ptah-compat schema clean` plans supported cleanup objects from the live database, supports `--dry-run`, preserves destructive confirmation unless `--auto-approve` is explicit, reads `env.url` and `format.schema.clean` from `atlas.hcl`, and supports Atlas-style `--format` templates such as `{{ json . }}` over `.Env`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`.
 
-Cleanup report changes cover the object kinds the target dialect's cleanup really destroys, so the report is not narrower than the apply: foreign keys, tables, views, materialized views, enum/domain/composite/range types and functions on the PostgreSQL family (plus standalone sequences on PostgreSQL itself); foreign keys, tables, views, stored functions and procedures, events and MariaDB sequences on MySQL and MariaDB; tables and views on SQLite; foreign keys and tables on SQL Server; base tables on ClickHouse. Objects that vanish as collateral of a listed drop — indexes, triggers, non-foreign-key constraints, RLS policies, comments — are not listed separately.
+Cleanup report changes cover the object kinds the target dialect's cleanup really destroys, so the report is not narrower than the apply: foreign keys, tables, views, materialized views, enum/domain/composite/range types and functions on the PostgreSQL family (plus standalone sequences on PostgreSQL itself); foreign keys, tables, views, stored functions and procedures, events and MariaDB sequences on MySQL and MariaDB; tables and views on SQLite; foreign keys and tables on SQL Server; base tables on ClickHouse. Objects that vanish as collateral of a listed drop — indexes, triggers, non-foreign-key constraints, RLS policies, comments — are not listed separately. Scoped PostgreSQL cleanup uses catalog dependency depth and one transaction, so selected same-kind dependents run first and a later `RESTRICT` refusal rolls back the complete narrowed plan.
 
 **Atlas OSS.** Atlas OSS documents schema diffing, declarative migrations, HCL formatting, and schema cleanup as open CLI features.
 

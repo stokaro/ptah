@@ -639,6 +639,15 @@ This distinction preserves Atlas CE's unknown-name behavior without hiding a
 likely typo or a policy that does nothing. The warning goes to stderr; stdout
 and the success exit code remain unchanged.
 
+`PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
+runs. The strict policy refuses an ignored construct before command work, and
+it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,
+object, and set collections. It also refuses YAML schema sources and an
+authored `schema apply` lint policy because the strict CE apply path cannot
+enforce that policy without silently discarding it. The normal `ptah-compat`
+process leaves the complete best-effort evaluator and apply policy enabled and
+continues to report ignored names.
+
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another

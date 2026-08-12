@@ -711,6 +711,10 @@ type Migration struct {
 	// DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
 	// global transaction-mode flag, so the zero value behaves like file.
 	DownTxMode                  MigrationFileTxMode
+	upParsedTxMode              MigrationFileTxMode
+	downParsedTxMode            MigrationFileTxMode
+	upTxModeFromSQL             bool
+	downTxModeFromSQL           bool
 	upTxModeSource              migrationFileTxModeSource
 	downTxModeSource            migrationFileTxModeSource
 	upTxModeErr                 error
@@ -784,6 +788,35 @@ func (m *Migration) downExecutionMode() migrationExecutionMode {
 	return migrationExecutionTransactional
 }
 
+func migrationExecutionModeForFileTxMode(mode MigrationFileTxMode) migrationExecutionMode {
+	if mode == MigrationFileTxModeNone {
+		return migrationExecutionNoTransaction
+	}
+	return migrationExecutionTransactional
+}
+
+func (m *Migration) parsedUpTxModeForDialect(dialect string) parsedMigrationFileTxMode {
+	if m.upTxModeFromSQL && m.UpTxMode == m.upParsedTxMode {
+		return parseMigrationFileTxModeForDialect(m.upSourcePath, m.UpSQL, dialect)
+	}
+	return parsedMigrationFileTxMode{
+		mode:   m.UpTxMode,
+		source: m.upTxModeSource,
+		err:    m.upTxModeErr,
+	}
+}
+
+func (m *Migration) parsedDownTxModeForDialect(dialect string) parsedMigrationFileTxMode {
+	if m.downTxModeFromSQL && m.DownTxMode == m.downParsedTxMode {
+		return parseMigrationFileTxModeForDialect(m.downSourcePath, m.DownSQL, dialect)
+	}
+	return parsedMigrationFileTxMode{
+		mode:   m.DownTxMode,
+		source: m.downTxModeSource,
+		err:    m.downTxModeErr,
+	}
+}
+
 // UpForReplay executes the up direction against a THROWAWAY dev database,
 // ignoring an unreadable transaction-mode directive.
 //
@@ -803,7 +836,8 @@ func (m *Migration) downExecutionMode() migrationExecutionMode {
 // directive to be unreadable in the first place.
 func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if m.upSQLFunc != nil {
-		return m.upSQLFunc(ctx, conn, m.upExecutionMode())
+		txMode := m.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
+		return m.upSQLFunc(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	return m.Up(ctx, conn)
 }
@@ -835,18 +869,22 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 	downTxMode := parseMigrationFileTxMode(description, downSQL)
 
 	migration := &Migration{
-		Version:          version,
-		Description:      description,
-		UpSQL:            upSQL,
-		DownSQL:          downSQL,
-		UpTxMode:         upTxMode.mode,
-		DownTxMode:       downTxMode.mode,
-		upTxModeSource:   upTxMode.source,
-		downTxModeSource: downTxMode.source,
-		upTxModeErr:      upTxMode.err,
-		downTxModeErr:    downTxMode.err,
-		upSourcePath:     description,
-		downSourcePath:   description,
+		Version:           version,
+		Description:       description,
+		UpSQL:             upSQL,
+		DownSQL:           downSQL,
+		UpTxMode:          upTxMode.mode,
+		DownTxMode:        downTxMode.mode,
+		upParsedTxMode:    upTxMode.mode,
+		downParsedTxMode:  downTxMode.mode,
+		upTxModeFromSQL:   true,
+		downTxModeFromSQL: true,
+		upTxModeSource:    upTxMode.source,
+		downTxModeSource:  downTxMode.source,
+		upTxModeErr:       upTxMode.err,
+		downTxModeErr:     downTxMode.err,
+		upSourcePath:      description,
+		downSourcePath:    description,
 	}
 
 	migration.upSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
@@ -857,16 +895,18 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 	}
 
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.upTxModeErr != nil {
-			return fmt.Errorf("invalid up migration directives: %w", migration.upTxModeErr)
+		txMode := migration.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return fmt.Errorf("invalid up migration directives: %w", txMode.err)
 		}
-		return migration.upSQLFunc(ctx, conn, migration.upExecutionMode())
+		return migration.upSQLFunc(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.downTxModeErr != nil {
-			return fmt.Errorf("invalid down migration directives: %w", migration.downTxModeErr)
+		txMode := migration.parsedDownTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return fmt.Errorf("invalid down migration directives: %w", txMode.err)
 		}
-		return migration.downSQLFunc(ctx, conn, migration.downExecutionMode())
+		return migration.downSQLFunc(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	return migration
 }
@@ -921,7 +961,7 @@ func executeMigrationFileSQL(
 	// invalid directive leaves nothing half-applied.
 	var fileDirectives map[string]string
 	if hooks.interceptor != nil || hooks.observer != nil {
-		fileDirectives = ParseFileDirectives(sql)
+		fileDirectives = parseFileDirectivesForDialect(sql, databaseConnectionDialect(conn))
 	}
 	interceptorDirectives := maps.Clone(fileDirectives)
 	if hooks.interceptor != nil {
@@ -1106,12 +1146,28 @@ func parseNoTransactionDirective(directives map[string]string) (bool, error) {
 }
 
 func parseMigrationFileTxMode(filename, sql string) parsedMigrationFileTxMode {
+	return parseMigrationFileTxModeWithDirectives(filename, sql, parseFileDirectivesConservatively(sql))
+}
+
+func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMigrationFileTxMode {
+	directives := parseFileDirectivesConservatively(sql)
+	if dialect != "" {
+		directives = parseFileDirectivesForDialect(sql, dialect)
+	}
+	return parseMigrationFileTxModeWithDirectives(filename, sql, directives)
+}
+
+func parseMigrationFileTxModeWithDirectives(
+	filename string,
+	sql string,
+	directives map[string]string,
+) parsedMigrationFileTxMode {
 	atlasMode, hasAtlasMode, atlasErr := parseAtlasFileTxMode(filename, sql)
 	if atlasErr != nil {
 		return parsedMigrationFileTxMode{source: migrationFileTxModeSourceAtlas, err: atlasErr}
 	}
 
-	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
+	noTransaction, err := parseNoTransactionDirective(directives)
 	if err != nil {
 		return parsedMigrationFileTxMode{
 			source: migrationFileTxModeSourcePtah,
@@ -1131,4 +1187,11 @@ func parseMigrationFileTxMode(filename, sql string) parsedMigrationFileTxMode {
 		}
 	}
 	return parsedMigrationFileTxMode{}
+}
+
+func databaseConnectionDialect(conn *dbschema.DatabaseConnection) string {
+	if conn == nil {
+		return ""
+	}
+	return conn.Info().Dialect
 }

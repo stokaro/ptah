@@ -23,18 +23,20 @@ type SchemaClean struct {
 }
 
 type SchemaCleanObject struct {
-	Type   string `json:"Type"`
-	Schema string `json:"Schema,omitempty"`
-	Table  string `json:"Table,omitempty"`
-	Name   string `json:"Name"`
+	Type       string `json:"Type"`
+	Schema     string `json:"Schema,omitempty"`
+	Table      string `json:"Table,omitempty"`
+	Name       string `json:"Name"`
+	Parameters string `json:"Parameters,omitempty"`
 }
 
 type SchemaCleanChange struct {
-	Type   string `json:"Type"`
-	Schema string `json:"Schema,omitempty"`
-	Table  string `json:"Table,omitempty"`
-	Name   string `json:"Name"`
-	Cmd    string `json:"Cmd"`
+	Type       string `json:"Type"`
+	Schema     string `json:"Schema,omitempty"`
+	Table      string `json:"Table,omitempty"`
+	Name       string `json:"Name"`
+	Parameters string `json:"Parameters,omitempty"`
+	Cmd        string `json:"Cmd"`
 }
 
 func NewSchemaClean(opts SchemaCleanOptions) SchemaClean {
@@ -79,10 +81,11 @@ func schemaCleanObjects(input []schemaclean.Object) []SchemaCleanObject {
 	objects := make([]SchemaCleanObject, 0, len(input))
 	for _, object := range input {
 		objects = append(objects, SchemaCleanObject{
-			Type:   object.Type,
-			Schema: object.Schema,
-			Table:  object.Table,
-			Name:   object.Name,
+			Type:       object.Type,
+			Schema:     object.Schema,
+			Table:      object.Table,
+			Name:       object.Name,
+			Parameters: object.Parameters,
 		})
 	}
 	return objects
@@ -92,11 +95,12 @@ func schemaCleanChanges(input []schemaclean.Change) []SchemaCleanChange {
 	changes := make([]SchemaCleanChange, 0, len(input))
 	for _, change := range input {
 		changes = append(changes, SchemaCleanChange{
-			Type:   change.Type,
-			Schema: change.Schema,
-			Table:  change.Table,
-			Name:   change.Name,
-			Cmd:    change.Cmd,
+			Type:       change.Type,
+			Schema:     change.Schema,
+			Table:      change.Table,
+			Name:       change.Name,
+			Parameters: change.Parameters,
+			Cmd:        change.Cmd,
 		})
 	}
 	return changes

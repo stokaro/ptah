@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/migratehash"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -18,8 +19,8 @@ import (
 // directory forwards to `ptah migrations hash` unchanged; a directory in a
 // foreign tool's layout, named with either spelling Atlas accepts, is hashed
 // over that tool's file set here.
-func newAtlasMigrateHashCommand() *cobra.Command {
-	return newAtlasMigrateIntegrityCommand(atlasMigrateHashVerb(), runAtlasMigrateHash)
+func newAtlasMigrateHashCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	return newAtlasMigrateIntegrityCommand(policy, atlasMigrateHashVerb(), runAtlasMigrateHash)
 }
 
 func newSilentNativeMigrateHashCommand() *cobra.Command {
@@ -62,7 +63,10 @@ func atlasMigrateHashVerb() atlasVerb {
 // reproduces Atlas CE's per-format selection, and the rolling hash from
 // migratesum.ComputeAtlasFiles — the same pair `migrate validate` verifies
 // with, so a directory this writes is one that verifies.
-func runAtlasMigrateHash(cmd *cobra.Command, source atlasMigrateSource) error {
+func runAtlasMigrateHash(
+	cmd *cobra.Command,
+	source atlasMigrateSource,
+) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

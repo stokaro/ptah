@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"time"
 
 	"go.5x5.cz/ptah/config"
@@ -45,6 +46,22 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// ValidateSchema applies a caller-selected policy to both fully resolved
+	// authored states before comparison. Nil accepts every modeled object.
+	ValidateSchema func(*goschema.Database) error
+	// ValidateInspectedSchema replaces ValidateSchema for live database and
+	// replayed migration-directory states.
+	ValidateInspectedSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects in live database and replayed migration-directory sources.
+	// Nil performs no supplemental catalog reads.
+	ValidateLiveObject func(LiveSchemaObject) error
+	// ValidateMigrationSource applies a caller-selected policy to each stable
+	// migration-directory snapshot before dev-database replay.
+	ValidateMigrationSource func(fs.FS) error
+	// ValidateLocalSchemaSource applies a caller-selected policy to each local
+	// schema path before parsing or dev-database work.
+	ValidateLocalSchemaSource func(string) error
 }
 
 // Diff computes the Atlas schema diff between two desired-state sources.
@@ -53,34 +70,20 @@ type DiffOptions struct {
 // is pinned by --dev-url first, then by --from and --to database sources;
 // local files alone still require --dev-url.
 func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error) {
-	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv)
+	prepared, err := prepareDiffSources(opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if err := fromSet.EnsureDevDatabase(opts.DevURL); err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if err := toSet.EnsureDevDatabase(opts.DevURL); err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, err
-	}
-	if dialect == "" {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("--dev-url is required for local schema file diffing")
-	}
+	fromSet := prepared.from
+	toSet := prepared.to
+	dialect := prepared.dialect
 
 	// Both sides are desired states here, so --dev-url is the only URL that can
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
 	resolveOpts := atlassource.ResolveOptions{
 		Dialect:         dialect,
-		DialectFlag:     dialectFlag,
+		DialectFlag:     prepared.dialectFlag,
 		DevURL:          opts.DevURL,
 		SchemaScope:     schemaScope,
 		SchemaScopeFlag: schemaScopeFlag,
@@ -89,18 +92,19 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		// projection below filters a universe that never contained the
 		// requested schema, so the diff answers "synced" for a database it
 		// never looked at.
-		Schemas:               opts.Schemas,
-		ConnectTimeout:        opts.ConnectTimeout,
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
+		Schemas:                   opts.Schemas,
+		ConnectTimeout:            opts.ConnectTimeout,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		Vars:                      opts.Vars,
+		ValidateSchema:            opts.ValidateSchema,
+		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
+		ValidateInspectedDatabase: LiveDatabaseValidator(opts.ValidateLiveObject),
+		ValidateMigrationSource:   opts.ValidateMigrationSource,
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}
-	fromState, err := fromSet.Resolve(ctx, resolveOpts)
+	fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, resolveOpts)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("load --from schema: %w", err)
-	}
-	toState, err := toSet.Resolve(ctx, resolveOpts)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("load --to schema: %w", err)
+		return atlasreport.SchemaDiff{}, err
 	}
 
 	scope := atlasfilter.Scope{
@@ -160,6 +164,115 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		}
 	}
 	return atlasreport.NewSchemaDiff(from, to, statements), nil
+}
+
+func resolveDiffSources(
+	ctx context.Context,
+	fromSet, toSet atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (fromState, toState atlassource.State, err error) {
+	// Strict live-catalog validation must finish before either side can replay
+	// and reset the dev database. Full/default mode supplies a nil callback and
+	// retains the established left-to-right resolution order.
+	fromState, fromResolved, err := preResolveLiveDiffSource(ctx, fromSet, opts)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	toState, toResolved, err := preResolveLiveDiffSource(ctx, toSet, opts)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+
+	if !fromResolved {
+		fromState, err = resolveDiffSource(ctx, fromSet, opts)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+	}
+	if !toResolved {
+		toState, err = resolveDiffSource(ctx, toSet, opts)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+	}
+	return fromState, toState, nil
+}
+
+func preResolveLiveDiffSource(
+	ctx context.Context,
+	set atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (atlassource.State, bool, error) {
+	if opts.ValidateInspectedDatabase == nil || set.Kind != atlassource.KindDatabase {
+		return atlassource.State{}, false, nil
+	}
+	state, err := resolveDiffSource(ctx, set, opts)
+	return state, true, err
+}
+
+func resolveDiffSource(
+	ctx context.Context,
+	set atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (atlassource.State, error) {
+	state, err := set.Resolve(ctx, opts)
+	if err != nil {
+		return atlassource.State{}, fmt.Errorf("load %s schema: %w", set.Flag, err)
+	}
+	return state, nil
+}
+
+type preparedDiffSources struct {
+	from        atlassource.Set
+	to          atlassource.Set
+	dialect     string
+	dialectFlag string
+}
+
+func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
+	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	if err := fromSet.EnsureDevDatabase(opts.DevURL); err != nil {
+		return preparedDiffSources{}, err
+	}
+	if err := toSet.EnsureDevDatabase(opts.DevURL); err != nil {
+		return preparedDiffSources{}, err
+	}
+	// Validate both local sides before resolving either one. In particular, a
+	// refused --to must not be preceded by opening a database-backed --from.
+	if err := fromSet.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --from schema: %w", err)
+	}
+	if err := toSet.ValidateLocalSchemaSources(opts.ValidateLocalSchemaSource); err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	fromSet, err = fromSet.PrepareMigrationSource(opts.ValidateMigrationSource)
+	if err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --from schema: %w", err)
+	}
+	toSet, err = toSet.PrepareMigrationSource(opts.ValidateMigrationSource)
+	if err != nil {
+		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
+	if err != nil {
+		return preparedDiffSources{}, err
+	}
+	if dialect == "" {
+		return preparedDiffSources{}, fmt.Errorf("--dev-url is required for local schema file diffing")
+	}
+	return preparedDiffSources{
+		from:        fromSet,
+		to:          toSet,
+		dialect:     dialect,
+		dialectFlag: dialectFlag,
+	}, nil
 }
 
 // diffFromDBState shapes the --from side for comparison. Database-backed

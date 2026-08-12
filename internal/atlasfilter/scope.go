@@ -2,6 +2,7 @@ package atlasfilter
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -85,6 +86,100 @@ var includeSelectableTypes = map[string]struct{}{
 	"composite_type":    {},
 	"range":             {},
 	"role":              {},
+}
+
+// Resource is one top-level identity offered to Atlas selector matching.
+// Types contains every selector type that names the same resource; for
+// example, a foreign table answers both table and foreign_table selectors.
+type Resource struct {
+	Types  []string
+	Schema string
+	Name   string
+}
+
+// ScopeResources applies schema/include/exclude matching to arbitrary
+// top-level identities while preserving input order. It exists for catalogs
+// such as schema-clean plans whose writer-owned kinds do not all have a field
+// in DBSchema. The boolean result aligns one-for-one with resources.
+func ScopeResources(resources []Resource, scope Scope) ([]bool, error) {
+	selectors, err := parseResourceIncludeSelectors(scope.Include)
+	if err != nil {
+		return nil, err
+	}
+	patterns, err := parsePatterns(scope.Exclude, scope.DefaultSchema)
+	if err != nil {
+		return nil, err
+	}
+	selection := newScopeSelection(scope, selectors)
+	selected := make([]bool, len(resources))
+	for i, resource := range resources {
+		keep := selection.selected(resource.Types, resource.Schema, resource.Name)
+		selected[i] = keep && !resourceExcluded(patterns, resource, scope.DefaultSchema)
+	}
+	if err := selection.emptySelectionError(scope); err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
+var additionalResourceSelectableTypes = map[string]struct{}{
+	"aggregate":         {},
+	"collation":         {},
+	"default_privilege": {},
+	"event":             {},
+	"foreign_table":     {},
+	"procedure":         {},
+}
+
+// ValidateResourceIncludeSelectors validates include selectors for arbitrary
+// writer-owned top-level resources. It is the pre-connect counterpart of
+// [ScopeResources]; the ordinary schema validator intentionally remains
+// narrower because a DBSchema cannot represent these additional catalog kinds.
+func ValidateResourceIncludeSelectors(values []string) error {
+	_, err := parseResourceIncludeSelectors(values)
+	return err
+}
+
+func parseResourceIncludeSelectors(values []string) ([]resourcePattern, error) {
+	allowed := maps.Clone(includeSelectableTypes)
+	maps.Copy(allowed, additionalResourceSelectableTypes)
+	var selectors []resourcePattern
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ",") {
+			raw := strings.TrimSpace(part)
+			if raw == "" {
+				continue
+			}
+			selector, err := parsePattern(raw, filterKindInclude)
+			if err != nil {
+				return nil, err
+			}
+			if err := validateIncludeSelectorTypesAgainst(raw, selector.types, allowed); err != nil {
+				return nil, err
+			}
+			selectors = append(selectors, selector)
+		}
+	}
+	return selectors, nil
+}
+
+func resourceExcluded(patterns []resourcePattern, resource Resource, defaultSchema string) bool {
+	schema := strings.TrimSpace(resource.Schema)
+	if schema == "" {
+		schema = strings.TrimSpace(defaultSchema)
+	}
+	objectNames := qualifiedNameCandidates(schema, resource.Name)
+	for _, pattern := range patterns {
+		if schema != "" && pattern.matches("schema", schema) {
+			return true
+		}
+		for _, resourceType := range resource.Types {
+			if pattern.matches(resourceType, objectNames...) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // includeChildTypes are resource kinds that cannot be included on their own
@@ -216,6 +311,14 @@ func includeSelectorSpellings(values []string) []string {
 }
 
 func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
+	return validateIncludeSelectorTypesAgainst(raw, types, includeSelectableTypes)
+}
+
+func validateIncludeSelectorTypesAgainst(
+	raw string,
+	types map[string]struct{},
+	selectable map[string]struct{},
+) error {
 	for resourceType := range types {
 		if _, child := includeChildTypes[resourceType]; child {
 			return fmt.Errorf(
@@ -225,7 +328,7 @@ func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
 		if resourceType == "schema" {
 			return fmt.Errorf("unsupported Atlas include selector %q: use --schema to select schemas", raw)
 		}
-		if _, ok := includeSelectableTypes[resourceType]; !ok {
+		if _, ok := selectable[resourceType]; !ok {
 			return fmt.Errorf("unsupported Atlas include resource type %q in selector %q", resourceType, raw)
 		}
 	}

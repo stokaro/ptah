@@ -56,6 +56,29 @@ func TestSchemaCleanFormatRendersCustomTemplate(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, `sqlite|1|DROP TABLE IF EXISTS "users"`)
 }
 
+func TestSchemaCleanFormatPreservesFunctionParameters(t *testing.T) {
+	report := atlasreport.NewSchemaClean(atlasreport.SchemaCleanOptions{
+		Driver: "postgres",
+		Plan: schemaclean.Plan{
+			Objects: []schemaclean.Object{
+				{Type: "function", Schema: "app", Name: "normalize", Parameters: "integer"},
+			},
+			Changes: []schemaclean.Change{
+				{
+					Type:       "function",
+					Schema:     "app",
+					Name:       "normalize",
+					Parameters: "integer",
+					Cmd:        `DROP FUNCTION IF EXISTS "app"."normalize"(integer) CASCADE`,
+				},
+			},
+		},
+	})
+
+	qt.Assert(t, report.Objects[0].Parameters, qt.Equals, "integer")
+	qt.Assert(t, report.Changes[0].Parameters, qt.Equals, "integer")
+}
+
 func TestSchemaCleanFormatRendersURLAsStringInCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	report := atlasreport.NewSchemaClean(atlasreport.SchemaCleanOptions{

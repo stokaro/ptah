@@ -57,35 +57,37 @@ func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode
 }
 
 func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
-	if migration.upTxModeErr != nil {
-		return "", migration.upTxModeErr
+	fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
+	if fileMode.err != nil {
+		return "", fileMode.err
 	}
-	if m.txMode == MigrationTxModeAll && migration.UpTxMode != MigrationFileTxModeUnspecified {
-		if migration.upTxModeSource == migrationFileTxModeSourcePtah && migration.UpTxMode == MigrationFileTxModeNone {
+	if m.txMode == MigrationTxModeAll && fileMode.mode != MigrationFileTxModeUnspecified {
+		if fileMode.source == migrationFileTxModeSourcePtah && fileMode.mode == MigrationFileTxModeNone {
 			return "", fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
 		}
-		if migration.upTxModeSource != migrationFileTxModeSourceAtlas {
+		if fileMode.source != migrationFileTxModeSourceAtlas {
 			return "", fmt.Errorf(
 				"migration %d selects txmode %q and cannot run with tx-mode all",
 				migration.Version,
-				migration.UpTxMode,
+				fileMode.mode,
 			)
 		}
 		return "", newAtlasTxModeDirectiveError(
 			"cannot set txmode directive to %q in %q when txmode %q is set globally",
-			migration.UpTxMode,
+			fileMode.mode,
 			migrationTxModeSourceName(migration.upSourcePath, migration.Description),
 			MigrationTxModeAll,
 		)
 	}
-	return resolveMigrationFileTxMode(m.txMode, migration.UpTxMode)
+	return resolveMigrationFileTxMode(m.txMode, fileMode.mode)
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
-	if migration.downTxModeErr != nil {
-		return "", migration.downTxModeErr
+	fileMode := migration.parsedDownTxModeForDialect(m.connectionDialect())
+	if fileMode.err != nil {
+		return "", fileMode.err
 	}
-	return resolveMigrationFileTxMode(MigrationTxModeFile, migration.DownTxMode)
+	return resolveMigrationFileTxMode(MigrationTxModeFile, fileMode.mode)
 }
 
 func migrationTxModeSourceName(sourcePath, description string) string {

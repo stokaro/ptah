@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -45,6 +46,19 @@ type InspectOptions struct {
 	// `ptah-compat` sets it; native inspection keeps Ptah's generated marker and
 	// native terminal spacing.
 	CompatibilityHCLFraming bool
+	// PrepareSchema applies a caller-selected normalization and validation
+	// policy to the fully introspected schema before any template renders or
+	// file export is published. A returned replacement becomes the exact state
+	// every downstream inspection surface sees.
+	PrepareSchema func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error)
+	// ValidateSchema applies a caller-selected policy to the fully introspected
+	// schema before any template renders or file export is published.
+	ValidateSchema func(*goschema.Database) error
+	// ValidateLiveObject applies a caller-selected policy to supplemental
+	// catalog objects before any template renders or file export is published.
+	// Nil avoids the additional catalog query and preserves full-mode
+	// best-effort inspection behavior.
+	ValidateLiveObject func(LiveSchemaObject) error
 }
 
 // NormalizeInspectFormat returns and validates the executable Atlas schema
@@ -74,9 +88,19 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 		return "", err
 	}
 
-	schema, err := readInspectSchema(ctx, conn, opts.Schemas)
+	schema, names, err := readInspectSchemaWithNames(ctx, conn, opts.Schemas)
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
+	}
+	schema, err = prepareInspectSchema(schema, opts.PrepareSchema)
+	if err != nil {
+		return "", err
+	}
+	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
+		return "", err
+	}
+	if err := ValidateLiveObjects(conn, names, opts.ValidateLiveObject); err != nil {
+		return "", err
 	}
 	// A description scoped to the roles the inspected schemas use omits roles
 	// that exist on the server, and the rendered document is the only thing
@@ -86,7 +110,27 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// told to materialize, whose other cluster roles are not an answer to
 	// anything they asked. See stokaro/ptah#1267.
 	rolescope.ReportUndescribed(opts.Diagnostics, schema)
-	return renderInspectSchema(schema, conn.Info(), opts)
+	validatedOpts := opts
+	validatedOpts.PrepareSchema = nil
+	validatedOpts.ValidateSchema = nil
+	return renderInspectSchema(schema, conn.Info(), validatedOpts)
+}
+
+func prepareInspectSchema(
+	schema *dbschematypes.DBSchema,
+	prepare func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error),
+) (*dbschematypes.DBSchema, error) {
+	if prepare == nil {
+		return schema, nil
+	}
+	return prepare(schema)
+}
+
+func validateInspectSchema(schema *dbschematypes.DBSchema, validate func(*goschema.Database) error) error {
+	if validate == nil {
+		return nil
+	}
+	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema))
 }
 
 // renderInspectSchema is the shared inspect tail for every source kind:
@@ -99,6 +143,9 @@ func renderInspectSchema(
 ) (string, error) {
 	format, err := NormalizeInspectFormat(opts.Format)
 	if err != nil {
+		return "", err
+	}
+	if err := validateInspectSchema(schema, opts.ValidateSchema); err != nil {
 		return "", err
 	}
 	schema, excludeReport, err := scopeInspectSchema(schema, info, opts)

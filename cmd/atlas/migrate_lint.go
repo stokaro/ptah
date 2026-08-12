@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
@@ -50,7 +51,7 @@ type atlasMigrateLintOptions struct {
 	atlasEnv  string
 }
 
-func newAtlasMigrateLintCommand() *cobra.Command {
+func newAtlasMigrateLintCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasMigrateLintOptions{
 		dir:       "file://migrations",
 		dirFormat: atlasDirFormatDefault,
@@ -76,7 +77,7 @@ Native ` + "`ptah migrations lint`" + ` needs neither and is unaffected by both.
 
 Native Ptah equivalent: ptah migrations lint.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAtlasMigrateLint(cmd, opts)
+			return runAtlasMigrateLint(cmd, policy, opts)
 		},
 	}
 	flags := cmd.Flags()
@@ -93,6 +94,7 @@ Native Ptah equivalent: ptah migrations lint.`,
 
 func runAtlasMigrateLint(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	opts atlasMigrateLintOptions,
 ) (runErr error) {
 	// Both variables this verb owns are resolved first, before the project file
@@ -297,6 +299,9 @@ func runAtlasMigrateLint(
 			fmt.Fprintln(cmd.ErrOrStderr(), integrity.Error)
 		}
 		return exitcode.New(1, errors.New(integrity.Error))
+	}
+	if err := policy.ValidateMigrationSourceForURL(captured.gateFS(), opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 
 	// A foreign layout is rebuilt here as up-only Atlas migrations, so what the

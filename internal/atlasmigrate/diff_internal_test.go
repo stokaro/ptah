@@ -61,7 +61,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil,
+		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil, nil,
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -87,7 +87,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&goschema.Database{}, nil,
+		&goschema.Database{}, nil, nil,
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -114,7 +114,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&goschema.Database{Sequences: []goschema.Sequence{{Name: "order_seq"}}},
-		diagnostics,
+		diagnostics, nil,
 	)
 
 	c.Assert(err, qt.IsNil)

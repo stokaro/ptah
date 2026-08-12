@@ -16,6 +16,49 @@ gap register lives in [Comparison](../comparison/); these entries are the
 subset that came out of
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241).
 
+These boundaries also remain active under
+`PTAH_ATLAS_STRICT_COMPAT=1`. Strict mode limits the CE capability inventory;
+it does not reproduce an acceptance that discards an argument, hides an edited
+migration, or loses recoverable state.
+
+The same rule protects richer live schemas. The pinned community inspector can
+omit object kinds outside its edition, and its cleanup can leave or handle a
+catalog differently from Ptah's complete cleanup. Strict mode therefore
+refuses a live Pro-only object before `schema inspect`, `schema apply`,
+`schema diff`, or `schema clean` emits output, compares incomplete states, or
+mutates the target. Default `ptah-compat` keeps Ptah's complete modeled-object
+behavior; the refusal exists only in the CE oracle profile.
+
+The command-specific inventory remains read-only. Cleanup validates the
+writer's complete destruction inventory, including PostgreSQL procedures,
+aggregates, foreign tables, collations, and default privileges. Inspection,
+apply planning, and database-backed or replayed schema- and migration-diff
+sources query those catalog-only kinds in the same schema scope. A dependent
+Pro-only object such as a trigger cannot disappear with a table merely because
+the cleanup plan does not print it as a separate line.
+
+Cleanup validation uses the writer's schema scope: a global
+extension installed in another PostgreSQL schema does not block cleaning the
+selected schema. A sequence backing a `SERIAL` or identity column is likewise
+not treated as a forbidden standalone sequence, because it rides with the
+table that owns it. A selector cannot split that ownership: selecting the
+sequence without its table, or excluding it while the table remains selected,
+is refused before mutation.
+
+`PTAH_ALLOW_NONINTERACTIVE_EDIT=1` remains available in strict mode. It permits
+an already-configured scripted editor to run without a terminal; it does not
+add an editor, command, flag, or migration semantic, so it is retained as an
+execution-safety control rather than classified as a Pro capability.
+
+The same fail-closed boundary covers authored extensions. Strict schema
+workflows refuse YAML sources and a `schema apply` lint policy that the CE path
+cannot enforce. Commands that execute, convert, or replay migration bodies
+refuse Atlas txtar, Ptah directives, and SQL templates; a bare or unknown
+`-- +ptah` directive marker is refused rather than ignored. Checksum-only reads
+preserve those bytes. Default mode retains and executes the extensions. The
+strict profile never turns an authored safety contract into an ignored comment
+or configuration block merely to copy an edition limit.
+
 Every measurement below was taken on 2026-08-09 against that binary, each exit
 status read on its own line rather than through a pipe. Where a fixture needed
 a hashed migration directory, that binary authored and hashed it, so no
@@ -49,9 +92,10 @@ is the reasoning the `--dir` defaults landed under, where a default that
 silently swallowed a typo would have migrated the wrong directory at exit `0`.
 
 The refusal is not carried behind an environment variable. A variable that
-restored the acceptance would have to default to the permissive side, and every
-boolean `PTAH_*` variable opts in to the more permissive side so that a typo
-lands on the strict default.
+restored the acceptance would have to default to the permissive side. Feature
+toggles instead opt in to more permissive behavior so that a typo lands on the
+strict default. The separate `PTAH_ATLAS_STRICT_COMPAT` policy selector narrows
+the command inventory for CE oracle runs and does not relax this refusal.
 
 `migrate hash` takes no positional either and refuses through the same helper,
 `cmdutil.NoPositionalArgsHint`. No reading of that binary was taken for it: the

@@ -1104,6 +1104,8 @@ runtime.
 | --- | --- |
 | `--dry-run` | Prints the planned cleanup. |
 | `--auto-approve` | Skips the interactive confirmation, which is otherwise preserved. |
+| `--include` | Full mode only. Keeps objects matched by Atlas resource selectors; dependent cleanup rows such as foreign keys and implicit sequences ride with their table. An owned sequence cannot be selected without its table. |
+| `--exclude` | Full mode only. Subtracts objects matched by Atlas resource selectors. Every independently writer-owned object kind remains selectable; an owned sequence cannot be preserved while its table is selected for removal. |
 | `--format` | Renders Atlas-style templates over the cleanup plan. |
 | `--env` | Reads `env.url` and `format.schema.clean` from `atlas.hcl`. |
 
@@ -1112,7 +1114,7 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 
 | Dialect | Reported and destroyed |
 | --- | --- |
-| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions; standalone sequences on PostgreSQL itself. |
+| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions. PostgreSQL itself also reports standalone sequences, foreign tables, procedures, aggregates, collations, and default privileges. |
 | MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
 | SQLite | Tables and views. |
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
@@ -1129,9 +1131,29 @@ any other name is reported as the ordinary table it is.
 
 Objects that vanish as collateral of a listed drop are not listed separately:
 indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
-rendered `Cmd` describes the object being destroyed; it is not the exact
-statement the cleanup runtime executes, and the report order is alphabetical by
-object kind rather than an execution order.
+report order is alphabetical by object kind rather than an execution order. An
+unscoped cleanup rebuilds its statements from the live catalog; a scoped
+cleanup executes the reported `Cmd` values in a separate deterministic order
+that removes known dependents before their dependencies. PostgreSQL uses live
+catalog depth to order dependent views and materialized views of the same kind.
+Every PostgreSQL-family target executes the complete scoped plan in one
+transaction and retries selected dependencies after a `RESTRICT` refusal. An
+external dependency rolls back earlier selected drops instead of leaving a
+partially cleaned schema.
+
+PostgreSQL `SERIAL` and identity sequences are recognized as implicit table
+children, execute after their parent table, and are not reported as forbidden
+standalone sequences by the strict CE oracle profile. A selector that tries to
+make the owned sequence and its table disagree is refused before mutation.
+Function objects and changes expose full declaration `Parameters`.
+
+PostgreSQL-family scoped drops use `RESTRICT`, so the database refuses a
+selected parent when an unselected view, foreign key, or other catalog
+dependency still refers to it. The narrowed command cannot cascade beyond the
+objects its plan reports.
+
+Function `Cmd` values use PostgreSQL identity arguments, so overloaded,
+defaulted, and OUT-only functions remain distinct and executable.
 
 Native twin: [`ptah schema clean`](../native-commands/).
 

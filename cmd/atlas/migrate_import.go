@@ -6,10 +6,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
 
-func newAtlasMigrateImportCommand() *cobra.Command {
+func newAtlasMigrateImportCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	var opts atlasmigrateimport.Options
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -30,7 +31,7 @@ every versioned migration. The destination file name carries that slot rather
 than an R suffix, so the imported directory keeps one-time migration semantics
 instead of Flyway-style reapply semantics.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAtlasMigrateImport(cmd, opts)
+			return runAtlasMigrateImport(cmd, policy, opts)
 		},
 	}
 	flags := cmd.Flags()
@@ -62,13 +63,20 @@ instead of Flyway-style reapply semantics.`,
 // would leave the converted directory — and the fresh atlas.sum computed over
 // it — behind, which is the laundering half of #1095 and survives any test that
 // only checks the exit code.
-func runAtlasMigrateImport(cmd *cobra.Command, opts atlasmigrateimport.Options) error {
+func runAtlasMigrateImport(
+	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
+	opts atlasmigrateimport.Options,
+) error {
 	captured, err := atlasmigrateimport.CaptureImport(opts)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := verifyAtlasImportSourceChecksum(cmd, captured.Source, captured.Format); err != nil {
 		return err
+	}
+	if err := policy.ValidateMigrationSource(captured.Source); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if _, err := captured.Write(); err != nil {
 		return cmdutil.Fail(cmd, err)

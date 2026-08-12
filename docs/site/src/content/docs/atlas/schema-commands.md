@@ -1034,14 +1034,19 @@ across different endpoints; malformed comparison inputs fail before reset.
 
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one
-target database. The lock is acquired before target inspection and planning,
-held through simulation, confirmation, and execution, and released on every
-exit path including cancellation.
+target database. Strict CE mode first inventories an explicit `--schema` target
+scope; without one, PostgreSQL-family targets inventory the user realm because
+desired replay may name schemas beyond the URL's `search_path`. This happens
+before the lock and before any migration-directory replay on the dev database.
+The lock then covers the authoritative target reinspection, planning,
+simulation, confirmation, and execution. It is released on every exit path,
+including cancellation.
 
-An empty value waits indefinitely; an elapsed timeout fails the apply before
-the target is inspected. PostgreSQL and YugabyteDB (`pg_advisory_lock`), MySQL
-and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real database
-locks.
+An empty value waits indefinitely. An elapsed timeout fails the apply before
+the locked target reinspection; a strict target-policy refusal happens before
+the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
+MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
+database locks.
 
 SQLite, ClickHouse, CockroachDB, and Spanner have no advisory-lock semantics:
 the apply proceeds without a lock, and an explicitly passed `--lock-timeout`
@@ -1501,7 +1506,17 @@ Planned cleanup changes: 2
 The plan lists the object kinds the target dialect's cleanup really destroys —
 see the [per-dialect coverage table](../../reference/atlas-commands/#ptah-compat-schema-clean).
 Rows are ordered alphabetically by object kind; that is a report order, not the
-order the statements run in.
+order the statements run in. Scoped cleanup uses a separate deterministic
+dependency order for known relationships, including views before tables and
+tables before their implicit PostgreSQL `SERIAL` or identity sequences.
+PostgreSQL reads live catalog depth to drop a dependent view or materialized
+view before another selected view of the same kind. It applies the whole scoped
+plan transactionally, so a later `RESTRICT` refusal rolls back earlier drops.
+
+An implicit sequence is not independently selectable: including it without its
+owning table, or excluding it while the table remains selected, is refused
+before cleanup mutates the database. Select or exclude the owning table so the
+child sequence rides with the same decision.
 
 :::danger
 Without `--dry-run`, cleanup drops the listed objects after confirmation
@@ -1516,6 +1531,9 @@ Without `--dry-run`, cleanup drops the listed objects after confirmation
 | `ptah-compat schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
 | `ptah-compat schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
 | `ptah-compat schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
+
+Function entries in `.Objects` and `.Changes` also carry `.Parameters`, and
+their `.Cmd` includes the PostgreSQL signature so overloads remain distinct.
 
 The shared report shape and URL redaction rules are described on the
 [Atlas compatibility overview](../overview/#format-reports-and-redaction).

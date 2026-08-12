@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
@@ -16,6 +17,37 @@ func TestEnvNameNormalizesFlagName(t *testing.T) {
 
 	c.Assert(cmdflags.EnvName("PTAH", "db-url"), qt.Equals, "PTAH_DB_URL")
 	c.Assert(cmdflags.EnvName("PTAH", "migration.lock-timeout"), qt.Equals, "PTAH_MIGRATION_LOCK_TIMEOUT")
+}
+
+func TestEnvBindingNameSkipsExplicitOnlyFlags(t *testing.T) {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	flags.String("url", "", "Database URL")
+	flags.Bool("auto-approve", false, "Skip approval")
+	qt.Assert(t, cmdflags.DisableEnvBinding(flags, "auto-approve"), qt.IsNil)
+
+	name, ok := cmdflags.EnvBindingName("PTAH", flags.Lookup("url"))
+	qt.Assert(t, ok, qt.IsTrue)
+	qt.Assert(t, name, qt.Equals, "PTAH_URL")
+	name, ok = cmdflags.EnvBindingName("PTAH", flags.Lookup("auto-approve"))
+	qt.Assert(t, ok, qt.IsFalse)
+	qt.Assert(t, name, qt.Equals, "")
+}
+
+func TestForwardedEnvBindingsRemainVisibleForExplicitAdapterFlags(t *testing.T) {
+	cmd := &cobra.Command{Use: "adapter"}
+	flags := cmd.Flags()
+	flags.String("dir", "", "")
+	qt.Assert(t,
+		cmdflags.AddForwardedEnvBinding(flags, "dir", "PTAH_MIGRATIONS_DIR"),
+		qt.IsNil,
+	)
+	qt.Assert(t, cmdflags.DisableEnvBinding(flags, "dir"), qt.IsNil)
+
+	qt.Assert(t,
+		cmdflags.ForwardedEnvBindings(flags.Lookup("dir")),
+		qt.DeepEquals,
+		[]string{"PTAH_MIGRATIONS_DIR"},
+	)
 }
 
 func TestInitializeEnvAppliesEnvironmentDefaults(t *testing.T) {

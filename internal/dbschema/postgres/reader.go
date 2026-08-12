@@ -2594,6 +2594,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		SELECT
 			p.proname AS function_name,
 			pg_get_function_arguments(p.oid) AS parameters,
+			pg_get_function_identity_arguments(p.oid) AS identity_arguments,
 			pg_get_function_result(p.oid) AS returns,
 			l.lanname AS language,
 			CASE p.prosecdef WHEN true THEN 'DEFINER' ELSE 'INVOKER' END AS security,
@@ -2621,7 +2622,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			JOIN pg_extension e ON e.oid = d.refobjid
 			WHERE d.objid = p.oid AND d.deptype = 'e'
 		)
-		ORDER BY p.proname`
+		ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`
 
 	rows, err := r.db.Query(functionsQuery, schemaName)
 	if err != nil {
@@ -2632,9 +2633,11 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 	var functions []types.DBFunction
 	for rows.Next() {
 		var fn types.DBFunction
+		var identityArguments string
 		err := rows.Scan(
 			&fn.Name,
 			&fn.Parameters,
+			&identityArguments,
 			&fn.Returns,
 			&fn.Language,
 			&fn.Security,
@@ -2650,6 +2653,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		// connection's own schema, named otherwise, so `--exclude app.fn_app`
 		// has a qualified candidate to match (stokaro/ptah#933).
 		fn.Schema = r.outputSchema(schemaName)
+		fn.IdentityArguments = &identityArguments
 		functions = append(functions, fn)
 	}
 
