@@ -126,6 +126,22 @@ func TestPostgresPlanRelationsLockEveryTableOwnerBeforeValidation(t *testing.T) 
 	})
 }
 
+func TestEmptyPlanStillRunsExecutionBoundaryValidation(t *testing.T) {
+	c := qt.New(t)
+	wantErr := errors.New("schema changed after confirmation")
+	called := false
+
+	err := ApplyPlanWithOptions(t.Context(), nil, Plan{}, ApplyPlanOptions{
+		ValidateBeforeExecute: func() error {
+			called = true
+			return wantErr
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, wantErr)
+	c.Assert(called, qt.IsTrue)
+}
+
 func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
 	for _, test := range []struct {
 		dialect string

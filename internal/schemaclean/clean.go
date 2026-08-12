@@ -249,11 +249,14 @@ func ApplyPlanWithOptions(
 	plan Plan,
 	opts ApplyPlanOptions,
 ) error {
-	conn.SchemaWriter().SetDryRun(false)
 	changes := executableChanges(plan)
 	if len(changes) == 0 {
+		if opts.ValidateBeforeExecute != nil {
+			return opts.ValidateBeforeExecute()
+		}
 		return nil
 	}
+	conn.SchemaWriter().SetDryRun(false)
 	if isPostgresFamily(conn.Info().Dialect) {
 		return applyPostgresFamilyPlan(ctx, conn, changes, opts)
 	}
