@@ -12,9 +12,12 @@ name: Capability Matrix
 # one, and the pull requests this tier exists to unblock are precisely the ones
 # that change only a container tag.
 #
-# The absence of a filter is measurable and was measured: a commit touching
-# nothing but this file starts this workflow, while `release.yml` and
-# `ptah-action-smoke.yml` produce no jobs for the same commit.
+# The unit a filter is evaluated against is the pull request's whole diff, not
+# its last commit: a `pull_request` event compares base and head, so a branch
+# that adds one commit touching only a workflow file still matches a filter
+# some earlier commit satisfied. The exclusion therefore bites exactly the
+# pull requests this tier exists to unblock, whose ENTIRE diff is a container
+# tag and matches `cmd/**`, `internal/**` and `go.mod` nowhere.
 on:
   push:
     branches:
