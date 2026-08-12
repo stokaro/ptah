@@ -293,17 +293,21 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if err := toSet.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
-	}
 	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
-	toSet, err = toSet.PrepareMigrationSource(migrationSourceValidator)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+	var preparedTo *atlassource.Set
+	if migrationSourceValidator != nil {
+		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if err := toSet.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		toSet, err = toSet.PrepareMigrationSource(migrationSourceValidator)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		preparedTo = &toSet
 	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
@@ -369,7 +373,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		TxMode:      txMode,
 		DryRun:      opts.dryRun,
 		ProjectEnv:  projectEnv,
-		PreparedTo:  &toSet,
+		PreparedTo:  preparedTo,
 		Diagnostics: cmd.ErrOrStderr(),
 
 		// Atlas-compatible surface: a schema file written for another tool

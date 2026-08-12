@@ -1034,7 +1034,9 @@ across different endpoints; malformed comparison inputs fail before reset.
 
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one
-target database. Strict CE mode first inventories the selected target catalog,
+target database. Strict CE mode first inventories an explicit `--schema` target
+scope; without one, PostgreSQL-family targets inventory the user realm because
+desired replay may name schemas beyond the URL's `search_path`. This happens
 before the lock and before any migration-directory replay on the dev database.
 The lock then covers the authoritative target reinspection, planning,
 simulation, confirmation, and execution. It is released on every exit path,

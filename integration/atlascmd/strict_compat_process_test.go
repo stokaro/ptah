@@ -1208,6 +1208,32 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		qt.Assert(t, postgresTableExists(t, devURL, "replayed_before_target_validation"), qt.IsFalse)
 	})
 
+	t.Run("apply target realm before desired schema replay", func(t *testing.T) {
+		migrationDir := t.TempDir()
+		replayDevURL := strictCompatPostgresDevURL(t)
+		tableName := prefix + "_replayed_scope"
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+			"CREATE SCHEMA IF NOT EXISTS "+procedureSchema+";\n"+
+				"CREATE TABLE "+procedureSchema+"."+tableName+" (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "apply",
+			"--url", emptyURL,
+			"--to", "file://"+migrationDir,
+			"--dev-url", replayDevURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		qt.Assert(t, postgresSchemaTableExists(t, replayDevURL, procedureSchema, tableName), qt.IsFalse)
+	})
+
 	t.Run("apply target before lock acquisition", func(t *testing.T) {
 		lockConn, err := dbschema.ConnectToDatabase(t.Context(), procedureURL)
 		qt.Assert(t, err, qt.IsNil)
@@ -1230,6 +1256,44 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		qt.Assert(t, code, qt.Equals, 1)
 		qt.Assert(t, stdout, qt.Equals, "")
 		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+	})
+
+	t.Run("full apply classifies migration directory under lock", func(t *testing.T) {
+		migrationDir := t.TempDir()
+		replayDevURL := strictCompatPostgresDevURL(t)
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_late.sql"), []byte(
+			"CREATE TABLE classified_under_lock (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+
+		lockConn, err := dbschema.ConnectToDatabase(t.Context(), emptyURL)
+		qt.Assert(t, err, qt.IsNil)
+		defer dbschema.CloseAndWarn(lockConn)
+		lock, err := atlasschema.AcquireApplyLock(t.Context(), lockConn, "", time.Second)
+		qt.Assert(t, err, qt.IsNil)
+		defer func() { _ = lock.Release() }()
+
+		var stdoutBuffer, stderrBuffer bytes.Buffer
+		command := exec.CommandContext(t.Context(), compat,
+			"schema", "apply",
+			"--url", emptyURL,
+			"--to", "file://"+migrationDir,
+			"--dev-url", replayDevURL,
+			"--lock-timeout", "5s",
+			"--dry-run",
+		)
+		command.Env = environmentWithoutPtahVariables()
+		command.Stdout = &stdoutBuffer
+		command.Stderr = &stderrBuffer
+		qt.Assert(t, command.Start(), qt.IsNil)
+
+		waitForPostgresAdvisoryLockWaiter(t, lockConn)
+		_, err = migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+		qt.Assert(t, lock.Release(), qt.IsNil)
+		qt.Assert(t, command.Wait(), qt.IsNil,
+			qt.Commentf("stdout=%q stderr=%q", stdoutBuffer.String(), stderrBuffer.String()))
+		qt.Assert(t, stdoutBuffer.String(), qt.Contains, "CREATE TABLE")
+		qt.Assert(t, stderrBuffer.String(), qt.Equals, "")
 	})
 
 	t.Run("apply target", func(t *testing.T) {
@@ -1385,6 +1449,41 @@ func postgresTableExists(t *testing.T, dbURL, table string) bool {
 		)`, table).Scan(&exists)
 	qt.Assert(t, err, qt.IsNil)
 	return exists
+}
+
+func postgresSchemaTableExists(t *testing.T, dbURL, schema, table string) bool {
+	t.Helper()
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	qt.Assert(t, err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var exists bool
+	err = conn.QueryRowContext(t.Context(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1 AND table_name = $2
+		)`, schema, table).Scan(&exists)
+	qt.Assert(t, err, qt.IsNil)
+	return exists
+}
+
+func waitForPostgresAdvisoryLockWaiter(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting bool
+		err := conn.QueryRowContext(t.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM pg_locks
+				WHERE locktype = 'advisory' AND NOT granted
+			)`).Scan(&waiting)
+		qt.Assert(t, err, qt.IsNil)
+		if waiting {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for schema apply to block on the advisory lock")
 }
 
 func strictCompatPostgresTestURL(t *testing.T) string {

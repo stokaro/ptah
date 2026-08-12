@@ -45,10 +45,13 @@ captured and validated before a target or dev database is opened or a migration
 lock is acquired, and replay uses that same stable snapshot. Default mode keeps
 the extensions.
 
-After a target connection opens, strict `schema apply` inventories the selected
-live scope before acquiring the apply lock or replaying a desired migration
-directory. The locked planning phase validates it again before producing or
-executing a plan. Default mode performs no supplemental strict-policy inventory.
+After a target connection opens, strict `schema apply` inventories an explicit
+`--schema` scope before acquiring the apply lock or replaying a desired
+migration directory. Without that explicit scope, a PostgreSQL-family target
+inventories the user realm because desired replay may name a schema beyond the
+URL's `search_path`. The locked planning phase validates it again before
+producing or executing a plan. Default mode performs no supplemental
+strict-policy inventory.
 
 Strict process startup also rejects both Atlas-facing `PTAH_*` flag bindings
 and native aliases consumed after forwarding, such as

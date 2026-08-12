@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/dbschema/types"
@@ -19,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -185,10 +187,13 @@ type applyComputation struct {
 	readScope []string
 }
 
-// PreflightApplyTarget validates the target state selected directly by the
-// connection URL and --schema before an apply lock is acquired or a desired
-// migration directory is replayed. Nil validators return without reading the
-// database, preserving the full/default compatibility path exactly.
+// PreflightApplyTarget validates the target state before an apply lock is
+// acquired or a desired migration directory is replayed. An explicit --schema
+// remains authoritative. Without one, PostgreSQL-family targets inventory the
+// user realm because desired-state replay may add schemas beyond a URL-pinned
+// search_path; other dialects retain their normal URL-derived read scope. Nil
+// validators return without reading the database, preserving the full/default
+// compatibility path exactly.
 //
 // Apply planning validates the target again while the lock is held. The second
 // check is deliberate: this preflight establishes before-work error ordering,
@@ -207,7 +212,7 @@ func PreflightApplyTarget(
 	if conn == nil {
 		return errors.New("schema apply target preflight requires database connection")
 	}
-	readScope, err := schemascope.ReadNames(ctx, conn.Info(), schemas, conn)
+	readScope, err := preflightApplyReadScope(ctx, conn, schemas)
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
@@ -219,6 +224,20 @@ func PreflightApplyTarget(
 		return err
 	}
 	return ValidateLiveObjects(conn, readScope, validateLiveObject)
+}
+
+func preflightApplyReadScope(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	schemas []string,
+) ([]string, error) {
+	if requested := schemascope.SplitNames(schemas); len(requested) > 0 {
+		return requested, nil
+	}
+	if platform.IsPostgresFamily(conn.Info().Dialect) {
+		return schemaselection.RealmSchemas(ctx, conn.Info().Dialect, conn)
+	}
+	return schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 }
 
 func computeApplyPlan(
