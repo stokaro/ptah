@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/capabilityline"
 	"go.5x5.cz/ptah/internal/capabilityprobe"
 )
 
@@ -23,6 +24,46 @@ func TestCells_IsNotEmpty(t *testing.T) {
 	// is the same refusal the repository's shell gates make when their input
 	// list comes back empty.
 	c.Assert(len(capabilityprobe.Cells) > 0, qt.IsTrue)
+}
+
+// TestCells_UseExactlyTheSharedMeasuredLines keeps the resolver's exact-line
+// attribution and the matrix declaration tied in both directions. A shared
+// line without a cell and a cell added without a shared resolver identifier
+// both fail here rather than creating a second drifting release-line list.
+func TestCells_UseExactlyTheSharedMeasuredLines(t *testing.T) {
+	c := qt.New(t)
+
+	for dialect, lines := range map[string][]string{
+		platform.MySQL:       capabilityline.MySQLMeasured(),
+		platform.MariaDB:     capabilityline.MariaDBMeasured(),
+		platform.CockroachDB: capabilityline.CockroachDBMeasured(),
+	} {
+		declared := declaredLines(dialect)
+		c.Assert(declared, qt.ContentEquals, lines,
+			qt.Commentf("the matrix cells and resolver identifiers must name exactly the same %s lines", dialect))
+		for _, line := range lines {
+			c.Run(dialect+" "+line, func(c *qt.C) {
+				version, err := capabilityprobe.ParseVersion(dialect, line, "")
+				c.Assert(err, qt.IsNil)
+				cell, found := capabilityprobe.CellFor(dialect, version)
+				c.Assert(found, qt.IsTrue)
+				c.Assert(cell.Line, qt.Equals, line)
+			})
+		}
+	}
+}
+
+func declaredLines(dialect string) []string {
+	cells := slices.DeleteFunc(slices.Clone(capabilityprobe.Cells), func(cell capabilityprobe.Cell) bool {
+		return cell.Dialect != dialect
+	})
+	return slices.Collect(func(yield func(string) bool) {
+		for _, cell := range cells {
+			if !yield(cell.Line) {
+				return
+			}
+		}
+	})
 }
 
 func TestCells_AreWellFormed(t *testing.T) {
@@ -60,6 +101,8 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 		"SQLite3":         capability.SQLite3,
 		"SQLServer2022":   capability.SQLServer2022,
 		"CockroachDB23":   capability.CockroachDB23,
+		"CockroachDB25":   capability.CockroachDB25,
+		"CockroachDB26":   capability.CockroachDB26,
 		"YugabyteDB25":    capability.YugabyteDB25,
 		"SpannerPostgres": capability.SpannerPostgres,
 	}
@@ -249,6 +292,14 @@ func TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts(t *testing.T) {
 	}
 }
 
+func TestCellsDeclaring_LineAliasMatchesTheTargetLine(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(cellsDeclaring("cockroachdb/cockroach", "v26.2.5"), qt.HasLen, 1)
+	c.Assert(cellsDeclaring("cockroachdb/cockroach", "v27.1.0"), qt.HasLen, 0,
+		qt.Commentf("a floating 25.4 or 26.2 cell must not cover an undeclared 27.1 target"))
+}
+
 // readPinnedImages returns every image reference the two files start, sorted
 // and deduplicated: postgres:18 appears in both.
 func readPinnedImages(c *qt.C) []string {
@@ -330,11 +381,18 @@ func cellsDeclaring(repository, tag string) []capabilityprobe.Cell {
 		if cellRepository != repository {
 			continue
 		}
-		if cellTag == tag || strings.HasPrefix(cellTag, tag+".") {
+		lineAlias := cellTag == "latest-v"+cell.Line && tagNamesLine(tag, cell.Line)
+		resolvedLine := cell.ResolveNewestPatch && strings.HasPrefix(tag, cell.Line+".")
+		if cellTag == tag || strings.HasPrefix(cellTag, tag+".") || lineAlias || resolvedLine {
 			out = append(out, cell)
 		}
 	}
 	return out
+}
+
+func tagNamesLine(tag, line string) bool {
+	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "latest-v"), "v")
+	return normalized == line || strings.HasPrefix(normalized, line+".")
 }
 
 // splitImageRef separates an image reference into repository and tag. The colon

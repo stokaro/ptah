@@ -118,7 +118,7 @@ func writeSessionDeltas(w io.Writer, r *Report) {
 // sees "decided 22" cannot tell an intact run from an eroded one without it.
 func writeSummary(w io.Writer, r *Report) {
 	fmt.Fprintf(w, "\nsummary: %d rows — %d AGREES, %d DISAGREES, %d UNDECIDABLE; decided %d, floor %d\n",
-		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Undecidable), r.Decided(), r.floor())
+		len(r.Rows), r.Count(Agrees), r.Count(Disagrees), r.Count(Undecidable), r.Decided(), r.Floor())
 }
 
 func writeAnnotations(w io.Writer, r *Report) {
