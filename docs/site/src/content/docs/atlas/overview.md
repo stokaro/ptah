@@ -49,11 +49,13 @@ PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat schema inspect --help
 ```
 
 Strict mode changes command construction, not only runtime validation. Its help
-tree exposes CE commands and flags, Pro-only verbs use the community boundary,
-and Ptah's generic `PTAH_<FLAG>` environment twins are disabled. A present
-extension variable is rejected before help, version, argument handling,
-configuration, filesystem, or database work. The selector has no CLI flag, so
-it cannot change the surface being measured.
+tree exposes CE commands and flags, and gated verbs use a Ptah-owned diagnostic
+that tells the operator to unset `PTAH_ATLAS_STRICT_COMPAT` for the full
+compatibility surface. It never links to an Atlas installer. Ptah's generic
+`PTAH_<FLAG>` environment twins are disabled. A present extension variable is
+rejected before help, version, argument handling, configuration, filesystem, or
+database work. The selector has no CLI flag, so it cannot change the surface
+being measured.
 
 This validation targets known Ptah flag bindings and feature toggles. It does
 not reserve the whole `PTAH_*` namespace: values read explicitly by an

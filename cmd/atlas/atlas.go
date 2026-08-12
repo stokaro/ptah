@@ -445,18 +445,18 @@ func addAtlasUnsupportedCommands(parent *cobra.Command, verbs []atlasUnsupported
 
 func addAtlasCommunityGatedCommands(parent *cobra.Command, group string, verbs []string) {
 	for _, verb := range verbs {
-		parent.AddCommand(newAtlasCommunityGatedCommand(group, verb))
+		parent.AddCommand(newAtlasStrictCompatGatedCommand(group, verb))
 	}
 }
 
-func newAtlasCommunityGatedCommand(group, verb string) *cobra.Command {
-	path := "atlas " + group + " " + verb
-	body := atlasCommunityGateBody(path)
+func newAtlasStrictCompatGatedCommand(group, verb string) *cobra.Command {
+	path := "ptah-compat " + group + " " + verb
+	body := atlasStrictCompatGateBody(path)
 	cmd := &cobra.Command{
 		Use:    verb,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return failAtlasCommunityGate(cmd, path)
+			return failAtlasStrictCompatGate(cmd, path)
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
@@ -467,25 +467,19 @@ func newAtlasCommunityGatedCommand(group, verb string) *cobra.Command {
 	return cmd
 }
 
-func atlasCommunityGateBody(path string) string {
-	return fmt.Sprintf(`'%s' is not supported by the community version.
+func atlasStrictCompatGateBody(path string) string {
+	return fmt.Sprintf(`'%s' is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
 
-To install the non-community version of Atlas, use the following command:
-
-	curl -sSf https://atlasgo.sh | sh
-
-Or, visit the website to see all installation options:
-
-	https://atlasgo.io/docs#installation
+Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 `, path) + "\n"
 }
 
-func failAtlasCommunityGate(cmd *cobra.Command, path string) error {
-	body := atlasCommunityGateBody(path)
+func failAtlasStrictCompatGate(cmd *cobra.Command, path string) error {
+	body := atlasStrictCompatGateBody(path)
 	unsupportedErr := errors.New(strings.TrimSpace(strings.SplitN(body, "\n", 2)[0]))
 	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Abort: %s", body); err != nil {
 		return exitcode.New(atlasErrorExitCode,
-			fmt.Errorf("%w: write community-version diagnostic: %w", unsupportedErr, err))
+			fmt.Errorf("%w: write strict-compatibility diagnostic: %w", unsupportedErr, err))
 	}
 	return exitcode.New(atlasErrorExitCode, unsupportedErr)
 }

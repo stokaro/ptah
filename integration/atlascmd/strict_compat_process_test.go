@@ -25,17 +25,13 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-const atlasCommunityInstallBody = `To install the non-community version of Atlas, use the following command:
+const strictCompatGateSuffix = ` is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
 
-	curl -sSf https://atlasgo.sh | sh
-
-Or, visit the website to see all installation options:
-
-	https://atlasgo.io/docs#installation
+Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 `
 
-func TestStrictCompatProcessMatchesCommunityGates(t *testing.T) {
+func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	tests := []struct {
@@ -48,18 +44,18 @@ func TestStrictCompatProcessMatchesCommunityGates(t *testing.T) {
 		{
 			name:       "schema plan help",
 			args:       []string{"schema", "plan", "--help"},
-			wantStdout: "'atlas schema plan' is not supported by the community version.\n\n" + atlasCommunityInstallBody,
+			wantStdout: "'ptah-compat schema plan'" + strictCompatGateSuffix,
 		},
 		{
 			name:       "schema plan execution",
 			args:       []string{"schema", "plan"},
-			wantStderr: "Abort: 'atlas schema plan' is not supported by the community version.\n\n" + atlasCommunityInstallBody,
+			wantStderr: "Abort: 'ptah-compat schema plan'" + strictCompatGateSuffix,
 			wantCode:   1,
 		},
 		{
 			name:       "schema apply plan execution",
 			args:       []string{"schema", "apply", "--plan", "file://missing.plan"},
-			wantStderr: "Abort: 'atlas schema apply --plan' is not supported by the community version.\n\n" + atlasCommunityInstallBody,
+			wantStderr: "Abort: 'ptah-compat schema apply --plan'" + strictCompatGateSuffix,
 			wantCode:   1,
 		},
 	}
@@ -1198,7 +1194,7 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "")
 }
 
-func TestStrictCompatSchemaCleanExecutesConfirmedSnapshot(t *testing.T) {
+func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t *testing.T) {
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
 		c,
@@ -1223,13 +1219,15 @@ func TestStrictCompatSchemaCleanExecutesConfirmedSnapshot(t *testing.T) {
 	command.Stderr = &stderr
 	c.Assert(command.Start(), qt.IsNil)
 	waitForFileContains(t, stdoutPath, "Type 'DELETE EVERYTHING'")
-	seedDatabase(c, dbURL, "CREATE PROCEDURE late_procedure() LANGUAGE SQL AS $$ SELECT 1 $$")
+	seedDatabase(c, dbURL, "CREATE VIEW late_view AS SELECT id FROM users")
 	_, err = io.WriteString(stdinWriter, "DELETE EVERYTHING\nYES I AM SURE\n")
 	c.Assert(err, qt.IsNil)
-	c.Assert(command.Wait(), qt.IsNil, qt.Commentf("stderr=%q", stderr.String()))
+	c.Assert(command.Wait(), qt.ErrorMatches, "exit status 1")
 	c.Assert(stdoutFile.Close(), qt.IsNil)
-	c.Assert(stderr.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Matches,
+		`(?s).*schema changed after cleanup confirmation; rerun schema clean and review the new plan.*`)
 	c.Assert(postgresStrictCleanObjectCount(t, dbURL), qt.Equals, 1)
+	c.Assert(postgresViewExists(t, dbURL, "late_view"), qt.IsTrue)
 }
 
 func waitForFileContains(t *testing.T, path, needle string) {
@@ -1670,6 +1668,26 @@ func postgresStrictCleanObjectCount(t *testing.T, dbURL string) int {
 	).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
+}
+
+func postgresViewExists(t *testing.T, dbURL, view string) bool {
+	t.Helper()
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var exists bool
+	err = conn.QueryRowContext(t.Context(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_class relation
+			JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+			WHERE namespace.nspname = current_schema()
+			  AND relation.relname = $1
+			  AND relation.relkind = 'v'
+		)`, view).Scan(&exists)
+	c.Assert(err, qt.IsNil)
+	return exists
 }
 
 func TestStrictCompatSchemaInspectValidatesMigrationBeforeDevReset(t *testing.T) {

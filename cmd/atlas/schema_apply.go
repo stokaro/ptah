@@ -142,10 +142,10 @@ executed, and a finding the policy rates as an error refuses the apply.
 has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.policy.IsStrictCE() && cmd.Flags().Changed("plan") {
-				return failAtlasCommunityGate(cmd, "atlas schema apply --plan")
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --plan")
 			}
 			if opts.policy.IsStrictCE() && cmd.Flags().Changed("include") {
-				return failAtlasCommunityGate(cmd, "atlas schema apply --include")
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --include")
 			}
 			return runAtlasSchemaApply(cmd, opts)
 		},

@@ -8,9 +8,9 @@ package schemaclean
 // table it never destroys, are invisible to it. Every exported-API test on
 // PostgreSQL passes whether or not the SQL Server placeholders are spelled for
 // the right driver; only the unexported builder's output distinguishes them.
-// The scoped execution order is also deliberately hidden from the alphabetical
-// report, so proving that dependency order without database I/O needs access to
-// the plan's unexported execution slice.
+// The scoped execution order and PostgreSQL relation-lock statement are also
+// deliberately hidden from the alphabetical report, so proving their exact
+// order and quoting without database I/O needs access to unexported helpers.
 
 import (
 	"context"
@@ -105,6 +105,24 @@ func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) 
 		"SAVEPOINT ptah_scoped_cleanup_object",
 		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
 		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+	})
+}
+
+func TestPostgresPlanRelationsLockEveryTableOwnerBeforeValidation(t *testing.T) {
+	c := qt.New(t)
+	tx := &cleanupRetryTransaction{}
+	changes := []Change{
+		{Type: ObjectTypeView, Schema: "public", Name: "active_users"},
+		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
+		{Type: ObjectTypeForeignTable, Schema: "public", Name: "remote_users"},
+		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
+	}
+
+	err := lockPostgresPlanRelations(t.Context(), tx, changes)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.queries, qt.DeepEquals, []string{
+		`LOCK TABLE "public"."remote_users", "tenant"."users" IN ACCESS EXCLUSIVE MODE`,
 	})
 }
 

@@ -3,8 +3,10 @@ package atlas
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -64,10 +66,10 @@ still depends on it.`
 		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if policy.IsStrictCE() && cmd.Flags().Changed("dry-run") {
-				return failAtlasCommunityGate(cmd, "atlas schema clean --dry-run")
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema clean --dry-run")
 			}
 			if policy.IsStrictCE() && cmd.Flags().Changed("format") {
-				return failAtlasCommunityGate(cmd, "atlas schema clean --format")
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema clean --format")
 			}
 			return runAtlasSchemaClean(cmd, opts, policy)
 		},
@@ -115,7 +117,7 @@ func runAtlasSchemaClean(
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 	}
 	if policy.IsStrictCE() && formatOutput {
-		return failAtlasCommunityGate(cmd, "atlas schema clean --format")
+		return failAtlasStrictCompatGate(cmd, "ptah-compat schema clean --format")
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -145,29 +147,9 @@ func runAtlasSchemaClean(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	inspectOpts := schemaclean.InspectOptions{}
-	if policy.IsStrictCE() {
-		inspectOpts.ValidateSchema = func(schema *dbschematypes.DBSchema) error {
-			owned := schemaclean.SnapshotWithinWriterScope(
-				schema,
-				conn.Info().Dialect,
-				conn.Info().Schema,
-			)
-			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned))
-		}
-	}
-	plan, err := schemaclean.InspectWithOptions(conn, inspectOpts)
+	plan, err := inspectAtlasSchemaCleanPlan(policy, conn)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
-	}
-	for _, object := range plan.Objects {
-		if err := policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
-			Kind:             object.Type,
-			Name:             object.Name,
-			ImplicitSequence: object.Implicit,
-		}); err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
 	}
 	if opts.scoped() {
 		plan, err = scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
@@ -251,10 +233,58 @@ func applyAtlasSchemaClean(
 	conn *dbschema.DatabaseConnection,
 	plan schemaclean.Plan,
 ) error {
-	if policy.IsStrictCE() || opts.scoped() {
+	if policy.IsStrictCE() {
+		return schemaclean.ApplyPlanWithOptions(
+			cmd.Context(),
+			conn,
+			plan,
+			schemaclean.ApplyPlanOptions{ValidateBeforeExecute: func() error {
+				fresh, err := inspectAtlasSchemaCleanPlan(policy, conn)
+				if err != nil {
+					return err
+				}
+				if !slices.Equal(plan.Objects, fresh.Objects) || !slices.Equal(plan.Changes, fresh.Changes) {
+					return errors.New("schema changed after cleanup confirmation; rerun schema clean and review the new plan")
+				}
+				return nil
+			}},
+		)
+	}
+	if opts.scoped() {
 		return schemaclean.ApplyPlan(cmd.Context(), conn, plan)
 	}
 	return schemaclean.Apply(cmd.Context(), conn)
+}
+
+func inspectAtlasSchemaCleanPlan(
+	policy atlascompatpolicy.Policy,
+	conn *dbschema.DatabaseConnection,
+) (schemaclean.Plan, error) {
+	inspectOpts := schemaclean.InspectOptions{}
+	if policy.IsStrictCE() {
+		inspectOpts.ValidateSchema = func(schema *dbschematypes.DBSchema) error {
+			owned := schemaclean.SnapshotWithinWriterScope(
+				schema,
+				conn.Info().Dialect,
+				conn.Info().Schema,
+			)
+			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned))
+		}
+	}
+	plan, err := schemaclean.InspectWithOptions(conn, inspectOpts)
+	if err != nil {
+		return schemaclean.Plan{}, err
+	}
+	for _, object := range plan.Objects {
+		if err := policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
+			Kind:             object.Type,
+			Name:             object.Name,
+			ImplicitSequence: object.Implicit,
+		}); err != nil {
+			return schemaclean.Plan{}, err
+		}
+	}
+	return plan, nil
 }
 
 func printAtlasSchemaCleanPlan(

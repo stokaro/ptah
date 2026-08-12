@@ -92,15 +92,17 @@ Strict mode also applies its object inventory to live schemas. `schema inspect`,
 `schema apply`, `schema diff`, and `schema clean` refuse a Pro-only object
 before rendering, comparison, or mutation instead of copying CE behavior that
 could omit, miscompare, or destroy it. On `schema clean`, the CE-registered
-`--dry-run` and `--format` flags retain the pinned binary's community-abort
-behavior. Leave strict mode off for Ptah's complete cleanup, inspection, diff,
-and apply capabilities.
+`--dry-run` and `--format` flags remain gated. The diagnostic names
+`ptah-compat` and tells the operator to unset the selector; Ptah never directs
+the operator to install Atlas. Leave strict mode off for Ptah's complete
+cleanup, inspection, diff, and apply capabilities.
 
 Strict inspection omits PostgreSQL's server-installed `plpgsql` extension and
 baseline `PUBLIC USAGE` grant from rendered output. Strict cleanup executes the
-validated plan after confirmation instead of taking a second whole-database
-inventory. Full mode preserves the complete reader output and its established
-unscoped writer path.
+validated plan after confirmation. On PostgreSQL it locks the planned tables,
+revalidates the live inventory, compares the rebuilt cleanup plan with the
+confirmed plan, and refuses drift before the first drop. Full mode preserves
+the complete reader output and its established unscoped writer path.
 
 The cleanup check covers the writer's complete destruction inventory. That
 includes PostgreSQL procedures, aggregates, foreign tables, collations,

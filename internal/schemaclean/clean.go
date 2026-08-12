@@ -231,13 +231,36 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // reach for a routine that ignores the plan, or the flag that narrowed it would
 // print one thing and destroy another.
 func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan) error {
+	return ApplyPlanWithOptions(ctx, conn, plan, ApplyPlanOptions{})
+}
+
+// ApplyPlanOptions configures validation at the destructive execution
+// boundary. PostgreSQL runs the validator after locking every planned relation
+// that can own dependent objects and before executing any drop.
+type ApplyPlanOptions struct {
+	ValidateBeforeExecute func() error
+}
+
+// ApplyPlanWithOptions executes exactly the changes plan carries and applies
+// the optional execution-boundary validation before the first mutation.
+func ApplyPlanWithOptions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	plan Plan,
+	opts ApplyPlanOptions,
+) error {
 	conn.SchemaWriter().SetDryRun(false)
 	changes := executableChanges(plan)
 	if len(changes) == 0 {
 		return nil
 	}
 	if isPostgresFamily(conn.Info().Dialect) {
-		return applyPostgresFamilyPlan(ctx, conn, changes)
+		return applyPostgresFamilyPlan(ctx, conn, changes, opts)
+	}
+	if opts.ValidateBeforeExecute != nil {
+		if err := opts.ValidateBeforeExecute(); err != nil {
+			return err
+		}
 	}
 	return applyPlanChanges(ctx, conn.Writer(), changes)
 }
@@ -255,10 +278,21 @@ func applyPostgresFamilyPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	changes []Change,
+	opts ApplyPlanOptions,
 ) error {
 	tx, err := conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return fmt.Errorf("begin scoped schema cleanup: %w", err)
+	}
+	if normalizeDialect(conn.Info().Dialect) == "postgres" {
+		if err := lockPostgresPlanRelations(ctx, tx, changes); err != nil {
+			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
+		}
+	}
+	if opts.ValidateBeforeExecute != nil {
+		if err := opts.ValidateBeforeExecute(); err != nil {
+			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
+		}
 	}
 	if err := applyPostgresFamilyPlanChanges(ctx, tx, changes); err != nil {
 		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
@@ -268,6 +302,35 @@ func applyPostgresFamilyPlan(
 			fmt.Errorf("commit scoped schema cleanup: %w", err),
 			cleanupRollbackError(tx.Rollback()),
 		)
+	}
+	return nil
+}
+
+func lockPostgresPlanRelations(
+	ctx context.Context,
+	tx dbschematypes.SchemaTransaction,
+	changes []Change,
+) error {
+	relations := make([]string, 0, len(changes))
+	seen := make(map[string]struct{}, len(changes))
+	for _, change := range changes {
+		if change.Type != ObjectTypeTable && change.Type != ObjectTypeForeignTable {
+			continue
+		}
+		relation := sqlident.Qualified("postgres", change.Schema, change.Name)
+		if _, exists := seen[relation]; exists {
+			continue
+		}
+		seen[relation] = struct{}{}
+		relations = append(relations, relation)
+	}
+	if len(relations) == 0 {
+		return nil
+	}
+	slices.Sort(relations)
+	statement := "LOCK TABLE " + strings.Join(relations, ", ") + " IN ACCESS EXCLUSIVE MODE"
+	if err := tx.ExecuteSQL(ctx, statement); err != nil {
+		return fmt.Errorf("lock planned schema cleanup relations: %w", err)
 	}
 	return nil
 }

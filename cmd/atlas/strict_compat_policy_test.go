@@ -189,16 +189,10 @@ func TestStrictCEHelpDoesNotAdvertiseOmittedExtensions(t *testing.T) {
 	}
 }
 
-func TestStrictCECommunityGateMatchesAtlasStreams(t *testing.T) {
-	const help = `'atlas schema plan' is not supported by the community version.
+func TestStrictCEGateUsesPtahDiagnostic(t *testing.T) {
+	const help = `'ptah-compat schema plan' is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
 
-To install the non-community version of Atlas, use the following command:
-
-	curl -sSf https://atlasgo.sh | sh
-
-Or, visit the website to see all installation options:
-
-	https://atlasgo.io/docs#installation
+Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 `
 	tests := []struct {
@@ -239,7 +233,7 @@ Or, visit the website to see all installation options:
 	}
 }
 
-func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
+func TestStrictCEGatedFlagsUsePtahDiagnostic(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -253,7 +247,7 @@ func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
 				"--to", "sqlite://to.db",
 				"--include", "table.users",
 			},
-			path: "atlas schema diff --include",
+			path: "ptah-compat schema diff --include",
 		},
 		{
 			name: "schema apply include",
@@ -263,7 +257,7 @@ func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
 				"--to", "sqlite://desired.db",
 				"--include", "table.users",
 			},
-			path: "atlas schema apply --include",
+			path: "ptah-compat schema apply --include",
 		},
 		{
 			name: "schema clean dry run",
@@ -272,7 +266,7 @@ func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
 				"--url", "sqlite://target.db",
 				"--dry-run",
 			},
-			path: "atlas schema clean --dry-run",
+			path: "ptah-compat schema clean --dry-run",
 		},
 		{
 			name: "schema clean format",
@@ -281,7 +275,7 @@ func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
 				"--url", "sqlite://target.db",
 				"--format", "{{ sql . }}",
 			},
-			path: "atlas schema clean --format",
+			path: "ptah-compat schema clean --format",
 		},
 	}
 
@@ -298,26 +292,20 @@ func TestStrictCECommunityGatedFlagsMatchAtlasStreams(t *testing.T) {
 
 			qt.Assert(t, exitcode.Code(err, 0), qt.Equals, 1)
 			qt.Assert(t, stdout.String(), qt.Equals, "")
-			qt.Assert(t, stderr.String(), qt.Equals, atlasCommunityGateStderr(test.path))
+			qt.Assert(t, stderr.String(), qt.Equals, atlasStrictCompatGateStderr(test.path))
 		})
 	}
 }
 
-func atlasCommunityGateStderr(path string) string {
-	return "Abort: '" + path + `' is not supported by the community version.
+func atlasStrictCompatGateStderr(path string) string {
+	return "Abort: '" + path + `' is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
 
-To install the non-community version of Atlas, use the following command:
-
-	curl -sSf https://atlasgo.sh | sh
-
-Or, visit the website to see all installation options:
-
-	https://atlasgo.io/docs#installation
+Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 `
 }
 
-func TestStrictCECommunityGateKeepsUnknownFlagParsing(t *testing.T) {
+func TestStrictCEGateKeepsUnknownFlagParsing(t *testing.T) {
 	root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

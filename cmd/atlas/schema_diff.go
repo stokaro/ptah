@@ -65,7 +65,7 @@ which Ptah does not evaluate.`
 		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if policy.IsStrictCE() && cmd.Flags().Changed("include") {
-				return failAtlasCommunityGate(cmd, "atlas schema diff --include")
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema diff --include")
 			}
 			return runAtlasSchemaDiff(cmd, opts)
 		},
