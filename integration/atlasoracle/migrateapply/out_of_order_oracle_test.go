@@ -129,13 +129,27 @@ func runApply(c *qt.C, binary, dbPath, dir string) commandResult {
 
 func runCommand(c *qt.C, binary string, args ...string) commandResult {
 	c.Helper()
-	out, err := exec.Command(binary, args...).CombinedOutput() //nolint:gosec // the binary is either built here or provided through PTAH_ATLAS_ORACLE
+	cmd := exec.Command(binary, args...)
+	cmd.Env = commandEnvironmentWithoutPtahVariables(os.Environ())
+	out, err := cmd.CombinedOutput()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return commandResult{code: exitErr.ExitCode(), output: string(out)}
 	}
 	c.Assert(err, qt.IsNil, qt.Commentf("%s %s\n%s", binary, strings.Join(args, " "), out))
 	return commandResult{output: string(out)}
+}
+
+func commandEnvironmentWithoutPtahVariables(environment []string) []string {
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(strings.ToUpper(key), "PTAH_") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []string) {
