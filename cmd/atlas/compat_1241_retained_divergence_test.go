@@ -166,6 +166,75 @@ func TestCompatCommand_AnOutOfOrderInsertRequiresNonLinear(t *testing.T) {
 	c.Assert(secondErr, qt.IsNil)
 }
 
+// TestCompatCommand_LinearSkipReproducesThePinnedDefaultOrderOutcome pins the
+// half of item 5 that makes the retained refusal legitimate: the outcome the
+// pinned community binary v1.3.0 produces on its own is still reachable here,
+// so nothing is removed by refusing it as the default.
+//
+// Measured 2026-08-12 on the item 5 fixture, both directories authored and
+// hashed by that binary through `migrate import`, exit status read on its own
+// line rather than through a pipe. At its DEFAULT --exec-order (linear, per its
+// own --help) that binary exits 0 on the inserted directory, prints "No
+// migration files to execute", and leaves the inserted migration unapplied: the
+// table it would have created is absent from the catalog and only the late
+// revision is recorded. It reports nothing about the file it passed over.
+//
+// That silent discard is the argument for Ptah's default refusal, and this test
+// is the reason the refusal costs nothing: --exec-order=linear-skip reproduces
+// that outcome exactly, on request and in writing.
+//
+// The sibling test above covers the other two orders. This one is separate
+// because it is the only row whose claim is an equivalence with the oracle
+// rather than a divergence from it.
+//
+// Mutated so the skip branch tests ExecOrderNonLinear instead of
+// ExecOrderLinearSkip in migrator.go, this test fails: linear-skip applies the
+// inserted migration and rt_early appears.
+func TestCompatCommand_LinearSkipReproducesThePinnedDefaultOrderOutcome(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dbPath := filepath.Join(root, "skip.db")
+	lateOnly := writeRetainedDir(c, filepath.Join(root, "late"), map[string]string{
+		retainedVersionLate + "_late.sql": retainedLateBody,
+	})
+	bothFiles := writeRetainedDir(c, filepath.Join(root, "both"), map[string]string{
+		retainedVersionEarly + "_early.sql": retainedEarlyBody,
+		retainedVersionLate + "_late.sql":   retainedLateBody,
+	})
+
+	_, _, err := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+lateOnly,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+
+	_, _, skipErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "linear-skip",
+	)
+	c.Assert(skipErr, qt.IsNil)
+	// The inserted migration is passed over rather than applied, which is what
+	// that binary's default order does with it.
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+
+	// Repeating it is stable: skipping is not a one-shot that later promotes the
+	// migration into the applied set.
+	_, _, secondErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "linear-skip",
+	)
+	c.Assert(secondErr, qt.IsNil)
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+}
+
 // TestCompatCommand_LintRefusesATrailingPositional pins the fourth verb of
 // #1241 item 13, and the one the existing table in compat_overstrict_test.go
 // does not reach.

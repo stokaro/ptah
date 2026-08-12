@@ -59,10 +59,11 @@ preserve those bytes. Default mode retains and executes the extensions. The
 strict profile never turns an authored safety contract into an ignored comment
 or configuration block merely to copy an edition limit.
 
-Every measurement below was taken on 2026-08-09 against that binary, each exit
-status read on its own line rather than through a pipe. Where a fixture needed
-a hashed migration directory, that binary authored and hashed it, so no
-checksum quoted here was computed by Ptah.
+Every measurement below was taken on 2026-08-09 against that binary, except
+where a section gives its own date, each exit status read on its own line
+rather than through a pipe. Where a fixture needed a hashed migration
+directory, that binary authored and hashed it, so no checksum quoted here was
+computed by Ptah.
 
 ## A trailing positional argument
 
@@ -127,6 +128,58 @@ was applied to, and the difference surfaces later as a diff nobody can explain.
 The refusal names the version and both checksums, and `--allow-dirty` is not
 involved.
 
+## A migration inserted below the applied high-water mark
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat migrate apply` refuses at its default
+`--exec-order linear` when the directory has grown a migration that sorts below
+the newest applied one, and names both ways forward. `--exec-order linear-skip`
+leaves the insertion unapplied; `--exec-order non-linear` applies it. Those are
+that binary's own flag and its own three values, not a Ptah addition.
+
+Measured on SQLite on 2026-08-12. Both directories were authored and hashed by
+that binary through `migrate import`, so no checksum here was computed by Ptah.
+`dirA` holds only the later migration; `dirB` holds an earlier one plus a
+byte-identical copy of the later one — `diff` between the two copies exits `0`.
+
+| step | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| apply `dirA` | exit `0`, later migration applied | exit `0`, later migration applied |
+| apply `dirB`, default order | exit `0`, `No migration files to execute` | exit `1`, names the version and both remedies |
+| apply `dirB`, `--exec-order linear-skip` | — | exit `0`, insertion left unapplied |
+| apply `dirB`, `--exec-order non-linear` | — | exit `0`, insertion applied |
+
+The second row is the entry. That binary's default order is `linear` by its own
+`--help`, and on that row it exits `0` while never applying the inserted
+migration: the table that migration creates is absent from the catalog
+afterwards, and only the later revision is recorded. It prints nothing about
+the file it passed over. An operator who adds a migration to a directory,
+runs apply, and reads exit `0` has been told the directory is applied when one
+of its migrations never ran and never will.
+
+That is the argument for the refusal, and it is not a strictness preference.
+Reproducing an exit `0` that discards an operator's migration silently is the
+kind of defect the parity rule declines to copy. The refusal names the version
+it will not apply and both flags that resolve it, so the operator chooses
+between skipping and applying rather than having the choice made and not
+reported.
+
+Nothing is removed by refusing it as the default. The third row is the pinned
+binary's own outcome, reachable on request through its own flag, and it is
+pinned by a test so it stays reachable. The fourth row is the outcome an
+operator who inserted the migration on purpose usually wants, which that
+binary's default order does not offer at all.
+
+One thing here changed rather than being retained. The refusal used to be
+reported as a checksum mismatch on the later migration, whose bytes had not
+changed: the per-file entry in an integrity file is chained over the entries
+before it, so inserting anything earlier changes the recorded value of every
+applied migration above it. The value is an ordering key, not a content
+identity, and the message claimed otherwise. That is fixed; the diagnostic now
+describes the ordering fact it actually found. The genuine content-change case
+keeps the checksum wording and is the section above.
+
 ## A dirty revision left by a non-transactional body
 
 **Type.** Deliberate divergence
@@ -170,11 +223,34 @@ through, and the operator, unlike the tool, can look first.
 Each entry above is pinned by a test in
 `cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
-`cmd/atlas/compat_overstrict_test.go`. The same focused file also pins the
-resolved out-of-order insertion behavior: the default order refuses, while
-`--exec-order non-linear` applies and remains idempotent.
+`cmd/atlas/compat_overstrict_test.go`. The same focused file also pins all three
+orders of the out-of-order insertion: the default refuses, `--exec-order
+non-linear` applies and remains idempotent, and `--exec-order linear-skip`
+leaves the insertion unapplied and stays that way on a repeat run. The last of
+those is the one that keeps the entry honest — it is the claim that the pinned
+binary's own outcome is still reachable, so it is guarded rather than asserted.
 
 Every case here is SQLite-measured; the two noted as also measured on
 PostgreSQL 17.10 were re-run against a live server. The rest carry the
 SQLite-only caveat that
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) declares.
+
+## Not on this page
+
+Two cells from that issue are still open and are deliberately not argued here,
+because no argument has been established for them.
+
+`--to file://../schema.sql` and `--dir file://../dir` are refused as `outside
+allowed root` where that binary exits `0` (item 11). The containment that
+produces the refusal applies to relative CLI paths only: the identical file
+named by an absolute path is accepted, and `migrate diff --to` against it
+succeeds. A boundary that refuses one spelling of a path and accepts another
+spelling of the same path does not contain anything, so the refusal cannot yet
+be defended as a safety control. Resolving it changes a shared path helper used
+by native `ptah` verbs as well as the compatibility surface, so it is a decision
+recorded on the issue rather than a divergence retained here.
+
+`migrate hash` carries the trailing-positional and `--var` cells of items 13 and
+12. No reading of the pinned binary was taken for either: the sandbox these
+sweeps ran in refuses any command containing that bare word, and the refusal was
+not scripted around.
