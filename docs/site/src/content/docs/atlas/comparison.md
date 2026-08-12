@@ -727,6 +727,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
 | [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
+| [Leading schema type selector](#leading-schema-type-selector) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -1081,6 +1082,35 @@ refuses the identical pattern on a schema-bound URL as
 `too many parts in pattern: "public.public.*[type=table].comment"`, and Ptah
 applies one depth rule to every scope, so accepting it would exit `0` where that
 binary exits `1`.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
+
+### Leading schema type selector
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `--exclude '*[type=schema].*[type=table]'` means every
+table inside every schema on every Ptah schema source. The leading schema glob
+may be narrowed, as in `app[type=schema].*[type=table]`.
+
+The pinned community binary v1.3.0 gives source-dependent answers. On a live
+PostgreSQL database containing tables and enums in `public` and `app`, the
+selector removes both tables and keeps both enums. On a SQLite file diff between
+one table and the same schema plus a second table, it exits `0` but leaves the
+second table's `CREATE TABLE` plan unchanged. Removing the selector from that
+SQLite run produces byte-identical output; `*[type=table]` is the control that
+does remove the plan.
+
+Ptah keeps the literal PostgreSQL answer on both source kinds. Making the
+selector a no-op only for a file diff would make one accepted scoping instruction
+mean two things depending on its input. It would also report success while
+leaving exactly the table the selector names in the migration plan. This is a
+defect Ptah does not copy; the complete compatibility surface keeps the coherent
+behavior rather than narrowing it to this Atlas CE result.
+
+The integration contour pins the file-diff result in
+`TestAtlasCompatLeadingSchemaTypeSelectorE2E`. The filter tests separately pin
+the schema glob, the final resource type, and the surviving non-table objects.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 
