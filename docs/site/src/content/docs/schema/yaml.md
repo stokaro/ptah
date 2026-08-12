@@ -52,6 +52,10 @@ accepted wherever Ptah needs a desired schema: `ptah schema render`,
 (`ptah migrations plan` / `ptah migrations generate`), and the API targets of
 [`ptah schema export`](../export/#sources).
 
+Relative `--schema-file` inputs are confined to the process working directory
+after symbolic-link resolution; use an absolute pathname for an intentional
+source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
+
 ## Use it for migrations
 
 Plan first, then generate files only after reviewing the plan:
