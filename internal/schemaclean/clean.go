@@ -4,6 +4,7 @@ package schemaclean
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -69,6 +70,7 @@ type Plan struct {
 	// stable, alphabetical report while a scoped cleanup must drop known
 	// dependents before the objects they depend on.
 	executionChanges []Change
+	executionDepths  map[executionObjectIdentity]int
 }
 
 type Object struct {
@@ -186,12 +188,16 @@ func InspectWithOptions(conn *dbschema.DatabaseConnection, opts InspectOptions) 
 		return Plan{}, err
 	}
 	objects = append(objects, runtimeObjects...)
+	executionDepths, err := inspectPostgresViewDependencyDepths(conn, objects)
+	if err != nil {
+		return Plan{}, err
+	}
 	revisionObjects, err := inspectRevisionTables(conn)
 	if err != nil {
 		return Plan{}, err
 	}
 	objects = append(objects, unlistedObjects(objects, revisionObjects)...)
-	return PlanFromObjects(objects, dialect), nil
+	return planFromObjects(objects, dialect, executionDepths), nil
 }
 
 func Execute(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (Plan, error) {
@@ -226,13 +232,122 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // print one thing and destroy another.
 func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan) error {
 	conn.SchemaWriter().SetDryRun(false)
-	executor := conn.Writer()
-	changes := plan.executionChanges
-	if changes == nil {
-		// A literal Plan remains executable for internal callers, but plans built
-		// by PlanFromObjects always carry the dependency-safe order.
-		changes = plan.Changes
+	changes := executableChanges(plan)
+	if len(changes) == 0 {
+		return nil
 	}
+	if isPostgres(conn.Info().Dialect) {
+		return applyPostgresPlan(ctx, conn, changes)
+	}
+	return applyPlanChanges(ctx, conn.Writer(), changes)
+}
+
+func executableChanges(plan Plan) []Change {
+	if plan.executionChanges != nil {
+		return plan.executionChanges
+	}
+	// A literal Plan remains executable for internal callers, but plans built
+	// by PlanFromObjects always carry the dependency-safe order.
+	return plan.Changes
+}
+
+func applyPostgresPlan(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	changes []Change,
+) error {
+	tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("begin scoped schema cleanup: %w", err)
+	}
+	if err := applyPostgresPlanChanges(ctx, tx, changes); err != nil {
+		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
+	}
+	if err := tx.Commit(); err != nil {
+		return errors.Join(
+			fmt.Errorf("commit scoped schema cleanup: %w", err),
+			cleanupRollbackError(tx.Rollback()),
+		)
+	}
+	return nil
+}
+
+func applyPostgresPlanChanges(
+	ctx context.Context,
+	tx dbschematypes.SchemaTransaction,
+	changes []Change,
+) error {
+	// RESTRICT is the safety boundary. Savepoints let a selected dependent
+	// disappear before retrying its selected dependency, while an external or
+	// unknown dependency eventually stops progress and rolls back the outer
+	// transaction. This mirrors PostgreSQLWriter's unscoped cleanup algorithm
+	// without widening the selected object set.
+	pending := slices.Clone(changes)
+	for len(pending) > 0 {
+		remaining := make([]Change, 0, len(pending))
+		var firstDropErr error
+
+		for _, change := range pending {
+			if strings.TrimSpace(change.Cmd) == "" {
+				continue
+			}
+			dropErr, controlErr := tryApplyPostgresPlanChange(ctx, tx, change)
+			if controlErr != nil {
+				return errors.Join(dropErr, controlErr)
+			}
+			if dropErr != nil {
+				if firstDropErr == nil {
+					firstDropErr = dropErr
+				}
+				remaining = append(remaining, change)
+			}
+		}
+
+		if len(remaining) == 0 {
+			return nil
+		}
+		if len(remaining) == len(pending) {
+			return firstDropErr
+		}
+		pending = remaining
+	}
+	return nil
+}
+
+func tryApplyPostgresPlanChange(
+	ctx context.Context,
+	tx dbschematypes.SchemaTransaction,
+	change Change,
+) (dropErr error, controlErr error) {
+	const savepoint = "ptah_scoped_cleanup_object"
+
+	if err := tx.ExecuteSQL(ctx, "SAVEPOINT "+savepoint); err != nil {
+		return nil, fmt.Errorf("create scoped cleanup savepoint: %w", err)
+	}
+	if err := tx.ExecuteSQL(ctx, change.Cmd); err != nil {
+		dropErr = fmt.Errorf("drop schema object %s %q: %w", change.Type, change.Name, err)
+		if rollbackErr := tx.ExecuteSQL(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+			controlErr = fmt.Errorf("roll back scoped cleanup savepoint: %w", rollbackErr)
+		}
+		if releaseErr := tx.ExecuteSQL(ctx, "RELEASE SAVEPOINT "+savepoint); releaseErr != nil {
+			controlErr = errors.Join(
+				controlErr,
+				fmt.Errorf("release scoped cleanup savepoint: %w", releaseErr),
+			)
+		}
+		return dropErr, controlErr
+	}
+	if err := tx.ExecuteSQL(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
+		return nil, fmt.Errorf("release scoped cleanup savepoint: %w", err)
+	}
+	return nil, nil
+}
+
+func applyPlanChanges(
+	ctx context.Context,
+	executor dbschematypes.SchemaExecutor,
+	changes []Change,
+) error {
 	for _, change := range changes {
 		if strings.TrimSpace(change.Cmd) == "" {
 			continue
@@ -244,6 +359,13 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 	return nil
 }
 
+func cleanupRollbackError(err error) error {
+	if err == nil || errors.Is(err, sql.ErrTxDone) {
+		return nil
+	}
+	return fmt.Errorf("roll back scoped schema cleanup: %w", err)
+}
+
 func PlanFromSchema(schema *dbschematypes.DBSchema, dialect string) Plan {
 	if schema == nil {
 		return Plan{}
@@ -252,8 +374,23 @@ func PlanFromSchema(schema *dbschematypes.DBSchema, dialect string) Plan {
 }
 
 func PlanFromObjects(objects []Object, dialect string) Plan {
+	return planFromObjects(objects, dialect, nil)
+}
+
+// WithObjects returns a plan narrowed to objects while retaining live catalog
+// execution metadata from the receiver. Compatibility adapters use it after
+// selectors remove objects from an inspected plan.
+func (p Plan) WithObjects(objects []Object, dialect string) Plan {
+	return planFromObjects(objects, dialect, p.executionDepths)
+}
+
+func planFromObjects(
+	objects []Object,
+	dialect string,
+	executionDepths map[executionObjectIdentity]int,
+) Plan {
 	executionObjects := slices.Clone(objects)
-	sortExecutionObjects(executionObjects, dialect)
+	sortExecutionObjects(executionObjects, dialect, executionDepths)
 	executionChanges := changesFromObjects(executionObjects, dialect)
 
 	objects = slices.Clone(objects)
@@ -262,6 +399,7 @@ func PlanFromObjects(objects []Object, dialect string) Plan {
 		Objects:          objects,
 		Changes:          changesFromObjects(objects, dialect),
 		executionChanges: executionChanges,
+		executionDepths:  executionDepths,
 	}
 }
 
@@ -790,6 +928,127 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema str
 	return objects, nil
 }
 
+func inspectPostgresViewDependencyDepths(
+	conn *dbschema.DatabaseConnection,
+	objects []Object,
+) (map[executionObjectIdentity]int, error) {
+	if !isPostgres(conn.Info().Dialect) {
+		return nil, nil
+	}
+	schema := strings.TrimSpace(conn.Info().Schema)
+	if schema == "" {
+		schema = "public"
+	}
+	rows, err := conn.Query(`
+		WITH RECURSIVE
+		managed_views AS (
+			SELECT c.oid, c.relnamespace, c.relname, c.relkind
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1 AND c.relkind IN ('v', 'm')
+		),
+		view_dependencies AS (
+			SELECT
+				dependent.oid AS dependent_oid,
+				referenced.oid AS referenced_oid
+			FROM pg_rewrite rewrite
+			JOIN managed_views dependent ON dependent.oid = rewrite.ev_class
+			JOIN pg_depend dependency
+				ON dependency.classid = 'pg_rewrite'::regclass
+			   AND dependency.objid = rewrite.oid
+			   AND dependency.refclassid = 'pg_class'::regclass
+			JOIN managed_views referenced ON referenced.oid = dependency.refobjid
+			WHERE dependent.oid <> referenced.oid
+		),
+		view_depths AS (
+			SELECT view.oid, 0 AS depth
+			FROM managed_views view
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM view_dependencies dependency
+				WHERE dependency.dependent_oid = view.oid
+			)
+
+			UNION ALL
+
+			SELECT dependency.dependent_oid, depth.depth + 1
+			FROM view_depths depth
+			JOIN view_dependencies dependency
+				ON dependency.referenced_oid = depth.oid
+		)
+		SELECT
+			view.relname,
+			view.relkind,
+			COALESCE(MAX(depth.depth), 0)
+		FROM managed_views view
+		LEFT JOIN view_depths depth ON depth.oid = view.oid
+		GROUP BY view.oid, view.relname, view.relkind
+		ORDER BY view.relname
+	`, schema)
+	if err != nil {
+		return nil, fmt.Errorf("inspect PostgreSQL view dependencies before cleanup: %w", err)
+	}
+	defer rows.Close()
+
+	depths := make(map[postgresViewIdentity]int)
+	for rows.Next() {
+		var name string
+		var relkind string
+		var depth int
+		if err := rows.Scan(&name, &relkind, &depth); err != nil {
+			return nil, fmt.Errorf("scan PostgreSQL view dependency: %w", err)
+		}
+		objectType := ObjectTypeView
+		if relkind == "m" {
+			objectType = ObjectTypeMaterializedView
+		}
+		depths[postgresViewIdentity{objectType: objectType, schema: schema, name: name}] = depth
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate PostgreSQL view dependencies: %w", err)
+	}
+	executionDepths := make(map[executionObjectIdentity]int)
+	for i := range objects {
+		objectSchema := strings.TrimSpace(objects[i].Schema)
+		if objectSchema == "" {
+			objectSchema = schema
+		}
+		depth := depths[postgresViewIdentity{
+			objectType: objects[i].Type,
+			schema:     objectSchema,
+			name:       objects[i].Name,
+		}]
+		if depth > 0 {
+			executionDepths[objectExecutionIdentity(objects[i])] = depth
+		}
+	}
+	return executionDepths, nil
+}
+
+type postgresViewIdentity struct {
+	objectType string
+	schema     string
+	name       string
+}
+
+type executionObjectIdentity struct {
+	objectType string
+	schema     string
+	table      string
+	name       string
+	parameters string
+}
+
+func objectExecutionIdentity(object Object) executionObjectIdentity {
+	return executionObjectIdentity{
+		objectType: object.Type,
+		schema:     object.Schema,
+		table:      object.Table,
+		name:       object.Name,
+		parameters: object.Parameters,
+	}
+}
+
 // inspectMySQLStoredObjects reports the stored programs and MariaDB sequences
 // that the MySQL writer's listCleanupObjects returns but the MySQL reader never
 // records: information_schema.routines, information_schema.events, and the
@@ -1059,8 +1318,8 @@ func postgresRuntimeObjectType(kind string) (string, bool) {
 // backing table is listed first even though cleanup drops views first. An
 // unscoped Apply delegates to SchemaWriter.DropAllTables. A scoped ApplyPlan
 // uses sortExecutionObjects below; it preserves the writer's known cross-kind
-// dependencies but cannot reproduce catalog dependency depth because the
-// reader's snapshot does not carry it.
+// dependencies and PostgreSQL's live view dependency depth without changing
+// this stable report.
 //
 // Alphabetical-by-kind is chosen because it is dialect independent, stable
 // across releases, and diffs cleanly when a schema gains or loses one object.
@@ -1089,14 +1348,23 @@ func sortObjects(objects []Object) {
 // cleanup; this order is for ApplyPlan, whose selected object set cannot be
 // handed to DropAllTables without widening the destructive scope.
 //
-// PostgreSQL is the discriminating case: views depend on tables, tables own
-// implicit SERIAL and identity sequences, and routines can depend on types.
-// Foreign keys are removed before every relation. MySQL and MariaDB use the
-// same broad relation order but destroy stored programs after tables, matching
-// their cleanup writer.
-func sortExecutionObjects(objects []Object, dialect string) {
+// PostgreSQL is the discriminating case: views depend on other views and
+// tables, tables own implicit SERIAL and identity sequences, and routines can
+// depend on types. Foreign keys are removed before every relation. Live
+// PostgreSQL view depth orders same-kind dependents before their dependencies.
+// MySQL and MariaDB use the same broad relation order but destroy stored
+// programs after tables, matching their cleanup writer.
+func sortExecutionObjects(
+	objects []Object,
+	dialect string,
+	executionDepths map[executionObjectIdentity]int,
+) {
 	slices.SortFunc(objects, func(a, b Object) int {
 		if cmp := executionPriority(dialect, a.Type) - executionPriority(dialect, b.Type); cmp != 0 {
+			return cmp
+		}
+		if cmp := executionDepths[objectExecutionIdentity(b)] -
+			executionDepths[objectExecutionIdentity(a)]; cmp != 0 {
 			return cmp
 		}
 		if cmp := strings.Compare(a.Schema, b.Schema); cmp != 0 {
@@ -1241,6 +1509,15 @@ func isForeignKeyConstraint(constraint dbschematypes.DBConstraint) bool {
 func isPostgresFamily(dialect string) bool {
 	switch normalizeDialect(dialect) {
 	case "postgres", "postgresql", "cockroachdb", "yugabytedb":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPostgres(dialect string) bool {
+	switch normalizeDialect(dialect) {
+	case "postgres", "postgresql":
 		return true
 	default:
 		return false

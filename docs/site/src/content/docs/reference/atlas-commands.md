@@ -1134,12 +1134,17 @@ indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
 report order is alphabetical by object kind rather than an execution order. An
 unscoped cleanup rebuilds its statements from the live catalog; a scoped
 cleanup executes the reported `Cmd` values in a separate deterministic order
-that removes known dependents before their dependencies. PostgreSQL `SERIAL`
-and identity sequences are recognized as implicit table children, execute
-after their parent table, and are not reported as forbidden standalone
-sequences by the strict CE oracle profile. A selector that tries to make the
-owned sequence and its table disagree is refused before mutation. Function
-objects and changes expose full declaration `Parameters`.
+that removes known dependents before their dependencies. PostgreSQL uses live
+catalog depth to order dependent views and materialized views of the same kind,
+and executes the complete scoped plan in one transaction. A failed `RESTRICT`
+drop rolls back earlier selected drops instead of leaving a partially cleaned
+schema.
+
+PostgreSQL `SERIAL` and identity sequences are recognized as implicit table
+children, execute after their parent table, and are not reported as forbidden
+standalone sequences by the strict CE oracle profile. A selector that tries to
+make the owned sequence and its table disagree is refused before mutation.
+Function objects and changes expose full declaration `Parameters`.
 
 PostgreSQL scoped drops use `RESTRICT`, so the database refuses a selected
 parent when an unselected view, foreign key, or other catalog dependency still

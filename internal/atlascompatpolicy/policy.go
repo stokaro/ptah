@@ -91,7 +91,27 @@ func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
 			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
 		},
 	)
+	// PostgreSQL creates public with PUBLIC USAGE on current releases. The
+	// ordinary reader preserves that baseline because full inspection must be
+	// able to round-trip the server state. It is not authored Pro-only content,
+	// however, and refusing it would make strict apply and diff reject every
+	// ordinary PostgreSQL database. An explicit GRANT of the same privilege is
+	// semantically indistinguishable and does not expand the server baseline.
+	inspected.Grants = slices.DeleteFunc(
+		slices.Clone(database.Grants),
+		isPostgresPublicUsageBaseline,
+	)
 	return p.validateSchemaObjects(&inspected, "inspected")
+}
+
+func isPostgresPublicUsageBaseline(grant goschema.Grant) bool {
+	return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
+		strings.EqualFold(strings.TrimSpace(grant.OnSchema), "public") &&
+		strings.TrimSpace(grant.OnTable) == "" &&
+		strings.TrimSpace(grant.OnSequence) == "" &&
+		!grant.WithOption &&
+		len(grant.Privileges) == 1 &&
+		strings.EqualFold(strings.TrimSpace(grant.Privileges[0]), "USAGE")
 }
 
 func (p Policy) validateSchemaObjects(database *goschema.Database, source string) error {

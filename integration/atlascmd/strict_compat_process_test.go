@@ -1155,26 +1155,25 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	c := qt.New(t)
 	dbURL := strictCompatPostgresTestURL(t)
 	prefix := fmt.Sprintf("ptah_strict_sources_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	dbURL = createDisposableDatabase(c, dbURL, prefix+"_target")
 	procedureSchema := prefix + "_procedure"
 	emptySchema := prefix + "_empty"
-	devSchema := prefix + "_dev"
 
 	admin, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
-		for _, schema := range []string{procedureSchema, emptySchema, devSchema} {
+		for _, schema := range []string{procedureSchema, emptySchema} {
 			_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 		}
 		dbschema.CloseAndWarn(admin)
 	})
-	for _, schema := range []string{procedureSchema, emptySchema, devSchema} {
+	for _, schema := range []string{procedureSchema, emptySchema} {
 		_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+schema)
 		c.Assert(err, qt.IsNil)
 	}
 
 	procedureURL := postgresURLWithSearchPath(t, dbURL, procedureSchema)
 	emptyURL := postgresURLWithSearchPath(t, dbURL, emptySchema)
-	devURL := postgresURLWithSearchPath(t, dbURL, devSchema)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), procedureURL)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(),
@@ -1187,6 +1186,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 
 	t.Run("apply target before desired replay", func(t *testing.T) {
 		migrationDir := t.TempDir()
+		replayDevURL := strictCompatPostgresDevURL(t)
 		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE TABLE replayed_before_target_validation (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
@@ -1199,13 +1199,13 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"schema", "apply",
 			"--url", procedureURL,
 			"--to", "file://"+migrationDir,
-			"--dev-url", devURL,
+			"--dev-url", replayDevURL,
 			"--dry-run",
 		)
 		qt.Assert(t, code, qt.Equals, 1)
 		qt.Assert(t, stdout, qt.Equals, "")
 		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
-		qt.Assert(t, postgresTableExists(t, devURL, "replayed_before_target_validation"), qt.IsFalse)
+		qt.Assert(t, postgresTableExists(t, replayDevURL, "replayed_before_target_validation"), qt.IsFalse)
 	})
 
 	t.Run("apply target realm before desired schema replay", func(t *testing.T) {
@@ -1286,7 +1286,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		command.Stderr = &stderrBuffer
 		qt.Assert(t, command.Start(), qt.IsNil)
 
-		waitForPostgresAdvisoryLockWaiter(t, lockConn)
+		waitForPostgresAdvisoryLockPoller(t, lockConn)
 		_, err = migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
 		qt.Assert(t, err, qt.IsNil)
 		qt.Assert(t, lock.Release(), qt.IsNil)
@@ -1467,23 +1467,25 @@ func postgresSchemaTableExists(t *testing.T, dbURL, schema, table string) bool {
 	return exists
 }
 
-func waitForPostgresAdvisoryLockWaiter(t *testing.T, conn *dbschema.DatabaseConnection) {
+func waitForPostgresAdvisoryLockPoller(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		var waiting bool
+		var polling bool
 		err := conn.QueryRowContext(t.Context(), `
 			SELECT EXISTS (
-				SELECT 1 FROM pg_locks
-				WHERE locktype = 'advisory' AND NOT granted
-			)`).Scan(&waiting)
+				SELECT 1 FROM pg_stat_activity
+				WHERE datname = current_database()
+				  AND pid <> pg_backend_pid()
+				  AND query LIKE '%pg_try_advisory_lock%'
+			)`).Scan(&polling)
 		qt.Assert(t, err, qt.IsNil)
-		if waiting {
+		if polling {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("timed out waiting for schema apply to block on the advisory lock")
+	t.Fatal("timed out waiting for schema apply to poll the advisory lock")
 }
 
 func strictCompatPostgresTestURL(t *testing.T) string {

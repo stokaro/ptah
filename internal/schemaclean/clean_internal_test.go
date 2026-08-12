@@ -13,6 +13,8 @@ package schemaclean
 // the plan's unexported execution slice.
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -56,12 +58,91 @@ func TestPlanExecutionOrdersKnownDependentsWithoutChangingReport(t *testing.T) {
 	})
 }
 
+func TestPlanExecutionOrdersSameKindDependentsByCatalogDepth(t *testing.T) {
+	c := qt.New(t)
+	objects := []Object{
+		{
+			Type:   ObjectTypeView,
+			Schema: "public",
+			Name:   "a_base",
+		},
+		{
+			Type:   ObjectTypeView,
+			Schema: "public",
+			Name:   "z_child",
+		},
+	}
+	plan := planFromObjects(objects, "postgres", map[executionObjectIdentity]int{
+		objectExecutionIdentity(objects[1]): 1,
+	})
+
+	c.Assert(changeNames(plan.Changes), qt.DeepEquals, []string{"a_base", "z_child"})
+	c.Assert(changeNames(plan.executionChanges), qt.DeepEquals, []string{"z_child", "a_base"})
+}
+
+func TestPostgresScopedExecutionRetriesSelectedDependencies(t *testing.T) {
+	c := qt.New(t)
+	tx := &cleanupRetryTransaction{
+		failQuery:         `DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		remainingFailures: 1,
+	}
+	changes := []Change{
+		{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW IF EXISTS "a_base" RESTRICT`},
+		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW IF EXISTS "z_child" RESTRICT`},
+	}
+
+	err := applyPostgresPlanChanges(t.Context(), tx, changes)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.queries, qt.DeepEquals, []string{
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		"ROLLBACK TO SAVEPOINT ptah_scoped_cleanup_object",
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "z_child" RESTRICT`,
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+	})
+}
+
+type cleanupRetryTransaction struct {
+	queries           []string
+	failQuery         string
+	remainingFailures int
+}
+
+func (tx *cleanupRetryTransaction) ExecuteSQL(_ context.Context, query string, _ ...any) error {
+	tx.queries = append(tx.queries, query)
+	if query == tx.failQuery && tx.remainingFailures > 0 {
+		tx.remainingFailures--
+		return errors.New("selected dependent still exists")
+	}
+	return nil
+}
+
+func (*cleanupRetryTransaction) IsDryRun() bool { return false }
+
+func (*cleanupRetryTransaction) Commit() error { return nil }
+
+func (*cleanupRetryTransaction) Rollback() error { return nil }
+
 func changeTypes(changes []Change) []string {
 	types := make([]string, 0, len(changes))
 	for _, change := range changes {
 		types = append(types, change.Type)
 	}
 	return types
+}
+
+func changeNames(changes []Change) []string {
+	names := make([]string, 0, len(changes))
+	for _, change := range changes {
+		names = append(names, change.Name)
+	}
+	return names
 }
 
 // TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax pins the two

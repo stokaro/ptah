@@ -98,7 +98,7 @@ func scopeAtlasSchemaCleanPlan(
 			selected = append(selected, object)
 		}
 	}
-	return schemaclean.PlanFromObjects(selected, dialect), nil
+	return plan.WithObjects(selected, dialect), nil
 }
 
 type atlasSchemaCleanTableIdentity struct {

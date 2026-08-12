@@ -153,7 +153,7 @@ seven of them as open capabilities regardless.
 | JSON output for native schema diff | ✅ | ➖ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
-| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL scoped drops use `RESTRICT`, so an unselected dependency blocks the command instead of disappearing through `CASCADE`. |
+| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL scoped drops are dependency-ordered and transactional; `RESTRICT` cannot cascade outside the selection. |
 | schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |

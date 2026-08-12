@@ -1509,6 +1509,10 @@ Rows are ordered alphabetically by object kind; that is a report order, not the
 order the statements run in. Scoped cleanup uses a separate deterministic
 dependency order for known relationships, including views before tables and
 tables before their implicit PostgreSQL `SERIAL` or identity sequences.
+PostgreSQL reads live catalog depth to drop a dependent view or materialized
+view before another selected view of the same kind. It applies the whole scoped
+plan transactionally, so a later `RESTRICT` refusal rolls back earlier drops.
+
 An implicit sequence is not independently selectable: including it without its
 owning table, or excluding it while the table remains selected, is refused
 before cleanup mutates the database. Select or exclude the owning table so the
