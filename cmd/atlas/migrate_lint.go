@@ -321,7 +321,7 @@ func runAtlasMigrateLint(
 			}
 			return exitcode.New(1, err)
 		}
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, atlasMigrateLintGitError(err))
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{

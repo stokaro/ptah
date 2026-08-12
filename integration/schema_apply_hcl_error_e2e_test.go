@@ -67,6 +67,82 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
 	})
 
+	// Cell 9.13's second half. The pinned community binary v1.3.0 echoes the
+	// --to path in the form it was given, and every form above is absolute, so
+	// the rows here are the ones the absolute cases cannot see.
+	c.Run("compat relative --to reports the relative path", func(c *qt.C) {
+		dir := c.TempDir()
+		c.Assert(os.MkdirAll(filepath.Join(dir, "fx", "sub"), 0o750), qt.IsNil)
+		relatives := []struct {
+			name    string
+			written string
+			given   string
+			want    string
+		}{
+			{
+				name:    "plain relative",
+				written: filepath.Join("fx", "bad.hcl"),
+				given:   "file://fx/bad.hcl",
+				want:    filepath.Join("fx", "bad.hcl"),
+			},
+			{
+				// The oracle normalizes the leading "./" away rather than
+				// echoing the literal spelling.
+				name:    "dot relative",
+				written: filepath.Join("fx", "dot.hcl"),
+				given:   "file://./fx/dot.hcl",
+				want:    filepath.Join("fx", "dot.hcl"),
+			},
+			{
+				name:    "nested relative",
+				written: filepath.Join("fx", "sub", "deep.hcl"),
+				given:   "file://fx/sub/deep.hcl",
+				want:    filepath.Join("fx", "sub", "deep.hcl"),
+			},
+		}
+		for _, relative := range relatives {
+			c.Run(relative.name, func(c *qt.C) {
+				c.Assert(os.WriteFile(
+					filepath.Join(dir, relative.written), []byte("schema \"main\" {\n"), 0o600,
+				), qt.IsNil)
+
+				stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
+					"schema", "apply",
+					"--url", "sqlite://"+filepath.Join(dir, "target.db"),
+					"--to", relative.given,
+					"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
+					"--dry-run",
+				)
+
+				c.Check(exitStatusOf(c, err), qt.Equals, 1)
+				c.Check(stdout, qt.Equals, "")
+				c.Check(stderr, qt.Equals,
+					"Error: "+relative.want+malformedSchemaHCLProcessDiagnostic+"\n")
+			})
+		}
+	})
+
+	c.Run("native relative --to keeps the resolved absolute path", func(c *qt.C) {
+		dir := c.TempDir()
+		c.Assert(os.MkdirAll(filepath.Join(dir, "fx"), 0o750), qt.IsNil)
+		schemaPath := filepath.Join(dir, "fx", "native.hcl")
+		c.Assert(os.WriteFile(schemaPath, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)
+
+		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,
+			"schema", "apply",
+			"--db-url", "sqlite://"+filepath.Join(dir, "target.db"),
+			"--to", "file://fx/native.hcl",
+			"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
+			"--dry-run",
+		)
+		want := "load --to schema: parse HCL schema: " +
+			canonicalSchemaApplyProcessPath(c, schemaPath) + malformedSchemaHCLProcessDiagnostic
+
+		c.Check(exitStatusOf(c, err), qt.Equals, 2)
+		c.Check(stdout, qt.Equals, "")
+		c.Check(stderr, qt.Equals, "error: "+want+"\n")
+	})
+
 	c.Run("native malformed HCL keeps native context", func(c *qt.C) {
 		dir := c.TempDir()
 		schemaPath := filepath.Join(dir, "schema.hcl")

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -65,14 +67,77 @@ type atlasSchemaApplyDisplayError struct {
 func (e atlasSchemaApplyDisplayError) Error() string { return e.text }
 func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
 
-func displayAtlasSchemaApplyError(err error) error {
+// displayAtlasSchemaApplyError renders a desired-schema HCL parse failure the
+// way the pinned community binary v1.3.0 renders it.
+//
+// Two measured differences, both display-only (#1235 cell 9.13). The loader's
+// context pair is dropped, and the diagnostic's leading path is rendered
+// relative to the working directory when the operator wrote a relative --to.
+// The pinned binary echoes the path in the form it was given: `file://fx/b.hcl`
+// reports `fx/b.hcl`, `file://./fx/b.hcl` reports `fx/b.hcl` too, and an
+// absolute --to reports the absolute path — which already matched, so the
+// rewrite must not fire for it.
+//
+// toURLs is the resolved --to set. A run with none, or one whose values are all
+// absolute or non-local, gets the prefix half alone.
+func displayAtlasSchemaApplyError(err error, toURLs []string) error {
 	const hclContext = "load --to schema: parse HCL schema: "
 
 	message, found := strings.CutPrefix(err.Error(), hclContext)
 	if !found {
 		return err
 	}
+	message = atlasSchemaApplyRelativeDiagnostic(message, toURLs)
 	return atlasSchemaApplyDisplayError{text: message, err: err}
+}
+
+// atlasSchemaApplyRelativeDiagnostic rewrites the leading absolute path of an
+// HCL diagnostic back to the working-directory-relative form, for the one --to
+// value that produced it.
+//
+// The match is anchored and exact: the message must begin with the resolved
+// absolute path followed by the ':' that starts the HCL position, so a
+// diagnostic about some other file, or one that merely mentions the path, is
+// left alone. A --to that is already absolute is skipped, because the pinned
+// binary reports an absolute path for it and this surface already agrees.
+func atlasSchemaApplyRelativeDiagnostic(message string, toURLs []string) string {
+	workdir, err := os.Getwd()
+	if err != nil {
+		return message
+	}
+	for _, raw := range toURLs {
+		path, ok := atlasSchemaApplyLocalToPath(raw)
+		if !ok || filepath.IsAbs(path) {
+			continue
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			continue
+		}
+		rest, found := strings.CutPrefix(message, absolute+":")
+		if !found {
+			continue
+		}
+		relative, err := filepath.Rel(workdir, absolute)
+		if err != nil || relative == "" {
+			continue
+		}
+		return relative + ":" + rest
+	}
+	return message
+}
+
+// atlasSchemaApplyLocalToPath reports the filesystem path a --to value names,
+// and whether it names one at all. Only the file:// scheme and a bare path do;
+// a database URL or an env:// reference names no local file.
+func atlasSchemaApplyLocalToPath(raw string) (string, bool) {
+	if after, found := strings.CutPrefix(raw, "file://"); found {
+		return after, after != ""
+	}
+	if strings.Contains(raw, "://") {
+		return "", false
+	}
+	return raw, raw != ""
 }
 
 func newAtlasSchemaApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
@@ -344,7 +409,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			opts.policy.ValidateInspectedSchema,
 			atlasLiveSchemaObjectValidator(opts.policy),
 		); err != nil {
-			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err))
+			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
 		}
 	}
 
@@ -392,7 +457,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		// native surface, but they are extra bytes on the compatibility boundary.
 		// Strip only that measured pair so every unrelated apply error retains
 		// its existing context (stokaro/ptah#1235 cell 9.13).
-		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err))
+		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
 	}
 	if !plan.HasChanges() {
 		if formatOutput {

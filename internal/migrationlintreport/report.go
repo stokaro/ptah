@@ -877,12 +877,47 @@ func gitChangedMigrationSelection(
 	return selection, nil
 }
 
+// GitCommandError reports a git invocation this package made on behalf of
+// --git-base or --git-dir that exited non-zero.
+//
+// Subcommand, Args, Output and Err are retained separately from the rendered
+// message so a compatibility adapter can reproduce an external surface's
+// diagnostic without parsing this error's text. Error keeps the full
+// invocation, which is what the native surface reports and what makes a failed
+// selection reproducible by hand; a caller that needs a terser rendering builds
+// it from the fields rather than by trimming the string.
+type GitCommandError struct {
+	// Subcommand is the git verb, the first element of Args.
+	Subcommand string
+	// Args is the complete argument vector, without the leading "git".
+	Args []string
+	// Output is git's combined output, trimmed.
+	Output string
+	// Err is the process failure, normally an *exec.ExitError.
+	Err error
+}
+
+func (e *GitCommandError) Error() string {
+	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.Args, " "), e.Err, e.Output)
+}
+
+func (e *GitCommandError) Unwrap() error { return e.Err }
+
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		subcommand := ""
+		if len(args) > 0 {
+			subcommand = args[0]
+		}
+		return "", &GitCommandError{
+			Subcommand: subcommand,
+			Args:       slices.Clone(args),
+			Output:     strings.TrimSpace(string(output)),
+			Err:        err,
+		}
 	}
 	return strings.TrimSpace(string(output)), nil
 }
