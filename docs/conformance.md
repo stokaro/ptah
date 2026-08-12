@@ -409,6 +409,15 @@ rule any caller can satisfy by respelling the argument is not a boundary, and
 recording this cell as deliberate strictness would record something the second
 row refutes.
 
+A third row was measured on 2026-08-12 and has since been closed: the native
+surface did not apply even the relative half. `ptah schema render --schema-file
+../outside/schema.sql` exited `0`, because the native desired-schema resolver
+called `filepath.Abs` on the operator's path before handing it to the same
+guard, and the absolute branch has no root. So the same helper returned opposite
+verdicts for the same destination depending on which command reached it. That is
+fixed; the absolute-pathname exemption above is untouched and remains the open
+decision.
+
 It is **not** the confinement this project does defend. That one is `file()`
 inside an `atlas.hcl` — a config-derived path, held by a different mechanism
 (`LocalDir.AllowedRoot`), where matching Atlas CE would turn config authorship

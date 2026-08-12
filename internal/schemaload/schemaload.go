@@ -279,7 +279,17 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 
 	o.logf("Reading schema file: %s", absPath)
 
-	result, err := schemafile.LoadPath(absPath, schemafile.Options{Dialect: o.Dialect})
+	// The operator's own spelling reaches the loader, not absPath.
+	//
+	// schemafile resolves the path through pathguard.ResolveCLIPath, which
+	// confines a relative path to the working directory and exempts an absolute
+	// one. Handing it absPath therefore spelled every path the exempt way and
+	// switched the guard off for this whole surface: `--schema-file
+	// ../outside.sql` loaded, while ptah-compat refused that identical
+	// destination through that identical guard. absPath is a display and
+	// extension-check convenience above; it must not become the value the guard
+	// judges.
+	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{Dialect: o.Dialect})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
