@@ -973,8 +973,10 @@ func toDBFunctions(functions []goschema.Function) []dbschematypes.DBFunction {
 	out := make([]dbschematypes.DBFunction, 0, len(functions))
 	for _, function := range functions {
 		function.Canonicalize()
+		name, schema := splitTableIdentity(function.Name)
 		out = append(out, dbschematypes.DBFunction{
-			Name:       function.Name,
+			Name:       name,
+			Schema:     schema,
 			Parameters: function.Parameters,
 			Returns:    function.Returns,
 			Language:   function.Language,

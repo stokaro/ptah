@@ -92,10 +92,9 @@ func TestSchemaDiffIncludeUnionsRepeatedValues(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "scope_archive")
 }
 
-// TestSchemaDiffIncludeEmptyMatchKeepsSyncedOnStdout pins that the empty
-// selection notice is written out of band. Standard output is what a CI check
-// compares, so it must keep the bytes it always had.
-func TestSchemaDiffIncludeEmptyMatchKeepsSyncedOnStdout(t *testing.T) {
+// TestSchemaDiffIncludeEmptyMatchRefuses pins that a selector matching neither
+// side cannot report a synced schema to a CI check.
+func TestSchemaDiffIncludeEmptyMatchRefuses(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 
@@ -106,9 +105,9 @@ func TestSchemaDiffIncludeEmptyMatchKeepsSyncedOnStdout(t *testing.T) {
 		"--include", "no_such_table",
 	)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
-	c.Assert(stderr, qt.Equals, `Warning: the --include selection matched no objects: "no_such_table".`+"\n")
+	c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: "no_such_table"`)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, `Error: the --include selection matched no objects: "no_such_table"`+"\n")
 }
 
 func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {

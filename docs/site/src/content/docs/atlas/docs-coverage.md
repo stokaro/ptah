@@ -184,7 +184,10 @@ planned SQL, and applies after interactive confirmation or explicit
 
 Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the reset dev database with the target's current schema recreated first; a failed rehearsal refuses the apply with the target unchanged.
 
-`--schema` and `--include` positively scope both comparison sides with union semantics, exclusion subtraction, cross-scope dependency diagnostics, and synced output for empty selections.
+`--schema` and `--include` positively scope both comparison sides with union
+semantics, exclusion subtraction, and cross-scope dependency diagnostics. An
+explicit include selection matching neither side refuses instead of reporting
+a synced schema.
 
 **Conformance status.** Partially measured with local schema files and live SQLite apply/no-op/dry-run/transaction-mode/exclude/config-driven format/schema-mode coverage, plus CLI-surface flag probes.
 

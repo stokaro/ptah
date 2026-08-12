@@ -43,14 +43,11 @@ var emptySelectionSpellings = []struct {
 	{name: "literal separator", selector: "main.empty_sel_users.email"},
 }
 
-// TestSchemaDiffIncludeEmptySelectionIsReportedOnStderr pins the diff verb's
-// half of the deliberate divergence: exit status and standard output are
-// unchanged, so the CI idiom "does this selection differ?" keeps working, but
-// the empty selection is no longer indistinguishable from an empty universe.
-//
-// Standard output is asserted byte for byte. A silent success and a reported
-// one share an exit code, and before this the two were the same bytes too.
-func TestSchemaDiffIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
+// TestSchemaDiffIncludeEmptySelectionRefuses pins the diff verb's fail-closed
+// answer. A warning beside a successful "synced" report still lets a mistyped
+// selector green-light a CI check, so a selector that met neither side is an
+// error and produces no diff output.
+func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 	c := qt.New(t)
 
 	for _, spelling := range emptySelectionSpellings {
@@ -68,10 +65,12 @@ func TestSchemaDiffIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 				"--include", spelling.selector,
 			)
 
-			c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
-			c.Assert(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
+			c.Assert(err, qt.ErrorMatches,
+				`the --include selection matched no objects: `+
+					regexp.QuoteMeta(`"`+spelling.selector+`"`))
+			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals,
-				"Warning: the --include selection matched no objects: \""+spelling.selector+"\".\n")
+				"Error: the --include selection matched no objects: \""+spelling.selector+"\"\n")
 		})
 	}
 }

@@ -208,9 +208,10 @@ var includeChildTypes = map[string]struct{}{
 // reported as synced schemas.
 //
 // Emptiness is an outcome, not a shape, so it cannot be decided by inspecting
-// the selector text. Each verb decides its own exit from this error: apply
-// refuses (nothing would be applied and nothing would say so), while diff and
-// inspect keep their exit status and report the empty selection out of band.
+// the selector text. Each verb decides its own exit from this error: apply and
+// diff refuse (nothing would be applied or compared and nothing would say so),
+// while inspect keeps its exit status and reports the empty selection out of
+// band.
 type EmptySelectionError struct {
 	// Selectors are the --include selectors as written, split and trimmed the
 	// way the parser splits them.

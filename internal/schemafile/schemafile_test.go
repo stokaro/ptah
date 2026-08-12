@@ -321,6 +321,34 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
+// TestToDBSchema_PreservesFunctionIdentities pins the local-schema conversion
+// used as the current side of schema diff. A qualified function must keep its
+// schema separate from its name, while a quoted literal dot remains part of
+// the name rather than becoming a qualification boundary.
+func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{Functions: []goschema.Function{
+		{Name: `"tenant.data"`, Parameters: "literal INTEGER", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+		{Name: "tenant.data", Parameters: "value TEXT", Returns: "integer", Language: "sql", Body: "SELECT 2"},
+	}}
+	goschema.Finalize(db)
+
+	got := schemafile.ToDBSchema(db, platform.Postgres)
+
+	c.Assert(got.Functions, qt.HasLen, 2)
+	c.Assert(got.Functions[0].Name, qt.Equals, "tenant.data")
+	c.Assert(got.Functions[0].Schema, qt.Equals, "")
+	c.Assert(got.Functions[0].QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Functions[0].Parameters, qt.Equals, "literal integer")
+	c.Assert(got.Functions[1].Name, qt.Equals, "data")
+	c.Assert(got.Functions[1].Schema, qt.Equals, "tenant")
+	c.Assert(got.Functions[1].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(got.Functions[1].Parameters, qt.Equals, "value text")
+
+	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
 func TestLocalFilePath_RejectsRemoteURL(t *testing.T) {
 	c := qt.New(t)
 

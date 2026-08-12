@@ -102,7 +102,8 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 // referenced by kept column types.
 func (s *scopeSelection) projectGeneratedSupport(db, out *goschema.Database) {
 	referenced := generatedFieldTypeSet(out.Fields)
-	out.Enums = keepEnumObjects(s, db.Enums, referenced, func(e goschema.Enum) string { return e.Name })
+	out.Enums = keepEnumObjects(s, db.Enums, referenced,
+		func(e goschema.Enum) (string, string) { return e.Schema, e.Name })
 	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
 		func(d goschema.Domain) (string, string) { return d.Schema, d.Name })
 	out.CompositeTypes = keepTypeObjects(s, db.CompositeTypes, "composite_type", referenced,
@@ -112,20 +113,29 @@ func (s *scopeSelection) projectGeneratedSupport(db, out *goschema.Database) {
 }
 
 // keepEnumObjects keeps enums that are either selected by the scope or
-// referenced by kept column types. Enums carry their optional schema in the
-// name, so selection resolves it from the qualified name.
+// referenced by kept column types. Current enum models carry schema and name
+// separately. An empty schema retains support for SQL-source enum values whose
+// legacy conversion parked the qualifier in Name.
 func keepEnumObjects[T any](
 	s *scopeSelection,
 	items []T,
 	referenced map[string]struct{},
-	name func(T) string,
+	key func(T) (schema, name string),
 ) []T {
 	return keep(items, func(item T) bool {
-		if s.selectedQualifiedName(typeList("enum"), name(item)) {
+		schema, name := enumIdentity(key(item))
+		if s.selected(typeList("enum"), schema, name) {
 			return true
 		}
-		return typeNameReferenced(referenced, "", name(item))
+		return typeNameReferenced(referenced, schema, name)
 	})
+}
+
+func enumIdentity(schema, name string) (resolvedSchema, resolvedName string) {
+	if strings.TrimSpace(schema) != "" {
+		return schema, name
+	}
+	return splitQualified(name)
 }
 
 // keepTypeObjects keeps type objects that are either selected by the scope or
@@ -196,6 +206,14 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 	}
 	for _, view := range out.MaterializedViews {
 		schema, _ := splitQualified(view.Name)
+		owning[s.effectiveSchema(schema)] = struct{}{}
+	}
+	for _, function := range out.Functions {
+		schema, _ := splitQualified(function.Name)
+		owning[s.effectiveSchema(schema)] = struct{}{}
+	}
+	for _, enum := range out.Enums {
+		schema, _ := enumIdentity(enum.Schema, enum.Name)
 		owning[s.effectiveSchema(schema)] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema goschema.Schema) bool {

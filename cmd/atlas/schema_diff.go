@@ -48,10 +48,9 @@ positively select what both comparison sides see: --schema names define the
 schema universe, --include selectors pick top-level resources inside it, and
 --exclude plus env.schema.mode subtract from the result. A selected object
 that depends on an unselected object refuses the diff with an explicit
-diagnostic. An --include selection that matches nothing on either side keeps
-the exit status and the standard-output bytes it would have had, and reports
-the empty selection on standard error, so a CI check comparing stdout is
-unaffected while a mistyped selector is no longer silent.`
+diagnostic. An --include selection that matches nothing on either side leaves
+no plan to compare and is refused instead of reporting a synced schema to a CI
+check.`
 	if !policy.IsStrictCE() {
 		long += `
 

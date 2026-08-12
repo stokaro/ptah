@@ -445,6 +445,28 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 			`selected tables use enum "public.user_status", but "public.user_status" is not selected`,
 		})
 	})
+
+	c.Run("excluded enum keeps schema identity in dependency diagnostics", func(c *qt.C) {
+		schema := &goschema.Database{
+			Schemas: []goschema.Schema{{Name: "app"}, {Name: "public"}},
+			Tables:  []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
+			Fields:  []goschema.Field{{StructName: "User", Name: "color", Type: "app.color"}},
+			Enums: []goschema.Enum{
+				{Schema: "app", Name: "color"},
+				{Schema: "public", Name: "color"},
+			},
+		}
+		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{
+			Include:       []string{"app.users"},
+			Exclude:       []string{"app.color"},
+			DefaultSchema: "public",
+		})
+		var crossScope *atlasfilter.CrossScopeError
+		c.Assert(err, qt.ErrorAs, &crossScope)
+		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
+			`selected tables use enum "app.color", but "app.color" is not selected`,
+		})
+	})
 }
 
 // scopeDatabaseFixture mirrors scopeGeneratedFixture for the introspected
@@ -547,6 +569,159 @@ func TestScopeDatabase_IncludeTableRideAlongs(t *testing.T) {
 	c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"app"})
 }
 
+func TestScopeDatabase_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		include   string
+		functions []string
+		enums     []string
+	}{
+		{
+			name:      "qualified function",
+			include:   "app.fn_app",
+			functions: []string{"app.fn_app"},
+			enums:     []string{},
+		},
+		{
+			name:      "bare function",
+			include:   "fn_app",
+			functions: []string{"app.fn_app"},
+			enums:     []string{},
+		},
+		{
+			name:      "qualified enum",
+			include:   "app.color",
+			functions: []string{},
+			enums:     []string{"app.color"},
+		},
+		{
+			name:      "bare enum",
+			include:   "color",
+			functions: []string{},
+			enums:     []string{"app.color"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
+				Schemas:   []dbschematypes.DBSchemaInfo{{Name: "app"}},
+				Functions: []dbschematypes.DBFunction{{Schema: "app", Name: "fn_app"}},
+				Enums:     []dbschematypes.DBEnum{{Schema: "app", Name: "color"}},
+			}, atlasfilter.Scope{Include: []string{test.include}, DefaultSchema: "public"})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, test.functions)
+			c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, test.enums)
+			c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"app"})
+		})
+	}
+}
+
+func TestScopeDatabase_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) {
+	tests := []string{"other.fn_app", "other.color"}
+	for _, include := range tests {
+		t.Run(include, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
+				Schemas:   []dbschematypes.DBSchemaInfo{{Name: "app"}},
+				Functions: []dbschematypes.DBFunction{{Schema: "app", Name: "fn_app"}},
+				Enums:     []dbschematypes.DBEnum{{Schema: "app", Name: "color"}},
+			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
+
+			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
+			c.Assert(got.Functions, qt.HasLen, 0)
+			c.Assert(got.Enums, qt.HasLen, 0)
+			c.Assert(got.Schemas, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestScopeGenerated_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		include   string
+		functions []string
+		enums     []goschema.Enum
+		schema    string
+	}{
+		{
+			name:      "qualified function",
+			include:   "app.fn_app",
+			functions: []string{"app.fn_app"},
+			enums:     []goschema.Enum{},
+			schema:    "app",
+		},
+		{
+			name:      "bare function",
+			include:   "fn_app",
+			functions: []string{"app.fn_app"},
+			enums:     []goschema.Enum{},
+			schema:    "app",
+		},
+		{
+			name:      "qualified enum with explicit schema",
+			include:   "app.color",
+			functions: []string{},
+			enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			schema:    "app",
+		},
+		{
+			name:      "bare enum with explicit schema",
+			include:   "color",
+			functions: []string{},
+			enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			schema:    "app",
+		},
+		{
+			name:      "qualified legacy enum name",
+			include:   "legacy.state",
+			functions: []string{},
+			enums:     []goschema.Enum{{Name: "legacy.state"}},
+			schema:    "legacy",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasfilter.ScopeGenerated(&goschema.Database{
+				Schemas:   []goschema.Schema{{Name: "app"}, {Name: "legacy"}},
+				Functions: []goschema.Function{{Name: "app.fn_app"}},
+				Enums: []goschema.Enum{
+					{Schema: "app", Name: "color"},
+					{Name: "legacy.state"},
+				},
+			}, atlasfilter.Scope{Include: []string{test.include}, DefaultSchema: "public"})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, test.functions)
+			c.Assert(got.Enums, qt.DeepEquals, test.enums)
+			c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{test.schema})
+		})
+	}
+}
+
+func TestScopeGenerated_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) {
+	tests := []string{"other.fn_app", "other.color"}
+	for _, include := range tests {
+		t.Run(include, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasfilter.ScopeGenerated(&goschema.Database{
+				Schemas:   []goschema.Schema{{Name: "app"}},
+				Functions: []goschema.Function{{Name: "app.fn_app"}},
+				Enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
+
+			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
+			c.Assert(got.Functions, qt.HasLen, 0)
+			c.Assert(got.Enums, qt.HasLen, 0)
+			c.Assert(got.Schemas, qt.HasLen, 0)
+		})
+	}
+}
+
 func TestScopeDatabase_EmptyMatchProjectsNothing(t *testing.T) {
 	c := qt.New(t)
 
@@ -603,6 +778,33 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, &crossScope)
 		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
 			`selected tables use enum "public.user_status", but "public.user_status" is not selected`,
+		})
+	})
+
+	c.Run("database enum validation does not collide across schemas", func(c *qt.C) {
+		schema := &dbschematypes.DBSchema{
+			Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "public"}},
+			Tables: []dbschematypes.DBTable{{
+				Schema: "app",
+				Name:   "users",
+				Columns: []dbschematypes.DBColumn{{
+					Name: "color", DataType: "USER-DEFINED", UDTName: "color",
+				}},
+			}},
+			Enums: []dbschematypes.DBEnum{
+				{Schema: "app", Name: "color"},
+				{Schema: "public", Name: "color"},
+			},
+		}
+		_, err := atlasfilter.ScopeDatabase(schema, atlasfilter.Scope{
+			Include:       []string{"app.users"},
+			Exclude:       []string{"app.color"},
+			DefaultSchema: "public",
+		})
+		var crossScope *atlasfilter.CrossScopeError
+		c.Assert(err, qt.ErrorAs, &crossScope)
+		c.Assert(crossScope.Diagnostics, qt.DeepEquals, []string{
+			`selected tables use enum "app.color", but "app.color" is not selected`,
 		})
 	})
 }

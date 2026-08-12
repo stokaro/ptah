@@ -56,7 +56,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 		return s.selected(typeList("materialized_view"), view.Schema, view.Name)
 	})
 	out.Functions = keep(db.Functions, func(function dbschematypes.DBFunction) bool {
-		return s.selectedQualifiedName(typeList("function"), function.Name)
+		return s.selected(typeList("function"), function.Schema, function.Name)
 	})
 	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
 		return s.selectedNames(typeList("extension"), qualifiedNameCandidates(extension.Schema, extension.Name)...)
@@ -90,7 +90,8 @@ func (s *scopeSelection) projectDatabaseSupport(db, out *dbschematypes.DBSchema)
 		func(c dbschematypes.DBComposite) (string, string) { return c.Schema, c.Name })
 	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
 		func(r dbschematypes.DBRange) (string, string) { return r.Schema, r.Name })
-	out.Enums = keepEnumObjects(s, db.Enums, referenced, func(e dbschematypes.DBEnum) string { return e.Name })
+	out.Enums = keepEnumObjects(s, db.Enums, referenced,
+		func(e dbschematypes.DBEnum) (string, string) { return e.Schema, e.Name })
 }
 
 // databaseGrantSelected mirrors generatedGrantSelected for introspected
@@ -141,6 +142,12 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 	}
 	for _, view := range out.MatViews {
 		owning[s.effectiveSchema(view.Schema)] = struct{}{}
+	}
+	for _, function := range out.Functions {
+		owning[s.effectiveSchema(function.Schema)] = struct{}{}
+	}
+	for _, enum := range out.Enums {
+		owning[s.effectiveSchema(enum.Schema)] = struct{}{}
 	}
 	return keep(db.Schemas, func(schema dbschematypes.DBSchemaInfo) bool {
 		if !s.schemaAllowed(schema.Name) {

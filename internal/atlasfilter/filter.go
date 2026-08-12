@@ -1067,13 +1067,14 @@ func (s *exclusionState) filterGeneratedEmbeddedFields(
 }
 
 // filterGeneratedEnums mirrors the database-side enum exclusion, so excluding
-// an enum removes it from both sides of a comparison. A generated enum carries
-// its schema the way a generated view does — as an optional "schema." prefix on
-// its name — so the candidates come from that prefix and the default schema.
+// an enum removes it from both sides of a comparison. Current enum models keep
+// schema and name separately; SQL-source legacy values may still carry the
+// qualifier in Name when Schema is empty.
 func (s *exclusionState) filterGeneratedEnums(enums []goschema.Enum) []goschema.Enum {
 	return keep(enums, func(enum goschema.Enum) bool {
-		named := s.matches("enum", s.qualifiedNameCandidatesFor(enum.Name)...)
-		return !named && !s.qualifiedSchemaExcluded(enum.Name)
+		schema, name := enumIdentity(enum.Schema, enum.Name)
+		named := s.matches("enum", s.nameCandidates(schema, name)...)
+		return !named && !s.schemaExcluded(schema)
 	})
 }
 

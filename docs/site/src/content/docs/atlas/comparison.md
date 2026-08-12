@@ -271,9 +271,16 @@ Both declarative paths accept desired-state URL sources through one typed resolv
 
 Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the dev database (reset, current target schema recreated, planned or edited statements executed under the apply's transaction mode); a failed rehearsal refuses the apply with the target unchanged.
 
-`schema apply --schema/--include` and `schema diff --schema/--include` positively scope both comparison sides: `--schema` names define the schema universe, `--include` selects top-level resources with Atlas-style glob selectors and `[type=...]` filters (repeated values union deterministically), `--exclude` plus disabled `schema.mode` values subtract afterward, cross-scope dependencies refuse the plan with explicit diagnostics, and an empty selection reports a synced schema.
+`schema apply --schema/--include` and `schema diff --schema/--include` positively scope both comparison sides: `--schema` names define the schema universe, `--include` selects top-level resources with Atlas-style glob selectors and `[type=...]` filters (repeated values union deterministically), and `--exclude` plus disabled `schema.mode` values subtract afterward. Cross-scope dependencies refuse the plan with explicit diagnostics. An explicit include selection matching neither comparison side fails instead of reporting a synced schema.
 
 Atlas CE aborts `--include` as a non-community feature, so Ptah's implementation is an open extension beyond the pinned CE binary. `ptah-compat schema fmt` formats local `.hcl` files with HCL canonical layout.
+
+A qualified selector matches a live PostgreSQL extension outside the default
+schema. Identical live placements compare as synced, while an asymmetric create
+or placement difference fails before SQL output: Ptah does not yet model the
+installation schema needed to render `CREATE EXTENSION ... WITH SCHEMA ...`.
+Default-schema creates and drops remain available. The complete shared model is
+tracked in [issue #1441](https://github.com/stokaro/ptah/issues/1441).
 
 `ptah-compat schema clean` plans supported cleanup objects from the live database, supports `--dry-run`, preserves destructive confirmation unless `--auto-approve` is explicit, reads `env.url` and `format.schema.clean` from `atlas.hcl`, and supports Atlas-style `--format` templates such as `{{ json . }}` over `.Env`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`.
 
@@ -783,7 +790,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 **Current boundary.** `schema inspect --url` now accepts local schema files, one migration directory, and one `env://` reference in addition to database URLs; non-database sources require `schema inspect --dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect), with Atlas's `--dev-url cannot be empty` failure when the dev database is missing.
 
-`schema apply --schema/--include` and `schema diff --schema/--include` now positively scope both comparison sides (schema universe, then include selection, then exclusion), with cross-scope dependency diagnostics and synced output for empty selections; Atlas CE aborts `--include` as non-community, so this is an open Ptah extension.
+`schema apply --schema/--include` and `schema diff --schema/--include` now positively scope both comparison sides (schema universe, then include selection, then exclusion), with cross-scope dependency diagnostics. An include selection matching neither side fails instead of returning a false synced result; Atlas CE aborts `--include` as non-community, so this is an open Ptah extension.
 
 `migrate down --dev-url` now verifies the rollback plan on the dev database before the target is touched, and `migrate down --format` renders an Atlas Go-template down report; `migrate down --to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly with their rationale.
 
