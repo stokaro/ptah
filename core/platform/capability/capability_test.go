@@ -433,7 +433,7 @@ func TestForServerVersionResultReportsFallback(t *testing.T) {
 	c := qt.New(t)
 
 	caps, versionSpecific := capability.ForServerVersionResult("mysql", "8.0.17")
-	c.Assert(versionSpecific, qt.Equals, true)
+	c.Assert(versionSpecific, qt.Equals, false)
 	c.Assert(caps.Has(capability.DropCheckClause), qt.Equals, true)
 	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.Equals, false)
 
@@ -468,22 +468,32 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		wantSaturated       bool
 		wantNewestMeasured  string
 	}{
-		// MySQL: the separately numbered 26.x generation is measured on 26.7.
-		{"mysql below", "mysql", "5.7.44", capability.MySQLLegacy(), true, false, "26.x"},
-		{"mysql inside", "mysql", "8.0.42-log", capability.MySQL8019(), true, false, "26.x"},
-		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.x"},
-		{"mysql at the newest measured line", "mysql", "26.7.0", capability.MySQL84(), true, false, "26.x"},
-		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "26.x"},
+		// MySQL: the separately numbered 26.x generation is measured on exact line 26.7.
+		{"mysql undeclared legacy line", "mysql", "5.7.44", capability.MySQLLegacy(), false, false, "26.7"},
+		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8019(), false, false, "26.7"},
+		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.7"},
+		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.7"},
+		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.7"},
+		{"mysql undeclared generation gap", "mysql", "25.1.0", capability.MySQL84(), false, false, "26.7"},
+		{"mysql sibling below measured minor", "mysql", "26.6.0", capability.MySQL84(), false, false, "26.7"},
+		{"mysql at the newest measured line", "mysql", "26.7.0", capability.MySQL84(), true, false, "26.7"},
+		{"mysql sibling above measured minor", "mysql", "26.8.0", capability.MySQL84(), false, true, "26.7"},
+		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "26.7"},
 
 		// MariaDB: MariaDB1011 is measured through the 12.x line.
-		{"mariadb below", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), true, false, "12.x"},
-		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
-		{"mariadb former LTS line", "mariadb", "11.8.2-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
-		{"mariadb at the newest measured line", "mariadb", "12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
-		{"mariadb far above", "mariadb", "99.0.0-MariaDB", capability.MariaDB1011(), false, true, "12.x"},
+		{"mariadb undeclared legacy line", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), false, false, "12.3"},
+		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
+		{"mariadb measured 11.4 LTS line", "mariadb", "11.4.5-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
+		{"mariadb gap inside major 11", "mariadb", "11.5.2-MariaDB", capability.MariaDB1011(), false, false, "12.3"},
+		{"mariadb former LTS line", "mariadb", "11.8.2-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
+		{"mariadb sibling after measured 11 line", "mariadb", "11.9.0-MariaDB", capability.MariaDB1011(), false, false, "12.3"},
+		{"mariadb sibling below measured minor", "mariadb", "12.2.0-MariaDB", capability.MariaDB1011(), false, false, "12.3"},
+		{"mariadb at the newest measured line", "mariadb", "12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
+		{"mariadb sibling above measured minor", "mariadb", "12.4.0-MariaDB", capability.MariaDB1011(), false, true, "12.3"},
+		{"mariadb far above", "mariadb", "99.0.0-MariaDB", capability.MariaDB1011(), false, true, "12.3"},
 		{
 			"mariadb above over the mysql replication prefix",
-			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.x",
+			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.3",
 		},
 
 		// PostgreSQL: Postgres17 is the top preset and is measured through 18.
@@ -497,7 +507,7 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		// dialect with no version ladder reports neither a ceiling nor
 		// saturation — refining those is the rest of issue #916.
 		{"mysql unparseable", "mysql", "who knows", capability.MySQL84(), false, false, ""},
-		{"mariadb unparseable", "mariadb", "MariaDB something", capability.MariaDB1011(), false, false, "12.x"},
+		{"mariadb unparseable", "mariadb", "MariaDB something", capability.MariaDB1011(), false, false, "12.3"},
 		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
 		{
 			"cockroachdb 26.2 selects its measured preset",

@@ -56,7 +56,7 @@ the supported set cannot say one thing here and another in a workflow file.
 | `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | yes |
 | `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | yes |
 | `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | yes |
-| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | yes |
+| `yugabytedb` | 2025.2 | `YugabyteDB25` | measured-release-line | yes |
 | `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | no |
 | `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | no |
 | `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | no |

@@ -97,9 +97,11 @@ type Report struct {
 	Rows []Row
 	// Decidable is how many rows this run was obliged to decide: the
 	// registered keys the dialect's plan did NOT declare undecidable in
-	// advance, on a line the matrix can credit an observation to. It is zero
-	// on an unattributable line, where every row is undecidable by
-	// construction and the count would be a demand no run can meet.
+	// advance and whose deciding experiment has every semantic prerequisite
+	// enabled by the session preset, on a line the matrix can credit an
+	// observation to. It is zero on an unattributable line, where every row is
+	// undecidable by construction and the count would be a demand no run can
+	// meet.
 	//
 	// It is derived from the plan rather than written down per dialect
 	// because a number somebody maintains by hand drifts the moment a
@@ -343,7 +345,14 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 }
 
 // decidable counts the rows this run had to decide for its coverage to be
-// intact: every registered key the plan did not declare undecidable in advance.
+// intact: every registered key the plan did not declare undecidable in advance
+// and whose experiment's semantic prerequisites the session preset enables.
+//
+// A dependent experiment cannot isolate its own key when a prerequisite is
+// expected to be absent. For example, a server without generic DROP CONSTRAINT
+// cannot answer whether IF EXISTS guards that clause: either spelling is
+// refused for the missing generic clause. That row stays visible and
+// UNDECIDABLE, but it is not coverage the plan promises on that preset.
 //
 // On a line no observation can be credited to it is zero rather than that
 // count. Every row there is undecidable by construction — the resolver hands
@@ -356,9 +365,16 @@ func decidable(report *Report, p plan) int {
 		return 0
 	}
 	n := 0
-	for _, key := range capability.All() {
-		if _, declared := p.undecided[key]; !declared {
-			n++
+	for _, current := range p.experiments {
+		promised := true
+		for _, required := range current.requires {
+			if !report.SessionCapabilities.Has(required) {
+				promised = false
+				break
+			}
+		}
+		if promised {
+			n += len(current.decides)
 		}
 	}
 	return n

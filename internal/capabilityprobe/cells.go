@@ -83,11 +83,12 @@ type Cell struct {
 	// byte-identical and a set comparison would label MariaDB rows MySQL.
 	PresetName string
 
-	// Refinement says how the preset is reached. Anything other than
-	// RefinedByVersion makes every capability row on this line UNDECIDABLE:
-	// the observation is still taken and printed, but it cannot be credited
-	// to this line rather than to the line's siblings, which receive the
-	// identical set.
+	// Refinement says how the preset is reached. RefinedByBanner and
+	// NotRefined make every capability row on this line UNDECIDABLE: the
+	// observation is still taken and printed, but it cannot be credited to
+	// this line rather than to the line's siblings, which receive the
+	// identical set. RefinedByMeasuredLine records the direct live evidence
+	// that makes one otherwise banner-selected line attributable.
 	Refinement Refinement
 
 	// Image reproduces the line locally, empty when there is no container for
@@ -138,7 +139,9 @@ func (c Cell) String() string {
 }
 
 // Cells is the capability matrix: every release line Ptah covers, in one
-// place.
+// place. Release strings shared with the version resolver are named once in
+// internal/capabilityline and referenced here; this slice remains the only
+// declaration of which lines are matrix cells.
 //
 // The lines are the vendor-supported ones, checked against the vendors on
 // 2026-08-09, plus any line whose preset Ptah still ships — a preset with no
@@ -213,7 +216,7 @@ var Cells = []Cell{
 	// 2032-04-30; both flagged LTS), plus 26.7, which is the line this
 	// repository actually starts.
 	{
-		Dialect: platform.MySQL, Line: "26.7",
+		Dialect: platform.MySQL, Line: capabilityline.MySQL26,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
 		Refinement: RefinedByVersion, Image: "mysql:26.7",
 		Note: "measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
@@ -221,12 +224,12 @@ var Cells = []Cell{
 			"does not create a privileged account",
 	},
 	{
-		Dialect: platform.MySQL, Line: "9.7",
+		Dialect: platform.MySQL, Line: capabilityline.MySQL9,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
 		Refinement: RefinedByVersion, Image: "mysql:9.7",
 	},
 	{
-		Dialect: platform.MySQL, Line: "8.4",
+		Dialect: platform.MySQL, Line: capabilityline.MySQL8,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
 		Refinement: RefinedByVersion, Image: "mysql:8.4",
 	},
@@ -236,24 +239,24 @@ var Cells = []Cell{
 	// 2028-02-16) plus 12.3, which the vendor KB names as the latest
 	// long-term stable series.
 	{
-		Dialect: platform.MariaDB, Line: "12.3",
+		Dialect: platform.MariaDB, Line: capabilityline.MariaDB12,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:12.3",
 		Note: "measured live on MariaDB 12.3.0 in capability-matrix run 31615442780: all 23 observable " +
 			"rows agree with MariaDB1011; role_management and sequences remain deliberately undecidable",
 	},
 	{
-		Dialect: platform.MariaDB, Line: "11.8",
+		Dialect: platform.MariaDB, Line: capabilityline.MariaDB11LTS,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:11.8",
 	},
 	{
-		Dialect: platform.MariaDB, Line: "11.4",
+		Dialect: platform.MariaDB, Line: capabilityline.MariaDB114,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:11.4",
 	},
 	{
-		Dialect: platform.MariaDB, Line: "10.11",
+		Dialect: platform.MariaDB, Line: capabilityline.MariaDB10,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:10.11",
 	},
@@ -304,9 +307,10 @@ var Cells = []Cell{
 		Refinement: NotRefined, Image: "mcr.microsoft.com/mssql/server:2019-latest",
 	},
 
-	// CockroachDB and YugabyteDB currently resolve from a banner substring, but
-	// the current OSS container lines below have been measured directly. Older
-	// lines keep banner attribution until they are re-measured.
+	// CockroachDB resolves through a version ladder and both YugabyteDB lines
+	// still reach their preset through a banner substring. Every line below is
+	// backed by a direct live measurement, which makes the YugabyteDB
+	// observations attributable despite that resolver mechanism.
 	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB26,
 		Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
@@ -335,10 +339,10 @@ var Cells = []Cell{
 	{
 		Dialect: platform.YugabyteDB, Line: "2025.2",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByBanner, Image: "yugabytedb/yugabyte:2025.2", ResolveNewestPatch: true,
-		Note: "Docker Hub publishes no floating 2025.2 tag; the CI driver resolves the newest numeric " +
-			"patch tag instead of freezing a concrete tag. The invalid 2025.2.0.0-b0 reference from the " +
-			"first matrix run is no longer part of the declaration",
+		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2025.2", ResolveNewestPatch: true,
+		Note: "measured live on YugabyteDB v2025.2.5.2-b0 in capability-matrix run 31627407769, " +
+			"job 94218797895: all 25 rows match YugabyteDB25 with zero mismatches. Docker Hub has no " +
+			"floating line tag, so the CI driver resolves the newest numeric patch",
 	},
 
 	// SQLite is not a server line. Its version is whatever the driver pinned

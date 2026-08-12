@@ -323,12 +323,12 @@ func TestReportCapabilityResolution(t *testing.T) {
 		{
 			name:      "mysql past the newest measured line is recorded at debug",
 			info:      types.DBInfo{Dialect: "mysql", Version: "99.0"},
-			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=99.0", "newest_measured=26.x"},
+			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
 		},
 		{
 			name:      "mariadb past the newest measured line is recorded at debug",
 			info:      types.DBInfo{Dialect: "mariadb", Version: "99.0-MariaDB"},
-			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.x"},
+			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.3"},
 		},
 		{
 			name:      "postgres past the newest measured line is recorded at debug",

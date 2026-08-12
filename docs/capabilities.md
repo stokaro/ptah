@@ -158,11 +158,12 @@ composed sets yourself.
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
 | `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the measured 26.x
-generation; `MySQL8019()` covers
+Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the 26.x generation;
+the exact measured lines are 8.4, 9.7, and 26.7. `MySQL8019()` covers
 8.0.19–8.3; `MySQL8016()` covers 8.0.16–8.0.18; `MySQLLegacy()` anything
 older. `MariaDB1011()` covers the
-supported MariaDB lines (10.6+ through 12.x); `MariaDBLegacy()` is the
+supported MariaDB lines (10.6+ through 12.x); the exact measured lines are
+10.11, 11.4, 11.8, and 12.3. `MariaDBLegacy()` is the
 conservative floor `ForServerVersion` assigns to pre-10.2 servers.
 `Postgres17()` covers PostgreSQL 17–18; `Postgres16()` covers 14–16;
 `Postgres13()` covers 12–13 (no
@@ -199,15 +200,16 @@ caps, versionSpecific := capability.ForServerVersionResult("mysql", "99.0")
 // versionSpecific == false   (99.x ran off the top of the ladder)
 ```
 
-`ResolveServerVersion` separates that fallback from the other one — a version
-that could not be parsed at all — and names the line the server was planned as:
+`ResolveServerVersion` separates saturation from the other fallbacks — a
+version that could not be parsed and an unmeasured major/minor gap below the
+ceiling — and names the newest line the resolver has measured:
 
 ```go
 resolution := capability.ResolveServerVersion("mysql", "99.0")
 // resolution.Capabilities    == capability.MySQL84()
 // resolution.VersionSpecific == false   (the dialect default was used)
 // resolution.Saturated       == true    (99.x is past the newest measured line)
-// resolution.NewestMeasured  == "26.x"
+// resolution.NewestMeasured  == "26.7"
 ```
 
 `Saturated` and `VersionSpecific` are never both true.
@@ -216,16 +218,17 @@ The newest measured line per refined dialect:
 
 | Dialect | Newest measured line | Saturates above |
 | --- | --- | --- |
-| MySQL | 26.x (`MySQL84()`) | 26 |
-| MariaDB | 12.x (`MariaDB1011()`) | 12 |
+| MySQL | 26.7 (`MySQL84()`) | 26.7 |
+| MariaDB | 12.3 (`MariaDB1011()`) | 12.3 |
 | PostgreSQL | 18.x (`Postgres17()`) | 18 |
 | CockroachDB | 26.2 (`CockroachDB26()`) | 26.2 |
 
 The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.0, and both
-CockroachDB 25.4 and 26.2 before promoting those lines. CockroachDB matches the
-full major/minor line: an unmeasured sibling such as 26.1 is not reported as a
-26.2-specific match, while 26.3 saturates above the newest measured line. The
-resolver uses the preceding conservative preset between measured lines.
+CockroachDB 25.4 and 26.2 before promoting those lines. MySQL, MariaDB, and
+CockroachDB match exact major/minor lines: an unmeasured sibling such as MySQL
+26.6, MariaDB 12.2, or CockroachDB 26.1 is not reported as a line-specific
+match. A sibling above the newest measurement saturates. The resolver uses a
+conservative preset between measured lines.
 
 Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
@@ -353,7 +356,7 @@ into four probed ones with no workflow edit.
 | `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
 | `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
 | `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
-| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | `yugabytedb/yugabyte:2025.2` | yes | yes |
+| `yugabytedb` | 2025.2 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
 | `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
 | `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |

@@ -214,9 +214,9 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 }
 
 // TestDecidable_IsDerivedFromThePlanAndTheLine pins the floor's derivation
-// against the current registry and plan: postgres:17 owes 25 decisions,
-// mysql:9.7 owes 24, and mariadb:10.11 owes 23. The MySQL-family gaps remain
-// only the keys plans.go records as unmeasurable by those engines.
+// against the current registry, plan and preset prerequisites: postgres:17
+// owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
+// 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	c := qt.New(t)
 
@@ -224,10 +224,12 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		cell Cell
+		caps capability.Capabilities
 		want int
 	}{{
 		name: "postgres declares nothing undecidable, so every registered row is owed",
 		cell: measuredCell,
+		caps: capability.Postgres17(),
 		want: registered,
 	}, {
 		name: "mysql owes one fewer: role_management names a surface no MySQL path reads",
@@ -236,6 +238,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
+		caps: capability.MySQL84(),
 		want: registered - 1,
 	}, {
 		name: "mariadb owes two fewer: sequences is a claim about the generator, not the engine",
@@ -244,22 +247,34 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
+		caps: capability.MariaDB1011(),
 		want: registered - 2,
 	}, {
-		name: "a directly measured release line owes the plan even when its resolver is banner-based",
+		name: "cockroachdb 26.2 owes every row because its preset enables both experiment prerequisites",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
-			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
-			Refinement: RefinedByMeasuredLine,
+			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
+			Refinement: RefinedByVersion,
 		},
+		caps: capability.CockroachDB26(),
 		want: registered,
 	}, {
-		name: "a banner-refined line owes nothing, because no observation there can be credited to it",
+		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "25.4",
-			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
+			Preset: capability.CockroachDB25, PresetName: "CockroachDB25",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.CockroachDB25(),
+		want: registered - 1,
+	}, {
+		name: "a banner-refined line owes nothing because no observation can be credited to it",
+		cell: Cell{
+			Dialect: platform.YugabyteDB, Line: "2025.2",
+			Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
 			Refinement: RefinedByBanner,
 		},
+		caps: capability.YugabyteDB25(),
 		want: 0,
 	}, {
 		name: "a line with no measured preset owes nothing either",
@@ -268,12 +283,13 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 			Note:       "no measured MySQL 26 preset",
 		},
+		caps: capability.MySQL84(),
 		want: 0,
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
 			dialectPlan, ok := planFor(tc.cell.Dialect)
 			c.Assert(ok, qt.IsTrue)
-			report := reportOn(tc.cell, true, capability.Postgres17())
+			report := reportOn(tc.cell, true, tc.caps)
 			c.Assert(decidable(report, dialectPlan), qt.Equals, tc.want)
 		})
 	}

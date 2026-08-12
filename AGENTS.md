@@ -196,8 +196,10 @@ state, so look at what is already running before invoking either.
 
 ### The version matrix
 
-Which database release lines Ptah covers is declared in exactly one place,
-`internal/capabilityprobe/cells.go`. Nothing else holds a list of versions:
+Which database release lines Ptah covers as matrix cells is declared in exactly
+one place, `internal/capabilityprobe/cells.go`. Exact measured-line identifiers
+shared with the version resolver live in `internal/capabilityline`; the cell
+slice references those identifiers instead of duplicating their spelling.
 
 ```bash
 # What the pipeline fans out over, and which declared lines it cannot run

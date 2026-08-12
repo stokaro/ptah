@@ -4939,7 +4939,7 @@ type VersionResolution struct {
     // never true at the same time as VersionSpecific.
     Saturated bool
     // NewestMeasured names the newest measured version line for the dialect,
-    // for example "26.x" or "26.2". It is empty for dialects with no ladder.
+    // for example "26.7" or "26.2". It is empty for dialects with no ladder.
     NewestMeasured string
 }
     VersionResolution reports how a server version string was mapped onto a

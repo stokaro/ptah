@@ -126,6 +126,20 @@ func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {
 	}
 }
 
+// TestCIMatrix_MeasuredBannerLineRemainsRunnable prevents a direct live
+// measurement from being hidden merely because the resolver reaches its
+// preset through an engine banner rather than a version ladder.
+func TestCIMatrix_MeasuredBannerLineRemainsRunnable(t *testing.T) {
+	c := qt.New(t)
+
+	cell, found := capabilityprobe.CIMatrix().Find("yugabytedb-2025-2")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(cell.Runnable, qt.IsTrue)
+	c.Assert(cell.Refinement, qt.Equals, string(capabilityprobe.RefinedByMeasuredLine))
+	c.Assert(cell.Note, qt.Contains, "v2025.2.5.2-b0")
+	c.Assert(cell.Note, qt.Contains, "all 25 rows match")
+}
+
 // TestCICell_TagPinsLine pins the scoping rule of stokaro/ptah#1341: the
 // matrix pins a LINE and lets the registry resolve the patch.
 //
@@ -259,7 +273,7 @@ func TestWriteMatrixMarkdown_CoversEveryDeclaredLine(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), "cockroachdb/cockroach:v26.2.5",
 		qt.Commentf("a frozen patch must not reappear in the generated matrix"))
 	c.Assert(out.String(), qt.Contains, "| `yugabytedb/yugabyte:2025.2` | yes |",
-		qt.Commentf("the YugabyteDB selector must document the line the driver resolves"))
+		qt.Commentf("the directly measured YugabyteDB line must remain in the live fan-out"))
 	c.Assert(out.String(), qt.Contains, "| `postgres:17` | yes |",
 		qt.Commentf("and which cells satisfy it, or the column carries no information either way"))
 }

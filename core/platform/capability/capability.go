@@ -894,27 +894,22 @@ func ForDialect(dialect string) Capabilities {
 // Each ladder in this file ends in an open-topped arm: MySQL sends everything
 // above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
 // PostgreSQL everything at or above 17 to Postgres17. That arm is a stand-in,
-// not a measurement — a server newer than the line below was never observed
-// behaving like the preset it receives. VersionResolution.Saturated is true
-// exactly there, so a caller can tell "inside a measured line" from "past the
-// newest line this package knows".
+// not a measurement — a server newer than the exact line below was never
+// observed behaving like the preset it receives. VersionResolution.Saturated
+// is true exactly past that line, so a caller can tell "inside a measured
+// line" from "past the newest line this package knows". A sibling minor below
+// the measured line is conservative fallback too, but not saturation.
 //
 // Above these boundaries the preset that comes back is byte-identical to
-// ForDialect's, so VersionSpecific is false there too. CockroachDB additionally
-// distinguishes exact measured major/minor lines from conservative fallbacks
-// between them.
+// ForDialect's, so VersionSpecific is false there too. MySQL, MariaDB and
+// CockroachDB distinguish exact measured major/minor lines from conservative
+// fallbacks between them.
 //
 // Raising one of these numbers is the deliberate act of claiming a newer
 // server line behaves like the preset it lands on. Do it in the change that
 // measures that line, together with the preset it deserves — never as a side
 // effect of bumping a container tag.
 const (
-	// MySQL84 covers 8.4 LTS through the 9.x line and the separately numbered
-	// 26.x line, measured on MySQL 26.7.0 by the capability matrix.
-	newestMeasuredMySQLMajor = 26
-	// MariaDB1011 covers 10.2 through the 12.x lines, measured on MariaDB
-	// 12.3.0 by the capability matrix.
-	newestMeasuredMariaDBMajor = 12
 	// Postgres17 also covers PostgreSQL 18, measured on PostgreSQL 18.4 by the
 	// capability matrix.
 	newestMeasuredPostgresMajor = 18
@@ -953,7 +948,7 @@ type VersionResolution struct {
 	// never true at the same time as VersionSpecific.
 	Saturated bool
 	// NewestMeasured names the newest measured version line for the dialect,
-	// for example "26.x" or "26.2". It is empty for dialects with no ladder.
+	// for example "26.7" or "26.2". It is empty for dialects with no ladder.
 	NewestMeasured string
 }
 
@@ -1044,7 +1039,8 @@ func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool
 }
 
 func mysqlResolution(v serverVersion) VersionResolution {
-	return ladderResolution(mysqlForVersion(v), newestMeasuredMySQLMajor, v.major > newestMeasuredMySQLMajor)
+	return measuredMinorLineResolution(
+		mysqlForVersion(v), v, capabilityline.MySQLMeasured(), capabilityline.MySQL26)
 }
 
 func mariaDBResolution(version string) VersionResolution {
@@ -1052,14 +1048,33 @@ func mariaDBResolution(version string) VersionResolution {
 	if !ok {
 		return VersionResolution{
 			Capabilities:   mariaDBForVersion(version),
-			NewestMeasured: measuredLine(newestMeasuredMariaDBMajor),
+			NewestMeasured: capabilityline.MariaDB12,
 		}
 	}
-	return ladderResolution(
-		mariaDBForVersion(version),
-		newestMeasuredMariaDBMajor,
-		v.major > newestMeasuredMariaDBMajor,
-	)
+	return measuredMinorLineResolution(
+		mariaDBForVersion(version), v, capabilityline.MariaDBMeasured(), capabilityline.MariaDB12)
+}
+
+// measuredMinorLineResolution recognizes only the major/minor pairs backed by
+// direct matrix evidence. A gap below the newest line is a conservative
+// fallback but not saturation; a line above the newest measurement is both
+// unattributed and saturated.
+func measuredMinorLineResolution(
+	caps Capabilities,
+	v serverVersion,
+	measuredLines []string,
+	newestLine string,
+) VersionResolution {
+	newest, _ := parseVersion(newestLine)
+	return VersionResolution{
+		Capabilities: caps,
+		VersionSpecific: slices.ContainsFunc(measuredLines, func(line string) bool {
+			measured, _ := parseVersion(line)
+			return sameMajorMinor(v, measured)
+		}),
+		Saturated:      compareServerVersion(v, newest) > 0,
+		NewestMeasured: newestLine,
+	}
 }
 
 func postgresResolution(v serverVersion) VersionResolution {
@@ -1095,9 +1110,10 @@ func cockroachDBForVersion(v serverVersion) Capabilities {
 }
 
 func cockroachDBMeasuredLine(v serverVersion) bool {
-	line25, _ := parseVersion(capabilityline.CockroachDB25)
-	line26, _ := parseVersion(capabilityline.CockroachDB26)
-	return sameMajorMinor(v, line25) || sameMajorMinor(v, line26)
+	return slices.ContainsFunc(capabilityline.CockroachDBMeasured(), func(line string) bool {
+		measured, _ := parseVersion(line)
+		return sameMajorMinor(v, measured)
+	})
 }
 
 func sameMajorMinor(left, right serverVersion) bool {
