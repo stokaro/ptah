@@ -1,6 +1,15 @@
 // Package pathguard validates user-supplied filesystem paths, resolving them
 // against an allowed root and rejecting escapes so CLI flags cannot traverse
 // outside the intended directory.
+//
+// How much a caller gets depends on which entry point it uses, and the
+// difference is worth knowing before treating any of them as a security
+// boundary. [ResolveWithinRoot], [OpenDirectoryWithinRoot] and
+// [OpenedDirectory.OpenDirectory] take an explicit root and bind it whatever
+// the path's spelling. [ResolveCLIPath] and [OpenCLIDirectory] take no root:
+// they use the process working directory, and they bound relative spellings
+// only, so an absolute pathname reaches any destination. Each doc comment says
+// which of the two it is.
 package pathguard
 
 import (
@@ -97,8 +106,23 @@ func ResolveWithinRoot(path, allowedRoot string) (string, error) {
 	return resolved, nil
 }
 
-// ResolveCLIPath applies a conservative boundary to relative CLI paths while
-// preserving historical support for explicit absolute paths.
+// ResolveCLIPath confines a relative CLI path to the process working directory
+// and exempts an absolute one.
+//
+// Within the relative branch the boundary binds the destination rather than the
+// spelling: the path is resolved through its existing symlinks first, so a
+// traversal, a ".." in the middle of the path, and a symlink that leaves the
+// root are all refused, while a path that leaves the root and returns is
+// allowed. The comparison is between resolved pathnames and never between file
+// identities, so no verdict here depends on inode reuse.
+//
+// The absolute branch has no root at all, so the same destination is refused
+// when it is spelled "../schema.sql" and accepted when it is spelled in full.
+// That exemption is what makes an absolute pathname — the ordinary way an
+// operator names a file, and one the pinned community binary accepts — keep
+// working, so it cannot be removed without deciding stokaro/ptah#1241 item 11's
+// parity question. Do not read this function as containment: it bounds the
+// relative spelling only.
 func ResolveCLIPath(path string) (string, error) {
 	if filepath.IsAbs(path) {
 		return ResolveWithinRoot(path, "")
@@ -113,6 +137,8 @@ func ResolveCLIPath(path string) (string, error) {
 // OpenCLIDirectory validates and opens a CLI directory path in one operation.
 // Relative paths are opened through the current working directory as their
 // allowed root. Explicit absolute paths preserve their unbounded CLI behavior.
+// It carries the same relative-only boundary as [ResolveCLIPath], for the same
+// reason; callers that have a real root to bind want [OpenDirectoryWithinRoot].
 func OpenCLIDirectory(path string) (*OpenedDirectory, error) {
 	if filepath.IsAbs(path) {
 		return OpenDirectory(path)
