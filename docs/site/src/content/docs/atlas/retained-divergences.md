@@ -128,20 +128,27 @@ was applied to, and the difference surfaces later as a diff nobody can explain.
 The refusal names the version and both checksums, and `--allow-dirty` is not
 involved.
 
-## A migration inserted below the applied high-water mark
+## A prefix migration inserted below the oldest applied revision
 
 **Type.** Deliberate divergence
 
-**Current boundary.** `ptah-compat migrate apply` refuses at its default
-`--exec-order linear` when the directory has grown a migration that sorts below
-the newest applied one, and names both ways forward. `--exec-order linear-skip`
+**Current boundary.** This entry covers a prefix migration that sorts below
+every applied revision. `ptah-compat migrate apply` refuses at its default
+`--exec-order linear` and names both ways forward. `--exec-order linear-skip`
 leaves the insertion unapplied; `--exec-order non-linear` applies it. Those are
 that binary's own flag and its own three values, not a Ptah addition.
 
+An insertion between two applied revisions is a different observable state.
+Measured on SQLite and PostgreSQL 17.10 on 2026-08-10, both binaries refuse
+that interval insertion at the default order and apply it under `non-linear`.
+The lower applied revision is the state that distinguishes that parity cell
+from the prefix divergence below.
+
 Measured on SQLite on 2026-08-12. Both directories were authored and hashed by
 that binary through `migrate import`, so no checksum here was computed by Ptah.
-`dirA` holds only the later migration; `dirB` holds an earlier one plus a
-byte-identical copy of the later one — `diff` between the two copies exits `0`.
+`dirA` holds only the later migration; `dirB` prefixes it with an earlier one
+and holds a byte-identical copy of the later one. `diff` between the two copies
+exits `0`.
 
 | step | pinned community binary v1.3.0 | `ptah-compat` |
 | --- | --- | --- |
@@ -224,7 +231,7 @@ Each entry above is pinned by a test in
 `cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
 `cmd/atlas/compat_overstrict_test.go`. The same focused file also pins all three
-orders of the out-of-order insertion: the default refuses, `--exec-order
+orders of the prefix insertion: the default refuses, `--exec-order
 non-linear` applies and remains idempotent, and `--exec-order linear-skip`
 leaves the insertion unapplied and stays that way on a repeat run. The last of
 those is the one that keeps the entry honest — it is the claim that the pinned

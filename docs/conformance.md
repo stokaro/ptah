@@ -317,7 +317,7 @@ Atlas CE, never looser. See
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) items 6
 and 13.
 
-### An out-of-order insertion preserves checksum verification
+### An insertion between applied revisions preserves checksum verification
 
 An `atlas.sum` entry is a running hash, not a content hash for one file.
 Inserting a migration ahead of applied ones therefore changes every later
@@ -326,7 +326,8 @@ the chain projected from the migrations that were applied when the row was
 written.
 
 Measured on SQLite and PostgreSQL 17.10, 2026-08-10, by applying `one` and
-`three` and then adding `two` between them:
+`three` and then adding `two` between them. This is an interval insertion: an
+applied revision exists on each side of the new file.
 
 | | Atlas CE v1.3.0 | Ptah |
 | --- | --- | --- |
@@ -338,6 +339,15 @@ The default refusal happens before any checksum row changes. Non-linear apply
 excludes pending insertions from its initial proof, then reconciles clean
 applied rows to the new chain only after the insertion succeeds. Dry runs and
 failed transactional or non-transactional migrations do not reconcile rows.
+
+A prefix insertion below the oldest applied revision is a different oracle
+cell. Measured on SQLite on 2026-08-12, Atlas CE exits 0, prints
+`No migration files to execute`, and silently leaves the prefix migration
+unapplied. Ptah refuses that default outcome, while `linear-skip` reproduces it
+on request and `non-linear` applies the insertion. The retained-divergences
+page records that deliberate refusal. The lower applied revision in the
+interval fixture above is the observable state that distinguishes the two
+Atlas CE results.
 
 Ptah computes every checksum change before writing and, on transaction-capable
 databases, commits the changes in one transaction. If one row update fails,
