@@ -3,6 +3,7 @@ package migrationlintreport_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -18,6 +19,29 @@ import (
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+type gitExitStatus128 struct{}
+
+func (gitExitStatus128) Error() string { return "exit status 128" }
+
+// TestGitCommandErrorKeepsTheNativeRendering pins the producer's own text. The
+// native surface prints the full invocation so a failed selection can be
+// reproduced by hand, and the compat adapter builds its terser form from the
+// fields rather than by trimming this string.
+func TestGitCommandErrorKeepsTheNativeRendering(t *testing.T) {
+	c := qt.New(t)
+
+	err := &migrationlintreport.GitCommandError{
+		Subcommand: "diff",
+		Args:       []string{"diff", "--name-only", "nosuchbranch...HEAD"},
+		Output:     "fatal: bad revision",
+		Err:        gitExitStatus128{},
+	}
+
+	c.Assert(err.Error(), qt.Equals,
+		"git diff --name-only nosuchbranch...HEAD: exit status 128: fatal: bad revision")
+	c.Assert(errors.Unwrap(err), qt.Equals, error(gitExitStatus128{}))
+}
 
 func writeLintTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
