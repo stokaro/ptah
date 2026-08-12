@@ -81,13 +81,27 @@ func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
 // toURLs is the resolved --to set. A run with none, or one whose values are all
 // absolute or non-local, gets the prefix half alone.
 func displayAtlasSchemaApplyError(err error, toURLs []string) error {
+	workdir, getwdErr := os.Getwd()
+	if getwdErr != nil {
+		workdir = ""
+	}
+	return displayAtlasSchemaApplyErrorFrom(err, toURLs, workdir)
+}
+
+// displayAtlasSchemaApplyErrorFrom contains the deterministic display
+// adaptation. Keeping the working directory explicit lets the unit contour
+// exercise the composed error without changing process state or touching the
+// filesystem; the process-level integration test covers os.Getwd.
+func displayAtlasSchemaApplyErrorFrom(err error, toURLs []string, workdir string) error {
 	const hclContext = "load --to schema: parse HCL schema: "
 
 	message, found := strings.CutPrefix(err.Error(), hclContext)
 	if !found {
 		return err
 	}
-	message = atlasSchemaApplyRelativeDiagnostic(message, toURLs)
+	if workdir != "" {
+		message = atlasSchemaApplyRelativeDiagnosticFrom(message, toURLs, workdir)
+	}
 	return atlasSchemaApplyDisplayError{text: message, err: err}
 }
 
@@ -100,20 +114,15 @@ func displayAtlasSchemaApplyError(err error, toURLs []string) error {
 // diagnostic about some other file, or one that merely mentions the path, is
 // left alone. A --to that is already absolute is skipped, because the pinned
 // binary reports an absolute path for it and this surface already agrees.
-func atlasSchemaApplyRelativeDiagnostic(message string, toURLs []string) string {
-	workdir, err := os.Getwd()
-	if err != nil {
-		return message
-	}
+// atlasSchemaApplyRelativeDiagnosticFrom contains the deterministic path
+// comparison used after the loader context has been removed.
+func atlasSchemaApplyRelativeDiagnosticFrom(message string, toURLs []string, workdir string) string {
 	for _, raw := range toURLs {
 		path, ok := atlasSchemaApplyLocalToPath(raw)
 		if !ok || filepath.IsAbs(path) {
 			continue
 		}
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			continue
-		}
+		absolute := filepath.Clean(filepath.Join(workdir, path))
 		rest, found := strings.CutPrefix(message, absolute+":")
 		if !found {
 			continue
