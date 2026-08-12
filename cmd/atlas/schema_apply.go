@@ -332,10 +332,22 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if opts.policy.IsStrictCE() {
+		if err := atlasschema.PreflightApplyTarget(
+			cmd.Context(),
+			conn,
+			opts.schemas,
+			opts.policy.ValidateInspectedSchema,
+			atlasLiveSchemaObjectValidator(opts.policy),
+		); err != nil {
+			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err))
+		}
+	}
 
-	// The apply lock is held across inspection, planning, simulation,
-	// confirmation, and execution, so the plan cannot go stale between
-	// planning and applying. The deferred release covers every exit path.
+	// After the before-work policy preflight above, the apply lock is held across
+	// the authoritative target reinspection, planning, simulation, confirmation,
+	// and execution, so the plan cannot go stale between planning and applying.
+	// The deferred release covers every exit path.
 	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

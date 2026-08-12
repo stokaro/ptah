@@ -261,7 +261,7 @@ policy from `atlas.hcl`, including local variable defaults, locals, `getenv`,
 `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
 references.
 
-`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target (acquired before target inspection and planning, released on every exit path; dialects without advisory locks proceed unlocked with a stderr note).
+`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target. Strict CE mode preflights the selected target catalog before that lock or any desired-source replay. The authoritative inspection and planning remain inside the lock, which is released on every exit path; dialects without advisory locks proceed unlocked with a stderr note.
 
 `ptah-compat schema diff` implements local schema-file diffs, reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`, prints migration SQL, supports Atlas-style `--format` templates with `sql` and `.MarshalSQL`, and applies the same Atlas-style filters to local `--from` and `--to` inputs.
 

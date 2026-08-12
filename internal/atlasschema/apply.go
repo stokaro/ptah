@@ -185,6 +185,42 @@ type applyComputation struct {
 	readScope []string
 }
 
+// PreflightApplyTarget validates the target state selected directly by the
+// connection URL and --schema before an apply lock is acquired or a desired
+// migration directory is replayed. Nil validators return without reading the
+// database, preserving the full/default compatibility path exactly.
+//
+// Apply planning validates the target again while the lock is held. The second
+// check is deliberate: this preflight establishes before-work error ordering,
+// while the locked check prevents a catalog change between preflight and plan
+// construction from bypassing the caller's policy.
+func PreflightApplyTarget(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	schemas []string,
+	validateSchema func(*goschema.Database) error,
+	validateLiveObject func(LiveSchemaObject) error,
+) error {
+	if validateSchema == nil && validateLiveObject == nil {
+		return nil
+	}
+	if conn == nil {
+		return errors.New("schema apply target preflight requires database connection")
+	}
+	readScope, err := schemascope.ReadNames(ctx, conn.Info(), schemas, conn)
+	if err != nil {
+		return fmt.Errorf("read database schema: %w", err)
+	}
+	current, err := dbschema.ReadSchemaWithSchemas(conn, readScope)
+	if err != nil {
+		return fmt.Errorf("read database schema: %w", err)
+	}
+	if err := validateCurrentApplySchema(current, validateSchema); err != nil {
+		return err
+	}
+	return ValidateLiveObjects(conn, readScope, validateLiveObject)
+}
+
 func computeApplyPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,

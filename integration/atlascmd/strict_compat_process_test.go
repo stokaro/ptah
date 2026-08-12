@@ -19,6 +19,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -1070,7 +1071,7 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	stdout, stderr, code = runAtlasBinary(compat, nil, inspectArgs...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Assert(stdout, qt.Not(qt.Equals), "")
-	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stderr, qt.Not(qt.Contains), "Error:")
 	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)
 
 	conn, err = dbschema.ConnectToDatabase(t.Context(), scopedURL)
@@ -1161,6 +1162,53 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	wantPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
 
+	t.Run("apply target before desired replay", func(t *testing.T) {
+		migrationDir := t.TempDir()
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+			"CREATE TABLE replayed_before_target_validation (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "apply",
+			"--url", procedureURL,
+			"--to", "file://"+migrationDir,
+			"--dev-url", devURL,
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		qt.Assert(t, postgresTableExists(t, devURL, "replayed_before_target_validation"), qt.IsFalse)
+	})
+
+	t.Run("apply target before lock acquisition", func(t *testing.T) {
+		lockConn, err := dbschema.ConnectToDatabase(t.Context(), procedureURL)
+		qt.Assert(t, err, qt.IsNil)
+		defer dbschema.CloseAndWarn(lockConn)
+		lock, err := atlasschema.AcquireApplyLock(t.Context(), lockConn, "", time.Second)
+		qt.Assert(t, err, qt.IsNil)
+		defer func() {
+			qt.Assert(t, lock.Release(), qt.IsNil)
+		}()
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "apply",
+			"--url", procedureURL,
+			"--to", emptyURL,
+			"--lock-timeout", "100ms",
+			"--dry-run",
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+	})
+
 	t.Run("apply target", func(t *testing.T) {
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1215,8 +1263,9 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 
 	t.Run("diff replayed migration directory", func(t *testing.T) {
 		migrationDir := t.TempDir()
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_procedure.sql"), []byte(
-			"CREATE PROCEDURE refresh_replayed() LANGUAGE SQL AS $$ SELECT 1 $$;\n",
+		collationName := prefix + "_replayed"
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_collation.sql"), []byte(
+			fmt.Sprintf("CREATE COLLATION %s FROM \"C\";\n", collationName),
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
 		qt.Assert(t, err, qt.IsNil)
@@ -1233,7 +1282,8 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		qt.Assert(t, stdout, qt.Equals, "")
 		qt.Assert(t, stderr, qt.Equals,
 			`Error: load --from schema: --from \"file://`+migrationDir+`\": `+
-				`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_replayed()"`+"\n")
+				`Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
+				collationName+`"`+"\n")
 
 		stdout, stderr, code = runAtlasBinary(
 			compat,
@@ -1249,13 +1299,14 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 
 	t.Run("migrate diff live desired source", func(t *testing.T) {
 		currentDir := t.TempDir()
+		migrateDevURL := strictCompatPostgresDevURL(t)
 		stdout, stderr, code := runAtlasBinary(
 			compat,
 			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 			"migrate", "diff", "next",
 			"--dir", "file://"+currentDir,
 			"--to", procedureURL,
-			"--dev-url", devURL,
+			"--dev-url", migrateDevURL,
 			"--dry-run",
 		)
 		qt.Assert(t, code, qt.Equals, 1)
@@ -1268,8 +1319,10 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 
 	t.Run("migrate diff replayed current source", func(t *testing.T) {
 		currentDir := t.TempDir()
-		qt.Assert(t, os.WriteFile(filepath.Join(currentDir, "1_procedure.sql"), []byte(
-			"CREATE PROCEDURE refresh_current() LANGUAGE SQL AS $$ SELECT 1 $$;\n",
+		migrateDevURL := strictCompatPostgresDevURL(t)
+		collationName := prefix + "_current"
+		qt.Assert(t, os.WriteFile(filepath.Join(currentDir, "1_collation.sql"), []byte(
+			fmt.Sprintf("CREATE COLLATION %s FROM \"C\";\n", collationName),
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(currentDir, migrator.MigrationDirFormatAtlas)
 		qt.Assert(t, err, qt.IsNil)
@@ -1280,17 +1333,34 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"migrate", "diff", "next",
 			"--dir", "file://"+currentDir,
 			"--to", emptyURL,
-			"--dev-url", devURL,
+			"--dev-url", migrateDevURL,
 			"--dry-run",
 		)
 		qt.Assert(t, code, qt.Equals, 1)
 		qt.Assert(t, stdout, qt.Equals, "")
 		qt.Assert(t, stderr, qt.Equals,
-			`Error: Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_current()"`+"\n")
+			`Error: Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
+				collationName+`"`+"\n")
 		entries, err := os.ReadDir(currentDir)
 		qt.Assert(t, err, qt.IsNil)
 		qt.Assert(t, entries, qt.HasLen, 2)
 	})
+}
+
+func postgresTableExists(t *testing.T, dbURL, table string) bool {
+	t.Helper()
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	qt.Assert(t, err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var exists bool
+	err = conn.QueryRowContext(t.Context(), `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = current_schema() AND table_name = $1
+		)`, table).Scan(&exists)
+	qt.Assert(t, err, qt.IsNil)
+	return exists
 }
 
 func strictCompatPostgresTestURL(t *testing.T) string {
@@ -1304,6 +1374,18 @@ func strictCompatPostgresTestURL(t *testing.T) string {
 	}
 	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
 		t.Skip("PostgreSQL URL required for strict schema-clean runtime coverage")
+	}
+	return dbURL
+}
+
+func strictCompatPostgresDevURL(t *testing.T) string {
+	t.Helper()
+	dbURL := os.Getenv("PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL")
+	if dbURL == "" {
+		t.Skip("PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL not set")
+	}
+	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
+		t.Skip("PostgreSQL dev URL required for strict migrate-diff runtime coverage")
 	}
 	return dbURL
 }

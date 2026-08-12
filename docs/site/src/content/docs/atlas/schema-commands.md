@@ -1034,14 +1034,17 @@ across different endpoints; malformed comparison inputs fail before reset.
 
 `--lock-timeout` bounds how long the apply waits for the session advisory lock
 (`ptah_schema_apply`) that serializes concurrent schema applies against one
-target database. The lock is acquired before target inspection and planning,
-held through simulation, confirmation, and execution, and released on every
-exit path including cancellation.
+target database. Strict CE mode first inventories the selected target catalog,
+before the lock and before any migration-directory replay on the dev database.
+The lock then covers the authoritative target reinspection, planning,
+simulation, confirmation, and execution. It is released on every exit path,
+including cancellation.
 
-An empty value waits indefinitely; an elapsed timeout fails the apply before
-the target is inspected. PostgreSQL and YugabyteDB (`pg_advisory_lock`), MySQL
-and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real database
-locks.
+An empty value waits indefinitely. An elapsed timeout fails the apply before
+the locked target reinspection; a strict target-policy refusal happens before
+the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
+MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
+database locks.
 
 SQLite, ClickHouse, CockroachDB, and Spanner have no advisory-lock semantics:
 the apply proceeds without a lock, and an explicitly passed `--lock-timeout`

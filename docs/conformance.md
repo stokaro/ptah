@@ -65,6 +65,10 @@ It rejects extension environment values and validates authored schema,
 project-config, migration, and inspected live-schema content before work.
 Local source-format and current-migration checks run before database or lock
 artifacts can be created.
+After the target connection opens, strict `schema apply` inventories its
+selected live scope before acquiring the apply lock or replaying a desired
+migration directory on the dev database. Planning repeats the validation while
+the lock is held so a catalog change cannot bypass the policy.
 
 A strict inspect, apply, diff, or clean run refuses a live Pro-only object
 before it can be omitted from output, mistaken for absence, or destroyed.
