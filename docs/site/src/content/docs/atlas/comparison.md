@@ -200,7 +200,7 @@ existing-directory destinations.
 
 Non-database sources require `--dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect); a missing dev database fails with Atlas's `--dev-url cannot be empty` message.
 
-The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors and type selectors on non-final pattern segments fail explicitly; exporter blocks remain a gap.
+The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector); exporter blocks remain a gap.
 
 The pinned Atlas CE binary rejects `split`, `write`, and `hcl` template functions as non-community features, so Ptah's split-write exports are an open extension beyond the pinned CE binary.
 
@@ -789,7 +789,7 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 `schema apply --edit`, `migrate diff --edit`, and `migrate new --edit` now open the operator's `$VISUAL`/`$EDITOR`. `schema apply --plan file://<path>` executes a pre-approved local plan file — the Atlas `.plan.hcl` format or the native JSON plan — after verifying it against the target (fingerprint check, dev-database replay against `--to`, and post-apply end-state verification, per format); registry `atlas://` plan URLs are rejected.
 
-`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
+`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs. Other field selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector).
 
 `ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
