@@ -139,6 +139,8 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"ClickHouse24":  capability.ClickHouse24(),
 		"SQLite3":       capability.SQLite3(),
 		"CockroachDB23": capability.CockroachDB23(),
+		"CockroachDB25": capability.CockroachDB25(),
+		"CockroachDB26": capability.CockroachDB26(),
 		"YugabyteDB25":  capability.YugabyteDB25(),
 		"SQLServer2022": capability.SQLServer2022(),
 		"Spanner":       capability.SpannerPostgres(),
@@ -466,42 +468,56 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		wantSaturated       bool
 		wantNewestMeasured  string
 	}{
-		// MySQL: the ladder tops out at MySQL84, measured through the 9.x line.
-		{"mysql below", "mysql", "5.7.44", capability.MySQLLegacy(), true, false, "9.x"},
-		{"mysql inside", "mysql", "8.0.42-log", capability.MySQL8019(), true, false, "9.x"},
-		{"mysql at the newest measured line", "mysql", "9.7.1", capability.MySQL84(), true, false, "9.x"},
-		{"mysql at the top of the newest measured major", "mysql", "9.99.0", capability.MySQL84(), true, false, "9.x"},
-		{"mysql above (#791 bumps CI to 26.x)", "mysql", "26.7.0", capability.MySQL84(), false, true, "9.x"},
-		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "9.x"},
+		// MySQL: the separately numbered 26.x generation is measured on 26.7.
+		{"mysql below", "mysql", "5.7.44", capability.MySQLLegacy(), true, false, "26.x"},
+		{"mysql inside", "mysql", "8.0.42-log", capability.MySQL8019(), true, false, "26.x"},
+		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.x"},
+		{"mysql at the newest measured line", "mysql", "26.7.0", capability.MySQL84(), true, false, "26.x"},
+		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "26.x"},
 
-		// MariaDB: MariaDB1011 is measured through the 11.x lines.
-		{"mariadb below", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), true, false, "11.x"},
-		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "11.x"},
-		{"mariadb at the newest measured line", "mariadb", "11.8.2-MariaDB", capability.MariaDB1011(), true, false, "11.x"},
-		{"mariadb above (#108 bumps CI to 12.x)", "mariadb", "12.3.0-MariaDB", capability.MariaDB1011(), false, true, "11.x"},
-		{"mariadb far above", "mariadb", "99.0.0-MariaDB", capability.MariaDB1011(), false, true, "11.x"},
+		// MariaDB: MariaDB1011 is measured through the 12.x line.
+		{"mariadb below", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), true, false, "12.x"},
+		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
+		{"mariadb former LTS line", "mariadb", "11.8.2-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
+		{"mariadb at the newest measured line", "mariadb", "12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.x"},
+		{"mariadb far above", "mariadb", "99.0.0-MariaDB", capability.MariaDB1011(), false, true, "12.x"},
 		{
 			"mariadb above over the mysql replication prefix",
-			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), false, true, "11.x",
+			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.x",
 		},
 
-		// PostgreSQL: Postgres17 is the top preset and covers 17 only, while
-		// the integration matrix already runs postgres:18.
-		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "17.x"},
-		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "17.x"},
-		{"postgres at the newest measured line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "17.x"},
-		{"postgres above (CI runs postgres:18)", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres17(), false, true, "17.x"},
-		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres17(), false, true, "17.x"},
+		// PostgreSQL: Postgres17 is the top preset and is measured through 18.
+		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "18.x"},
+		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "18.x"},
+		{"postgres former current line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "18.x"},
+		{"postgres at the newest measured line", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres17(), true, false, "18.x"},
+		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres17(), false, true, "18.x"},
 
 		// Controls. An unparseable version never reports saturation, and a
 		// dialect with no version ladder reports neither a ceiling nor
 		// saturation — refining those is the rest of issue #916.
 		{"mysql unparseable", "mysql", "who knows", capability.MySQL84(), false, false, ""},
-		{"mariadb unparseable", "mariadb", "MariaDB something", capability.MariaDB1011(), false, false, "11.x"},
+		{"mariadb unparseable", "mariadb", "MariaDB something", capability.MariaDB1011(), false, false, "12.x"},
 		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
 		{
-			"cockroachdb resolves from the banner, no ladder",
-			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB23(), true, false, "",
+			"cockroachdb 26.2 selects its measured preset",
+			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.2",
+		},
+		{
+			"cockroachdb 26.1 is not claimed as its measured 26.2 sibling",
+			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
+		},
+		{
+			"cockroachdb 26.3 saturates above the measured 26.2 line",
+			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), false, true, "26.2",
+		},
+		{
+			"cockroachdb 25.4 selects its measured preset",
+			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.2",
+		},
+		{
+			"cockroachdb 25.5 uses the conservative preset without claiming measurement",
+			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
 		},
 		{
 			"yugabytedb resolves from the banner, no ladder",
@@ -556,18 +572,10 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 //	Same for mariadb 12.3.0 vs 10.11.6. Silently saturating while returning
 //	true is what fails. #791 and #108 unblock on exactly this row.
 //
-// The criterion permits either outcome, so the assertion is on the conjunction
-// the criterion forbids — an identical set *and* a true boolean — rather than
-// on the branch this change happens to take. A later change that gives MySQL
-// 26.x, MariaDB 12.x or PostgreSQL 18 a measured preset of its own satisfies
-// the criterion the other way and must keep this test green without editing
-// it.
-//
-// wantIdenticalSet records which branch is live today, so the test also fails
-// if a preset silently starts differing and nobody notices the criterion is
-// now met for a different reason. The postgres row is not named in the
-// criterion; it is here because the integration matrix runs postgres:18, which
-// makes it the row a reader will hit first.
+// Each row below is now backed by a live capability-matrix run. An identical
+// set with a true boolean is therefore a measured version-specific answer, not
+// silent saturation. The separate ResolveServerVersion assertions pin the
+// newest measured line and ensure a later unmeasured version still saturates.
 func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -577,9 +585,9 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 		wantIdenticalSet  bool
 		wantAboveSpecific bool
 	}{
-		{"mysql 26.7.0 against 8.4.0 (#791)", "mysql", "26.7.0", "8.4.0", true, false},
-		{"mariadb 12.3.0 against 10.11.6 (#108)", "mariadb", "12.3.0-MariaDB", "10.11.6-MariaDB", true, false},
-		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", true, false},
+		{"mysql 26.7.0 against 8.4.0 (#791)", "mysql", "26.7.0", "8.4.0", true, true},
+		{"mariadb 12.3.0 against 10.11.6 (#108)", "mariadb", "12.3.0-MariaDB", "10.11.6-MariaDB", true, true},
+		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -590,8 +598,6 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 			insideCaps, insideSpecific := capability.ForServerVersionResult(tt.dialect, tt.inside)
 
 			identicalSet := maps.Equal(aboveCaps, insideCaps)
-			c.Assert(identicalSet && aboveSpecific, qt.IsFalse, comment)
-
 			c.Assert(identicalSet, qt.Equals, tt.wantIdenticalSet, comment)
 			c.Assert(aboveSpecific, qt.Equals, tt.wantAboveSpecific, comment)
 

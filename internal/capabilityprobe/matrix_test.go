@@ -50,10 +50,31 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 			c.Assert(cell.SuiteDatabase, qt.Not(qt.Equals), "",
 				qt.Commentf("tier 3 runs the integration suite for this cell and needs the runner's own name for it"))
 			c.Assert(cell.SuiteURLEnv, qt.Not(qt.Equals), "")
+			c.Assert(cell.SuiteURL, qt.Not(qt.Equals), "")
 			c.Assert(cell.DockerRun, qt.Contains, cell.Image,
 				qt.Commentf("the docker run arguments must start the image this line declares"))
 			c.Assert(strings.HasPrefix(cell.URL, cell.Dialect+"://"), qt.IsTrue,
 				qt.Commentf("cell %s probes %s, which resolves to a different dialect", cell.ID, cell.URL))
+		})
+	}
+}
+
+// TestCIMatrix_MySQLFamilyUsesRestrictedScenarioConnections keeps the nightly
+// permission-restriction scenario meaningful. The probe needs an administrator
+// for capability discovery, but the suite reserves it for cleanup.
+func TestCIMatrix_MySQLFamilyUsesRestrictedScenarioConnections(t *testing.T) {
+	c := qt.New(t)
+
+	for _, id := range []string{"mysql-8-4", "mariadb-10-11"} {
+		c.Run(id, func(c *qt.C) {
+			cell, found := capabilityprobe.CIMatrix().Find(id)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(cell.SuiteURL, qt.Contains, "ptah_user:ptah_password")
+			c.Assert(cell.SuiteURL, qt.Not(qt.Contains), "root:root_password")
+			c.Assert(cell.SuiteCleanupURLEnv, qt.Equals, strings.ToUpper(cell.Dialect)+"_CLEANUP_URL")
+			c.Assert(cell.SuiteCleanupURL, qt.Contains, "root:root_password")
+			c.Assert(cell.URL, qt.Equals, cell.SuiteCleanupURL,
+				qt.Commentf("the capability probe and cleanup both require the administrator"))
 		})
 	}
 }
@@ -108,10 +129,9 @@ func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {
 // TestCICell_TagPinsLine pins the scoping rule of stokaro/ptah#1341: the
 // matrix pins a LINE and lets the registry resolve the patch.
 //
-// The two rows that matter are the CockroachDB and YugabyteDB ones. A prefix
-// comparison — the obvious cheaper implementation — would call
-// `cockroachdb/cockroach:v26.2.5` a pin on line 26.2 and report the whole
-// matrix as line-pinned, which is exactly the frozen patch the rule rejects.
+// CockroachDB publishes a floating latest-v<line> alias. YugabyteDB does not,
+// so its line tag is a selector the driver resolves before Docker runs. Both
+// satisfy the rule; a frozen v26.2.5 or 2026.1.0.0-b118 tag would not.
 func TestCICell_TagPinsLine(t *testing.T) {
 	c := qt.New(t)
 
@@ -122,8 +142,8 @@ func TestCICell_TagPinsLine(t *testing.T) {
 		{cell: "postgres-17", want: true},
 		{cell: "mariadb-10-11", want: true},
 		{cell: "mysql-26-7", want: true},
-		{cell: "cockroachdb-26-2", want: false},
-		{cell: "yugabytedb-2026-1", want: false},
+		{cell: "cockroachdb-26-2", want: true},
+		{cell: "yugabytedb-2026-1", want: true},
 	} {
 		c.Run(tc.cell, func(c *qt.C) {
 			cell, found := capabilityprobe.CIMatrix().Find(tc.cell)
@@ -203,9 +223,9 @@ func TestMatrix_Validate(t *testing.T) {
 	}
 }
 
-// TestPresetGaps names the lines that have no measured preset. The count is
-// asserted against the declaration rather than written down, so filling one in
-// under stokaro/ptah#916 updates this test by fixing it.
+// TestPresetGaps names every line that lacks a measured preset. The expected
+// count is derived from the declaration, including the current zero-gap state,
+// so adding or filling a gap cannot leave a stale hand-written count.
 func TestPresetGaps(t *testing.T) {
 	c := qt.New(t)
 
@@ -236,9 +256,10 @@ func TestWriteMatrixMarkdown_CoversEveryDeclaredLine(t *testing.T) {
 		c.Check(out.String(), qt.Contains, "| `"+declared.Dialect+"` | "+declared.Line+" ",
 			qt.Commentf("the generated table has no row for %s", declared))
 	}
-	c.Assert(out.String(), qt.Contains, "| `cockroachdb/cockroach:v26.2.5` | no |",
-		qt.Commentf("the table must say which cells pin something other than a line, or the scoping rule "+
-			"of stokaro/ptah#1341 is unreadable from the documentation"))
+	c.Assert(out.String(), qt.Not(qt.Contains), "cockroachdb/cockroach:v26.2.5",
+		qt.Commentf("a frozen patch must not reappear in the generated matrix"))
+	c.Assert(out.String(), qt.Contains, "| `yugabytedb/yugabyte:2025.2` | yes |",
+		qt.Commentf("the YugabyteDB selector must document the line the driver resolves"))
 	c.Assert(out.String(), qt.Contains, "| `postgres:17` | yes |",
 		qt.Commentf("and which cells satisfy it, or the column carries no information either way"))
 }

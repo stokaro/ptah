@@ -59,8 +59,10 @@ as views, materialized views, functions, and triggers.
 For the PostgreSQL family, that refusal path currently applies to Spanner. A
 role, grant, sequence, row-level security enablement, or policy is written as a
 named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a plan
-in silence. CockroachDB v26.2.5 and YugabyteDB 2026.1 were measured with live
-servers and accept those three categories, so their presets enable them.
+in silence. CockroachDB 25.4 and 26.2 plus YugabyteDB 2026.1 were measured with
+live servers and accept those three categories, so their presets enable them.
+CockroachDB's two measured resolver arms differ where the 25.4 server refuses
+generic and guarded `DROP CONSTRAINT` and `CREATE OR REPLACE TRIGGER`.
 
 A refused object is reported again every time the plan is rebuilt, rather than
 reported once and then called synced. The skip comment is not a change a

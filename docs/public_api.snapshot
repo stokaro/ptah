@@ -4852,6 +4852,8 @@ func Doc(key Capability) string
 type Capabilities map[Capability]bool
     func ClickHouse24() Capabilities
     func CockroachDB23() Capabilities
+    func CockroachDB25() Capabilities
+    func CockroachDB26() Capabilities
     func ForDialect(dialect string) Capabilities
     func ForServerVersion(dialect, version string) Capabilities
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -4886,6 +4888,8 @@ type Capabilities map[Capability]bool
 
 func ClickHouse24() Capabilities
 func CockroachDB23() Capabilities
+func CockroachDB25() Capabilities
+func CockroachDB26() Capabilities
 func ForDialect(dialect string) Capabilities
 func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -4924,11 +4928,10 @@ package capability // import "go.5x5.cz/ptah/core/platform/capability"
 type VersionResolution struct {
     // Capabilities is the resolved preset, never nil for a known dialect.
     Capabilities Capabilities
-    // VersionSpecific is false when no version-specific preset could be
-    // selected and the dialect default was used instead. It carries exactly
-    // the meaning of ForServerVersionResult's second return value, and it is
-    // false for a saturated version because the preset such a version lands
-    // on is exactly ForDialect's.
+    // VersionSpecific is false when no exact measured release line selected the
+    // preset. Most ladders use the dialect default in that case; a ladder with
+    // measured minor lines may use the preceding conservative preset between
+    // those lines.
     VersionSpecific bool
     // Saturated is true when the resolved preset is the top of a version
     // ladder and the server is newer than the newest line that ladder was
@@ -4936,7 +4939,7 @@ type VersionResolution struct {
     // never true at the same time as VersionSpecific.
     Saturated bool
     // NewestMeasured names the newest measured version line for the dialect,
-    // for example "9.x". It is empty for dialects with no version ladder.
+    // for example "26.x" or "26.2". It is empty for dialects with no ladder.
     NewestMeasured string
 }
     VersionResolution reports how a server version string was mapped onto a
@@ -4947,16 +4950,17 @@ type VersionResolution struct {
     itself newer than the newest line that ladder was measured against — so the
     preset is a stand-in and any capability the newer server gained or lost
     is unmodeled. That is not a version-specific answer, so VersionSpecific is
-    false whenever Saturated is true, and the two fields together say which of
-    the two ways a caller ended up on the dialect default: the version could not
-    be parsed at all, or it parsed and ran off the top of the ladder.
+    false whenever Saturated is true, and the two fields together say which
+    of the reasons a caller did not receive an exact measured-line answer:
+    the version could not be parsed, it fell between measured lines, or it ran
+    off the top of the ladder.
 
-    Saturation is only defined where this package has a version ladder: MySQL,
-    MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
-    from the banner without consulting a version at all, and ClickHouse, SQLite
-    and SQL Server have no ladder to saturate; all six report Saturated=false
-    and an empty NewestMeasured. Refining those dialects is the remaining scope
-    of issue #916 and is deliberately not answered here.
+    Saturation is defined where this package has a version ladder: MySQL,
+    MariaDB, PostgreSQL, and CockroachDB. YugabyteDB and Spanner are resolved
+    from the banner without consulting a version at all, and ClickHouse, SQLite,
+    and SQL Server have no ladder to saturate; those five report Saturated=false
+    and an empty NewestMeasured. Refining those dialects is remaining scope of
+    issue #916 and is deliberately not answered here.
 
 func ResolveServerVersion(dialect, version string) VersionResolution
 

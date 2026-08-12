@@ -168,7 +168,8 @@ jobs:
           set -euo pipefail
           # One flat argument list, printed by the driver, so this step cannot
           # assemble flags, image and container command in the wrong order.
-          mapfile -t args < <("${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}")
+          "${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}" >"${RUNNER_TEMP}/docker-args"
+          mapfile -t args <"${RUNNER_TEMP}/docker-args"
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell

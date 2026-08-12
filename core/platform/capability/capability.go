@@ -46,6 +46,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/capabilityline"
 )
 
 // Capability is a single named feature flag from the curated registry below.
@@ -745,7 +746,8 @@ func SQLServer2022() Capabilities {
 	}
 }
 
-// CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
+// CockroachDB23 is the historical preset for CockroachDB's
+// PostgreSQL-compatible surface.
 // CockroachDB runs schema changes online by design, so PostgreSQL's
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
 // accepts the keyword inside an explicit transaction on v26.2.5, which proves
@@ -763,10 +765,8 @@ func SQLServer2022() Capabilities {
 //
 // The trigger row is the one worth spelling out, because this preset is named
 // for a line that did not have triggers — CockroachDB added them in v24.3.
-// ForServerVersionResult maps EVERY version string containing "cockroachdb"
-// here, so writing false would retire triggers for every CockroachDB user on
-// a current release. Splitting the key by version is issue #916's job; until
-// then this preset follows the engine that was measured, not its own name.
+// The exported historical preset retains its pre-matrix behavior; the live
+// resolver now selects CockroachDB25 or CockroachDB26 for those measured lines.
 //
 // The same v26.2.5 probe accepted CREATE ROLE plus GRANT SELECT, ALTER TABLE
 // ... ENABLE ROW LEVEL SECURITY plus CREATE POLICY, CREATE SEQUENCE, and
@@ -779,6 +779,23 @@ func CockroachDB23() Capabilities {
 		With(IndexIncludeSPGiST, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false)
+}
+
+// CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses
+// both generic DROP CONSTRAINT and CREATE OR REPLACE TRIGGER, which the 26.2
+// line accepts. The remaining registered capabilities match CockroachDB26.
+func CockroachDB25() Capabilities {
+	return CockroachDB23().
+		With(DropConstraintGeneric, false).
+		With(DropConstraintIfExists, false).
+		With(CreateOrReplaceTrigger, false)
+}
+
+// CockroachDB26 is the preset measured on CockroachDB 26.2. It retains the
+// full current CockroachDB surface documented by CockroachDB23 while giving
+// the version resolver a truthful current-line name.
+func CockroachDB26() Capabilities {
+	return CockroachDB23()
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -845,7 +862,7 @@ func SpannerPostgres() Capabilities {
 
 var defaultDialectPresets = map[string]func() Capabilities{
 	platform.ClickHouse:  ClickHouse24,
-	platform.CockroachDB: CockroachDB23,
+	platform.CockroachDB: CockroachDB26,
 	platform.MariaDB:     MariaDB1011,
 	platform.MySQL:       MySQL84,
 	platform.Postgres:    Postgres17,
@@ -872,7 +889,7 @@ func ForDialect(dialect string) Capabilities {
 	return preset()
 }
 
-// Newest measured major version line per refined dialect.
+// Newest measured version boundary per refined dialect.
 //
 // Each ladder in this file ends in an open-topped arm: MySQL sends everything
 // above 8.4 to MySQL84, MariaDB everything above 10.2 to MariaDB1011, and
@@ -882,26 +899,25 @@ func ForDialect(dialect string) Capabilities {
 // exactly there, so a caller can tell "inside a measured line" from "past the
 // newest line this package knows".
 //
-// Above these numbers the preset that comes back is byte-identical to
-// ForDialect's, which is the definition of "no version-specific preset could be
-// selected", so VersionSpecific is false there too.
+// Above these boundaries the preset that comes back is byte-identical to
+// ForDialect's, so VersionSpecific is false there too. CockroachDB additionally
+// distinguishes exact measured major/minor lines from conservative fallbacks
+// between them.
 //
 // Raising one of these numbers is the deliberate act of claiming a newer
 // server line behaves like the preset it lands on. Do it in the change that
 // measures that line, together with the preset it deserves — never as a side
 // effect of bumping a container tag.
 const (
-	// MySQL84 covers 8.4 LTS through the 9.x LTS line. The integration matrix
-	// already runs mysql:26.7, which therefore resolves saturated: Ptah has no
-	// measured MySQL 26 capability line yet.
-	newestMeasuredMySQLMajor = 9
-	// MariaDB1011 covers 10.2 through the 11.x lines; the integration matrix
-	// runs mariadb:10.11.
-	newestMeasuredMariaDBMajor = 11
-	// Postgres17 covers 17 only. The integration matrix already runs
-	// postgres:18, which therefore resolves saturated: Ptah has no measured
-	// PostgreSQL 18 capability line yet.
-	newestMeasuredPostgresMajor = 17
+	// MySQL84 covers 8.4 LTS through the 9.x line and the separately numbered
+	// 26.x line, measured on MySQL 26.7.0 by the capability matrix.
+	newestMeasuredMySQLMajor = 26
+	// MariaDB1011 covers 10.2 through the 12.x lines, measured on MariaDB
+	// 12.3.0 by the capability matrix.
+	newestMeasuredMariaDBMajor = 12
+	// Postgres17 also covers PostgreSQL 18, measured on PostgreSQL 18.4 by the
+	// capability matrix.
+	newestMeasuredPostgresMajor = 18
 )
 
 // VersionResolution reports how a server version string was mapped onto a
@@ -913,23 +929,23 @@ const (
 // preset is a stand-in and any capability the newer server gained or lost is
 // unmodeled. That is not a version-specific answer, so VersionSpecific is
 // false whenever Saturated is true, and the two fields together say which of
-// the two ways a caller ended up on the dialect default: the version could not
-// be parsed at all, or it parsed and ran off the top of the ladder.
+// the reasons a caller did not receive an exact measured-line answer: the
+// version could not be parsed, it fell between measured lines, or it ran off
+// the top of the ladder.
 //
-// Saturation is only defined where this package has a version ladder: MySQL,
-// MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
-// from the banner without consulting a version at all, and ClickHouse, SQLite
-// and SQL Server have no ladder to saturate; all six report Saturated=false
-// and an empty NewestMeasured. Refining those dialects is the remaining scope
-// of issue #916 and is deliberately not answered here.
+// Saturation is defined where this package has a version ladder: MySQL,
+// MariaDB, PostgreSQL, and CockroachDB. YugabyteDB and Spanner are resolved
+// from the banner without consulting a version at all, and ClickHouse, SQLite,
+// and SQL Server have no ladder to saturate; those five report Saturated=false
+// and an empty NewestMeasured. Refining those dialects is remaining scope of
+// issue #916 and is deliberately not answered here.
 type VersionResolution struct {
 	// Capabilities is the resolved preset, never nil for a known dialect.
 	Capabilities Capabilities
-	// VersionSpecific is false when no version-specific preset could be
-	// selected and the dialect default was used instead. It carries exactly
-	// the meaning of ForServerVersionResult's second return value, and it is
-	// false for a saturated version because the preset such a version lands
-	// on is exactly ForDialect's.
+	// VersionSpecific is false when no exact measured release line selected the
+	// preset. Most ladders use the dialect default in that case; a ladder with
+	// measured minor lines may use the preceding conservative preset between
+	// those lines.
 	VersionSpecific bool
 	// Saturated is true when the resolved preset is the top of a version
 	// ladder and the server is newer than the newest line that ladder was
@@ -937,7 +953,7 @@ type VersionResolution struct {
 	// never true at the same time as VersionSpecific.
 	Saturated bool
 	// NewestMeasured names the newest measured version line for the dialect,
-	// for example "9.x". It is empty for dialects with no version ladder.
+	// for example "26.x" or "26.2". It is empty for dialects with no ladder.
 	NewestMeasured string
 }
 
@@ -953,9 +969,9 @@ func ForServerVersion(dialect, version string) Capabilities {
 }
 
 // ForServerVersionResult is ForServerVersion plus an explicit fallback signal.
-// The boolean is false when no version-specific preset could be selected and
-// the dialect default was used instead. Callers with a live connection can log
-// that degradation while offline callers can keep using ForDialect.
+// The boolean is false when no exact measured release line selected a preset.
+// Callers with a live connection can log that degradation while offline
+// callers can keep using ForDialect.
 //
 // A version newer than the newest measured line for its dialect is one of
 // those fallbacks: the ladder's open-topped arm hands back exactly ForDialect's
@@ -978,7 +994,7 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 
 	switch {
 	case strings.Contains(versionLower, "cockroachdb"):
-		return VersionResolution{Capabilities: CockroachDB23(), VersionSpecific: true}
+		return cockroachDBResolution(version)
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
 		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true}
 	case strings.Contains(versionLower, "spanner"):
@@ -1048,6 +1064,51 @@ func mariaDBResolution(version string) VersionResolution {
 
 func postgresResolution(v serverVersion) VersionResolution {
 	return ladderResolution(postgresForVersion(v), newestMeasuredPostgresMajor, v.major > newestMeasuredPostgresMajor)
+}
+
+func cockroachDBResolution(version string) VersionResolution {
+	v, ok := parseVersion(version)
+	if !ok {
+		return VersionResolution{Capabilities: CockroachDB26()}
+	}
+	newest, _ := parseVersion(capabilityline.CockroachDB26)
+	saturated := compareServerVersion(v, newest) > 0
+	return VersionResolution{
+		Capabilities:    cockroachDBForVersion(v),
+		VersionSpecific: cockroachDBMeasuredLine(v),
+		Saturated:       saturated,
+		NewestMeasured:  capabilityline.CockroachDB26,
+	}
+}
+
+func cockroachDBForVersion(v serverVersion) Capabilities {
+	line25, _ := parseVersion(capabilityline.CockroachDB25)
+	line26, _ := parseVersion(capabilityline.CockroachDB26)
+	switch {
+	case compareServerVersion(v, line26) >= 0:
+		return CockroachDB26()
+	case compareServerVersion(v, line25) >= 0:
+		return CockroachDB25()
+	default:
+		return CockroachDB23()
+	}
+}
+
+func cockroachDBMeasuredLine(v serverVersion) bool {
+	line25, _ := parseVersion(capabilityline.CockroachDB25)
+	line26, _ := parseVersion(capabilityline.CockroachDB26)
+	return sameMajorMinor(v, line25) || sameMajorMinor(v, line26)
+}
+
+func sameMajorMinor(left, right serverVersion) bool {
+	return left.major == right.major && left.minor == right.minor
+}
+
+func compareServerVersion(left, right serverVersion) int {
+	if left.major != right.major {
+		return left.major - right.major
+	}
+	return left.minor - right.minor
 }
 
 func mysqlForVersion(v serverVersion) Capabilities {

@@ -16,8 +16,16 @@ func twoCellMatrix() capabilityprobe.Matrix {
 	return capabilityprobe.Matrix{
 		Declared: 3,
 		Cells: []capabilityprobe.CICell{
-			{ID: "postgres-17", Dialect: "postgres", Line: "17", Runnable: true, URL: "postgres://x", DockerRun: []string{"postgres:17"}},
-			{ID: "mariadb-11-4", Dialect: "mariadb", Line: "11.4", Runnable: true, URL: "mariadb://x", DockerRun: []string{"mariadb:11.4"}},
+			{
+				ID: "postgres-17", Dialect: "postgres", Line: "17", Runnable: true,
+				URL: "postgres://x", DockerRun: []string{"postgres:17"},
+				SuiteDatabase: "postgres", SuiteURLEnv: "POSTGRES_URL", SuiteURL: "postgres://x",
+			},
+			{
+				ID: "mariadb-11-4", Dialect: "mariadb", Line: "11.4", Runnable: true,
+				URL: "mariadb://root@x", DockerRun: []string{"mariadb:11.4"},
+				SuiteDatabase: "mariadb", SuiteURLEnv: "MARIADB_URL", SuiteURL: "mariadb://user@x",
+			},
 		},
 		Skipped: []capabilityprobe.CICell{
 			{ID: "spanner-0", Dialect: "spanner", Line: "0", Skip: "no container image is declared for this line"},
@@ -26,8 +34,12 @@ func twoCellMatrix() capabilityprobe.Matrix {
 }
 
 func passing(cell string) capmatrix.CellResult {
+	return passingAtTier(cell, 2)
+}
+
+func passingAtTier(cell string, tier int) capmatrix.CellResult {
 	return capmatrix.CellResult{
-		Cell: cell, Tier: 2, Probe: capmatrix.ProbeOutcome{OK: true, Rows: 25, Decided: 25, Floor: 25},
+		Cell: cell, Tier: tier, Probe: capmatrix.ProbeOutcome{OK: true, Rows: 25, Decided: 25, Floor: 25},
 	}
 }
 
@@ -110,6 +122,21 @@ func TestAggregate_FailurePath(t *testing.T) {
 			c.Assert(aggregate.Err(), qt.ErrorMatches, "(?s).*mariadb-11-4 \\[SUITE\\]: the integration suite exited 1.*")
 		},
 	}, {
+		name: "a result written for another tier fails the requested tier",
+		tier: 3,
+		results: []capmatrix.CellResult{
+			passing("postgres-17"),
+			{
+				Cell: "mariadb-11-4", Tier: 3,
+				Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{OK: true},
+			},
+		},
+		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
+			c.Assert(aggregate.Count(capmatrix.Missing), qt.Equals, 1)
+			c.Assert(aggregate.Err(), qt.ErrorMatches,
+				"(?s).*postgres-17 \\[MISSING\\]: result reports tier 2; this aggregate requires tier 3.*")
+		},
+	}, {
 		name: "a result for a line the matrix does not declare is reported",
 		tier: 2,
 		results: []capmatrix.CellResult{
@@ -169,11 +196,13 @@ func TestWriteAggregate_TierThreeDefersToTierTwo(t *testing.T) {
 		},
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
+			tierDisagreement := disagreeing
+			tierDisagreement.Tier = tc.tier
 			var out strings.Builder
 			capmatrix.WriteAggregate(&out, capmatrix.Aggregate{
 				Tier:    tc.tier,
 				Matrix:  twoCellMatrix(),
-				Results: []capmatrix.CellResult{passing("postgres-17"), disagreeing},
+				Results: []capmatrix.CellResult{passingAtTier("postgres-17", tc.tier), tierDisagreement},
 			})
 			tc.assert(c, out.String())
 		})
@@ -192,12 +221,16 @@ func TestCellResult_Verdict(t *testing.T) {
 		result capmatrix.CellResult
 		want   capmatrix.Verdict
 	}{{
-		name:   "probe agrees and no suite ran",
-		result: capmatrix.CellResult{Probe: capmatrix.ProbeOutcome{OK: true}},
+		name:   "tier 2 probe agrees and no suite is expected",
+		result: capmatrix.CellResult{Tier: 2, Probe: capmatrix.ProbeOutcome{OK: true}},
 		want:   capmatrix.Passed,
 	}, {
+		name:   "tier 3 probe agrees but no suite outcome was recorded",
+		result: capmatrix.CellResult{Tier: 3, Probe: capmatrix.ProbeOutcome{OK: true}},
+		want:   capmatrix.Missing,
+	}, {
 		name:   "probe agrees and the suite passed",
-		result: capmatrix.CellResult{Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{OK: true}},
+		result: capmatrix.CellResult{Tier: 3, Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{OK: true}},
 		want:   capmatrix.Passed,
 	}, {
 		name:   "probe disagrees",
@@ -216,4 +249,8 @@ func TestCellResult_Verdict(t *testing.T) {
 			c.Assert(tc.result.Verdict(), qt.Equals, tc.want)
 		})
 	}
+
+	missingSuite := capmatrix.CellResult{Tier: 3, Probe: capmatrix.ProbeOutcome{OK: true}}
+	c.Assert(missingSuite.Reasons(), qt.DeepEquals,
+		[]string{"the integration suite produced no recorded outcome"})
 }

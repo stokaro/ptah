@@ -60,6 +60,8 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 		"SQLite3":         capability.SQLite3,
 		"SQLServer2022":   capability.SQLServer2022,
 		"CockroachDB23":   capability.CockroachDB23,
+		"CockroachDB25":   capability.CockroachDB25,
+		"CockroachDB26":   capability.CockroachDB26,
 		"YugabyteDB25":    capability.YugabyteDB25,
 		"SpannerPostgres": capability.SpannerPostgres,
 	}
@@ -249,6 +251,14 @@ func TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts(t *testing.T) {
 	}
 }
 
+func TestCellsDeclaring_LineAliasMatchesTheTargetLine(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(cellsDeclaring("cockroachdb/cockroach", "v26.2.5"), qt.HasLen, 1)
+	c.Assert(cellsDeclaring("cockroachdb/cockroach", "v27.1.0"), qt.HasLen, 0,
+		qt.Commentf("a floating 25.4 or 26.2 cell must not cover an undeclared 27.1 target"))
+}
+
 // readPinnedImages returns every image reference the two files start, sorted
 // and deduplicated: postgres:18 appears in both.
 func readPinnedImages(c *qt.C) []string {
@@ -330,11 +340,18 @@ func cellsDeclaring(repository, tag string) []capabilityprobe.Cell {
 		if cellRepository != repository {
 			continue
 		}
-		if cellTag == tag || strings.HasPrefix(cellTag, tag+".") {
+		lineAlias := cellTag == "latest-v"+cell.Line && tagNamesLine(tag, cell.Line)
+		resolvedLine := cell.ResolveNewestPatch && strings.HasPrefix(tag, cell.Line+".")
+		if cellTag == tag || strings.HasPrefix(cellTag, tag+".") || lineAlias || resolvedLine {
 			out = append(out, cell)
 		}
 	}
 	return out
+}
+
+func tagNamesLine(tag, line string) bool {
+	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "latest-v"), "v")
+	return normalized == line || strings.HasPrefix(normalized, line+".")
 }
 
 // splitImageRef separates an image reference into repository and tag. The colon

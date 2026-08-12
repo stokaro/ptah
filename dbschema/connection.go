@@ -187,15 +187,13 @@ func getDatabaseInfoWithCapabilities(
 // match: the version could not be parsed at all, or it parsed and ran off the
 // top of its dialect's ladder.
 //
-// Both stay at DEBUG, and that level is the point. The default logger
+// All stay at DEBUG, and that level is the point. The default logger
 // cmd/internal/cliobs installs keeps WARN and above precisely because a clean
 // run against a supported server emits nothing there; anything it does emit is
 // a diagnostic that exists nowhere else. Connecting to a server Ptah supports
 // and runs in CI is not such an event. A saturated resolution fires on every
-// single connection to that server — the integration matrix runs postgres:18,
-// which is saturated against the PostgreSQL 17 line — so reporting it at WARN
-// wrote a line to stderr on every command and broke every test that asserts a
-// clean error stream.
+// connection to an unmeasured newer major, so reporting it at WARN writes a
+// line to stderr on every command and breaks the clean error-stream contract.
 //
 // The fact itself is not lost. capability.ResolveServerVersion returns
 // Saturated and NewestMeasured to any caller that wants to act on them, and
@@ -214,7 +212,7 @@ func reportCapabilityResolution(info types.DBInfo, resolution capability.Version
 	}
 	if !resolution.VersionSpecific {
 		slog.Debug(
-			"falling back to dialect default capabilities",
+			"falling back from an unmeasured server version",
 			"dialect", info.Dialect,
 			"version", info.Version,
 		)

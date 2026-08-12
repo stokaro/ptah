@@ -40,21 +40,21 @@ the supported set cannot say one thing here and another in a workflow file.
 <!-- BEGIN GENERATED VERSION MATRIX -->
 | Dialect | Release line | Capability preset | Refinement | Probed |
 | --- | --- | --- | --- | --- |
-| `postgres` | 18 | none yet | version-ladder | yes |
+| `postgres` | 18 | `Postgres17` | version-ladder | yes |
 | `postgres` | 17 | `Postgres17` | version-ladder | yes |
 | `postgres` | 16 | `Postgres16` | version-ladder | yes |
 | `postgres` | 15 | `Postgres16` | version-ladder | yes |
 | `postgres` | 14 | `Postgres16` | version-ladder | yes |
 | `postgres` | 13 | `Postgres13` | version-ladder | yes |
-| `mysql` | 26.7 | none yet | version-ladder | yes |
+| `mysql` | 26.7 | `MySQL84` | version-ladder | yes |
 | `mysql` | 9.7 | `MySQL84` | version-ladder | yes |
 | `mysql` | 8.4 | `MySQL84` | version-ladder | yes |
-| `mariadb` | 12.3 | none yet | version-ladder | yes |
+| `mariadb` | 12.3 | `MariaDB1011` | version-ladder | yes |
 | `mariadb` | 11.8 | `MariaDB1011` | version-ladder | yes |
 | `mariadb` | 11.4 | `MariaDB1011` | version-ladder | yes |
 | `mariadb` | 10.11 | `MariaDB1011` | version-ladder | yes |
-| `cockroachdb` | 26.2 | `CockroachDB23` | measured-release-line | yes |
-| `cockroachdb` | 25.4 | `CockroachDB23` | banner-substring | yes |
+| `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | yes |
+| `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | yes |
 | `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | yes |
 | `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | yes |
 | `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | no |
@@ -83,10 +83,6 @@ Lines that are declared and not probed, and why:
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
-- `cockroachdb` 26.2, pinned as `cockroachdb/cockroach:v26.2.5`.
-- `cockroachdb` 25.4, pinned as `cockroachdb/cockroach:v25.4.5`.
-- `yugabytedb` 2026.1, pinned as `yugabytedb/yugabyte:2026.1.0.0-b118`.
-- `yugabytedb` 2025.2, pinned as `yugabytedb/yugabyte:2025.2.0.0-b0`.
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
@@ -99,16 +95,19 @@ been measured directly; `banner-substring` and `dialect-default` hand every
 release of the engine the same set, so an observation on one release cannot be
 credited to one line rather than its siblings.
 
-A line with no preset yet resolves onto the newest preset Ptah has, which is a
-stand-in rather than a match. Those lines are tracked in
-[issue 916](https://github.com/stokaro/ptah/issues/916), and the pipeline
-reports them as failures rather than as measured lines.
+A future line with no preset resolves onto the newest preset Ptah has, which is
+a stand-in rather than a match. The pipeline reports that condition as a
+failure, and [issue 916](https://github.com/stokaro/ptah/issues/916) tracks the
+remaining version-specific refinement work.
 
 Which versions a vendor supports is recorded, with its source, next to each
 block of cells in `internal/capabilityprobe/cells.go`. PostgreSQL does not
 label releases LTS, so the reading used here is the newest patch of each
 still-supported major line. The container that reproduces each line is
-recorded there too.
+recorded there too. CockroachDB's `latest-v<line>` aliases follow the newest
+patch. YugabyteDB publishes no equivalent aliases, so the matrix driver
+resolves the highest numeric Docker Hub tag under each declared line before it
+starts the container.
 
 ## PostgreSQL
 

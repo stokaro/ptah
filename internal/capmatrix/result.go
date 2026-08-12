@@ -100,6 +100,8 @@ func (r CellResult) Verdict() Verdict {
 	switch {
 	case !r.Probe.OK:
 		return CapabilityDisagreement
+	case r.Tier == 3 && r.Suite == nil:
+		return Missing
 	case r.Suite != nil && !r.Suite.OK:
 		return SuiteFailure
 	default:
@@ -111,6 +113,9 @@ func (r CellResult) Verdict() Verdict {
 func (r CellResult) Reasons() []string {
 	var reasons []string
 	reasons = append(reasons, r.probeReasons()...)
+	if r.Tier == 3 && r.Suite == nil {
+		reasons = append(reasons, "the integration suite produced no recorded outcome")
+	}
 	if r.Suite != nil && !r.Suite.OK {
 		reasons = append(reasons, r.suiteReason())
 	}

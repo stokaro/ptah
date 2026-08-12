@@ -100,7 +100,8 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          mapfile -t args < <("${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}")
+          "${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}" >"${RUNNER_TEMP}/docker-args"
+          mapfile -t args <"${RUNNER_TEMP}/docker-args"
           docker run --detach --name capability-probe-server "${args[@]}"
 
       - name: Probe the cell

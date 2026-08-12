@@ -130,44 +130,49 @@ composed sets yourself.
 
 ## Presets
 
-| Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `drop_constraint_generic` | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `check_constraints_enforced` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `drop_check_clause` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 
-Version lines: `MySQL84()` covers MySQL 8.4+ and 9.x; `MySQL8019()` covers
+Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the measured 26.x
+generation; `MySQL8019()` covers
 8.0.19–8.3; `MySQL8016()` covers 8.0.16–8.0.18; `MySQLLegacy()` anything
 older. `MariaDB1011()` covers the
-supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
-floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres17()` covers
-PostgreSQL 17; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13 (no
+supported MariaDB lines (10.6+ through 12.x); `MariaDBLegacy()` is the
+conservative floor `ForServerVersion` assigns to pre-10.2 servers.
+`Postgres17()` covers PostgreSQL 17–18; `Postgres16()` covers 14–16;
+`Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER` and no `SPGIST` indexes with `INCLUDE` columns).
 
-`CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
-common distributed-SQL subset; `SpannerPostgres()` is deliberately
+`CockroachDB25()` and `CockroachDB26()` are the measured CockroachDB release
+arms. The 25.x arm disables generic and guarded `DROP CONSTRAINT` plus
+`CREATE OR REPLACE TRIGGER`; the 26.x arm supports them. `CockroachDB23()`
+remains the conservative historical arm. `YugabyteDB25()` is the current
+YugabyteDB distributed-SQL preset; `SpannerPostgres()` is deliberately
 conservative because Spanner's PostgreSQL interface is not a drop-in
 PostgreSQL server.
 
@@ -189,48 +194,48 @@ exactly what `ForServerVersionResult`'s boolean means by "no version-specific
 preset could be selected". So the boolean is `false` there:
 
 ```go
-caps, versionSpecific := capability.ForServerVersionResult("mysql", "26.7.0")
+caps, versionSpecific := capability.ForServerVersionResult("mysql", "99.0")
 // caps            == capability.MySQL84() == capability.ForDialect("mysql")
-// versionSpecific == false   (26.x ran off the top of the ladder)
+// versionSpecific == false   (99.x ran off the top of the ladder)
 ```
 
 `ResolveServerVersion` separates that fallback from the other one — a version
 that could not be parsed at all — and names the line the server was planned as:
 
 ```go
-resolution := capability.ResolveServerVersion("mysql", "26.7.0")
+resolution := capability.ResolveServerVersion("mysql", "99.0")
 // resolution.Capabilities    == capability.MySQL84()
 // resolution.VersionSpecific == false   (the dialect default was used)
-// resolution.Saturated       == true    (26.x is past the newest measured line)
-// resolution.NewestMeasured  == "9.x"
+// resolution.Saturated       == true    (99.x is past the newest measured line)
+// resolution.NewestMeasured  == "26.x"
 ```
 
 `Saturated` and `VersionSpecific` are never both true.
 
 The newest measured line per refined dialect:
 
-| Dialect | Newest measured line | Saturates above major |
+| Dialect | Newest measured line | Saturates above |
 | --- | --- | --- |
-| MySQL | 9.x (`MySQL84()`) | 9 |
-| MariaDB | 11.x (`MariaDB1011()`) | 11 |
-| PostgreSQL | 17.x (`Postgres17()`) | 17 |
+| MySQL | 26.x (`MySQL84()`) | 26 |
+| MariaDB | 12.x (`MariaDB1011()`) | 12 |
+| PostgreSQL | 18.x (`Postgres17()`) | 18 |
+| CockroachDB | 26.2 (`CockroachDB26()`) | 26.2 |
 
-PostgreSQL 18 therefore resolves saturated even though the integration matrix
-already runs `postgres:18`: Ptah has no measured PostgreSQL 18 capability line
-yet, so 18 is planned with the PostgreSQL 17 preset and says so. MySQL is in the
-same position for the same reason — the matrix runs `mysql:26.7`, which is the
-`26.7.0` in the examples above — so two of the three refined dialects are
-currently described to their own CI by a stand-in.
+The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.0, and both
+CockroachDB 25.4 and 26.2 before promoting those lines. CockroachDB matches the
+full major/minor line: an unmeasured sibling such as 26.1 is not reported as a
+26.2-specific match, while 26.3 saturates above the newest measured line. The
+resolver uses the preceding conservative preset between measured lines.
 
 Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
 that line — never as a side effect of bumping a container tag.
 
 Saturation is only defined where this package has a version ladder. ClickHouse,
-SQLite and SQL Server have no ladder at all, and CockroachDB, YugabyteDB and
-Spanner are resolved from the banner without consulting a version; all six
-report `Saturated=false` and an empty `NewestMeasured`. Refining those dialects
-is the remaining scope of issue #916.
+SQLite, and SQL Server have no ladder at all, while YugabyteDB and Spanner are
+resolved from the banner without consulting a version; those five report
+`Saturated=false` and an empty `NewestMeasured`. Refining those dialects is the
+remaining scope of issue #916.
 
 `dbschema.ConnectToDatabase` is the one production caller of the version-aware
 selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
@@ -238,9 +243,9 @@ server version, and the line it was planned as; an unparseable version is
 recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
 deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
 emits nothing, and connecting to a supported server is a clean run. The
-integration matrix runs `postgres:18` and `mysql:26.7`, so a saturated
-resolution fires on every connection to either — a warning would be noise on
-every command rather than a diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
+first connection after a vendor publishes an unmeasured major can saturate, so
+a warning would be noise on every command against that server rather than a
+diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
 `NewestMeasured` from `ResolveServerVersion` directly.
 
 Surfacing an unrefined version to the user on a channel of its own is
@@ -317,12 +322,12 @@ engine receives the same set, so an observation on one release cannot be
 credited to one line rather than its siblings.
 
 **Tag names the line** answers the scoping rule: the matrix pins a line and
-lets the registry resolve the newest patch, rather than freezing a patch that
-goes stale the moment the vendor ships another. `postgres:17` names its line;
-`cockroachdb/cockroach:v26.2.5` and `yugabytedb/yugabyte:2026.1.0.0-b118`
-freeze a patch, and the SQL Server tags name a marketing year where the line is
-the product version. A `no` in this column is a line whose newest patch is not
-automatically covered.
+resolves its newest patch rather than freezing a patch that goes stale when the
+vendor ships another. `postgres:17` is a registry line tag and CockroachDB
+publishes `latest-v<line>` aliases. YugabyteDB publishes neither form, so the
+CI driver queries Docker Hub for the highest numeric tag under the declared
+line immediately before Docker runs. The SQL Server tags name a marketing year
+where the matrix line is the product version; a `no` records that mismatch.
 
 **Probed per pull request** is tier 2. A line is probed when a container
 reproduces it and the capability probe has a statement table for its dialect;
@@ -332,23 +337,23 @@ into four probed ones with no workflow edit.
 <!-- BEGIN GENERATED VERSION MATRIX -->
 | Dialect | Release line | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |
 | --- | --- | --- | --- | --- | --- | --- |
-| `postgres` | 18 | none yet | version-ladder | `postgres:18` | yes | yes |
+| `postgres` | 18 | `Postgres17` | version-ladder | `postgres:18` | yes | yes |
 | `postgres` | 17 | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
 | `postgres` | 16 | `Postgres16` | version-ladder | `postgres:16` | yes | yes |
 | `postgres` | 15 | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
 | `postgres` | 14 | `Postgres16` | version-ladder | `postgres:14` | yes | yes |
 | `postgres` | 13 | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
-| `mysql` | 26.7 | none yet | version-ladder | `mysql:26.7` | yes | yes |
+| `mysql` | 26.7 | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
 | `mysql` | 9.7 | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
 | `mysql` | 8.4 | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
-| `mariadb` | 12.3 | none yet | version-ladder | `mariadb:12.3` | yes | yes |
+| `mariadb` | 12.3 | `MariaDB1011` | version-ladder | `mariadb:12.3` | yes | yes |
 | `mariadb` | 11.8 | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
 | `mariadb` | 11.4 | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
 | `mariadb` | 10.11 | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
-| `cockroachdb` | 26.2 | `CockroachDB23` | measured-release-line | `cockroachdb/cockroach:v26.2.5` | no | yes |
-| `cockroachdb` | 25.4 | `CockroachDB23` | banner-substring | `cockroachdb/cockroach:v25.4.5` | no | yes |
-| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1.0.0-b118` | no | yes |
-| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | `yugabytedb/yugabyte:2025.2.0.0-b0` | no | yes |
+| `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
+| `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
+| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
+| `yugabytedb` | 2025.2 | `YugabyteDB25` | banner-substring | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
 | `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
 | `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
@@ -369,10 +374,10 @@ the reading here is the newest patch of each still-supported major line. The
 a `Postgres13` preset, and a preset with no cell is a claim nothing here can
 measure.
 
-Three lines name no preset yet — PostgreSQL 18, MySQL 26.7 and MariaDB 12.3.
-Each is a line this repository already starts while resolving it onto the
-newest preset it has by saturation, which stokaro/ptah#916 tracks. Until they
-are filled in, tier 2 reports them as failures rather than as measured lines.
+Every currently runnable line names a measured preset. A newly declared line
+without one fails the `preset coverage` job instead of borrowing the dialect
+default and turning green through saturation; stokaro/ptah#916 tracks the
+remaining resolver refinement work.
 
 ## Current consumers
 

@@ -111,6 +111,12 @@ the default foreign-key referenced-key policy. Pre-GA callers must select the
 explicit `MySQL8016`, `MySQL8019`, or `MySQL84` preset that matches their server
 instead of relying on an ambiguous compatibility alias.
 
+`CockroachDB25` and `CockroachDB26` are the measured CockroachDB resolver arms.
+CockroachDB 25.4 refuses generic and guarded `DROP CONSTRAINT` plus
+`CREATE OR REPLACE TRIGGER`; CockroachDB 26.2 accepts those statements. Use
+`ResolveServerVersion` when a live banner is available so the correct arm is
+selected instead of choosing a preset by its name.
+
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of

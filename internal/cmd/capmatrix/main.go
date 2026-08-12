@@ -65,7 +65,7 @@ func newPresetsCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			gaps := capabilityprobe.PresetGaps()
-			fmt.Fprintf(cmd.OutOrStdout(), "checked %d declared release lines, %d name no preset\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "checked %d declared release lines; %d name no capability preset\n",
 				len(capabilityprobe.Cells), len(gaps))
 			for _, gap := range gaps {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", gap)
@@ -120,7 +120,11 @@ func newDockerArgsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, argument := range cell.DockerRun {
+			arguments, err := capabilityprobe.ResolveDockerRun(cmd.Context(), cell)
+			if err != nil {
+				return fmt.Errorf("resolve container image for %s: %w", cell.ID, err)
+			}
+			for _, argument := range arguments {
 				fmt.Fprintln(cmd.OutOrStdout(), argument)
 			}
 			return nil
@@ -143,11 +147,14 @@ func newSuiteEnvCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cell.SuiteDatabase == "" || cell.SuiteURLEnv == "" {
+			if cell.SuiteDatabase == "" || cell.SuiteURLEnv == "" || cell.SuiteURL == "" {
 				return fmt.Errorf("cell %s has no integration-runner target", cell.ID)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "CAPMATRIX_SUITE_DATABASE=%s\n", cell.SuiteDatabase)
-			fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", cell.SuiteURLEnv, cell.URL)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", cell.SuiteURLEnv, cell.SuiteURL)
+			if cell.SuiteCleanupURLEnv != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", cell.SuiteCleanupURLEnv, cell.SuiteCleanupURL)
+			}
 			return nil
 		},
 	}

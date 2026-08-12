@@ -37,12 +37,15 @@ type CICell struct {
 
 	// TagPinsLine reports whether Image's tag names the release LINE, so the
 	// registry resolves it to that line's newest patch, rather than freezing
-	// one patch.
+	// one patch. ResolveNewestPatch means the matrix driver performs that
+	// resolution when the registry publishes no floating line tag.
 	//
 	// This is the scoping rule of stokaro/ptah#1341 made checkable per cell
 	// rather than asserted in prose: "mariadb:10.11" satisfies it and
 	// "cockroachdb/cockroach:v26.2.5" does not.
 	TagPinsLine bool `json:"tag_pins_line"`
+
+	ResolveNewestPatch bool `json:"resolve_newest_patch,omitempty"`
 
 	// DockerRun is the full argument list for `docker run`, after the caller's
 	// own --detach and --name. It is one flat list rather than separate env,
@@ -55,10 +58,14 @@ type CICell struct {
 	URL string `json:"url,omitempty"`
 
 	// SuiteDatabase is the --databases value the integration runner knows this
-	// dialect by, and SuiteURLEnv the environment variable it reads the URL
-	// from. Both are empty when the runner has no target for the dialect.
-	SuiteDatabase string `json:"suite_database,omitempty"`
-	SuiteURLEnv   string `json:"suite_url_env,omitempty"`
+	// dialect by. SuiteURLEnv and SuiteURL configure the scenario connection;
+	// the optional cleanup pair configures the privileged cleanup connection.
+	// All are empty when the runner has no target for the dialect.
+	SuiteDatabase      string `json:"suite_database,omitempty"`
+	SuiteURLEnv        string `json:"suite_url_env,omitempty"`
+	SuiteURL           string `json:"suite_url,omitempty"`
+	SuiteCleanupURLEnv string `json:"suite_cleanup_url_env,omitempty"`
+	SuiteCleanupURL    string `json:"suite_cleanup_url,omitempty"`
 
 	// Runnable reports whether a tier can execute this cell at all.
 	Runnable bool `json:"runnable"`
@@ -138,6 +145,16 @@ func (c CICell) problems() []error {
 	if len(c.DockerRun) == 0 {
 		problems = append(problems, fmt.Errorf("cell %s is runnable with no way to start a server", c.ID))
 	}
+	if c.SuiteDatabase == "" || c.SuiteURLEnv == "" || c.SuiteURL == "" {
+		problems = append(problems, fmt.Errorf("cell %s is runnable with an incomplete integration-runner target", c.ID))
+	}
+	if (c.SuiteCleanupURLEnv == "") != (c.SuiteCleanupURL == "") {
+		problems = append(problems, fmt.Errorf("cell %s has only half of its integration cleanup connection", c.ID))
+	}
+	if c.ResolveNewestPatch && !c.TagPinsLine {
+		problems = append(problems, fmt.Errorf(
+			"cell %s asks to resolve a newest patch but its image selector does not name release line %s", c.ID, c.Line))
+	}
 	if c.Skip != "" {
 		problems = append(problems, fmt.Errorf("cell %s is runnable and carries the skip reason %q", c.ID, c.Skip))
 	}
@@ -147,12 +164,9 @@ func (c CICell) problems() []error {
 // PresetGaps returns one error per declared release line that names no
 // capability preset.
 //
-// This is the half of "the matrix is checked against the presets" that fails
-// today, and deliberately so: PostgreSQL 18, MySQL 26.7 and MariaDB 12.3 are
-// the lines this repository already starts while resolving them onto the
-// newest preset it has by saturation. stokaro/ptah#916 is the work that closes
-// them, and until it lands the honest report is a red one — a line whose
-// capabilities are a stand-in is not a line anybody has measured.
+// This is one half of "the matrix is checked against the presets." A new
+// release line must carry measured preset evidence before the pull-request
+// fan-out can pass; silent saturation onto an older line is not evidence.
 func PresetGaps() []error {
 	var gaps []error
 	for _, cell := range Cells {
@@ -195,10 +209,13 @@ type launcher struct {
 	command []string
 	// url addresses the container from the runner's own host namespace.
 	url string
-	// suiteDatabase and suiteURLEnv wire the same server into the integration
+	// suiteDatabase and the URL fields wire the same server into the integration
 	// runner for tier 3. Empty when the runner has no target for the dialect.
-	suiteDatabase string
-	suiteURLEnv   string
+	suiteDatabase      string
+	suiteURLEnv        string
+	suiteURL           string
+	suiteCleanupURLEnv string
+	suiteCleanupURL    string
 }
 
 // launchers covers exactly the dialects whose servers this repository already
@@ -233,9 +250,12 @@ var launchers = map[string]launcher{
 			"--env", "MYSQL_ROOT_PASSWORD=root_password",
 			"--tmpfs", "/var/lib/mysql:rw,noexec,nosuid,size=1024m",
 		},
-		url:           "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
-		suiteDatabase: "mysql",
-		suiteURLEnv:   "MYSQL_URL",
+		url:                "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
+		suiteDatabase:      "mysql",
+		suiteURLEnv:        "MYSQL_URL",
+		suiteURL:           "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test",
+		suiteCleanupURLEnv: "MYSQL_CLEANUP_URL",
+		suiteCleanupURL:    "mysql://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
 	},
 	platform.MariaDB: {
 		flags: []string{
@@ -246,9 +266,12 @@ var launchers = map[string]launcher{
 			"--env", "MARIADB_ROOT_PASSWORD=root_password",
 			"--tmpfs", "/var/lib/mysql:rw,noexec,nosuid,size=1024m",
 		},
-		url:           "mariadb://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
-		suiteDatabase: "mariadb",
-		suiteURLEnv:   "MARIADB_URL",
+		url:                "mariadb://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
+		suiteDatabase:      "mariadb",
+		suiteURLEnv:        "MARIADB_URL",
+		suiteURL:           "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test",
+		suiteCleanupURLEnv: "MARIADB_CLEANUP_URL",
+		suiteCleanupURL:    "mariadb://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
 	},
 	platform.CockroachDB: {
 		flags:         []string{"--publish", "26257:26257"},
@@ -291,15 +314,16 @@ func CIMatrix() Matrix {
 
 func toCICell(cell Cell) CICell {
 	converted := CICell{
-		ID:          CellID(cell),
-		Dialect:     cell.Dialect,
-		Line:        cell.Line,
-		Label:       cell.Label,
-		Preset:      cell.PresetName,
-		Refinement:  string(cell.Refinement),
-		Image:       cell.Image,
-		TagPinsLine: tagPinsLine(cell),
-		Note:        cell.Note,
+		ID:                 CellID(cell),
+		Dialect:            cell.Dialect,
+		Line:               cell.Line,
+		Label:              cell.Label,
+		Preset:             cell.PresetName,
+		Refinement:         string(cell.Refinement),
+		Image:              cell.Image,
+		TagPinsLine:        tagPinsLine(cell),
+		ResolveNewestPatch: cell.ResolveNewestPatch,
+		Note:               cell.Note,
 	}
 	reasons := skipReasons(cell)
 	if len(reasons) > 0 {
@@ -312,6 +336,12 @@ func toCICell(cell Cell) CICell {
 	converted.URL = recipe.url
 	converted.SuiteDatabase = recipe.suiteDatabase
 	converted.SuiteURLEnv = recipe.suiteURLEnv
+	converted.SuiteURL = recipe.suiteURL
+	if converted.SuiteURL == "" {
+		converted.SuiteURL = recipe.url
+	}
+	converted.SuiteCleanupURLEnv = recipe.suiteCleanupURLEnv
+	converted.SuiteCleanupURL = recipe.suiteCleanupURL
 	return converted
 }
 
@@ -359,7 +389,7 @@ func CellID(cell Cell) string {
 // patch the moment the vendor ships v26.2.6.
 func tagPinsLine(cell Cell) bool {
 	_, tag := splitImageTag(cell.Image)
-	return tag != "" && (tag == cell.Line || tag == "v"+cell.Line)
+	return tag != "" && (tag == cell.Line || tag == "v"+cell.Line || tag == "latest-v"+cell.Line)
 }
 
 // splitImageTag separates an image reference into repository and tag. The

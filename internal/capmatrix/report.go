@@ -42,17 +42,23 @@ func (a Aggregate) Verdicts() []CellVerdict {
 	}
 	verdicts := make([]CellVerdict, 0, len(a.Matrix.Cells))
 	for _, cell := range a.Matrix.Cells {
-		verdicts = append(verdicts, verdictFor(cell, received))
+		verdicts = append(verdicts, verdictFor(a.Tier, cell, received))
 	}
 	return verdicts
 }
 
-func verdictFor(cell capabilityprobe.CICell, received map[string]CellResult) CellVerdict {
+func verdictFor(tier int, cell capabilityprobe.CICell, received map[string]CellResult) CellVerdict {
 	result, arrived := received[cell.ID]
 	if !arrived {
 		return CellVerdict{
 			Cell: cell.ID, Dialect: cell.Dialect, Line: cell.Line, Verdict: Missing,
 			Reasons: []string{"no result was uploaded for this cell: its job did not run, did not finish, or did not report"},
+		}
+	}
+	if result.Tier != tier {
+		return CellVerdict{
+			Cell: cell.ID, Dialect: cell.Dialect, Line: cell.Line, Verdict: Missing,
+			Reasons: []string{fmt.Sprintf("result reports tier %d; this aggregate requires tier %d", result.Tier, tier)},
 		}
 	}
 	return CellVerdict{

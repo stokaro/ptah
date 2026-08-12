@@ -22,10 +22,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-mode=check
+mode="check"
 case "${1-}" in
 "") ;;
---write) mode=write ;;
+--write) mode="write" ;;
 *)
 	echo "usage: $0 [--write]" >&2
 	exit 2

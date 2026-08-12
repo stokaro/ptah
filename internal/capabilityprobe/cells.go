@@ -6,6 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/capabilityline"
 )
 
 // Refinement records whether a probe observation can be attributed to one
@@ -90,8 +91,16 @@ type Cell struct {
 	Refinement Refinement
 
 	// Image reproduces the line locally, empty when there is no container for
-	// it.
+	// it. When ResolveNewestPatch is true, its tag is a release-line selector
+	// rather than a registry tag: the CI driver resolves the newest concrete
+	// patch before invoking Docker.
 	Image string
+
+	// ResolveNewestPatch selects registries that do not publish a floating tag
+	// for a release line. The current implementation supports Docker Hub and
+	// requires Image's tag to equal Line, so the declaration cannot quietly
+	// freeze one patch while claiming that it follows the line.
+	ResolveNewestPatch bool
 
 	// Note records why a line is shaped the way it is: a missing preset, a
 	// missing server, a version axis that does not exist.
@@ -140,7 +149,7 @@ func (c Cell) String() string {
 // derives the check from those two files rather than from a list somebody has
 // to remember to edit.
 //
-// Four presets still have no cell, and each absence is deliberate:
+// Five presets still have no cell, and each absence is deliberate:
 //
 //   - MySQLLegacy, MySQL8016 and MySQL8019 describe the MySQL 8.0 line, which
 //     left vendor support on 2026-04-30 and is not one line in any case: the
@@ -163,9 +172,10 @@ var Cells = []Cell{
 	// use the term LTS). Postgres16's own doc covers 14 through 16.
 	{
 		Dialect: platform.Postgres, Line: "18",
-		Preset: nil, PresetName: "",
+		Preset: capability.Postgres17, PresetName: "Postgres17",
 		Refinement: RefinedByVersion, Image: "postgres:18",
-		Note: "no measured PostgreSQL 18 preset: newestMeasuredPostgresMajor is 17, so an 18 server resolves saturated onto Postgres17",
+		Note: "measured live on PostgreSQL 18.4 in capability-matrix run 31615442780: all 25 observed " +
+			"capability rows agree with Postgres17",
 	},
 	{
 		Dialect: platform.Postgres, Line: "17",
@@ -204,13 +214,11 @@ var Cells = []Cell{
 	// repository actually starts.
 	{
 		Dialect: platform.MySQL, Line: "26.7",
-		Preset: nil, PresetName: "",
+		Preset: capability.MySQL84, PresetName: "MySQL84",
 		Refinement: RefinedByVersion, Image: "mysql:26.7",
-		Note: "no measured MySQL 26 preset: newestMeasuredMySQLMajor is 9, so a 26 server resolves " +
-			"saturated onto MySQL84. This is the line docker-compose.yaml and " +
-			".github/workflows/go-integration-tests.yml pin, and a live mysql:26.7 reports VERSION() " +
-			"26.7.0 — so until a preset is measured for it, the servers this repository runs its own " +
-			"MySQL suite against are described by a stand-in",
+		Note: "measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
+			"rows agree with MySQL84; role_management remains undecidable because the probe deliberately " +
+			"does not create a privileged account",
 	},
 	{
 		Dialect: platform.MySQL, Line: "9.7",
@@ -229,9 +237,10 @@ var Cells = []Cell{
 	// long-term stable series.
 	{
 		Dialect: platform.MariaDB, Line: "12.3",
-		Preset: nil, PresetName: "",
+		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:12.3",
-		Note: "no measured MariaDB 12 preset: newestMeasuredMariaDBMajor is 11, so a 12 server resolves saturated onto MariaDB1011",
+		Note: "measured live on MariaDB 12.3.0 in capability-matrix run 31615442780: all 23 observable " +
+			"rows agree with MariaDB1011; role_management and sequences remain deliberately undecidable",
 	},
 	{
 		Dialect: platform.MariaDB, Line: "11.8",
@@ -299,35 +308,37 @@ var Cells = []Cell{
 	// the current OSS container lines below have been measured directly. Older
 	// lines keep banner attribution until they are re-measured.
 	{
-		Dialect: platform.CockroachDB, Line: "26.2",
-		Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
-		Refinement: RefinedByMeasuredLine, Image: "cockroachdb/cockroach:v26.2.5",
+		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB26,
+		Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
+		Refinement: RefinedByVersion, Image: "cockroachdb/cockroach:latest-v26.2",
 		Note: "measured live on CockroachDB CCL v26.2.5: role_management, row_level_security, " +
-			"and sequences agree with CockroachDB23 after issue #1376; create_index_concurrently " +
+			"and sequences agree with CockroachDB26 after issue #1376; create_index_concurrently " +
 			"remains false because the keyword is accepted inside a transaction",
 	},
 	{
-		Dialect: platform.CockroachDB, Line: "25.4",
-		Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
-		Refinement: RefinedByBanner, Image: "cockroachdb/cockroach:v25.4.5",
+		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB25,
+		Preset: capability.CockroachDB25, PresetName: "CockroachDB25",
+		Refinement: RefinedByVersion, Image: "cockroachdb/cockroach:latest-v25.4",
+		Note: "measured live on CockroachDB CCL v25.4.5 in capability-matrix run 31615442780: " +
+			"create_or_replace_trigger and drop_constraint_generic are unsupported on this line; " +
+			"guarded DROP CONSTRAINT is therefore undecidable and the other 22 rows agree with CockroachDB25",
 	},
 	{
 		Dialect: platform.YugabyteDB, Line: "2026.1",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2026.1.0.0-b118",
+		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2026.1", ResolveNewestPatch: true,
 		Note: "measured live on YugabyteDB 2026.1.0.0-b118: advisory_locks, " +
 			"create_index_concurrently, and row_level_security agree with YugabyteDB25 after issue #1376; " +
-			"drop_index_concurrently remains false because the server refuses that spelling",
+			"drop_index_concurrently remains false because the server refuses that spelling. Docker Hub " +
+			"publishes no floating 2026.1 tag, so the CI driver resolves the newest numeric patch tag",
 	},
 	{
 		Dialect: platform.YugabyteDB, Line: "2025.2",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByBanner, Image: "yugabytedb/yugabyte:2025.2.0.0-b0",
-		Note: "this image reference does not resolve: `docker run` answered `manifest for " +
-			"yugabytedb/yugabyte:2025.2.0.0-b0 not found: manifest unknown` on 2026-08-12, in the first " +
-			"tier 2 run that started every declared container. The line stays declared and the cell stays " +
-			"red until the tag is corrected, because a line whose server cannot be started is a line " +
-			"nothing here can measure",
+		Refinement: RefinedByBanner, Image: "yugabytedb/yugabyte:2025.2", ResolveNewestPatch: true,
+		Note: "Docker Hub publishes no floating 2025.2 tag; the CI driver resolves the newest numeric " +
+			"patch tag instead of freezing a concrete tag. The invalid 2025.2.0.0-b0 reference from the " +
+			"first matrix run is no longer part of the declaration",
 	},
 
 	// SQLite is not a server line. Its version is whatever the driver pinned
@@ -354,13 +365,15 @@ var Cells = []Cell{
 // PresetsWithoutCell names every capability preset Ptah ships that no cell
 // claims, and why that absence is deliberate.
 //
-// It exists because the four absences above are otherwise indistinguishable
+// It exists because the five absences above are otherwise indistinguishable
 // from an oversight, and stokaro/ptah#1341 asks that a preset with no cell fail
 // the build. Written as data rather than prose, the claim is checkable in both
 // directions: a preset that loses its cell has to be added here with a reason,
 // and an entry here that a cell does claim, or that names a preset the
 // capability package no longer ships, fails too.
 var PresetsWithoutCell = map[string]string{
+	"CockroachDB23": "is the conservative historical preset below the maintained 25.x and 26.x lines; " +
+		"the matrix tests the vendor-supported lines through CockroachDB25 and CockroachDB26",
 	"MySQLLegacy": "describes MySQL before 8.0.16, which left vendor support on 2026-04-30; the 8.0 line " +
 		"is three presets split at 8.0.16 and 8.0.19, so no single 8.0 cell could name one of them",
 	"MySQL8016": "describes MySQL 8.0.16 to 8.0.18, inside the out-of-support 8.0 line",
