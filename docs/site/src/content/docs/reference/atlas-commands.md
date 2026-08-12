@@ -1141,6 +1141,11 @@ sequences by the strict CE oracle profile. A selector that tries to make the
 owned sequence and its table disagree is refused before mutation. Function
 objects and changes expose full declaration `Parameters`.
 
+PostgreSQL scoped drops use `RESTRICT`, so the database refuses a selected
+parent when an unselected view, foreign key, or other catalog dependency still
+refers to it. The narrowed command cannot cascade beyond the objects its plan
+reports.
+
 Function `Cmd` values use PostgreSQL identity arguments, so overloaded,
 defaulted, and OUT-only functions remain distinct and executable.
 

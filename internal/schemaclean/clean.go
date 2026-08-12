@@ -115,7 +115,9 @@ func SnapshotWithinWriterScope(
 // An unscoped Apply delegates to SchemaWriter.DropAllTables, which rebuilds its
 // own statements from the live catalog. ApplyPlan executes Cmd for a scoped
 // cleanup, but in a separate dependency-safe order rather than this report's
-// alphabetical order.
+// alphabetical order. PostgreSQL commands use RESTRICT: the scoped executor
+// removes selected known dependents first, and the server refuses a parent
+// whose remaining dependency was outside the selected set.
 type Change struct {
 	Type       string
 	Schema     string
@@ -1159,9 +1161,9 @@ func dropCommand(dialect string, object Object) string {
 	case ObjectTypeComposite, ObjectTypeEnum, ObjectTypeRange:
 		// Composite, enum, and range types are all pg_type rows, and
 		// PostgreSQL drops all three with DROP TYPE.
-		return "DROP TYPE IF EXISTS " + name + " CASCADE"
+		return "DROP TYPE IF EXISTS " + name + " RESTRICT"
 	case ObjectTypeDomain:
-		return "DROP DOMAIN IF EXISTS " + name + " CASCADE"
+		return "DROP DOMAIN IF EXISTS " + name + " RESTRICT"
 	case ObjectTypeEvent:
 		return "DROP EVENT IF EXISTS " + name
 	case ObjectTypeForeignKey:
@@ -1169,7 +1171,7 @@ func dropCommand(dialect string, object Object) string {
 	case ObjectTypeFunction:
 		return dropRoutineCommand(dialect, "FUNCTION", name, object.Parameters)
 	case ObjectTypeMaterializedView:
-		return "DROP MATERIALIZED VIEW IF EXISTS " + name + " CASCADE"
+		return "DROP MATERIALIZED VIEW IF EXISTS " + name + " RESTRICT"
 	case ObjectTypeProcedure:
 		return dropRoutineCommand(dialect, "PROCEDURE", name, object.Parameters)
 	case ObjectTypeSequence:
@@ -1194,28 +1196,28 @@ func dropForeignKeyCommand(dialect string, object Object) string {
 
 func dropRoutineCommand(dialect, keyword, name, parameters string) string {
 	if isPostgresFamily(dialect) {
-		return "DROP " + keyword + " IF EXISTS " + name + "(" + parameters + ") CASCADE"
+		return "DROP " + keyword + " IF EXISTS " + name + "(" + parameters + ") RESTRICT"
 	}
 	return "DROP " + keyword + " IF EXISTS " + name
 }
 
 func dropSequenceCommand(dialect, name string) string {
 	if isPostgresFamily(dialect) {
-		return "DROP SEQUENCE IF EXISTS " + name + " CASCADE"
+		return "DROP SEQUENCE IF EXISTS " + name + " RESTRICT"
 	}
 	return "DROP SEQUENCE IF EXISTS " + name
 }
 
 func dropViewCommand(dialect, name string) string {
 	if isPostgresFamily(dialect) {
-		return "DROP VIEW IF EXISTS " + name + " CASCADE"
+		return "DROP VIEW IF EXISTS " + name + " RESTRICT"
 	}
 	return "DROP VIEW IF EXISTS " + name
 }
 
 func dropTableCommand(dialect, name string) string {
 	if isPostgresFamily(dialect) {
-		return "DROP TABLE IF EXISTS " + name + " CASCADE"
+		return "DROP TABLE IF EXISTS " + name + " RESTRICT"
 	}
 	if normalizeDialect(dialect) == "clickhouse" {
 		return "DROP TABLE IF EXISTS " + name + " SYNC"

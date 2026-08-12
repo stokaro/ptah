@@ -76,6 +76,34 @@ func TestSchemaCleanScopeRefusesExcludingAnExplicitSchemaSequenceFromItsDefaultS
 		`owned sequence "app\.users_id_seq" cannot be excluded while its owning table "app\.users" is selected; exclude the table instead`)
 }
 
+func TestSchemaCleanScopeUsesRestrictForASelectedPostgresTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "users"},
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "posts"},
+		{Type: schemaclean.ObjectTypeForeignKey, Schema: "app", Table: "posts", Name: "posts_user_id_fkey"},
+		{Type: schemaclean.ObjectTypeView, Schema: "app", Name: "active_users"},
+	}, "postgres")
+
+	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users[type=table]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Objects, qt.DeepEquals, []schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "users"},
+	})
+	c.Assert(got.Changes, qt.DeepEquals, []schemaclean.Change{
+		{
+			Type:   schemaclean.ObjectTypeTable,
+			Schema: "app",
+			Name:   "users",
+			Cmd:    `DROP TABLE IF EXISTS "app"."users" RESTRICT`,
+		},
+	})
+}
+
 func schemaCleanDefaultSchemaOwnershipPlan() schemaclean.Plan {
 	return schemaclean.PlanFromObjects([]schemaclean.Object{
 		{Type: schemaclean.ObjectTypeTable, Name: "users"},
