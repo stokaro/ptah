@@ -68,7 +68,10 @@ func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate lint --dir-format: .*custom.*`)
+	// The format refusal wins over the directory URL, and it now prints the
+	// community binary's own wording; the rejected value is still named. See
+	// migrate_dir_format_error.go.
+	c.Assert(err, qt.ErrorMatches, `unknown dir format "custom"`)
 }
 
 func TestMigrateSetValidatesDatabaseURLBeforeCapturingDirectory(t *testing.T) {

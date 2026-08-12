@@ -511,6 +511,18 @@ and its `atlas.sum` instead of relying on a progress message. Failures are still
 reported on stderr. The native `ptah migrations import` converts the same source
 formats into Ptah-native migrations instead, and reports what it wrote.
 
+`--from` and `--to` are resolved by the same rules as every other verb's
+`--dir`. Both require a scheme, the source layout comes from `--from`'s
+`?format=` query or from `--dir-format` with the query winning, and the value is
+matched verbatim — `FLYWAY` and `" flyway "` are refused. An empty `?format=`
+selects the Atlas layout and outranks `--dir-format`, which makes the import a
+no-op that is refused rather than performed.
+
+Refusals are answered in Atlas's order: the source scheme, then the layout
+value, then whether the source directory exists, then whether it is already in
+the Atlas layout, then the target scheme. A source directory that is not there
+is reported as missing rather than as a layout conflict.
+
 ### `ptah-compat migrate checkpoint [name]`
 
 Forwards to `ptah migrations checkpoint`, replaying the migration directory on

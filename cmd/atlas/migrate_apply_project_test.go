@@ -71,7 +71,10 @@ func TestMigrateApplyRejectsUnknownProjectFormatBeforeOpeningDatabase(t *testing
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`atlas migrate apply --dir: unknown Atlas migration directory format "custom": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`,
+		// A format named by atlas.hcl is refused with the same community-binary
+		// wording as one named on the command line; see
+		// migrate_dir_format_error.go.
+		`unknown dir format "custom"`,
 		qt.Commentf("command output:\n%s", output),
 	)
 	_, statErr := os.Stat(dbPath)
