@@ -1,3 +1,5 @@
+//go:build integration
+
 package schemaload_test
 
 import (
@@ -47,25 +49,17 @@ func newContainmentFixture(t *testing.T, c *qt.C) containmentFixture {
 	return containmentFixture{root: root, outside: outside}
 }
 
-func refusedAsOutsideRoot(c *qt.C, database *goschema.Database, err error) {
-	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
-	c.Assert(database, qt.IsNil)
+func assertReachedTable(c *qt.C, database *goschema.Database, err error, name string) {
+	c.Assert(err, qt.IsNil)
+	c.Assert(database, qt.IsNotNil)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	// Assert which file was read, not merely that one was: an exit status
+	// cannot tell a contained read from an escaped one.
+	c.Assert(database.Tables[0].Name, qt.Equals, name)
 }
 
-func reachedTable(name string) func(*qt.C, *goschema.Database, error) {
-	return func(c *qt.C, database *goschema.Database, err error) {
-		c.Assert(err, qt.IsNil)
-		c.Assert(database, qt.IsNotNil)
-		c.Assert(database.Tables, qt.HasLen, 1)
-		// Assert which file was read, not merely that one was: an exit status
-		// cannot tell a contained read from an escaped one.
-		c.Assert(database.Tables[0].Name, qt.Equals, name)
-	}
-}
-
-// TestLoad_SchemaFileContainmentBindsTheDestinationNotTheSpelling pins that the
-// CLI path guard reaches the NATIVE desired-schema resolver, which is what
-// `ptah schema render --schema-file` and its siblings load through.
+// TestLoad_SchemaFileContainmentRefusesEscapes pins that the CLI path guard
+// reaches the native desired-schema resolver used by schema-file commands.
 //
 // The resolver used to call filepath.Abs on the operator's path before handing
 // it to the guard. Every spelling therefore arrived absolute, the guard's
@@ -74,44 +68,23 @@ func reachedTable(name string) func(*qt.C, *goschema.Database, error) {
 // through the identical guard. The rewrite was not a decision about what should
 // be allowed; it was a canonicalization that happened to disarm the check.
 //
-// Refusal here is judged on where a path lands, never on how it is written: the
-// row that leaves the root and returns is accepted, and the row that never
-// writes ".." at all — a symlink — is refused.
-func TestLoad_SchemaFileContainmentBindsTheDestinationNotTheSpelling(t *testing.T) {
+// Refusal here is judged on where a path lands, never on how it is written. In
+// particular, the symlink row never writes ".." but is still refused.
+func TestLoad_SchemaFileContainmentRefusesEscapes(t *testing.T) {
 	testCases := []struct {
 		name     string
 		spelling func(containmentFixture) string
-		verdict  func(*qt.C, *goschema.Database, error)
 	}{{
 		name:     "relative traversal leaves the root",
 		spelling: func(containmentFixture) string { return filepath.Join("..", "outside", "schema.sql") },
-		verdict:  refusedAsOutsideRoot,
 	}, {
 		// No ".." anywhere in the spelling. A rule that reads the text instead
 		// of resolving it accepts this one.
 		name:     "symlink inside the root points out of it",
 		spelling: func(containmentFixture) string { return filepath.Join("link", "schema.sql") },
-		verdict:  refusedAsOutsideRoot,
 	}, {
 		name:     "dot-dot in the middle of the path",
 		spelling: func(containmentFixture) string { return filepath.Join("a", "..", "..", "outside", "schema.sql") },
-		verdict:  refusedAsOutsideRoot,
-	}, {
-		// The converse of the row above: ".." is present and the destination is
-		// still inside, so a text rule that refuses ".." refuses this wrongly.
-		name:     "path leaves the root and returns to it",
-		spelling: func(f containmentFixture) string { return filepath.Join("..", filepath.Base(f.root), "inside.sql") },
-		verdict:  reachedTable("inside_target"),
-	}, {
-		name:     "relative path inside the root",
-		spelling: func(containmentFixture) string { return "inside.sql" },
-		verdict:  reachedTable("inside_target"),
-	}, {
-		// Acceptance is destination-based too: an absolute spelling of a
-		// contained destination stays contained and stays allowed.
-		name:     "absolute path inside the root",
-		spelling: func(f containmentFixture) string { return filepath.Join(f.root, "inside.sql") },
-		verdict:  reachedTable("inside_target"),
 	}}
 
 	for _, tc := range testCases {
@@ -124,7 +97,45 @@ func TestLoad_SchemaFileContainmentBindsTheDestinationNotTheSpelling(t *testing.
 				Dialect:     "sqlite",
 			})
 
-			tc.verdict(c, database, err)
+			c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
+			c.Assert(database, qt.IsNil)
+		})
+	}
+}
+
+// TestLoad_SchemaFileContainmentAllowsContainedDestinations keeps successful
+// loads separate from the refusal table above. A path may contain ".." and
+// remain valid when its resolved destination is inside the working directory.
+func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
+	testCases := []struct {
+		name     string
+		spelling func(containmentFixture) string
+	}{{
+		// The converse of the row above: ".." is present and the destination is
+		// still inside, so a text rule that refuses ".." refuses this wrongly.
+		name:     "path leaves the root and returns to it",
+		spelling: func(f containmentFixture) string { return filepath.Join("..", filepath.Base(f.root), "inside.sql") },
+	}, {
+		name:     "relative path inside the root",
+		spelling: func(containmentFixture) string { return "inside.sql" },
+	}, {
+		// Acceptance is destination-based too: an absolute spelling of a
+		// contained destination stays contained and stays allowed.
+		name:     "absolute path inside the root",
+		spelling: func(f containmentFixture) string { return filepath.Join(f.root, "inside.sql") },
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newContainmentFixture(t, c)
+
+			database, err := schemaload.Load(schemaload.Options{
+				SchemaFiles: []string{tc.spelling(fixture)},
+				Dialect:     "sqlite",
+			})
+
+			assertReachedTable(c, database, err, "inside_target")
 		})
 	}
 }
@@ -149,5 +160,5 @@ func TestLoad_AbsoluteSchemaFileOutsideTheRootIsStillAccepted(t *testing.T) {
 		Dialect:     "sqlite",
 	})
 
-	reachedTable("outside_target")(c, database, err)
+	assertReachedTable(c, database, err, "outside_target")
 }

@@ -21,6 +21,10 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 configuration in `atlas.hcl` is a different file type; see
 [Atlas project config](../../atlas/project-config/).
 
+Relative schema-file inputs are confined to the process working directory after
+symbolic-link resolution; use an absolute pathname for an intentional source
+outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
+
 `ptah schema fmt [path ...]` rewrites `.hcl` schema files into HashiCorp
 HCL's canonical layout, walking directory arguments recursively and printing
 only the files that changed. `--check` reports non-canonical files without

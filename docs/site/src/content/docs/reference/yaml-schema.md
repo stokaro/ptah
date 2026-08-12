@@ -17,7 +17,9 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
 `--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` inputs. This page
-documents the YAML shape only.
+documents the YAML shape only. Relative inputs are confined to the process
+working directory after symbolic-link resolution; use an absolute pathname for
+an intentional source outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
 
 ## Minimal schema
 
