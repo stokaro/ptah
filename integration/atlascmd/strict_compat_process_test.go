@@ -1348,6 +1348,30 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
 	})
 
+	t.Run("diff live to before from replay", func(t *testing.T) {
+		migrationDir := t.TempDir()
+		replayDevURL := strictCompatPostgresDevURL(t)
+		const tableName = "replayed_before_live_to_validation"
+		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+			"CREATE TABLE "+tableName+" (id integer PRIMARY KEY);\n",
+		), 0o600), qt.IsNil)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		qt.Assert(t, err, qt.IsNil)
+
+		stdout, stderr, code := runAtlasBinary(
+			compat,
+			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+			"schema", "diff",
+			"--from", "file://"+migrationDir,
+			"--to", procedureURL,
+			"--dev-url", replayDevURL,
+		)
+		qt.Assert(t, code, qt.Equals, 1)
+		qt.Assert(t, stdout, qt.Equals, "")
+		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		qt.Assert(t, postgresTableExists(t, replayDevURL, tableName), qt.IsFalse)
+	})
+
 	t.Run("diff replayed migration directory", func(t *testing.T) {
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)

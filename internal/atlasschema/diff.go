@@ -102,13 +102,9 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}
-	fromState, err := fromSet.Resolve(ctx, resolveOpts)
+	fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, resolveOpts)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("load --from schema: %w", err)
-	}
-	toState, err := toSet.Resolve(ctx, resolveOpts)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("load --to schema: %w", err)
+		return atlasreport.SchemaDiff{}, err
 	}
 
 	scope := atlasfilter.Scope{
@@ -168,6 +164,62 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		}
 	}
 	return atlasreport.NewSchemaDiff(from, to, statements), nil
+}
+
+func resolveDiffSources(
+	ctx context.Context,
+	fromSet, toSet atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (fromState, toState atlassource.State, err error) {
+	// Strict live-catalog validation must finish before either side can replay
+	// and reset the dev database. Full/default mode supplies a nil callback and
+	// retains the established left-to-right resolution order.
+	fromState, fromResolved, err := preResolveLiveDiffSource(ctx, fromSet, opts)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	toState, toResolved, err := preResolveLiveDiffSource(ctx, toSet, opts)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+
+	if !fromResolved {
+		fromState, err = resolveDiffSource(ctx, fromSet, opts)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+	}
+	if !toResolved {
+		toState, err = resolveDiffSource(ctx, toSet, opts)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+	}
+	return fromState, toState, nil
+}
+
+func preResolveLiveDiffSource(
+	ctx context.Context,
+	set atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (atlassource.State, bool, error) {
+	if opts.ValidateInspectedDatabase == nil || set.Kind != atlassource.KindDatabase {
+		return atlassource.State{}, false, nil
+	}
+	state, err := resolveDiffSource(ctx, set, opts)
+	return state, true, err
+}
+
+func resolveDiffSource(
+	ctx context.Context,
+	set atlassource.Set,
+	opts atlassource.ResolveOptions,
+) (atlassource.State, error) {
+	state, err := set.Resolve(ctx, opts)
+	if err != nil {
+		return atlassource.State{}, fmt.Errorf("load %s schema: %w", set.Flag, err)
+	}
+	return state, nil
 }
 
 type preparedDiffSources struct {
