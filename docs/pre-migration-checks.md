@@ -39,6 +39,11 @@ Keys:
   double quote inside the value is escaped by doubling it (`""`).
 - Multiple `-- +ptah check` lines per migration are allowed and run in file
   order, before the first migration statement.
+- A check is the one directive whose **position** is not significant. Every
+  other `-- +ptah` and `-- atlas:` directive is honored only above the first
+  executable statement; a check written below the statements still runs, still
+  before them, because its position never decided which statements ran. It is
+  therefore not reported as a misplaced directive.
 - A malformed check directive (missing `assert`, unknown key, unsupported
   `on_fail`, unterminated quote, multi-statement `assert`) aborts the migration
   with nothing applied.

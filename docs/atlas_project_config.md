@@ -306,8 +306,25 @@ per-migration timeout, and pre-migration check in the selected batch. Under
 global `none`, an explicit file mode restores a per-file transaction and may
 use migration timeouts.
 
-The Atlas header must be in the initial line-comment block. A blank line after
-the header is accepted but not required. Unknown, duplicate, and file-level
+The Atlas header must be in the initial line-comment block: the unbroken run of
+line comments that begins on line 1, each starting in column 1. A blank line
+after the header is accepted but not required.
+
+Both directive families answer to one rule about where a directive is
+significant, and to separate rules about what a bad one costs:
+
+- `-- +ptah no_transaction` is significant in the same region — before the
+  first executable statement — but accepts indentation and blank lines inside
+  it.
+- A directive of either family outside its region is reported at `WARN` on
+  stderr naming the file and line, never dropped in silence.
+- A `-- +ptah` directive whose key is recognized but whose value cannot be read
+  fails the run wherever the line sits.
+- The `atlas:` spelling is only reported, never refused, outside its block:
+  Atlas CE applies a directory whose `-- atlas:txmode bogus` sits below the
+  statement.
+`PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier file-wide scope for
+`-- +ptah` directives only. Unknown, duplicate, and file-level
 `all` values fail before the affected migration body or revision row changes.
 Validation applies only to the migrations selected after amount and baseline
 processing.

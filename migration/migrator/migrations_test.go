@@ -491,7 +491,7 @@ DROP TABLE users;`,
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := parseMigrationTimeoutDirectives(tt.sql)
+			got, err := parseMigrationTimeoutDirectives(tt.sql, directiveScopeHeader)
 			if tt.wantErr != "" {
 				c.Assert(err, qt.IsNotNil)
 				c.Assert(err.Error(), qt.Contains, tt.wantErr)

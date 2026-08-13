@@ -175,8 +175,49 @@ people and pipelines share a directory:
 - **Transaction mode** (`--tx-mode`): `file` (default) wraps each migration
   in its own transaction; `all` runs the selected batch in one; `none`
   disables wrapping. A migration may select `file` or `none` with a leading
-  `-- atlas:txmode <mode>` header. A blank line after that header is accepted
-  but not required. Explicit file modes conflict with global `all`.
+  `-- atlas:txmode <mode>` header, or with `-- +ptah no_transaction`. A blank
+  line after that header is accepted but not required. Explicit file modes
+  conflict with global `all`.
+
+  Both spellings answer to one position rule: a directive is significant only
+  **before the first executable statement**. A directive written below the
+  statements it claims to govern is not honored — and it is not dropped in
+  silence either. Ptah reports it at `WARN` on stderr, naming the file, the
+  line, the directive and how to fix it, because an operator who writes
+  `txmode none`, sees exit `0`, and believes the file ran outside a transaction
+  is the failure this rule exists to prevent. The `-- atlas:` spelling keeps
+  Atlas's own stricter acceptance inside that region: only the unbroken run of
+  line comments that begins on line 1, each starting in column 1. A leading
+  blank line, an indented directive, or a blank line between the directive and
+  an earlier comment all put it outside that block, so Atlas CE ignores it and
+  so does Ptah — with the same warning. `-- +ptah` directives accept the whole
+  region, blank lines and indentation included.
+
+  Position and value are separate facts, and a bad value is not demoted to a
+  position warning. A `-- +ptah` directive whose key Ptah recognizes but whose
+  **value** it cannot read — `no_transaction=maybe`, `lock_timeout=soon` — fails
+  the run wherever the line sits, and the refusal names the position too, so you
+  are not told the value is nonsense, told nothing about the line being in the
+  wrong place, and left to discover that on the next run. Whether `maybe` is a
+  boolean is a property of the file, so this verdict does not change with
+  `PTAH_DIRECTIVES_ANYWHERE`. A bare word Ptah does not recognize as a directive
+  (`-- +ptah revisit this`) is an ordinary comment and is neither refused nor
+  reported.
+
+  The `-- atlas:` spelling deliberately has no equivalent refusal. Measured on
+  Atlas CE `v1.3.0`, `migrate apply` over a directory carrying
+  `-- atlas:txmode bogus` exits `1` when the line is the header and `0` when it
+  sits below the statement. Refusing the second would exit non-zero where Atlas
+  CE exits `0`, so Ptah reports it and applies the directory, as CE does.
+
+  Setting `PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier scope of the merged
+  `-- +ptah` directive map — `no_transaction` and the online-DDL keys —
+  in which those directives are significant anywhere in the file. It is there
+  for a directory that already depends on that scope. It restores that scope
+  and nothing else: `-- +ptah lock_timeout` and `-- +ptah statement_timeout`
+  were header-scoped before this change and stay header-scoped under it, and
+  the `-- atlas:` spelling stays exactly what Atlas CE does in either mode.
+  A value that is not a boolean fails the run rather than reading as unset.
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision

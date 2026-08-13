@@ -565,6 +565,18 @@ header. A blank line after the header is accepted but not required:
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 
+The header must sit in the unbroken run of line comments that begins on line 1,
+each comment starting in column 1. Measured on Atlas CE `v1.3.0` with
+`migrate apply --tx-mode all` over one-statement directories, `atlas:txmode
+none` is honored on line 1 and on line 2 below another comment, and ignored
+when a blank line precedes it, when it is indented, when a blank line separates
+it from an earlier comment, and when it follows the statement. Ptah matches
+every one of those, and adds the thing CE does not do: an ignored directive is
+reported at `WARN` on stderr with its file, line and text, rather than dropped
+in silence. Ptah's own `-- +ptah` directives answer to the same "before the
+first executable statement" rule with a more forgiving acceptance inside it —
+see [Apply](../../versioned/apply/).
+
 The accepted file values are `file` and `none`. File-level `all`, unknown
 values, duplicate values, and any explicit file mode under global `all` fail
 before the affected migration body or revision row changes. Validation follows

@@ -133,7 +133,10 @@ example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
 `atlas:txmode file` or `atlas:txmode none` header overrides global `file` or
 `none`; global `all` rejects every explicit file mode before the selected batch
 starts. An explicit file mode under global `none` restores a per-file
-transaction and permits migration timeouts.
+transaction and permits migration timeouts. The header is significant only in
+the unbroken run of line comments that begins on line 1; a directive outside
+that block is ignored, as it is on Atlas CE, and reported at `WARN` rather than
+dropped in silence.
 
 Project config precedence is explicit CLI flags, environment variables,
 `atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
