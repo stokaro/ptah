@@ -956,7 +956,9 @@ the connection is on — as an inspected document of a multi-schema database doe
 — is compared against those schemas too, which is what makes inspecting a
 database and applying its own output back a no-op. A desired state that names
 only the connected schema reads only that one, so a schema the document never
-mentions is never planned for removal. `--schema` outranks both.
+mentions is never planned for removal. An `atlas.hcl` environment's `schemas`
+attribute restricts the universe the same way, and `--schema` outranks all of
+them.
 
 Use `--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
 transaction, or `--tx-mode=none` to execute statements without transaction
