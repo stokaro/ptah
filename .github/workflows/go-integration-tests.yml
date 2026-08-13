@@ -230,6 +230,31 @@ jobs:
                 DROP FUNCTION ptah_privilege_probe;"
           echo "MySQL routine creation is available to ptah_user"
 
+      # A round-trip test applies a desired schema as the whole truth about the
+      # database it connects to, so the planner drops every object the desired
+      # schema does not declare. Run against the shared ptah_test that empties
+      # it: measured on both engines, one such test removed an unrelated table.
+      # Tests that need that shape own a private ptah_rt_* database instead.
+      #
+      # The grant is scoped to the name pattern rather than made global, and the
+      # probe below checks both directions: ptah_user may create a matching
+      # database, and is still refused a non-matching one. A global CREATE would
+      # let a buggy test reach ptah_test by another route.
+      - name: Grant scoped test-database privilege
+        run: |
+          for port in 3306 3307; do
+            mysql -h 127.0.0.1 -P "$port" -u root -proot_password \
+              -e "GRANT ALL PRIVILEGES ON \`ptah\_rt\_%\`.* TO 'ptah_user'@'%'; FLUSH PRIVILEGES;"
+            mysql -h 127.0.0.1 -P "$port" -u ptah_user -pptah_password \
+              -e "CREATE DATABASE ptah_rt_probe; DROP DATABASE ptah_rt_probe;"
+            if mysql -h 127.0.0.1 -P "$port" -u ptah_user -pptah_password \
+                 -e "CREATE DATABASE ptah_other_probe" 2>/dev/null; then
+              echo "port $port: scoped grant leaked to a non-matching database name" >&2
+              exit 1
+            fi
+            echo "port $port: ptah_rt_* is creatable and the grant is still scoped"
+          done
+
       - name: Install Graphviz
         run: |
           sudo apt-get update

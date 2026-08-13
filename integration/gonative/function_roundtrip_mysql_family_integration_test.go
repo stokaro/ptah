@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -16,6 +16,90 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
+
+// roundTripDatabase is the database this test owns outright. It must match the
+// `ptah_rt_%` pattern the CI grant scopes ptah_user to, and it must never be
+// the shared ptah_test.
+const roundTripDatabase = "ptah_rt_functions"
+
+// newOwnedDatabase creates roundTripDatabase on the server dsn names and
+// returns a connection whose default database is it.
+//
+// The test owns a whole database rather than cleaning up after itself in the
+// shared one, because cleanup was never the real problem. applyPlannedSQL below
+// executes EVERY statement the planner emits, and the planner is told the
+// desired schema is the whole truth about the connected database -- so a
+// desired schema declaring one function and no tables plans a DROP for every
+// table it finds. Measured against a shared ptah_test holding one unrelated
+// table, running this test emptied SHOW TABLES on both engines. No amount of
+// dropping the function afterwards fixes that; the assumption is only true in a
+// database this test alone owns, and here it is true by construction.
+//
+// It also confines the leak that started this: whatever the body creates goes
+// away with the database.
+func newOwnedDatabase(c *qt.C, dsn string) *sql.DB {
+	c.Helper()
+
+	admin, err := sql.Open("mysql", dsn)
+	c.Assert(err, qt.IsNil)
+	defer admin.Close()
+
+	// Heal a database an earlier crashed run may have left behind, so a leak is
+	// self-correcting rather than permanent.
+	_, err = admin.Exec("DROP DATABASE IF EXISTS " + roundTripDatabase)
+	c.Assert(err, qt.IsNil)
+	_, err = admin.Exec("CREATE DATABASE " + roundTripDatabase)
+	c.Assert(err, qt.IsNil)
+
+	config, err := mysqldriver.ParseDSN(dsn)
+	c.Assert(err, qt.IsNil)
+	config.DBName = roundTripDatabase
+	db, err := sql.Open("mysql", config.FormatDSN())
+	c.Assert(err, qt.IsNil)
+
+	// Registered first so it runs LAST: t.Cleanup is LIFO, and a cleanup
+	// registered later must be able to still use this connection. The original
+	// version of this test used `defer db.Close()`, which runs before EVERY
+	// t.Cleanup, so its drop ran on a closed connection, returned
+	// "sql: database is closed", and had its error discarded -- which is
+	// precisely how the leak stayed invisible.
+	c.Cleanup(func() { _ = db.Close() })
+	// Registered after, so it runs first. It opens its own connection so that it
+	// depends on nothing another cleanup may already have released.
+	c.Cleanup(func() { dropOwnedDatabase(c, dsn) })
+
+	return db
+}
+
+// dropOwnedDatabase removes roundTripDatabase and verifies the server agrees it
+// is gone.
+//
+// The verification is the point. A cleanup whose error is discarded is
+// indistinguishable from one that worked, and it runs on the failure path too,
+// where leaks actually happen. If this cannot clean up, this test fails rather
+// than a neighbour's.
+func dropOwnedDatabase(c *qt.C, dsn string) {
+	c.Helper()
+
+	admin, err := sql.Open("mysql", dsn)
+	c.Assert(err, qt.IsNil)
+	defer admin.Close()
+
+	_, err = admin.Exec("DROP DATABASE IF EXISTS " + roundTripDatabase)
+	c.Check(err, qt.IsNil)
+
+	var remaining int
+	c.Check(admin.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+		roundTripDatabase).Scan(&remaining), qt.IsNil)
+	c.Check(remaining, qt.Equals, 0, qt.Commentf("database %s survived cleanup", roundTripDatabase))
+
+	var routines int
+	c.Check(admin.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ?",
+		roundTripDatabase).Scan(&routines), qt.IsNil)
+	c.Check(routines, qt.Equals, 0, qt.Commentf("routines survived in %s", roundTripDatabase))
+}
 
 // functionRoundTripSchema is the desired state both cases below converge on.
 //
@@ -96,13 +180,7 @@ func TestFunctionRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			dsn := test.dsn(t)
 			c := qt.New(t)
 
-			db, err := sql.Open("mysql", dsn)
-			c.Assert(err, qt.IsNil)
-			defer db.Close()
-
-			_, err = db.Exec("DROP FUNCTION IF EXISTS ptah_rt_fn")
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() { _, _ = db.Exec("DROP FUNCTION IF EXISTS ptah_rt_fn") })
+			db := newOwnedDatabase(c, dsn)
 
 			desired := functionRoundTripSchema("RETURN a + 1")
 
