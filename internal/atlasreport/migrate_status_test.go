@@ -68,6 +68,108 @@ func TestWriteMigrateStatusFormat_ExposesAtlasZeroValueFields(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "0|0||")
 }
 
+func TestWriteMigrateStatusFormat_CurrentUsesAtlasTextualIdentityOrder(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Current }}`, atlasreport.MigrateStatusOptions{
+		FS: fstest.MapFS{},
+		Status: &migrator.MigrationStatus{
+			CurrentVersion:       20,
+			CurrentVersionKey:    "1",
+			CurrentVersionKeySet: true,
+		},
+		AppliedRevisions: []migrator.MigrationRevision{
+			{Version: 10, AtlasVersion: "x"},
+			{Version: 20, AtlasVersion: "1"},
+		},
+		RevisionVersions: map[int64]string{
+			10: "x",
+			20: "1",
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "x")
+}
+
+func TestWriteMigrateStatusFormat_CurrentUsesNativeRuntimeOrder(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Current }}`, atlasreport.MigrateStatusOptions{
+		FS: fstest.MapFS{},
+		Status: &migrator.MigrationStatus{
+			CurrentVersion:       10,
+			CurrentVersionKey:    "10",
+			CurrentVersionKeySet: true,
+		},
+		AppliedRevisions: []migrator.MigrationRevision{
+			{Version: 9},
+			{Version: 10},
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "10")
+}
+
+func TestWriteMigrateStatusFormat_DirtyExactIdentityNeedsPriorAppliedHistory(t *testing.T) {
+	c := qt.New(t)
+	dirty := migrator.MigrationRevision{Version: 10, AtlasVersion: "x", Applied: 1, Total: 2}
+
+	var out bytes.Buffer
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Current }}`, atlasreport.MigrateStatusOptions{
+		FS:               fstest.MapFS{},
+		Status:           &migrator.MigrationStatus{DirtyRevision: &dirty},
+		AppliedRevisions: []migrator.MigrationRevision{dirty},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "No migration applied yet")
+
+	out.Reset()
+	err = atlasreport.WriteMigrateStatusFormat(&out, `{{ .Current }}`, atlasreport.MigrateStatusOptions{
+		FS: fstest.MapFS{},
+		Status: &migrator.MigrationStatus{
+			AppliedMigrations: []int64{1},
+			DirtyRevision:     &dirty,
+		},
+		AppliedRevisions: []migrator.MigrationRevision{
+			{Version: 1, AtlasVersion: "1", Applied: 1, Total: 1},
+			dirty,
+		},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "x")
+}
+
+func TestWriteMigrateStatusFormat_PartialFieldsUseTheDirtyRevision(t *testing.T) {
+	c := qt.New(t)
+	dirty := migrator.MigrationRevision{
+		Version:        0,
+		AtlasVersion:   "retired",
+		Applied:        1,
+		Total:          2,
+		Error:          "boom\ndetail",
+		ErrorStatement: "CREATE TABLE broken (\n  id integer\n);",
+	}
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out,
+		`{{ .Count }}|{{ .Total }}|{{ .Error }}|{{ .SQL }}`,
+		atlasreport.MigrateStatusOptions{
+			FS:     fstest.MapFS{},
+			Status: &migrator.MigrationStatus{DirtyRevision: &dirty},
+			AppliedRevisions: []migrator.MigrationRevision{
+				dirty,
+				{Version: 1, AtlasVersion: "1", Applied: 1, Total: 1},
+			},
+		})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1|2|boom detail|CREATE TABLE broken (   id integer );")
+}
+
 func TestWriteMigrateStatusFormat_RedactsSensitiveURL(t *testing.T) {
 	c := qt.New(t)
 	redactionURL := "postgres://app:" + "secret" + "@db.local/app?token=" + "secret" +
@@ -155,6 +257,58 @@ func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 	c.Assert(got.Current, qt.Equals, "1")
 	c.Assert(got.Next, qt.Equals, "2")
 	c.Assert(got.Status, qt.Equals, "PENDING")
+}
+
+func TestWriteMigrateStatusFormat_JSONPreservesPresentEmptyIdentities(t *testing.T) {
+	c := qt.New(t)
+	var revision migrator.MigrationRevision
+	c.Assert(json.Unmarshal([]byte(`{"version":1,"atlas_version":"","applied":1,"total":1}`), &revision), qt.IsNil)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ json . }}`, atlasreport.MigrateStatusOptions{
+		FS: fstest.MapFS{
+			"1_only.sql": {Data: []byte("CREATE TABLE only (id integer);")},
+		},
+		Status: &migrator.MigrationStatus{
+			CurrentVersion:       1,
+			CurrentVersionKey:    "",
+			CurrentVersionKeySet: true,
+			AppliedMigrations:    []int64{1},
+		},
+		AppliedRevisions: []migrator.MigrationRevision{revision},
+		RevisionVersions: map[int64]string{1: ""},
+	})
+
+	c.Assert(err, qt.IsNil)
+	var got struct {
+		Current   *string
+		Available []struct{ Version *string }
+		Applied   []struct{ Version *string }
+	}
+	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+	c.Assert(got.Current, qt.IsNotNil)
+	c.Assert(*got.Current, qt.Equals, "")
+	c.Assert(got.Available, qt.HasLen, 1)
+	c.Assert(got.Available[0].Version, qt.IsNotNil)
+	c.Assert(*got.Available[0].Version, qt.Equals, "")
+	c.Assert(got.Applied, qt.HasLen, 1)
+	c.Assert(got.Applied[0].Version, qt.IsNotNil)
+	c.Assert(*got.Applied[0].Version, qt.Equals, "")
+}
+
+func TestWriteMigrateStatusFormat_JSONNamesNoMigrationState(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ json . }}`, atlasreport.MigrateStatusOptions{
+		FS:     fstest.MapFS{},
+		Status: &migrator.MigrationStatus{},
+	})
+
+	c.Assert(err, qt.IsNil)
+	var got struct{ Current string }
+	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+	c.Assert(got.Current, qt.Equals, "No migration applied yet")
 }
 
 func TestWriteMigrateStatusFormat_OmitsDescriptionForVersionOnlyFile(t *testing.T) {

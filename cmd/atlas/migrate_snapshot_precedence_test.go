@@ -35,6 +35,29 @@ func TestMigrateApplyValidatesBaselineBeforeCapturingDirectory(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
+func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "ATLAS.SUM"), []byte("metadata\n"), 0o600), qt.IsNil)
+	dbPath := filepath.Join(dir, "must-not-exist.db")
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + dir,
+		"--to-version", "invalid",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `--to-version "invalid" is not a valid migration version: .*`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
 // TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL pins the measured
 // order, which is the reverse of what this test asserted before.
 //

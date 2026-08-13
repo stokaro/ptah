@@ -347,3 +347,23 @@ func TestMigrateApplyDryRunChecksObserveApplyState(t *testing.T) {
 		})
 	}
 }
+
+func TestMigrateApplyDryRunChecksNameConvertedFlywayIdentity(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__one.sql", dryRunChecksCreateUsers)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__two.sql", dryRunChecksDirectiveNeedsPrior)
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
+	dbPath := filepath.Join(dir, "flyway-checks.db")
+
+	stdout, stderr, err := runDryRunChecksApply(
+		migrationsDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stderr, qt.Contains, "Deferred pre-migration checks for 1 migration (1.5)")
+	c.Assert(stderr, qt.Not(qt.Contains), "461168")
+}

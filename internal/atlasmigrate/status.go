@@ -14,6 +14,10 @@ type StatusOptions struct {
 	FS              fs.FS
 	AtlasEnv        string
 	RevisionsSchema string
+	// RevisionVersions maps converted numeric order keys to exact revision
+	// identities. A full mapping may include baseline-squashed history; only
+	// migrations present in FS become pending work.
+	RevisionVersions map[int64]string
 }
 
 type StatusResult struct {
@@ -36,6 +40,7 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 		opts.FS,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
+		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
 	)
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error registering migrations: %w", err)

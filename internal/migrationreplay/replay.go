@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,10 @@ type Options struct {
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
 	AtlasTemplateData any
+	// RevisionVersions maps numeric execution-order keys in FS to exact Atlas
+	// revision identities used in replay diagnostics. Compatibility adapters
+	// set it for converted directories; native callers leave it nil.
+	RevisionVersions map[int64]string
 	// ObserveVersion, when set, runs before each migration is replayed, with the
 	// connection bound to the schema state that migration starts from. It is how
 	// a caller reads the before-state of one migration without replaying the
@@ -83,6 +88,7 @@ func Replay(ctx context.Context, opts Options) error {
 		snapshot,
 		opts.DirFormat,
 		opts.AtlasTemplateData,
+		opts.RevisionVersions,
 		replayHooks{observeVersion: opts.ObserveVersion, consume: opts.ObserveReplayed},
 	)
 }
@@ -131,7 +137,7 @@ func ReplaySnapshotOnConnection(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{})
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{})
 }
 
 // WithReplayedSnapshot replays one immutable migration filesystem, invokes
@@ -151,7 +157,7 @@ func WithReplayedSnapshot(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
 }
 
 // WithReplayedSnapshotLocked performs the same replay as
@@ -171,7 +177,7 @@ func WithReplayedSnapshotLocked(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
+	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
 }
 
 // replayHooks are the optional callbacks a replay runs alongside the
@@ -190,6 +196,7 @@ func replayOnConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
+	revisionVersions map[int64]string,
 	hooks replayHooks,
 ) (resultErr error) {
 	if conn == nil {
@@ -202,7 +209,7 @@ func replayOnConnection(
 	defer func() {
 		resultErr = errors.Join(resultErr, lock.Release())
 	}()
-	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, hooks)
+	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks)
 }
 
 func replayOnLockedConnection(
@@ -211,6 +218,7 @@ func replayOnLockedConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
+	revisionVersions map[int64]string,
 	hooks replayHooks,
 ) error {
 	if conn == nil {
@@ -220,6 +228,7 @@ func replayOnLockedConnection(
 		fsys,
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(atlasTemplateData),
+		migrator.WithAtlasRevisionVersions(revisionVersions),
 		migrator.WithStatementValidator(devclean.NewReplayGuard(conn.Info())),
 	)
 	if err != nil {
@@ -270,13 +279,14 @@ func replayMigrations(
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	for _, migration := range migrations {
+		versionLabel := replayMigrationVersionLabel(migration.RevisionVersion())
 		if hooks.observeVersion != nil {
 			if err := hooks.observeVersion(ctx, migration, conn); err != nil {
-				return fmt.Errorf("observe dev database before migration %s: %w", migration.RevisionVersion(), err)
+				return fmt.Errorf("observe dev database before migration %s: %w", versionLabel, err)
 			}
 		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
-			return fmt.Errorf("replay migration %s on dev database: %w", migration.RevisionVersion(), err)
+			return fmt.Errorf("replay migration %s on dev database: %w", versionLabel, err)
 		}
 	}
 	if hooks.consume != nil {
@@ -286,6 +296,13 @@ func replayMigrations(
 	}
 	replaySucceeded = true
 	return nil
+}
+
+func replayMigrationVersionLabel(version string) string {
+	if version == "" {
+		return strconv.Quote(version)
+	}
+	return version
 }
 
 func captureReplaySessionState(
