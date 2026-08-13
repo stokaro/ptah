@@ -458,6 +458,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// before the target database is contacted, which is the order the community
 	// binary reports in: an unparseable --tx-mode or --lock-timeout is named
 	// there even when --dev-url is also missing.
+	//
+	// The driver verdict on a value that WAS given comes first, because it is
+	// the one that binary reports regardless of what --to turned out to be:
+	// measured on 2026-08-13, `--to` a database and `--dev-url notadriver://x`
+	// answers `sql/sqlclient: unknown driver "notadriver"` there, on the argv
+	// where ensureAtlasSchemaApplyDevURL below deliberately exempts the source.
+	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

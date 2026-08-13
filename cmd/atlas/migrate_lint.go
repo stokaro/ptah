@@ -176,7 +176,7 @@ func runAtlasMigrateLint(
 	// atlas.hcl env that supplies `dev` satisfies it there and here, which is why
 	// this reads the merged value rather than the flag.
 	if !withoutDevURL {
-		if err := requireAtlasMigrateLintDevURL(opts.devURL); err != nil {
+		if err := requireAtlasMigrateLintDevURL(cmd, opts.devURL); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
@@ -497,11 +497,14 @@ func requireAtlasMigrateLintScope(
 // both refuse. The scope requirement is #1241's and arrived separately; this one
 // is stokaro/ptah#1231 case 2, which #1307 explicitly left open rather than
 // widening into itself.
-func requireAtlasMigrateLintDevURL(devURL string) error {
-	if strings.TrimSpace(devURL) != "" {
-		return nil
-	}
-	return errors.New(`required flag(s) "dev-url" not set`)
+//
+// It asks whether the flag was GIVEN rather than whether its value is empty,
+// because those are two different rows on the pinned binary: an absent
+// `--dev-url` is the refusal above, while `--dev-url ""` passes the required
+// check there and is answered `sql/sqlclient: missing driver` by the client
+// layer. See [requireAtlasDevURL], which owns both halves.
+func requireAtlasMigrateLintDevURL(cmd *cobra.Command, devURL string) error {
+	return requireAtlasDevURL(cmd, devURL)
 }
 
 // atlasLintWithoutDevURL is the declaration of the variable, made once, on the

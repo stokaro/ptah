@@ -1375,6 +1375,7 @@ unpiped invocation.
 | 9.12 | `migrate lint --git-base nosuchbranch --dir file://migrations --dev-url <SQLite>` inside a two-branch repository | Exit 1, empty stdout, stderr `Error: git diff: exit status 128\n` (33 bytes) | Exit 1, empty stdout, stderr naming the whole `git diff --name-only --diff-filter=ACMR --end-of-options nosuchbranch...HEAD -- migrations` invocation and git's own `fatal:` line (203 bytes) | byte-identical |
 | 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, escaped, symlinked, directory-member and absolute `--to` |
 | 9.14 | A missing or undriveable `--url`, on every verb where the pinned binary registers one: `migrate apply`, `migrate set`, `migrate status`, `schema apply`, `schema clean` and `schema inspect` | Exit 1, empty stdout, and one of four strings depending on the verb and on whether the flag was absent or empty — see the table below | Exit 1 with four different Ptah wordings that did not track the verb: `database URL is required`, `database URL is required; pass --url`, `--url is required`, and a 184-byte desired-state scheme message | byte-identical on all 18 measured cells |
+| 9.15 | A missing or undriveable `--dev-url`, on the six verbs where the pinned binary registers one: `migrate diff`, `migrate lint`, `migrate validate`, `schema apply`, `schema diff` and `schema inspect` (twelve register it here) | Exit 1 with `required flag(s) "dev-url" not set`, `sql/sqlclient: missing driver`, `sql/sqlclient: unknown driver "notadriver"` or `--dev-url cannot be empty` by verb and by whether the flag was absent or empty — see the table below; `migrate validate` and `schema apply` exit 0 with no dev database | Exit 1 with `unsupported --dev-url dialect "notadriver://x"` on five verbs, a 130-byte wrapped connector error on `migrate validate`, and `--dev-url is required` where the required-flag wording belonged | byte-identical on 14 of 18 measured cells, up from 5; the four still open are named below |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1692,12 +1693,101 @@ The plan path carries the same plural spelling as the plan-free path so one verb
 does not answer the same mistake two ways, but that is an internal-consistency
 choice and is not claimed as a match.
 
-**The `--dev-url` family is the same string and is not closed here.** Measured
-on the pinned binary, `migrate lint --dev-url notadriver://x` answers with the
-identical `sql/sqlclient: unknown driver "notadriver"` text. `--dev-url`,
-`--to` and `--from` are opened as database URLs on verbs that mostly forward to
-native commands, so covering them is a different change against a different set
-of call sites, and it is reported here rather than claimed.
+**The `--dev-url` family is the same string, and cell 9.15 closes most of it.**
+`--to` and `--from` remain open and are still reported rather than claimed.
+
+### A missing `--dev-url` is three strings, and the empty one is not the absent one
+
+Cell 9.15 is the sibling 9.14 named. Measured on 2026-08-13, each binary run in
+its own directory and every exit code read from an unpiped invocation, twelve
+compat verbs register `--dev-url` — enumerated by walking the built command tree,
+not by hand — and six of them have a row on the pinned binary. Every message is
+on standard error with standard output empty:
+
+| `--dev-url` on … | absent | `--dev-url ""` | `--dev-url notadriver://x` |
+| --- | --- | --- | --- |
+| `migrate diff` | `required flag(s) "dev-url" not set` (42 B) | **`sql/sqlclient: missing driver. See: https://atlasgo.io/url`** (66 B) | `sql/sqlclient: unknown driver "notadriver". See: https://atlasgo.io/url` (79 B) |
+| `migrate lint` | the required refusal | **the missing-driver string** | the unknown-driver string |
+| `migrate validate` | exit 0, both streams empty | exit 0, both streams empty | the unknown-driver string |
+| `schema apply` | exit 0, plan on stdout | exit 0, plan on stdout | the unknown-driver string |
+| `schema diff` | `--dev-url cannot be empty` (33 B) | the same | the unknown-driver string |
+| `schema inspect` | `--dev-url cannot be empty` (33 B) | the same | the unknown-driver string |
+
+Byte counts include the `Error: ` prefix and the trailing line feed. Before this
+change five verbs answered the last column `unsupported --dev-url dialect
+"notadriver://x"` (54 B) and `migrate validate` wrapped a connector failure into
+130 B. **Fourteen of the eighteen cells are now byte-identical, up from five**;
+the four still open are named below.
+
+Two facts are in that table, and matching one does not match the other:
+
+- **Absent against empty.** `migrate diff` and `migrate lint` refuse only a flag
+  that was never given: an explicitly empty value passes their required check and
+  is answered by the client layer. That is the difference between asking pflag's
+  Changed bit and asking the string, and a build that asks the string matches
+  both absent rows while un-matching both empty ones.
+- **The unknown-driver row is shared with `--url`.** It is spelled once and
+  reused, so the two flags cannot drift apart on a scheme one of them learns to
+  open later.
+
+Placement is measured as well as wording, and it splits inside one family.
+Against an unhashed directory, `migrate diff` and `migrate validate` print
+`checksum file not found` with the same 143-byte guidance block on standard
+output, while `migrate lint` answers the URL there instead. That is cobra's own
+order — `ValidateRequiredFlags` runs after the pre-run hooks — so a verb gating
+integrity in a hook answers the checksum first. On `migrate validate` this is
+what decides the call site: the refusal cannot sit in the forwarding wrapper,
+because that wrapper runs before the integrity gate.
+
+**cobra's `MarkFlagRequired` is deliberately not used**, for the reason 9.14 gave
+for `--url`: it tests the Changed bit, which an `atlas.hcl` env supplying `dev`
+never sets. Measured, the pinned binary runs `migrate lint --env local` with such
+an env to exit 0, and so does ptah-compat; marking the flag required would refuse
+both and delete a capability (rule (c)).
+
+**Six verbs register `--dev-url` with nothing to match.** `migrate checkpoint`,
+`migrate down`, `migrate test`, `schema plan new`, `schema plan validate` and
+`schema test` all answer `unknown flag: --dev-url` on the pinned binary, and
+`migrate checkpoint` reports the verb itself as unavailable in the community
+version. Their own diagnostics are unchanged, and the same tree walk that
+enumerated the twelve requires every verb registering the flag to be either
+pinned by a row or named here, so a thirteenth cannot appear carrying the old
+wording.
+
+**Four cells stay open, each measured.**
+
+- `schema diff` with no usable dev database answers `--dev-url is required for
+  local schema file diffing` (59 B) where the pinned binary answers `--dev-url
+  cannot be empty` (33 B). Both exit 1 on the same inputs; Ptah's names the
+  sources that need the dev database, and the refusal is shared with native
+  `ptah schema diff`, so matching it is a separate change.
+- `schema apply` with a local-file desired state and no dev database exits 1 here
+  and 0 there: the pinned binary plans and applies without one on both SQLite and
+  PostgreSQL. The gate is deliberate — it is the verb that modifies the target —
+  and the fuller behavior is already reachable through
+  `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL`, so the default is left where its own
+  measurement put it rather than widened here.
+
+Two more measured divergences are recorded without being closed. A `.sql`
+desired-state source moves the pinned binary's empty-value answer to `--dev-url
+cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database` (88 B) on
+all three schema verbs — the split is the source kind, not the verb — while Ptah
+prints the 33-byte form for both kinds. And `schema inspect --url <database>
+--dev-url notadriver://x` exits 0 on the pinned binary, which never opens the dev
+URL when the source is a database, where Ptah still validates it; the
+unknown-driver row above is measured on the file source, which is the scope the
+pinned binary was measured to check.
+
+**Native Ptah keeps the clearer message, deliberately.** `ptah schema inspect`
+still answers `unsupported --dev-url dialect "notadriver://x"`, which names the
+flag the operator has to change and quotes the whole value they typed; the
+community wording reports a driver problem and shows only `"notadriver"`, so the
+operator cannot see what they wrote. Matching is this surface's contract, not an
+improvement to be propagated (rule (b)). Measured before and after this change
+across fifteen cells on all seven native verbs registering the flag — `schema
+inspect`, `schema diff`, `schema apply`, `schema plan`, `migrations lint`,
+`migrations validate` and `migrations generate` — native is byte-identical on
+both streams.
 
 ## Reports
 

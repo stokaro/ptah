@@ -364,7 +364,7 @@ func compatURLVerbsWithoutOracleRow() []string {
 func TestCompatURLDiagnostics_CoverEveryVerbRegisteringTheFlag(t *testing.T) {
 	c := qt.New(t)
 
-	registered := compatVerbsRegisteringURL(atlas.NewCompatCommand("atlas"))
+	registered := compatVerbsRegisteringFlag(atlas.NewCompatCommand("atlas"), "url")
 	c.Assert(len(registered) > 0, qt.IsTrue,
 		qt.Commentf("the walk found no --url at all, so it is measuring nothing"))
 
@@ -393,9 +393,14 @@ func TestCompatURLDiagnostics_CoverEveryVerbRegisteringTheFlag(t *testing.T) {
 	}
 }
 
-// compatVerbsRegisteringURL returns the space-joined path of every runnable
-// command below root that registers a --url flag, sorted.
-func compatVerbsRegisteringURL(root *cobra.Command) []string {
+// compatVerbsRegisteringFlag returns the space-joined path of every runnable
+// command below root that registers the named flag, sorted.
+//
+// The flag name is a parameter rather than a constant because two coverage
+// gates now walk this tree for two different URL-shaped flags, and a second
+// copy of the walk is how the two would drift into disagreeing about what
+// "runnable command" means.
+func compatVerbsRegisteringFlag(root *cobra.Command, flag string) []string {
 	var found []string
 	var walk func(cmd *cobra.Command, path []string)
 	walk = func(cmd *cobra.Command, path []string) {
@@ -403,7 +408,7 @@ func compatVerbsRegisteringURL(root *cobra.Command) []string {
 		for _, child := range children {
 			walk(child, append(slices.Clone(path), child.Name()))
 		}
-		if len(children) > 0 || cmd.Flags().Lookup("url") == nil {
+		if len(children) > 0 || cmd.Flags().Lookup(flag) == nil {
 			return
 		}
 		found = append(found, strings.Join(path, " "))

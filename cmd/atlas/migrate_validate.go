@@ -102,6 +102,15 @@ func runAtlasMigrateValidate(
 	if source.devURL == "" {
 		return nil
 	}
+	// Placed after the integrity gate and in front of the replay, which is the
+	// order the pinned community binary v1.3.0 was measured in: with no
+	// `--dev-url` at all this verb exits 0, so the URL cannot be settled ahead of
+	// the directory. `--dev-url notadriver://x` answers `sql/sqlclient: unknown
+	// driver "notadriver"` there, where Ptah wrapped a connector error into a
+	// 130-byte sentence naming an internal replay step.
+	if err := atlasDevURLDriverDiagnostic(source.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
