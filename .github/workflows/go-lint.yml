@@ -40,6 +40,9 @@ jobs:
       - name: Check repository-local path leaks
         run: scripts/check-repository-local-paths.sh
 
+      - name: Check developer stack image pins
+        run: scripts/check-compose-image-pins.sh
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 
