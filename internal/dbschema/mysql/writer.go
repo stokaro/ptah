@@ -137,6 +137,9 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 
 	_, err := w.db.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
+		if refusal := describeRoutinePrivilegeRefusal(err, sqlExpr); refusal != nil {
+			return refusal
+		}
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
 	return nil
@@ -173,6 +176,9 @@ func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args
 	}
 	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
+		if refusal := describeRoutinePrivilegeRefusal(err, sqlExpr); refusal != nil {
+			return refusal
+		}
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
 	return nil

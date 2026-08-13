@@ -1078,10 +1078,10 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s;", escapeIdentifier(node.Name))
+	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s;", escapeQualifiedIdentifier(node.Name))
 
 	header := fmt.Sprintf("CREATE FUNCTION %s(%s) RETURNS %s",
-		escapeIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
+		escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
 	parts := []string{header, mysqlRoutineCharacteristic(node.Volatility)}
 	if security := mysqlRoutineSecurity(node.Security); security != "" {
 		parts = append(parts, security)
@@ -1161,7 +1161,7 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, escapeIdentifier(node.Name))
+	parts = append(parts, escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }

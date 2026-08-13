@@ -202,6 +202,34 @@ jobs:
           done
           echo "OCI registry is ready!"
 
+      # MySQL refuses CREATE FUNCTION from a user without SUPER while binary
+      # logging is on, whatever the statement says: measured on mysql:26.7 with
+      # its own defaults (log_bin = 1, log_bin_trust_function_creators = 0), a
+      # function declared DETERMINISTIC or READS SQL DATA is still Error 1419,
+      # and only a function with no characteristic at all reaches Error 1418.
+      # ptah_user holds ALL PRIVILEGES on ptah_test but only USAGE globally, so
+      # the round-trip test for stored functions cannot create one.
+      #
+      # The grant is deliberate rather than setting log_bin_trust_function_creators.
+      # That variable is what MySQL's own message calls the less safe option, and
+      # measured on the same server it switches off the characteristic check too:
+      # `CREATE FUNCTION f() RETURNS int RETURN 1` is ACCEPTED with it on. CI
+      # would then stop proving that the renderer emits a characteristic at all,
+      # which is one of the things these tests exist to hold. Granting the
+      # privilege keeps both gates armed and models a provisioned deployment.
+      #
+      # MariaDB needs nothing here: its image ships with binary logging off, so
+      # neither gate is active, and this step leaves it alone.
+      - name: Grant MySQL routine-creation privilege
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot_password \
+            -e "GRANT SUPER ON *.* TO 'ptah_user'@'%'; FLUSH PRIVILEGES;"
+          # Fail loudly here rather than 40 minutes later inside the contour.
+          mysql -h 127.0.0.1 -P 3306 -u ptah_user -pptah_password -D ptah_test \
+            -e "CREATE FUNCTION ptah_privilege_probe() RETURNS int DETERMINISTIC RETURN 1;
+                DROP FUNCTION ptah_privilege_probe;"
+          echo "MySQL routine creation is available to ptah_user"
+
       - name: Install Graphviz
         run: |
           sudo apt-get update

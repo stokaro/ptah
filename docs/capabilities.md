@@ -517,6 +517,33 @@ remaining resolver refinement work.
   `MODIFIES SQL DATA` and a bare `NOT DETERMINISTIC` are refused too, so a
   `VOLATILE` declaration renders as `READS SQL DATA`.
 
+  One MySQL deployment shape refuses stored functions regardless of what Ptah
+  renders, and it is a **privilege** condition rather than a capability one.
+  With binary logging enabled and `log_bin_trust_function_creators` off, MySQL
+  applies two gates in sequence: a function declaring no characteristic is
+  refused with Error 1418, and once it declares one, a connected user without
+  the `SUPER` privilege is refused with Error 1419. The renderer answers the
+  first; nothing it can emit answers the second. The remedy belongs to the
+  operator — grant `SUPER` to the migrating user, run the migration as a user
+  that holds it, or do not declare functions for that target — so Ptah replaces
+  MySQL's own wording with a message that says exactly that instead of
+  forwarding a server error code.
+
+  `functions` stays `true` for the MySQL presets. The key answers "does a Ptah
+  path emit, read back and plan this object", and all three exist and are
+  proven by a live round trip; it does not answer "may the account you happen to
+  be connected as run the statement". No capability key does — a `GRANT` can
+  refuse a view or a table as readily — and the presets are resolved from
+  the server version, not from the connected user's grants. MySQL with binary
+  logging off, and MySQL with binary logging on and a provisioned migrating
+  user, both create functions normally.
+
+  Note that `log_bin_trust_function_creators` is the variable MySQL's own error
+  text calls "the less safe" option, and measured on MySQL 26.7.0 it removes the
+  characteristic gate as well: a function declaring nothing at all is accepted
+  with it on. It is not a recommendation here, and Ptah's diagnostic does not
+  offer it as one.
+
   SQL Server declares `false`. The engine hosts scalar functions and accepts
   both `CREATE FUNCTION` and `CREATE OR ALTER FUNCTION` on 2025 (RTM-CU7), but
   `sys.sql_modules.definition` returns the whole original `CREATE` statement as
