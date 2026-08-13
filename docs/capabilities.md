@@ -494,6 +494,20 @@ remaining resolver refinement work.
   refusal path for these three categories because the measured servers accept
   them. Printed plans keep the diagnostic; the apply execution path drops
   comment-only statements before target or dev-database execution.
+- **Every declared object reaches a renderer (#929 item 5).** Whether an object
+  kind is converted at all is not decided by the dialect name. Every sequence,
+  domain, composite type, range, role, function, view, materialized view,
+  trigger, grant and row-level security declaration in a schema becomes an AST
+  node for every target, and the target's renderer answers: a statement, a
+  supported equivalent, or a named skip. Deleting the node before rendering was
+  the previous behavior and it left nothing to report the deletion —
+  `ptah schema render` dropped a declared sequence, domain, role or function on
+  clickhouse, mysql, mariadb, sqlserver and sqlite and exited 0 with no comment
+  and no warning. A diagnostic naming a target that cannot host the object
+  states what Ptah generates rather than what the engine can do, because the two
+  differ: SQL Server has had `CREATE SEQUENCE` since 2012 and MySQL 8 has roles,
+  while `sequences` and `role_management` are off for both because Ptah has no
+  reader and no planner for those kinds there.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and
@@ -512,7 +526,14 @@ remaining resolver refinement work.
   constraints, foreign keys, XML, and single-statement trigger replacement. It
   leaves enum and sequence capabilities disabled because Ptah models SQL Server
   enums as `NVARCHAR(255)` plus `CHECK` constraints and does not yet expose
-  standalone SQL Server sequence objects. Raw view and trigger definitions can
+  standalone SQL Server sequence objects. A declared `//ptah:schema:sequence` is
+  therefore reported rather than emitted:
+  `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated for this
+  target; skipped.` The sentence names Ptah's generator on purpose — SQL Server
+  has had sequences since 2012, so a bare "is not supported" would be a false
+  statement about the engine. Turning the key on requires a SQL Server sequence
+  reader and planner in the same change, or `schema apply` would plan a `CREATE`
+  that `db read` never sees again. Raw view and trigger definitions can
   be rendered, but SQL Server catalog readback is not yet normalized enough for
   full drift-safe round trips. `DROP INDEX IF EXISTS` and `DROP CONSTRAINT IF
   EXISTS` are disabled in the portable preset, so plans should remain exactly

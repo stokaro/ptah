@@ -271,13 +271,21 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
+// VisitCreateType names the user-defined type Ptah does not generate for this
+// target. MySQL and MariaDB have no CREATE TYPE object at all; an enum lives in
+// the column definition and reaches this renderer that way, never as a node.
+//
+// The diagnostic used to name no object -- "MYSQL does not support CREATE TYPE -
+// enums are handled inline in column definitions" -- which was survivable only
+// while the converter dropped domain, composite and range nodes before this
+// renderer saw one. It does not any more, so a schema declaring three domains
+// produced three identical lines naming none of them, and the sentence was about
+// enums while the node was a domain (stokaro/ptah#929 item 5).
 func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
-	// MySQL/MariaDB doesn't support separate type definitions
-	// Enums are handled inline in column definitions
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("-- %s does not support CREATE TYPE - enums are handled inline in column definitions", r.dialectUpper)
+	r.notGenerated("CREATE TYPE", node.Name)
 	return nil
 }
 
@@ -1075,9 +1083,13 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitDropFunction returns an error since PostgreSQL functions are not supported in MySQL
+// VisitDropFunction names the function drop Ptah does not generate for this
+// target. Its CREATE counterpart above already answers with a comment; an error
+// on only the DOWN half would abort a rollback script that the UP half rendered
+// happily.
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	return fmt.Errorf("DROP FUNCTION is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("DROP FUNCTION", node.Name)
+	return nil
 }
 
 // VisitCreateSequence reports that Ptah does not generate standalone sequence
@@ -1124,39 +1136,75 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 	return nil
 }
 
-// VisitDropPolicy returns an error since RLS policies are not supported in MySQL
+// VisitDropPolicy names the policy drop Ptah does not generate for this target,
+// matching VisitCreatePolicy above rather than aborting the DOWN half alone.
 func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	return fmt.Errorf("DROP POLICY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("DROP POLICY", node.Name)
+	return nil
 }
 
-// VisitAlterTableDisableRLS returns an error since RLS is not supported in MySQL
+// VisitAlterTableDisableRLS names the row-level security change Ptah does not
+// generate for this target, matching VisitAlterTableEnableRLS above.
 func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	return fmt.Errorf("ALTER TABLE DISABLE ROW LEVEL SECURITY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("DISABLE ROW LEVEL SECURITY on", node.Table)
+	return nil
 }
 
-// VisitCreateRole returns an error since PostgreSQL roles are not supported in MySQL
+// notGenerated records that Ptah does not generate the named object for this
+// MySQL-family target, in the same sentence the SQL Server renderer uses.
+//
+// These five visitors returned an ERROR until the converter stopped gating
+// emission by dialect name. That was survivable only because the node never
+// arrived: FromDatabase deleted every role and grant before the MySQL family
+// could see one, so a schema declaring a role rendered at exit 0 with the role
+// missing and nothing said about it. Now the node arrives, and an error here
+// would abort the whole render -- turning fifteen silent omissions into a
+// command that produces no SQL at all, which removes a capability rather than
+// restoring one.
+//
+// The sentence names the generator rather than the engine because the engine
+// claim would be false: MySQL has had roles and GRANT ... TO <role> since 8.0
+// and MariaDB since 10.0.5. capability.MySQL84 and capability.MariaDB1011 leave
+// RoleManagement off because Ptah has no MySQL-family role reader and no
+// MySQL-family role planner, so a CREATE ROLE emitted here would never be read
+// back or planned again.
+func (r *Renderer) notGenerated(kind, name string) {
+	if name == "" {
+		r.w.WriteLinef("-- %s: %s is not generated for this target; skipped.", r.dialectUpper, kind)
+		return
+	}
+	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
+}
+
+// VisitCreateRole names the role Ptah does not generate for this target. See
+// notGenerated for why it is a comment and not an error.
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	return fmt.Errorf("CREATE ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("role", node.Name)
+	return nil
 }
 
-// VisitDropRole returns an error since PostgreSQL roles are not supported in MySQL
+// VisitDropRole names the role drop Ptah does not generate for this target.
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	return fmt.Errorf("DROP ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("DROP ROLE", node.Name)
+	return nil
 }
 
-// VisitAlterRole returns an error since PostgreSQL roles are not supported in MySQL
+// VisitAlterRole names the role change Ptah does not generate for this target.
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	return fmt.Errorf("ALTER ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("ALTER ROLE", node.Name)
+	return nil
 }
 
-// VisitGrantPrivilege returns an error since PostgreSQL grants are not supported in MySQL
+// VisitGrantPrivilege names the grant Ptah does not generate for this target.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	return fmt.Errorf("GRANT privilege management is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("grant", node.Role)
+	return nil
 }
 
-// VisitRevokePrivilege returns an error since PostgreSQL grants are not supported in MySQL
+// VisitRevokePrivilege names the revoke Ptah does not generate for this target.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	return fmt.Errorf("REVOKE privilege management is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+	r.notGenerated("revoke", node.Role)
+	return nil
 }
 
 // VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific
