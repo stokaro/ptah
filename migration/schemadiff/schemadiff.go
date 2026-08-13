@@ -221,7 +221,7 @@ func CompareReportingUndecidedAdditions(
 	compare.ExtensionsWithSemantics(generated, database, diff, opts, cov, identifierSemantics)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
-	compare.FunctionsWithSemantics(generated, database, diff, identifierSemantics)
+	compare.FunctionsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
 	compare.SequencesWithSemantics(generated, database, diff, cov, identifierSemantics)
