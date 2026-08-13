@@ -92,11 +92,23 @@ func TestParseLocalDir_FailurePath(t *testing.T) {
 
 func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
 	c := qt.New(t)
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "meaningful format key", query: "format=atlas"},
+		{name: "unknown key", query: "nonsense=1"},
+		{name: "meaningful and unknown keys", query: "format=atlas&nonsense=1"},
+	}
 
-	got, err := atlasargs.LocalDirValue("file://migrations?format=atlas")
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasargs.LocalDirValue("file://migrations?" + tt.query)
 
-	c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
-	c.Assert(got, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
+			c.Assert(got, qt.Equals, "")
+		})
+	}
 }
 
 func TestRequireDirScheme_HappyPathLeavesNamedSchemesToTheParser(t *testing.T) {
