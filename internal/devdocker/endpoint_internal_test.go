@@ -127,15 +127,22 @@ func TestParseDockerEndpointClassifiesTheDaemonLocation(t *testing.T) {
 // at all.
 func TestParseSSHConfigReadsTheEffectiveDestination(t *testing.T) {
 	tests := []struct {
-		name          string
-		out           string
-		wantHostname  string
-		wantProxyJump string
+		name         string
+		out          string
+		wantHostname string
+		// wantProxy is the description of the indirection, empty when the
+		// destination is reached directly.
+		wantProxy string
 	}{
 		{
-			// The measured shape for a destination with no rewriting.
-			name:         "no rewriting",
-			out:          "host remote-dev\nuser buster\nhostname remote-dev\nport 22\naddressfamily any\n",
+			// The measured shape for a destination with no rewriting. Note the
+			// two `proxy`-ish keys a plain host really does carry: an
+			// implementation matching by substring rather than by exact key
+			// would read the first as a proxy command and refuse every ordinary
+			// host.
+			name: "no rewriting, and the proxy-shaped keys a plain host carries",
+			out: "host remote-dev\nuser buster\nhostname remote-dev\nport 22\n" +
+				"nohostauthenticationforproxycommand no\nproxyusefdpass no\n",
 			wantHostname: "remote-dev",
 		},
 		{
@@ -147,10 +154,20 @@ func TestParseSSHConfigReadsTheEffectiveDestination(t *testing.T) {
 		},
 		{
 			// No direct TCP route to the published port exists here.
-			name:          "reachable only through a jump host",
-			out:           "host devbox\nhostname 10.0.0.5\nproxyjump bastion.example\n",
-			wantHostname:  "10.0.0.5",
-			wantProxyJump: "bastion.example",
+			name:         "reachable only through a jump host",
+			out:          "host devbox\nhostname 10.0.0.5\nproxyjump bastion.example\n",
+			wantHostname: "10.0.0.5",
+			wantProxy:    `the jump host "bastion.example"`,
+		},
+		{
+			// The other spelling of the same fact. Measured: `ssh -G -o
+			// 'ProxyCommand=ssh bastion -W %h:%p' <host>` emits a `proxycommand`
+			// line and NO `proxyjump` line at all, so a parser that knew only
+			// about jump hosts would call this destination directly dialable.
+			name:         "reachable only through a proxy command",
+			out:          "host devbox\nhostname 10.0.0.5\nproxycommand ssh bastion -W %h:%p\n",
+			wantHostname: "10.0.0.5",
+			wantProxy:    `the proxy command "ssh bastion -W %h:%p"`,
 		},
 		{
 			// ssh spells "no jump host" as the literal `none`, which must not
@@ -159,13 +176,18 @@ func TestParseSSHConfigReadsTheEffectiveDestination(t *testing.T) {
 			out:          "host remote-dev\nhostname remote-dev\nproxyjump none\n",
 			wantHostname: "remote-dev",
 		},
+		{
+			name:         "proxycommand none is not a proxy command",
+			out:          "host remote-dev\nhostname remote-dev\nproxycommand none\n",
+			wantHostname: "remote-dev",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			hostname, proxyJump := parseSSHConfig(tc.out)
+			hostname, proxy := parseSSHConfig(tc.out)
 			qt.Check(t, hostname, qt.Equals, tc.wantHostname)
-			qt.Check(t, proxyJump, qt.Equals, tc.wantProxyJump)
+			qt.Check(t, proxy, qt.Equals, tc.wantProxy)
 		})
 	}
 }

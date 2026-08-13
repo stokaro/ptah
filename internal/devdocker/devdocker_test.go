@@ -215,6 +215,11 @@ func (f *fakeRunner) calls() (started, removed []string) {
 	return append([]string{}, f.started...), append([]string{}, f.removed...)
 }
 
+// testPassword stands in for the generated superuser password wherever a URL is
+// asserted byte for byte. The real one is random per instance; see
+// TestProvisionGeneratesADistinctPasswordPerInstance.
+const testPassword = "testpw"
+
 // alwaysReady and neverReady stand in for the connection probe.
 func alwaysReady(context.Context, string) error { return nil }
 
@@ -248,7 +253,9 @@ func TestResolveProvisionsADockerURLAndReleaseRemovesTheContainer(t *testing.T) 
 	})
 	qt.Assert(t, err, qt.IsNil)
 
-	qt.Check(t, resolved, qt.Equals, "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=disable")
+	// The password is generated per instance, so the shape is asserted and the
+	// secret is not. Its per-instance-ness has its own test below.
+	qt.Check(t, resolved, qt.Matches, `postgres://postgres:[0-9a-f]{48}@127\.0\.0\.1:15432/dev\?sslmode=disable`)
 	started, removed := runner.calls()
 	qt.Assert(t, started, qt.HasLen, 1)
 	// Nothing is removed until the caller releases: a release that removed
@@ -387,14 +394,14 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
 			name:    "no parameters leaves the engine defaults",
 			rawURL:  "docker://postgres/16/dev",
-			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=disable",
+			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=disable",
 		},
 		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
 			// The row the pinned binary answers exit 1 on. The parameter has to
 			// reach the connection for Ptah to answer it at all.
 			name:    "search_path survives alongside the defaults",
 			rawURL:  "docker://postgres/16/dev?search_path=app",
-			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
+			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
 		},
 		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
 			// The operator wins on a key the engine also sets. Defaults exist to
@@ -402,7 +409,7 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			// has a reason the container cannot know.
 			name:    "an operator sslmode replaces the default",
 			rawURL:  "docker://postgres/16/dev?sslmode=require",
-			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=require",
+			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=require",
 		},
 		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
 			// Two keys, one of which the engine also sets: the unmentioned
@@ -410,7 +417,7 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			// wholesale instead of merging would drop sslmode here.
 			name:    "an unmentioned default survives beside an operator key",
 			rawURL:  "docker://postgres/16/dev?search_path=app",
-			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
+			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
 		},
 		{
 			// MySQL has no default parameters, so its URL carries a query only
@@ -418,12 +425,12 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			// would read as an empty parameter list.
 			name:    "mysql without parameters carries no query at all",
 			rawURL:  "docker://mysql/8/dev",
-			wantURL: "mysql://root:ptah-dev@tcp(127.0.0.1:15432)/dev",
+			wantURL: "mysql://root:testpw@tcp(127.0.0.1:15432)/dev",
 		},
 		{
 			name:    "mysql carries the operator parameters",
 			rawURL:  "docker://mysql/8/dev?parseTime=true",
-			wantURL: "mysql://root:ptah-dev@tcp(127.0.0.1:15432)/dev?parseTime=true",
+			wantURL: "mysql://root:testpw@tcp(127.0.0.1:15432)/dev?parseTime=true",
 		},
 	}
 	for _, tc := range tests {
@@ -431,7 +438,7 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			t.Parallel()
 			spec, err := devdocker.Parse(tc.rawURL)
 			qt.Assert(t, err, qt.IsNil)
-			qt.Check(t, spec.URL("127.0.0.1:15432"), qt.Equals, tc.wantURL)
+			qt.Check(t, spec.URL("127.0.0.1:15432", testPassword), qt.Equals, tc.wantURL)
 		})
 	}
 }
@@ -445,12 +452,12 @@ func TestReadyURLProbesTheServerWithoutTheOperatorParameters(t *testing.T) {
 	// schema, so every attempt fails and the wait burns its whole budget before
 	// reporting a deterministic error. Measured before this split, that cost
 	// two minutes; after it the same run refuses in about five seconds.
-	qt.Check(t, spec.ReadyURL("127.0.0.1:15432"), qt.Equals,
-		"postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=disable")
+	qt.Check(t, spec.ReadyURL("127.0.0.1:15432", testPassword), qt.Equals,
+		"postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=disable")
 	// The engine's own defaults are still on the probe URL: dropping sslmode
 	// here would make the probe fail against a container that speaks no TLS.
-	qt.Check(t, spec.URL("127.0.0.1:15432"), qt.Equals,
-		"postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable")
+	qt.Check(t, spec.URL("127.0.0.1:15432", testPassword), qt.Equals,
+		"postgres://postgres:testpw@127.0.0.1:15432/dev?search_path=app&sslmode=disable")
 }
 
 func TestCloseStaysRetryableUntilRemovalSucceeds(t *testing.T) {
@@ -513,6 +520,35 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 	// takes the whole test binary -- and every later test -- with it. Comparing
 	// the slice covers the count and the identity in one verdict that cannot.
 	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
+}
+
+// TestProvisionGeneratesADistinctPasswordPerInstance pins the credential that a
+// remote daemon made load-bearing.
+//
+// The password used to be the constant `ptah-dev`, justified in a comment by the
+// container publishing on loopback only. That premise stopped holding the moment
+// a remote daemon began publishing on every interface of its host: a known
+// superuser password on a reachable ephemeral port lets any peer that finds it
+// read the replayed schema, or write to it and corrupt a lint or diff result.
+// The binding cannot be tightened -- a daemon can only publish on interfaces it
+// owns, and the one this process must reach is not that host's loopback -- so
+// the credential is what has to change.
+func TestProvisionGeneratesADistinctPasswordPerInstance(t *testing.T) {
+	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
+	options := devdocker.Options{Runner: runner, Ready: alwaysReady}
+
+	first, releaseFirst, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", options)
+	qt.Assert(t, err, qt.IsNil)
+	t.Cleanup(releaseFirst)
+	second, releaseSecond, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", options)
+	qt.Assert(t, err, qt.IsNil)
+	t.Cleanup(releaseSecond)
+
+	qt.Check(t, first, qt.Not(qt.Equals), second)
+	// And neither carries the constant this replaced, which is the string an
+	// operator's old notes or a copied script would still be holding.
+	qt.Check(t, first, qt.Not(qt.Contains), "ptah-dev@")
+	qt.Check(t, second, qt.Not(qt.Contains), "ptah-dev@")
 }
 
 func TestProvisionRemovesTheContainerWhenStartFailsAfterCreatingIt(t *testing.T) {

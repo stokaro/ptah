@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -199,14 +200,14 @@ func resolveSSHDestination(ctx context.Context, endpoint dockerEndpoint) (docker
 			"host", endpoint.host, "error", err)
 		return endpoint, nil
 	}
-	resolved, proxyJump := parseSSHConfig(string(out))
-	if proxyJump != "" {
+	resolved, proxy := parseSSHConfig(string(out))
+	if proxy != "" {
 		return dockerEndpoint{}, fmt.Errorf(
-			"the docker endpoint ssh://%s is reachable only through the jump host %q,"+
+			"the docker endpoint ssh://%s is reachable only through %s,"+
 				" so the dev database port published on it cannot be dialed directly;"+
 				" point DOCKER_HOST at a daemon whose host this machine can reach,"+
 				" or pass a directly connectable dev database URL",
-			endpoint.host, proxyJump,
+			endpoint.host, proxy,
 		)
 	}
 	if resolved != "" {
@@ -215,9 +216,22 @@ func resolveSSHDestination(ctx context.Context, endpoint dockerEndpoint) (docker
 	return endpoint, nil
 }
 
-// parseSSHConfig reads the effective hostname and proxyjump out of `ssh -G`
-// output, which is one lowercase `key value` pair per line.
-func parseSSHConfig(out string) (hostname, proxyJump string) {
+// parseSSHConfig reads the effective hostname and the indirection settings out
+// of `ssh -G` output, which is one lowercase `key value` pair per line.
+//
+// proxy describes the route when the destination is reached through something
+// other than a direct connection, and is empty when it is direct. BOTH forms
+// count: `ProxyJump` and `ProxyCommand` are different spellings of the same
+// fact, and measured on OpenSSH here, `ssh -G -o 'ProxyCommand=ssh bastion -W
+// %h:%p' <host>` emits a `proxycommand` line while emitting no `proxyjump` at
+// all. A parser that knew only about jump hosts would report that destination
+// as directly dialable.
+//
+// The keys are matched exactly, not by substring. A plain destination's output
+// contains `nohostauthenticationforproxycommand no` and `proxyusefdpass no` --
+// measured -- and a `strings.Contains(line, "proxycommand")` test would read the
+// first of those as a proxy command and refuse every ordinary host.
+func parseSSHConfig(out string) (hostname, proxy string) {
 	for line := range strings.SplitSeq(out, "\n") {
 		key, value, found := strings.Cut(strings.TrimSpace(line), " ")
 		if !found {
@@ -230,11 +244,15 @@ func parseSSHConfig(out string) (hostname, proxyJump string) {
 		case "proxyjump":
 			// ssh spells "no jump host" as the literal `none`.
 			if !strings.EqualFold(value, "none") {
-				proxyJump = value
+				proxy = "the jump host " + strconv.Quote(value)
+			}
+		case "proxycommand":
+			if !strings.EqualFold(value, "none") {
+				proxy = "the proxy command " + strconv.Quote(value)
 			}
 		}
 	}
-	return hostname, proxyJump
+	return hostname, proxy
 }
 
 // isLoopbackHost reports whether host names this machine's loopback.

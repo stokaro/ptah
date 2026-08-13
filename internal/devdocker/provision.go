@@ -181,7 +181,15 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	if err != nil {
 		return nil, err
 	}
-	hostPort, err := runner.Start(ctx, name, spec.Image, spec.engine.port, spec.engine.env(spec.Database))
+	// Generated per instance rather than fixed. A remote daemon publishes on
+	// every interface of its host, so a known superuser password on the
+	// ephemeral port would let any peer that finds it read the replayed schema
+	// or write to it and corrupt a lint or diff result. See [passwordBytes].
+	password, err := devPassword()
+	if err != nil {
+		return nil, err
+	}
+	hostPort, err := runner.Start(ctx, name, spec.Image, spec.Port(), spec.Env(password))
 	if err != nil {
 		// Start may have created the container before failing to publish or
 		// inspect it -- `docker run` succeeding and `docker port` failing leaves
@@ -193,13 +201,13 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		return nil, err
 	}
 	instance := &Instance{
-		url:       spec.URL(hostPort),
+		url:       spec.URL(hostPort, password),
 		container: name,
 		runner:    runner,
 	}
 	// The wait probes the server, not the operator's parameters; see
 	// [Spec.ReadyURL] for the two minutes that distinction is worth.
-	if err := waitReady(ctx, spec.ReadyURL(hostPort), opts); err != nil {
+	if err := waitReady(ctx, spec.ReadyURL(hostPort, password), opts); err != nil {
 		// The same bounded retry the release uses, not a single discarded
 		// Close. On this path the caller receives no instance, so nothing else
 		// is left holding a handle to the container: a removal refused here
@@ -301,6 +309,19 @@ func waitReady(ctx context.Context, rawURL string, opts Options) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// devPassword returns a fresh superuser password for one container.
+//
+// Hex rather than raw bytes because the value travels through a container
+// environment variable and a URL userinfo field, where a `@`, `:` or `/` would
+// have to be escaped correctly in three places by three different consumers.
+func devPassword() (string, error) {
+	secret := make([]byte, passwordBytes)
+	if _, err := rand.Read(secret); err != nil {
+		return "", fmt.Errorf("generate dev database password: %w", err)
+	}
+	return hex.EncodeToString(secret), nil
 }
 
 // containerName returns a name no concurrent invocation can also choose.

@@ -70,14 +70,20 @@ const DefaultTag = "latest"
 // use (`docker://postgres/16/dev`).
 const DefaultDatabase = "dev"
 
-// devPassword is the superuser password set inside the throwaway container.
+// passwordBytes is the entropy of the superuser password set inside each
+// throwaway container.
 //
-// It is a constant rather than a generated secret on purpose. The container
-// publishes its port on the loopback interface only, it holds no data that
-// outlives the command, and it is removed when the command ends; a random value
-// would add a secret to carry without removing a reachable attack surface. It
-// is never a credential for anything else.
-const devPassword = "ptah-dev" //nolint:gosec // G101: see above; not a credential for anything outliving the command
+// The password is generated per instance, not fixed. It used to be the constant
+// `ptah-dev`, justified by the container publishing on loopback only -- and that
+// premise stopped being true the moment a remote daemon began publishing on
+// every interface of its host, which is a machine other peers can reach. A
+// known superuser password on a reachable ephemeral port lets any of them read
+// the replayed schema, or write to it and quietly corrupt a lint or diff result.
+//
+// The fix is the credential rather than the binding, because the binding cannot
+// be tightened: a daemon can only publish on interfaces it owns, and the one
+// this process needs to reach is not that host's loopback.
+const passwordBytes = 24
 
 // IsURL reports whether rawURL names a dev database this package provisions.
 //
@@ -102,11 +108,11 @@ type engine struct {
 	// an operator can override one and cannot lose one they did not mention.
 	params map[string]string
 	// env builds the container environment that creates database.
-	env func(database string) []string
+	env func(database, password string) []string
 	// url builds a directly connectable URL for the published hostPort. query
 	// is the merged parameter string, already encoded and without a leading
 	// `?`; it is empty when there are no parameters.
-	url func(hostPort, database, query string) string
+	url func(hostPort, database, password, query string) string
 }
 
 // engines maps the host segment of a docker URL onto the container to start.
@@ -125,29 +131,29 @@ var engines = map[string]engine{
 		// default disables it. An operator who writes `sslmode` on the docker
 		// URL replaces this value rather than being silently overruled.
 		params: map[string]string{"sslmode": "disable"},
-		env: func(database string) []string {
+		env: func(database, password string) []string {
 			return []string{
-				"POSTGRES_PASSWORD=" + devPassword,
+				"POSTGRES_PASSWORD=" + password,
 				"POSTGRES_USER=postgres",
 				"POSTGRES_DB=" + database,
 			}
 		},
-		url: func(hostPort, database, query string) string {
-			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", devPassword, hostPort, database, querySuffix(query))
+		url: func(hostPort, database, password, query string) string {
+			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, database, querySuffix(query))
 		},
 	},
 	"mysql": {
 		image:   "mysql",
 		dialect: platform.MySQL,
 		port:    "3306",
-		env: func(database string) []string {
+		env: func(database, password string) []string {
 			return []string{
-				"MYSQL_ROOT_PASSWORD=" + devPassword,
+				"MYSQL_ROOT_PASSWORD=" + password,
 				"MYSQL_DATABASE=" + database,
 			}
 		},
-		url: func(hostPort, database, query string) string {
-			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s%s", devPassword, hostPort, database, querySuffix(query))
+		url: func(hostPort, database, password, query string) string {
+			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s%s", password, hostPort, database, querySuffix(query))
 		},
 	},
 	"maria":   mariaEngine,
@@ -160,14 +166,14 @@ var mariaEngine = engine{
 	image:   "mariadb",
 	dialect: platform.MariaDB,
 	port:    "3306",
-	env: func(database string) []string {
+	env: func(database, password string) []string {
 		return []string{
-			"MARIADB_ROOT_PASSWORD=" + devPassword,
+			"MARIADB_ROOT_PASSWORD=" + password,
 			"MARIADB_DATABASE=" + database,
 		}
 	},
-	url: func(hostPort, database, query string) string {
-		return fmt.Sprintf("mariadb://root:%s@tcp(%s)/%s%s", devPassword, hostPort, database, querySuffix(query))
+	url: func(hostPort, database, password, query string) string {
+		return fmt.Sprintf("mariadb://root:%s@tcp(%s)/%s%s", password, hostPort, database, querySuffix(query))
 	},
 }
 
@@ -227,8 +233,8 @@ type Spec struct {
 
 // URL is the directly connectable URL for a server published at hostPort. It
 // carries the operator's parameters.
-func (s Spec) URL(hostPort string) string {
-	return s.engine.url(hostPort, s.Database, s.Query)
+func (s Spec) URL(hostPort, password string) string {
+	return s.engine.url(hostPort, s.Database, password, s.Query)
 }
 
 // ReadyURL is the URL the readiness wait probes: the same server, with the
@@ -242,8 +248,19 @@ func (s Spec) URL(hostPort string) string {
 // server and letting the consumer open the full URL turns that into an
 // immediate refusal naming the schema, which is also when the pinned community
 // binary v1.3.0 reports it.
-func (s Spec) ReadyURL(hostPort string) string {
-	return s.engine.url(hostPort, s.Database, defaultParams(s.engine.params))
+func (s Spec) ReadyURL(hostPort, password string) string {
+	return s.engine.url(hostPort, s.Database, password, defaultParams(s.engine.params))
+}
+
+// Env is the container environment that creates the database with password as
+// its superuser credential.
+func (s Spec) Env(password string) []string {
+	return s.engine.env(s.Database, password)
+}
+
+// Port is the port the provisioned server listens on inside the container.
+func (s Spec) Port() string {
+	return s.engine.port
 }
 
 // defaultParams encodes an engine's own parameters, with nothing merged in.
