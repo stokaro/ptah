@@ -85,9 +85,24 @@ func (e dockerEndpoint) connectHost() string {
 
 // endpoint reports where the daemon this CLI will talk to is running.
 //
-// DOCKER_HOST is read first because it overrides the active context without
-// changing it, so asking the context alone would answer for a daemon the next
-// `docker run` is not going to use.
+// The precedence is the CLI's own, measured rather than read off a document.
+// On the docker client here (29.4.0), with a context `ptah-844-remote` pointing
+// at `ssh://remote-dev`, `docker info --format {{.Name}}` answers:
+//
+//	DOCKER_HOST          DOCKER_CONTEXT      daemon
+//	unset                unset               orbstack     (the active context)
+//	unset                ptah-844-remote     remote-dev
+//	unix://…orbstack…    ptah-844-remote     orbstack     (DOCKER_HOST wins)
+//	ssh://remote-dev     orbstack            remote-dev   (DOCKER_HOST wins)
+//
+// So DOCKER_HOST is read first, and it is read first because it WINS -- not
+// merely because it is convenient. DOCKER_CONTEXT needs no separate branch:
+// `docker context inspect` honors it, so the fallback below answers for exactly
+// the daemon the next `docker run` will use in the two rows where DOCKER_HOST
+// is unset. Measured: with `DOCKER_CONTEXT=ptah-844-remote` and no DOCKER_HOST,
+// `docker context inspect --format {{.Endpoints.docker.Host}}` answers
+// `ssh://remote-dev`, and a full `schema inspect` run against it exits 0 with
+// the remote-exposure warning and leaves no container behind.
 func (d DockerCLI) endpoint(ctx context.Context) (dockerEndpoint, error) {
 	raw := strings.TrimSpace(os.Getenv("DOCKER_HOST"))
 	if raw == "" {

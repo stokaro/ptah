@@ -150,6 +150,16 @@ func TestParseRefusesTheURLFormsTheCommunityBinaryRefuses(t *testing.T) {
 			rawURL:  "docker://postgres/16/dev/extra",
 			wantErr: `docker --dev-url path "/16/dev/extra" has more than <tag>/<database>`,
 		},
+		{
+			// A `?` reaches the database name only as `%3F`, since an
+			// unescaped one starts the URL query. It is refused because a MySQL
+			// DSN carries the name literally and would read everything after it
+			// as connection parameters, and no escaping fixes that without
+			// renaming the database.
+			name:    "a query separator in the database name",
+			rawURL:  "docker://mysql/8/foo%3Fbar",
+			wantErr: `docker --dev-url database name "foo?bar" contains a query separator`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -426,6 +436,27 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			name:    "mysql without parameters carries no query at all",
 			rawURL:  "docker://mysql/8/dev",
 			wantURL: "mysql://root:testpw@tcp(127.0.0.1:15432)/dev",
+		},
+		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+			// url.Parse decodes the path before the formatter sees it, so a
+			// database written `foo%23bar` arrives as `foo#bar` and must be
+			// re-escaped. Measured before this: the URL became
+			// `…/foo#bar?sslmode=disable`, whose path is `/foo` and whose
+			// FRAGMENT is `bar?sslmode=disable` -- so the run connected to a
+			// database called `foo`, lost `sslmode=disable` with it, and spent
+			// the full two-minute readiness budget before exiting 1 where the
+			// pinned binary exits 0.
+			name:    "a delimiter in the database name is escaped for postgres",
+			rawURL:  "docker://postgres/16/foo%23bar",
+			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/foo%23bar?sslmode=disable",
+		},
+		{
+			// The MySQL family is the other way round: its DSN is not a URL,
+			// the driver reads the name literally, and escaping would connect
+			// to `foo%23bar` while the container created `foo#bar`.
+			name:    "the same delimiter stays literal for mysql",
+			rawURL:  "docker://mysql/8/foo%23bar",
+			wantURL: "mysql://root:testpw@tcp(127.0.0.1:15432)/foo#bar",
 		},
 		{
 			name:    "mysql carries the operator parameters",

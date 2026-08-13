@@ -139,7 +139,7 @@ var engines = map[string]engine{
 			}
 		},
 		url: func(hostPort, database, password, query string) string {
-			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, database, querySuffix(query))
+			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", password, hostPort, url.PathEscape(database), querySuffix(query))
 		},
 	},
 	"mysql": {
@@ -152,6 +152,12 @@ var engines = map[string]engine{
 				"MYSQL_DATABASE=" + database,
 			}
 		},
+		// The database is NOT escaped here, unlike the PostgreSQL URL above.
+		// A MySQL DSN is not a URL: the driver reads the name between the last
+		// `/` and the `?` literally and never percent-decodes it, so escaping
+		// would connect to a database called `foo%23bar` while the container
+		// created `foo#bar`. The one delimiter that would break the DSN, `?`,
+		// is refused in [Parse] instead.
 		url: func(hostPort, database, password, query string) string {
 			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s%s", password, hostPort, database, querySuffix(query))
 		},
@@ -345,6 +351,15 @@ func splitDockerPath(path string) (tag, database string, err error) {
 		database = segments[1]
 		if database == "" {
 			return "", "", fmt.Errorf("docker --dev-url database name is empty")
+		}
+		// `?` can only reach here as `%3F`, because an unescaped one starts the
+		// URL query. It is refused because a MySQL DSN carries the database
+		// name literally and would read everything after it as connection
+		// parameters, and there is no escaping that fixes that without renaming
+		// the database. Every other delimiter is handled by escaping the
+		// PostgreSQL path segment.
+		if strings.Contains(database, "?") {
+			return "", "", fmt.Errorf("docker --dev-url database name %q contains a query separator", database)
 		}
 	}
 	return tag, database, nil
