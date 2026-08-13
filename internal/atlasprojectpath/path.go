@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 )
 
-// LocalDir resolves a local Atlas migration directory URL relative to baseDir.
+// LocalDir resolves a local Atlas migration directory URL inside baseDir.
 func LocalDir(rawURL, baseDir string) (string, error) {
 	path, query, err := LocalDirWithQuery(rawURL, baseDir)
 	if err != nil {
@@ -22,15 +22,16 @@ func LocalDir(rawURL, baseDir string) (string, error) {
 	return path, nil
 }
 
-// LocalDirWithQuery resolves a local Atlas migration directory URL relative to
+// LocalDirWithQuery resolves a local Atlas migration directory URL inside
 // baseDir and preserves query parameters for command-specific validation.
-// Query semantics apply only to file:// URLs, not plain filesystem paths.
+// Absolute paths must also stay inside baseDir. Query semantics apply only to
+// file:// URLs, not plain filesystem paths.
 func LocalDirWithQuery(rawURL, baseDir string) (string, url.Values, error) {
 	path, query, err := localPath(rawURL, "migration directories")
 	if err != nil {
 		return "", nil, err
 	}
-	resolved, err := resolvePath(path, baseDir)
+	resolved, err := resolveProjectPath(path, baseDir)
 	if err != nil {
 		return "", nil, err
 	}
@@ -59,7 +60,7 @@ func SchemaFileURL(rawURL, baseDir string) (string, error) {
 	if len(query) > 0 {
 		return "", fmt.Errorf("schema file URL query parameters are not supported yet")
 	}
-	resolved, err := resolvePath(path, baseDir)
+	resolved, err := resolveUnrootedPath(path, baseDir)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +96,17 @@ func localPath(rawURL, resource string) (path string, query url.Values, err erro
 	return filepath.Clean(filepath.FromSlash(path)), query, nil
 }
 
-func resolvePath(path, baseDir string) (string, error) {
+func resolveProjectPath(path, baseDir string) (string, error) {
+	if strings.TrimSpace(baseDir) == "" {
+		return "", fmt.Errorf("atlas.hcl base directory is required")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(baseDir, path)
+	}
+	return pathguard.ResolveWithinRoot(path, baseDir)
+}
+
+func resolveUnrootedPath(path, baseDir string) (string, error) {
 	if filepath.IsAbs(path) {
 		return pathguard.ResolveWithinRoot(path, "")
 	}

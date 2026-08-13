@@ -12,9 +12,10 @@ refusal is more useful than the acceptance.
 
 This page holds those cases. Each one carries what both binaries did, so a
 reader can argue with the decision rather than only with the outcome. The wider
-gap register lives in [Comparison](../comparison/); these entries are the
-subset that came out of
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241).
+gap register lives in [Comparison](../comparison/). Most entries came out of
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241); the project
+migration-directory boundary is tracked in
+[`stokaro/ptah#1118`](https://github.com/stokaro/ptah/issues/1118).
 
 These boundaries also remain active under
 `PTAH_ATLAS_STRICT_COMPAT=1`. Strict mode limits the CE capability inventory;
@@ -225,9 +226,41 @@ index. Discarding the row automatically in that mode would hand the next run a
 clean slate over a database that is not clean. `--allow-dirty` remains the way
 through, and the operator, unlike the tool, can look first.
 
+## A project migration directory outside its root
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A `migration.dir` declared in `atlas.hcl` must remain
+inside the directory containing that project file after symbolic-link
+resolution. The rule applies to relative and absolute values. An explicit CLI
+`--dir` remains operator-owned: a directly named absolute directory keeps its
+normal CLI behavior.
+
+Measured on 2026-08-12 with `migrate diff`, a local SQL desired schema, and a
+SQLite dev database:
+
+| project `migration.dir` | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `file://migrations` | exit `0`, writes migration and `atlas.sum` inside the project | exit `0`, same artifacts inside the project |
+| `file://../outside` | exit `0`, writes migration and `atlas.sum` outside the project | exit `1`, `outside allowed root`, outside directory untouched |
+| `file:///absolute/outside` | exit `0`, writes migration and `atlas.sum` outside the project | exit `1`, `outside allowed root`, outside directory untouched |
+
+The project file is repository-controlled input. Letting it select an arbitrary
+write destination means a configuration change in a pull request can publish a
+migration and replace an `atlas.sum` anywhere the process can write. That is not
+equivalent to an operator explicitly naming an absolute `--dir` at the command
+line. Binding the project value to the already-open project handle preserves
+the useful explicit CLI capability while refusing the implicit external write.
+
+The refusal also closes the spelling hole. Previously a contained relative
+value carried the project root, while parent-relative and absolute spellings
+silently dropped the root and fell through to unbounded CLI resolution. The
+destination now determines the answer: every project-owned value is checked
+against the same root before output or mutation.
+
 ## What holds these
 
-Each entry above is pinned by a test in
+The issue #1241 entries above are pinned by a test in
 `cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
 `cmd/atlas/compat_overstrict_test.go`. The same focused file also pins all three
@@ -236,6 +269,13 @@ non-linear` applies and remains idempotent, and `--exec-order linear-skip`
 leaves the insertion unapplied and stays that way on a repeat run. The last of
 those is the one that keeps the entry honest — it is the claim that the pinned
 binary's own outcome is still reachable, so it is guarded rather than asserted.
+
+The project-root boundary is pinned through the real `ptah-compat` process in
+`integration/atlas_project_migration_dir_confinement_e2e_test.go` and its Unix
+symbolic-link companion. The tests prove both outside spellings and an escaping
+symbolic link fail without artifacts, relative and absolute inside paths and a
+linked project root succeed, and an explicit absolute CLI `--dir` remains
+reachable.
 
 Every case here is SQLite-measured; the two noted as also measured on
 PostgreSQL 17.10 were re-run against a live server. The rest carry the

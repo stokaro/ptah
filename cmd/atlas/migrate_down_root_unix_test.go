@@ -44,7 +44,7 @@ func TestCompatCommandMigrateDownRejectsProjectDirectorySymlinkEscapeBeforeOpeni
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `.*invalid migrations directory: .*outside allowed root.*`)
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl migration\.dir: .*outside allowed root.*`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
@@ -114,7 +114,7 @@ func TestMigrateApplyRejectsProjectDirectorySymlinkEscapeBeforeOpeningDatabase(t
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`atlas migrate apply --dir: invalid migrations directory: .*outside allowed root.*`,
+		`atlas migrate apply --dir: .*outside allowed root.*`,
 		qt.Commentf("command output:\n%s", output),
 	)
 	_, statErr := os.Stat(dbPath)
