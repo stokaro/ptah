@@ -851,8 +851,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Targets Atlas CE v1.3.0 per-file behavior; conformance evidence is pending. Txtar section modes are a Ptah extension; #887 tracks revision bookkeeping.",
-    "evidence": "migration/migrator atlas_tx_mode_matrix_test.go and atlas_tx_mode_selection_test.go; pending ptah-atlas-conformance coverage; stokaro/ptah#998 and #887"
+    "note": "File/all/none behavior is tested; none-mode partial progress is pinned both ways against Atlas CE v1.3.0. Txtar section modes remain a Ptah safety extension.",
+    "evidence": "migration/migrator/atlas_tx_mode_matrix_test.go and atlas_tx_mode_selection_test.go pin mode precedence and validation. integration/atlasoracle/migrateapply/partial_progress_oracle_test.go runs four external-process directions on every Atlas CE oracle workflow: global none and an atlas:txmode none file directive, each with Ptah writing partial progress for Atlas to resume and Atlas writing it for Ptah to resume. Every row asserts applied=1, total=2, the exact partial_hashes value, a nonempty failure, and identification of the failing CREATE TABLE statement; it then proves only the remaining statement executes and verifies clean final metadata and operator provenance. stokaro/ptah#998 and closed stokaro/ptah#887."
   },
   {
     "area": "Versioned migrations — runtime policy",
