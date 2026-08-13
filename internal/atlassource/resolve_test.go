@@ -131,7 +131,18 @@ func TestResolve_MigrationDirRequiresDevURL(t *testing.T) {
 		`--to "file://.*" is a migration directory; --dev-url is required to replay it on a dev database`)
 }
 
-func TestResolve_MigrationDirRejectsDockerDevURL(t *testing.T) {
+// TestResolve_MigrationDirRoutesADockerDevURLToTheProvisioner replaced a test
+// that asserted a migration-directory source REFUSED every docker:// dev URL. It
+// now provisions one instead (stokaro/ptah#844), which is what makes
+// `schema diff --from file://migrations --dev-url docker://postgres/16/dev`
+// work.
+//
+// The URL names a docker image this build will not start, so nothing is
+// provisioned here. That is the measured refusal, not a convenience: the pinned
+// community binary v1.3.0 answers `unsupported docker image "sqlite"` and exits
+// 1 for it, so a build that started a container would exit 0 where that binary
+// exits 1.
+func TestResolve_MigrationDirRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	c := qt.New(t)
 	dir := writeMigrationDir(t)
 	set := classifySingle(t, "--to", "file://"+dir)
@@ -141,8 +152,7 @@ func TestResolve_MigrationDirRejectsDockerDevURL(t *testing.T) {
 		DevURL:  "docker://sqlite/latest/dev",
 	})
 
-	c.Assert(err, qt.ErrorMatches,
-		`docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay`)
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 }
 
 func TestResolve_MigrationDirRejectsDevDialectMismatch(t *testing.T) {

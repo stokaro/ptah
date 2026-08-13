@@ -458,6 +458,72 @@ before destination creation, so the mixed layout cannot partially import. A
 directory containing only numbered SQL names keeps the established one-file
 conversion. Liquibase XML, YAML, and JSON changelogs remain unsupported.
 
+### `docker://` dev databases are provisioned, with two forms deliberately refused
+
+Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)
+and `ptah-compat`, in a directory holding a hashed `./migrations`, `schema.sql`
+and `schema2.sql`, with every exit status read directly from an unpiped
+invocation.
+
+Before this change `ptah-compat` refused every `docker://` value with a sentence
+saying Ptah required a directly connectable dev database URL. It now starts the
+container itself ([`stokaro/ptah#844`](https://github.com/stokaro/ptah/issues/844)):
+
+| `--dev-url docker://postgres/16/dev` | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | --- | --- | --- |
+| `migrate diff m2 --dir file://migrations --to file://schema.sql` | 0 | 1, refused | **0** |
+| `migrate lint --dir file://migrations --latest 1` | 0 | 1, refused | **0** |
+| `migrate validate --dir file://migrations` | 0 | 1, refused | **0** |
+| `schema inspect -u file://schema.sql` | 0 | 1, refused | **0** |
+| `schema diff --from file://migrations --to file://schema2.sql` | 0 | 1, refused | **0** |
+| `schema apply --url postgres://... --to file://schema.sql --dry-run` | 0 | 1, refused | **0** |
+
+The `schema apply` row was measured against a throwaway PostgreSQL target
+started for the purpose; the other five need no target database. Every cell in
+that column is a run, not a code reading.
+
+Two `docker://` forms are refused on purpose, because Atlas CE refuses them and
+accepting them would be a `ptah-compat exits 0 where Atlas CE exits 1` cell:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `--dev-url docker://sqlite/dev` | 1, `unsupported docker image "sqlite"` | 1, byte-identical |
+| `--dev-url docker://postgres:16/dev` | 1, `unsupported docker image "postgres:16"` | 1, byte-identical |
+
+Both matter because Ptah's own dialect parser answers happily for each:
+`docker://sqlite` names a dialect Ptah has, and `docker://postgres:16` is read
+by that parser as an engine with a port. The provisioner matches the host
+segment whole against an explicit engine table instead of reusing the dialect
+parser, which is the only reason those two rows come out right.
+
+Two retained divergences, both recorded rather than chased:
+
+- **Images.** Atlas CE pulls `postgres:<tag>` but the vendor's own
+  `arigaio/mysql:<tag>` and `arigaio/mariadb:<tag>` — measured from its
+  `Unable to find image` diagnostics. Ptah uses the official `mysql` and
+  `mariadb` images. A run that reaches a database is strictly more than one that
+  cannot pull the image, so this falls under rule 2.
+- **`schema diff` between two local schema files.** Neither binary's answer
+  changes with this work, and Ptah still does not normalize local files through
+  the dev database:
+
+  | | Atlas CE v1.3.0 | Ptah |
+  | --- | --- | --- |
+  | `schema diff --from file://schema.sql --to file://schema2.sql --dev-url docker://postgres/16/dev` | `ALTER TABLE "public"."users" ADD COLUMN "email" text NULL;` | `ALTER TABLE "users" ADD COLUMN "email" text;` |
+
+  Ptah uses `--dev-url` on that path only to pin the SQL dialect, and it does so
+  identically for a `docker://` URL and for a directly connectable `postgres://`
+  one — so the value is no longer silently unused in a way that is specific to
+  `docker://`. Normalizing local files through a dev database is a change to the
+  diff engine for every dev URL, not a docker question, and is left open.
+
+Not yet wired, and named so the gap is not mistaken for coverage:
+`migrate checkpoint`, `migrate down`, `migrate test`, `schema test`,
+`schema plan new` and `schema plan validate` register `--dev-url` and still hand
+a `docker://` value to the database connector. Atlas CE v1.3.0 answers
+`unknown flag: --dev-url` on all six — measured — so no parity cell is open on
+them and there is no wording to copy.
+
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost nine attributes that the pinned

@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/devclean"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -151,19 +152,20 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 
 // refuseInspectDevURL answers a dev database URL this inspection cannot use.
 //
-// The three verdicts are ordered as measured: an absent value first, then the
-// docker form Ptah does not start, then whatever the calling surface wants to
-// say about the remainder. Only the caller can supply that last one, because
-// the two surfaces owe different sentences for the same value; see
-// [InspectSourceOptions.DevURLDiagnostic].
+// The two verdicts are ordered as measured: an absent value first, then
+// whatever the calling surface wants to say about the remainder. Only the
+// caller can supply that last one, because the two surfaces owe different
+// sentences for the same value; see [InspectSourceOptions.DevURLDiagnostic].
+//
+// A `docker://` value used to be refused here. It is now provisioned instead,
+// by [devdocker.Resolve] further down, and the refusals that remain for one --
+// an image no engine table names, a form the pinned community binary rejects --
+// are that package's, in the pinned binary's own words.
 func refuseInspectDevURL(devURL string, surfaceDiagnostic func(string) error) error {
 	if devURL == "" {
 		// Atlas parity: `atlas schema inspect -u file://...` without a dev
 		// database fails with exactly this message.
 		return errors.New("--dev-url cannot be empty")
-	}
-	if isDockerSimulationURL(devURL) {
-		return errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema inspection")
 	}
 	if surfaceDiagnostic == nil {
 		return nil
@@ -234,6 +236,16 @@ func inspectOnDev(
 	if err := validateInspectDesiredSchema(desired, opts.ValidateDesiredSchema); err != nil {
 		return "", err
 	}
+
+	// The container is started here and not at the top of the function: every
+	// refusal above is answerable from the URL text and the sources alone, and
+	// paying two seconds of container start for a run that fails on a bad
+	// schema file would be a worse answer to the same question.
+	devURL, releaseDev, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	if err != nil {
+		return "", err
+	}
+	defer releaseDev()
 
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
 	if err != nil {

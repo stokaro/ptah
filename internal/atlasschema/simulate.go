@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -94,10 +94,13 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	devConn, err := connectSimulationDev(ctx, devURL, p.conn, opts.TargetURL, opts.DesiredURLs)
+	devConn, releaseDev, err := connectSimulationDev(ctx, devURL, p.conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
+	// Registered before the close so it runs after it: a provisioned container
+	// is removed only once the connection to it is gone.
+	defer releaseDev()
 	defer dbschema.CloseAndWarn(devConn)
 	// Registered after the close, so it runs before it: the dev database is
 	// handed back with nothing the rehearsal put in it, whether the rehearsal
@@ -137,56 +140,98 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 }
 
 // connectSimulationDev validates the dev database URL against the target and
-// opens the dev connection used to rehearse a plan. The caller owns closing
-// the returned connection.
+// opens the dev connection used to rehearse a plan.
+//
+// The caller owns both returned values: the connection must be closed, and the
+// release must be called to remove a container this call may have started. The
+// release is always non-nil, including on the error return, so a caller can
+// defer it without asking whether provisioning happened.
 func connectSimulationDev(
 	ctx context.Context,
 	devURL string,
 	targetConn *dbschema.DatabaseConnection,
 	targetURL string,
 	desiredURLs []string,
-) (*dbschema.DatabaseConnection, error) {
+) (*dbschema.DatabaseConnection, func(), error) {
+	noRelease := func() {}
 	targetInfo := targetConn.Info()
+	// The dialect check reads the URL as written: a `docker://` value names its
+	// engine in the text, so a mismatch is answerable before a container is
+	// started and a refused run pays for none.
 	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
-		return nil, err
+		return nil, noRelease, err
 	}
-	if isDockerSimulationURL(devURL) {
-		return nil, errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation")
-	}
-	if strings.TrimSpace(targetURL) != "" {
-		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, targetURL)
+	// The alias checks below ask whether the dev database IS the target or the
+	// desired-state database, because the dev database is reset destructively.
+	// A container that does not exist yet cannot be either, and asking the
+	// question of a `docker://` URL does not merely waste work -- the URL
+	// comparison has no dialect to compare and answers `unsupported database
+	// URL dialect`, which would refuse every docker dev database on this verb
+	// with a sentence about a dialect the operator did not choose.
+	for _, target := range aliasCandidates(devURL, []string{targetURL}) {
+		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
 		if err != nil {
-			return nil, fmt.Errorf("compare --dev-url with target database: %w", err)
+			return nil, noRelease, fmt.Errorf("compare --dev-url with target database: %w", err)
 		}
 		if sameTarget {
-			return nil, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
+			return nil, noRelease, errors.New("--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it")
 		}
 	}
-	for _, desired := range desiredURLs {
+	for _, desired := range aliasCandidates(devURL, desiredURLs) {
 		sameDesired, err := sameDirectDatabaseURL(devURL, desired)
 		if err != nil {
-			return nil, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
+			return nil, noRelease, fmt.Errorf("compare --dev-url with --to desired-state database %q: %w", desired, err)
 		}
 		if sameDesired {
-			return nil, fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
+			return nil, noRelease, fmt.Errorf("--dev-url must not point at the --to desired-state database %q: the dev database is reset destructively before the plan is rehearsed on it", desired)
 		}
+	}
+
+	devURL, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	if err != nil {
+		return nil, noRelease, err
 	}
 
 	devConn, err := dbschema.ConnectToDatabase(ctx, devURL)
 	if err != nil {
-		return nil, fmt.Errorf("connect to --dev-url: %w", err)
+		release()
+		return nil, noRelease, fmt.Errorf("connect to --dev-url: %w", err)
 	}
 
 	devInfo := devConn.Info()
 	if platform.NormalizeDialect(devInfo.Dialect) != platform.NormalizeDialect(targetInfo.Dialect) {
 		dbschema.CloseAndWarn(devConn)
-		return nil, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
+		release()
+		return nil, noRelease, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
 	}
 	if err := checkSimulationSchemaScope(devInfo, targetInfo); err != nil {
 		dbschema.CloseAndWarn(devConn)
-		return nil, err
+		release()
+		return nil, noRelease, err
 	}
-	return devConn, nil
+	return devConn, release, nil
+}
+
+// aliasCandidates returns the URLs worth asking whether devURL already names
+// them, dropping the empty ones.
+//
+// It returns nothing at all for a `docker://` dev URL. A container that does not
+// exist yet cannot be a database the operator already named, and asking anyway
+// does more than waste work: [atlasurl.MayAddressSameDatabase] has no dialect to
+// compare for a docker URL and answers `unsupported database URL dialect`, which
+// would refuse every docker dev database on this verb with a sentence about a
+// dialect the operator never chose.
+func aliasCandidates(devURL string, candidates []string) []string {
+	if devdocker.IsURL(devURL) {
+		return nil
+	}
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate) != "" {
+			out = append(out, candidate)
+		}
+	}
+	return out
 }
 
 // sameDirectDatabaseURL compares candidate only when its scheme names a
@@ -393,9 +438,4 @@ func serialTypeForBaseline(columnType string) (string, bool) {
 		return "SMALLSERIAL", true
 	}
 	return "", false
-}
-
-func isDockerSimulationURL(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	return err == nil && parsed.Scheme == "docker"
 }
