@@ -1,7 +1,6 @@
 package atlas
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -74,9 +73,13 @@ func runAtlasMigrateSet(
 	}
 	defer closeAtlasProject(&prepared.project, &runErr)
 	opts = prepared.options
-	if opts.url == "" {
-		return failAtlasCommand(cmd, errors.New("database URL is required; pass --url"))
-	}
+	// No required-flag check on purpose. The pinned community binary v1.3.0 has
+	// none here either: an absent --url is opened as the empty string and the
+	// client layer answers `sql/sqlclient: missing driver`. Measured, that
+	// refusal loses to the checksum gate below -- `migrate set <v> --dir
+	// <unhashed>` with no --url prints `checksum file not found` -- so leaving
+	// the URL to the gate in front of the connection is also what puts these two
+	// diagnostics in the measured order. See cmd/atlas/compat_url_diagnostic.go.
 	source, err := prepared.project.captureLocal(prepared.dir)
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
@@ -111,6 +114,9 @@ func runAtlasMigrateSet(
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
 
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return failAtlasCommand(cmd, err)
+	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)

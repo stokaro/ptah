@@ -964,9 +964,21 @@ func rehearseAtlasSchemaApplyPlan(
 // --to and --dev-url combine with --plan the way Atlas
 // combines them: --to names the desired state the plan is verified against
 // and --dev-url hosts the pre-apply rehearsal.
+//
+// The --url wording here is a consistency choice, not an oracle match, and the
+// distinction is deliberate: measured on 2026-08-13, the pinned community
+// binary v1.3.0 answers `schema apply --plan` with
+// `Abort: 'atlas schema apply --plan' is not supported by the community
+// version.` whether --url is absent, empty or unopenable, so this branch has no
+// row to match. It carries the same spelling as the plan-free path above so one
+// verb does not answer the same mistake two ways depending on a flag that
+// changes nothing about the mistake.
 func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+		return atlasRequiredURLError(atlasRequiredURLPlural)
+	}
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return err
 	}
 	conflicts := []struct {
 		flag   string
@@ -1120,11 +1132,22 @@ func validateAtlasSchemaApplyOptions(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
+	// Plural, and tested on the value rather than on cobra's Changed bit: the
+	// pinned community binary v1.3.0 answers `--url ""` here the same way it
+	// answers an absent one, which is what separates this verb from
+	// `schema clean`. See cmd/atlas/compat_url_diagnostic.go.
 	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
+	}
+	// The URL's driver is settled after the desired state is required and
+	// before anything is opened, because that is the measured order: with a
+	// bad --url and no --to the pinned binary names the missing desired state,
+	// and with both present it names the driver.
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return err
 	}
 	// Malformed or unsupported --include selectors fail before the target
 	// database is contacted.
