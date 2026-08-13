@@ -62,9 +62,20 @@ and Ptah's own revision table.
 A virtual table is read as a virtual table, not as an ordinary one.
 `ptah db read` emits the statement that created it:
 
+```bash
+ptah db read --db-url "sqlite://app.db"
+```
+
 ```sql
 CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 ```
+
+On the compatibility surface the SQL format has to be asked for —
+`ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'`.
+Without it, `schema inspect` returns HCL, as the community CLI does, and HCL
+has no virtual-table block: the table renders as
+`table "docs" { schema = schema.main }` with no columns, which is what the
+pinned community binary emits for the same object and which does not replay.
 
 The module name and the text between its parentheses are carried verbatim, so
 tokenizer options, quoted values and commas inside quoted arguments survive.

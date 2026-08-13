@@ -123,6 +123,10 @@ func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 	t.Setenv("PTAH_HCL_STRICT_REDECLARATIONS", "1")
 	t.Setenv("PTAH_STRICT_DIR_QUERY", "1")
 	t.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
+	// Retained rather than gated: a true spelling restores the DROP TABLE the
+	// pinned community binary plans for a SQLite virtual table anyway, so it
+	// adds no Atlas capability for strict mode to refuse.
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "1")
 
 	policy, err := atlascompatpolicy.Resolve()
 
@@ -135,6 +139,7 @@ func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
 		"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 		"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 		"PTAH_HCL_STRICT_REDECLARATIONS",
+		"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 		"PTAH_STRICT_DIR_QUERY",
 	} {
 		t.Run(name, func(t *testing.T) {

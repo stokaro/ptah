@@ -151,15 +151,57 @@ func TestValidateComparison(t *testing.T) {
 			wantContains:    []string{"cannot convert one kind into the other"},
 		},
 		{
-			name:     "a database with no virtual table is untouched",
+			// The variable is validated on every SQLite comparison, not only on
+			// the ones that hold a virtual table. A pipeline carrying a typo'd
+			// opt-in must hear about it on the run that carries it, not on the
+			// distant day someone adds an FTS5 index.
+			name:         "a malformed value is refused even with no virtual table present",
+			dialect:      "sqlite",
+			env:          envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
+			desired:      declaring("users"),
+			database:     []types.DBTable{users},
+			wantErr:      true,
+			wantContains: []string{sqlitevirtual.AllowDropEnvVar, "maybe"},
+		},
+		{
+			// Measured, not reasoned: `CREATE VIRTUAL TABLE "\u00c4"` and
+			// `CREATE TABLE "\u00e4"` both succeed in one SQLite database and
+			// PRAGMA table_list reports two tables, while `CREATE TABLE DOCS`
+			// beside `docs` fails with `table DOCS already exists`. SQLite folds
+			// ASCII only. Folding Unicode here would invent a collision the
+			// engine does not see and refuse a sound comparison.
+			name:            "a Unicode near-twin is a different table, not a collision",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaring("\u00e4"),
+			database:        []types.DBTable{{Name: "\u00c4", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			wantErr:         true,
+			wantUnsupported: true,
+			// The removal refusal, not the collision one: the two names are two
+			// tables, so the virtual one is simply undeclared.
+			wantContains: []string{"the desired schema does not declare"},
+		},
+		{
+			// The ASCII control for the row above, on the same code path.
+			name:            "an ASCII near-twin IS a collision",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaring("DOCS"),
+			database:        []types.DBTable{fts5},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"cannot convert one kind into the other"},
+		},
+		{
+			name:     "a database with no virtual table and a sound value is untouched",
 			dialect:  "sqlite",
-			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
+			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "false"),
 			desired:  declaring("users"),
 			database: []types.DBTable{users},
 			wantErr:  false,
 		},
 		{
-			name:     "a non-SQLite comparison does not invoke the subsystem",
+			name:     "a non-SQLite comparison does not invoke the subsystem, malformed value and all",
 			dialect:  "postgres",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
 			desired:  declaring("users"),

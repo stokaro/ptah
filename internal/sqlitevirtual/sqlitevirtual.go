@@ -52,6 +52,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool"
@@ -105,21 +106,29 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 		// owns the variable, and on no others.
 		return nil
 	}
-	virtual := Tables(database)
-	if len(virtual) == 0 {
-		return nil
-	}
-	// Resolved before the tables are split, so a run holding any virtual table
-	// refuses a malformed value instead of passing in silence.
+	// Resolved before anything is scanned, so EVERY SQLite comparison refuses a
+	// malformed value -- including the healthy pipeline that holds no virtual
+	// table today. Resolving it after the scan instead left a typo'd opt-in
+	// dormant: the operator believes they enabled the drop, nothing says
+	// otherwise, and the value is first parsed on the day a virtual table
+	// appears. Same boundary as
+	// [go.5x5.cz/ptah/internal/reservedrole.ValidateDeclared], which resolves
+	// after the dialect gate and before the roles are scanned.
 	dropAllowed, err := DropAllowed()
 	if err != nil {
 		return err
 	}
 
-	declared := declaredTableNames(desired)
+	virtual := Tables(database)
+	if len(virtual) == 0 {
+		return nil
+	}
+
+	semantics := identifier.ForDialect(dialect)
+	declared := declaredTableNames(desired, semantics)
 	var collisions, removals []Table
 	for _, table := range virtual {
-		if declared[identity(table.Schema, table.Name)] {
+		if declared[identity(table.Schema, table.Name, semantics)] {
 			collisions = append(collisions, table)
 			continue
 		}
@@ -184,22 +193,35 @@ func Tables(database *types.DBSchema) []Table {
 
 // declaredTableNames indexes the desired state by the identity the comparator
 // matches on.
-func declaredTableNames(desired *goschema.Database) map[string]bool {
+func declaredTableNames(desired *goschema.Database, semantics identifier.Semantics) map[string]bool {
 	declared := make(map[string]bool)
 	if desired == nil {
 		return declared
 	}
 	for _, table := range desired.Tables {
-		declared[identity(table.Schema, table.Name)] = true
+		declared[identity(table.Schema, table.Name, semantics)] = true
 	}
 	return declared
 }
 
-// identity folds case because SQLite matches table names case-insensitively:
-// `CREATE TABLE DOCS` collides with a virtual `docs`, and a comparison that
-// missed that would refuse nothing and plan the ALTER anyway.
-func identity(schema, name string) string {
-	return strings.ToLower(schema) + "\x00" + strings.ToLower(name)
+// identity is the comparator's own table identity, built from
+// [identifier.Semantics] rather than from a second spelling of the rule.
+//
+// SQLite matches table names case-insensitively, so `CREATE TABLE DOCS`
+// collides with a virtual `docs` and a comparison that missed it would refuse
+// nothing and plan the ALTER anyway. But the folding is ASCII ONLY, which
+// `strings.ToLower` is not: measured on a real database, `CREATE VIRTUAL TABLE
+// "Ä"` and `CREATE TABLE "ä"` both succeed and `PRAGMA table_list` reports two
+// tables, while `CREATE TABLE DOCS` beside `docs` fails with
+// `table DOCS already exists`. Folding Unicode here would invent a collision
+// the engine does not see and refuse a comparison that has nothing wrong with
+// it.
+func identity(schema, name string, semantics identifier.Semantics) string {
+	if strings.TrimSpace(schema) == "" {
+		schema = semantics.DefaultSchema
+	}
+	return semantics.TableIdentityKey(strings.TrimSpace(schema)) +
+		"\x00" + semantics.TableIdentityKey(strings.TrimSpace(name))
 }
 
 func names(tables []Table) string {

@@ -592,10 +592,17 @@ var gatedBooleanEnvVars = []string{
 // an Atlas capability. Strict mode keeps them available, but still parses
 // every present value at the process boundary so malformed configuration is
 // refused before command construction or any external work.
+// PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP is retained rather than gated. A true
+// spelling adds no Atlas capability: it restores the `DROP TABLE` the pinned
+// community binary plans for a SQLite virtual table anyway, so refusing it in
+// strict mode would move Ptah further from the oracle rather than closer. What
+// strict mode owes it is the parse, because a malformed value would otherwise
+// sit dormant until a comparison happens to hold a virtual table.
 var retainedBooleanEnvVars = []string{
 	"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 	"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 	"PTAH_HCL_STRICT_REDECLARATIONS",
+	"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 	"PTAH_STRICT_DIR_QUERY",
 }
 

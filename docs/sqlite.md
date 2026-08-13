@@ -64,12 +64,24 @@ table are ignored.
 
 ## Virtual Tables
 
-Virtual tables are read as virtual tables. `ptah db read` and
-`ptah-compat schema inspect` emit the statement that created one:
+Virtual tables are read as virtual tables. `ptah db read`, and
+`ptah-compat schema inspect --format '{{ sql . }}'`, emit the statement that
+created one:
+
+```bash
+ptah db read --db-url "sqlite://app.db"
+ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'
+```
 
 ```sql
 CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 ```
+
+The `--format` is not optional on the compatibility surface: `schema inspect`
+defaults to HCL there, as the community CLI does, and HCL has no virtual-table
+block. A virtual table renders as `table "docs" { schema = schema.main }` with
+no columns — which is what the pinned community binary emits for the same
+object, and which does not replay.
 
 The module name and everything between its parentheses are carried verbatim, so
 tokenizer options, quoted values, and commas inside quoted arguments survive.
