@@ -83,6 +83,46 @@ would have created itself, which then collides when the virtual table is
 created. Suppression comes from SQLite's classification rather than from the
 names, so a `docs_data` an operator created is still reported as their table.
 
+## Virtual tables in a comparison
+
+No desired-state source can declare a virtual table. Go annotations, HCL, YAML
+and `.sql` schema files have no syntax for one, and the native SQL schema
+parser says so out loud: feeding it `ptah db read` output for a database
+holding a virtual table fails with `unsupported CREATE target: VIRTUAL`.
+
+A comparison therefore has two ways to be wrong about one, and Ptah refuses
+both rather than planning them:
+
+- **Absent from the desired state.** Read as intent, that plans
+  `DROP TABLE "docs"` and deletes the index and its contents. The desired state
+  could not have asked for the table to be kept, so the removal is refused and
+  the table and its module are named.
+- **Present in the desired state**, which it can only be as an ordinary table.
+  Two different kinds of object have collided; the planner cannot convert one
+  into the other, and `ALTER TABLE ... ADD COLUMN` is not something SQLite
+  accepts on a virtual table. Refused rather than reported as no difference.
+
+Every verb that compares a live database is covered — `ptah schema apply`,
+`diff`, `compare`, `plan`, `drift`, and `ptah-compat schema diff`,
+`schema apply` and `migrate diff`. Reading is untouched: `ptah db read` and
+`ptah-compat schema inspect` compare nothing.
+
+Say which one you meant to proceed:
+
+```bash
+# keep it: both sides ignore the table, the rest converges
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --exclude docs
+
+# drop it: plans DROP TABLE, destroying the index and the module's shadow tables
+PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1 \
+  ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql
+```
+
+An unset variable and an explicit false both keep the refusal; a value that is
+not a boolean is a configuration error. The opt-in covers only the removal — a
+desired ordinary table colliding with a live virtual one stays refused however
+it is set.
+
 ## Virtual table limitations
 
 - Shadow tables belonging to a module the reading build does not register
@@ -91,12 +131,10 @@ names, so a `docs_data` an operator created is still reported as their table.
   table itself is still recognized and still round-trips. This is permanent
   because it is SQLite's own answer: no catalog field distinguishes a shadow
   table without the module.
-- No desired-state source can declare a virtual table — Go annotations, HCL,
-  YAML and `.sql` schema files have no syntax for one — so a virtual table is
-  read and reproduced rather than diffed. Its columns are never compared
-  against a desired table's columns, because `ALTER TABLE ... ADD COLUMN`
-  cannot touch a virtual table. Declaring virtual tables in desired state is
-  tracked in [#1028](https://github.com/stokaro/ptah/issues/1028).
+- Desired state cannot declare a virtual table, so a comparison can only refuse
+  or be scoped past one; it can never converge a virtual table's definition.
+  Declaring virtual tables in desired state is tracked in
+  [#1028](https://github.com/stokaro/ptah/issues/1028).
 
 ## Rebuild-required changes
 

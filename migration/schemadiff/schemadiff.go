@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -81,6 +82,14 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		); err != nil {
 			return nil, nil, err
 		}
+	}
+	// A SQLite virtual table cannot appear on the desired side of any
+	// comparison, so its absence there is not deletion intent and its presence
+	// there is a different kind of object. Refuse both before anything is
+	// compared, rather than planning a DROP the operator never asked for
+	// (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database); err != nil {
+		return nil, nil, err
 	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)

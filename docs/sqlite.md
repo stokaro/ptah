@@ -89,19 +89,51 @@ suppression asks SQLite rather than matching names: a table called `docs_data`
 that the operator created is reported as the user table it is, next to an FTS5
 index called `docs` whose own `docs_data` is not.
 
-Two limits are worth knowing:
+One limit is worth knowing about the read: only the module can say which
+suffixes are its own, so shadow tables belonging to a module the reading build
+does not register — an `fts4` index in a database written elsewhere, for
+example — cannot be identified, and SQLite reports them as ordinary tables.
+The virtual table itself is still recognized as virtual and still round-trips,
+because that classification does not need the module.
 
-- Only the module can say which suffixes are its own, so shadow tables belong
-  to a module the reading build does not register — an `fts4` index in a
-  database written elsewhere, for example — cannot be identified, and SQLite
-  reports them as ordinary tables. The virtual table itself is still recognized
-  as virtual and still round-trips, because that classification does not need
-  the module.
-- No desired-state source declares a virtual table: Go annotations, HCL, YAML
-  and `.sql` schema files have no syntax for one. A virtual table is therefore
-  something Ptah reads and reproduces, not something a diff plans changes to.
-  Its columns are never compared against a desired table's columns, because
-  `ALTER TABLE ... ADD COLUMN` cannot touch a virtual table.
+## Virtual Tables in a Comparison
+
+No desired-state source declares a virtual table. Go annotations, HCL, YAML and
+`.sql` schema files have no syntax for one, and the native SQL schema parser
+says so: feeding it `ptah db read` output for a database holding a virtual
+table fails with `unsupported CREATE target: VIRTUAL`.
+
+That leaves a comparison two ways to be wrong, and Ptah refuses both rather
+than planning them:
+
+- **The desired state does not name it.** Read as intent, that plans
+  `DROP TABLE "docs"`, which deletes the index and everything in it. The desired
+  state could not have asked for the table to be kept, so the removal is refused
+  and named instead.
+- **The desired state names it**, which it can only do as an ordinary table.
+  The two are different kinds of object, the planner cannot convert one into the
+  other, and `ALTER TABLE ... ADD COLUMN` is not something SQLite accepts on a
+  virtual table. The collision is refused rather than reported as no difference.
+
+Both refusals name the table and its module. Every verb that compares a live
+database is covered: `ptah schema apply`, `diff`, `compare`, `plan` and `drift`,
+and `ptah-compat schema diff`, `schema apply` and `migrate diff`. Reading is
+never affected — `ptah db read` and `ptah-compat schema inspect` compare
+nothing.
+
+To proceed, say which one you meant:
+
+- **To keep the table**, exclude it from the comparison with `--exclude docs`.
+  Both sides then ignore it and the rest of the schema converges normally.
+- **To drop it**, set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1`. The removal is
+  planned exactly as before, including the `DROP TABLE` that destroys the index
+  contents and the module's shadow tables. The opt-in covers only the removal:
+  a desired ordinary table colliding with a live virtual one stays refused
+  however it is set, because no value of it makes the planner able to convert
+  one kind into the other.
+
+An unset variable and an explicit false both keep the refusal; a value that is
+not a boolean is a configuration error rather than a silent refusal.
 
 ## ALTER TABLE Limits
 
