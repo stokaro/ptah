@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -389,6 +390,124 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+}
+
+func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		dialect   string
+		fromState atlassource.State
+		toState   atlassource.State
+		wantFlag  string
+		wantName  string
+	}{
+		{
+			name:    "PostgreSQL current document",
+			dialect: platform.Postgres,
+			fromState: atlassource.State{Schema: &goschema.Database{
+				Schemas: []goschema.Schema{{Name: "pg_catalog"}},
+			}},
+			toState:  atlassource.State{Schema: &goschema.Database{}},
+			wantFlag: "--from",
+			wantName: "pg_catalog",
+		},
+		{
+			name:      "PostgreSQL desired document",
+			dialect:   platform.Postgres,
+			fromState: atlassource.State{Schema: &goschema.Database{}},
+			toState: atlassource.State{Schema: &goschema.Database{
+				Schemas: []goschema.Schema{{Name: "information_schema"}},
+			}},
+			wantFlag: "--to",
+			wantName: "information_schema",
+		},
+		{
+			name:      "CockroachDB desired document",
+			dialect:   platform.CockroachDB,
+			fromState: atlassource.State{Schema: &goschema.Database{}},
+			toState: atlassource.State{Schema: &goschema.Database{
+				Schemas: []goschema.Schema{{Name: "crdb_internal"}},
+			}},
+			wantFlag: "--to",
+			wantName: "crdb_internal",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := validateDiffSystemSchemaStates(test.fromState, test.toState, test.dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches,
+				`validate `+test.wantFlag+` schema: .*declares server-owned PostgreSQL schema "`+
+					test.wantName+`".*`)
+		})
+	}
+}
+
+func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T) {
+	c := qt.New(t)
+	pgCatalog := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "pg_catalog"}}})
+	pgCatalog.Kind = atlassource.KindDatabase
+	informationSchema := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "information_schema"}}})
+	informationSchema.Kind = atlassource.KindDatabase
+	crdbInternal := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "crdb_internal"}}})
+	crdbInternal.Kind = atlassource.KindDatabase
+	replayedCatalog := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "pg_catalog"}}})
+	replayedCatalog.Kind = atlassource.KindMigrationDir
+	empty := atlassource.State{Schema: &goschema.Database{}}
+	tests := []struct {
+		name      string
+		dialect   string
+		fromState atlassource.State
+		toState   atlassource.State
+		schema    string
+		wantFlag  string
+	}{
+		{name: "PostgreSQL current database pg_catalog", dialect: platform.Postgres, fromState: pgCatalog, toState: empty, schema: "pg_catalog", wantFlag: "--from"},
+		{name: "PostgreSQL desired database information_schema", dialect: platform.Postgres, fromState: empty, toState: informationSchema, schema: "information_schema", wantFlag: "--to"},
+		{name: "CockroachDB database crdb_internal", dialect: platform.CockroachDB, fromState: crdbInternal, toState: empty, schema: "crdb_internal", wantFlag: "--from"},
+		{name: "migration replay snapshot", dialect: platform.Postgres, fromState: replayedCatalog, toState: empty, schema: "pg_catalog", wantFlag: "--from"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := validateDiffSystemSchemaStates(test.fromState, test.toState, test.dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches,
+				`validate `+test.wantFlag+` database schema: observed server-owned PostgreSQL schema "`+
+					test.schema+`" cannot be compared safely; its catalog objects are not migration-managed state`)
+		})
+	}
+}
+
+func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		kind    atlassource.Kind
+		dialect string
+		schema  string
+	}{
+		{name: "database user schema", kind: atlassource.KindDatabase, dialect: platform.Postgres, schema: "app"},
+		{name: "PostgreSQL quoted lookalike", kind: atlassource.KindDatabase, dialect: platform.Postgres, schema: "PG_CATALOG"},
+		{name: "CockroachDB quoted lookalike", kind: atlassource.KindDatabase, dialect: platform.CockroachDB, schema: "CRDB_INTERNAL"},
+		{name: "ordinary migration replay", kind: atlassource.KindMigrationDir, dialect: platform.Postgres, schema: "app"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			database := &types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: test.schema}}}
+			state := diffDatabaseState(database)
+			state.Kind = test.kind
+
+			err := validateDiffSystemSchemaStates(state, state, test.dialect)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
 }
 
 func diffDatabaseState(database *types.DBSchema) atlassource.State {

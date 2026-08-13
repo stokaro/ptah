@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -72,6 +73,12 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// here instead, before anything is compared (stokaro/ptah#1312).
 	if generated != nil {
 		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
+			return nil, nil, err
+		}
+		if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+			info.Dialect,
+			generated.Schemas,
+		); err != nil {
 			return nil, nil, err
 		}
 	}

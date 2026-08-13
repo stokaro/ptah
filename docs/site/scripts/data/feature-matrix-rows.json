@@ -572,8 +572,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Names define the schema-owned universe; matching non-extension resources carry all database-wide extensions as non-removing support, while schema-only and extension-only scopes remain authoritative.",
-    "evidence": "conformance gaps.md `atlas schema apply -s` and `atlas schema diff -s` shorthand rows; internal/atlasfilter/scope_extension_schema_universe_test.go; internal/atlasschema/diff_scope_internal_test.go; integration/atlascmd/schema_scope_live_test.go; docs/site/src/content/docs/atlas/schema-commands.md"
+    "note": "Schema names scope resources; non-extension matches carry extensions as support. Diff refuses exact PostgreSQL-family server namespaces before SQL because catalogs do not round-trip safely.",
+    "evidence": "conformance gaps.md `atlas schema apply -s` and `atlas schema diff -s` shorthand rows; internal/atlasfilter/scope_extension_schema_universe_test.go; internal/atlasschema/diff_scope_internal_test.go; integration/atlascmd/schema_scope_live_test.go; integration/atlascmd/schema_apply_extension_schema_live_test.go; docs/site/src/content/docs/atlas/schema-commands.md"
   },
   {
     "area": "Declarative / direct schema workflow",

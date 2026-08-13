@@ -22,6 +22,10 @@ func (r *renderer) renderExtensions() {
 		}
 		r.linef(`extension %s {`, quote(extension.Name))
 		if schema := r.extensionSchemaFor(extension); schema != "" {
+			// The common PostgreSQL namespaces are recognized even when dialect is
+			// empty, which keeps dialect-neutral artifacts from turning placement
+			// into a schema declaration. Target-specific namespaces such as
+			// CockroachDB's crdb_internal still require a concrete dialect.
 			if schemaselection.IsPostgresFamilySystemSchema(r.dialect, schema) {
 				r.stringAttr(1, "schema", schema)
 			} else {
