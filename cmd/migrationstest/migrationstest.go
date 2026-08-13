@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/dbtest"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -76,7 +78,7 @@ at a throwaway database, because tests mutate schema and data.
 
 The command exits non-zero if any case fails.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd.Context(), cmd.OutOrStdout(), opts)
+			return run(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
 
@@ -95,13 +97,28 @@ The command exits non-zero if any case fails.`,
 	return cmd
 }
 
-func run(ctx context.Context, out io.Writer, opts options) error {
+func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	if opts.report != "" && !slices.Contains(reportFormats, opts.report) {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
 	if err != nil {
+		return err
+	}
+
+	// The shared integrity gate. `migrations test` belongs to the class for a
+	// reason that is easy to miss: a migrate_to step rolls the directory
+	// FORWARD and BACK, so this verb executes the down files too. Measured on
+	// the same tampered directory that produced the defect, a passing test run
+	// left the attacker's table behind in the target database at exit 0.
+	//
+	// --db-url is documented as a throwaway database, but nothing constrains it
+	// to one, and "the operator promised it was disposable" is not a gate. The
+	// verb keeps working on directories nobody hashed, which is the common case
+	// while migrations are being written; it refuses only a directory that
+	// carries a checksum its files no longer match.
+	if _, err := migrationintegrity.Gate(notice, os.DirFS(opts.migrationsDir), dirFormat); err != nil {
 		return err
 	}
 
