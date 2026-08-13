@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/dblock"
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -131,6 +132,19 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		))
 	}
 	if err := checkIntegrityFileConflict(opts.migrationsDir, dirFormat); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// The shared integrity gate, before the replay and before the write.
+	//
+	// Checkpoint is the worst place in the class to leave ungated. It replays
+	// the whole history onto the shadow database and then writes what it
+	// OBSERVED there into a new migration under a FRESH ptah.sum, so a tampered
+	// migration does not merely execute once — it is baked into a checkpoint
+	// that verifies clean afterwards, and every later `migrations validate` on
+	// the directory reports no drift. That is the laundering shape
+	// stokaro/ptah#1095 closed on the compat surface, where `migrate import`
+	// rewrote a directory `migrate apply` refuses.
+	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), os.DirFS(opts.migrationsDir), dirFormat); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)

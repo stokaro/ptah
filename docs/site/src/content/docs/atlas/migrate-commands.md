@@ -1574,18 +1574,34 @@ migration was edited, added to, or removed from, both `lint` implementations
 exit 1 on the checksum mismatch, so this is not a route for inspecting a
 directory that has already drifted.
 
-`down` does not enforce it either, for a different reason than `lint`: the
-community binary refuses that verb outright, so there is no behavior to match.
-It still reads a native Atlas directory and executes rollback SQL, so on a
-hashed directory whose migration was edited, `status` exits 1 while `down`
-reports normally and exits 0. No issue tracks gating it yet.
+`down` enforces it too, and did not always. It reads a native Atlas directory
+and executes rollback SQL from it, so a hashed directory whose migration was
+edited is now refused there exactly as it is on `status`. Before that, `status`
+exited 1 on such a directory while `down` reported normally and exited 0 —
+integrity verification guarding the constructive direction and not the
+destructive one, which is backwards, because `down` is the direction where the
+result cannot be inspected afterwards.
 
-`rm`, `rebase`, `checkpoint` and `edit` remain divergent — they write an
-`atlas.sum` over a directory whose previous contents were never verified,
-turning drift into apparent cleanliness. All four are verbs the community binary
-refuses outright, so like `down` they have no behavior to match; they are listed
-because the hazard is the same one, not because a comparison exists. No issue
-tracks closing that gap yet. `new` and `diff` used to be on this list and were
+The refusal is not a parity claim. The community binary refuses `migrate down`
+outright, so there is no behavior to match: gating it cannot exit 0 where that
+binary exits 1, and "matching is the floor, not the ceiling" is what leaves room
+for the refusal. The two paths through the verb refuse with different text for
+that reason. The default forward inherits the native refusal from
+`ptah migrations down` and prints ptah's own drift report; `--format` runs the
+compat gate and prints the same guidance block `apply` and `status` do.
+
+`checkpoint` also enforces it now, on the native verb the compat surface
+forwards to. It was the worst of the ungated set: it replays the whole history
+onto a shadow database and writes what it observed there into a new migration
+under a fresh checksum, so drift was not merely executed but laundered into a
+directory that verifies clean afterwards.
+
+`rm`, `rebase` and `edit` remain divergent — they write an `atlas.sum` over a
+directory whose previous contents were never verified, turning drift into
+apparent cleanliness. All three are verbs the community binary refuses outright,
+so like `down` they have no behavior to match; they are listed because the
+hazard is the same one, not because a comparison exists. No issue tracks closing
+that gap yet. `new` and `diff` used to be on this list and were
 gated by [#1086](https://github.com/stokaro/ptah/issues/1086); the predicate
 they now share is the one described above, so the remaining four need a decision
 about the missing-`atlas.sum` case rather than new machinery.

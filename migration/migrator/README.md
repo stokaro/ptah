@@ -610,7 +610,11 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 2. **Use descriptive names**: Make migration purposes clear from the filename
 3. **Keep migrations small**: Each migration should make one focused change
 4. **Test migrations**: Always test both up and down migrations before deploying
-5. **Use transactions**: The migrator automatically wraps migrations in transactions
+5. **Know which transaction mode you are in**: by default (`file`) each migration
+   runs in its own transaction, but that is a default and not a guarantee —
+   `--tx-mode=none` creates none, a file may opt out of its own, and on MySQL and
+   MariaDB DDL can commit server-side regardless. See
+   [Transaction Modes](#transaction-modes) before relying on a rollback
 6. **Backup before rollbacks**: Down migrations can cause data loss
 7. **Handle out-of-order files deliberately**: Use the default `linear` policy in CI so
    a migration merged below the current version cannot be skipped silently

@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -116,6 +117,23 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	source, err := migrationsource.CaptureLocal(opts.migrationsDir, migrationsource.LocalOptions{})
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
+	}
+	// The shared integrity gate, and it fires only for --resume-from.
+	//
+	// That is the class predicate applied exactly, not a softened version of
+	// it. A plain repair rewrites revision metadata and executes none of the
+	// directory's SQL, so it is outside the class and stays usable on a drifted
+	// directory — which matters, because clearing a dirty row is a recovery
+	// step an operator may genuinely need before they can re-hash anything.
+	// --resume-from is different: it executes the remaining statements of the
+	// body that failed, straight from the file, so it is a member and gates
+	// like one. Resuming a half-applied migration out of a rewritten file is
+	// the same hazard as `down`, with the operator's attention already
+	// elsewhere.
+	if resumeFrom > 0 {
+		if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), source.FileSystem, dirFormat); err != nil {
+			return err
+		}
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		source.FileSystem,

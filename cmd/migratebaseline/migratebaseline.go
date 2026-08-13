@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/safety"
@@ -104,6 +105,15 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
 	if err != nil {
+		return err
+	}
+	// The shared integrity gate, before the shadow replay in verifyBaseline
+	// executes the directory's migrations and before any revision row is
+	// written. Baseline's whole output is a claim about which migrations a
+	// database already contains; deriving that claim from files that do not
+	// match the checksum recorded beside them records the wrong history under
+	// the right version numbers.
+	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), os.DirFS(opts.migrationsDir), dirFormat); err != nil {
 		return err
 	}
 	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)

@@ -55,15 +55,83 @@ migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
 
-The same drift blocks `ptah migrations up` on any hashed directory — the
-apply verifies `ptah.sum` or `atlas.sum` before executing anything, so a
-tampered migration never runs (exit `2`):
+The same drift blocks every native verb that **executes** SQL from the
+directory. Each one verifies `ptah.sum` or `atlas.sum` before executing
+anything, so a tampered migration never runs (exit `2`):
 
 ```text
 error: migration sum verification failed:
 migration directory does not match ptah.sum:
   changed: 0000000002_add_posts.up.sql
 ```
+
+The gated set is the executing class, not a list of verbs that happened to be
+noticed:
+
+| verb | what it executes from the directory |
+| --- | --- |
+| `up` | the pending up migrations, against `--db-url` |
+| `down` | the rollback migrations, against `--db-url` |
+| `test` | up **and** down, against `--db-url` |
+| `checkpoint` | the whole history, against `--shadow-db` |
+| `baseline` | the baselined history, against `--shadow-db` |
+| `lint` | the whole history, against `--dev-url` |
+| `repair --resume-from` | the remaining statements of the body that failed |
+
+`repair` is on that list only in its `--resume-from` spelling, and the
+distinction is deliberate. A plain `repair` rewrites revision metadata and
+executes none of the directory's SQL, so it keeps working on a drifted
+directory — clearing a dirty row is a recovery step you may need *before* you
+can sensibly re-hash anything, and a gate there would send you to fix the
+directory you are still trying to reason about. `--resume-from` executes
+statements straight out of the migration file, so it gates like the rest.
+
+`status` and `set` read the directory but execute none of its SQL. `hash`,
+`edit`, `rebase` and `rm` exist to **rewrite** the integrity file, so verifying
+it first would refuse their purpose — they are outside the class by the
+predicate, not by oversight.
+
+`down` was the last member outside the gate, and it was the worst one to leave
+out. Measured on one hashed directory whose `_init.down.sql` was rewritten with
+`ptah.sum` left stale, `up` exited `2` and refused while
+`down --target 0 --confirm` exited `0` and executed the rewritten file; a
+catalog census afterwards listed a table that appears in no committed
+migration. Verification guarding the constructive direction and not the
+destructive one is backwards, because `down` is the direction where the result
+cannot be inspected afterwards — the objects are gone either way.
+
+`checkpoint` mattered for a second reason. It replays the history onto a shadow
+database and writes what it observed there into a new migration under a **fresh**
+checksum, so drift was not merely executed but laundered into a directory that
+verifies clean from then on.
+
+### Overriding the gate during a recovery
+
+Refusing outright would remove a capability, so the gate has an escape:
+`PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1` executes a drifted directory anyway. It
+exists for the case that genuinely needs it — rolling back through a directory
+whose sum is stale while recovering from a botched edit, where re-hashing first
+would record the botched bytes as the intended ones.
+
+It is an environment variable rather than a flag because the Atlas-compatible
+surface asserts flag parity with the community binary, the same reason
+`PTAH_SKIP_CHECKS` is spelled that way.
+
+Using it is never silent. A run that overrides a real refusal says so on stderr
+and names what it accepted:
+
+```text
+warning: PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR is set; ptah.sum verification was
+SKIPPED and this run is executing migration SQL that no reviewed checksum
+covers:
+migration directory does not match ptah.sum:
+  changed: 0000000002_add_posts.up.sql
+```
+
+A run against a directory that verifies skips nothing and therefore prints
+nothing. The variable does **not** relax `ptah migrations up --verify-sum`:
+that flag is an explicit request for a stricter contract than the default, and
+an environment variable does not override what the command line asked for.
 
 `ptah-compat migrate validate`, `apply`, `status`, `set`, `new` and `diff`
 enforce the same gate on `atlas.sum` directories with Atlas's own checksum
