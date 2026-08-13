@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -838,7 +839,11 @@ func TestCompatCommand_ForwardsSupportedCommands(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required")
+	// The refusal stands in for "the verb was reached and ran its own body".
+	// Its wording is the compatibility surface's, pinned against the pinned
+	// community binary in compat_url_diagnostic_test.go; `migrate apply` is the
+	// one verb of the family that answers in the singular.
+	c.Assert(err, qt.ErrorMatches, `required flag "url" not set`)
 }
 
 func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
@@ -1469,7 +1474,9 @@ func TestCompatCommand_ForwardsParentedNativeCommand(t *testing.T) {
 
 	err := root.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required")
+	// As above: the refusal proves the parented verb was reached, and its
+	// wording is pinned in compat_url_diagnostic_test.go.
+	c.Assert(err, qt.ErrorMatches, `required flag "url" not set`)
 }
 
 func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T) {
@@ -1908,8 +1915,14 @@ func TestCompatCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required; pass --url")
-	c.Assert(out.String(), qt.Contains, "database URL is required; pass --url")
+	// --revisions-schema is accepted, so the run gets as far as opening the
+	// database and the absent --url is answered by the client layer rather than
+	// by a flag validator. Measured on the pinned community binary v1.3.0, this
+	// exact invocation answers the same string, and `unknown flag` is what a
+	// rejected --revisions-schema would have produced instead.
+	const missingDriver = "sql/sqlclient: missing driver. See: https://atlasgo.io/url"
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(missingDriver))
+	c.Assert(out.String(), qt.Contains, missingDriver)
 	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
 }
 

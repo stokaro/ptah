@@ -187,6 +187,9 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
@@ -228,10 +231,17 @@ func needsAtlasMigrateStatusConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("url")
 }
 
+// validateAtlasMigrateStatusOptions deliberately does not require --url.
+//
+// The pinned community binary v1.3.0 has no required-flag check on this verb:
+// an absent --url is opened as the empty string, and the client layer answers
+// `sql/sqlclient: missing driver`. Measured, that refusal also loses to the
+// directory checksum gate -- `migrate status --dir <unhashed>` with no --url
+// prints `checksum file not found` -- which is the order this body already
+// runs in once the URL is left to the open. The gate in front of
+// dbschema.ConnectToDatabase above is what answers instead; see
+// cmd/atlas/compat_url_diagnostic.go.
 func validateAtlasMigrateStatusOptions(opts atlasMigrateStatusOptions) error {
-	if opts.url == "" {
-		return fmt.Errorf("database URL is required")
-	}
 	if opts.dir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}

@@ -135,8 +135,18 @@ func runAtlasSchemaClean(
 	if err := atlasfilter.ValidateExcludeSelectors(opts.exclude); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if strings.TrimSpace(opts.url) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("--url is required"))
+	// Absent and empty are different answers on this verb. The pinned community
+	// binary v1.3.0 refuses an absent --url with the plural spelling, but lets
+	// `--url ""` through to the client layer, which answers
+	// `sql/sqlclient: missing driver` -- the behavior of a check that asks
+	// whether the flag was given, not what it holds. The project-config value is
+	// already folded into opts.url above, so a url from atlas.hcl satisfies this
+	// exactly as a flag does. See cmd/atlas/compat_url_diagnostic.go.
+	if !cmd.Flags().Changed("url") && strings.TrimSpace(opts.url) == "" {
+		return cmdutil.Fail(cmd, atlasRequiredURLError(atlasRequiredURLPlural))
+	}
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)

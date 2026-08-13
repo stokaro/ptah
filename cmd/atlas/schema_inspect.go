@@ -190,7 +190,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err := opts.policy.ValidateSchemaInspectFormat(normalizedFormat); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
+	if err := validateAtlasSchemaInspectOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	schemaVars, err := atlasVarFlagValues(cmd)
@@ -275,9 +275,20 @@ func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("url")
 }
 
-func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
-	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+// validateAtlasSchemaInspectOptions settles this verb's --url before any source
+// is resolved.
+//
+// Three measured answers, not one. On the pinned community binary v1.3.0 an
+// absent --url is the plural required-flag refusal; an explicitly empty one
+// gets past that check and is answered `missing scheme` by the desired-state
+// layer -- this verb's URL names a source, not a connection, so it carries no
+// `sql/sqlclient:` prefix; and a scheme that names no source kind at all is
+// answered `sql/sqlclient: unknown driver`. A url supplied by atlas.hcl is
+// already folded into opts.url by the caller, so it satisfies the first check
+// exactly as a flag does. See cmd/atlas/compat_url_diagnostic.go.
+func validateAtlasSchemaInspectOptions(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
+	if !cmd.Flags().Changed("url") && strings.TrimSpace(opts.url) == "" {
+		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
-	return nil
+	return atlasDesiredStateURLDiagnostic(opts.url)
 }

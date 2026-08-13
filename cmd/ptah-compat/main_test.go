@@ -390,8 +390,15 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, &exitErr)
 		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 		c.Assert(stdout.String(), qt.Equals, "")
+		// The subtest's name is now what it asserts. Measured on 2026-08-13,
+		// the pinned community binary v1.3.0 answers this exact invocation --
+		// a hashed directory, no positional version, no --url -- with these 66
+		// bytes on standard error and nothing on standard output, so the
+		// missing driver really does precede the version. This verb has no
+		// required-flag check on either binary; see cell 9.14 of
+		// stokaro/ptah#1235 and cmd/atlas/compat_url_diagnostic.go.
 		c.Assert(stderr.String(), qt.Equals,
-			"Error: database URL is required; pass --url\n")
+			"Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n")
 	})
 
 	c.Run("migrate set missing version after environment", func(c *qt.C) {

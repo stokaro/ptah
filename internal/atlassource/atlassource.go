@@ -201,8 +201,34 @@ func Classify(rawURL string) (Source, error) {
 		// generic unknown-scheme default below staying strict.
 		return Source{}, errors.New("ptah-external-schema:// is a reserved internal marker scheme; reference data.external_schema.<name>.url from an atlas.hcl env src instead")
 	default:
-		return Source{}, fmt.Errorf("unsupported desired-state URL scheme %q: supported sources are local schema files, migration directories, database URLs, and env:// references", scheme)
+		return Source{}, &UnsupportedSchemeError{Scheme: scheme}
 	}
+}
+
+// UnsupportedSchemeError reports a desired-state URL whose scheme names no
+// source kind this build resolves. It is the generic default of [Classify]:
+// docker://, atlas:// and the reserved internal marker are refused by named
+// branches above it and never produce this error.
+//
+// The type exists so a caller can recognize that verdict without matching the
+// message, and it carries the scheme so a caller that words the refusal
+// differently does not have to re-parse the URL. The Atlas-compatible surface
+// is the caller that needs both: the pinned community binary answers an
+// unknown scheme on `schema inspect --url` from its client layer rather than
+// from a desired-state resolver, so cmd/atlas re-words exactly this verdict
+// and leaves every other classification failure alone. Its Error text is the
+// message this branch has always produced, so native Ptah is unchanged.
+type UnsupportedSchemeError struct {
+	// Scheme is the lowercased scheme that named no source kind.
+	Scheme string
+}
+
+func (e *UnsupportedSchemeError) Error() string {
+	return fmt.Sprintf(
+		"unsupported desired-state URL scheme %q: supported sources are local schema files,"+
+			" migration directories, database URLs, and env:// references",
+		e.Scheme,
+	)
 }
 
 // ClassifySet classifies all URLs of one flag, expands env:// references
