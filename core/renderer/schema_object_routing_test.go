@@ -10,6 +10,8 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 )
 
@@ -75,7 +77,8 @@ func routedObjectSchema() *goschema.Database {
 //
 //	"ddl"    a statement a server would execute names it
 //	"named"  only a comment names it -- the target declines the object and says so
-//	"silent" nothing in the output mentions it at all
+//	"refused" rendering fails before SQL because the target cannot converge it
+//	"silent"  nothing in the output mentions it at all
 //
 // The comment/statement split is the whole measurement. Every renderer here
 // writes its refusal as a comment that repeats the object's DDL keywords, so a
@@ -117,10 +120,28 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 
 	cells := make([]routedObjectCell, 0, len(routingDialects)*len(routedObjectRows))
 	for _, dialect := range routingDialects {
-		statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), dialect)
+		database := routedObjectSchema()
+		roleRefused := dialect == platform.MySQL || dialect == platform.MariaDB
+		if roleRefused {
+			database.Roles = nil
+		}
+		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 		c.Assert(err, qt.IsNil, qt.Commentf("render failed for %s", dialect))
 		sql := strings.Join(statements, "\n")
 		for _, row := range routedObjectRows {
+			if roleRefused && row.kind == "role" {
+				_, err := renderer.GetOrderedCreateStatements(&goschema.Database{
+					Roles: []goschema.Role{{Name: row.object}},
+				}, dialect)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				cells = append(cells, routedObjectCell{
+					dialect: dialect,
+					kind:    row.kind,
+					object:  row.object,
+					answer:  "refused",
+				})
+				continue
+			}
 			cells = append(cells, routedObjectCell{
 				dialect: dialect,
 				kind:    row.kind,
@@ -207,6 +228,14 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				qt.Commentf("no cell is a named refusal; the classifier reads everything as DDL"))
 		},
 	}, {
+		name: "mysql family refuses roles",
+		check: func(c *qt.C) {
+			c.Assert(cellsAnswering(kindCells(cells, "role"), "refused"), qt.DeepEquals, []string{
+				"mysql        role      role_probe",
+				"mariadb      role      role_probe",
+			})
+		},
+	}, {
 		name: "the table and the view are executable everywhere",
 		check: func(c *qt.C) {
 			for _, kind := range []string{"table", "view"} {
@@ -215,7 +244,7 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 			}
 		},
 	}, {
-		name: "sqlite refuses the four kinds it has no object for",
+		name: "sqlite refuses the five kinds it has no object for",
 		check: func(c *qt.C) {
 			c.Assert(cellsAnswering(dialectCells(cells, platform.SQLite), "named"), qt.DeepEquals, []string{
 				"sqlite       sequence  seq_probe",
@@ -271,30 +300,112 @@ func TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone(t *testing.T) 
 	c.Assert(routedObjectAnswer(sql, "seq_probe"), qt.Equals, "named")
 }
 
-// TestRender_MySQLFamilyNamesRolesInsteadOfAbortingTheRender pins that a role
-// declared for a MySQL-family target is reported, not fatal.
+// TestRender_MySQLFamilyRefusesRolesBeforeSQL pins that a role declared for a
+// MySQL-family target fails closed.
 //
-// The MySQL renderer answered a role node with an ERROR, and an error aborts the
-// render of the WHOLE schema. That was invisible only because the converter
-// deleted every role before the renderer could see one; once every declared
-// object is routed, the same code turns a schema that used to render into a
-// command that produces no SQL at all. A refusal that removes the other
-// statements is a worse answer than the omission it replaces.
-func TestRender_MySQLFamilyNamesRolesInsteadOfAbortingTheRender(t *testing.T) {
+// Both engines host roles, but Ptah does not read or compare their role model.
+// Reporting success after emitting only a comment loses declared state, so the
+// safe answer is an error before any statement is returned.
+func TestRender_MySQLFamilyRefusesRolesBeforeSQL(t *testing.T) {
 	c := qt.New(t)
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		c.Run(dialect, func(c *qt.C) {
 			statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), dialect)
 
+			c.Assert(statements, qt.HasLen, 0)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Check(err, qt.ErrorMatches,
+				".*"+dialect+": CREATE ROLE role_probe: Ptah does not read or compare MySQL-family role state.*")
+		})
+	}
+}
+
+// TestValidateSchema_MySQLFamilyRefusesRoles keeps the public validation-only
+// entry points aligned with complete rendering. A role cannot pass validation
+// and then fail only when a caller asks for SQL.
+func TestValidateSchema_MySQLFamilyRefusesRoles(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		validate func(*goschema.Database, string) error
+	}{
+		{
+			name: "mysql default capabilities", dialect: platform.MySQL,
+			validate: renderer.ValidateSchema,
+		},
+		{
+			name: "mariadb default capabilities", dialect: platform.MariaDB,
+			validate: renderer.ValidateSchema,
+		},
+		{
+			name: "mysql capability override", dialect: platform.MySQL,
+			validate: func(database *goschema.Database, dialect string) error {
+				return renderer.ValidateSchemaWithCapabilities(
+					database,
+					dialect,
+					capability.ForDialect(dialect).With(capability.RoleManagement, true),
+				)
+			},
+		},
+		{
+			name: "mariadb capability override", dialect: platform.MariaDB,
+			validate: func(database *goschema.Database, dialect string) error {
+				return renderer.ValidateSchemaWithCapabilities(
+					database,
+					dialect,
+					capability.ForDialect(dialect).With(capability.RoleManagement, true),
+				)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := test.validate(
+				&goschema.Database{Roles: []goschema.Role{{Name: "app_user"}}},
+				test.dialect,
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches,
+				".*"+test.dialect+": CREATE ROLE app_user: Ptah does not read or compare MySQL-family role state.*")
+		})
+	}
+}
+
+// TestValidateSchema_MySQLFamilyRoleRefusalIsNarrow pins both sides of the
+// validation gate: role-free MySQL-family schemas still validate, and the
+// PostgreSQL role model remains supported.
+func TestValidateSchema_MySQLFamilyRoleRefusalIsNarrow(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		database *goschema.Database
+	}{
+		{
+			name: "mysql without roles", dialect: platform.MySQL,
+			database: &goschema.Database{Tables: []goschema.Table{{StructName: "T", Name: "t"}}},
+		},
+		{
+			name: "mariadb without roles", dialect: platform.MariaDB,
+			database: &goschema.Database{Tables: []goschema.Table{{StructName: "T", Name: "t"}}},
+		},
+		{
+			name: "postgres with an application role", dialect: platform.Postgres,
+			database: &goschema.Database{Roles: []goschema.Role{{Name: "app_user"}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := renderer.ValidateSchema(test.database, test.dialect)
+
 			c.Assert(err, qt.IsNil)
-			sql := strings.Join(statements, "\n")
-			c.Assert(sql, qt.Contains,
-				fmt.Sprintf("-- %s: role role_probe is not generated for this target; skipped.",
-					strings.ToUpper(dialect)))
-			// The rest of the schema still renders, which is what an error here
-			// used to destroy.
-			c.Assert(legacyRenderedSQL(sql), qt.Contains, "CREATE TABLE table_probe")
 		})
 	}
 }

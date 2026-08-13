@@ -705,30 +705,35 @@ remaining resolver refinement work.
   the key stays `false` and the renderer answers with the named skip
   `-- SQLSERVER: CREATE FUNCTION "f1" is not generated for this target; skipped.`
   — a sentence about Ptah, not about SQL Server.
-- **One answer shape for every refused object kind (#929).** `sequences`,
-  `role_management`, and `row_level_security` answer the same question as the
-  four keys above and use the same named-skip path when a preset disables them.
-  Within the PostgreSQL family that currently matters for Spanner: a role,
-  grant, sequence, row-level security enablement, or policy is written as a
-  named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a
-  plan in silence. CockroachDB v26.2.5 and YugabyteDB 2026.1 no longer use that
-  refusal path for these three categories because the measured servers accept
-  them. Printed plans keep the diagnostic; the apply execution path drops
-  comment-only statements before target or dev-database execution.
+- **One answer shape for every safely skippable object kind (#929).**
+  `sequences`, `role_management`, and `row_level_security` use the same named
+  skip when a PostgreSQL-family preset disables them. That currently matters
+  for Spanner: a role, grant, sequence, row-level security enablement, or policy
+  is written as a named `-- SPANNER: ... skipped.` diagnostic instead of being
+  dropped from a plan in silence. CockroachDB v26.2.5 and YugabyteDB 2026.1 no
+  longer use that refusal path for these three categories because the measured
+  servers accept them. MySQL and MariaDB roles are deliberately different:
+  complete-schema validation and rendering fail before SQL because Ptah cannot
+  read or converge their role state, so a comment-only success would lose an
+  authored security declaration. Printed plans keep safe skip diagnostics; the
+  apply execution path drops comment-only statements before target or
+  dev-database execution.
 - **Every declared object reaches a renderer (#929 item 5).** Whether an object
   kind is converted at all is not decided by the dialect name. Every sequence,
   domain, composite type, range, role, function, view, materialized view,
   trigger, grant and row-level security declaration in a schema becomes an AST
-  node for every target, and the target's renderer answers: a statement, a
-  supported equivalent, or a named skip. Deleting the node before rendering was
-  the previous behavior and it left nothing to report the deletion —
+  node for every target, and the target's renderer answers with a statement, a
+  supported equivalent, a named skip, or a fail-closed error when continuing
+  would lose state. Deleting the node before rendering was the previous
+  behavior and it left nothing to report the deletion —
   `ptah schema render` dropped a declared sequence, domain, role or function on
   clickhouse, mysql, mariadb, sqlserver and sqlite and exited 0 with no comment
   and no warning. A diagnostic naming a target that cannot host the object
-  states what Ptah generates rather than what the engine can do, because the two
-  differ: SQL Server has had `CREATE SEQUENCE` since 2012 and MySQL 8 has roles,
-  while `sequences` and `role_management` are off for both because Ptah has no
-  reader and no planner for those kinds there.
+  states what Ptah generates rather than what the engine can do, because the
+  two differ: SQL Server has had `CREATE SEQUENCE` since 2012 and MySQL 8 has
+  roles, while Ptah still lacks convergent readers and planners for those kinds
+  there. SQL Server sequences therefore use a named skip; MySQL-family roles
+  fail closed because silently continuing would discard security state.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and
