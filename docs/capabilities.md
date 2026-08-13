@@ -640,7 +640,16 @@ remaining resolver refinement work.
   `bar` exists — and that is independent of the `TableNames` comparison the
   identifier semantics carry. Keying routines by exact spelling made live `foo`
   and desired `Foo` two objects: the diff carried an addition *and* a removal,
-  and a successful apply left the database with no function at all. Routine
+  and a successful apply left the database with no function at all. The
+  declaration check uses that same identity, so two functions declared as `Foo`
+  and `foo` are refused rather than silently reduced to one — while they were
+  folded only for comparison and keyed exactly for duplicate detection, the two
+  disagreed, and the disagreement discarded a declaration: measured on both
+  engines, two declared functions produced one planned statement and one row in
+  `information_schema.ROUTINES` after an apply that exited 0. The check is
+  dialect-aware rather than part of the shared duplicate-definition validator,
+  because PostgreSQL routine names *are* case-sensitive and both spellings are
+  legitimate there. Routine
   types are likewise normalized on both sides, because the engines resolve
   synonyms themselves: a declared `INTEGER` is reported as `int`, and the two
   engines further disagree with each other about the legacy display width

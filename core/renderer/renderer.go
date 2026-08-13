@@ -54,9 +54,11 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -955,7 +957,77 @@ func validateDatabaseDeclarations(
 			Message: err.Error(),
 		}
 	}
+	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
+		return err
+	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateRoutineIdentityCollisions refuses two function declarations the
+// target cannot tell apart.
+//
+// The duplicate-definition check in core/goschema keys functions by their exact
+// name, which is right for PostgreSQL, where routine names ARE case-sensitive
+// and `Foo` and `foo` are two functions. On MySQL and MariaDB they are one
+// routine, and the comparator folds them accordingly -- so the two keyings
+// disagreed, and the disagreement lost a declaration rather than reporting it:
+// both names passed validation, the comparator's map kept whichever came last,
+// and an apply against an empty database created ONE function from TWO
+// declarations and exited 0. Measured on MySQL 26.7.0 and MariaDB 12.3.2:
+//
+//	declared 2 functions -> diff.FunctionsAdded = [ptah_dup_fn]
+//	                     -> 1 statement planned
+//	                     -> 1 row in information_schema.ROUTINES
+//
+// The identity is [mysqlroutine.IdentityKey], the same function the comparator
+// folds with, so the check and the behavior it guards cannot drift apart. This
+// lives in the dialect-aware validation seam rather than in the dialect-blind
+// duplicate check because the collision only exists on targets that fold; both
+// `schema render` and the migration planner pass through here.
+//
+// Only names that differ in spelling are reported. Two declarations of the
+// SAME name are the existing duplicate-definition case, which
+// core/goschema already answers -- and answers better, because it allows
+// byte-identical repeats.
+func validateRoutineIdentityCollisions(dialect string, functions []goschema.Function) error {
+	if !routineNamesAreCaseInsensitive(dialect) {
+		return nil
+	}
+	type declaration struct{ schema, name string }
+	seen := make(map[declaration]string, len(functions))
+	for _, function := range functions {
+		ref, ok := tableref.Parse(function.Name)
+		if !ok {
+			continue
+		}
+		key := declaration{schema: ref.Schema, name: mysqlroutine.IdentityKey(ref.Name)}
+		previous, collides := seen[key]
+		if collides && previous != function.Name {
+			return &ptaherr.RenderError{
+				Dialect: dialect,
+				Err:     ptaherr.ErrUnsupportedFeature,
+				Message: fmt.Sprintf(
+					"functions %q and %q differ only by case, and stored-routine names are "+
+						"case-insensitive on %s, so the target cannot hold both: creating the "+
+						"second is Error 1304 on the first. Rename one of them",
+					previous, function.Name, dialect),
+			}
+		}
+		seen[key] = function.Name
+	}
+	return nil
+}
+
+// routineNamesAreCaseInsensitive reports whether dialect folds stored-routine
+// names. PostgreSQL and its family do not, which is why this is not applied
+// everywhere.
+func routineNamesAreCaseInsensitive(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateExtensionInstallationSchemas(dialect string, extensions []goschema.Extension) error {

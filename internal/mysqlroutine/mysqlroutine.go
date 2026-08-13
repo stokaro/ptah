@@ -29,6 +29,28 @@ const (
 	Volatile  = "VOLATILE"
 )
 
+// IdentityKey returns the key under which two spellings of one stored routine
+// name are the same routine on a MySQL-family target.
+//
+// Stored-routine names are case-insensitive on both engines, and that is
+// independent of the table-name rules [identifier.Semantics] carries: both
+// report TableNames as ComparisonExact, and lower_case_table_names does not
+// govern routines. Measured on MySQL 26.7.0, with `foo` in the catalog,
+// `SELECT Foo(1)` resolves to it and `CREATE FUNCTION BAR` is refused with
+// Error 1304 "FUNCTION BAR already exists" while `bar` is present.
+//
+// It lives here because THREE callers must agree on it: the comparator, which
+// matches a desired routine to a live one; the declaration validator, which
+// refuses two declarations the target cannot tell apart; and anything that
+// later needs the same question answered. When only the comparator folded, two
+// declarations differing by case passed validation as two objects and collapsed
+// to one in the comparator's map -- an apply against an empty database created
+// ONE function from TWO declarations and reported success, with the discarded
+// one named nowhere.
+func IdentityKey(name string) string {
+	return strings.ToLower(name)
+}
+
 // RunsLanguage reports whether a routine declared in this language becomes real
 // DDL on a MySQL-family target.
 //

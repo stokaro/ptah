@@ -599,6 +599,76 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 	}
 }
 
+// TestFunctionCaseCollidingDeclarationsAreRefused_Integration pins that two
+// declarations the target cannot tell apart are refused rather than silently
+// reduced to one.
+//
+// This is the same shape as the skipped-drop defect one layer up. Routine
+// identity is case-folded for COMPARISON, because the engines fold it; the
+// duplicate-declaration check keys on the exact spelling. Two names that differ
+// only by case therefore passed validation as two objects and collapsed to one
+// in the comparator's map, so an apply against an empty database created ONE
+// function and reported success. A declared object vanished with no diagnostic.
+//
+// The count against an empty database is the assertion that matters: two
+// declarations must not become one routine.
+func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
+	for _, target := range mysqlFamilyTargets {
+		t.Run(target.name, func(t *testing.T) {
+			dsn := target.dsn(t)
+			c := qt.New(t)
+			db := newPropertyDatabase(c, dsn)
+
+			colliding := &goschema.Database{Functions: []goschema.Function{
+				{
+					Name: "Ptah_Dup_Fn", Parameters: "a INT", Returns: "int",
+					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 1",
+				},
+				{
+					Name: "ptah_dup_fn", Parameters: "a INT", Returns: "int",
+					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 2",
+				},
+			}}
+
+			reader := mysql.NewMySQLReader(db, "")
+			live, err := reader.ReadSchema()
+			c.Assert(err, qt.IsNil)
+			diff := schemadiff.CompareWithDialect(colliding, live, target.dialect)
+
+			// Planning must refuse, naming both spellings, rather than
+			// producing statements for whichever declaration survived the map.
+			_, planErr := planner.GenerateSchemaDiffSQLStatements(diff, colliding, target.dialect)
+			c.Assert(planErr, qt.IsNotNil)
+			c.Check(planErr.Error(), qt.Contains, "Ptah_Dup_Fn")
+			c.Check(planErr.Error(), qt.Contains, "ptah_dup_fn")
+
+			// Nothing was created, because nothing was planned.
+			c.Check(queryRoutineCount(c, dsn, "ptah_dup_fn"), qt.Equals, 0)
+
+			// The control: the SAME two bodies under names that do not collide
+			// still plan and apply as two separate functions, so the refusal is
+			// about the collision and not about declaring two functions.
+			distinct := &goschema.Database{Functions: []goschema.Function{
+				{
+					Name: "ptah_dup_one", Parameters: "a INT", Returns: "int",
+					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 1",
+				},
+				{
+					Name: "ptah_dup_two", Parameters: "a INT", Returns: "int",
+					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 2",
+				},
+			}}
+			applyPropertySQL(c, db, target.dialect, distinct)
+			c.Check(queryRoutineCount(c, dsn, "ptah_dup_one"), qt.Equals, 1)
+			c.Check(queryRoutineCount(c, dsn, "ptah_dup_two"), qt.Equals, 1)
+		})
+	}
+}
+
 // TestFunctionReplacementIsTwoStatements_Integration pins that the drop a
 // replacement needs is still planned, now as its own statement.
 //

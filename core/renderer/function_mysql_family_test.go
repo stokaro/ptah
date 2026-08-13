@@ -68,6 +68,73 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 	}
 }
 
+// TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames pins that two
+// declarations the target cannot tell apart are refused rather than silently
+// reduced to one.
+//
+// The duplicate-definition check in core/goschema keys functions by their exact
+// name, which is right for PostgreSQL, where `Foo` and `foo` really are two
+// functions. On MySQL and MariaDB they are one routine and the comparator folds
+// them, so the two keyings disagreed -- and the disagreement lost a declaration
+// instead of reporting it. Measured on MySQL 26.7.0 and MariaDB 12.3.2, two
+// declared functions produced `FunctionsAdded = [ptah_dup_fn]`, one planned
+// statement, and one row in information_schema.ROUTINES after an apply that
+// exited 0.
+//
+// The PostgreSQL rows are the control and they are the reason this is not in
+// the dialect-blind validator: folding there would refuse a schema PostgreSQL
+// hosts perfectly well.
+func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
+	c := qt.New(t)
+
+	colliding := &goschema.Database{Functions: []goschema.Function{
+		{
+			Name: "Ptah_Dup_Fn", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
+		},
+		{
+			Name: "ptah_dup_fn", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 2",
+		},
+	}}
+	distinct := &goschema.Database{Functions: []goschema.Function{
+		{
+			Name: "ptah_dup_one", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
+		},
+		{
+			Name: "ptah_dup_two", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 2",
+		},
+	}}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		c.Run(dialect+"/colliding is refused", func(c *qt.C) {
+			_, err := renderer.GetOrderedCreateStatements(colliding, dialect)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Check(err.Error(), qt.Contains, "Ptah_Dup_Fn")
+			c.Check(err.Error(), qt.Contains, "ptah_dup_fn")
+			c.Check(err.Error(), qt.Contains, "case")
+		})
+		c.Run(dialect+"/two distinct names are fine", func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(distinct, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Check(statements, qt.HasLen, 2)
+		})
+	}
+
+	// Control: PostgreSQL routine names are case-sensitive, so the same schema
+	// is legitimate there and must still render both functions.
+	c.Run("postgres hosts both spellings", func(c *qt.C) {
+		statements, err := renderer.GetOrderedCreateStatements(colliding, platform.Postgres)
+
+		c.Assert(err, qt.IsNil)
+		c.Check(statements, qt.HasLen, 2)
+	})
+}
+
 // TestRender_MySQLFamilyRendersOneStatementPerElement pins the invariant that
 // makes this list executable statement by statement.
 //

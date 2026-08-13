@@ -105,7 +105,12 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 // information_schema.ROUTINES afterwards.
 func routineIdentityKey(name, dialect string) string {
 	if isMySQLFamily(dialect) {
-		return strings.ToLower(name)
+		// The rule itself is mysqlroutine.IdentityKey, not a ToLower written
+		// here, because the declaration validator in core/renderer has to reach
+		// the same answer: a pair this folds together is a pair that target
+		// cannot host, and it must be refused rather than silently reduced to
+		// one by this map.
+		return mysqlroutine.IdentityKey(name)
 	}
 	return name
 }
