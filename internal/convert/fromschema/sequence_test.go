@@ -117,22 +117,31 @@ func countCreateSequenceNodes(statements []ast.Node) int {
 	return created
 }
 
-// TestFromDatabase_SequenceStillSkippedForSQLite is the non-interference
-// control for the change above: SQLite and SQL Server were deliberately left
-// out of the sequence append, so widening it to the MySQL family and ClickHouse
-// must not have moved them.
-func TestFromDatabase_SequenceStillSkippedForSQLite(t *testing.T) {
+// TestFromDatabase_SequenceReachesEveryDialectsRenderer states the rule this
+// converter now follows, over every dialect spelling `--dialect` accepts: a
+// declared sequence becomes exactly one CREATE SEQUENCE node whatever the
+// target is, and the renderer decides what that means.
+//
+// This replaces a test that asserted the OPPOSITE for SQLite -- that no sequence
+// node was produced there -- which is how the defect stayed pinned. SQLite and
+// SQL Server were held out of the append because the SQL Server renderer
+// answered a sequence node with a flat "CREATE SEQUENCE is not supported", a
+// false statement about an engine that has had sequences since 2012. That
+// message now names Ptah's generator instead of the engine, so there is nothing
+// left to hold out (stokaro/ptah#929 item 5).
+func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq"}},
-	}
+	for _, spelling := range acceptedSpellings(c) {
+		c.Run(spelling, func(c *qt.C) {
+			database := goschema.Database{
+				Sequences: []goschema.Sequence{{Name: "order_seq"}},
+			}
 
-	statements := fromschema.FromDatabase(database, platform.SQLite)
+			statements := fromschema.FromDatabase(database, spelling)
 
-	for _, stmt := range statements.Statements {
-		_, isCreate := stmt.(*ast.CreateSequenceNode)
-		_, isAlter := stmt.(*ast.AlterSequenceNode)
-		c.Assert(isCreate || isAlter, qt.IsFalse, qt.Commentf("no sequence nodes for SQLite"))
+			c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
+				qt.Commentf("the declared sequence must reach the %s renderer", spelling))
+		})
 	}
 }

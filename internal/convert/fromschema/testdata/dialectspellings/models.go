@@ -16,11 +16,17 @@
 //     against emitsStandaloneEnumDefinitions: on the four engines that model an
 //     enum on the column, a spelling that reaches only one of the two halves
 //     drops the enum entirely.
-//   - active_users and users_touch pin supportsStandaloneViewsAndTriggers.
-//   - email_lower pins defaultGeneratedKind (STORED / VIRTUAL / PERSISTED).
+//   - email_lower pins defaultGeneratedKind (STORED / VIRTUAL / PERSISTED),
+//     which is the last thing isPostgreSQLFamilyPlatform still decides.
 //   - orders.user_id pins isSQLiteTarget (inline vs ALTER TABLE foreign keys)
 //     and isMySQLFamilyTarget (index emission order around ADD CONSTRAINT).
-//   - the PostgreSQL object block pins isPostgreSQLFamilyPlatform.
+//
+// The object block below -- role, sequence, domain, composite, range, function,
+// view, matview, trigger, RLS and grant -- no longer separates one dialect from
+// another here: FromDatabase converts every one of them for every target now,
+// and the renderer decides what each means (stokaro/ptah#929 item 5). It stays
+// because it is what makes this fixture discriminate engines by their rendered
+// answers, which TestFromDatabase_FixtureDiscriminatesEngines asserts.
 //
 // The app-qualified audit table exercises renderTableName, but it does not pin
 // sqlident.Quote's quote style: the dialect renderer re-quotes the table name,

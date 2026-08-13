@@ -165,7 +165,17 @@ type Product struct {
 	c.Assert(sqlOutput, qt.Contains, "FOREIGN KEY (user_id) REFERENCES users(id)")
 }
 
-func TestRLSAndFunctionIntegration_MySQLSkipsPostgreSQLFeatures(t *testing.T) {
+// TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips pins that a
+// MySQL target emits no PostgreSQL-only DDL and says so for each object.
+//
+// It used to assert the objects were simply ABSENT from the output, which the
+// converter achieved by deleting the nodes before the renderer saw them: the
+// function, the RLS enablement and the policy vanished at exit 0 with nothing
+// said about any of them. Absence and a named skip are indistinguishable to a
+// `Not(Contains)` assertion, so this now asserts both halves separately -- no
+// executable statement, and a diagnostic naming each object (stokaro/ptah#929
+// item 5).
+func TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that MySQL correctly skips PostgreSQL-specific features
@@ -198,10 +208,16 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
 
-	// Verify that PostgreSQL-specific features are not included in MySQL output
-	c.Assert(sqlOutput, qt.Not(qt.Contains), "CREATE FUNCTION")
-	c.Assert(sqlOutput, qt.Not(qt.Contains), "CREATE POLICY")
-	c.Assert(sqlOutput, qt.Not(qt.Contains), "ENABLE ROW LEVEL SECURITY")
+	// No PostgreSQL-only statement is executable on this target.
+	executable := executableSQL(sqlOutput)
+	c.Assert(executable, qt.Not(qt.Contains), "CREATE FUNCTION")
+	c.Assert(executable, qt.Not(qt.Contains), "CREATE POLICY")
+	c.Assert(executable, qt.Not(qt.Contains), "ENABLE ROW LEVEL SECURITY")
+
+	// And each one is named rather than dropped in silence.
+	c.Assert(sqlOutput, qt.Contains, "-- CREATE FUNCTION test_func not supported in MySQL")
+	c.Assert(sqlOutput, qt.Contains, "-- ALTER TABLE test_table ENABLE ROW LEVEL SECURITY not supported in MySQL")
+	c.Assert(sqlOutput, qt.Contains, "-- CREATE POLICY test_policy not supported in MySQL")
 
 	// But table creation should still work
 	c.Assert(sqlOutput, qt.Contains, "CREATE TABLE test_table")
