@@ -515,6 +515,37 @@ each ignored source location once:
 warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
 ```
 
+### Structured settings must be written as blocks
+
+A setting Atlas CE decodes into a structure takes a **block** body. The same
+name written as an **attribute** with an object value is refused:
+
+```text
+Error: atlas.hcl "lint" at atlas.hcl:3 must be a block, or an empty object
+```
+
+This is not a Ptah restriction. Atlas CE routes both spellings to the same
+field, and its object decoder refuses every member name it finds there —
+including the members the block spelling accepts, so `lint = { latest = 1 }`
+and `lint = { anything = 1 }` both fail on the community binary. The attribute
+spelling carries no configuration on either binary. The two values that are
+accepted are an empty object and `null`, for the same reason: they carry
+nothing.
+
+The affected names were measured one at a time and the set is neither "every
+block name" nor scope-independent:
+
+| Scope | Must be a block | Tolerated as an attribute |
+| --- | --- | --- |
+| top level | `diff`, `lint`, `test` | `atlas`, `data`, `format`, `locals`, `migration`, `schema`, `variable` |
+| `env` | `diff`, `format`, `lint`, `migration`, `schema`, `test` | — |
+| `env.diff` | `skip` | `concurrent_index` |
+| `env.format` | `migrate`, `schema` | — |
+| `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
+| `env.schema` | `repo` | `mode` |
+
+Writing any of these as a block is unaffected.
+
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another

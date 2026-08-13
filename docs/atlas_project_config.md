@@ -658,6 +658,22 @@ This distinction preserves Atlas CE's unknown-name behavior without hiding a
 likely typo or a policy that does nothing. The warning goes to stderr; stdout
 and the success exit code remain unchanged.
 
+The tolerance is spelling-sensitive. A name Atlas CE decodes into a structure
+takes a block body; the same name written as an attribute with an object value
+reaches CE's object decoder, which refuses every member name it finds — including
+the members the block spelling accepts. Ptah reproduces that refusal:
+
+```text
+atlas.hcl "lint" at atlas.hcl:3 must be a block, or an empty object
+```
+
+An empty object and `null` are accepted, because they carry no configuration.
+The affected names are `diff`, `lint` and `test` at the top level; `diff`,
+`format`, `lint`, `migration`, `schema` and `test` under `env`; `diff.skip`,
+`format.migrate`, `format.schema`, `lint.git` and `schema.repo` under those. Each
+was measured against the pinned community binary individually — the set is not
+"every block name", and it is not the same at every scope.
+
 `PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
 runs. The strict policy refuses an ignored construct before command work, and
 it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,
