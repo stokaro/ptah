@@ -128,7 +128,19 @@ func newAtlasMigrateIntegrityCommand(
 		directStrictReplay := policy.IsStrictCE() &&
 			verb.use == atlasMigrateValidateVerb().use &&
 			source.devURL != ""
-		if atlasmigrate.ReadsNativeAtlasDir(source.format) && !directStrictReplay {
+		// A --dev-url this surface refuses is answered on the direct branch too,
+		// and the reason is ordering rather than wording. Measured on the pinned
+		// community binary v1.3.0 on 2026-08-13, `migrate validate` against an
+		// UNHASHED directory with `--dev-url notadriver://x` prints `checksum
+		// file not found`, so the URL must be settled after the integrity gate.
+		// Only the direct branch runs that gate before it reaches the URL; a
+		// refusal placed in this wrapper, in front of the forward, would answer
+		// the driver on a directory the community binary answers the checksum on.
+		// The forwarded native command owns its own, clearer wording for the same
+		// value, which is why this cannot simply be left to it.
+		directRefusedDevURL := verb.use == atlasMigrateValidateVerb().use &&
+			atlasDevURLDriverDiagnostic(source.devURL) != nil
+		if atlasmigrate.ReadsNativeAtlasDir(source.format) && !directStrictReplay && !directRefusedDevURL {
 			return forward(cmd, source.forwardArgs)
 		}
 		// Only the directly executed path can report what the project file
