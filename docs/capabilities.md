@@ -517,6 +517,25 @@ remaining resolver refinement work.
   `MODIFIES SQL DATA` and a bare `NOT DETERMINISTIC` are refused too, so a
   `VOLATILE` declaration renders as `READS SQL DATA`.
 
+  What is generated depends on the declared `language`, not on the target
+  alone. MySQL and MariaDB run exactly one routine language, SQL, so a function
+  declared `language="plpgsql"` is PostgreSQL procedural code that no envelope
+  makes runnable there — the shared `014-rls-functions` fixture declares
+  `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, whose return type
+  alone is Error 1064 on MySQL 26.7.0 before the body is parsed. Those
+  declarations get a named skip that says which language was declared and that
+  this target does not run it. A function whose body the target can run gets
+  real DDL. The distinction is the point: skipping every function would be
+  `-- CREATE FUNCTION f1 not supported in MySQL` in a new spelling, and would
+  make this key vacuous again.
+
+  Stored-function DDL is never transactional on these engines. Measured on
+  MySQL 26.7.0, `CREATE FUNCTION` inside `START TRANSACTION` survives a
+  `ROLLBACK` — it commits implicitly — while an `INSERT` in the same shape rolls
+  back. A generated function therefore cannot be grouped into a file-level
+  transaction and have that transaction mean anything, which is what the
+  migrator's transaction witness refuses.
+
   One MySQL deployment shape refuses stored functions regardless of what Ptah
   renders, and it is a **privilege** condition rather than a capability one.
   With binary logging enabled and `log_bin_trust_function_creators` off, MySQL

@@ -1075,6 +1075,25 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		r.notGenerated("CREATE FUNCTION", node.Name)
 		return nil
 	}
+	// A routine body is written in a language, and MySQL and MariaDB run
+	// exactly one: SQL. A function declared LANGUAGE plpgsql is PostgreSQL
+	// procedural code, and no envelope makes it run here -- the shared
+	// integration fixture is the worked example, declaring
+	// `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, where the return
+	// type alone is Error 1064 on MySQL 26.7.0 before the body is even reached.
+	//
+	// So this skip is about the declaration, not the engine, and it says so.
+	// The distinction matters: `-- CREATE FUNCTION f1 not supported in MySQL`
+	// was false because MySQL hosts functions perfectly well (stokaro/ptah#929),
+	// and a target that declines every function would be the same lie in a new
+	// spelling. A function whose body this target can run still gets real DDL,
+	// which is what capability.Functions claims and what the live round trip
+	// proves.
+	if language := strings.ToLower(strings.TrimSpace(node.Language)); language != "" && language != "sql" {
+		r.w.WriteLinef("-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
+			r.dialectUpper, escapeIdentifier(node.Name), language)
+		return nil
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
