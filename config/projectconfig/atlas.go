@@ -407,10 +407,16 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 //	lint { condrop { error = "x" } }     -> "parsing datadepend check options"
 //	diff { skip { drop_schema = "x" } }  -> attr "drop_schema" cannot be read as bool
 //	env { schema { repo { name = 1 } } } -> attr "name" cannot be read as string
+//	env { schemas = "one" }              -> field is of type slice but attr
+//	                                        "schemas" is type: string
 //
 // The same probe run against lint.naming, lint.statement, lint.non_linear,
 // lint.ownership, lint.check, lint.rule, destructive.allow_table and
-// schema.mode.sensitive stays silent, so those are tolerated.
+// schema.mode.sensitive stays silent, so those are tolerated. At env scope it
+// also stays silent for baseline, dir, driver, log, plan, project, registry, to
+// and vars, measured with an object value against a nonsense sibling as the
+// control -- a name CE decodes at all refuses an object, so silence on the
+// control is what keeps silence on the others meaningful.
 //
 // Note the probe only proves the positive: a decode failure means CE reads the
 // field. Silence alone means nothing unless a known-decoded name in the SAME
@@ -422,11 +428,24 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // The map is empty. lint.condrop, diff.skip.drop_schema and schema.repo were
 // its three entries until stokaro/ptah#1048 gave each a parser arm of its own,
 // which puts them in the same position as lint.destructive: decoded, so never
-// reaching the tolerance path, so nothing to hold back here. The map and
+// reaching the tolerance path, so nothing to hold back here. env.schemas was
+// the fourth candidate and took the same resolution in stokaro/ptah#934: a
+// parser arm rather than a refusal, because the value has a meaning Ptah can
+// carry out -- see [parseEnvAttr] and [IgnoreEnvSchemasEnvVar]. The map and
 // enforcedByCE stay because the criterion above is the standing rule for the
 // next name a probe catches -- an entry here is the holding pen for a construct
 // CE acts on that Ptah has not implemented yet, and refusing is where such a
 // construct waits.
+//
+// One class the probe found and nothing here answers yet: env.diff, env.format,
+// env.lint, env.migration, env.schema and env.test written as OBJECT-VALUED
+// ATTRIBUTES rather than as blocks. CE decodes each -- `env { lint = { k = "v" } }`
+// answers `converting cty.Value to *cmdapi.Lint: unsupported attribute "k"`,
+// exit 1 -- and Ptah's structure validator, which classifies attributes and
+// blocks separately, sends the attribute spelling to the tolerance and exits 0.
+// The block spelling of all six is implemented, so this is a spelling gap and
+// not an unimplemented setting; it is recorded here rather than fixed because
+// the fix belongs in the validator's attribute/block split, not in this map.
 var ceEnforcedConstructs = map[string]struct{}{}
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
@@ -914,6 +933,30 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		}
 		cfg.Exclude = values
 		cfg.presence.mark(fieldExclude)
+	case "schemas":
+		// The type check runs before the opt-out is consulted, and returns
+		// before it: the pinned binary refuses `schemas = "one"` with
+		// `field is of type slice but attr "schemas" is type: string`, and a
+		// Ptah environment variable may not reopen an exit-0 where the binary
+		// exits 1. See [IgnoreEnvSchemasEnvVar].
+		values, err := p.stringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		ignore, err := ignoreEnvSchemas.Resolve()
+		if err != nil {
+			return err
+		}
+		if ignore {
+			p.noteIgnored("attribute", attrName, attr.NameRange)
+			return nil
+		}
+		// An empty list is not a selection. Measured on the pinned binary:
+		// `schemas = []` describes the same three schemas an absent attribute
+		// describes, so the presence mark must not turn it into a restriction
+		// naming nothing.
+		cfg.Schemas = values
+		cfg.presence.mark(fieldSchemas)
 	default:
 		if err := p.tolerateUnknownAttr("env", attrName, attr); err != nil {
 			return err

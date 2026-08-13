@@ -107,7 +107,8 @@ for the message and the flag it names.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is
-refused before SQL. To preserve an extension already installed in a
+refused before SQL, including when comparison would otherwise report no changes.
+To preserve an extension already installed in a
 server-owned namespace without requesting `CREATE SCHEMA`, write the placement
 as a string, for example `schema = "pg_catalog"`, and omit the schema block.
 Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact

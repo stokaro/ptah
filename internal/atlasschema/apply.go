@@ -268,9 +268,9 @@ func computeApplyPlan(
 		Exclude:       opts.Exclude,
 		DefaultSchema: conn.Info().Schema,
 	}
-	desired, err := loadDesiredApplySchema(ctx, conn, opts)
+	desired, err := loadAndValidateDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
+		return applyComputation{}, err
 	}
 	current, readScope, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
@@ -568,6 +568,24 @@ func loadDesiredApplySchema(
 		return nil, err
 	}
 	return state.Schema, nil
+}
+
+func loadAndValidateDesiredApplySchema(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+) (*goschema.Database, error) {
+	desired, err := loadDesiredApplySchema(ctx, conn, opts)
+	if err != nil {
+		return nil, fmt.Errorf("load --to schema: %w", err)
+	}
+	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+		conn.Info().Dialect,
+		desired.Schemas,
+	); err != nil {
+		return nil, fmt.Errorf("validate --to schema: %w", err)
+	}
+	return desired, nil
 }
 
 // PrepareApply validates Atlas schema apply runtime inputs and builds the

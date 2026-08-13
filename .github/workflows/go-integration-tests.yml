@@ -48,14 +48,14 @@ jobs:
           - 3306:3306
 
       mariadb:
-        image: mariadb:10.11
+        image: mariadb:12.3
         env:
           MARIADB_DATABASE: ptah_test
           MARIADB_USER: ptah_user
           MARIADB_PASSWORD: ptah_password
           MARIADB_ROOT_PASSWORD: root_password
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u ptah_user -pptah_password"
+          --health-cmd "mariadb-admin ping -h localhost -u ptah_user -pptah_password"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

@@ -6,6 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/schemaselection"
 )
@@ -301,6 +303,56 @@ func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
 				qt.Equals,
 				test.want,
 			)
+		})
+	}
+}
+
+func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+	}{
+		{name: "PostgreSQL catalog", dialect: "postgres", schema: "pg_catalog"},
+		{name: "PostgreSQL reserved prefix", dialect: "yugabytedb", schema: "pg_app"},
+		{name: "information schema", dialect: "spanner", schema: "information_schema"},
+		{name: "CockroachDB internal", dialect: "cockroachdb", schema: "crdb_internal"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+				test.dialect,
+				[]goschema.Schema{{Name: test.schema}},
+			)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches,
+				`.*declares server-owned PostgreSQL schema "`+test.schema+`".*`)
+		})
+	}
+}
+
+func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+	}{
+		{name: "quoted catalog lookalike", dialect: "postgres", schema: "PG_CATALOG"},
+		{name: "CockroachDB lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL"},
+		{name: "CockroachDB namespace on PostgreSQL", dialect: "postgres", schema: "crdb_internal"},
+		{name: "non PostgreSQL target", dialect: "mysql", schema: "pg_catalog"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+				test.dialect,
+				[]goschema.Schema{{Name: test.schema}},
+			)
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

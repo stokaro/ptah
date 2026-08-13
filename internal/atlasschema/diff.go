@@ -9,12 +9,14 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -107,6 +109,9 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
+	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
 
 	scope := atlasfilter.Scope{
 		Schemas:       opts.Schemas,
@@ -155,6 +160,47 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		}
 	}
 	return atlasreport.NewSchemaDiff(from, to, statements), nil
+}
+
+func validateDiffSystemSchemaStates(
+	fromState, toState atlassource.State,
+	dialect string,
+) error {
+	if err := validateDiffSystemSchemaState(fromState, dialect, "--from"); err != nil {
+		return err
+	}
+	if err := validateDiffSystemSchemaState(toState, dialect, "--to"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string) error {
+	// Database and migration-directory states are introspected snapshots. Their
+	// schema lists describe server namespaces; a migration directory's authored
+	// SQL has already been executed and validated by replay before this point.
+	if state.DB != nil {
+		for _, schema := range state.DB.Schemas {
+			if !schemaselection.IsPostgresFamilySystemSchema(dialect, schema.Name) {
+				continue
+			}
+			return fmt.Errorf("validate %s database schema: %w", flag, &ptaherr.PlanError{
+				Err: ptaherr.ErrInvalidSchemaDiff,
+				Message: fmt.Sprintf(
+					"observed server-owned PostgreSQL schema %q cannot be compared safely; its catalog objects are not migration-managed state",
+					schema.Name,
+				),
+			})
+		}
+		return nil
+	}
+	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+		dialect,
+		state.Schema.Schemas,
+	); err != nil {
+		return fmt.Errorf("validate %s schema: %w", flag, err)
+	}
+	return nil
 }
 
 func resolveDiffSources(

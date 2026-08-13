@@ -131,18 +131,19 @@ func qualifiedRLSPolicyRows(t *testing.T, dbURL string) []string {
 
 // runCompatSchemaApply runs `schema apply` on the compatibility binary's
 // command tree and returns its combined output and error.
-func runCompatSchemaApply(targetURL, devURL, schemaPath string) (string, error) {
+func runCompatSchemaApply(targetURL, devURL, schemaPath string, extra ...string) (string, error) {
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
+	args := []string{
 		"schema", "apply",
 		"--url", targetURL,
 		"--to", "file://" + schemaPath,
 		"--dev-url", devURL,
 		"--auto-approve",
-	})
+	}
+	cmd.SetArgs(append(args, extra...))
 	err := cmd.Execute()
 	return out.String(), err
 }

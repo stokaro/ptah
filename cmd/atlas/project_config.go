@@ -1218,6 +1218,31 @@ func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectc
 	return append(slices.Clone(values), cfg.Schema.Mode.ExcludePatterns()...)
 }
 
+// effectiveAtlasSchemas resolves the schema universe from --schema and from
+// `env { schemas }`, with the flag winning.
+//
+// The precedence is measured, not assumed. Against a PostgreSQL database
+// holding schemas `one`, `two` and `public`, on the pinned Atlas community
+// binary v1.3.0:
+//
+//	schemas = ["one"]              schema inspect --env local             -> one
+//	schemas = ["one","two"]        schema inspect --env local             -> one, two
+//	schemas = ["nosuchschema"]     schema inspect --env local             -> nothing, exit 0
+//	schemas = []                   schema inspect --env local             -> one, two, public
+//	(absent)                       schema inspect --env local             -> one, two, public
+//	schemas = ["one"]              schema inspect --env local --schema two -> two
+//	schemas = ["one","two"]        schema inspect --env local --schema one -> one
+//	schemas = ["nosuchschema"]     schema inspect --env local --schema one -> one
+//
+// The last three rows are the ones this helper exists for: the flag replaces
+// the configured list rather than intersecting with it, which is what
+// [effectiveStringArray] does when cobra reports the flag changed. The
+// empty-list row is why a zero-length configured value must fall through to the
+// flag instead of restricting to nothing.
+func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {
+	return effectiveStringArray(cmd, "schema", flagValues, cfg.Schemas)
+}
+
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 	return atlasschema.DiffPolicy{
 		SkipDropTable:         cfg.Diff.Skip.DropTable.Set && cfg.Diff.Skip.DropTable.Value,
