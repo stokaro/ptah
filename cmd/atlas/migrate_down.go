@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/migration/generator"
@@ -154,6 +155,22 @@ func runAtlasMigrateDownFormat(
 		return fmt.Errorf("atlas migrate down --dir: %w", err)
 	}
 	dir := source.Display
+
+	// `migrate down` joins the atlas.sum gate family here, on the same
+	// verb-neutral predicate `migrate apply`, `migrate status` and
+	// `migrate set` run, and in the same position: after the directory
+	// snapshot, before the database connection.
+	//
+	// It was the one verb that read a NATIVE Atlas directory, executed SQL from
+	// it, and sat outside the stokaro/ptah#974 gate. That was never a parity
+	// decision — the pinned community binary v1.3.0 answers
+	// `'atlas migrate down' is not supported by the community version`, so
+	// there is no oracle behavior to match and compatibility policy (b) applies:
+	// matching is the floor, not the ceiling. Refusing here cannot break policy
+	// (a) either, which forbids exiting 0 where the community binary exits 1.
+	if err := verifyAtlasApplyChecksum(cmd, source.FileSystem, atlasmigrateimport.FormatAtlas); err != nil {
+		return err
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()

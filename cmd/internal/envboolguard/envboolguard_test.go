@@ -27,6 +27,7 @@ import (
 	_ "go.5x5.cz/ptah/internal/atlashclrender"
 	_ "go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/envbool"
+	_ "go.5x5.cz/ptah/internal/migrationintegrity"
 	_ "go.5x5.cz/ptah/internal/reservedrole"
 	_ "go.5x5.cz/ptah/internal/rolescope"
 	_ "go.5x5.cz/ptah/migration/migrator"

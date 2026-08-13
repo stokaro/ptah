@@ -50,9 +50,15 @@ delegates to a native command still prints `Error: `, because the user invoked
 the compatibility surface. If you grep stderr in a script, match the prefix of
 the binary you actually run.
 
-The rule covers the prefix only. The message text after it stays Ptah-owned
-prose, so `ptah-compat schema inspect` with no `--url` reports Ptah's own
-`--url is required` rather than any wording copied from another tool.
+The rule covers the prefix only. The message text after it is decided per
+diagnostic, and the two surfaces decide it differently. Where a cell of the
+output-shape register pins a wording, `ptah-compat` matches the pinned community
+binary byte for byte: `ptah-compat schema inspect` with no `--url` reports
+`required flag(s) "url" not set`, and `ptah-compat migrate status` with none
+reports `sql/sqlclient: missing driver. See: https://atlasgo.io/url`. Native
+`ptah` keeps its own prose for the same mistake — `ptah migrations status`
+reports `database URL is required` — because matching is a promise the
+compatibility surface makes and the native tree does not.
 
 Other stderr output is outside the class and keeps its own format. Report
 bodies are the main case: the `Error:` field inside a `migrate status`

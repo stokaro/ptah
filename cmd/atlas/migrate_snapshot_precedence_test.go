@@ -35,7 +35,21 @@ func TestMigrateApplyValidatesBaselineBeforeCapturingDirectory(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
-func TestMigrateStatusValidatesDatabaseURLBeforeDirectoryURL(t *testing.T) {
+// TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL pins the measured
+// order, which is the reverse of what this test asserted before.
+//
+// It used to require `database URL is required` here, on the reasoning that the
+// cheaper check should answer first. Measured on 2026-08-13, the pinned
+// community binary v1.3.0 answers
+// `atlas migrate status --dir atlas://remote` with no --url by rejecting the
+// DIRECTORY -- `atlas remote directory is not supported by this release` -- so
+// the URL does not outrank it there. Removing this verb's required-flag check
+// (cell 9.14 of stokaro/ptah#1235: the binary has none, and opens an absent
+// --url as the empty string) put Ptah into that order too.
+//
+// The directory refusal's own wording is a separate divergence and is not
+// claimed here; what this pins is which of the two answers.
+func TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 	c := qt.New(t)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -45,7 +59,7 @@ func TestMigrateStatusValidatesDatabaseURLBeforeDirectoryURL(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `database URL is required`)
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
 }
 
 func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {
@@ -74,7 +88,22 @@ func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unknown dir format "custom"`)
 }
 
-func TestMigrateSetValidatesDatabaseURLBeforeCapturingDirectory(t *testing.T) {
+// TestMigrateSetCapturesTheDirectoryBeforeTheDatabaseURL pins the measured
+// order, which is the reverse of what this test asserted before.
+//
+// Measured on 2026-08-13 against the same fixture -- a directory holding an
+// uppercase ATLAS.SUM and nothing else -- the pinned community binary v1.3.0
+// answers `migrate set 1 --dir file://<dir>` with no --url by refusing the
+// DIRECTORY (`checksum mismatch`), not by requiring the flag. Ptah reaches the
+// same ordering now that this verb's required-flag check is gone, because the
+// binary has none: cell 9.14 of stokaro/ptah#1235 measures an absent --url here
+// being opened as the empty string and answered
+// `sql/sqlclient: missing driver`.
+//
+// The refusal Ptah prints for this directory is its own canonical-name
+// diagnostic rather than the binary's `checksum mismatch`; that wording is a
+// separate cell. What this pins is that the directory answers first.
+func TestMigrateSetCapturesTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "ATLAS.SUM"), []byte("metadata\n"), 0o600), qt.IsNil)
@@ -86,5 +115,6 @@ func TestMigrateSetValidatesDatabaseURLBeforeCapturingDirectory(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `database URL is required; pass --url`)
+	c.Assert(err, qt.ErrorMatches,
+		`atlas migrate set --dir: capture migrations directory: migration metadata file "ATLAS.SUM" must use canonical name "atlas.sum"`)
 }

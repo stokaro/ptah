@@ -147,12 +147,10 @@ func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testi
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "project-dev.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
-	c.Assert(os.WriteFile(
-		filepath.Join(migrationsDir, "2_add_audit.down.sql"),
-		[]byte("DROP TABLE no_such_table;\n"),
-		0o600,
-	), qt.IsNil)
+	// The failing rollback is part of the hashed fixture rather than an edit
+	// made after it: the integrity gate on `migrate down` would otherwise
+	// refuse first and this test would stop measuring the dev-URL replay.
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     dev: "sqlite://`+filepath.Join(dir, "shadow.db")+`"

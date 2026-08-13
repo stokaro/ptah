@@ -12,6 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migratecheckpoint"
+	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func seedMigrations(c *qt.C, dir string) {
@@ -489,7 +491,17 @@ func TestMigrateCheckpointCommand_AllowsCheckpointBesideItsOwnSum(t *testing.T) 
 	// The directory's OWN integrity file is not a conflict — it is the one the
 	// checkpoint refreshes. This is the fixture that separates "a second sum
 	// file" from "any sum file at all".
-	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("h1:stale\n"), 0o600), qt.IsNil)
+	//
+	// It is a REAL atlas.sum rather than the `h1:stale` placeholder it used to
+	// be. Checkpoint replays the history onto the shadow database, so it now
+	// verifies the directory first, and a placeholder that no parser accepts is
+	// refused before the question this test asks is reached. The refusal is
+	// correct — the old fixture depended on checkpoint executing a directory
+	// whose integrity file could not be read at all — and a valid sum keeps the
+	// test measuring what its name says.
+	sumBefore, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sumBefore, qt.IsNotNil)
 	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
 	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
@@ -498,7 +510,6 @@ func TestMigrateCheckpointCommand_AllowsCheckpointBesideItsOwnSum(t *testing.T) 
 
 	sum, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(sum), qt.Not(qt.Equals), "h1:stale\n")
 	c.Assert(string(sum), qt.Contains, "_checkpoint.sql")
 }
 
