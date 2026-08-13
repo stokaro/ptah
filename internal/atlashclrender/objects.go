@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -20,6 +21,13 @@ func (r *renderer) renderExtensions() {
 			continue
 		}
 		r.linef(`extension %s {`, quote(extension.Name))
+		if schema := r.extensionSchemaFor(extension); schema != "" {
+			if schemaselection.IsPostgresFamilySystemSchema(r.dialect, schema) {
+				r.stringAttr(1, "schema", schema)
+			} else {
+				r.rawAttr(1, "schema", r.schemaRef(schema))
+			}
+		}
 		if extension.IfNotExists {
 			r.trueAttr(1, "if_not_exists")
 		}

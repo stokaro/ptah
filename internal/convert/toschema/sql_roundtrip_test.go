@@ -286,7 +286,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 		`"audit"."user""events"`,
 		"[event]]id]",
 	)
-	extension := ast.NewExtension(`"uuid-ossp"`)
+	extension := ast.NewExtension(`"uuid-ossp"`).SetSchema(`"Extension Store"`)
 	enum := ast.NewEnum(`"audit"."event""kind"`, "created")
 
 	db := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
@@ -309,12 +309,36 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `audit."user""events"`)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"event]id"})
 	c.Assert(toschema.ToExtension(extension), qt.DeepEquals, goschema.Extension{
-		Name: "uuid-ossp",
+		Name:   "uuid-ossp",
+		Schema: "Extension Store",
 	})
 	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
 		Name:   `audit.event"kind`,
 		Values: []string{"created"},
 	}})
+}
+
+func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	unquoted := parseToDatabase(c, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
+	c.Assert(unquoted.Extensions, qt.DeepEquals, []goschema.Extension{{
+		Name:   "pgcrypto",
+		Schema: "extensions",
+	}})
+	unquotedSQL, err := renderer.RenderSQL("postgres", fromschema.FromExtension(unquoted.Extensions[0]))
+	c.Assert(err, qt.IsNil)
+	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
+
+	quoted := parseToDatabase(c, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
+	c.Assert(quoted.Extensions, qt.DeepEquals, []goschema.Extension{{
+		Name:   "PGCrypto",
+		Schema: " Extension Store ",
+	}})
+
+	rendered, err := renderer.RenderSQL("postgres", fromschema.FromExtension(quoted.Extensions[0]))
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered, qt.Contains, `CREATE EXTENSION "PGCrypto" WITH SCHEMA " Extension Store ";`)
 }
 
 func TestToConstraint_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {

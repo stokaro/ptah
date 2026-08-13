@@ -13,18 +13,10 @@ import (
 
 // `schema diff` is the one verb whose CURRENT side can be a document rather
 // than a database, so it is the only place a `// ptah:not-described` record can
-// gate a creation. It gated too much: an object the --to document explicitly
-// declared was deleted from the plan, and the command then printed the same
-// words it prints for two identical schemas.
-//
-//	--from: // ptah:not-described extension
-//	--to:   extension "citext" { if_not_exists = true }
-//	stdout: Schemas are synced, no changes to be made.
-//	stderr: (empty)                                       exit 0
-//
-// measured on PostgreSQL 17.10, where the same command with the record stripped
-// from --from printed `CREATE EXTENSION IF NOT EXISTS "citext";`
-// (stokaro/ptah#1276).
+// gate a creation. A guarded extension addition is still undecidable now that
+// installation schema is modeled: an extension may already exist in another
+// schema, where CREATE EXTENSION IF NOT EXISTS succeeds without moving it
+// (stokaro/ptah#1276, stokaro/ptah#1441).
 
 const coverageDiffFrom = `
 schema "public" {
@@ -37,42 +29,44 @@ table "users" {
 }
 `
 
-// TestDiffPlansAGuardedCreationTheCurrentDocumentCouldNotRuleOut is the refuted
-// shape and its control in one table: the only difference between the two rows
-// is the record on --from, and the answer must not move.
-func TestDiffPlansAGuardedCreationTheCurrentDocumentCouldNotRuleOut(t *testing.T) {
+func TestDiffNamesAGuardedExtensionPlacementItCannotConfirm(t *testing.T) {
 	c := qt.New(t)
+	var diagnostics bytes.Buffer
 
-	tests := []struct {
-		name string
-		from string
-	}{
-		{
-			name: "--from records that it does not describe extensions",
-			from: "// ptah:not-described extension\n" + coverageDiffFrom,
-		},
-		{
-			name: "control: --from with the record stripped",
-			from: coverageDiffFrom,
-		},
-	}
-
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			var diagnostics bytes.Buffer
-			report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, test.from, coverageDiffFrom+`
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c,
+		"// ptah:not-described extension\n"+coverageDiffFrom,
+		coverageDiffFrom+`
 extension "citext" {
   if_not_exists = true
+  schema        = "extensions"
 }
 `, &diagnostics))
 
-			c.Assert(err, qt.IsNil)
-			sql, err := report.MarshalSQL()
-			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "citext";`)
-			c.Assert(diagnostics.String(), qt.Equals, "")
-		})
-	}
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Changes, qt.HasLen, 0)
+	c.Assert(diagnostics.String(), qt.Matches,
+		`Warning: extension "citext" is declared by --to but no change was planned for it:`+
+			" --from records `ptah:not-described extension`.*cannot safely converge from an unknown current state\\.\n")
+}
+
+func TestDiffPlansGuardedExtensionPlacementWhenCurrentIsAuthoritative(t *testing.T) {
+	c := qt.New(t)
+	var diagnostics bytes.Buffer
+
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c,
+		coverageDiffFrom,
+		coverageDiffFrom+`
+extension "citext" {
+  if_not_exists = true
+  schema        = "extensions"
+}
+`, &diagnostics))
+
+	c.Assert(err, qt.IsNil)
+	sql, err := report.MarshalSQL()
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "citext" WITH SCHEMA "extensions";`)
+	c.Assert(diagnostics.String(), qt.Equals, "")
 }
 
 // TestDiffNamesAnUnguardedCreationItWithheld covers the half that stays
@@ -97,7 +91,7 @@ sequence "order_seq" {
 	c.Assert(report.Changes, qt.HasLen, 0)
 	c.Assert(diagnostics.String(), qt.Matches,
 		`Warning: sequence "public\.order_seq" is declared by --to but no change was planned for it:`+
-			" --from records `ptah:not-described sequence`.*no IF NOT EXISTS guard\\.\n")
+			" --from records `ptah:not-described sequence`.*cannot safely converge from an unknown current state\\.\n")
 }
 
 // TestDiffPlansAnUnguardedCreationWithoutTheRecord is the control for the test

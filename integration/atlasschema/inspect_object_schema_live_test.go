@@ -40,10 +40,10 @@ import (
 // that reverting one line of the fix reddens exactly the rows it broke.
 //
 // Kinds deliberately absent, and why: `role` is cluster-scoped and belongs to
-// no schema; `extension` carries a schema the goschema model does not model at
-// all, so the document claims none (see the issue's per-kind table); `grant`
-// and `policy` name their target relation, so their schema is the table row's
-// answer, and both are additionally suppressed on the Atlas-compatible surface.
+// no schema; extension placement has its own create, move, and convergence
+// controls; `grant` and `policy` name their target relation, so their schema is
+// the table row's answer, and both are additionally suppressed on the
+// Atlas-compatible surface.
 func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

@@ -14,7 +14,7 @@ import (
 )
 
 func (p *parser) parseExtension(block *hclsyntax.Block) error {
-	name, err := p.objectName(block, "extension")
+	schema, name, err := p.extensionSchemaAndName(block)
 	if err != nil {
 		return err
 	}
@@ -27,11 +27,69 @@ func (p *parser) parseExtension(block *hclsyntax.Block) error {
 	}
 	p.db.Extensions = append(p.db.Extensions, goschema.Extension{
 		Name:        name,
+		Schema:      schema,
 		IfNotExists: ifNotExists,
 		Version:     p.optionalString(block.Body.Attributes["version"]),
 		Comment:     p.optionalString(block.Body.Attributes["comment"]),
 	})
 	return nil
+}
+
+func (p *parser) extensionSchemaAndName(block *hclsyntax.Block) (schema, name string, err error) {
+	schemaAttribute, hasSchemaAttribute := block.Body.Attributes["schema"]
+	schemaAttr, validSchemaAttr := p.optionalExtensionSchemaName(schemaAttribute)
+	if !validSchemaAttr {
+		return "", "", p.blockError(block, `extension attribute "schema" must be a string template or exact schema reference`)
+	}
+	switch len(block.Labels) {
+	case 1:
+		return schemaAttr, block.Labels[0], nil
+	case 2:
+		if hasSchemaAttribute && schemaAttr != block.Labels[0] {
+			return "", "", p.blockError(
+				block,
+				"extension %q schema label conflicts with schema attribute %q",
+				block.Labels[1],
+				schemaAttr,
+			)
+		}
+		return block.Labels[0], block.Labels[1], nil
+	default:
+		return "", "", p.blockError(block, "extension block requires one or two name labels")
+	}
+}
+
+func (p *parser) optionalExtensionSchemaName(attr *hclsyntax.Attribute) (string, bool) {
+	if attr == nil {
+		return "", true
+	}
+	switch attr.Expr.(type) {
+	case *hclsyntax.TemplateExpr, *hclsyntax.TemplateWrapExpr:
+		value, diags := attr.Expr.Value(p.ctx)
+		if !diags.HasErrors() && value.IsKnown() && !value.IsNull() && value.Type() == cty.String {
+			return value.AsString(), true
+		}
+	}
+	if name, ok := exactSchemaTraversalName(p.rawExpr(attr)); ok {
+		return name, true
+	}
+	return "", false
+}
+
+func exactSchemaTraversalName(raw string) (string, bool) {
+	expr, diags := hclsyntax.ParseExpression([]byte(raw), "schema-reference.hcl", hcl.InitialPos)
+	if diags.HasErrors() {
+		return "", false
+	}
+	traversal, diags := hcl.AbsTraversalForExpr(expr)
+	if diags.HasErrors() || len(traversal) != 2 {
+		return "", false
+	}
+	root, ok := traversal[0].(hcl.TraverseRoot)
+	if !ok || root.Name != "schema" {
+		return "", false
+	}
+	return traversalPart(traversal[1])
 }
 
 func (p *parser) parseFunction(block *hclsyntax.Block) error {
@@ -500,6 +558,7 @@ func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":        true,
 		"if_not_exists": true,
 		"version":       true,
 		"comment":       true,

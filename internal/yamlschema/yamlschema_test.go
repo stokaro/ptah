@@ -124,6 +124,7 @@ enums:
   account_status: [active, suspended]
 extensions:
   pg_trgm:
+    schema: extensions
     if_not_exists: true
 functions:
   current_tenant:
@@ -201,6 +202,7 @@ rls_policies:
 	c.Assert(db.Fields[5].GeneratedKind, qt.Equals, "STORED")
 	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{Name: "account_status", Values: []string{"active", "suspended"}}})
 	c.Assert(db.Extensions, qt.HasLen, 1)
+	c.Assert(db.Extensions[0].Schema, qt.Equals, "extensions")
 	c.Assert(db.Functions, qt.HasLen, 1)
 	c.Assert(db.Functions[0].Returns, qt.Equals, "text")
 	c.Assert(db.Functions[0].Language, qt.Equals, "sql")

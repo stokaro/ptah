@@ -64,6 +64,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -137,6 +138,15 @@ func canonicalPlatform(targetPlatform string) string {
 // cannot disagree about the same file (stokaro/ptah#929).
 func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
 	return platform.IsPostgresFamily(targetPlatform)
+}
+
+func supportsExtensionInstallationSchema(targetPlatform string) bool {
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.Postgres, platform.YugabyteDB:
+		return true
+	default:
+		return false
+	}
 }
 
 // typeRawSQLSurvives reports whether the column type is still the one the
@@ -1446,6 +1456,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 // # Extension Features
 //
 //   - Extension name specification (pg_trgm, postgis, etc.)
+//   - PostgreSQL installation schema
 //   - IF NOT EXISTS clause support
 //   - Version specification for specific extension versions
 //   - Extension comments for documentation
@@ -1465,6 +1476,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 //
 //	extension := goschema.Extension{
 //		Name:        "postgis",
+//		Schema:      "extensions",
 //		Version:     "3.0",
 //		IfNotExists: true,
 //		Comment:     "Geographic data support",
@@ -1474,9 +1486,12 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 // # Return Value
 //
 // Returns a fully configured *ast.ExtensionNode ready for SQL generation.
-// The node contains the extension name, version, and all specified options.
+// The node contains the extension name, installation schema, version, and all specified options.
 func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 	extensionNode := ast.NewExtension(extension.Name)
+	if extension.Schema != "" {
+		extensionNode.SetSchema(extension.Schema)
+	}
 
 	// Set IF NOT EXISTS
 	if extension.IfNotExists {
@@ -2081,8 +2096,9 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	database = *QualifyDeclaredUserTypes(assigned, targetPlatform)
 	allFields := database.Fields
 
-	// 1. Add schema definitions first (they may be referenced by tables)
-	appendSchemaStatements(statements, database.Schemas)
+	// 1. Add schema definitions first (they may be referenced by tables or
+	// extension installation clauses).
+	appendSchemaStatements(statements, schemasForRender(database, targetPlatform))
 
 	// 2. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {
@@ -2339,6 +2355,30 @@ func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Sc
 			Collate:     schema.Collate,
 		})
 	}
+}
+
+func schemasForRender(database goschema.Database, targetPlatform string) []goschema.Schema {
+	schemas := slices.Clone(database.Schemas)
+	if !supportsExtensionInstallationSchema(targetPlatform) {
+		return schemas
+	}
+
+	seen := make(map[string]struct{}, len(schemas))
+	for _, schema := range schemas {
+		seen[schema.Name] = struct{}{}
+	}
+	for _, extension := range database.Extensions {
+		name := extension.Schema
+		if name == "" || schemaselection.IsPostgresSystemSchema(name) {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		schemas = append(schemas, goschema.Schema{Name: name})
+	}
+	return schemas
 }
 
 // createStructToTableMap creates a mapping from struct names to table names.

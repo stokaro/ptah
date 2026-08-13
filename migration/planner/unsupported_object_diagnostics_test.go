@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -305,6 +306,85 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			c.Assert(planned, qt.Contains, test.wantSequence)
 			c.Assert(rendered, qt.Contains, test.wantExtension)
 			c.Assert(rendered, qt.Contains, test.wantSequence)
+		})
+	}
+}
+
+func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{{
+		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
+	}}}
+
+	tests := []struct {
+		dialect string
+		want    string
+	}{
+		{dialect: platform.MySQL, want: "-- Extension pgcrypto not supported in MySQL"},
+		{dialect: platform.MariaDB, want: "-- Extension pgcrypto not supported in MariaDB"},
+		{dialect: platform.ClickHouse, want: `-- CLICKHOUSE: CREATE EXTENSION "pgcrypto" is not supported`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.dialect, func(c *qt.C) {
+			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, test.dialect), "\n")
+			c.Assert(planned, qt.Contains, test.want)
+		})
+	}
+}
+
+func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{
+				"CREATE SCHEMA IF NOT EXISTS \"extensions\"",
+				"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \"extensions\"",
+			})
+		})
+	}
+}
+
+func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }

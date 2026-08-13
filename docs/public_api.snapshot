@@ -2207,6 +2207,8 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type ExtensionNode struct {
     // Name is the extension name (pg_trgm, postgis, etc.)
     Name string
+    // Schema is the PostgreSQL installation schema. Empty uses the connection default.
+    Schema string
     // IfNotExists indicates whether to use IF NOT EXISTS clause
     IfNotExists bool
     // Version specifies a specific version requirement (optional)
@@ -2223,6 +2225,7 @@ func NewExtension(name string) *ExtensionNode
 func (n *ExtensionNode) Accept(visitor Visitor) error
 func (n *ExtensionNode) SetComment(comment string) *ExtensionNode
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode
+func (n *ExtensionNode) SetSchema(schema string) *ExtensionNode
 func (n *ExtensionNode) SetVersion(version string) *ExtensionNode
 
 ### go.5x5.cz/ptah/core/ast.ForeignKeyRef
@@ -4004,6 +4007,7 @@ package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Extension struct {
     Name        string // Extension name (pg_trgm, postgis, etc.)
+    Schema      string // PostgreSQL installation schema (optional; empty selects the connection default)
     IfNotExists bool   // Whether to use IF NOT EXISTS clause
     Version     string // Specific version requirement (optional)
     Comment     string // Extension comment/description
@@ -4045,7 +4049,7 @@ type Extension struct {
         type DatabaseExtensions struct{}
 
         // Enable PostGIS for geographic data
-        //ptah:schema:extension name="postgis" version="3.0" if_not_exists="true"
+        //ptah:schema:extension name="postgis" schema="extensions" version="3.0" if_not_exists="true"
         type GeoExtensions struct{}
 
 
@@ -8778,6 +8782,7 @@ type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
 type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
+type ExtensionDiff struct{ ... }
 type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
@@ -9004,6 +9009,18 @@ type EnumDiff struct {
             ValuesAdded: []string{"pending", "archived"},
             ValuesRemoved: []string{"deprecated"},
         }
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ExtensionDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ExtensionDiff struct {
+    Name       string `json:"name"`
+    FromSchema string `json:"from_schema"`
+    ToSchema   string `json:"to_schema"`
+}
+    ExtensionDiff represents a PostgreSQL extension installation-schema change.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.ForeignKeyRemovalInfo
@@ -9325,6 +9342,10 @@ type SchemaDiff struct {
     // ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
     // but not in the target schema (potentially dangerous - may break existing functionality)
     ExtensionsRemoved []string `json:"extensions_removed"`
+
+    // ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
+    // PostgreSQL extension names are database-wide identities; schema is placement, not identity.
+    ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
 
     // FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
     // but not in the current database schema

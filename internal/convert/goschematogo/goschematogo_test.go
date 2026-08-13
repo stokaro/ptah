@@ -51,6 +51,12 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 			Name:   "status_type",
 			Values: []string{"active", "inactive"},
 		}},
+		Extensions: []goschema.Extension{{
+			Name:        "pgcrypto",
+			Schema:      "extensions",
+			IfNotExists: true,
+			Version:     "1.3",
+		}},
 		Indexes: []goschema.Index{{
 			StructName:     "OrderItem",
 			Name:           "idx_order_items_status",
@@ -130,6 +136,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	parsed, err := goschema.ParseDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Enums, qt.DeepEquals, db.Enums)
+	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Name, qt.Equals, "order_items")
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})

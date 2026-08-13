@@ -207,9 +207,8 @@ func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *t
 }
 
 // TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres
-// pins that selector matching uses the introspected identity before converting
-// it to goschema. The conversion carries an extension's name and version but
-// cannot carry its installation schema, so filtering it first made the real
+// pins that selector matching and the shared schema model preserve the
+// introspected qualified identity. Filtering must not make the real
 // `extensions.pgcrypto` objects on both sides look like empty selections.
 func TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
@@ -303,13 +302,11 @@ func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "matched no objects")
 }
 
-// TestSchemaDiffIncludeRefusesUnrepresentableLiveExtensionPlacementPostgres
-// distinguishes selector match truth from safe DDL generation. A qualified
-// live extension can be selected, but goschema cannot yet carry its
-// installation schema into CREATE EXTENSION. The asymmetric create and move
-// cases therefore fail closed instead of emitting the extension in the wrong
-// schema or reporting different placements as synced.
-func TestSchemaDiffIncludeRefusesUnrepresentableLiveExtensionPlacementPostgres(t *testing.T) {
+// TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres distinguishes
+// creation, movement, and removal. Creation preserves the desired installation
+// schema; movement fails before SQL until the shared planner supports ALTER
+// EXTENSION SET SCHEMA; removal is independent of placement.
+func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := livePostgresURLForScope(t)
 	suffix := uniqueScopeSuffix()
@@ -322,43 +319,23 @@ func TestSchemaDiffIncludeRefusesUnrepresentableLiveExtensionPlacementPostgres(t
 		"CREATE EXTENSION pgcrypto WITH SCHEMA extensions",
 	)
 
-	tests := []struct {
-		name    string
-		fromURL string
-		toURL   string
-		include string
-		want    string
-	}{
-		{
-			name:    "non-default create refuses",
-			fromURL: emptyURL,
-			toURL:   scopedURL,
-			include: "extensions.pgcrypto",
-			want:    `cannot create extension "pgcrypto" in schema "extensions"`,
-		},
-		{
-			name:    "placement change refuses",
-			fromURL: defaultURL,
-			toURL:   scopedURL,
-			include: "*.pgcrypto",
-			want:    `cannot move extension "pgcrypto" from schema "public" to schema "extensions"`,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			out, err := executeCompatSchemaDiff(c,
-				"--from", test.fromURL,
-				"--to", test.toURL,
-				"--include", test.include,
-			)
+	createdNonDefault := runCompatSchemaDiff(c,
+		"--from", emptyURL,
+		"--to", scopedURL,
+		"--include", "extensions.pgcrypto",
+	)
+	c.Assert(createdNonDefault, qt.Contains, `CREATE SCHEMA IF NOT EXISTS "extensions";`)
+	c.Assert(createdNonDefault, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions"`)
 
-			c.Assert(err, qt.ErrorMatches, test.want+`.*`)
-			c.Assert(out, qt.Contains, test.want)
-			c.Assert(out, qt.Not(qt.Contains), "CREATE EXTENSION")
-			c.Assert(out, qt.Not(qt.Contains), "Atlas")
-		})
-	}
+	moved, err := executeCompatSchemaDiff(c,
+		"--from", defaultURL,
+		"--to", scopedURL,
+		"--include", "*.pgcrypto",
+	)
+	c.Assert(err, qt.ErrorMatches, `.*cannot move PostgreSQL extension "pgcrypto" from schema "public" to schema "extensions".*`)
+	c.Assert(moved, qt.Not(qt.Contains), "CREATE EXTENSION")
+	c.Assert(moved, qt.Not(qt.Contains), "DROP EXTENSION")
+	c.Assert(moved, qt.Not(qt.Contains), "Atlas")
 
 	created := runCompatSchemaDiff(c,
 		"--from", emptyURL,
@@ -376,8 +353,8 @@ func TestSchemaDiffIncludeRefusesUnrepresentableLiveExtensionPlacementPostgres(t
 }
 
 // TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions pins that the
-// placement safety check uses the same ignored-extension policy as the schema
-// comparator. Every ordinary PostgreSQL database exposes plpgsql in
+// schema comparator uses the same ignored-extension policy on both sides.
+// Every ordinary PostgreSQL database exposes plpgsql in
 // pg_catalog, while a hand-authored current state does not describe it. The
 // ignored extension must not turn the diff into a refusal or extension DDL.
 func TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions(t *testing.T) {

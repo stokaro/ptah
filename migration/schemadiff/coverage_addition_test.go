@@ -16,24 +16,29 @@ import (
 // author did not ask. Reading it as both deleted an explicitly declared object
 // from the plan and then reported a synced schema:
 //
-//	current: // ptah:not-described extension
-//	desired: extension "citext" { if_not_exists = true }
+//	current: // ptah:not-described sequence
+//	desired: sequence "s1" { if_not_exists = true }
 //	result:  Schemas are synced, no changes to be made.   exit 0, stderr empty
 //
 // measured on PostgreSQL 17.10 through `ptah-compat schema diff --from
 // file://<compat-inspected doc> --to file://<doc declaring citext>`, where the
 // same command with the record stripped from --from printed
-// `CREATE EXTENSION IF NOT EXISTS "citext";`.
+// `CREATE SEQUENCE IF NOT EXISTS "public"."s1";`.
 //
 // The gate is kept, because a read that did not look cannot tell a missing
 // object from an existing one and `CREATE ROLE` for a role that exists fails
 // the migration. What changed is that it now asks whether the creation NEEDS
-// that answer: a creation carrying IF NOT EXISTS is correct either way, so it
-// is planned; one that does not is withheld and named
-// (stokaro/ptah#1276).
+// that answer: a creation carrying IF NOT EXISTS is correct either way only
+// when the guard converges every modeled semantic. A guarded sequence is
+// planned. An extension is withheld even with the guard, because an existing
+// extension in another schema makes CREATE EXTENSION IF NOT EXISTS a successful
+// no-op that leaves desired placement unapplied (stokaro/ptah#1276,
+// stokaro/ptah#1441).
 
-// TestAGuardedCreationSurvivesAReadThatDidNotLook is the refuted shape.
-func TestAGuardedCreationSurvivesAReadThatDidNotLook(t *testing.T) {
+// TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook pins the generic
+// coverage rule independently of extensions, whose installation schema makes
+// an IF NOT EXISTS no-op insufficient to converge an unknown current state.
+func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -42,16 +47,6 @@ func TestAGuardedCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 		read        func(*difftypes.SchemaDiff) []string
 		wantPlanned []string
 	}{
-		{
-			name: "an extension the desired state declares with if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Extensions: []goschema.Extension{{Name: "citext", IfNotExists: true}},
-				}
-			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
-			wantPlanned: []string{"citext"},
-		},
 		{
 			name: "a sequence the desired state declares with if_not_exists",
 			desired: func() *goschema.Database {
@@ -75,6 +70,30 @@ func TestAGuardedCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
 			c.Assert(undecided, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T) {
+	c := qt.New(t)
+
+	for _, ifNotExists := range []bool{false, true} {
+		c.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(c *qt.C) {
+			desired := &goschema.Database{Extensions: []goschema.Extension{{
+				Name:        "citext",
+				Schema:      "extensions",
+				IfNotExists: ifNotExists,
+			}}}
+			current := &types.DBSchema{}
+			current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
+
+			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
+
+			c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
+			c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
+				Kind: coverage.Extension,
+				Name: "citext",
+			}})
 		})
 	}
 }

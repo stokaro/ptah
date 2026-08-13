@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -121,6 +122,72 @@ func TestExtensions(t *testing.T) {
 			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.expectedRemoved)
 		})
 	}
+}
+
+func TestExtensionsWithSemanticsComparesInstallationSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated goschema.Extension
+		database  types.DBExtension
+		want      []difftypes.ExtensionDiff
+	}{
+		{
+			name:      "implicit default matches explicit public",
+			generated: goschema.Extension{Name: "pgcrypto"},
+			database:  types.DBExtension{Name: "pgcrypto", Schema: "public"},
+			want:      []difftypes.ExtensionDiff{},
+		},
+		{
+			name:      "identical nondefault schema is synced",
+			generated: goschema.Extension{Name: "pgcrypto", Schema: "extensions"},
+			database:  types.DBExtension{Name: "pgcrypto", Schema: "extensions"},
+			want:      []difftypes.ExtensionDiff{},
+		},
+		{
+			name:      "placement change is not synced",
+			generated: goschema.Extension{Name: "pgcrypto", Schema: "extensions"},
+			database:  types.DBExtension{Name: "pgcrypto", Schema: "public"},
+			want: []difftypes.ExtensionDiff{{
+				Name:       "pgcrypto",
+				FromSchema: "public",
+				ToSchema:   "extensions",
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+			generated := &goschema.Database{Extensions: []goschema.Extension{test.generated}}
+			database := &types.DBSchema{Extensions: []types.DBExtension{test.database}}
+			compare.ExtensionsWithSemantics(
+				generated,
+				database,
+				diff,
+				nil,
+				compare.CoverageOf(generated, database),
+				identifier.Semantics{
+					DefaultSchema:  "public",
+					IndexNamespace: identifier.IndexNamespaceSchema,
+					IndexNames:     identifier.ComparisonExact,
+					TableNames:     identifier.ComparisonExact,
+					ColumnNames:    identifier.ComparisonExact,
+				},
+			)
+			c.Assert(diff.ExtensionsModified, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestExtensionsWrapperUsesPostgreSQLDefaultSchema(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
+	database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Extensions(generated, database, diff, nil, compare.CoverageOf(generated, database))
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
 func TestExtensions_RealWorldScenarios(t *testing.T) {

@@ -45,6 +45,71 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 	c.Assert(fieldByName(parsed.Fields, "email").UniqueExpr, qt.Equals, "lower(email)")
 }
 
+func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{Extensions: []goschema.Extension{{
+		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
+	}}}
+
+	inspected, err := atlashclrender.RenderInspected(db, "postgres", "public")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(inspected.Data), qt.Contains, `extension "plpgsql"`)
+	c.Assert(string(inspected.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
+	c.Assert(string(inspected.Data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
+	c.Assert(string(inspected.Data), qt.Contains, `schema = "pg_catalog"`)
+	parsedInspected, err := atlashcl.Parse(inspected.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", inspected.Data))
+	c.Assert(parsedInspected.Schemas, qt.HasLen, 0)
+	c.Assert(parsedInspected.Extensions, qt.DeepEquals, db.Extensions)
+
+	authored, err := atlashclrender.RenderForDialect(db, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(authored.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
+	c.Assert(string(authored.Data), qt.Contains, `schema = "pg_catalog"`)
+
+	parsed, err := atlashcl.Parse(authored.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", authored.Data))
+	c.Assert(parsed.Schemas, qt.HasLen, 0)
+	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
+}
+
+func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:        "pgcrypto",
+			Schema:      "Extension Store",
+			IfNotExists: true,
+			Version:     "1.3",
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Contains, `schema "Extension Store" {`)
+	c.Assert(string(rendered.Data), qt.Contains, `schema = schema["Extension Store"]`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
+	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
+}
+
+func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Contains, `schema " " {`)
+	c.Assert(string(rendered.Data), qt.Contains, `schema = schema[" "]`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", rendered.Data))
+	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
+}
+
 func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{

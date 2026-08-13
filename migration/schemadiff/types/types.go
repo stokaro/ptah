@@ -209,6 +209,10 @@ type SchemaDiff struct {
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	ExtensionsRemoved []string `json:"extensions_removed"`
 
+	// ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
+	// PostgreSQL extension names are database-wide identities; schema is placement, not identity.
+	ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
+
 	// FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
 	// but not in the current database schema
 	FunctionsAdded []string `json:"functions_added"`
@@ -546,7 +550,8 @@ func sortedIndexRefs(refs []IndexRef) []IndexRef {
 // hasExtensionChanges returns true if there are any extension-related changes
 func (d *SchemaDiff) hasExtensionChanges() bool {
 	return len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0
+		len(d.ExtensionsRemoved) > 0 ||
+		len(d.ExtensionsModified) > 0
 }
 
 // hasFunctionChanges returns true if there are any function-related changes
@@ -831,6 +836,13 @@ type SequenceDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// ExtensionDiff represents a PostgreSQL extension installation-schema change.
+type ExtensionDiff struct {
+	Name       string `json:"name"`
+	FromSchema string `json:"from_schema"`
+	ToSchema   string `json:"to_schema"`
 }
 
 // ViewDiff represents changes to a view definition.
