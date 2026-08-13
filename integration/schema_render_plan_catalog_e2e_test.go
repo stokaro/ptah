@@ -204,11 +204,18 @@ func runRenderPlanCatalogCase(
 
 	renderName := "p929_render_" + suffix
 	planName := "p929_plan_" + suffix
-	createE2EDatabase(c, ctx, adminDB, renderName)
-	c.Cleanup(func() { dropPostgresFamilyE2EDatabase(c, adminDB, renderName) })
-	createE2EDatabase(c, ctx, adminDB, planName)
-	c.Cleanup(func() { dropPostgresFamilyE2EDatabase(c, adminDB, planName) })
+
+	// The role is registered ahead of both databases so it is dropped after
+	// them. A role that still holds a grant inside a live database cannot be
+	// dropped -- PostgreSQL refuses with "role cannot be dropped because some
+	// objects depend on it" -- and roles are cluster-global, so getting this
+	// order wrong leaks one role per run onto a shared server rather than into a
+	// database somebody later removes.
 	c.Cleanup(func() { dropRenderPlanRole(adminDB, roleName) })
+	createE2EDatabase(c, ctx, adminDB, renderName)
+	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, renderName) })
+	createE2EDatabase(c, ctx, adminDB, planName)
+	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, planName) })
 
 	renderURL := replaceDatabaseName(c, adminURL, renderName)
 	planURL := replaceDatabaseName(c, adminURL, planName)
@@ -226,7 +233,7 @@ func runRenderPlanCatalogCase(
 	// The render surface's database and role are removed before the plan surface
 	// runs, so the plan surface starts from the same empty server the plan was
 	// read against.
-	dropPostgresFamilyE2EDatabase(c, adminDB, renderName)
+	dropRenderPlanDatabase(c, adminDB, renderName)
 	dropRenderPlanRole(adminDB, roleName)
 
 	planCensus := applyAndCensus(c, ctx, test.dialect, planURL, planSQL, suffix)
@@ -349,6 +356,30 @@ func applyAndCensus(
 		census[probe.kind] = fmt.Sprintf("count=%d err=%v", count, scanErr)
 	}
 	return census
+}
+
+// dropRenderPlanDatabase removes one of this measurement's throwaway databases.
+//
+// It evicts other sessions first, and carries its own context rather than the
+// test's. A database still holding a backend refuses to drop, and the drop also
+// has to survive being called from a cleanup after the test's context is
+// canceled. The budget is deliberately generous: a loaded machine has taken
+// over thirty seconds to drop a database of this size, which is a fact about
+// the disk and not about the surfaces under measurement.
+func dropRenderPlanDatabase(c *qt.C, adminDB *sql.DB, name string) {
+	c.Helper()
+
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// Best-effort: not every member of this family implements
+	// pg_terminate_backend, and a target that does not still drops fine.
+	_, _ = adminDB.ExecContext(cleanupCtx,
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity"+
+			" WHERE datname = $1 AND pid <> pg_backend_pid()", name)
+
+	_, err := adminDB.ExecContext(cleanupCtx, "DROP DATABASE IF EXISTS "+quoteE2EIdent(name))
+	c.Assert(err, qt.IsNil)
 }
 
 // dropRenderPlanRole removes the cluster-global role between the two surfaces.
