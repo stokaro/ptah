@@ -185,6 +185,12 @@ Parent traversal that resolves outside, an absolute outside path, and a
 symbolic-link escape fail as `outside allowed root`. An explicit CLI `--dir` is
 operator-owned and retains the CLI path behavior above.
 
+When a command prepares that directory for migration output, rooted parent
+creation also refuses to traverse a symbolic-link component whose target stays
+inside the project root. The error includes `path escapes from parent`; point
+`migration.dir` directly at the target instead. An existing migration directory
+may itself be a symbolic link when its resolved target remains inside the root.
+
 ## Minimal `ptah.yaml`
 
 ```yaml

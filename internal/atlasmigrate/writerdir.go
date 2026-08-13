@@ -269,11 +269,9 @@ func ensureMigrationDirParent(root *pathguard.OpenedDirectory, dir string) error
 	return rootMkdirAll(root, parentPath)
 }
 
-// rootMkdirAll creates path inside root, treating an entry that already resolves
-// to a directory as success. os.Root.MkdirAll reports fs.ErrExist for a path
-// component that is a symlink to a directory, where the unrooted os.MkdirAll
-// this replaced followed it and returned nil; the containment guarantee comes
-// from the rooted open that follows, not from the create.
+// rootMkdirAll creates path inside root. os.Root refuses directory symlinks
+// during rooted creation; keep that fail-closed behavior. The fs.ErrExist case
+// defers validation of an already-present leaf to the rooted open that follows.
 func rootMkdirAll(root *pathguard.OpenedDirectory, path string) error {
 	err := root.MkdirAll(path, 0o755)
 	if err == nil || errors.Is(err, fs.ErrExist) {

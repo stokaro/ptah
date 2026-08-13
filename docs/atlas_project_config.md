@@ -155,6 +155,14 @@ work. Relative CLI `--dir` paths remain rooted at the process working
 directory, symlink escapes are rejected, and explicit absolute CLI paths remain
 supported.
 
+When a command prepares a project-configured directory for migration output,
+rooted parent creation also refuses to traverse a symbolic-link component,
+even when its target remains inside the project root. The error includes
+`path escapes from parent`; name the target directory directly instead. An
+existing migration directory may itself be a symbolic link when its resolved
+target remains inside the root. Links that resolve outside the root continue to
+fail as `outside allowed root`.
+
 Ptah's `ptah.yaml external_schema` block is a separate native configuration
 surface. It supplies an explicit external-program argument list and SQL, HCL,
 or YAML stdout to `ptah schema render`, `ptah schema compare`,

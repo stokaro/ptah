@@ -1,6 +1,6 @@
 module go.5x5.cz/ptah/testkit
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/frankban/quicktest v1.14.6

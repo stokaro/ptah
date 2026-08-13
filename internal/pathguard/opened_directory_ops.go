@@ -60,7 +60,9 @@ func (d *OpenedDirectory) Mkdir(name string, perm fs.FileMode) error {
 }
 
 // MkdirAll creates path and every missing parent inside the opened directory.
-// Path may be spelled absolutely as long as it stays within the handle.
+// Path may be spelled absolutely as long as it stays within the handle. It
+// preserves os.Root's refusal to traverse directory symlinks and translates an
+// escaping target to the package's named containment error.
 func (d *OpenedDirectory) MkdirAll(path string, perm fs.FileMode) error {
 	target, err := rootedRelativePath(path, d.path)
 	if err != nil {
@@ -69,7 +71,14 @@ func (d *OpenedDirectory) MkdirAll(path string, perm fs.FileMode) error {
 	if target.relative == "." {
 		return nil
 	}
-	return d.root.MkdirAll(target.relative, perm)
+	if err := d.root.MkdirAll(target.relative, perm); err != nil {
+		_, containmentErr := ResolveWithinRoot(target.display, d.path)
+		if errors.Is(containmentErr, ErrOutsideRoot) {
+			return containmentErr
+		}
+		return err
+	}
+	return nil
 }
 
 // CreateTemp creates a new exclusively owned file directly in the opened

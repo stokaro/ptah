@@ -1,6 +1,6 @@
 module go.5x5.cz/ptah/examples/orm-loaders/gorm
 
-go 1.26.5
+go 1.26.6
 
 require gorm.io/gorm v1.31.2
 

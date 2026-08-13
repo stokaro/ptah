@@ -87,6 +87,14 @@ after symbolic-link resolution; parent traversal that resolves outside and
 external symbolic links are refused. An explicit CLI `--dir` keeps CLI path
 semantics.
 
+When a command prepares a project-configured directory for migration output,
+rooted parent creation also refuses to traverse a symbolic-link component,
+even when its target remains inside the project root. The error includes
+`path escapes from parent`; name the target directory directly instead. An
+existing migration directory may itself be a symbolic link when its resolved
+target remains inside the root. Links that resolve outside the root continue to
+fail as `outside allowed root`.
+
 Ptah reads the directory twice and accepts it only when both observed captures
 match. This best-effort check rejects observed differences, but cannot defeat
 coordinated writers or an ABA change that restores the original bytes before

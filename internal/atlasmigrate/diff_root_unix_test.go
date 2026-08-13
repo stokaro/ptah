@@ -144,13 +144,13 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 		{
 			name: "ancestor symlink swapped before planning",
 			stage: func(c *qt.C, root, _ string) (string, string) {
-				bound := filepath.Join(root, "realnest", "migrations")
+				bound := filepath.Join(root, "nest", "migrations")
 				c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
-				c.Assert(os.Symlink(filepath.Join(root, "realnest"), filepath.Join(root, "nest")), qt.IsNil)
-				return filepath.Join(root, "nest", "migrations"), bound
+				return bound, filepath.Join(root, "realnest", "migrations")
 			},
 			swap: func(c *qt.C, root, decoy string) {
-				swapMigrationSymlink(c, filepath.Join(root, "nest"), decoy)
+				c.Assert(os.Rename(filepath.Join(root, "nest"), filepath.Join(root, "realnest")), qt.IsNil)
+				c.Assert(os.Symlink(decoy, filepath.Join(root, "nest")), qt.IsNil)
 			},
 			hook:        verifyDirHook,
 			projectRoot: openDiffProjectRoot,
@@ -193,7 +193,6 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			test.hook(&opts, func() { test.swap(c, root, decoy) })
 
 			result, err := atlasmigrate.GenerateDiff(context.Background(), conn, opts)
-
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.MigrationPaths, qt.HasLen, 1)
 			// The run published into the object it opened, not into whatever the

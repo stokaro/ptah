@@ -16,7 +16,7 @@ inputs:
   go-version:
     description: Go version passed to actions/setup-go.
     required: false
-    default: "1.26.5"
+    default: "1.26.6"
   dir:
     description: Root directory to scan for Go schema entities.
     required: false

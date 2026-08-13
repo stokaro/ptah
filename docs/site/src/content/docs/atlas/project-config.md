@@ -405,6 +405,13 @@ Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value; an explicit CLI path flag still wins
 before URI validation.
 
+When a command prepares a project-configured directory for migration output,
+rooted parent creation also refuses to traverse a symbolic-link component,
+even when its target remains inside the project root. The error includes
+`path escapes from parent`; name the target directory directly instead. An
+existing migration directory may itself be a symbolic link when its resolved
+target remains inside the root.
+
 ## Environment selection
 
 Use Atlas project flags on commands under `ptah-compat schema ...` and

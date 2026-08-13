@@ -61,7 +61,7 @@ local Ptah validation path.
 | `version` | `latest` | Ptah release tag to download. |
 | `binary-path` | empty | Existing Ptah binary path. Skips release download. |
 | `setup-go` | `true` | Set up the Go toolchain before running Ptah. |
-| `go-version` | `1.26.5` | Go version passed to `actions/setup-go`. |
+| `go-version` | `1.26.6` | Go version passed to `actions/setup-go`. |
 | `dir` | `.` | Root directory scanned for Go schema entities. |
 | `db-url` | required | Target database URL used to read the current schema. |
 | `dialect` | empty | Dialect passed to `ptah migrations lint`. |

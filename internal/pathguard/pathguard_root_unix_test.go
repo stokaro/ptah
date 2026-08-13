@@ -83,6 +83,61 @@ func TestOpenDirectoryWithinRootRejectsEscapingSymlink(t *testing.T) {
 	c.Assert(opened, qt.IsNil)
 }
 
+func TestOpenedDirectoryMkdirAllNamesEscapingSymlink(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	c.Assert(os.Symlink(outside, filepath.Join(root, "link")), qt.IsNil)
+	opened, err := pathguard.OpenDirectory(root)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(opened.Close(), qt.IsNil)
+	})
+
+	err = opened.MkdirAll(filepath.Join(root, "link", "migrations"), 0o700)
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
+	_, err = os.Stat(filepath.Join(outside, "migrations"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+func TestOpenedDirectoryMkdirAllNamesEscapingFinalSymlink(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	c.Assert(os.Symlink(outside, filepath.Join(root, "link")), qt.IsNil)
+	opened, err := pathguard.OpenDirectory(root)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(opened.Close(), qt.IsNil)
+	})
+
+	err = opened.MkdirAll(filepath.Join(root, "link"), 0o700)
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
+}
+
+func TestOpenedDirectoryMkdirAllRefusesContainedDirectorySymlink(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	c.Assert(os.Mkdir(target, 0o700), qt.IsNil)
+	c.Assert(os.Symlink(target, filepath.Join(root, "link")), qt.IsNil)
+	opened, err := pathguard.OpenDirectory(root)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(opened.Close(), qt.IsNil)
+	})
+
+	err = opened.MkdirAll(filepath.Join(root, "link", "migrations"), 0o700)
+
+	c.Assert(err, qt.ErrorMatches, `.*path escapes from parent.*`)
+	_, err = os.Stat(filepath.Join(target, "migrations"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
 func TestOpenDirectoryWithinRootAnchorsAllowedRoot(t *testing.T) {
 	c := qt.New(t)
 	parent := t.TempDir()
