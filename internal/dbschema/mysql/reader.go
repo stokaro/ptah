@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -102,6 +103,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		return nil, fmt.Errorf("failed to read triggers: %w", err)
 	}
 	schema.Triggers = triggers
+
+	functions, err := r.readFunctions(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read functions: %w", err)
+	}
+	schema.Functions = functions
 
 	// Reconcile per-column flags after all catalog metadata is loaded.
 	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
@@ -415,6 +422,139 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 		views = append(views, view)
 	}
 	return views, nil
+}
+
+// readFunctions reads stored functions back from the live catalog.
+//
+// The parameter list is rebuilt from information_schema.PARAMETERS rather than
+// taken from ROUTINES, because ROUTINES carries no argument list at all. In
+// PARAMETERS, ordinal 0 is the RETURN type of a function and carries a NULL
+// name, so only ordinals 1 and above are real arguments -- measured on MySQL
+// 26.7.0, where `f_full(a INT, b VARCHAR(10)) RETURNS varchar(20)` reports
+// three rows: (0, NULL, varchar(20)), (1, a, int), (2, b, varchar(10)).
+//
+// Volatility is derived from IS_DETERMINISTIC, the inverse of the mapping the
+// renderer applies. The renderer emits DETERMINISTIC only for IMMUTABLE, so
+// IS_DETERMINISTIC = YES reads back as IMMUTABLE and NO as VOLATILE. That
+// round-trips every value the renderer can produce; a STABLE declaration lands
+// on VOLATILE, which the comparator normalizes rather than reporting as drift.
+func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
+	parameters, err := r.readRoutineParameters(dbName)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT
+			ROUTINE_NAME,
+			DTD_IDENTIFIER,
+			IS_DETERMINISTIC,
+			SECURITY_TYPE,
+			COALESCE(ROUTINE_DEFINITION, ''),
+			COALESCE(ROUTINE_COMMENT, '')
+		FROM information_schema.ROUTINES
+		WHERE ROUTINE_SCHEMA = ?
+		AND ROUTINE_TYPE = 'FUNCTION'
+		ORDER BY ROUTINE_NAME`
+
+	rows, err := r.db.Query(query, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunction
+	for rows.Next() {
+		var (
+			fn              types.DBFunction
+			isDeterministic string
+		)
+		if err := rows.Scan(&fn.Name, &fn.Returns, &isDeterministic, &fn.Security, &fn.Body, &fn.Comment); err != nil {
+			return nil, err
+		}
+		fn.Schema = dbName
+		fn.Language = "sql"
+		fn.Returns = normalizeRoutineType(fn.Returns)
+		fn.Parameters = parameters[fn.Name]
+		fn.Volatility = "VOLATILE"
+		if strings.EqualFold(isDeterministic, "YES") {
+			fn.Volatility = "IMMUTABLE"
+		}
+		functions = append(functions, fn)
+	}
+	return functions, rows.Err()
+}
+
+// integerRoutineTypes are the types whose parenthesized argument is a display
+// width rather than a size. Everything else -- varchar(20), decimal(10,2) --
+// carries meaning in the parentheses and is left alone.
+var integerRoutineTypes = []string{"tinyint", "smallint", "mediumint", "int", "bigint"}
+
+// normalizeRoutineType strips the legacy integer display width from a catalog
+// type so the two engines this reader serves answer with one spelling.
+//
+// Measured on the same declaration, `f1(a int) RETURNS int`: MySQL 26.7.0
+// reports DTD_IDENTIFIER `int`, MariaDB 10.11.18 reports `int(11)`. Without
+// this the identical schema converges on MySQL and reports a permanent
+// `parameters, returns` diff on MariaDB -- the engines disagreeing with each
+// other, not the operator disagreeing with either.
+//
+// The width is dropped, not the rest: `int(11) unsigned` keeps its unsigned.
+func normalizeRoutineType(dataType string) string {
+	trimmed := strings.TrimSpace(dataType)
+	open := strings.Index(trimmed, "(")
+	if open < 0 {
+		return trimmed
+	}
+	base := strings.TrimSpace(trimmed[:open])
+	if !slices.Contains(integerRoutineTypes, strings.ToLower(base)) {
+		return trimmed
+	}
+	closing := strings.Index(trimmed[open:], ")")
+	if closing < 0 {
+		return trimmed
+	}
+	suffix := strings.TrimSpace(trimmed[open+closing+1:])
+	if suffix == "" {
+		return base
+	}
+	return base + " " + suffix
+}
+
+// readRoutineParameters returns the rendered argument list of every function in
+// dbName, keyed by function name. See readFunctions for why ordinal 0 is
+// skipped.
+func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error) {
+	query := `
+		SELECT SPECIFIC_NAME, PARAMETER_NAME, DTD_IDENTIFIER
+		FROM information_schema.PARAMETERS
+		WHERE SPECIFIC_SCHEMA = ?
+		AND ORDINAL_POSITION > 0
+		ORDER BY SPECIFIC_NAME, ORDINAL_POSITION`
+
+	rows, err := r.db.Query(query, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	declarations := make(map[string][]string)
+	for rows.Next() {
+		var routine, name, dataType string
+		if err := rows.Scan(&routine, &name, &dataType); err != nil {
+			return nil, err
+		}
+		declarations[routine] = append(declarations[routine], name+" "+normalizeRoutineType(dataType))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rendered := make(map[string]string, len(declarations))
+	for routine, args := range declarations {
+		rendered[routine] = strings.Join(args, ", ")
+	}
+	return rendered, nil
 }
 
 func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {

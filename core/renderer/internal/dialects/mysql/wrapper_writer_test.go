@@ -41,9 +41,13 @@ func TestMySQLRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
 			want:   "-- DROP EXTENSION pg_trgm not supported in MySQL",
 		},
 		{
-			name:   "VisitCreateFunction",
-			render: func(r *mysql.Renderer) error { return r.VisitCreateFunction(&ast.CreateFunctionNode{Name: "touch"}) },
-			want:   "-- CREATE FUNCTION touch not supported in MySQL",
+			name: "VisitCreateFunction",
+			render: func(r *mysql.Renderer) error {
+				return r.VisitCreateFunction(&ast.CreateFunctionNode{
+					Name: "touch", Returns: "int", Volatility: "IMMUTABLE", Body: "RETURN 1",
+				})
+			},
+			want: "CREATE FUNCTION `touch`() RETURNS int DETERMINISTIC RETURN 1;",
 		},
 		{
 			name:   "VisitCreatePolicy",

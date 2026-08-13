@@ -1,7 +1,15 @@
 package mysql
 
 import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -59,12 +67,21 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 // and function kinds these targets do not generate. It is split from
 // reportUnsupportedObjects so that adding a kind does not push that function
 // past the cyclomatic-complexity gate.
+//
+// Functions are here only for a target whose capability set declines them. A
+// target that declares capability.Functions gets real DDL from
+// planFunctions instead, which is what makes the key mean what its own doc
+// comment says: a preset may claim it only where a path emits, reads back and
+// plans the object.
 func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, name := range diff.RolesAdded {
 		result = append(result, ast.NewCreateRole(name))
 	}
 	for _, name := range diff.RolesRemoved {
 		result = append(result, ast.NewDropRole(name))
+	}
+	if p.capabilities().Has(capability.Functions) {
+		return result
 	}
 	for _, name := range diff.FunctionsAdded {
 		result = append(result, ast.NewCreateFunction(name))
@@ -73,4 +90,53 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 		result = append(result, ast.NewDropFunction(name))
 	}
 	return result
+}
+
+// planFunctions plans the create, replace and drop of stored functions for a
+// target that hosts them.
+//
+// A modified function is planned as its full CREATE node, exactly as an added
+// one is: the MySQL-family renderer prefixes every CREATE FUNCTION with
+// DROP FUNCTION IF EXISTS, because neither engine has the single-statement
+// replace form the PostgreSQL planner leans on, so one node covers both cases.
+//
+// A target that declines capability.Functions plans nothing here; its named
+// skips come from reportUnsupportedRoutinesAndRoles.
+func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	if !p.capabilities().Has(capability.Functions) {
+		return result
+	}
+	for _, name := range diff.FunctionsAdded {
+		if fn, ok := findGeneratedFunction(generated, name); ok {
+			result = append(result, fromschema.FromFunction(fn))
+		}
+	}
+	for _, fnDiff := range diff.FunctionsModified {
+		fn, ok := findGeneratedFunction(generated, fnDiff.FunctionName)
+		if !ok {
+			continue
+		}
+		node := fromschema.FromFunction(fn)
+		node.SetComment(fmt.Sprintf("Modify function %s: %s",
+			fn.Name, strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")))
+		result = append(result, node)
+	}
+	for _, name := range diff.FunctionsRemoved {
+		result = append(result, ast.NewDropFunction(name).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this function"))
+	}
+	return result
+}
+
+// findGeneratedFunction returns the desired definition the diff entry names.
+// The diff carries names only, so without the definition there is no faithful
+// CREATE to emit.
+func findGeneratedFunction(generated *goschema.Database, name string) (goschema.Function, bool) {
+	for _, fn := range generated.Functions {
+		if fn.Name == name {
+			return fn, true
+		}
+	}
+	return goschema.Function{}, false
 }

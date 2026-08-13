@@ -1047,16 +1047,72 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-// VisitCreateFunction renders CREATE FUNCTION statements for MySQL-like databases (no-op)
+// VisitCreateFunction renders a CREATE FUNCTION statement for MySQL/MariaDB.
+//
+// The statement is preceded by DROP FUNCTION IF EXISTS because neither engine
+// offers the replace form Ptah's PostgreSQL renderer relies on for the same
+// node: `CREATE OR REPLACE FUNCTION f() RETURNS integer DETERMINISTIC RETURN 2`
+// is Error 1064 on MySQL 26.7.0. MariaDB 10.11.18 does accept it, but the
+// drop-then-create pair is accepted by both, so the family shares one shape --
+// the same trade the trigger renderer above makes when a target lacks
+// capability.CreateOrReplaceTrigger.
+//
+// A characteristic is always emitted. With binary logging on and
+// log_bin_trust_function_creators off -- the MySQL 26.7.0 image's own defaults
+// -- a function declared without one is refused outright:
+//
+//	CREATE FUNCTION f() RETURNS integer RETURN 1
+//	  -> Error 1418 (HY000): This function has none of DETERMINISTIC, NO SQL,
+//	     or READS SQL DATA in its declaration and binary logging is enabled
+//
+// Only those three satisfy the check. Measured on the same server,
+// MODIFIES SQL DATA and a bare NOT DETERMINISTIC are BOTH refused with the
+// same 1418, which is why a VOLATILE function maps to READS SQL DATA rather
+// than to the MODIFIES spelling its name suggests: the latter renders a
+// statement the engine will not accept.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	// MySQL-like databases don't support PostgreSQL-style functions
-	// Add a comment to indicate this feature is not supported
-	if node.Comment != "" {
-		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
-	} else {
-		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s", node.Name, r.dialect)
+	if !r.caps.Has(capability.Functions) {
+		r.notGenerated("CREATE FUNCTION", node.Name)
+		return nil
 	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s;", escapeIdentifier(node.Name))
+
+	header := fmt.Sprintf("CREATE FUNCTION %s(%s) RETURNS %s",
+		escapeIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
+	parts := []string{header, mysqlRoutineCharacteristic(node.Volatility)}
+	if security := mysqlRoutineSecurity(node.Security); security != "" {
+		parts = append(parts, security)
+	}
+	parts = append(parts, terminateStatement(node.Body))
+	r.w.WriteLinef("%s", strings.Join(parts, " "))
 	return nil
+}
+
+// mysqlRoutineCharacteristic maps Ptah's PostgreSQL-shaped volatility onto the
+// MySQL-family characteristic that both engines accept under default binary
+// logging. See VisitCreateFunction for the measurements behind the mapping.
+func mysqlRoutineCharacteristic(volatility string) string {
+	if strings.EqualFold(strings.TrimSpace(volatility), "IMMUTABLE") {
+		return "DETERMINISTIC"
+	}
+	return "READS SQL DATA"
+}
+
+// mysqlRoutineSecurity renders the SQL SECURITY clause. An unset or
+// unrecognized value renders nothing so the server applies its own default
+// (DEFINER), rather than Ptah inventing a security context for the operator.
+func mysqlRoutineSecurity(security string) string {
+	switch strings.ToUpper(strings.TrimSpace(security)) {
+	case "DEFINER":
+		return "SQL SECURITY DEFINER"
+	case "INVOKER":
+		return "SQL SECURITY INVOKER"
+	default:
+		return ""
+	}
 }
 
 // VisitCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)
@@ -1083,12 +1139,30 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	return nil
 }
 
-// VisitDropFunction names the function drop Ptah does not generate for this
-// target. Its CREATE counterpart above already answers with a comment; an error
-// on only the DOWN half would abort a rollback script that the UP half rendered
-// happily.
+// VisitDropFunction renders a DROP FUNCTION statement for MySQL/MariaDB.
+//
+// A target whose capability set declines Functions still only gets the named
+// skip, and it gets it on this half too: its CREATE counterpart answers the
+// same way, and an error on only the DOWN half would abort a rollback script
+// whose UP half rendered happily.
+//
+// CASCADE is dropped rather than rendered. Neither engine has it on DROP
+// FUNCTION, and a routine has no dependent objects to cascade to in their
+// model, so silently omitting it changes nothing the operator asked for.
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	r.notGenerated("DROP FUNCTION", node.Name)
+	if !r.caps.Has(capability.Functions) {
+		r.notGenerated("DROP FUNCTION", node.Name)
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP FUNCTION"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, escapeIdentifier(node.Name))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 

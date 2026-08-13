@@ -283,7 +283,10 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	sqlServer := capability.SQLServer2022()
 	c.Assert(sqlServer.Has(capability.Views), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.MaterializedViews), qt.IsFalse)
-	c.Assert(sqlServer.Has(capability.Functions), qt.IsTrue)
+	// The engine hosts scalar functions; Ptah has no SQL Server path that reads
+	// one back, and the key names the generator rather than the engine. See the
+	// preset's own comment for the measurement (stokaro/ptah#929).
+	c.Assert(sqlServer.Has(capability.Functions), qt.IsFalse)
 	c.Assert(sqlServer.Has(capability.Triggers), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.CheckConstraintsEnforced), qt.IsTrue)

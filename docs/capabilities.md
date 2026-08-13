@@ -144,7 +144,7 @@ composed sets yourself.
 | `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -496,6 +496,36 @@ remaining resolver refinement work.
   object. Every row of these four keys was measured against a live server of
   that engine except Spanner's, which has no container and no live test (#942)
   and follows Google's documentation.
+- **Stored functions outside the PostgreSQL family (#929).** `functions` is the
+  worked example of the rule the key's own doc comment states: it describes
+  Ptah's generator, not the engine's brochure, so a preset may claim it only
+  where a path emits, reads back **and** plans the object. All three of MySQL,
+  MariaDB and SQL Server declared it while nothing implemented it, and
+  `ptah schema render --dialect mysql` answered a declared function with
+  `-- CREATE FUNCTION f1 not supported in MySQL` — a claim about the server that
+  the server contradicts.
+
+  MySQL and MariaDB now have all three parts. The renderer emits the engine's
+  own spelling, always preceded by `DROP FUNCTION IF EXISTS` because MySQL 26.7.0
+  refuses `CREATE OR REPLACE FUNCTION` with Error 1064; the reader reads
+  `information_schema.ROUTINES` and `information_schema.PARAMETERS`; and the
+  MySQL-family planner gates on this key instead of listing functions as an
+  object it cannot host. A characteristic is always emitted, because with binary
+  logging on and `log_bin_trust_function_creators` off — the pinned image's own
+  defaults — a function carrying none of `DETERMINISTIC`, `NO SQL` or
+  `READS SQL DATA` is refused with Error 1418. Measured on the same server,
+  `MODIFIES SQL DATA` and a bare `NOT DETERMINISTIC` are refused too, so a
+  `VOLATILE` declaration renders as `READS SQL DATA`.
+
+  SQL Server declares `false`. The engine hosts scalar functions and accepts
+  both `CREATE FUNCTION` and `CREATE OR ALTER FUNCTION` on 2025 (RTM-CU7), but
+  `sys.sql_modules.definition` returns the whole original `CREATE` statement as
+  one string rather than a body plus attributes, so reading one back into the
+  fields a diff compares needs a T-SQL routine-header parser that does not exist
+  yet. Emitting without reading is the permanent diff this issue is about, so
+  the key stays `false` and the renderer answers with the named skip
+  `-- SQLSERVER: CREATE FUNCTION "f1" is not generated for this target; skipped.`
+  — a sentence about Ptah, not about SQL Server.
 - **One answer shape for every refused object kind (#929).** `sequences`,
   `role_management`, and `row_level_security` answer the same question as the
   four keys above and use the same named-skip path when a preset disables them.
