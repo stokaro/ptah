@@ -718,19 +718,31 @@ func SQLite3() Capabilities {
 // than its own object kind.
 func SQLServer2022() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             false,
-		DropIndexIfExists:                  false,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   false,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  false,
-		Functions:                          true,
+		DropConstraintGeneric:    true,
+		DropConstraintIfExists:   false,
+		DropIndexIfExists:        false,
+		CheckConstraintsEnforced: true,
+		DropCheckClause:          false,
+		EnumInlineColumn:         false,
+		EnumCustomType:           false,
+		CreateIndexConcurrently:  false,
+		DropIndexConcurrently:    false,
+		IndexIncludeSPGiST:       false,
+		Views:                    true,
+		MaterializedViews:        false,
+		// Functions is off for the reason Sequences is off on MariaDB, and the
+		// key's own doc comment states the rule: it describes Ptah's generator,
+		// not the engine's brochure. SQL Server hosts scalar functions happily
+		// -- CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1 END and
+		// its CREATE OR ALTER form are both ACCEPTED on 2025 (RTM-CU7) -- but
+		// no Ptah code path reads one back. sys.sql_modules.definition returns
+		// the whole original CREATE statement as one string rather than a body
+		// plus attributes, so reconstructing the parameters, return type and
+		// body that a diff compares needs a T-SQL routine-header parser that
+		// does not exist here. Emitting without reading is precisely the
+		// permanent diff stokaro/ptah#929 is about, so the key stays false
+		// until the reader lands.
+		Functions:                          false,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
