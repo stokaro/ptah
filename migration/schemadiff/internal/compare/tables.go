@@ -132,6 +132,15 @@ func TablesAndColumnsWithSemantics(
 	// Find modified tables (compare columns)
 	for identity, genTable := range genTables {
 		if dbTable, exists := dbTables[identity]; exists {
+			// A SQLite virtual table has no column list of its own: its
+			// columns are the module's answer, and when the module is not
+			// registered in this build the catalog reports none at all.
+			// Comparing them against a desired table's columns plans
+			// `ALTER TABLE ... ADD COLUMN` against an object ALTER TABLE
+			// cannot touch. See stokaro/ptah#1028.
+			if dbTable.VirtualModule != "" {
+				continue
+			}
 			tableDiff := tableColumnsWithSemantics(
 				genTable,
 				dbTable,

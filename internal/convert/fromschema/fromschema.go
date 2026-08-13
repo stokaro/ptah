@@ -881,6 +881,15 @@ func fromTableWithFieldConverter(
 		if newTable.Strict {
 			createTable.SetOption("STRICT", "true")
 		}
+		// A virtual table is a different statement, not a trailing option, so
+		// the SQLite renderer branches on this key before it writes anything.
+		// The only producer of a non-empty VirtualModule is the SQLite reader,
+		// so a virtual table never reaches another dialect's renderer.
+		// See stokaro/ptah#1028.
+		if newTable.VirtualModule != "" {
+			createTable.SetOption(ast.SQLiteVirtualModuleOption, newTable.VirtualModule)
+			createTable.SetOption(ast.SQLiteVirtualArgumentsOption, newTable.VirtualArguments)
+		}
 	}
 	createTable.Partition = toASTPartition(newTable.Partition)
 

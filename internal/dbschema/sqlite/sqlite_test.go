@@ -292,9 +292,12 @@ func TestReaderUsesBatchedCatalogQueries(t *testing.T) {
 	c.Assert(schema.Constraints, qt.HasLen, 102)
 
 	queryCount := db.QueryCount() - before
-	// Catalog, table_xinfo, index_list, index_xinfo, and foreign_key_list stay
-	// batched regardless of table or index count.
-	c.Assert(queryCount, qt.Equals, 5)
+	// table_list, catalog, table_xinfo, index_list, index_xinfo, and
+	// foreign_key_list stay batched regardless of table or index count.
+	// table_list is the sixth: it classifies every table in the schema at once,
+	// so virtual tables and their modules' shadow tables can be told apart
+	// without a query per table. See stokaro/ptah#1028.
+	c.Assert(queryCount, qt.Equals, 6)
 }
 
 func TestReaderReadsAttachedSchema(t *testing.T) {

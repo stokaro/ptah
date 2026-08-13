@@ -62,6 +62,47 @@ index:
 System objects whose names start with `sqlite_` and Ptah's `schema_migrations`
 table are ignored.
 
+## Virtual Tables
+
+Virtual tables are read as virtual tables. `ptah db read` and
+`ptah-compat schema inspect` emit the statement that created one:
+
+```sql
+CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
+```
+
+The module name and everything between its parentheses are carried verbatim, so
+tokenizer options, quoted values, and commas inside quoted arguments survive.
+Applying that output to an empty database recreates the same object.
+
+The reader never names a module. It asks `PRAGMA table_list`, which classifies
+every table as `table`, `virtual`, or `shadow`, so `fts3`, `fts4`, `fts5`,
+`rtree`, `rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build
+registers are all handled the same way. The SQLite build Ptah links reports its
+own registered modules through `PRAGMA module_list`.
+
+The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
+and the rest — are not reported. They are the module's bookkeeping, and an
+operator who applied a `CREATE TABLE` for one would create a table SQLite
+creates itself, which then collides when the virtual table is created. The
+suppression asks SQLite rather than matching names: a table called `docs_data`
+that the operator created is reported as the user table it is, next to an FTS5
+index called `docs` whose own `docs_data` is not.
+
+Two limits are worth knowing:
+
+- Only the module can say which suffixes are its own, so shadow tables belong
+  to a module the reading build does not register — an `fts4` index in a
+  database written elsewhere, for example — cannot be identified, and SQLite
+  reports them as ordinary tables. The virtual table itself is still recognized
+  as virtual and still round-trips, because that classification does not need
+  the module.
+- No desired-state source declares a virtual table: Go annotations, HCL, YAML
+  and `.sql` schema files have no syntax for one. A virtual table is therefore
+  something Ptah reads and reproduces, not something a diff plans changes to.
+  Its columns are never compared against a desired table's columns, because
+  `ALTER TABLE ... ADD COLUMN` cannot touch a virtual table.
+
 ## ALTER TABLE Limits
 
 SQLite cannot add, drop, or modify table constraints in place, and many column

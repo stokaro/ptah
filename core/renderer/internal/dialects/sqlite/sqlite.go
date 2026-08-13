@@ -72,6 +72,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		guard = " IF NOT EXISTS"
 	}
 
+	if module := node.Options[ast.SQLiteVirtualModuleOption]; module != "" {
+		r.writeCreateVirtualTable(node, guard, module)
+		return nil
+	}
+
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
 		r.writeTableOptions(node.Options)
@@ -428,6 +433,47 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(strings.TrimSpace(node.SQL))
 	return nil
+}
+
+// writeCreateVirtualTable writes the statement that created a virtual table.
+//
+// Describing one with CREATE TABLE emits a statement that never created it:
+// a plain table named `docs` is not a full-text index, `MATCH` against it
+// fails, and applying the description makes SQLite's own shadow tables collide
+// with the real object later. The column list is deliberately not written --
+// a virtual table's columns come from the module, and the module arguments are
+// what recreate them. See stokaro/ptah#1028.
+func (r *Renderer) writeCreateVirtualTable(node *ast.CreateTableNode, guard, module string) {
+	r.w.Writef("CREATE VIRTUAL TABLE%s %s USING %s",
+		guard,
+		escapeQualifiedIdentifier(node.Name),
+		escapeModuleName(module),
+	)
+	if arguments := strings.TrimSpace(node.Options[ast.SQLiteVirtualArgumentsOption]); arguments != "" {
+		r.w.Writef("(%s)", arguments)
+	}
+	r.w.WriteLine(";")
+}
+
+// escapeModuleName keeps a module name that is already a plain identifier
+// bare, the way SQLite records it, and quotes anything else. SQLite resolves
+// the module name as an identifier, so quoting is only needed when the name
+// could not be read as one.
+func escapeModuleName(module string) string {
+	for i := 0; i < len(module); i++ {
+		char := module[i]
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char == '_':
+			continue
+		case char >= '0' && char <= '9' && i > 0:
+			continue
+		}
+		return escapeIdentifier(module)
+	}
+	if module == "" {
+		return escapeIdentifier(module)
+	}
+	return module
 }
 
 func (r *Renderer) writeTableOptions(options map[string]string) {

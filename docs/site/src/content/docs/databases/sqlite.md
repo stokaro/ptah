@@ -57,6 +57,47 @@ The SQLite renderer and planner support:
 Introspection ignores SQLite system objects (names starting with `sqlite_`)
 and Ptah's own revision table.
 
+## Virtual tables
+
+A virtual table is read as a virtual table, not as an ordinary one.
+`ptah db read` emits the statement that created it:
+
+```sql
+CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
+```
+
+The module name and the text between its parentheses are carried verbatim, so
+tokenizer options, quoted values and commas inside quoted arguments survive.
+Applying that output to an empty database recreates the same object — a
+full-text index that answers `MATCH`, not a plain table of the same name.
+
+Nothing in the reader names a module. `PRAGMA table_list` classifies every
+table as `table`, `virtual` or `shadow`, so `fts3`, `fts4`, `fts5`, `rtree`,
+`rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build registers
+are all read the same way.
+
+The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
+and their siblings — are not reported at all. They are the module's own
+bookkeeping, and applying a `CREATE TABLE` for one creates a table SQLite
+would have created itself, which then collides when the virtual table is
+created. Suppression comes from SQLite's classification rather than from the
+names, so a `docs_data` an operator created is still reported as their table.
+
+## Virtual table limitations
+
+- Shadow tables belonging to a module the reading build does not register
+  cannot be identified, because only that module knows which suffixes are its
+  own. SQLite reports them as ordinary tables and so does Ptah. The virtual
+  table itself is still recognized and still round-trips. This is permanent
+  because it is SQLite's own answer: no catalog field distinguishes a shadow
+  table without the module.
+- No desired-state source can declare a virtual table — Go annotations, HCL,
+  YAML and `.sql` schema files have no syntax for one — so a virtual table is
+  read and reproduced rather than diffed. Its columns are never compared
+  against a desired table's columns, because `ALTER TABLE ... ADD COLUMN`
+  cannot touch a virtual table. Declaring virtual tables in desired state is
+  tracked in [#1028](https://github.com/stokaro/ptah/issues/1028).
+
 ## Rebuild-required changes
 
 Ptah's rebuild planning is intentionally conservative: where it cannot prove

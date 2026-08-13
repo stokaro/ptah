@@ -85,6 +85,25 @@ type CreateTableNode struct {
 	Comment string
 }
 
+// SQLite virtual-table option keys for CreateTableNode.Options.
+//
+// A SQLite virtual table is not a CREATE TABLE with an extra keyword: it has
+// no column list of its own, and the module declaration after USING is what
+// recreates it. These two keys carry that declaration from the SQLite reader
+// to the SQLite renderer, which branches on SQLiteVirtualModuleOption before
+// it writes a statement. They are declared here, beside Options, so the
+// producer and the consumer cannot drift to different spellings.
+//
+// SQLiteVirtualArgumentsOption holds the text between the module's
+// parentheses verbatim; module arguments are not SQL and only the module
+// interprets them. An empty value renders as a bare `USING <module>`.
+//
+// See stokaro/ptah#1028.
+const (
+	SQLiteVirtualModuleOption    = "SQLITE_VIRTUAL_MODULE"
+	SQLiteVirtualArgumentsOption = "SQLITE_VIRTUAL_ARGUMENTS"
+)
+
 // PartitionSpec represents a table PARTITION BY clause.
 type PartitionSpec struct {
 	// Type is the partitioning method, such as RANGE, LIST, or HASH.

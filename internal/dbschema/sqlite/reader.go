@@ -46,23 +46,38 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		return nil, err
 	}
 
-	columnsByTable, err := r.readColumnsByTable()
+	// Virtual tables and their shadow tables are excluded from every per-table
+	// PRAGMA. A virtual table has no column list of its own to read, and
+	// asking for one is not merely useless: pragma_table_xinfo has to load the
+	// module to answer, so a single virtual table whose module this build does
+	// not register fails the whole batch with `no such module: <name>` and
+	// takes the rest of the schema down with it.
+	skipped := catalog.nonOrdinaryTableNames()
+
+	columnsByTable, err := r.readColumnsByTable(skipped)
 	if err != nil {
 		return nil, err
 	}
 
-	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(catalog.indexDDLByName, catalog.tableDDLByName)
+	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(
+		catalog.indexDDLByName, catalog.tableDDLByName, skipped,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	foreignKeysByTable, err := r.readForeignKeysByTable(catalog.tableDDLByName)
+	foreignKeysByTable, err := r.readForeignKeysByTable(catalog.tableDDLByName, skipped)
 	if err != nil {
 		return nil, err
 	}
 
 	var schema types.DBSchema
 	for _, tableName := range catalog.tableNames {
+		if spec, ok := catalog.virtualTables[tableName]; ok {
+			schema.Tables = append(schema.Tables, r.readVirtualTable(tableName, spec))
+			continue
+		}
+
 		ddl := catalog.tableDDLByName[tableName]
 		table := r.readTable(tableName, columnsByTable[tableName], ddl)
 		schema.Tables = append(schema.Tables, table)
@@ -87,6 +102,44 @@ type sqliteSchemaCatalog struct {
 	indexDDLByName map[string]string
 	viewObjects    []sqliteSchemaObject
 	triggerObjects []sqliteSchemaObject
+	// virtualTables holds the module declaration of every name in tableNames
+	// that a CREATE VIRTUAL TABLE statement created. Ordinary tables are
+	// absent from it.
+	virtualTables map[string]virtualTableSpec
+	// shadowTableNames holds the tables a virtual table's module maintains.
+	// They are never reported as schema objects; the field exists so the
+	// per-table PRAGMA batches can skip them too.
+	shadowTableNames []string
+}
+
+// nonOrdinaryTableNames lists the tables no per-table PRAGMA should be asked
+// about: the virtual tables and the shadow tables their modules maintain.
+func (c sqliteSchemaCatalog) nonOrdinaryTableNames() []string {
+	names := make([]string, 0, len(c.virtualTables)+len(c.shadowTableNames))
+	for name := range c.virtualTables {
+		names = append(names, name)
+	}
+	names = append(names, c.shadowTableNames...)
+	sort.Strings(names)
+	return names
+}
+
+// excludeTablesFilter renders a WHERE fragment that removes the named tables
+// from a query over sqlite_schema aliased as m, together with its arguments.
+//
+// The names are bound as parameters rather than interpolated: they come from
+// the catalog of a database Ptah did not create, and a table name is allowed
+// to contain a quote.
+func excludeTablesFilter(names []string) (string, []any) {
+	if len(names) == 0 {
+		return "", nil
+	}
+	arguments := make([]any, 0, len(names))
+	for _, name := range names {
+		arguments = append(arguments, name)
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(names)), ", ")
+	return "\n\t\t  AND m.name NOT IN (" + placeholders + ")", arguments
 }
 
 type sqliteSchemaObject struct {
@@ -118,6 +171,11 @@ func (c sqliteSchemaCatalog) triggers(schema string) []types.DBTrigger {
 }
 
 func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
+	kinds, err := r.readTableKinds()
+	if err != nil {
+		return sqliteSchemaCatalog{}, err
+	}
+
 	query := fmt.Sprintf(`
 		SELECT type, name, tbl_name, sql
 		FROM %s
@@ -135,6 +193,7 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 	catalog := sqliteSchemaCatalog{
 		tableDDLByName: make(map[string]string),
 		indexDDLByName: make(map[string]string),
+		virtualTables:  make(map[string]virtualTableSpec),
 	}
 	for rows.Next() {
 		var objectType, name, tableName string
@@ -144,6 +203,27 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 		}
 		switch objectType {
 		case "table":
+			spec, virtual := parseVirtualTableDDL(ddl.String)
+			switch {
+			case kinds[name] == tableKindShadow:
+				// A module's own bookkeeping table. Reporting it would put a
+				// CREATE TABLE in front of an operator for an object SQLite
+				// creates itself, which then collides with the virtual table
+				// that owns it. See stokaro/ptah#1028.
+				catalog.shadowTableNames = append(catalog.shadowTableNames, name)
+				continue
+			case virtual:
+				catalog.virtualTables[name] = spec
+			case kinds[name] == tableKindVirtual:
+				// SQLite says this is a virtual table but its own recorded
+				// statement does not parse as one. Ptah cannot say which
+				// module owns it, and describing it as an ordinary table would
+				// emit a statement that never created it.
+				return sqliteSchemaCatalog{}, fmt.Errorf(
+					"sqlite: %q is a virtual table whose CREATE VIRTUAL TABLE statement Ptah cannot read: %q",
+					name, ddl.String,
+				)
+			}
 			catalog.tableNames = append(catalog.tableNames, name)
 			catalog.tableDDLByName[name] = ddl.String
 		case "index":
@@ -190,6 +270,25 @@ func (r *Reader) readTable(name string, columns []types.DBColumn, ddl string) ty
 	}
 }
 
+// readVirtualTable describes a virtual table by the module declaration that
+// created it.
+//
+// It carries no columns. A virtual table's columns are the module's answer to
+// xConnect, not a column list an operator wrote, and CREATE VIRTUAL TABLE has
+// nowhere to put them: the module arguments are what recreate the object. When
+// the module is not registered in this build, SQLite cannot report the columns
+// at all, so a description built from them would be empty for exactly the
+// databases that need it most.
+func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) types.DBTable {
+	return types.DBTable{
+		Name:             name,
+		Schema:           r.outputSchema(),
+		Type:             "TABLE",
+		VirtualModule:    spec.Module,
+		VirtualArguments: spec.Arguments,
+	}
+}
+
 func sqliteTableOptions(ddl string) (strict bool, withoutRowID bool) {
 	idx := strings.LastIndex(ddl, ")")
 	if idx < 0 {
@@ -214,17 +313,18 @@ func (r *Reader) schemaObject(name string) string {
 	return sqlident.Qualified("sqlite", schema, name)
 }
 
-func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(skipped []string) (map[string][]types.DBColumn, error) {
+	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
 		FROM %s AS m
 		JOIN pragma_table_xinfo(m.name, ?) AS x
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'
+		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, x.cid
-	`, r.schemaObject("sqlite_schema"))
-	rows, err := r.db.Query(query, r.schema)
+	`, r.schemaObject("sqlite_schema"), exclusion)
+	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read columns: %w", err)
 	}
@@ -342,17 +442,18 @@ func autoincrementColumn(ddl string) string {
 func (r *Reader) readIndexesByTable(
 	indexDDLByName map[string]string,
 	tableDDLByName map[string]string,
+	skipped []string,
 ) (
 	map[string][]types.DBIndex,
 	map[string][]types.DBConstraint,
 	error,
 ) {
-	entriesByTable, err := r.readIndexEntriesByTable()
+	entriesByTable, err := r.readIndexEntriesByTable(skipped)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	columnsByIndex, err := r.readIndexColumnsByIndex()
+	columnsByIndex, err := r.readIndexColumnsByIndex(skipped)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -367,17 +468,18 @@ func (r *Reader) readIndexesByTable(
 	return indexesByTable, constraintsByTable, nil
 }
 
-func (r *Reader) readIndexEntriesByTable() (map[string][]sqliteIndexEntry, error) {
+func (r *Reader) readIndexEntriesByTable(skipped []string) (map[string][]sqliteIndexEntry, error) {
+	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, il.seq, il.name, il."unique", il.origin, il.partial
 		FROM %s AS m
 		JOIN pragma_index_list(m.name, ?) AS il
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'
+		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, il.seq
-	`, r.schemaObject("sqlite_schema"))
-	rows, err := r.db.Query(query, r.schema)
+	`, r.schemaObject("sqlite_schema"), exclusion)
+	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read indexes: %w", err)
 	}
@@ -472,7 +574,8 @@ type sqliteIndexColumns struct {
 	needsDDLParsing bool
 }
 
-func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error) {
+func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteIndexColumns, error) {
+	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.key
 		FROM %s AS m
@@ -480,10 +583,10 @@ func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error
 		JOIN pragma_index_xinfo(il.name, ?) AS ix
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'
+		  AND m.name <> 'schema_migrations'%s
 		ORDER BY il.name, ix.seqno
-	`, r.schemaObject("sqlite_schema"))
-	rows, err := r.db.Query(query, r.schema, r.schema)
+	`, r.schemaObject("sqlite_schema"), exclusion)
+	rows, err := r.db.Query(query, append([]any{r.schema, r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read index columns: %w", err)
 	}
@@ -662,17 +765,21 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 	}
 }
 
-func (r *Reader) readForeignKeysByTable(tableDDLByName map[string]string) (map[string][]types.DBConstraint, error) {
+func (r *Reader) readForeignKeysByTable(
+	tableDDLByName map[string]string,
+	skipped []string,
+) (map[string][]types.DBConstraint, error) {
+	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, fk.id, fk.seq, fk."table", fk."from", fk."to", fk.on_update, fk.on_delete, fk.match
 		FROM %s AS m
 		JOIN pragma_foreign_key_list(m.name, ?) AS fk
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite\_%%' ESCAPE '\'
-		  AND m.name <> 'schema_migrations'
+		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, fk.id, fk.seq
-	`, r.schemaObject("sqlite_schema"))
-	rows, err := r.db.Query(query, r.schema)
+	`, r.schemaObject("sqlite_schema"), exclusion)
+	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read foreign keys: %w", err)
 	}
