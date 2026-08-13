@@ -308,12 +308,21 @@ use migration timeouts.
 
 The Atlas header must be in the initial line-comment block: the unbroken run of
 line comments that begins on line 1, each starting in column 1. A blank line
-after the header is accepted but not required. Ptah's own
-`-- +ptah no_transaction` obeys the same rule about where a directive is
-significant — before the first executable statement — with a more forgiving
-acceptance inside that region (indentation and blank lines are allowed). A
-directive of either family that falls outside its region is reported at `WARN`
-on stderr naming the file and line, never dropped in silence.
+after the header is accepted but not required.
+
+Both directive families answer to one rule about where a directive is
+significant, and to separate rules about what a bad one costs:
+
+- `-- +ptah no_transaction` is significant in the same region — before the
+  first executable statement — but accepts indentation and blank lines inside
+  it.
+- A directive of either family outside its region is reported at `WARN` on
+  stderr naming the file and line, never dropped in silence.
+- A `-- +ptah` directive whose key is recognized but whose value cannot be read
+  fails the run wherever the line sits.
+- The `atlas:` spelling is only reported, never refused, outside its block:
+  Atlas CE applies a directory whose `-- atlas:txmode bogus` sits below the
+  statement.
 `PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier file-wide scope for
 `-- +ptah` directives only. Unknown, duplicate, and file-level
 `all` values fail before the affected migration body or revision row changes.

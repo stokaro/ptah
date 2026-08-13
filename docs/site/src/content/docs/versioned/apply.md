@@ -193,6 +193,23 @@ people and pipelines share a directory:
   so does Ptah — with the same warning. `-- +ptah` directives accept the whole
   region, blank lines and indentation included.
 
+  Position and value are separate facts, and a bad value is not demoted to a
+  position warning. A `-- +ptah` directive whose key Ptah recognizes but whose
+  **value** it cannot read — `no_transaction=maybe`, `lock_timeout=soon` — fails
+  the run wherever the line sits, and the refusal names the position too, so you
+  are not told the value is nonsense, told nothing about the line being in the
+  wrong place, and left to discover that on the next run. Whether `maybe` is a
+  boolean is a property of the file, so this verdict does not change with
+  `PTAH_DIRECTIVES_ANYWHERE`. A bare word Ptah does not recognize as a directive
+  (`-- +ptah revisit this`) is an ordinary comment and is neither refused nor
+  reported.
+
+  The `-- atlas:` spelling deliberately has no equivalent refusal. Measured on
+  Atlas CE `v1.3.0`, `migrate apply` over a directory carrying
+  `-- atlas:txmode bogus` exits `1` when the line is the header and `0` when it
+  sits below the statement. Refusing the second would exit non-zero where Atlas
+  CE exits `0`, so Ptah reports it and applies the directory, as CE does.
+
   Setting `PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier scope of the merged
   `-- +ptah` directive map — `no_transaction` and the online-DDL keys —
   in which those directives are significant anywhere in the file. It is there

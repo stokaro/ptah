@@ -186,6 +186,15 @@ run instead and this function keeps the header rule. Ordered
 `-- +ptah check` directives are unaffected: they are position-insensitive by
 design and `ParseChecks` still reads the whole file.
 
+Position and value stay separate verdicts. A `-- +ptah` directive whose key is
+recognized but whose value cannot be read fails `ParseMigrationUp`, `Migration.Up`
+and `Migration.Down` wherever the line sits, and the error names the line, so a
+typo is never demoted to a position warning and the verdict does not depend on
+`PTAH_DIRECTIVES_ANYWHERE`. An unrecognized bare token and an unknown
+`key=value` pair are not directives and produce neither. The `-- atlas:txmode`
+spelling is reported but not refused outside its block, because Atlas CE applies
+such a directory.
+
 This pre-GA API replaces the former `UpNoTransaction` and
 `DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
 interceptor variant return a complete `Migration`, preserving both directions'
