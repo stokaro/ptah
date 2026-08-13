@@ -66,13 +66,33 @@ type dockerEndpoint struct {
 }
 
 // bindAddress is the address to publish the container port on.
+//
+// The family has to match the one [dockerEndpoint.connectHost] will be dialed
+// on. An IPv6-only daemon -- `DOCKER_HOST=ssh://[2001:db8::1]` -- publishing on
+// `0.0.0.0` binds IPv4 only, and the readiness probe then dials an IPv6 address
+// whose port nothing is listening on, so the container starts and the wait runs
+// out. The two answers are derived from the same endpoint for that reason.
 func (e dockerEndpoint) bindAddress() string {
-	if e.remote {
-		// Every interface of the daemon host: its loopback is not reachable
-		// from here, and the daemon cannot bind an address it does not own.
-		return "0.0.0.0"
+	if !e.remote {
+		return "127.0.0.1"
 	}
-	return "127.0.0.1"
+	// Every interface of the daemon host: its loopback is not reachable from
+	// here, and the daemon cannot bind an address it does not own.
+	if isIPv6Host(e.host) {
+		return "::"
+	}
+	return "0.0.0.0"
+}
+
+// isIPv6Host reports whether host is a literal IPv6 address.
+//
+// A NAME is not treated as IPv6 even when it resolves to an AAAA record: the
+// daemon does the resolving, `::` would be the wrong bind on a dual-stack host
+// reached over IPv4, and a name that resolves to both is reachable either way.
+// Only a literal leaves no room for that.
+func isIPv6Host(host string) bool {
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.Is6() && !addr.Is4In6()
 }
 
 // connectHost is the address this process reaches the published port on.

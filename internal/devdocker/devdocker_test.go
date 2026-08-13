@@ -160,6 +160,31 @@ func TestParseRefusesTheURLFormsTheCommunityBinaryRefuses(t *testing.T) {
 			rawURL:  "docker://mysql/8/foo%3Fbar",
 			wantErr: `docker --dev-url database name "foo?bar" contains a query separator`,
 		},
+		{
+			// The dangerous one. libpq and pgx let a `host` in the query
+			// override the URL's own authority, so this would provision a
+			// throwaway container, pass readiness against it (the probe URL
+			// carries the engine's parameters only), and hand the consumer a
+			// URL pointing at a production server -- which then gets every
+			// table dropped and a migration directory replayed into it. The
+			// alias checks that would normally catch a dev URL aiming at a real
+			// database are deliberately skipped for docker:// URLs.
+			name:   "a host parameter would redirect the connection",
+			rawURL: "docker://postgres/16/dev?host=prod.example",
+			wantErr: `docker --dev-url parameter "host" would point the connection away from` +
+				` the container this URL provisions; remove it, or pass a directly` +
+				` connectable dev database URL instead`,
+		},
+		{
+			// `service` is the quiet one: it names a stanza in a connection
+			// service file, host and credentials included, so it reroutes
+			// without any of the obvious parameter names appearing in the URL.
+			name:   "a service parameter would redirect the connection",
+			rawURL: "docker://postgres/16/dev?service=prod",
+			wantErr: `docker --dev-url parameter "service" would point the connection away from` +
+				` the container this URL provisions; remove it, or pass a directly` +
+				` connectable dev database URL instead`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

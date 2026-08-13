@@ -183,6 +183,53 @@ var mariaEngine = engine{
 	},
 }
 
+// routingParams are the connection parameters that decide WHICH server, and as
+// which identity, a client connects to.
+//
+// libpq and pgx accept these in the query string and let them override the
+// URL's own authority, so `docker://postgres/16/dev?host=prod.example` would
+// provision a throwaway container, pass readiness against it -- the probe URL
+// carries the engine's parameters only -- and then hand the consumer a URL
+// pointing somewhere else entirely. What the consumer does next is drop every
+// table and replay a migration directory. `service` and `servicefile` are in
+// the set because they pull a whole connection definition, host included, out
+// of a file.
+//
+// This is not caught anywhere else: the alias checks that ask whether the dev
+// database IS the target are deliberately skipped for `docker://` URLs,
+// precisely because a container that does not exist yet cannot be a database
+// the operator already named.
+var routingParams = []string{
+	"host", "hostaddr", "port", "user", "password", "dbname",
+	"passfile", "service", "servicefile",
+}
+
+// refuseRoutingParams rejects a dev URL that tries to redirect the connection
+// away from the container it asked to provision.
+//
+// It refuses rather than dropping. Measured on 2026-08-13, the pinned community
+// binary v1.3.0 exits 0 on `docker://postgres/16/dev?host=192.0.2.1&port=5432`
+// and inspects the CONTAINER, so it ignores the parameter -- but silently
+// discarding something the operator wrote is the defect this whole change
+// exists to remove, and a routing parameter on a URL that provisions its own
+// server is a contradiction worth naming rather than papering over. Ptah exits
+// 1 where that binary exits 0 here, which is a capability gap and not a safety
+// hole (AGENTS.md rule (a) runs the other way), and rule (b) is explicit that
+// matching is the floor.
+func refuseRoutingParams(operator url.Values) error {
+	for _, name := range routingParams {
+		if _, present := operator[name]; present {
+			return fmt.Errorf(
+				"docker --dev-url parameter %q would point the connection away from the"+
+					" container this URL provisions; remove it, or pass a directly"+
+					" connectable dev database URL instead",
+				name,
+			)
+		}
+	}
+	return nil
+}
+
 // querySuffix renders an encoded parameter string as a URL suffix.
 //
 // It exists so each engine's URL template can carry parameters without every
@@ -208,6 +255,9 @@ func mergeParams(defaults map[string]string, rawQuery string) (string, error) {
 	operator, err := url.ParseQuery(rawQuery)
 	if err != nil {
 		return "", fmt.Errorf("parse docker --dev-url parameters %q: %w", rawQuery, err)
+	}
+	if err := refuseRoutingParams(operator); err != nil {
+		return "", err
 	}
 	merged := url.Values{}
 	for key, value := range defaults {

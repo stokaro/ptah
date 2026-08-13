@@ -96,6 +96,35 @@ func TestParseDockerEndpointClassifiesTheDaemonLocation(t *testing.T) {
 			wantBindAddress: "0.0.0.0",
 			wantConnectHost: "100.101.64.121",
 		},
+		{
+			// The bind family has to match the family the probe will dial.
+			// Publishing `0.0.0.0` for an IPv6-only daemon binds IPv4 only, so
+			// the container starts and the readiness probe dials an IPv6
+			// address with nothing listening on it.
+			name:            "ipv6 literal binds the ipv6 wildcard",
+			raw:             "ssh://[2001:db8::1]",
+			wantRemote:      true,
+			wantBindAddress: "::",
+			wantConnectHost: "2001:db8::1",
+		},
+		{
+			// A NAME is left on IPv4 even if it happens to have an AAAA record:
+			// the daemon resolves it, and a dual-stack host reached over IPv4
+			// would be mis-bound by `::`.
+			name:            "a name is not assumed to be ipv6",
+			raw:             "tcp://buildbox.example:2375",
+			wantRemote:      true,
+			wantBindAddress: "0.0.0.0",
+			wantConnectHost: "buildbox.example",
+		},
+		{
+			// An IPv4-mapped IPv6 literal is an IPv4 address wearing a costume.
+			name:            "ipv4-mapped ipv6 is still ipv4",
+			raw:             "tcp://[::ffff:192.0.2.7]:2375",
+			wantRemote:      true,
+			wantBindAddress: "0.0.0.0",
+			wantConnectHost: "::ffff:192.0.2.7",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
