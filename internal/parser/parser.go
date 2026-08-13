@@ -327,15 +327,55 @@ func (p *Parser) parseCreateExtension() (*ast.ExtensionNode, error) {
 	}
 
 	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("VERSION") {
-		version, err := p.parseCreateExtensionVersion()
-		if err != nil {
-			return nil, err
+	if p.current.MatchIdentifierValue("WITH") {
+		p.advance()
+		p.skipWhitespace()
+		if !p.current.MatchIdentifierValue("SCHEMA") && !p.current.MatchIdentifierValue("VERSION") {
+			return nil, fmt.Errorf("expected SCHEMA or VERSION after WITH in CREATE EXTENSION")
 		}
-		extension.SetVersion(version)
+	}
+	if err := p.parseCreateExtensionOptions(extension); err != nil {
+		return nil, err
 	}
 
 	return extension, nil
+}
+
+func (p *Parser) parseCreateExtensionOptions(extension *ast.ExtensionNode) error {
+	foundSchema := false
+	foundVersion := false
+	for {
+		p.skipWhitespace()
+		switch {
+		case p.current.MatchIdentifierValue("SCHEMA"):
+			if foundSchema {
+				return fmt.Errorf("duplicate SCHEMA option in CREATE EXTENSION")
+			}
+			foundSchema = true
+			p.advance()
+			p.skipWhitespace()
+			schema, err := p.expectIdentifier()
+			if err != nil {
+				return fmt.Errorf("expected extension schema: %w", err)
+			}
+			extension.SetSchema(schema)
+		case p.current.MatchIdentifierValue("VERSION"):
+			if foundVersion {
+				return fmt.Errorf("duplicate VERSION option in CREATE EXTENSION")
+			}
+			foundVersion = true
+			version, err := p.parseCreateExtensionVersion()
+			if err != nil {
+				return err
+			}
+			extension.SetVersion(version)
+		default:
+			if p.isAtEnd() || p.current.Type == lexer.TokenSemicolon {
+				return nil
+			}
+			return fmt.Errorf("unsupported CREATE EXTENSION option %q at position %d", p.current.Value, p.current.Start)
+		}
+	}
 }
 
 func (p *Parser) parseCreateExtensionVersion() (string, error) {

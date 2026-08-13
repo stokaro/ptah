@@ -23,6 +23,7 @@ render a report, and return a non-zero status when any case fails.
 | `--seed-dir` | Default for seed steps | Default for seed steps | No default |
 | `--dir-format` | `auto`, `ptah`, or `atlas` | No | `ptah` |
 | `--db-url` | Optional explicit throwaway database | Optional explicit throwaway database | Ephemeral SQLite |
+| `--schema` | No | Repeatable schema allow-list for desired tables and their schema-owned objects; database-wide extensions remain in the provisioned desired state regardless of installation placement | All schemas |
 | `--run` | Go regular expression matched against case names | Go regular expression matched against case names | All cases |
 | `--report` | `text`, `json`, or `html` | `text`, `json`, or `html` | `text` |
 

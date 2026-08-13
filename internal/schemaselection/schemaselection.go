@@ -57,6 +57,24 @@ func PostgresNonSystemSchemasPredicate(dialect string) string {
 			  AND `)
 }
 
+// IsPostgresSystemSchema reports whether name is a PostgreSQL-owned namespace
+// that a user migration must not try to create. Names beginning with pg_ are
+// reserved by PostgreSQL; information_schema is the other catalog namespace
+// exposed by every PostgreSQL-family server. The comparison is exact because
+// an authored quoted name such as "PG_APP" is a distinct user identifier.
+func IsPostgresSystemSchema(name string) bool {
+	return name == "information_schema" || strings.HasPrefix(name, "pg_")
+}
+
+// IsPostgresFamilySystemSchema reports whether name is owned by the concrete
+// PostgreSQL-family target. CockroachDB adds crdb_internal to PostgreSQL's
+// common catalog namespaces. Matching remains exact so a quoted lookalike such
+// as "CRDB_INTERNAL" is still a user identifier.
+func IsPostgresFamilySystemSchema(dialect, name string) bool {
+	return IsPostgresSystemSchema(name) ||
+		platform.NormalizeDialect(dialect) == platform.CockroachDB && name == "crdb_internal"
+}
+
 // RowQuerier is the part of *sql.DB and *sql.Tx [Selection.Resolve] needs.
 // Taking the narrow interface keeps this package off the connection layer,
 // which is what would otherwise import it back.

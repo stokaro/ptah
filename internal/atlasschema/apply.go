@@ -279,11 +279,12 @@ func computeApplyPlan(
 	if err := validateCurrentApplyState(conn, current, readScope, opts); err != nil {
 		return applyComputation{}, err
 	}
-	current, currentReport, currentErr := scopeDatabaseSide(current, scope, "current schema")
+	scoped := scopeApplyStates(current, desired, scope)
+	current, currentReports, currentErr := scoped.current, scoped.currentReports, scoped.currentErr
 	if currentErr != nil && !emptySelection(currentErr) {
 		return applyComputation{}, currentErr
 	}
-	desired, desiredReport, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+	desired, desiredReports, desiredErr := scoped.desired, scoped.desiredReports, scoped.desiredErr
 	if desiredErr != nil && !emptySelection(desiredErr) {
 		return applyComputation{}, desiredErr
 	}
@@ -292,7 +293,7 @@ func computeApplyPlan(
 	// the plan out. Refusing is the safe answer there; the opt-in named in the
 	// message restores the permissive one. Callers that only compute a plan
 	// say so instead.
-	unmatched := atlasfilter.UnmatchedAcrossStates(currentReport, desiredReport)
+	unmatched := atlasfilter.UnmatchedAcrossStates(currentReports.Exclude, desiredReports.Exclude)
 	if opts.RefuseUnmatchedExclude && !allowUnmatched {
 		if err := refuseUnmatchedExclude(unmatched); err != nil {
 			return applyComputation{}, err
@@ -310,6 +311,7 @@ func computeApplyPlan(
 			"%w; schema apply would change nothing",
 			currentErr)
 	}
+	applyExtensionSupportCoverage(desired, currentReports.Selection, desiredReports.Selection)
 
 	computation := applyComputation{
 		current:   current,
@@ -335,6 +337,49 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return computation, nil
+}
+
+type scopedApplyStates struct {
+	current        *types.DBSchema
+	desired        *goschema.Database
+	currentReports atlasfilter.ScopeReports
+	desiredReports atlasfilter.ScopeReports
+	currentErr     error
+	desiredErr     error
+}
+
+func scopeApplyStates(
+	current *types.DBSchema,
+	desired *goschema.Database,
+	scope atlasfilter.Scope,
+) scopedApplyStates {
+	project := func(scope atlasfilter.Scope) scopedApplyStates {
+		projectedCurrent, currentReports, currentErr := scopeDatabaseSide(current, scope, "current schema")
+		projectedDesired, desiredReports, desiredErr := scopeGeneratedSide(desired, scope, "desired schema")
+		return scopedApplyStates{
+			current:        projectedCurrent,
+			desired:        projectedDesired,
+			currentReports: currentReports,
+			desiredReports: desiredReports,
+			currentErr:     currentErr,
+			desiredErr:     desiredErr,
+		}
+	}
+
+	result := project(scope)
+	if result.currentErr != nil && !emptySelection(result.currentErr) ||
+		result.desiredErr != nil && !emptySelection(result.desiredErr) {
+		return result
+	}
+	supportScope, changed := extensionSupportScope(
+		scope,
+		result.currentReports.Selection,
+		result.desiredReports.Selection,
+	)
+	if !changed {
+		return result
+	}
+	return project(supportScope)
 }
 
 func validateCurrentApplyState(

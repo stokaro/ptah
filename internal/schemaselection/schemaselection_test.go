@@ -268,6 +268,43 @@ func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *te
 	})
 }
 
+func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	for _, name := range []string{"pg_catalog", "pg_toast", "information_schema"} {
+		c.Assert(schemaselection.IsPostgresSystemSchema(name), qt.IsTrue, qt.Commentf("name: %q", name))
+	}
+	for _, name := range []string{"public", "extensions", "PG_CATALOG", " pg_catalog ", " "} {
+		c.Assert(schemaselection.IsPostgresSystemSchema(name), qt.IsFalse, qt.Commentf("name: %q", name))
+	}
+}
+
+func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+		want    bool
+	}{
+		{name: "Cockroach internal", dialect: "cockroachdb", schema: "crdb_internal", want: true},
+		{name: "Postgres does not own it", dialect: "postgres", schema: "crdb_internal", want: false},
+		{name: "quoted lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL", want: false},
+		{name: "common catalog", dialect: "cockroachdb", schema: "pg_catalog", want: true},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(
+				schemaselection.IsPostgresFamilySystemSchema(test.dialect, test.schema),
+				qt.Equals,
+				test.want,
+			)
+		})
+	}
+}
+
 // errString renders an error for comparison, so the table can carry the wanted
 // message as one field instead of a nil check plus a match in every row.
 func errString(err error) string {

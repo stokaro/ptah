@@ -402,6 +402,7 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 
 	s.extensions = append(s.extensions, Extension{
 		Name:        kv["name"],
+		Schema:      kv["schema"],
 		IfNotExists: kv["if_not_exists"] == "true",
 		Version:     kv["version"],
 		Comment:     kv["comment"],

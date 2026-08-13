@@ -1,6 +1,7 @@
 package atlasfilter
 
 import (
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -53,6 +54,7 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 
 	s.projectGeneratedTopLevel(db, out)
 	s.projectGeneratedSupport(db, out)
+	s.projectGeneratedExtensions(db, out)
 	out.Schemas = s.keepGeneratedSchemas(db, out)
 
 	out.Dependencies = nil
@@ -63,10 +65,11 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 }
 
 // projectGeneratedTopLevel selects independently includable top-level
-// resources: views, materialized views, functions, extensions, and roles.
+// resources: views, materialized views, functions, sequences, and roles.
 // Views, materialized views, and functions carry their schema in an optional
-// "schema." name prefix; extensions and roles are database-scoped and skip
-// the schema universe.
+// "schema." name prefix. Roles are database-scoped and skip the schema
+// universe. Extensions are projected after support objects, when the selection
+// knows whether a non-extension resource matched.
 func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	out.Views = keep(db.Views, func(view goschema.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
@@ -76,9 +79,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	})
 	out.Functions = keep(db.Functions, func(function goschema.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
-	})
-	out.Extensions = keep(db.Extensions, func(extension goschema.Extension) bool {
-		return s.selectedNames(typeList("extension"), extension.Name)
 	})
 	out.Sequences = keep(db.Sequences, func(sequence goschema.Sequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
@@ -94,6 +94,19 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 			return true
 		}
 		return generatedGrantRoleReferenced(out.Grants, role.Name)
+	})
+}
+
+func (s *scopeSelection) projectGeneratedExtensions(db, out *goschema.Database) {
+	if s.extensionSupport || s.nonExtensionMatched {
+		for _, extension := range db.Extensions {
+			s.selectedExtension(extension.Schema, extension.Name)
+		}
+		out.Extensions = slices.Clone(db.Extensions)
+		return
+	}
+	out.Extensions = keep(db.Extensions, func(extension goschema.Extension) bool {
+		return s.selectedExtension(extension.Schema, extension.Name)
 	})
 }
 
@@ -216,6 +229,9 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 		schema, _ := enumIdentity(enum.Schema, enum.Name)
 		owning[s.effectiveSchema(schema)] = struct{}{}
 	}
+	for _, extension := range out.Extensions {
+		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
 	return keep(db.Schemas, func(schema goschema.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
@@ -223,7 +239,7 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, ok := owning[strings.TrimSpace(schema.Name)]
+		_, ok := owning[schema.Name]
 		return ok
 	})
 }

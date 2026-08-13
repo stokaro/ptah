@@ -65,6 +65,9 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.Schemas = keep(db.Schemas, func(schema goschema.Schema) bool {
 		return schemaAllowed(allowed, effectiveSchema(schema.Name, defaultSchema))
 	})
+	// Extensions are database-wide identities. Their schema is installation
+	// placement, not ownership, so a schema allow-list must retain them: a
+	// selected table may depend on an extension installed in another schema.
 	filtered.Fields = keep(db.Fields, func(field goschema.Field) bool {
 		if _, ok := keptStructs[field.StructName]; !ok {
 			return false
@@ -155,9 +158,9 @@ func FilterDatabaseWithDefaultSchema(
 		return constraint.ForeignSchema == "" ||
 			schemaAllowed(allowed, effectiveSchema(constraint.ForeignSchema, defaultSchema))
 	})
-	filtered.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
-		return schemaAllowed(allowed, effectiveSchema(extension.Schema, defaultSchema))
-	})
+	// Keep every extension for the same database-wide identity reason as the
+	// generated projection above. Filtering only one side invents additions or
+	// removals when a selected object uses an extension placed elsewhere.
 	filtered.Views = keep(db.Views, func(view dbschematypes.DBView) bool {
 		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
 	})

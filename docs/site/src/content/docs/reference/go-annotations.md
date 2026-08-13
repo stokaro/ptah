@@ -300,6 +300,7 @@ Declares a PostgreSQL extension.
 | `comment` | No | Extension comment. |
 | `if_not_exists` | No | Adds IF NOT EXISTS where supported. `true`/`false`. |
 | `name` | No | Extension name. |
+| `schema` | No | PostgreSQL installation schema. Empty means the target's default schema. |
 | `version` | No | Extension version. |
 
 ### `//ptah:schema:sequence`

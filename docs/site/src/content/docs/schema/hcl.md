@@ -40,6 +40,13 @@ table "accounts" {
     include = [column.created_at]
   }
 }
+
+schema "extensions" {}
+
+extension "pgcrypto" {
+  schema        = schema.extensions
+  if_not_exists = true
+}
 ```
 
 ## Render it
@@ -52,6 +59,10 @@ Expected output includes:
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS "public";
+
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
 CREATE TABLE "public"."accounts" (
   "id" int NOT NULL,

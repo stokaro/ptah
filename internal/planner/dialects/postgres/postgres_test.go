@@ -1145,6 +1145,65 @@ func TestPlanner_GenerateMigrationASTChecked_MissingIndexRejected(t *testing.T) 
 	c.Assert(nodes, qt.IsNil)
 }
 
+func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{Extensions: []goschema.Extension{{
+		Name: "pgcrypto", Schema: " Extension Store ",
+	}}}
+
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	schema, ok := nodes[0].(*ast.CreateSchemaNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(schema.Name, qt.Equals, " Extension Store ")
+	c.Assert(schema.IfNotExists, qt.IsTrue)
+	extension, ok := nodes[1].(*ast.ExtensionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(extension.Name, qt.Equals, "pgcrypto")
+	c.Assert(extension.Schema, qt.Equals, " Extension Store ")
+}
+
+func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{Extensions: []goschema.Extension{{
+		Name: "pgcrypto", Schema: " ",
+	}}}
+
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	schema, ok := nodes[0].(*ast.CreateSchemaNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(schema.Name, qt.Equals, " ")
+	c.Assert(schema.IfNotExists, qt.IsTrue)
+	extension, ok := nodes[1].(*ast.ExtensionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(extension.Name, qt.Equals, "pgcrypto")
+	c.Assert(extension.Schema, qt.Equals, " ")
+}
+
+func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPrecondition(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"plpgsql"}}
+	generated := &goschema.Database{Extensions: []goschema.Extension{{
+		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
+	}}}
+
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	extension, ok := nodes[0].(*ast.ExtensionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(extension.Name, qt.Equals, "plpgsql")
+	c.Assert(extension.Schema, qt.Equals, "pg_catalog")
+}
+
 func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1243,6 +1302,22 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
 	}
+}
+
+func TestPlanner_GenerateMigrationAST_ExtensionMoveRefusesBeforeEmission(t *testing.T) {
+	c := qt.New(t)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
+		ExtensionsModified: []types.ExtensionDiff{{
+			Name:       "pgcrypto",
+			FromSchema: "public",
+			ToSchema:   "extensions",
+		}},
+	}, &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}}})
+
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches,
+		`invalid schema diff: cannot move PostgreSQL extension "pgcrypto" from schema "public" to schema "extensions"; extension schema moves are not yet supported`)
 }
 
 func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {

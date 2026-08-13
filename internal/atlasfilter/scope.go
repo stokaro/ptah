@@ -12,23 +12,38 @@ import (
 
 // Scope is the positive selection applied to Atlas schema apply and diff.
 //
-// Composition order is fixed: --schema names define the schema universe,
-// --include selectors pick top-level resources inside that universe, and
+// Composition order is fixed: --schema names define the universe for
+// schema-owned resources, --include selectors pick top-level resources, and
 // exclude patterns (--exclude plus atlas.hcl env.schema.mode) subtract from
-// the result. The final projection is then validated: a selected object that
-// depends on an unselected or excluded object refuses the projection with a
+// the result. Extensions are database-wide: an extension-only include selects
+// their identities, while any matching non-extension resource carries every
+// extension as support, even beside extension selectors. In that support mode,
+// an extension omitted from the desired description is not a removal request;
+// schema-only and extension-only scopes remain authoritative. The final
+// projection is then validated: a selected object that depends on an
+// unselected or excluded object refuses the projection with a
 // [*CrossScopeError] instead of producing an incomplete plan.
 type Scope struct {
-	// Schemas restricts the projection to the named schemas. Repeated and
-	// comma-separated values union deterministically. Empty keeps all schemas.
+	// Schemas restricts schema-owned resources to the named schemas. Repeated
+	// and comma-separated values union deterministically. Empty keeps all
+	// schemas. Database-wide extensions are not restricted by installation
+	// schema.
 	Schemas []string
 	// Include restricts the projection to top-level resources matched by the
 	// Atlas-style selectors. Repeated and comma-separated values union
-	// deterministically. Empty keeps every resource in the schema universe.
+	// deterministically. Empty keeps every schema-owned resource in the schema
+	// universe and every database-wide extension. A matching non-extension
+	// resource carries all extensions as non-removing support; an extension-only
+	// selection remains authoritative for selected extension identities.
 	Include []string
 	// Exclude subtracts Atlas-style exclude patterns from the positive
 	// selection.
 	Exclude []string
+	// ExtensionSupport keeps every database-wide extension during a
+	// comparison-side reprojection. Comparison callers set it only after either
+	// side reports a matching non-extension resource, so an extension-only
+	// include remains authoritative for the identities it selected.
+	ExtensionSupport bool
 	// DefaultSchema owns unqualified objects ("public" for PostgreSQL, the
 	// database name for MySQL-family targets, "main" for SQLite).
 	DefaultSchema string
@@ -357,6 +372,31 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 // nothing; asking the projection instead would report a selector as empty
 // whenever a positive selection had removed its object first.
 func ScopeGeneratedReport(db *goschema.Database, scope Scope) (*goschema.Database, ExcludeReport, error) {
+	filtered, reports, err := ScopeGeneratedSelectionReport(db, scope)
+	return filtered, reports.Exclude, err
+}
+
+// SelectionReport records which selection mode a projection actually matched.
+// A comparison uses it to distinguish an authoritative extension-only scope
+// from extensions that ride as support for a selected non-extension resource.
+type SelectionReport struct {
+	NonExtensionMatched bool
+}
+
+// ScopeReports groups the exclusion and positive-selection observations from
+// one projection without overloading either report with the other's meaning.
+type ScopeReports struct {
+	Exclude   ExcludeReport
+	Selection SelectionReport
+}
+
+// ScopeGeneratedSelectionReport is [ScopeGeneratedReport] plus the positive
+// selection outcome needed when a comparison aggregates matches across both
+// sides.
+func ScopeGeneratedSelectionReport(
+	db *goschema.Database,
+	scope Scope,
+) (*goschema.Database, ScopeReports, error) {
 	return scopeReport(db, scope, ExcludeGeneratedReport,
 		(*scopeSelection).projectGenerated, validateGeneratedScope)
 }
@@ -372,30 +412,36 @@ func scopeReport[T any](
 	exclude func(*T, []string, string) (*T, ExcludeReport, error),
 	project func(*scopeSelection, *T) *T,
 	validate func(*T, *T, *scopeSelection) error,
-) (*T, ExcludeReport, error) {
+) (*T, ScopeReports, error) {
 	if !scope.Positive() {
-		return exclude(db, scope.Exclude, scope.DefaultSchema)
+		filtered, report, err := exclude(db, scope.Exclude, scope.DefaultSchema)
+		return filtered, ScopeReports{Exclude: report}, err
 	}
 	selectors, err := parseIncludeSelectors(scope.Include)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, ScopeReports{}, err
 	}
 	if db == nil {
-		return nil, ExcludeReport{}, nil
+		return nil, ScopeReports{}, nil
 	}
 	_, report, err := exclude(db, scope.Exclude, scope.DefaultSchema)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, ScopeReports{}, err
 	}
 	selection := newScopeSelection(scope, selectors)
 	final, _, err := exclude(project(selection, db), scope.Exclude, scope.DefaultSchema)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, ScopeReports{}, err
 	}
 	if err := validate(db, final, selection); err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, ScopeReports{}, err
 	}
-	return final, report, selection.emptySelectionError(scope)
+	return final, ScopeReports{
+		Exclude: report,
+		Selection: SelectionReport{
+			NonExtensionMatched: selection.nonExtensionMatched,
+		},
+	}, selection.emptySelectionError(scope)
 }
 
 // ScopeDatabase projects the introspected database schema through the same
@@ -410,21 +456,34 @@ func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSc
 // ScopeDatabaseReport is [ScopeDatabase] plus the [ExcludeReport], measured
 // against the unprojected state for the reason [ScopeGeneratedReport] gives.
 func ScopeDatabaseReport(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, ExcludeReport, error) {
+	filtered, reports, err := ScopeDatabaseSelectionReport(db, scope)
+	return filtered, reports.Exclude, err
+}
+
+// ScopeDatabaseSelectionReport is [ScopeDatabaseReport] plus the positive
+// selection outcome needed when a comparison aggregates matches across both
+// sides.
+func ScopeDatabaseSelectionReport(
+	db *dbschematypes.DBSchema,
+	scope Scope,
+) (*dbschematypes.DBSchema, ScopeReports, error) {
 	return scopeReport(db, scope, ExcludeDatabaseReport,
 		(*scopeSelection).projectDatabase, validateDatabaseScope)
 }
 
 // scopeSelection carries the parsed positive selection during one projection.
 type scopeSelection struct {
-	allowed   map[string]struct{}
-	selectors []resourcePattern
-	def       string
+	allowed          map[string]struct{}
+	selectors        []resourcePattern
+	def              string
+	extensionSupport bool
 	// matched records whether any include selector matched a top-level object
 	// during the projection. It is the outcome the emptiness check needs:
 	// counting the projected objects instead would also count the support
 	// objects and grants that ride along with a selection, and would miss a
 	// match the exclude subtraction later removed.
-	matched bool
+	matched             bool
+	nonExtensionMatched bool
 }
 
 // emptySelectionError reports an include selection that matched nothing.
@@ -444,14 +503,21 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 		allowed[schema] = struct{}{}
 	}
 	return &scopeSelection{
-		allowed:   allowed,
-		selectors: selectors,
-		def:       strings.TrimSpace(scope.DefaultSchema),
+		allowed:          allowed,
+		selectors:        selectors,
+		def:              strings.TrimSpace(scope.DefaultSchema),
+		extensionSupport: scope.ExtensionSupport,
 	}
 }
 
 func (s *scopeSelection) effectiveSchema(schema string) string {
-	schema = strings.TrimSpace(schema)
+	if strings.TrimSpace(schema) != "" {
+		return schema
+	}
+	return s.def
+}
+
+func (s *scopeSelection) effectiveExtensionSchema(schema string) string {
 	if schema != "" {
 		return schema
 	}
@@ -481,13 +547,15 @@ func (s *scopeSelection) nameCandidates(schema, name string) []string {
 }
 
 // selectedNames reports whether the include selectors match one of the name
-// candidates for any of the resource types. Empty selectors select everything
-// in the schema universe.
+// candidates for any of the resource types. Empty selectors select every
+// candidate passed by the caller.
 //
-// Every call is a top-level object asking whether a selector names it, so a
-// match here is exactly what [scopeSelection.emptySelectionError] needs to
-// know. Callers evaluate the schema universe first, so an object outside it
-// never reaches this point and never counts as a match.
+// Every call is a non-extension top-level object asking whether a selector
+// names it, so a match here is exactly what
+// [scopeSelection.emptySelectionError] needs to know and also records that
+// database-wide extensions must ride as support. Schema-owned callers evaluate
+// the schema universe first. selectedExtension deliberately skips that
+// ownership check and offers extension identities directly to the selectors.
 func (s *scopeSelection) selectedNames(resourceTypes []string, names ...string) bool {
 	if len(s.selectors) == 0 {
 		return true
@@ -496,6 +564,7 @@ func (s *scopeSelection) selectedNames(resourceTypes []string, names ...string) 
 		for _, resourceType := range resourceTypes {
 			if selector.matches(resourceType, names...) {
 				s.matched = true
+				s.nonExtensionMatched = true
 				return true
 			}
 		}
@@ -507,6 +576,34 @@ func (s *scopeSelection) selectedNames(resourceTypes []string, names ...string) 
 // and the include selectors.
 func (s *scopeSelection) selected(resourceTypes []string, schema, name string) bool {
 	return s.schemaAllowed(schema) && s.selectedNames(resourceTypes, s.nameCandidates(schema, name)...)
+}
+
+func (s *scopeSelection) selectedExtension(schema, name string) bool {
+	// Extensions are database-wide capabilities. Schema is installation
+	// placement, not object ownership, so --schema does not remove an
+	// extension merely because it was installed outside the selected schema
+	// universe. An extension-only --include selects qualified or bare extension
+	// identities. If a non-extension resource matches, every extension rides as
+	// non-removing support even when the selection also contains extension
+	// selectors.
+	if len(s.selectors) == 0 {
+		return true
+	}
+	if !s.extensionMatches(schema, name) {
+		return false
+	}
+	s.matched = true
+	return true
+}
+
+func (s *scopeSelection) extensionMatches(schema, name string) bool {
+	names := extensionNameCandidates(s.effectiveExtensionSchema(schema), name)
+	for _, selector := range s.selectors {
+		if selector.matches("extension", names...) {
+			return true
+		}
+	}
+	return false
 }
 
 // selectedQualifiedName applies the schema universe and include selectors to

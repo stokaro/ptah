@@ -21,6 +21,7 @@ import (
 const postgresObjectsHCL = `schema "public" {}
 
 extension "pg_trgm" {
+	schema        = schema.public
   if_not_exists = true
   version       = "1.6"
   comment       = "trigram search"
@@ -210,6 +211,7 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Extensions, qt.HasLen, 1)
+	c.Assert(got.Extensions[0].Schema, qt.Equals, "public")
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.CompositeTypes, qt.HasLen, 1)

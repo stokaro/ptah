@@ -154,7 +154,9 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		name     string
 		database *goschema.Database
 	}{
-		{name: "extensions", database: &goschema.Database{Extensions: []goschema.Extension{{}}}},
+		{name: "extensions", database: &goschema.Database{Extensions: []goschema.Extension{{
+			Name: "pgcrypto", Schema: "extensions",
+		}}}},
 		{name: "functions", database: &goschema.Database{Functions: []goschema.Function{{}}}},
 		{name: "standalone sequences", database: &goschema.Database{Sequences: []goschema.Sequence{{}}}},
 		{name: "domains", database: &goschema.Database{Domains: []goschema.Domain{{}}}},

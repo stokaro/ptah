@@ -48,6 +48,15 @@ func TestParseExtensionComment(t *testing.T) {
 			},
 		},
 		{
+			name:    "extension with installation schema",
+			comment: "//ptah:schema:extension name=\"postgis\" schema=\"extensions\" version=\"3.0\"",
+			expected: goschema.Extension{
+				Name:    "postgis",
+				Schema:  "extensions",
+				Version: "3.0",
+			},
+		},
+		{
 			name:    "extension with comment",
 			comment: "//ptah:schema:extension name=\"btree_gin\" comment=\"Enable GIN indexes on btree types\"",
 			expected: goschema.Extension{
@@ -76,6 +85,7 @@ type TestExtensions struct{}
 			c.Assert(database.Extensions, qt.HasLen, 1)
 			ext := database.Extensions[0]
 			c.Assert(ext.Name, qt.Equals, tt.expected.Name)
+			c.Assert(ext.Schema, qt.Equals, tt.expected.Schema)
 			c.Assert(ext.IfNotExists, qt.Equals, tt.expected.IfNotExists)
 			c.Assert(ext.Version, qt.Equals, tt.expected.Version)
 			c.Assert(ext.Comment, qt.Equals, tt.expected.Comment)

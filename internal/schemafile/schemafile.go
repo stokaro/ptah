@@ -890,6 +890,7 @@ func toDBExtensions(extensions []goschema.Extension) []dbschematypes.DBExtension
 	for _, extension := range extensions {
 		out = append(out, dbschematypes.DBExtension{
 			Name:    extension.Name,
+			Schema:  extension.Schema,
 			Version: extension.Version,
 			Comment: optionalStringPtr(
 				extension.Comment,
