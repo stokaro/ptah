@@ -482,6 +482,32 @@ The `schema apply` row was measured against a throwaway PostgreSQL target
 started for the purpose; the other five need no target database. Every cell in
 that column is a run, not a code reading.
 
+Connection parameters written on the dev URL are carried into the provisioned
+connection. Atlas CE honors them, so discarding them is both a wrong answer and
+a `ptah-compat exits 0 where Atlas CE exits 1` cell:
+
+| `schema inspect -u file://schema.sql --dev-url …` | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `docker://postgres/16/dev?search_path=app` | 1, `schema "app" was not found` | 1, `database URL selects schema "app", which does not exist in this database` |
+| `docker://postgres/16/dev?search_path=public` | 0 | 0, byte-identical to the same run with no parameters |
+
+The engine's own parameters are defaults, not overrides: `sslmode=disable` is
+added because the container publishes on loopback and speaks no TLS, and an
+operator who writes `sslmode` replaces it rather than being silently overruled.
+The readiness wait deliberately probes the server with the engine defaults only
+— a `search_path` naming a schema a fresh container cannot have would fail every
+attempt, and the wait would spend its whole budget before reporting a verdict no
+amount of waiting changes. Measured: two minutes before that split, about five
+seconds after it.
+
+A database `--to` with a `docker://` dev database is planned rather than
+refused. The isolation check that asks whether the dev database aliases the
+desired state is not asked of a container that does not exist yet:
+
+| argv | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | :-: | :-: | :-: |
+| `migrate diff m2 --dir file://migrations --to postgres://… --dev-url docker://postgres/16/dev` | 0 | 1, `unsupported database URL dialect` | **0** |
+
 Two `docker://` forms are refused on purpose, because Atlas CE refuses them and
 accepting them would be a `ptah-compat exits 0 where Atlas CE exits 1` cell:
 

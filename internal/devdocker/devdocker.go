@@ -50,6 +50,7 @@ package devdocker
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"strings"
 
@@ -96,10 +97,16 @@ type engine struct {
 	dialect string
 	// port is the port the server listens on inside the container.
 	port string
+	// params are the connection parameters the provisioned URL needs by
+	// default. Parameters written on the docker URL are merged over these, so
+	// an operator can override one and cannot lose one they did not mention.
+	params map[string]string
 	// env builds the container environment that creates database.
 	env func(database string) []string
-	// url builds a directly connectable URL for the published hostPort.
-	url func(hostPort, database string) string
+	// url builds a directly connectable URL for the published hostPort. query
+	// is the merged parameter string, already encoded and without a leading
+	// `?`; it is empty when there are no parameters.
+	url func(hostPort, database, query string) string
 }
 
 // engines maps the host segment of a docker URL onto the container to start.
@@ -114,6 +121,10 @@ var engines = map[string]engine{
 		image:   "postgres",
 		dialect: platform.Postgres,
 		port:    "5432",
+		// The container publishes on loopback and speaks no TLS, so the
+		// default disables it. An operator who writes `sslmode` on the docker
+		// URL replaces this value rather than being silently overruled.
+		params: map[string]string{"sslmode": "disable"},
 		env: func(database string) []string {
 			return []string{
 				"POSTGRES_PASSWORD=" + devPassword,
@@ -121,8 +132,8 @@ var engines = map[string]engine{
 				"POSTGRES_DB=" + database,
 			}
 		},
-		url: func(hostPort, database string) string {
-			return fmt.Sprintf("postgres://postgres:%s@%s/%s?sslmode=disable", devPassword, hostPort, database)
+		url: func(hostPort, database, query string) string {
+			return fmt.Sprintf("postgres://postgres:%s@%s/%s%s", devPassword, hostPort, database, querySuffix(query))
 		},
 	},
 	"mysql": {
@@ -135,8 +146,8 @@ var engines = map[string]engine{
 				"MYSQL_DATABASE=" + database,
 			}
 		},
-		url: func(hostPort, database string) string {
-			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s", devPassword, hostPort, database)
+		url: func(hostPort, database, query string) string {
+			return fmt.Sprintf("mysql://root:%s@tcp(%s)/%s%s", devPassword, hostPort, database, querySuffix(query))
 		},
 	},
 	"maria":   mariaEngine,
@@ -155,9 +166,45 @@ var mariaEngine = engine{
 			"MARIADB_DATABASE=" + database,
 		}
 	},
-	url: func(hostPort, database string) string {
-		return fmt.Sprintf("mariadb://root:%s@tcp(%s)/%s", devPassword, hostPort, database)
+	url: func(hostPort, database, query string) string {
+		return fmt.Sprintf("mariadb://root:%s@tcp(%s)/%s%s", devPassword, hostPort, database, querySuffix(query))
 	},
+}
+
+// querySuffix renders an encoded parameter string as a URL suffix.
+//
+// It exists so each engine's URL template can carry parameters without every
+// one of them repeating the empty-string case, and so a `?` never appears with
+// nothing after it -- the MySQL driver reads its DSN by cutting on `?` and a
+// bare one leaves it parsing an empty parameter list.
+func querySuffix(query string) string {
+	if query == "" {
+		return ""
+	}
+	return "?" + query
+}
+
+// mergeParams overlays the parameters written on the docker URL onto the
+// engine's defaults and encodes the result.
+//
+// The operator's value wins on a key both name. That direction is deliberate:
+// the defaults exist to make a throwaway container reachable, and an operator
+// who writes one has a reason the container cannot know. Keys the operator did
+// not mention survive, which is the half a naive "use the operator's query if
+// there is one" would drop.
+func mergeParams(defaults map[string]string, rawQuery string) (string, error) {
+	operator, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "", fmt.Errorf("parse docker --dev-url parameters %q: %w", rawQuery, err)
+	}
+	merged := url.Values{}
+	for key, value := range defaults {
+		merged.Set(key, value)
+	}
+	// Copied wholesale rather than appended: a key the operator wrote REPLACES
+	// the default for that key, and appending would send both values.
+	maps.Copy(merged, operator)
+	return merged.Encode(), nil
 }
 
 // Spec is a parsed `docker://` dev URL: everything needed to start the
@@ -171,8 +218,41 @@ type Spec struct {
 	Image string
 	// Database is the database created inside the container.
 	Database string
+	// Query is the encoded connection parameter string the provisioned URL
+	// carries: the engine's defaults with the operator's written over them.
+	Query string
 
 	engine engine
+}
+
+// URL is the directly connectable URL for a server published at hostPort. It
+// carries the operator's parameters.
+func (s Spec) URL(hostPort string) string {
+	return s.engine.url(hostPort, s.Database, s.Query)
+}
+
+// ReadyURL is the URL the readiness wait probes: the same server, with the
+// engine's own parameters only.
+//
+// Readiness asks whether the CONTAINER is up, and the operator's parameters can
+// make that question unanswerable. Measured: `docker://postgres/16/dev?search_path=app`
+// probed with the full URL fails every attempt with `schema "app" does not
+// exist` -- a verdict no amount of waiting changes -- so the wait spent its
+// whole two-minute budget before reporting a deterministic error. Probing the
+// server and letting the consumer open the full URL turns that into an
+// immediate refusal naming the schema, which is also when the pinned community
+// binary v1.3.0 reports it.
+func (s Spec) ReadyURL(hostPort string) string {
+	return s.engine.url(hostPort, s.Database, defaultParams(s.engine.params))
+}
+
+// defaultParams encodes an engine's own parameters, with nothing merged in.
+func defaultParams(params map[string]string) string {
+	values := url.Values{}
+	for key, value := range params {
+		values.Set(key, value)
+	}
+	return values.Encode()
 }
 
 // unsupportedImageError is the pinned binary's refusal for a host segment that
@@ -206,11 +286,21 @@ func Parse(rawURL string) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
+	// The parameters travel with the spec. Dropping them would accept a URL and
+	// then ignore half of what it said -- and measurably so: the pinned
+	// community binary v1.3.0 honors them, and a `?search_path=app` it answers
+	// `schema "app" was not found` (exit 1) was answered here by inspecting
+	// `public` and exiting 0 while they were being discarded.
+	query, err := mergeParams(found.params, parsed.RawQuery)
+	if err != nil {
+		return Spec{}, err
+	}
 	return Spec{
 		Engine:   host,
 		Dialect:  found.dialect,
 		Image:    found.image + ":" + tag,
 		Database: database,
+		Query:    query,
 		engine:   found,
 	}, nil
 }

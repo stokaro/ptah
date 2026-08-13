@@ -63,6 +63,25 @@ type Options struct {
 	Ready ReadyFunc
 	// ReadyTimeout bounds the readiness wait. Defaults to two minutes.
 	ReadyTimeout time.Duration
+	// ReleaseAttempts bounds how many times the release function returned by
+	// [Resolve] retries a removal the runtime refused. Defaults to three.
+	ReleaseAttempts int
+	// ReleaseRetryDelay spaces those attempts. Defaults to one second.
+	ReleaseRetryDelay time.Duration
+}
+
+func (o Options) releaseAttempts() int {
+	if o.ReleaseAttempts > 0 {
+		return o.ReleaseAttempts
+	}
+	return defaultReleaseAttempts
+}
+
+func (o Options) releaseRetryDelay() time.Duration {
+	if o.ReleaseRetryDelay > 0 {
+		return o.ReleaseRetryDelay
+	}
+	return defaultReleaseRetryDelay
 }
 
 func (o Options) runner() Runner {
@@ -113,7 +132,16 @@ func (i *Instance) Container() string {
 	return i.container
 }
 
-// Close removes the container. It is safe to call more than once.
+// Close removes the container. It is safe to call more than once, and a call
+// that fails leaves the instance retryable.
+//
+// The `closed` flag is set only after the runtime confirms removal. Setting it
+// first is the obvious spelling and it is wrong in the direction that leaks: a
+// `docker rm` that fails transiently or times out would leave the container
+// running while every later Close returned success, and the deferred release
+// the consumers use is exactly such a later call. A dev database is reset
+// destructively and holds a copy of the operator's schema; one left running is
+// not a tidiness problem.
 //
 // The removal runs on a context detached from any the caller may have canceled:
 // a canceled command must still clean up after itself, and a removal issued on
@@ -122,12 +150,12 @@ func (i *Instance) Close() error {
 	if i == nil || i.closed {
 		return nil
 	}
-	i.closed = true
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), removeTimeout)
 	defer cancel()
 	if err := i.runner.Remove(ctx, i.container); err != nil {
 		return fmt.Errorf("remove dev database container %s: %w", i.container, err)
 	}
+	i.closed = true
 	return nil
 }
 
@@ -160,11 +188,13 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		return nil, err
 	}
 	instance := &Instance{
-		url:       spec.engine.url(hostPort, spec.Database),
+		url:       spec.URL(hostPort),
 		container: name,
 		runner:    runner,
 	}
-	if err := waitReady(ctx, instance.url, opts); err != nil {
+	// The wait probes the server, not the operator's parameters; see
+	// [Spec.ReadyURL] for the two minutes that distinction is worth.
+	if err := waitReady(ctx, spec.ReadyURL(hostPort), opts); err != nil {
 		_ = instance.Close()
 		return nil, fmt.Errorf("dev database %s did not become ready: %w", spec.Image, err)
 	}
@@ -187,12 +217,40 @@ func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), 
 	if err != nil {
 		return "", func() {}, err
 	}
-	return instance.URL(), func() {
-		if err := instance.Close(); err != nil {
-			slog.Warn("failed to remove the provisioned dev database container",
-				"container", instance.Container(), "error", err)
+	return instance.URL(), func() { releaseInstance(instance, opts) }, nil
+}
+
+// defaultReleaseAttempts bounds how many times a release retries a removal the
+// runtime refused. Most consumers call the release exactly once, from a defer,
+// so a removal that fails there has no later caller to retry it; the retry
+// lives here rather than relying on one existing.
+const defaultReleaseAttempts = 3
+
+// defaultReleaseRetryDelay spaces those attempts. A daemon that is briefly busy
+// answers the second attempt; one that is down is not worth waiting for while
+// the operator's command is trying to exit.
+const defaultReleaseRetryDelay = time.Second
+
+// releaseInstance removes the container, retrying a refused removal, and
+// reports a container it could not remove by the name an operator would need
+// to remove it by hand.
+func releaseInstance(instance *Instance, opts Options) {
+	attempts := opts.releaseAttempts()
+	var err error
+	for attempt := range attempts {
+		err = instance.Close()
+		if err == nil {
+			return
 		}
-	}, nil
+		if attempt < attempts-1 {
+			time.Sleep(opts.releaseRetryDelay())
+		}
+	}
+	slog.Warn("failed to remove the provisioned dev database container; remove it by hand",
+		"container", instance.Container(),
+		"attempts", attempts,
+		"sweep", "docker rm -f $(docker ps -aq --filter label="+ContainerLabel+")",
+		"error", err)
 }
 
 // waitReady polls until the database accepts a connection, the deadline passes,

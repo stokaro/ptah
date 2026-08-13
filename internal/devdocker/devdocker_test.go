@@ -174,6 +174,10 @@ type fakeRunner struct {
 	availableErr error
 	startErr     error
 	hostPort     string
+	// removeFailures[i] is returned by the (i+1)-th Remove call. Calls past the
+	// end succeed, so a queue of one error models a removal that fails once and
+	// then works -- the transient `docker rm` the retry exists for.
+	removeFailures []error
 
 	started []string
 	removed []string
@@ -194,7 +198,15 @@ func (f *fakeRunner) Remove(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, name)
-	return nil
+	return errorAt(f.removeFailures, len(f.removed)-1)
+}
+
+// errorAt reads errs[i], treating a short slice as trailing nils. It pads
+// rather than testing the length so the fake stays free of branches.
+func errorAt(errs []error, i int) error {
+	padded := make([]error, max(len(errs), i+1))
+	copy(padded, errs)
+	return padded[i]
 }
 
 func (f *fakeRunner) calls() (started, removed []string) {
@@ -347,6 +359,176 @@ func TestReleaseIsSafeToCallTwice(t *testing.T) {
 	// a second call must not issue a second removal against a name the daemon
 	// may by then have given to nobody.
 	qt.Check(t, removed, qt.HasLen, 1)
+}
+
+// The rows below pin that connection parameters written on a docker dev URL
+// survive into the provisioned URL.
+//
+// Measured against the pinned community binary v1.3.0 on 2026-08-13, exit
+// status read from an unpiped invocation of
+// `atlas schema inspect -u file://schema.sql --dev-url <value>`:
+//
+//	docker://postgres/16/dev                     exit 0, inspects the container
+//	docker://postgres/16/dev?search_path=app     exit 1, `schema "app" was not found`
+//	docker://postgres/16/dev?search_path=public  exit 0
+//
+// That binary HONORS the parameter: it provisions, then scopes to the named
+// schema, and fails when a fresh container does not have it. While the query
+// was being parsed and discarded here, the middle row answered exit 0 and
+// inspected `public` — accepting what the operator wrote and then ignoring it,
+// and exiting 0 where the pinned binary exits 1, which compatibility rule (a)
+// forbids outright.
+func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantURL string
+	}{
+		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+			name:    "no parameters leaves the engine defaults",
+			rawURL:  "docker://postgres/16/dev",
+			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=disable",
+		},
+		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+			// The row the pinned binary answers exit 1 on. The parameter has to
+			// reach the connection for Ptah to answer it at all.
+			name:    "search_path survives alongside the defaults",
+			rawURL:  "docker://postgres/16/dev?search_path=app",
+			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
+		},
+		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+			// The operator wins on a key the engine also sets. Defaults exist to
+			// make a throwaway container reachable; an operator who writes one
+			// has a reason the container cannot know.
+			name:    "an operator sslmode replaces the default",
+			rawURL:  "docker://postgres/16/dev?sslmode=require",
+			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=require",
+		},
+		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+			// Two keys, one of which the engine also sets: the unmentioned
+			// default must survive. A build that used the operator's query
+			// wholesale instead of merging would drop sslmode here.
+			name:    "an unmentioned default survives beside an operator key",
+			rawURL:  "docker://postgres/16/dev?search_path=app",
+			wantURL: "postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
+		},
+		{
+			// MySQL has no default parameters, so its URL carries a query only
+			// when the operator wrote one -- and no bare `?`, which the driver
+			// would read as an empty parameter list.
+			name:    "mysql without parameters carries no query at all",
+			rawURL:  "docker://mysql/8/dev",
+			wantURL: "mysql://root:ptah-dev@tcp(127.0.0.1:15432)/dev",
+		},
+		{
+			name:    "mysql carries the operator parameters",
+			rawURL:  "docker://mysql/8/dev?parseTime=true",
+			wantURL: "mysql://root:ptah-dev@tcp(127.0.0.1:15432)/dev?parseTime=true",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			spec, err := devdocker.Parse(tc.rawURL)
+			qt.Assert(t, err, qt.IsNil)
+			qt.Check(t, spec.URL("127.0.0.1:15432"), qt.Equals, tc.wantURL)
+		})
+	}
+}
+
+func TestReadyURLProbesTheServerWithoutTheOperatorParameters(t *testing.T) {
+	spec, err := devdocker.Parse("docker://postgres/16/dev?search_path=app")
+	qt.Assert(t, err, qt.IsNil)
+
+	// The readiness wait asks whether the CONTAINER is up. Probing with
+	// `search_path=app` cannot answer that: a fresh container never has the
+	// schema, so every attempt fails and the wait burns its whole budget before
+	// reporting a deterministic error. Measured before this split, that cost
+	// two minutes; after it the same run refuses in about five seconds.
+	qt.Check(t, spec.ReadyURL("127.0.0.1:15432"), qt.Equals,
+		"postgres://postgres:ptah-dev@127.0.0.1:15432/dev?sslmode=disable")
+	// The engine's own defaults are still on the probe URL: dropping sslmode
+	// here would make the probe fail against a container that speaks no TLS.
+	qt.Check(t, spec.URL("127.0.0.1:15432"), qt.Equals,
+		"postgres://postgres:ptah-dev@127.0.0.1:15432/dev?search_path=app&sslmode=disable")
+}
+
+func TestCloseStaysRetryableUntilRemovalSucceeds(t *testing.T) {
+	removeFailed := errors.New("Error response from daemon: removal already in progress")
+	runner := &fakeRunner{hostPort: "127.0.0.1:15432", removeFailures: []error{removeFailed}}
+
+	instance, err := devdocker.Provision(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner: runner,
+		Ready:  alwaysReady,
+	})
+	qt.Assert(t, err, qt.IsNil)
+
+	// First removal is refused, the way a busy or briefly unreachable daemon
+	// refuses one.
+	first := instance.Close()
+	qt.Assert(t, first, qt.IsNotNil)
+	qt.Check(t, first, qt.ErrorIs, removeFailed)
+	qt.Check(t, first.Error(), qt.Contains, instance.Container())
+
+	// The second call must RETRY. Marking the instance closed before the
+	// removal succeeded is the obvious spelling and it leaks: the container
+	// keeps running while every later Close reports success, and the deferred
+	// release consumers use is exactly such a later call.
+	second := instance.Close()
+	qt.Check(t, second, qt.IsNil)
+	_, removed := runner.calls()
+	qt.Assert(t, removed, qt.HasLen, 2)
+
+	// Only once it has actually succeeded does a further call stop asking.
+	qt.Check(t, instance.Close(), qt.IsNil)
+	_, removed = runner.calls()
+	qt.Check(t, removed, qt.HasLen, 2)
+}
+
+func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
+	removeFailed := errors.New("Error response from daemon: removal already in progress")
+	runner := &fakeRunner{
+		hostPort:       "127.0.0.1:15432",
+		removeFailures: []error{removeFailed, removeFailed},
+	}
+
+	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:            runner,
+		Ready:             alwaysReady,
+		ReleaseRetryDelay: time.Millisecond,
+	})
+	qt.Assert(t, err, qt.IsNil)
+
+	// Consumers call the release exactly once, from a defer. A removal refused
+	// there has no later caller to retry it, so the retry has to live inside
+	// the release rather than depend on one existing.
+	release()
+
+	started, removed := runner.calls()
+	qt.Assert(t, started, qt.HasLen, 1)
+	qt.Check(t, removed, qt.HasLen, 3)
+}
+
+// TestDockerCLIRemoveReportsAnUnreachableDaemon is what makes the retry above
+// worth having.
+//
+// [DockerCLI.Remove] treats "No such container" as success, because a container
+// the daemon already reaped is not a failure. That tolerance must not widen
+// into swallowing everything: a removal that could not reach the daemon at all
+// has to come back as an error, or the retry has nothing to act on and the
+// release reports success over a container that is still running.
+//
+// It needs no daemon and starts nothing — an unreachable DOCKER_HOST is the
+// failure being measured. Measured output:
+//
+//	failed to connect to the docker API at unix:///tmp/…sock; check if the
+//	path is correct and if the daemon is running: … : exit status 1
+func TestDockerCLIRemoveReportsAnUnreachableDaemon(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "unix:///tmp/ptah-devdocker-no-such-socket.sock")
+
+	err := devdocker.DockerCLI{}.Remove(t.Context(), "ptah-dev-doesnotexist")
+
+	qt.Assert(t, err, qt.IsNotNil)
 }
 
 func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
