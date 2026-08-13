@@ -184,8 +184,12 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	hostPort, err := runner.Start(ctx, name, spec.Image, spec.engine.port, spec.engine.env(spec.Database))
 	if err != nil {
 		// Start may have created the container before failing to publish or
-		// inspect it, so removal is attempted regardless of where it stopped.
-		removeQuietly(runner, name)
+		// inspect it -- `docker run` succeeding and `docker port` failing leaves
+		// a live container behind -- so removal is attempted regardless of where
+		// it stopped, and with the same bounded retry every other exit path
+		// uses. This is the third branch of the same question, and the answer
+		// is spelled once so a fourth cannot get a weaker one.
+		releaseInstance(&Instance{container: name, runner: runner}, opts)
 		return nil, err
 	}
 	instance := &Instance{
@@ -306,15 +310,6 @@ func containerName() (string, error) {
 		return "", fmt.Errorf("generate dev database container name: %w", err)
 	}
 	return containerNamePrefix + hex.EncodeToString(suffix), nil
-}
-
-// removeQuietly drops a container whose creation state is unknown. Its error is
-// discarded on purpose: it is reported on a path that already carries a more
-// specific failure, and "no such container" is the expected answer.
-func removeQuietly(runner Runner, name string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), removeTimeout)
-	defer cancel()
-	_ = runner.Remove(ctx, name)
 }
 
 // DockerCLI drives the `docker` command-line client.

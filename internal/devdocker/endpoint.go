@@ -59,6 +59,9 @@ type dockerEndpoint struct {
 	host string
 	// remote reports whether the daemon runs on another machine.
 	remote bool
+	// ssh reports whether the endpoint is an SSH destination, whose host is
+	// resolved through ssh's own configuration rather than through DNS alone.
+	ssh bool
 }
 
 // bindAddress is the address to publish the container port on.
@@ -94,6 +97,10 @@ func (d DockerCLI) endpoint(ctx context.Context) (dockerEndpoint, error) {
 		}
 	}
 	endpoint, err := parseDockerEndpoint(raw)
+	if err != nil {
+		return dockerEndpoint{}, err
+	}
+	endpoint, err = resolveSSHDestination(ctx, endpoint)
 	if err != nil {
 		return dockerEndpoint{}, err
 	}
@@ -145,13 +152,89 @@ func parseDockerEndpoint(raw string) (dockerEndpoint, error) {
 	if host == "" {
 		return dockerEndpoint{}, fmt.Errorf("the docker endpoint %q names no host", raw)
 	}
+	// A host is passed to `ssh -G` as an argument, and `url.Parse` is happy to
+	// produce one beginning with a dash -- `ssh://-oProxyCommand=…` parses with
+	// that as the hostname. ssh would read it as an option rather than a
+	// destination, so it is refused here instead of being quoted somewhere
+	// downstream and forgotten.
+	if strings.HasPrefix(host, "-") {
+		return dockerEndpoint{}, fmt.Errorf("the docker endpoint %q names a host beginning with a dash", raw)
+	}
 	if isLoopbackHost(host) {
 		// `tcp://127.0.0.1:2375` is a daemon on this machine reached over TCP.
 		// Its published loopback ports are this process's loopback ports, so
 		// nothing about the address needs to change.
 		return dockerEndpoint{}, nil
 	}
-	return dockerEndpoint{host: host, remote: true}, nil
+	return dockerEndpoint{host: host, remote: true, ssh: parsed.Scheme == "ssh"}, nil
+}
+
+// resolveSSHDestination replaces an `ssh://` endpoint's host with the address
+// ssh itself would dial, and refuses one that has no direct route.
+//
+// The host in a docker `ssh://` endpoint is an SSH destination, not necessarily
+// a DNS name. `ssh://devbox` can be an alias whose real HostName is somewhere
+// else entirely, and the published port is dialed by a SQL driver over ordinary
+// TCP -- which knows nothing about ~/.ssh/config. Returning the alias verbatim
+// works only when it happens to resolve. It did in the case this was first
+// measured on, `ssh://remote-dev`, because that name resolves through the
+// tailnet's DNS to 100.101.64.121; that was luck, not design.
+//
+// `ssh -G` is the authority, because it is the same resolution ssh performs.
+// A destination reachable only through a ProxyJump is refused rather than
+// dialed: no direct TCP route to the published port exists, so returning
+// anything would be returning an address that cannot work, and a refusal that
+// names DOCKER_HOST costs the operator seconds where a dial costs two minutes.
+func resolveSSHDestination(ctx context.Context, endpoint dockerEndpoint) (dockerEndpoint, error) {
+	if !endpoint.ssh {
+		return endpoint, nil
+	}
+	//nolint:gosec // G204: the host is the operator's own DOCKER_HOST, is refused above if it could read as an option, and -G resolves configuration without connecting
+	out, err := exec.CommandContext(ctx, "ssh", "-G", endpoint.host).Output()
+	if err != nil {
+		// An ssh client that cannot be asked is not a reason to refuse: the
+		// literal host is what this code used before, and it works whenever the
+		// name resolves. Failing here would turn a working setup into an error.
+		slog.Debug("could not resolve the ssh destination; using the endpoint host as written",
+			"host", endpoint.host, "error", err)
+		return endpoint, nil
+	}
+	resolved, proxyJump := parseSSHConfig(string(out))
+	if proxyJump != "" {
+		return dockerEndpoint{}, fmt.Errorf(
+			"the docker endpoint ssh://%s is reachable only through the jump host %q,"+
+				" so the dev database port published on it cannot be dialed directly;"+
+				" point DOCKER_HOST at a daemon whose host this machine can reach,"+
+				" or pass a directly connectable dev database URL",
+			endpoint.host, proxyJump,
+		)
+	}
+	if resolved != "" {
+		endpoint.host = resolved
+	}
+	return endpoint, nil
+}
+
+// parseSSHConfig reads the effective hostname and proxyjump out of `ssh -G`
+// output, which is one lowercase `key value` pair per line.
+func parseSSHConfig(out string) (hostname, proxyJump string) {
+	for line := range strings.SplitSeq(out, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), " ")
+		if !found {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		switch strings.ToLower(key) {
+		case "hostname":
+			hostname = value
+		case "proxyjump":
+			// ssh spells "no jump host" as the literal `none`.
+			if !strings.EqualFold(value, "none") {
+				proxyJump = value
+			}
+		}
+	}
+	return hostname, proxyJump
 }
 
 // isLoopbackHost reports whether host names this machine's loopback.

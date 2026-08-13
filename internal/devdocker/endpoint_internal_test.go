@@ -113,8 +113,77 @@ func TestParseDockerEndpointClassifiesTheDaemonLocation(t *testing.T) {
 	}
 }
 
+// The fixtures below are real `ssh -G` output shapes, captured on 2026-08-13.
+// The command prints one lowercase `key value` pair per line and always answers
+// `hostname`, even for a destination no config mentions -- `ssh -G
+// ptah-no-such-alias-xyz` answers `hostname ptah-no-such-alias-xyz`.
+//
+// This matters because the host in a docker `ssh://` endpoint is an SSH
+// destination, not necessarily a DNS name, while the published port is dialed
+// by a SQL driver over ordinary TCP that knows nothing about ~/.ssh/config. The
+// case this was first measured on, `ssh://remote-dev`, worked only because that
+// name happens to resolve through the tailnet's DNS to 100.101.64.121 -- `ssh
+// -G remote-dev` answers `hostname remote-dev`, so nothing was being resolved
+// at all.
+func TestParseSSHConfigReadsTheEffectiveDestination(t *testing.T) {
+	tests := []struct {
+		name          string
+		out           string
+		wantHostname  string
+		wantProxyJump string
+	}{
+		{
+			// The measured shape for a destination with no rewriting.
+			name:         "no rewriting",
+			out:          "host remote-dev\nuser buster\nhostname remote-dev\nport 22\naddressfamily any\n",
+			wantHostname: "remote-dev",
+		},
+		{
+			// The case the endpoint host cannot be used verbatim for: an alias
+			// whose real address is somewhere else.
+			name:         "alias with a different hostname",
+			out:          "host devbox\nuser deploy\nhostname 10.0.0.5\nport 2222\n",
+			wantHostname: "10.0.0.5",
+		},
+		{
+			// No direct TCP route to the published port exists here.
+			name:          "reachable only through a jump host",
+			out:           "host devbox\nhostname 10.0.0.5\nproxyjump bastion.example\n",
+			wantHostname:  "10.0.0.5",
+			wantProxyJump: "bastion.example",
+		},
+		{
+			// ssh spells "no jump host" as the literal `none`, which must not
+			// be mistaken for one.
+			name:         "proxyjump none is not a jump host",
+			out:          "host remote-dev\nhostname remote-dev\nproxyjump none\n",
+			wantHostname: "remote-dev",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hostname, proxyJump := parseSSHConfig(tc.out)
+			qt.Check(t, hostname, qt.Equals, tc.wantHostname)
+			qt.Check(t, proxyJump, qt.Equals, tc.wantProxyJump)
+		})
+	}
+}
+
 func TestParseDockerEndpointRefusesAnEndpointNamingNoHost(t *testing.T) {
 	_, err := parseDockerEndpoint("tcp://")
 	qt.Assert(t, err, qt.IsNotNil)
 	qt.Check(t, err.Error(), qt.Contains, "names no host")
+}
+
+// TestParseDockerEndpointRefusesAHostThatReadsAsAnSSHOption closes the one way
+// operator input reaches an argument list.
+//
+// The host is handed to `ssh -G` as an argument, and net/url is happy to parse
+// a leading dash as a hostname, so `ssh://-oProxyCommand=…` would arrive as an
+// option rather than a destination.
+func TestParseDockerEndpointRefusesAHostThatReadsAsAnSSHOption(t *testing.T) {
+	_, err := parseDockerEndpoint("ssh://-lroot")
+	qt.Assert(t, err, qt.IsNotNil)
+	qt.Check(t, err.Error(), qt.Contains, "beginning with a dash")
 }

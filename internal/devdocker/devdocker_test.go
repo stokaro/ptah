@@ -515,6 +515,31 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
 }
 
+func TestProvisionRemovesTheContainerWhenStartFailsAfterCreatingIt(t *testing.T) {
+	removeFailed := errors.New("Error response from daemon: removal already in progress")
+	runner := &fakeRunner{
+		// `docker run` succeeded and reading the published port failed, which
+		// leaves a live container behind and is what Start reports as an error.
+		startErr:       errors.New("read published port of container: exit status 1"),
+		removeFailures: []error{removeFailed},
+	}
+
+	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:            runner,
+		Ready:             alwaysReady,
+		ReleaseRetryDelay: time.Millisecond,
+	})
+	qt.Assert(t, err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	// The third branch that hands the caller no instance. Like the
+	// readiness-failure one, a removal refused here has no later caller to
+	// retry it, so the retry has to be on the branch.
+	started, removed := runner.calls()
+	qt.Assert(t, started, qt.HasLen, 1)
+	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
+}
+
 // stallingReady blocks until its context ends, which is what a probe caught
 // inside a TCP or database handshake does.
 func stallingReady(ctx context.Context, _ string) error {
