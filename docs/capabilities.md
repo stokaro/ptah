@@ -539,28 +539,75 @@ remaining resolver refinement work.
   the server contradicts.
 
   MySQL and MariaDB now have all three parts. The renderer emits the engine's
-  own spelling, always preceded by `DROP FUNCTION IF EXISTS` because MySQL 26.7.0
-  refuses `CREATE OR REPLACE FUNCTION` with Error 1064; the reader reads
-  `information_schema.ROUTINES` and `information_schema.PARAMETERS`; and the
-  MySQL-family planner gates on this key instead of listing functions as an
-  object it cannot host. A characteristic is always emitted, because with binary
-  logging on and `log_bin_trust_function_creators` off — the pinned image's own
-  defaults — a function carrying none of `DETERMINISTIC`, `NO SQL` or
-  `READS SQL DATA` is refused with Error 1418. Measured on the same server,
-  `MODIFIES SQL DATA` and a bare `NOT DETERMINISTIC` are refused too, so a
-  `VOLATILE` declaration renders as `READS SQL DATA`.
+  own spelling; the reader reads `information_schema.ROUTINES` and
+  `information_schema.PARAMETERS`; and the MySQL-family planner gates on this
+  key instead of listing functions as an object it cannot host.
 
-  What is generated depends on the declared `language`, not on the target
+  **One node renders one statement.** A modified function still needs the
+  drop-then-create pair, because MySQL 26.7.0 refuses
+  `CREATE OR REPLACE FUNCTION` with Error 1064, but the drop is a separate node
+  the planner emits rather than a line the CREATE visitor prefixes. Putting both
+  in one visitor put two statements in one element of
+  `GetOrderedCreateStatements`, and the compatibility dev-database path passes
+  each element to `ExecuteSQL` unchanged over a DSN that does not enable
+  go-sql-driver's `multiStatements`; materializing any desired schema containing
+  a function failed with Error 1064 on both engines. An *added* function gets no
+  drop at all.
+
+  **Volatility survives a read.** A characteristic is always emitted, because
+  with binary logging on and `log_bin_trust_function_creators` off — the pinned
+  image's own defaults — a function carrying none of `DETERMINISTIC`, `NO SQL`
+  or `READS SQL DATA` is refused with Error 1418. Measured across all fifteen
+  combinations of the two axes on MySQL 26.7.0, exactly six
+  (`IS_DETERMINISTIC`, `SQL_DATA_ACCESS`) cells survive, and only two of them
+  are `NOT DETERMINISTIC`: `NO SQL` and `READS SQL DATA`. So the three
+  volatilities take three distinct cells — `IMMUTABLE` → `DETERMINISTIC`,
+  `STABLE` → `NOT DETERMINISTIC NO SQL`, `VOLATILE` → `READS SQL DATA` — and the
+  reader recovers the value from both columns. They used to share one clause, so
+  a declared `STABLE` function read back as `VOLATILE` and planned the same
+  destructive replacement on every apply, forever. `SQL_DATA_ACCESS` is advisory
+  rather than enforced, which is what makes it usable as the encoding channel
+  and is also its cost: a `STABLE` routine's catalog row says `NO SQL` whatever
+  its body reads.
+
+  **What cannot be represented is refused, not dropped.** A security mode that
+  is neither `DEFINER` nor `INVOKER` used to render no clause at all, so the
+  server applied its `DEFINER` default and every later comparison reported
+  `security: DEFINER -> INVKOER` — an operator who asked for invoker rights got
+  definer rights and a permanent diff. It is an error now, raised before the
+  leading drop is planned. An unknown volatility is refused the same way.
+
+  What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function
   declared `language="plpgsql"` is PostgreSQL procedural code that no envelope
-  makes runnable there — the shared `014-rls-functions` fixture declares
-  `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, whose return type
-  alone is Error 1064 on MySQL 26.7.0 before the body is parsed. Those
-  declarations get a named skip that says which language was declared and that
-  this target does not run it. A function whose body the target can run gets
-  real DDL. The distinction is the point: skipping every function would be
+  makes runnable there — `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`
+  is Error 1064 on MySQL 26.7.0 at the return type, before the body is parsed.
+  Such a declaration is refused with a message naming the language it was given
+  and the one word that settles it, `language="sql"`. It used to be a named skip
+  comment, which was accurate and silent: nothing was created, the comparator
+  kept the function in `FunctionsAdded`, `schema apply` exited 0 having done
+  nothing, and the next run planned the same creation. Because
+  `Function.Canonicalize` defaults an unset language to `plpgsql`, an annotation
+  that omits `language=` reached that branch too — so the case that should never
+  have skipped was skipping. A function whose body the target can run still gets
+  real DDL. That distinction is the point: refusing every function would be
   `-- CREATE FUNCTION f1 not supported in MySQL` in a new spelling, and would
   make this key vacuous again.
+
+  **Routine identity is the engine's, not the table rules'.** Stored-routine
+  names are case-insensitive on both engines — with `foo` in the catalog,
+  `SELECT Foo(1)` resolves to it and `CREATE FUNCTION BAR` is Error 1304 while
+  `bar` exists — and that is independent of the `TableNames` comparison the
+  identifier semantics carry. Keying routines by exact spelling made live `foo`
+  and desired `Foo` two objects: the diff carried an addition *and* a removal,
+  and a successful apply left the database with no function at all. Routine
+  types are likewise normalized on both sides, because the engines resolve
+  synonyms themselves: a declared `INTEGER` is reported as `int`, and the two
+  engines further disagree with each other about the legacy display width
+  (`int` on MySQL, `int(11)` on MariaDB). Parameter rows are restricted to
+  `ROUTINE_TYPE = 'FUNCTION'`, since a procedure of the same name shares the
+  function's `SPECIFIC_NAME` and its arguments used to be appended to the
+  function's signature.
 
   Stored-function DDL is never transactional on these engines. Measured on
   MySQL 26.7.0, `CREATE FUNCTION` inside `START TRANSACTION` survives a

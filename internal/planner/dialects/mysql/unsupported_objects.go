@@ -95,10 +95,21 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 // planFunctions plans the create, replace and drop of stored functions for a
 // target that hosts them.
 //
-// A modified function is planned as its full CREATE node, exactly as an added
-// one is: the MySQL-family renderer prefixes every CREATE FUNCTION with
-// DROP FUNCTION IF EXISTS, because neither engine has the single-statement
-// replace form the PostgreSQL planner leans on, so one node covers both cases.
+// A modified function is planned as TWO nodes: a DROP FUNCTION IF EXISTS
+// followed by the full CREATE. Neither engine has the single-statement replace
+// form the PostgreSQL planner leans on -- `CREATE OR REPLACE FUNCTION` is
+// Error 1064 on MySQL 26.7.0 -- so the pair is what a replacement is here.
+//
+// The drop is planned rather than rendered inside the CREATE. It used to be
+// the first line of VisitCreateFunction, which made one node render two
+// statements, and an element of GetOrderedCreateStatements holding two
+// statements is executed as one string by the compatibility dev-database path,
+// where the driver's default DSN refuses it. Emitting the drop as its own node
+// keeps every element a single statement without giving up the replacement.
+//
+// An ADDED function gets no drop. Nothing of that name is there to replace,
+// and the IF EXISTS that made the old unconditional prefix safe was hiding
+// that distinction rather than expressing it.
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.
@@ -116,9 +127,12 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 		if !ok {
 			continue
 		}
+		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
+		result = append(result, ast.NewDropFunction(fn.Name).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Replace function %s: %s", fn.Name, changes)))
 		node := fromschema.FromFunction(fn)
-		node.SetComment(fmt.Sprintf("Modify function %s: %s",
-			fn.Name, strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")))
+		node.SetComment(fmt.Sprintf("Modify function %s: %s", fn.Name, changes))
 		result = append(result, node)
 	}
 	for _, name := range diff.FunctionsRemoved {
