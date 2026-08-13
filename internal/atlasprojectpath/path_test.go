@@ -40,17 +40,28 @@ func TestLocalDirWithQuery_HappyPath(t *testing.T) {
 	c.Assert(query, qt.DeepEquals, url.Values{"format": []string{"atlas"}})
 }
 
-func TestLocalDir_PreservesAbsolutePath(t *testing.T) {
+func TestLocalDir_AllowsAbsolutePathInsideProjectRoot(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
 	absoluteDir := filepath.Join(baseDir, "absolute-migrations")
-	want, err := pathguard.ResolveWithinRoot(absoluteDir, "")
+	want, err := pathguard.ResolveWithinRoot(absoluteDir, baseDir)
 	c.Assert(err, qt.IsNil)
 
-	resolved, err := atlasprojectpath.LocalDir(absoluteDir, t.TempDir())
+	resolved, err := atlasprojectpath.LocalDir(absoluteDir, baseDir)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(resolved, qt.Equals, want)
+}
+
+func TestLocalDir_RejectsAbsolutePathOutsideProjectRoot(t *testing.T) {
+	c := qt.New(t)
+	baseDir := t.TempDir()
+	absoluteDir := filepath.Join(t.TempDir(), "absolute-migrations")
+
+	_, err := atlasprojectpath.LocalDir(absoluteDir, baseDir)
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
 }
 
 func TestLocalDir_PreservesPlainPathURLCharacters(t *testing.T) {
@@ -78,18 +89,16 @@ func TestLocalDirWithQuery_PreservesPlainPathQueryLikeSuffix(t *testing.T) {
 	c.Assert(query, qt.HasLen, 0)
 }
 
-func TestLocalDir_AllowsParentRelativePath(t *testing.T) {
+func TestLocalDir_RejectsParentRelativePath(t *testing.T) {
 	c := qt.New(t)
 	rootDir := t.TempDir()
 	baseDir := filepath.Join(rootDir, "project")
 	c.Assert(os.MkdirAll(baseDir, 0o755), qt.IsNil)
-	want, err := pathguard.ResolveWithinRoot(filepath.Join(rootDir, "migrations"), "")
-	c.Assert(err, qt.IsNil)
 
-	resolved, err := atlasprojectpath.LocalDir("file://../migrations", baseDir)
+	_, err := atlasprojectpath.LocalDir("file://../migrations", baseDir)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(resolved, qt.Equals, want)
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
 }
 
 func TestLocalDir_FailurePath(t *testing.T) {

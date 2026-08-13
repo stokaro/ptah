@@ -780,10 +780,12 @@ filesystem-level snapshots. Relative CLI directories are rooted at the working
 directory and symlink escapes are rejected, while explicit absolute paths
 remain supported.
 
-A contained relative `atlas.hcl` migration directory remains bound to the
-project directory handle opened for config evaluation until capture completes;
-replacing the project pathname does not retarget it. Parent-relative project
-directories are external compatibility paths and do not inherit that root.
+An `atlas.hcl` migration directory remains bound to the project directory
+handle opened for config evaluation until capture completes; replacing the
+project pathname does not retarget it. Relative and absolute project values
+must remain inside that root after symbolic-link resolution. Parent traversal,
+outside absolute paths, and symbolic-link escapes are refused when their
+resolved destination leaves the root.
 
 ## Pre-migration checks
 

@@ -382,11 +382,12 @@ func writeDockerDevProject(c *qt.C, t *testing.T, workspace testVerbWorkspace) {
 	c.Helper()
 	dir := c.TempDir()
 	t.Chdir(dir)
+	c.Assert(os.CopyFS(filepath.Join(dir, "migrations"), os.DirFS(workspace.migrationsDir)), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(
 		"env \"local\" {\n"+
 			"  src = \"file://"+filepath.ToSlash(workspace.modelsDir)+"\"\n"+
 			"  migration {\n"+
-			"    dir = \"file://"+filepath.ToSlash(workspace.migrationsDir)+"\"\n"+
+			"    dir = \"file://migrations\"\n"+
 			"  }\n"+
 			"  dev = \"docker://postgres/16/dev\"\n"+
 			"}\n"), 0o600), qt.IsNil)

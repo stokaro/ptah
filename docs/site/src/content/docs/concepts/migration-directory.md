@@ -82,9 +82,10 @@ supported. A relative `migration.dir` in `atlas.hcl` resolves from the project
 file's directory. Ptah keeps that project directory handle open from
 `atlas.hcl` evaluation, including `file()` and `fileset()`, through migration
 capture, so replacing the project pathname cannot redirect the command.
-Parent-relative project paths such as `../shared-migrations` are intentionally
-external and use unrooted compatibility semantics. An explicit CLI `--dir`
-keeps CLI path semantics.
+Both relative and absolute project values must remain inside that opened root
+after symbolic-link resolution; parent traversal that resolves outside and
+external symbolic links are refused. An explicit CLI `--dir` keeps CLI path
+semantics.
 
 Ptah reads the directory twice and accepts it only when both observed captures
 match. This best-effort check rejects observed differences, but cannot defeat

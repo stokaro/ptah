@@ -347,24 +347,10 @@ func atlasProjectConfigLocalDirWithQueryFromBaseDir(
 	if err != nil {
 		return atlasargs.LocalDir{}, err
 	}
-	parsed, err := atlasargs.ParseLocalDir(raw)
-	if err != nil {
-		return atlasargs.LocalDir{}, err
-	}
-	allowedRoot := ""
-	if !filepath.IsAbs(parsed.Path) {
-		relative, relativeErr := filepath.Rel(baseDir, filepath.Join(baseDir, parsed.Path))
-		if relativeErr == nil &&
-			relative != ".." &&
-			!strings.HasPrefix(relative, ".."+string(filepath.Separator)) &&
-			!filepath.IsAbs(relative) {
-			allowedRoot = baseDir
-		}
-	}
 	return atlasargs.LocalDir{
 		Path:        path,
 		Query:       query,
-		AllowedRoot: allowedRoot,
+		AllowedRoot: baseDir,
 	}, nil
 }
 
