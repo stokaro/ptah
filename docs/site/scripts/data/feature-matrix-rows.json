@@ -362,11 +362,11 @@
   {
     "area": "Dev databases",
     "feature": "Docker dev databases (`docker://` `--dev-url`)",
-    "ptah": "no",
+    "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "migrate diff, lint and validate refuse docker:// and require a directly connectable dev database URL.",
-    "evidence": "ptah-compat migrate diff --dev-url docker://postgres/16/dev --dir file://m --to file://s.sql; conformance cli-surface.md lists `--dev-url` in the CE `atlas migrate diff` flag set"
+    "note": "migrate diff, lint, validate, schema inspect, schema diff and the apply rehearsal start a container and remove it. `docker://sqlite` and the colon form stay refused, as on CE. Six verbs are unwired.",
+    "evidence": "Measured 2026-08-13 against the pinned community binary v1.3.0, each exit status read from an unpiped invocation on a hashed migrations/ plus schema files, with `--dev-url docker://postgres/16/dev`: `migrate diff`, `migrate lint`, `migrate validate`, `schema inspect`, `schema diff --from file://migrations` and `schema apply --url postgres://...` all exit 0 on both, where a binary built from master exited 1 on all six. `docker://sqlite/dev` and `docker://postgres:16/dev` exit 1 on both with byte-identical `unsupported docker image` wording. migrate checkpoint, migrate down, migrate test, schema test and the two schema plan sub-verbs remain unwired; that binary answers `unknown flag: --dev-url` on all six. stokaro/ptah#844, #1468"
   },
   {
     "area": "Migration linting",
