@@ -96,22 +96,28 @@ names, so a `docs_data` an operator created is still reported as their table.
 
 ## Virtual tables in a comparison
 
-No desired-state source can declare a virtual table. Go annotations, HCL, YAML
+No schema **document** can declare a virtual table. Go annotations, HCL, YAML
 and `.sql` schema files have no syntax for one, and the native SQL schema
 parser says so out loud: feeding it `ptah db read` output for a database
-holding a virtual table fails with `unsupported CREATE target: VIRTUAL`.
+holding a virtual table fails with `unsupported CREATE target: VIRTUAL`. But
+`schema diff` also accepts a **database URL** as its desired side, read by the
+same reader, so a desired table can itself be virtual.
 
-A comparison therefore has two ways to be wrong about one, and Ptah refuses
-both rather than planning them:
+Each name either side calls virtual is classified, and only the answers a plan
+cannot express are refused:
 
-- **Absent from the desired state.** Read as intent, that plans
-  `DROP TABLE "docs"` and deletes the index and its contents. The desired state
-  could not have asked for the table to be kept, so the removal is refused and
-  the table and its module are named.
-- **Present in the desired state**, which it can only be as an ordinary table.
-  Two different kinds of object have collided; the planner cannot convert one
-  into the other, and `ALTER TABLE ... ADD COLUMN` is not something SQLite
-  accepts on a virtual table. Refused rather than reported as no difference.
+| desired side | database side | outcome |
+| --- | --- | --- |
+| does not name it | virtual | **refused** — a document could not have asked for it to be kept, so silence is not a request to drop |
+| ordinary table | virtual | **refused** — two kinds of object under one name |
+| virtual | ordinary table | **refused** — the same collision, mirrored |
+| virtual, different declaration | virtual | **refused** — no `ALTER VIRTUAL TABLE`, so converging destroys the index |
+| virtual, same declaration | virtual | synced |
+| virtual | absent | planned as `CREATE VIRTUAL TABLE` |
+
+The module name is folded the way SQLite folds an identifier; the module
+arguments are compared verbatim, because only the module interprets them and
+normalizing whitespace would equate two different tokenizers.
 
 Every verb that compares a live database is covered — `ptah schema apply`,
 `diff`, `compare`, `plan`, `drift`, and `ptah-compat schema diff`,
@@ -130,9 +136,10 @@ PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1 \
 ```
 
 An unset variable and an explicit false both keep the refusal; a value that is
-not a boolean is a configuration error. The opt-in covers only the removal — a
-desired ordinary table colliding with a live virtual one stays refused however
-it is set.
+not a boolean is a configuration error, on every SQLite comparison rather than
+only the ones holding a virtual table. The opt-in covers only the first row of
+the table above — a kind collision and a changed declaration stay refused
+however it is set.
 
 ## Virtual table limitations
 
@@ -142,9 +149,13 @@ it is set.
   table itself is still recognized and still round-trips. This is permanent
   because it is SQLite's own answer: no catalog field distinguishes a shadow
   table without the module.
-- Desired state cannot declare a virtual table, so a comparison can only refuse
-  or be scoped past one; it can never converge a virtual table's definition.
-  Declaring virtual tables in desired state is tracked in
+- A schema document cannot declare a virtual table, so a comparison whose
+  desired side is a document can only refuse or be scoped past one. Two
+  databases can be compared and found synced, but a changed declaration is
+  still refused rather than converged: recreating a virtual table destroys its
+  contents, and Ptah does not parse module arguments to tell an equivalent
+  declaration from a changed one. Declaring virtual tables in desired state and
+  planning a recreate are tracked in
   [#1028](https://github.com/stokaro/ptah/issues/1028).
 
 ## Rebuild-required changes

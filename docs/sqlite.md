@@ -110,24 +110,34 @@ because that classification does not need the module.
 
 ## Virtual Tables in a Comparison
 
-No desired-state source declares a virtual table. Go annotations, HCL, YAML and
-`.sql` schema files have no syntax for one, and the native SQL schema parser
-says so: feeding it `ptah db read` output for a database holding a virtual
-table fails with `unsupported CREATE target: VIRTUAL`.
+The desired side of a comparison comes from one of two places, and the
+difference decides what happens.
 
-That leaves a comparison two ways to be wrong, and Ptah refuses both rather
-than planning them:
+No schema **document** can declare a virtual table. Go annotations, HCL, YAML
+and `.sql` schema files have no syntax for one, and the native SQL schema
+parser says so: feeding it `ptah db read` output for a database holding a
+virtual table fails with `unsupported CREATE target: VIRTUAL`. But
+`schema diff` also accepts a **database URL** as its desired side, and that
+catalog is read by the same reader — so a desired table can itself be virtual.
 
-- **The desired state does not name it.** Read as intent, that plans
-  `DROP TABLE "docs"`, which deletes the index and everything in it. The desired
-  state could not have asked for the table to be kept, so the removal is refused
-  and named instead.
-- **The desired state names it**, which it can only do as an ordinary table.
-  The two are different kinds of object, the planner cannot convert one into the
-  other, and `ALTER TABLE ... ADD COLUMN` is not something SQLite accepts on a
-  virtual table. The collision is refused rather than reported as no difference.
+Each name that either side calls a virtual table is classified, and only the
+answers a plan cannot express are refused:
 
-Both refusals name the table and its module. Every verb that compares a live
+| desired side | database side | outcome |
+| --- | --- | --- |
+| does not name it | virtual | **refused** — a document could not have asked for it to be kept, so the silence is not a request to drop it |
+| ordinary table | virtual | **refused** — two kinds of object under one name |
+| virtual | ordinary table | **refused** — the same collision, mirrored |
+| virtual, different module or arguments | virtual | **refused** — SQLite has no `ALTER VIRTUAL TABLE`, so converging means dropping and recreating, which destroys the index |
+| virtual, same declaration | virtual | synced, nothing to do |
+| virtual | absent | planned as `CREATE VIRTUAL TABLE` |
+
+Declarations are compared with the module name folded the way SQLite folds an
+identifier, and the module arguments compared verbatim: they are not SQL, only
+the module interprets them, and normalizing whitespace would equate
+`tokenize = 'a  b'` with `tokenize = 'a b'`, which are two different tokenizers.
+
+Every refusal names the table and its module. Every verb that compares a live
 database is covered: `ptah schema apply`, `diff`, `compare`, `plan` and `drift`,
 and `ptah-compat schema diff`, `schema apply` and `migrate diff`. Reading is
 never affected — `ptah db read` and `ptah-compat schema inspect` compare
@@ -139,10 +149,10 @@ To proceed, say which one you meant:
   Both sides then ignore it and the rest of the schema converges normally.
 - **To drop it**, set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1`. The removal is
   planned exactly as before, including the `DROP TABLE` that destroys the index
-  contents and the module's shadow tables. The opt-in covers only the removal:
-  a desired ordinary table colliding with a live virtual one stays refused
-  however it is set, because no value of it makes the planner able to convert
-  one kind into the other.
+  contents and the module's shadow tables. The opt-in covers only that first
+  row of the table above: a kind collision and a changed declaration stay
+  refused however it is set, because no value of it makes the planner able to
+  convert one object into another.
 
 An unset variable and an explicit false both keep the refusal; a value that is
 not a boolean is a configuration error rather than a silent refusal.

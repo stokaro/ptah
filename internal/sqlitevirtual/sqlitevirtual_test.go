@@ -55,7 +55,7 @@ func TestValidateComparison(t *testing.T) {
 			wantUnsupported: true,
 			wantContains: []string{
 				`virtual table "docs" (module fts5)`,
-				"the desired schema does not declare",
+				"the desired schema does not name",
 				"would delete the index and everything in it",
 				sqlitevirtual.AllowDropEnvVar,
 			},
@@ -120,9 +120,9 @@ func TestValidateComparison(t *testing.T) {
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
-				`declares "docs" as an ordinary table`,
+				`"docs" is a virtual table on one side of the comparison and an ordinary table on the other`,
 				"cannot convert one kind into the other",
-				"ALTER TABLE statements SQLite refuses on a virtual table",
+				"statements SQLite refuses on a virtual table",
 			},
 		},
 		{
@@ -179,7 +179,7 @@ func TestValidateComparison(t *testing.T) {
 			wantUnsupported: true,
 			// The removal refusal, not the collision one: the two names are two
 			// tables, so the virtual one is simply undeclared.
-			wantContains: []string{"the desired schema does not declare"},
+			wantContains: []string{"the desired schema does not name"},
 		},
 		{
 			// The ASCII control for the row above, on the same code path.
@@ -197,6 +197,82 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "false"),
 			desired:  declaring("users"),
+			database: []types.DBTable{users},
+			wantErr:  false,
+		},
+		{
+			// `schema diff` accepts a database URL as its desired side, so a
+			// desired table can itself be virtual. Two identical databases used
+			// to be refused as an ordinary/virtual collision, naming the desired
+			// side ordinary when it was the same FTS5 index.
+			name:     "two identical virtual declarations are not a collision",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  declaringVirtual("docs", "fts5", "title, body"),
+			database: []types.DBTable{fts5},
+			wantErr:  false,
+		},
+		{
+			// The module is an identifier and SQLite resolves it
+			// case-insensitively, so this is the same declaration.
+			name:     "the module name is matched case-insensitively",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  declaringVirtual("docs", "FTS5", "title, body"),
+			database: []types.DBTable{fts5},
+			wantErr:  false,
+		},
+		{
+			name:            "a different module is an unsupported transition",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaringVirtual("docs", "rtree", "title, body"),
+			database:        []types.DBTable{fts5},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"declared differently on the two sides", "no ALTER VIRTUAL TABLE"},
+		},
+		{
+			name:            "different module arguments are an unsupported transition",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaringVirtual("docs", "fts5", "title, body, extra"),
+			database:        []types.DBTable{fts5},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"declared differently on the two sides"},
+		},
+		{
+			// The opt-in says "you may drop an undeclared one". It cannot say
+			// "you may recreate a declared one and lose its contents".
+			name:            "a changed declaration is refused even with the opt-in set",
+			dialect:         "sqlite",
+			env:             envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
+			desired:         declaringVirtual("docs", "fts5", "title, body, extra"),
+			database:        []types.DBTable{fts5},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"declared differently on the two sides"},
+		},
+		{
+			// The mirror of the collision row: virtual on the DESIRED side,
+			// ordinary live.
+			name:            "a live ordinary table colliding with a desired virtual one is refused",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaringVirtual("docs", "fts5", "title, body"),
+			database:        []types.DBTable{{Name: "docs", Type: "TABLE"}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"is a virtual table on one side of the comparison and an ordinary table on the other"},
+		},
+		{
+			// An addition. Measured on the command: the module declaration
+			// reaches the renderer and CREATE VIRTUAL TABLE is planned.
+			name:     "a desired virtual table the database does not have is an addition",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  declaringVirtual("docs", "fts5", "title, body"),
 			database: []types.DBTable{users},
 			wantErr:  false,
 		},
@@ -295,6 +371,16 @@ func TestTables(t *testing.T) {
 			c.Assert(sqlitevirtual.Tables(tt.database), qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// declaringVirtual builds a desired state whose table is itself virtual, which
+// is what a database URL on the desired side of `schema diff` produces.
+func declaringVirtual(name, module, arguments string) *goschema.Database {
+	return &goschema.Database{Tables: []goschema.Table{{
+		Name:             name,
+		VirtualModule:    module,
+		VirtualArguments: arguments,
+	}}}
 }
 
 // declaring builds a desired state naming the given tables. Only the names
