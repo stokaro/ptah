@@ -110,6 +110,35 @@ func routineIdentityKey(name, dialect string) string {
 	return name
 }
 
+// qualifiedRoutineIdentityKey folds ONLY the routine component of a name that
+// may carry a schema.
+//
+// The scope of the folding rule matters as much as the rule. Routine names are
+// case-insensitive on these engines; SCHEMA names are not -- they follow
+// lower_case_table_names, which is 0 on both pinned images, and the identifier
+// semantics already describe them as ComparisonExact. Folding the whole string
+// applied the routine rule to the database name too.
+//
+// That was not symmetrical, which is what made it a defect rather than merely
+// a wide rule: the desired side folded `Sales.Foo` whole, while the database
+// side folded only [types.DBFunction.Name] and left `Schema` exact. The two
+// identities then disagreed on the schema component, so an unchanged function
+// was reported as BOTH added and removed and the plan tried to create a
+// function that was already there.
+//
+// Parsing is delegated to tableref so a routine whose own name contains a dot,
+// quoted as `"tenant.data"`, is not mistaken for a schema-qualified one.
+// The key is built through tableref.Canonical on BOTH sides so the two spell
+// an unqualified name the same way by construction; findDatabaseFunction
+// re-parses it and looks the qualified form up the same way.
+func qualifiedRoutineIdentityKey(name, dialect string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return tableref.Canonical("", routineIdentityKey(name, dialect))
+	}
+	return tableref.Canonical(ref.Schema, routineIdentityKey(ref.Name, dialect))
+}
+
 // FunctionsWithDialect compares functions using the target's routine identity
 // and type-spelling rules. See [routineIdentityKey] and
 // [FunctionDefinitionsWithDialect] for what the dialect decides.
@@ -122,7 +151,7 @@ func FunctionsWithDialect(
 	// Build lookup maps for function comparison
 	generatedFunctionMap := make(map[string]goschema.Function)
 	for _, fn := range generated.Functions {
-		generatedFunctionMap[routineIdentityKey(fn.Name, dialect)] = fn
+		generatedFunctionMap[qualifiedRoutineIdentityKey(fn.Name, dialect)] = fn
 	}
 
 	// A generated function's name may be schema-qualified -- the HCL parser
@@ -135,9 +164,10 @@ func FunctionsWithDialect(
 	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
 	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
 	for _, fn := range database.Functions {
-		databaseFunctionsByName[routineIdentityKey(fn.Name, dialect)] =
-			append(databaseFunctionsByName[routineIdentityKey(fn.Name, dialect)], fn)
-		databaseFunctionsByQualifiedName[routineIdentityKey(fn.QualifiedName(), dialect)] = fn
+		key := routineIdentityKey(fn.Name, dialect)
+		databaseFunctionsByName[key] = append(databaseFunctionsByName[key], fn)
+		// The schema keeps its own spelling; only the routine half is folded.
+		databaseFunctionsByQualifiedName[tableref.Canonical(fn.Schema, key)] = fn
 	}
 
 	matchedDatabaseFunctions := make(map[string]struct{}, len(database.Functions))
@@ -196,7 +226,14 @@ func FunctionsWithSemantics(
 	generatedFunctions := make(map[tableIdentity]goschema.Function, len(generated.Functions))
 	generatedNames := make(map[tableIdentity]string, len(generated.Functions))
 	for _, function := range generated.Functions {
-		identity := newQualifiedTableIdentity(routineIdentityKey(function.Name, dialect), semantics)
+		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
+		// string lowercased the SCHEMA too, while the database loop below folds
+		// only the routine name and leaves function.Schema to the identifier
+		// semantics. The two sides then disagreed about the schema component of
+		// `Sales.Foo`, so an unchanged function was reported as both added and
+		// removed and the plan tried to create one that already existed.
+		identity := newQualifiedTableIdentity(
+			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
 		generatedFunctions[identity] = function
 		generatedNames[identity] = function.Name
 	}

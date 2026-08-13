@@ -582,10 +582,27 @@ remaining resolver refinement work.
   26.7.0, while `DOUBLE`, `DOUBLE PRECISION` and `FLOAT` are mode-independent),
   and the `NATIONAL`/`NCHAR`/`NVARCHAR` spellings report the SAME
   `DTD_IDENTIFIER` as the plain ones and differ only in `CHARACTER_SET_NAME`
-  (`utf8mb3` against `utf8mb4`), a column this comparison does not read. Both
-  are refused rather than merely left out of the synonym table, because leaving
-  a spelling unfolded keeps it on the desired side against a different catalog
+  (`utf8mb3` against `utf8mb4`), a column this comparison does not read. A third
+  is `ZEROFILL` written without a display width: the width is what `ZEROFILL`
+  pads to, and both engines substitute their own default — `INT ZEROFILL` is
+  reported as `int(10) unsigned zerofill` — which the declaration cannot
+  predict. Written *with* a width it round-trips exactly, so that width is kept
+  rather than stripped as an integer display width would be. All of these are
+  refused rather than merely left out of the synonym table, because leaving a
+  spelling unfolded keeps it on the desired side against a different catalog
   spelling — permanent drift, the failure this whole section is about.
+
+  **A replacement's two halves travel together.** A modification is planned as
+  DROP followed by CREATE, and the DROP is planned only when the CREATE will
+  actually render DDL. When it was planned unconditionally, a desired
+  declaration whose language this target cannot run produced an executable drop
+  in front of a CREATE the renderer answered with a comment: `schema apply`
+  deleted the live routine, created nothing, and reported success. Measured on
+  MySQL 26.7.0 and MariaDB 12.3.2, zero rows in `information_schema.ROUTINES`
+  afterwards. The shape needs no exotic schema — `Function.Canonicalize`
+  defaults an omitted `language=` to `plpgsql`, so an ordinary annotation
+  reaches it. The predicate the renderer and the planner share lives in one
+  place so the two cannot drift apart again.
 
   What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function

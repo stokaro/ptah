@@ -3,6 +3,7 @@
 package gonative_test
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
@@ -174,6 +175,10 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 		declared goschema.Function
 		changed  goschema.Function
 		property string
+		// call probes the created routine. It is per-row because not every
+		// signature under test takes an integer; an empty value uses the
+		// default probe below.
+		call string
 	}{
 		{
 			name:     "volatility immutable to stable",
@@ -204,6 +209,43 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			declared: withSecurity("DEFINER"),
 			changed:  withSecurity("INVOKER"),
 			property: "security",
+		},
+		{
+			// A comma inside an ENUM member is not a parameter separator.
+			// Splitting on every comma reassembled `ENUM('x,y')` as
+			// `enum('x, y')`, which made it normalize identically to
+			// `ENUM('x','y')` -- two genuinely different member sets that both
+			// catalogs report distinctly -- so changing one to the other
+			// produced no modification at all.
+			name: "enum member containing a comma",
+			declared: goschema.Function{
+				Name: "ptah_prop_fn", Parameters: "p ENUM('x,y')", Returns: "int",
+				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
+			},
+			changed: goschema.Function{
+				Name: "ptah_prop_fn", Parameters: "p ENUM('x','y')", Returns: "int",
+				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
+			},
+			property: "parameters",
+			// The signature takes an enum, so the probe call passes a member.
+			call: "SELECT ptah_prop_fn('x,y')",
+		},
+		{
+			// Under ZEROFILL the parenthesized argument is the padding target
+			// rather than a display width, and both engines report it. Dropping
+			// it collapsed INT(5) and INT(10) ZEROFILL onto one type, so the
+			// authored change was silently ignored.
+			name: "zerofill width is meaning",
+			declared: goschema.Function{
+				Name: "ptah_prop_fn", Parameters: "a INT(5) ZEROFILL", Returns: "int",
+				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
+			},
+			changed: goschema.Function{
+				Name: "ptah_prop_fn", Parameters: "a INT(10) ZEROFILL", Returns: "int",
+				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
+			},
+			property: "parameters",
+			call:     "SELECT ptah_prop_fn(1)",
 		},
 		{
 			// The desired side canonicalizes INTEGER to `integer` while both
@@ -239,7 +281,8 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 				// 2. The server really hosts it: the catalog answering, not
 				//    Ptah's rendered text.
 				var value int
-				c.Assert(db.QueryRow("SELECT ptah_prop_fn(41)").Scan(&value), qt.IsNil)
+				call := cmp.Or(test.call, "SELECT ptah_prop_fn(41)")
+				c.Assert(db.QueryRow(call).Scan(&value), qt.IsNil)
 				c.Check(value, qt.Equals, 42)
 
 				// 3. Round trip: reading it back and diffing yields nothing.
@@ -467,6 +510,92 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 				c.Check(dropErr, qt.IsNil)
 			})
 		})
+	}
+}
+
+// TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration is the
+// acceptance for the one outcome that must never ship: a drop whose paired
+// create is skipped.
+//
+// The shape is reachable without an exotic schema. A function exists on the
+// server. The desired declaration omits `language=`, which
+// [goschema.Function.Canonicalize] defaults to `plpgsql`. The comparator sees
+// `language: sql -> plpgsql` and reports a MODIFICATION, the planner emits
+// DROP + CREATE for it, and the renderer answers the CREATE with a skip comment
+// because neither engine runs plpgsql. Applying that plan executes the drop and
+// creates nothing: the operator asked for a change and got a deletion.
+//
+// The regression was introduced by splitting the drop out of the CREATE
+// visitor. While the visitor emitted its own leading drop, the language skip
+// suppressed BOTH halves together, so nothing was lost; once the drop became a
+// separate node it stopped being covered by that skip. The two halves have to
+// travel together, which is what this asserts.
+//
+// The count is read from the catalog after a SUCCESSFUL apply, because that is
+// the failure mode: the migration reports success.
+func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+	}{
+		{
+			// The realistic one: no language written at all.
+			name: "omitted language canonicalizes to plpgsql",
+			language: "",
+		},
+		{
+			name:     "explicit plpgsql",
+			language: "plpgsql",
+		},
+	}
+
+	for _, target := range mysqlFamilyTargets {
+		for _, test := range tests {
+			t.Run(target.name+"/"+test.name, func(t *testing.T) {
+				dsn := target.dsn(t)
+				c := qt.New(t)
+				db := newPropertyDatabase(c, dsn)
+
+				live := propertyFunction(goschema.Function{
+					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
+					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 1",
+				})
+				applyPropertySQL(c, db, target.dialect, live)
+				c.Assert(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1)
+
+				// Same function, but declared in a language this target cannot
+				// run. Canonicalize is called explicitly because the annotation
+				// parser calls it on every parsed function, and it is what turns
+				// an omitted `language=` into plpgsql. Without it this test
+				// would carry an empty language the renderer treats as SQL, and
+				// the omitted-language row would not model production at all.
+				declared := goschema.Function{
+					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
+					Language: test.language, Volatility: "IMMUTABLE", Security: "INVOKER",
+					Body: "RETURN a + 2",
+				}
+				declared.Canonicalize()
+				c.Assert(declared.Language, qt.Equals, "plpgsql")
+				desired := propertyFunction(declared)
+
+				statements := applyPropertySQL(c, db, target.dialect, desired)
+
+				// Nothing executable may be planned for a replacement whose
+				// CREATE half cannot render.
+				for _, statement := range statements {
+					c.Check(statement, qt.Not(qt.Contains), "DROP FUNCTION",
+						qt.Commentf("a drop was planned for a create that is skipped: %s", statement))
+				}
+
+				// The live routine is still there, and still works.
+				c.Check(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1,
+					qt.Commentf("the apply succeeded and deleted the live function"))
+				var value int
+				c.Assert(db.QueryRow("SELECT ptah_prop_fn(41)").Scan(&value), qt.IsNil)
+				c.Check(value, qt.Equals, 42)
+			})
+		}
 	}
 }
 

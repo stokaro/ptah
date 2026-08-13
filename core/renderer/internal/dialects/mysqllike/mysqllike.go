@@ -1132,7 +1132,12 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// The message still never blames the engine. `-- CREATE FUNCTION f1 not
 	// supported in MySQL` was false because MySQL hosts functions perfectly well
 	// (stokaro/ptah#929); this is about the declaration, and it says so.
-	if language := strings.ToLower(strings.TrimSpace(node.Language)); language != "" && language != "sql" {
+	// The predicate is mysqlroutine.RunsLanguage rather than a comparison
+	// written here, because the MySQL-family planner has to reach the same
+	// answer: it must not plan the DROP half of a replacement whose CREATE half
+	// this branch is about to skip.
+	if !mysqlroutine.RunsLanguage(node.Language) {
+		language := strings.ToLower(strings.TrimSpace(node.Language))
 		r.w.WriteLinef(
 			"-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
 			r.dialectUpper, escapeIdentifier(node.Name), language)

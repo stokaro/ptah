@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -128,10 +129,31 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 			continue
 		}
 		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
+		node := fromschema.FromFunction(fn)
+		// The two halves of a replacement travel together or not at all.
+		//
+		// The renderer answers a CREATE FUNCTION whose language this target
+		// cannot run with a named skip comment and no DDL. Planning the DROP
+		// anyway made `schema apply` execute the drop, create nothing, and
+		// report success -- the operator asked for a change and got a deletion.
+		// Measured on MySQL 26.7.0 and MariaDB 12.3.2: zero rows in
+		// information_schema.ROUTINES afterwards. The shape needs no exotic
+		// schema, because Canonicalize defaults an omitted `language=` to
+		// plpgsql, so an ordinary annotation reaches it.
+		//
+		// The CREATE node is still emitted, and that is deliberate: it renders
+		// the skip comment, so the plan says which function was left alone
+		// instead of silently omitting it. Nothing executable is produced.
+		if !mysqlroutine.RunsLanguage(fn.Language) {
+			node.SetComment(fmt.Sprintf(
+				"Function %s differs (%s) but its language is not one this target runs; "+
+					"left unchanged, and NOT dropped", fn.Name, changes))
+			result = append(result, node)
+			continue
+		}
 		result = append(result, ast.NewDropFunction(fn.Name).
 			SetIfExists().
 			SetComment(fmt.Sprintf("Replace function %s: %s", fn.Name, changes)))
-		node := fromschema.FromFunction(fn)
 		node.SetComment(fmt.Sprintf("Modify function %s: %s", fn.Name, changes))
 		result = append(result, node)
 	}

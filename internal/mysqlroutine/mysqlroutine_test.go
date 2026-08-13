@@ -305,6 +305,153 @@ func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNormalizeType_KeepsTheWidthUnderZEROFILL pins the one case where an
+// integer's parenthesized argument is meaning rather than display width.
+//
+// Measured on MySQL 26.7.0 AND MariaDB 12.3.2, which agree exactly here --
+// unlike the plain integer case that motivated the width stripping:
+//
+//	INT(5) ZEROFILL           -> int(5) unsigned zerofill
+//	INT(10) ZEROFILL          -> int(10) unsigned zerofill
+//	INT(5) UNSIGNED ZEROFILL  -> int(5) unsigned zerofill
+//
+// Dropping the width collapsed the first two onto `int zerofill`, so changing
+// the padding width produced no modification and was never applied. The
+// `unsigned` is added because ZEROFILL implies it and both catalogs write the
+// implication out; without that the desired side never matched the catalog even
+// with the width kept.
+//
+// The plain-integer rows are the control: they must still lose their width, or
+// the two engines stop agreeing with each other.
+func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "width is meaning under zerofill", in: "int(5) zerofill", want: "int(5) unsigned zerofill"},
+		{name: "a different width is a different type", in: "int(10) zerofill", want: "int(10) unsigned zerofill"},
+		{name: "catalog spelling is a fixed point", in: "int(5) unsigned zerofill", want: "int(5) unsigned zerofill"},
+		{name: "uppercase declaration", in: "INT(5) ZEROFILL", want: "int(5) unsigned zerofill"},
+		{name: "bigint zerofill", in: "bigint(20) zerofill", want: "bigint(20) unsigned zerofill"},
+		// Control: without zerofill the width is a display width and goes.
+		{name: "plain int keeps losing its width", in: "int(11)", want: "int"},
+		{name: "unsigned without zerofill still loses the width", in: "int(10) unsigned", want: "int unsigned"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Check(mysqlroutine.NormalizeType(test.in), qt.Equals, test.want)
+		})
+	}
+
+	c.Run("two widths do not collapse onto one type", func(c *qt.C) {
+		c.Check(mysqlroutine.NormalizeType("int(5) zerofill"),
+			qt.Not(qt.Equals), mysqlroutine.NormalizeType("int(10) zerofill"))
+	})
+}
+
+// TestValidateSignature_RefusesZEROFILLWithoutAWidth holds the edge the width
+// rule cannot close.
+//
+// Measured on both engines, `INT ZEROFILL` is reported as
+// `int(10) unsigned zerofill`: the server substitutes its own default rather
+// than recording "unspecified", and the desired side cannot predict it without
+// a per-type table of engine defaults. Written WITH a width it round-trips
+// exactly, which is why the refusal asks for the width rather than rejecting
+// ZEROFILL outright -- and the accepted rows below are that control.
+func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
+	c := qt.New(t)
+
+	refused := []struct {
+		name       string
+		parameters string
+		returns    string
+	}{
+		{name: "return type", returns: "INT ZEROFILL"},
+		{name: "parameter", parameters: "a INT ZEROFILL", returns: "int"},
+		{name: "bigint", returns: "BIGINT ZEROFILL"},
+	}
+
+	for _, test := range refused {
+		c.Run("refused/"+test.name, func(c *qt.C) {
+			err := mysqlroutine.ValidateSignature(test.parameters, test.returns)
+			c.Assert(err, qt.IsNotNil)
+			c.Check(err.Error(), qt.Contains, "ZEROFILL")
+			c.Check(err.Error(), qt.Contains, "width")
+		})
+	}
+
+	accepted := []struct {
+		name       string
+		parameters string
+		returns    string
+	}{
+		{name: "width makes it decidable", returns: "INT(10) ZEROFILL"},
+		{name: "width on a parameter", parameters: "a INT(5) ZEROFILL", returns: "int"},
+		{name: "no zerofill at all", returns: "INT"},
+	}
+
+	for _, test := range accepted {
+		c.Run("accepted/"+test.name, func(c *qt.C) {
+			c.Check(mysqlroutine.ValidateSignature(test.parameters, test.returns), qt.IsNil)
+		})
+	}
+}
+
+// TestNormalizeParameterList_SplitsAtTopLevelCommasOnly pins that a comma
+// belonging to a value is not a parameter separator.
+//
+// `ENUM('x,y')` and `ENUM('x','y')` are different member sets and both catalogs
+// report them as such. Splitting on every comma turned the first into two
+// parameters and reassembled it as `enum('x, y')`, so the two normalized
+// identically and changing one to the other produced no modification at all --
+// a real signature change that could never be applied.
+//
+// The `DECIMAL(10,2)` row is the same trap in the shape that is easy to reach
+// by accident, and the two-parameter rows are the control: real separators must
+// still separate.
+func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "comma inside an enum member", in: "p ENUM('x,y')", want: "p enum('x,y')"},
+		{name: "separate enum members", in: "p ENUM('x','y')", want: "p enum('x','y')"},
+		{name: "comma inside decimal precision", in: "d DECIMAL(10,2)", want: "d decimal(10,2)"},
+		{
+			name: "real separators still separate",
+			in:   "a INTEGER, b VARCHAR(10)", want: "a int, b varchar(10)",
+		},
+		{
+			name: "a value comma beside a real one",
+			in:   "p ENUM('x,y'), b INTEGER", want: "p enum('x,y'), b int",
+		},
+		{
+			name: "decimal beside an enum",
+			in:   "d DECIMAL(10,2), p ENUM('a,b')", want: "d decimal(10,2), p enum('a,b')",
+		},
+		{name: "escaped quote inside a member", in: `p ENUM('x''y,z')`, want: `p enum('x''y,z')`},
+		{name: "paren inside a member", in: "p ENUM('a)b')", want: "p enum('a)b')"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Check(mysqlroutine.NormalizeParameterList(test.in), qt.Equals, test.want)
+		})
+	}
+
+	c.Run("the two enum spellings stay distinct", func(c *qt.C) {
+		c.Check(mysqlroutine.NormalizeParameterList("p ENUM('x,y')"),
+			qt.Not(qt.Equals), mysqlroutine.NormalizeParameterList("p ENUM('x','y')"))
+	})
+}
+
 // TestNormalizeType_IsIdempotent holds the property that makes it safe to run on
 // both sides of a comparison: the catalog spelling is already a fixed point, so
 // normalizing it again cannot move it.

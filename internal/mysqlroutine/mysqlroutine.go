@@ -29,6 +29,29 @@ const (
 	Volatile  = "VOLATILE"
 )
 
+// RunsLanguage reports whether a routine declared in this language becomes real
+// DDL on a MySQL-family target.
+//
+// MySQL and MariaDB run exactly one routine language, SQL. An empty value is
+// accepted because an [ast.CreateFunctionNode] built directly carries no
+// language and the renderer has always treated that as SQL; note that a
+// declaration parsed from an annotation never arrives empty, because
+// [goschema.Function.Canonicalize] defaults an unset language to plpgsql.
+//
+// It lives here, next to the rest of the family's routine rules, because TWO
+// callers must agree on it and they are in different packages. The renderer
+// uses it to decide whether to emit DDL or a named skip; the planner uses it to
+// decide whether a replacement may emit its DROP. When only the renderer knew,
+// the planner emitted an executable `DROP FUNCTION` in front of a CREATE that
+// rendered nothing, and `schema apply` deleted a live routine and created
+// nothing in its place -- measured on MySQL 26.7.0 and MariaDB 12.3.2, zero
+// rows in information_schema.ROUTINES after an apply that reported success.
+// One predicate, two consumers, so the two halves cannot drift apart again.
+func RunsLanguage(language string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(language))
+	return normalized == "" || normalized == "sql"
+}
+
 // Characteristic returns the routine characteristic clause that encodes
 // volatility for a MySQL-family target.
 //
@@ -236,13 +259,13 @@ func ValidateSignature(parameters, returns string) error {
 	if err := validateType(returns); err != nil {
 		return fmt.Errorf("return type: %w", err)
 	}
-	for declaration := range strings.SplitSeq(parameters, ",") {
-		fields := strings.Fields(declaration)
-		if len(fields) < 2 {
+	for _, declaration := range splitTopLevel(parameters, ',') {
+		name, dataType := splitParameterDeclaration(declaration)
+		if name == "" {
 			continue
 		}
-		if err := validateType(strings.Join(fields[1:], " ")); err != nil {
-			return fmt.Errorf("parameter %s: %w", fields[0], err)
+		if err := validateType(dataType); err != nil {
+			return fmt.Errorf("parameter %s: %w", name, err)
 		}
 	}
 	return nil
@@ -253,9 +276,23 @@ func validateType(dataType string) error {
 	if trimmed == "" {
 		return nil
 	}
-	base, _ := splitTypeBase(trimmed)
+	base, rest := splitTypeBase(trimmed)
 	if reason, ambiguous := ambiguousRoutineTypes[strings.ToLower(base)]; ambiguous {
 		return fmt.Errorf("%s cannot be compared faithfully on this target: %s", base, reason)
+	}
+	// ZEROFILL pads to a width, so the width is the point of the declaration --
+	// and when it is left out, the server materializes its own default rather
+	// than recording "unspecified". Measured on MySQL 26.7.0 and MariaDB
+	// 12.3.2, `INT ZEROFILL` is reported as `int(10) unsigned zerofill` on
+	// both, which the desired side cannot predict without a per-type table of
+	// engine defaults. Written with a width it round-trips exactly, so the
+	// refusal asks for the one thing that makes the declaration decidable.
+	if strings.Contains(strings.ToLower(rest), "zerofill") && !strings.HasPrefix(rest, "(") {
+		return fmt.Errorf(
+			"%s declares ZEROFILL without a display width: the width is what ZEROFILL "+
+				"pads to, and the server substitutes its own default, which the "+
+				"declaration cannot predict; write the width, as in %s(10) ZEROFILL",
+			trimmed, base)
 	}
 	return nil
 }
@@ -308,18 +345,135 @@ func NormalizeType(dataType string) string {
 	}
 	// rest begins at the "(" when there is one.
 	if !strings.HasPrefix(rest, "(") {
-		return strings.TrimSpace(lowered + " " + rest)
+		return strings.TrimSpace(lowered + " " + normalizeTypeSuffix(rest))
 	}
-	closing := strings.Index(rest, ")")
+	// closeParen, not strings.Index: an argument list may contain a ")" inside a
+	// quoted member, as `enum('a)b')` does, and cutting at the first one would
+	// split the type in the middle of a literal.
+	closing := closeParen(rest)
 	if closing < 0 {
 		return strings.TrimSpace(lowered + rest)
 	}
 	width := rest[:closing+1]
-	suffix := strings.TrimSpace(rest[closing+1:])
-	if _, isInteger := integerRoutineTypes[lowered]; isInteger {
+	suffix := normalizeTypeSuffix(rest[closing+1:])
+
+	// The display width is dropped for integers because the two engines
+	// disagree about it -- EXCEPT under ZEROFILL, where it stops being a
+	// display width and becomes the padding target. Measured on MySQL 26.7.0
+	// AND MariaDB 12.3.2, which agree exactly here:
+	//
+	//	INT(5) ZEROFILL           -> int(5) unsigned zerofill
+	//	INT(10) ZEROFILL          -> int(10) unsigned zerofill
+	//	INT(5) UNSIGNED ZEROFILL  -> int(5) unsigned zerofill
+	//
+	// Dropping it collapsed `INT(5) ZEROFILL` and `INT(10) ZEROFILL` onto one
+	// `int zerofill`, so changing the padding width produced no modification and
+	// was never applied -- a real change made invisible, the same failure as the
+	// collapsed volatility. ZEROFILL without a width is refused instead; see
+	// [validateType].
+	_, isInteger := integerRoutineTypes[lowered]
+	if isInteger && !strings.Contains(suffix, "zerofill") {
 		width = ""
 	}
 	return strings.TrimSpace(lowered + width + " " + suffix)
+}
+
+// normalizeTypeSuffix canonicalizes the attributes trailing a routine type.
+//
+// ZEROFILL implies UNSIGNED, and both engines write that implication out:
+// `INT(5) ZEROFILL` is reported as `int(5) unsigned zerofill`. The desired side
+// carries whatever the operator typed, so without this a faithful declaration
+// still reported drift against the catalog on every inspection.
+func normalizeTypeSuffix(suffix string) string {
+	lowered := strings.ToLower(strings.TrimSpace(suffix))
+	if lowered == "" {
+		return ""
+	}
+	if !strings.Contains(lowered, "zerofill") {
+		return strings.Join(strings.Fields(lowered), " ")
+	}
+	return "unsigned zerofill"
+}
+
+// closeParen returns the index of the ")" closing the "(" at the start of s, or
+// -1. Parentheses and quotes inside a quoted literal do not count.
+func closeParen(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		if quote := s[i]; quote == '\'' || quote == '"' || quote == '`' {
+			i = skipQuoted(s, i)
+			continue
+		}
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// skipQuoted returns the index of the closing quote of the literal that opens
+// at start, or len(s)-1 when the literal is unterminated. Both escape forms the
+// engines accept are honored: a doubled quote and a backslash.
+func skipQuoted(s string, start int) int {
+	quote := s[start]
+	for i := start + 1; i < len(s); i++ {
+		if s[i] == '\\' {
+			i++
+			continue
+		}
+		if s[i] == quote {
+			if i+1 < len(s) && s[i+1] == quote {
+				i++
+				continue
+			}
+			return i
+		}
+	}
+	return len(s) - 1
+}
+
+// splitTopLevel splits s at every separator outside parentheses and outside a
+// quoted literal.
+//
+// A routine parameter list is not a comma-separated list of anything simple:
+// `p ENUM('x,y')` holds a comma that belongs to the member, and
+// `d DECIMAL(10,2)` holds one that belongs to the type. Splitting on every
+// comma turned the first into two parameters and reassembled it as
+// `p enum('x, y')`, which made `ENUM('x,y')` and `ENUM('x','y')` -- genuinely
+// different member sets, and reported as such by both catalogs -- normalize to
+// the same string, so changing one to the other produced no modification.
+func splitTopLevel(s string, separator byte) []string {
+	var (
+		parts []string
+		depth int
+		start int
+	)
+	for i := 0; i < len(s); i++ {
+		if quote := s[i]; quote == '\'' || quote == '"' || quote == '`' {
+			i = skipQuoted(s, i)
+			continue
+		}
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case separator:
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, s[start:])
 }
 
 // splitTypeBase separates a type's name from its parenthesized argument and
@@ -361,19 +515,47 @@ func NormalizeParameterList(parameters string) string {
 	if trimmed == "" {
 		return ""
 	}
-	declarations := strings.Split(trimmed, ",")
+	declarations := splitTopLevel(trimmed, ',')
 	normalized := make([]string, 0, len(declarations))
 	for _, declaration := range declarations {
-		fields := strings.Fields(declaration)
-		if len(fields) == 0 {
+		name, dataType := splitParameterDeclaration(declaration)
+		if name == "" && dataType == "" {
 			continue
 		}
-		if len(fields) == 1 {
-			normalized = append(normalized, NormalizeType(fields[0]))
+		if name == "" {
+			normalized = append(normalized, NormalizeType(dataType))
 			continue
 		}
-		name := fields[0]
-		normalized = append(normalized, name+" "+NormalizeType(strings.Join(fields[1:], " ")))
+		normalized = append(normalized, name+" "+NormalizeType(dataType))
 	}
 	return strings.Join(normalized, ", ")
+}
+
+// splitParameterDeclaration separates `name type` at the first space that is
+// not inside a quoted literal or parentheses.
+//
+// It is not strings.Fields followed by a Join, which is what this replaces:
+// that rebuilds the type with single spaces everywhere, so a member value
+// written `ENUM('x,  y')` came back as `ENUM('x, y')` and a change to the
+// spacing inside a literal became invisible. Splitting once, and keeping the
+// remainder verbatim, leaves the type's own bytes alone -- which matters
+// because those bytes are the value being compared.
+func splitParameterDeclaration(declaration string) (name, dataType string) {
+	trimmed := strings.TrimSpace(declaration)
+	if trimmed == "" {
+		return "", ""
+	}
+	for i := 0; i < len(trimmed); i++ {
+		if quote := trimmed[i]; quote == '\'' || quote == '"' || quote == '`' {
+			i = skipQuoted(trimmed, i)
+			continue
+		}
+		if trimmed[i] == '(' {
+			break
+		}
+		if trimmed[i] == ' ' || trimmed[i] == '\t' || trimmed[i] == '\n' {
+			return trimmed[:i], strings.TrimSpace(trimmed[i+1:])
+		}
+	}
+	return "", trimmed
 }
