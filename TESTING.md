@@ -105,9 +105,9 @@ Detailed integration test runner with Docker Compose:
 
 The integration tests use Docker Compose to start:
 
-- **PostgreSQL 16** on port 5432
-- **MySQL 8.0** on port 3310  
-- **MariaDB 10.11** on port 3307
+- **PostgreSQL 18** on port 5432
+- **MySQL 26.7** on port 3310
+- **MariaDB 12.3** on port 3307
 
 Connection details:
 - Database: `ptah_test`

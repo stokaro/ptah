@@ -242,7 +242,7 @@ var Cells = []Cell{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB12,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 		Refinement: RefinedByVersion, Image: "mariadb:12.3",
-		Note: "measured live on MariaDB 12.3.0 in capability-matrix run 31615442780: all 23 observable " +
+		Note: "measured live on MariaDB 12.3.2 in capability-matrix run 31615442780: all 23 observable " +
 			"rows agree with MariaDB1011; role_management and sequences remain deliberately undecidable",
 	},
 	{
