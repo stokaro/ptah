@@ -522,6 +522,35 @@ by that parser as an engine with a port. The provisioner matches the host
 segment whole against an explicit engine table instead of reusing the dialect
 parser, which is the only reason those two rows come out right.
 
+A container runtime on another machine is supported, and the dev database is
+published where this process can reach it. Measured 2026-08-13 with
+`DOCKER_HOST=ssh://remote-dev`, a host reachable over a tailnet:
+
+| | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | :-: | :-: | :-: |
+| `schema inspect -u file://schema.sql --dev-url docker://postgres/18/dev` | 0 | 1 after 2m0s, `dial tcp 127.0.0.1:32768: connect: connection refused` | **0** |
+
+A container's ports are published on the *daemon's* interfaces, so a loopback
+binding on a remote daemon is reachable from that machine and nowhere else,
+while `docker port` still answers `127.0.0.1:<port>`. Measured on the same run:
+`nc -z 127.0.0.1 32768` exited 0 on the daemon host and 1 here.
+
+Atlas CE binds every interface — its container was caught publishing
+`0.0.0.0:59319->5432/tcp` — and it genuinely honors `DOCKER_HOST`, since
+pointing it at a socket that does not exist exits 1 with `failed to connect to
+the docker API`. Ptah does the same thing only where it is the only thing that
+works, and keeps the tighter binding otherwise:
+
+- a **local** daemon publishes on `127.0.0.1`, which is a deliberate divergence:
+  Atlas CE exposes the dev database on every interface even locally, and
+  matching that would copy a weaker default for nothing (rule 2);
+- a **remote** daemon publishes on every interface of the daemon host and is
+  connected to by that host's name, with a warning naming the exposure.
+
+Refusing a remote daemon was the alternative. It was rejected on the
+measurement: Atlas CE exits 0 there, so refusing would be `ptah-compat` exiting
+1 where it exits 0 — the same capability gap this work exists to close.
+
 Two retained divergences, both recorded rather than chased:
 
 - **Images.** Atlas CE pulls `postgres:<tag>` but the vendor's own

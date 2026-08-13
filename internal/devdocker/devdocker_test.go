@@ -485,6 +485,71 @@ func TestCloseStaysRetryableUntilRemovalSucceeds(t *testing.T) {
 	qt.Check(t, removed, qt.HasLen, 2)
 }
 
+func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *testing.T) {
+	removeFailed := errors.New("Error response from daemon: removal already in progress")
+	runner := &fakeRunner{
+		hostPort:       "127.0.0.1:15432",
+		removeFailures: []error{removeFailed},
+	}
+
+	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:            runner,
+		Ready:             neverReady,
+		ReadyTimeout:      10 * time.Millisecond,
+		ReleaseRetryDelay: time.Millisecond,
+	})
+	qt.Assert(t, err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	// The readiness-failure path is the one branch that hands the caller no
+	// instance, so nothing is left holding a handle to the container. A single
+	// discarded Close there leaks it permanently however retryable Close has
+	// since become -- the retry has to be ON this branch, not merely available
+	// to a caller that does not exist.
+	started, removed := runner.calls()
+	qt.Assert(t, started, qt.HasLen, 1)
+	// Asserted as a whole rather than by index: a Check records its verdict and
+	// lets the test continue, so indexing after a failed length check panics and
+	// takes the whole test binary -- and every later test -- with it. Comparing
+	// the slice covers the count and the identity in one verdict that cannot.
+	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
+}
+
+// stallingReady blocks until its context ends, which is what a probe caught
+// inside a TCP or database handshake does.
+func stallingReady(ctx context.Context, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestWaitReadyBoundsAProbeThatStalls(t *testing.T) {
+	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
+
+	// The caller's context is deliberately unbounded, which is what a command
+	// context normally is. Before the probe carried the readiness deadline, the
+	// loop's own `time.Now().After(deadline)` check could not fire -- control
+	// never came back to it -- and this call did not return at all.
+	started := time.Now()
+	_, release, err := devdocker.Resolve(context.Background(), "docker://postgres/16/dev", devdocker.Options{
+		Runner:            runner,
+		Ready:             stallingReady,
+		ReadyTimeout:      150 * time.Millisecond,
+		ReleaseRetryDelay: time.Millisecond,
+	})
+	elapsed := time.Since(started)
+	qt.Assert(t, err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	qt.Check(t, err.Error(), qt.Contains, "did not become ready")
+	// Generous enough not to flake, tight enough that an unbounded probe cannot
+	// pass: without the deadline on the probe context this never returns.
+	qt.Check(t, elapsed < 30*time.Second, qt.IsTrue, qt.Commentf("elapsed=%s", elapsed))
+	// And the container is still cleaned up on the way out.
+	started2, removed := runner.calls()
+	qt.Assert(t, started2, qt.HasLen, 1)
+	qt.Check(t, removed, qt.DeepEquals, started2)
+}
+
 func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
 	removeFailed := errors.New("Error response from daemon: removal already in progress")
 	runner := &fakeRunner{

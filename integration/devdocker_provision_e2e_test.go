@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,28 @@ func devDockerCensus(c *qt.C) []string {
 	return strings.FieldsFunc(trimmed, func(r rune) bool { return r == '\n' })
 }
 
+// onlyNewContainer returns the single container the census gained, failing if
+// the two lists differ by anything else.
+func onlyNewContainer(c *qt.C, before, during []string) string {
+	c.Helper()
+	added := slices.DeleteFunc(slices.Clone(during), func(id string) bool {
+		return slices.Contains(before, id)
+	})
+	c.Assert(added, qt.HasLen, 1, qt.Commentf("before=%v during=%v", before, during))
+	return added[0]
+}
+
+// devDockerPortMapping reads the published binding of a container's PostgreSQL
+// port, as the runtime reports it.
+func devDockerPortMapping(c *qt.C, container string) string {
+	c.Helper()
+	out, err := exec.Command("docker", "port", container, "5432/tcp").Output()
+	c.Assert(err, qt.IsNil)
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	c.Assert(len(lines) > 0, qt.IsTrue)
+	return strings.TrimSpace(lines[0])
+}
+
 func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
@@ -78,6 +101,18 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	during := devDockerCensus(c)
 	c.Assert(len(during), qt.Equals, len(before)+1,
 		qt.Commentf("before=%v during=%v", before, during))
+
+	// A LOCAL daemon must publish on loopback and nowhere else. This is asserted
+	// from the runtime rather than from the publish flag, because the flag has
+	// three fields and getting the middle one wrong is silent: `0.0.0.0:5432`
+	// reads the bind address as the host port and is refused outright, while
+	// `0.0.0.0::5432` exposes the dev database on every interface of the host.
+	// The pinned community binary v1.3.0 does the latter unconditionally --
+	// measured, its container publishes `0.0.0.0:59319->5432/tcp` -- so this row
+	// pins a divergence Ptah keeps on purpose.
+	mapping := devDockerPortMapping(c, onlyNewContainer(c, before, during))
+	c.Assert(strings.HasPrefix(mapping, "127.0.0.1:"), qt.IsTrue,
+		qt.Commentf("a local daemon published %q, not a loopback binding", mapping))
 
 	// The proof: a statement executed on the provisioned server, and its effect
 	// read back. A port that accepts a TCP connection is not a database.

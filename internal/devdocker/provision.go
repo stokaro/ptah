@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os/exec"
 	"strings"
 	"time"
@@ -195,7 +196,13 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	// The wait probes the server, not the operator's parameters; see
 	// [Spec.ReadyURL] for the two minutes that distinction is worth.
 	if err := waitReady(ctx, spec.ReadyURL(hostPort), opts); err != nil {
-		_ = instance.Close()
+		// The same bounded retry the release uses, not a single discarded
+		// Close. On this path the caller receives no instance, so nothing else
+		// is left holding a handle to the container: a removal refused here
+		// leaks it permanently, with no later call able to retry. That is the
+		// defect Close was just fixed for, on the branch Close is not reached
+		// from.
+		releaseInstance(instance, opts)
 		return nil, fmt.Errorf("dev database %s did not become ready: %w", spec.Image, err)
 	}
 	return instance, nil
@@ -255,20 +262,34 @@ func releaseInstance(instance *Instance, opts Options) {
 
 // waitReady polls until the database accepts a connection, the deadline passes,
 // or the caller's context ends.
+//
+// Every probe runs on a context carrying the readiness deadline, not on the
+// caller's. The deadline check between probes is not enough on its own: the
+// default probe opens a real connection, and a container whose port is
+// published but whose server never answers leaves it stalled inside a TCP or
+// database handshake. The caller's context is normally the command's, which is
+// unbounded, so control would never return to the check and the documented
+// timeout would not bound anything. Measured against a remote daemon before
+// this change, a probe that could never succeed still returned on its own; a
+// probe that HANGS is the case the check cannot see.
 func waitReady(ctx context.Context, rawURL string, opts Options) error {
-	deadline := time.Now().Add(opts.readyTimeout())
+	timeout := opts.readyTimeout()
+	deadline := time.Now().Add(timeout)
+	waitCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
 	ready := opts.ready()
 	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
 	var last error
 	for {
-		if err := ready(ctx, rawURL); err == nil {
+		if err := ready(waitCtx, rawURL); err == nil {
 			return nil
 		} else {
 			last = err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s: %w", opts.readyTimeout(), last)
+			return fmt.Errorf("timed out after %s: %w", timeout, last)
 		}
 		select {
 		case <-ctx.Done():
@@ -324,18 +345,36 @@ func (DockerCLI) Available(ctx context.Context) error {
 	return nil
 }
 
-// Start runs the image detached with the container port published on a
-// loopback port the daemon picks, then reads back which port that was.
+// Start runs the image detached with the container port published on a port the
+// daemon picks, then reads back which port that was and pairs it with an
+// address this process can actually reach.
 //
 // The port is not chosen by Ptah. Picking a free port and then binding it is a
 // race two concurrent invocations lose sooner or later; letting the daemon
 // allocate and asking it afterwards has no window at all.
+//
+// The bind address depends on where the daemon is, and getting that wrong is
+// silent. A container is published on the DAEMON's interfaces, so a daemon on
+// another machine that binds loopback is reachable from that machine and from
+// nowhere else -- while `docker port` still answers `127.0.0.1:<port>`, which
+// this process would resolve against its own loopback. Measured on 2026-08-13
+// with `DOCKER_HOST=ssh://remote-dev`: the container came up on the remote host
+// as `127.0.0.1:32768->5432/tcp`, `nc -z 127.0.0.1 32768` succeeded there and
+// failed here, and the run spent its full two-minute readiness budget before
+// reporting `connection refused`.
 func (d DockerCLI) Start(ctx context.Context, name, image, containerPort string, env []string) (string, error) {
+	endpoint, err := d.endpoint(ctx)
+	if err != nil {
+		return "", err
+	}
 	args := []string{
 		"run", "--detach", "--rm",
 		"--name", name,
 		"--label", ContainerLabel + "=1",
-		"--publish", "127.0.0.1::" + containerPort,
+		// `<bind>::<container>` — the empty middle field is what asks the
+		// daemon to choose the host port. `<bind>:<container>` reads the bind
+		// address as the host port and is refused: `invalid hostPort: 0.0.0.0`.
+		"--publish", endpoint.bindAddress() + "::" + containerPort,
 	}
 	for _, entry := range env {
 		args = append(args, "--env", entry)
@@ -345,24 +384,40 @@ func (d DockerCLI) Start(ctx context.Context, name, image, containerPort string,
 	if err != nil {
 		return "", fmt.Errorf("start dev database container from %s: %s: %w", image, trimDockerOutput(out), err)
 	}
-	return d.publishedPort(ctx, name, containerPort)
+	port, err := d.publishedPort(ctx, name, containerPort)
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(endpoint.connectHost(), port), nil
 }
 
-// publishedPort asks the daemon which loopback port it bound.
+// publishedPort asks the daemon which port it bound, and returns the port
+// alone: the address to pair it with is the daemon's, not the one in the
+// mapping.
+//
+// `docker port` prints one mapping per line and the bindings differ by bind
+// address -- `127.0.0.1:32768` for a loopback publish, `0.0.0.0:59319` plus an
+// `[::]:59319` twin for an all-interfaces one. Reading the port off the last
+// colon is what makes all three shapes answer the same thing.
 func (DockerCLI) publishedPort(ctx context.Context, name, containerPort string) (string, error) {
 	out, err := exec.CommandContext(ctx, "docker", "port", name, containerPort+"/tcp").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("read published port of container %s: %s: %w", name, trimDockerOutput(out), err)
 	}
-	// `docker port` prints one mapping per line, and an IPv6 binding can be
-	// among them; the first IPv4 loopback line is the one that was asked for.
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		mapping := strings.TrimSpace(line)
-		if host, ok := strings.CutPrefix(mapping, "127.0.0.1:"); ok {
-			return "127.0.0.1:" + host, nil
+		if _, port, found := strings.Cut(mapping, ":"); found {
+			// An IPv6 mapping is `[::]:59319`, so the port is after the LAST
+			// colon rather than the first.
+			if idx := strings.LastIndex(mapping, ":"); idx >= 0 {
+				port = mapping[idx+1:]
+			}
+			if port != "" {
+				return port, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("container %s published no loopback port for %s", name, containerPort)
+	return "", fmt.Errorf("container %s published no port for %s", name, containerPort)
 }
 
 // Remove deletes the container and treats an already-absent one as success, so
