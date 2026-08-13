@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -4289,7 +4290,7 @@ func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *test
 	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
 }
 
-func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T) {
+func TestCompatCommand_MigrateStatusRejectsParentRelativeProjectDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4320,8 +4321,10 @@ func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T)
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: .*outside allowed root.*`)
+	c.Assert(out.String(), qt.Contains, "outside allowed root")
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
 func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {

@@ -338,9 +338,11 @@ above.
 
 When an `atlas.hcl` `migration` block is present, Ptah defaults
 `revision-format` to `atlas`, so migration commands use
-`atlas_schema_revisions` unless an explicit CLI flag overrides it. Relative
-`migration.dir` values declared in `atlas.hcl` resolve relative to the
-directory containing that `atlas.hcl` file.
+`atlas_schema_revisions` unless an explicit CLI flag overrides it.
+`migration.dir` values declared in `atlas.hcl` resolve relative to the directory
+containing that `atlas.hcl` file and must remain inside that project root after
+symbolic-link resolution. The same confinement applies when the project file
+uses an absolute value.
 
 Explicit CLI `--dir` values keep CLI semantics and resolve relative to the
 process working directory unless they are absolute. Apply, down, status, lint,
@@ -349,11 +351,11 @@ handle and capture an immutable snapshot before database work. Relative CLI
 traversal and symlink escapes are rejected; explicit absolute paths remain
 supported.
 
-Intentional project-relative paths such as `../shared-migrations` retain their
-config-relative meaning and are captured at the resolved location. Non-local
-URI schemes in `migration.dir` and `schema.src` fail explicitly when a command
-needs that configured value; an explicit CLI path flag still wins before URI
-validation.
+Parent-relative paths that resolve outside the project root, absolute paths
+outside it, and symbolic links that leave it fail as `outside allowed root`.
+Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
+a command needs that configured value; an explicit CLI path flag still wins
+before URI validation.
 
 ## Environment selection
 

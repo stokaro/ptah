@@ -146,14 +146,14 @@ a supported local file or database URL. `env://url` and `env://dev` resolve the
 corresponding database URL; `env://migration.dir` resolves the configured
 local migration directory. Nested `env://` references fail explicitly.
 
-Relative `migration.dir` values resolve from the directory containing
-`atlas.hcl`. Apply, down, status, lint, set, and native repair commands open the
-resolved directory through a rooted handle and capture an immutable snapshot
-before database work. Relative CLI `--dir` paths remain rooted at the process
-working directory, symlink escapes are rejected, and explicit absolute paths
-remain supported. Intentional config-relative paths such as
-`../shared-migrations` retain their meaning and are captured at the resolved
-location.
+`migration.dir` values resolve from the directory containing `atlas.hcl` and
+must remain inside that project root after symbolic-link resolution. This rule
+also applies to absolute values declared in the project file. Apply, down,
+status, lint, set, and native repair commands open the resolved directory
+through the project handle and capture an immutable snapshot before database
+work. Relative CLI `--dir` paths remain rooted at the process working
+directory, symlink escapes are rejected, and explicit absolute CLI paths remain
+supported.
 
 Ptah's `ptah.yaml external_schema` block is a separate native configuration
 surface. It supplies an explicit external-program argument list and SQL, HCL,
@@ -317,9 +317,11 @@ When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `atlas_schema_revisions` unless an explicit CLI flag overrides it. `file://`
 migration directories are normalized to local paths. Relative migration
 directories declared in `atlas.hcl` resolve relative to the directory containing
-that `atlas.hcl` file, not the process working directory. Explicit CLI `--dir`
-values keep CLI semantics and resolve relative to the process working directory
-unless they are absolute. Other URI schemes are rejected.
+that `atlas.hcl` file, not the process working directory. Both relative and
+absolute project values must resolve inside that directory after symbolic-link
+resolution. Explicit CLI `--dir` values keep CLI semantics and resolve relative
+to the process working directory unless they are absolute. Other URI schemes
+are rejected.
 
 ## Expression evaluation
 

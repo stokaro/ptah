@@ -179,6 +179,12 @@ relative to the directory containing that `atlas.hcl` file. Explicit CLI path
 flags such as `--to`, `--from`, and `--dir` keep CLI semantics and resolve
 relative to the process working directory unless they are absolute.
 
+A project-configured `migration.dir`, whether relative or absolute, must remain
+inside the directory containing `atlas.hcl` after symbolic-link resolution.
+Parent traversal that resolves outside, an absolute outside path, and a
+symbolic-link escape fail as `outside allowed root`. An explicit CLI `--dir` is
+operator-owned and retains the CLI path behavior above.
+
 ## Minimal `ptah.yaml`
 
 ```yaml
