@@ -1,0 +1,259 @@
+name: Capability Matrix
+
+# Tier 2 of stokaro/ptah#1341: one capability probe per (dialect, release
+# line), on every pull request.
+#
+# There is deliberately NO `paths:` filter on this workflow. Measured on this
+# repository while investigating why the container-bump pull requests show
+# fewer checks than a human one: `release.yml` and `ptah-action-smoke.yml`
+# filter on `cmd/**`, `internal/**`, `go.mod` and friends, so a pull request
+# that touches only a workflow file or docker-compose.yaml matches none of
+# them and those jobs never run. An absent check reads exactly like a passing
+# one, and the pull requests this tier exists to unblock are precisely the ones
+# that change only a container tag.
+#
+# The unit a filter is evaluated against is the pull request's whole diff, not
+# its last commit: a `pull_request` event compares base and head, so a branch
+# that adds one commit touching only a workflow file still matches a filter
+# some earlier commit satisfied. The exclusion therefore bites exactly the
+# pull requests this tier exists to unblock, whose ENTIRE diff is a container
+# tag and matches `cmd/**`, `internal/**` and `go.mod` nowhere.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capability-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cells:
+    name: cells
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      cells: ${{ steps.emit.outputs.cells }}
+      count: ${{ steps.emit.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build the matrix driver
+        run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+
+      - name: Emit the matrix
+        id: emit
+        run: |
+          set -euo pipefail
+          # The release lines live in internal/capabilityprobe/cells.go and
+          # nowhere else. This workflow carries no list of versions: it asks the
+          # declaration what exists, so adding a line is a data change.
+          "${RUNNER_TEMP}/capmatrix" matrix >"${RUNNER_TEMP}/matrix.json"
+          count="$(jq '.cells | length' "${RUNNER_TEMP}/matrix.json")"
+          if [ "${count}" -eq 0 ]; then
+            echo "the matrix produced zero runnable cells; a fan-out with no jobs must not report success" >&2
+            exit 1
+          fi
+          # Only the ids cross the job boundary. Measured on run 1 of this
+          # workflow: passing the whole cell objects made the runner answer
+          # "Skip output 'cells' since it may contain secret" — the throwaway
+          # container credentials in each URL are enough — and the strategy
+          # then fanned out over an empty list, producing zero jobs. The
+          # reporting job caught it as seventeen MISSING cells. Everything that
+          # carries a credential is now asked for by id inside the job that
+          # needs it.
+          {
+            echo "cells=$("${RUNNER_TEMP}/capmatrix" matrix --ids)"
+            echo "count=${count}"
+          } >>"${GITHUB_OUTPUT}"
+          {
+            echo "## Capability matrix"
+            echo
+            echo "Declared release lines: $(jq '.declared' "${RUNNER_TEMP}/matrix.json")."
+            echo "Cells this tier runs: ${count}."
+            echo
+            jq -r '.skipped[] | "- `\(.id)` is declared and not run: \(.skip)"' "${RUNNER_TEMP}/matrix.json"
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+  presets:
+    name: preset coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      # A declared release line with no capability preset is a line whose
+      # capabilities are a stand-in chosen by saturation. This job is separate
+      # from `cells` on purpose: `cells` feeds the fan-out, and a fan-out that
+      # failed here would skip every probe, turning a preset gap into a tier
+      # that measured nothing.
+      - name: Check every declared line names a preset
+        run: go run ./internal/cmd/capmatrix presets
+
+  documentation:
+    name: documented matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      # This runs here rather than in docs.yml because docs.yml filters on
+      # `docs/**`: a pull request that adds a release line to
+      # internal/capabilityprobe/cells.go and forgets the documentation matches
+      # no filter there, and the drift check would never run on the change that
+      # caused the drift.
+      - name: Check the documented version matrix
+        run: scripts/check-version-matrix.sh
+
+  probe:
+    name: probe ${{ matrix.cell }}
+    needs: cells
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CELL_ID: ${{ matrix.cell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ${{ fromJSON(needs.cells.outputs.cells) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build the matrix driver
+        run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+
+      # continue-on-error is deliberate. A cell whose container cannot start —
+      # measured on run 2, where `yugabytedb/yugabyte:2025.2.0.0-b0` answered
+      # "manifest unknown" — must still reach the reporting job as a named
+      # result. Failing the step here skips the probe and the upload, and the
+      # cell arrives as MISSING, which says the job did not report rather than
+      # what actually happened to it. The probe below fails on the unreachable
+      # server instead, with the error in the cell's result.
+      - name: Start the server for this cell
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # One flat argument list, printed by the driver, so this step cannot
+          # assemble flags, image and container command in the wrong order.
+          "${RUNNER_TEMP}/capmatrix" docker-args --cell "${CELL_ID}" >"${RUNNER_TEMP}/docker-args"
+          mapfile -t args <"${RUNNER_TEMP}/docker-args"
+          docker run --detach --name capability-probe-server "${args[@]}"
+
+      - name: Probe the cell
+        id: probe
+        run: |
+          # `set +e` is load-bearing: GitHub runs a `run:` block as `bash -e`,
+          # so without it the step would die on the probe's non-zero exit and
+          # the code below would never be recorded. And no pipe: the probe's
+          # exit code IS the measurement, and `probe | tee` would hand $? the
+          # status of tee. Output goes to a file and is printed afterwards.
+          set +e
+          set -uo pipefail
+          mkdir -p results
+          "${RUNNER_TEMP}/capmatrix" probe \
+            --cell "${CELL_ID}" \
+            --tier 2 \
+            --wait 4m \
+            --result "results/${CELL_ID}.json" >"results/${CELL_ID}.log" 2>&1
+          code=$?
+          cat "results/${CELL_ID}.log"
+          echo "code=${code}" >>"${GITHUB_OUTPUT}"
+
+      - name: Server log
+        if: always()
+        run: docker logs capability-probe-server 2>&1 | tail -n 50 || true
+
+      - name: Upload the cell result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: capability-cell-${{ matrix.cell }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report this cell's verdict
+        env:
+          CODE: ${{ steps.probe.outputs.code }}
+        run: |
+          set -euo pipefail
+          if [ "${CODE}" != "0" ]; then
+            echo "cell ${CELL_ID} failed: the capability probe exited ${CODE}" >&2
+            exit 1
+          fi
+
+  report:
+    name: tier 2 report
+    needs: [cells, probe]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      # The download must not decide the verdict. When no cell uploaded
+      # anything, the report has to run anyway and say that every declared cell
+      # is missing, which is a failure; a download step that failed the job
+      # first would report an infrastructure error where the truth is that the
+      # tier measured nothing.
+      - name: Collect the cell results
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: capability-cell-*
+          path: results
+          merge-multiple: true
+
+      - name: Build the matrix driver
+        run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
+
+      - name: Aggregate the tier
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p results
+          "${RUNNER_TEMP}/capmatrix" report --tier 2 --results results >"${RUNNER_TEMP}/tier2.md" 2>&1
+          code=$?
+          cat "${RUNNER_TEMP}/tier2.md"
+          cat "${RUNNER_TEMP}/tier2.md" >>"${GITHUB_STEP_SUMMARY}"
+          exit "${code}"

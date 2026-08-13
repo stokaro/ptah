@@ -33,6 +33,20 @@ func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
 	}
 }
 
+func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
+	schema := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
+		{Name: "plpgsql", Schema: "pg_catalog"},
+		{Name: "pgcrypto", Schema: "app"},
+	}}
+
+	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
+
+	qt.Assert(t, got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
+		{Name: "pgcrypto", Schema: "app"},
+	})
+	qt.Assert(t, schema.Extensions, qt.HasLen, 2)
+}
+
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's
 // plan coverage to what that dialect's SchemaWriter.DropAllTables really drops.
 //
@@ -55,7 +69,11 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 				{Type: "domain", Schema: "public", Name: "d_email"},
 				{Type: "enum", Name: "mood"},
 				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
-				{Type: "function", Name: "f_touch"},
+				{
+					Type:    "function",
+					Name:    "f_touch",
+					Command: `DROP FUNCTION IF EXISTS "f_touch"() RESTRICT`,
+				},
 				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 				{Type: "range", Schema: "public", Name: "r_int"},
 				{Type: "table", Schema: "public", Name: "posts"},
@@ -71,7 +89,11 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 				{Type: "domain", Schema: "public", Name: "d_email"},
 				{Type: "enum", Name: "mood"},
 				{Type: "foreign_key", Schema: "public", Table: "posts", Name: "fk_posts_users"},
-				{Type: "function", Name: "f_touch"},
+				{
+					Type:    "function",
+					Name:    "f_touch",
+					Command: `DROP FUNCTION IF EXISTS "f_touch"() RESTRICT`,
+				},
 				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 				{Type: "range", Schema: "public", Name: "r_int"},
 				{Type: "table", Schema: "public", Name: "posts"},
@@ -151,37 +173,37 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			name:    "postgres view",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "view", Schema: "public", Name: "v_users"},
-			want:    `DROP VIEW IF EXISTS "public"."v_users" CASCADE`,
+			want:    `DROP VIEW IF EXISTS "public"."v_users" RESTRICT`,
 		},
 		{
 			name:    "postgres materialized view",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "materialized_view", Schema: "public", Name: "mv_users"},
-			want:    `DROP MATERIALIZED VIEW IF EXISTS "public"."mv_users" CASCADE`,
+			want:    `DROP MATERIALIZED VIEW IF EXISTS "public"."mv_users" RESTRICT`,
 		},
 		{
 			name:    "postgres function",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "function", Name: "f_touch"},
-			want:    `DROP FUNCTION IF EXISTS "f_touch" CASCADE`,
+			want:    `DROP FUNCTION IF EXISTS "f_touch"() RESTRICT`,
 		},
 		{
 			name:    "postgres domain",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "domain", Schema: "public", Name: "d_email"},
-			want:    `DROP DOMAIN IF EXISTS "public"."d_email" CASCADE`,
+			want:    `DROP DOMAIN IF EXISTS "public"."d_email" RESTRICT`,
 		},
 		{
 			name:    "postgres composite type",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "composite", Schema: "public", Name: "c_addr"},
-			want:    `DROP TYPE IF EXISTS "public"."c_addr" CASCADE`,
+			want:    `DROP TYPE IF EXISTS "public"."c_addr" RESTRICT`,
 		},
 		{
 			name:    "postgres range type",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "range", Schema: "public", Name: "r_int"},
-			want:    `DROP TYPE IF EXISTS "public"."r_int" CASCADE`,
+			want:    `DROP TYPE IF EXISTS "public"."r_int" RESTRICT`,
 		},
 		{
 			name:    "postgres foreign key",
@@ -231,10 +253,21 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			want:    "DROP SEQUENCE IF EXISTS `s_counter`",
 		},
 		{
-			name:    "postgres sequence keeps CASCADE",
+			name:    "postgres sequence uses RESTRICT",
 			dialect: "postgres",
 			object:  schemaclean.Object{Type: "sequence", Schema: "public", Name: "users_id_seq"},
-			want:    `DROP SEQUENCE IF EXISTS "public"."users_id_seq" CASCADE`,
+			want:    `DROP SEQUENCE IF EXISTS "public"."users_id_seq" RESTRICT`,
+		},
+		{
+			name:    "catalog command is preserved exactly",
+			dialect: "postgres",
+			object: schemaclean.Object{
+				Type:    "procedure",
+				Schema:  "public",
+				Name:    "refresh(integer)",
+				Command: `DROP PROCEDURE IF EXISTS "public"."refresh"(integer) RESTRICT`,
+			},
+			want: `DROP PROCEDURE IF EXISTS "public"."refresh"(integer) RESTRICT`,
 		},
 		{
 			name:    "sqlite view",
@@ -263,6 +296,82 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			c.Assert(plan.Changes[0].Cmd, qt.Equals, test.want)
 		})
 	}
+}
+
+func TestPlanFromSchemaPreservesOverloadedFunctionIdentity(t *testing.T) {
+	c := qt.New(t)
+	integerIdentity := "integer"
+	textIdentity := "text"
+	emptyIdentity := ""
+	schema := &dbschematypes.DBSchema{Functions: []dbschematypes.DBFunction{
+		{
+			Name:              "normalize",
+			Schema:            "app",
+			Parameters:        "value integer DEFAULT 1",
+			IdentityArguments: &integerIdentity,
+		},
+		{
+			Name:              "normalize",
+			Schema:            "app",
+			Parameters:        "value text",
+			IdentityArguments: &textIdentity,
+		},
+		{
+			Name:              "out_only",
+			Schema:            "app",
+			Parameters:        "OUT value integer",
+			IdentityArguments: &emptyIdentity,
+		},
+	}}
+
+	plan := schemaclean.PlanFromSchema(schema, "postgres")
+
+	c.Assert(plan.Objects, qt.DeepEquals, []schemaclean.Object{
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value integer DEFAULT 1",
+			Command:    `DROP FUNCTION IF EXISTS "app"."normalize"(integer) RESTRICT`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value text",
+			Command:    `DROP FUNCTION IF EXISTS "app"."normalize"(text) RESTRICT`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "out_only",
+			Parameters: "OUT value integer",
+			Command:    `DROP FUNCTION IF EXISTS "app"."out_only"() RESTRICT`,
+		},
+	})
+	c.Assert(plan.Changes, qt.DeepEquals, []schemaclean.Change{
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value integer DEFAULT 1",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."normalize"(integer) RESTRICT`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "normalize",
+			Parameters: "value text",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."normalize"(text) RESTRICT`,
+		},
+		{
+			Type:       "function",
+			Schema:     "app",
+			Name:       "out_only",
+			Parameters: "OUT value integer",
+			Cmd:        `DROP FUNCTION IF EXISTS "app"."out_only"() RESTRICT`,
+		},
+	})
 }
 
 // TestPlanFromObjectsOrdersReportByKindThenLocation pins the documented report
@@ -348,7 +457,7 @@ func TestPlanFromSchemaUsesDialectSpecificTableCommands(t *testing.T) {
 	mysqlPlan := schemaclean.PlanFromSchema(schema, "mysql")
 	clickhousePlan := schemaclean.PlanFromSchema(schema, "clickhouse")
 
-	c.Assert(postgresPlan.Changes[0].Cmd, qt.Equals, `DROP TABLE IF EXISTS "events" CASCADE`)
+	c.Assert(postgresPlan.Changes[0].Cmd, qt.Equals, `DROP TABLE IF EXISTS "events" RESTRICT`)
 	c.Assert(mysqlPlan.Changes[0].Cmd, qt.Equals, "DROP TABLE IF EXISTS `events`")
 	c.Assert(clickhousePlan.Changes[0].Cmd, qt.Equals, "DROP TABLE IF EXISTS `events` SYNC")
 }
@@ -358,5 +467,6 @@ func TestPlanFromSchemaAcceptsNilSchema(t *testing.T) {
 
 	plan := schemaclean.PlanFromSchema(nil, "sqlite")
 
-	c.Assert(plan, qt.DeepEquals, schemaclean.Plan{})
+	c.Assert(plan.Objects, qt.IsNil)
+	c.Assert(plan.Changes, qt.IsNil)
 }

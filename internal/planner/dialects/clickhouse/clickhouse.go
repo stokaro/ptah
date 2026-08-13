@@ -1,7 +1,7 @@
 // Package clickhouse implements ClickHouse-specific migration planning.
 //
-// ClickHouse only honors a subset of the schema features expressible
-// through Ptah's annotations: tables, columns and a narrow set of
+// ClickHouse only honors a subset of the schema features expressible through
+// Ptah's annotations: tables, columns, plain views, and a narrow set of
 // constraints (CHECK only). Enums, custom types, extensions, functions,
 // row-level security policies and roles are PostgreSQL-shaped and have no
 // direct equivalent here, so this planner emits no runnable SQL for them.
@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
@@ -34,10 +35,24 @@ import (
 )
 
 // Planner implements the migration planner interface for ClickHouse.
-type Planner struct{}
+type Planner struct {
+	caps capability.Capabilities
+}
 
-// New returns a ClickHouse planner.
-func New() *Planner { return &Planner{} }
+// New returns a ClickHouse planner using the default ClickHouse 24 preset.
+func New() *Planner { return NewWithCapabilities(capability.ClickHouse24()) }
+
+// NewWithCapabilities returns a ClickHouse planner for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change a
+// plan already being assembled. A nil set is conservative; New explicitly
+// selects the default ClickHouse 24 preset.
+func NewWithCapabilities(caps capability.Capabilities) *Planner {
+	return &Planner{caps: caps.Clone()}
+}
+
+func (p *Planner) capabilities() capability.Capabilities {
+	return p.caps
+}
 
 // GenerateMigrationASTChecked produces the AST node sequence that, when rendered
 // against the ClickHouse renderer, brings the database from its current
@@ -49,16 +64,17 @@ func New() *Planner { return &Planner{} }
 //  1. Diagnostics for the extensions and sequences ClickHouse cannot host.
 //  2. CREATE TABLE for every newly-added table.
 //  3. ALTER TABLE for every per-table column add/modify/drop.
-//  4. Diagnostics for the roles, functions, views, materialized views, RLS,
-//     grants and triggers ClickHouse cannot host.
+//  4. CREATE, CREATE OR REPLACE, or DROP for plain views, plus diagnostics for
+//     roles, functions, materialized views, RLS, grants, and triggers that
+//     Ptah's ClickHouse model cannot express.
 //  5. ADD INDEX for new data-skipping indexes.
 //  6. DROP INDEX for removed indexes.
 //  7. DROP TABLE for removed tables.
 //
-// Steps 1 and 4 emit no runnable SQL: the renderer reduces each node to a
-// named `-- CLICKHOUSE: ... is not supported` comment, in the order
-// `schema render` produces for the same model. Ignoring those diff fields
-// instead is what made `schema apply` under-generate without a word.
+// Unsupported nodes in steps 1 and 4 emit no runnable SQL: the renderer reduces
+// each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
+// `schema render` produces for the same model. Plain-view nodes are executable
+// and retain their declared bodies.
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
@@ -82,7 +98,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff, generated)
 	result = p.modifyExistingTables(result, diff, generated)
-	result = reportUnsupportedObjectsAfterTables(result, diff)
+	result, err = reportUnsupportedObjectsAfterTables(result, diff, generated, p.capabilities())
+	if err != nil {
+		return nil, err
+	}
 	result, err = p.addNewIndexes(result, diff, indexes)
 	if err != nil {
 		return nil, err

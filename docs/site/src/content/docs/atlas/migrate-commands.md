@@ -23,7 +23,7 @@ plus the flag translation rules are on the
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
 | `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
-| `ptah-compat migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs them against the desired state, and writes Atlas-style migration files with `atlas.sum` updated atomically. |
+| `ptah-compat migrate diff` | Replays local migrations on `--dev-url`, diffs them against the desired state, and writes the selected layout with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
 | `ptah-compat migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
@@ -487,6 +487,39 @@ revision rows and include only migrations that a real apply would select. They
 also run the same dirty-state, checksum, execution-order, and transaction-mode
 validations as a real apply.
 
+### Apply an inserted migration out of order
+
+The default `--exec-order linear` refuses a pending migration below the current
+version. Use non-linear order when the insertion is intentional:
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --exec-order non-linear
+```
+
+An `atlas.sum` entry is a running hash over the files before it. Adding an
+earlier migration changes later entries even when those later files are
+byte-identical. Ptah verifies them against the chain projected from applied
+migrations, excluding the pending insertion.
+
+After the insertion succeeds, Ptah reconciles clean revision rows to the new
+chain while it still holds the migration lock. It computes the full update set
+first, then commits every affected row in one transaction where the driver
+supports transactions. A failed row update leaves the whole set on the prior
+chain, so the next apply can retry it. A dry run, execution failure, or process
+stop before the revision is applied never rewrites later clean rows.
+
+Equal non-zero application timestamps remain one candidate group. Ptah retries
+only when exactly one prior applied-set projection explains every affected row
+and each later row still matches the projection from its own application-time
+group. Mixed old and new hashes, ambiguous groups, and edited files fail closed.
+
+ClickHouse permits one synchronous checksum mutation. A reconciliation that
+needs multiple row updates fails before the first mutation because the
+configured driver has no multi-statement transaction.
+
 An env `for_each` can select several database targets. `migrate apply` runs
 them sequentially in stable expansion order and stops at the first failure.
 Formatted output contains one document per attempted target with one newline
@@ -531,6 +564,18 @@ header. A blank line after the header is accepted but not required:
 -- atlas:txmode file
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
+
+The header must sit in the unbroken run of line comments that begins on line 1,
+each comment starting in column 1. Measured on Atlas CE `v1.3.0` with
+`migrate apply --tx-mode all` over one-statement directories, `atlas:txmode
+none` is honored on line 1 and on line 2 below another comment, and ignored
+when a blank line precedes it, when it is indented, when a blank line separates
+it from an earlier comment, and when it follows the statement. Ptah matches
+every one of those, and adds the thing CE does not do: an ignored directive is
+reported at `WARN` on stderr with its file, line and text, rather than dropped
+in silence. Ptah's own `-- +ptah` directives answer to the same "before the
+first executable statement" rule with a more forgiving acceptance inside it —
+see [Apply](../../versioned/apply/).
 
 The accepted file values are `file` and `none`. File-level `all`, unknown
 values, duplicate values, and any explicit file mode under global `all` fail
@@ -589,8 +634,10 @@ down migrations.
 Every other format is captured first and then converted in memory to Atlas
 single-file, up-only migrations, so apply executes only the source tool's
 forward (up) SQL and never its down, rollback, undo, or metadata section. This
-reuses the same format-loading layer as `ptah-compat migrate import`, so apply
-and import agree on every format's semantics.
+shares format parsers and up/down semantics with `ptah-compat migrate import`.
+Conventional Liquibase import adds a persistence adapter that splits changesets
+into numeric Atlas files; direct apply retains its numbered-file requirement and
+source-file boundary.
 
 An explicit `?format=` query on the effective directory URL, from either
 `migration.dir` or CLI `--dir`, overrides the `migration.format` project
@@ -656,8 +703,13 @@ the accepted set matches Atlas. Directive names are case- and space-sensitive
 exactly as Atlas matches them: `-- +goose Up` is a directive, `-- +goose up`,
 `-- +goose  Up` and `-- +Goose Up` are not. A name may carry trailing text
 (`-- +goose Up extra` is still `Up`). Lines Atlas does not recognize as
-section directives — including `-- +goose NO TRANSACTION` — stay in the
-migration body and are executed with it.
+section directives stay in the migration body and are executed with it. The
+exact whole-file `-- +goose NO TRANSACTION` line becomes Atlas
+transaction-mode metadata in Ptah's converted view, so a direct `migrate apply`
+runs that source migration outside a transaction. Ptah consumes the exact
+annotation as metadata even inside `StatementBegin`; it does not leak into the
+SQL body. Near-matches and unrecognized annotation-like lines inside a statement
+block remain literal SQL; recognized section-changing directives still refuse.
 
 A goose file that contains **no** section directive at all is executed in full:
 the whole file is the migration. Such a file has no rollback section that could
@@ -915,6 +967,25 @@ followed by a `<name>_concurrent_indexes` file tagged `-- atlas:txmode none`;
 mixes that cannot be split automatically (for example enum value additions
 alongside table changes) are refused.
 
+The rollback is planned through the same dialect and capability set. Each
+reverse index operation selects concurrency independently. A concurrent create
+becomes the exact table-qualified concurrent drop when supported and a blocking
+drop otherwise; the same rule applies to the reverse create after a concurrent
+drop. An explicitly requested unsupported forward operation still fails before
+a migration or `atlas.sum` is published. On MySQL and MariaDB, the rollback
+also removes a backing index the forward foreign-key addition caused the server
+to create. It preserves any prior or same-run covering index, even under a
+different name, and refuses a plan that later removes every such index.
+
+All five foreign directory layouts carry the ordinary rollback. Goose can also
+represent a no-transaction requirement from either direction with its
+whole-file `-- +goose NO TRANSACTION` directive. That directive makes both
+sections non-transactional, including when only one direction requires it. The
+other four layouts remain fail-closed when either direction requires
+no-transaction execution because their safe transaction metadata has not been
+proven. The native Atlas layout remains forward-only and carries `--
+atlas:txmode none` on its own file when required.
+
 Docker dev databases fail explicitly until their provisioning semantics are
 implemented.
 
@@ -1007,19 +1078,22 @@ community binary v1.3.0 byte for byte:
 | invocation | exit | message |
 | --- | --- | --- |
 | no `--dev-url` | 1 | `required flag(s) "dev-url" not set` |
-| no `--latest` and no `--git-base` | 1 | `--latest or --git-base is required` |
+| no usable selector, including `--latest 0` without `--git-base` | 1 | `--latest or --git-base is required` |
 
 An argv missing both answers the `--dev-url` sentence, because that is the one
 the pinned binary answers on the same argv.
 
 A **scope** may come from the selected `atlas.hcl` environment instead of the
 command line: a `lint { latest = 1 }` or a `lint { git { base = … } }` satisfies
-the requirement with nothing spelled on the command line. `--latest N` with an N
-larger than the directory analyzes every migration. The scope refusal comes
-before the migration directory is read and before `--dev-url` is contacted,
-which is the part that matters: `--dev-url` is scratch space and the run
-**cleans** it, so an unscoped invocation that answered would drop tables in a
-database the pinned binary never connects to.
+the requirement with nothing spelled on the command line. An explicit
+`--latest 0` clears configured `lint.latest` but leaves an explicit or
+configured Git selector eligible. With `--git-base`, zero follows Git selection
+instead of conflicting with it. Positive `--latest N` remains exclusive with
+Git, and an N larger than the directory analyzes every migration. The scope
+refusal comes before the migration directory is read and before `--dev-url` is
+contacted, which is the part that matters: `--dev-url` is scratch space and the
+run **cleans** it, so an unscoped invocation that answered would drop tables in
+a database the pinned binary never connects to.
 
 Two environment variables relax these requirements. They relax **different**
 ones, and neither implies the other:
@@ -1331,9 +1405,19 @@ Each layout covers a different set of source files, matching Atlas; see
 per-layout rules and for the inputs that stay refused.
 
 When both spellings are given, the `?format=` query wins, which is what Atlas
-does. Values are matched verbatim on every one of those verbs: `--dir-format
-ATLAS` and `--dir-format " atlas "` are refused rather than normalized, and an
-empty value selects the Atlas layout.
+does. Values are matched verbatim on every CE-comparable path that resolves a
+layout — the six above plus `diff` and `import`: `--dir-format ATLAS` and
+`--dir-format " atlas "` are refused rather than normalized, and an empty value
+selects the Atlas layout. `migrate import` resolved its own source format until
+[#1235](https://github.com/stokaro/ptah/issues/1235) cell 9.8 was closed as a
+class; it accepted `FLYWAY` and `" flyway "` and read `?format=` with an empty
+value as no selection, all three of which Atlas refuses.
+
+A rejected value is refused with the measured CE wording — `unknown dir format
+"bogus"` — on all nine CE-comparable paths, `apply` included through its
+`?format=` query. Fuller-surface commands such as `checkpoint`, `test`, `edit`,
+`rebase`, and `rm` keep Ptah's longer diagnostic, which names the accepted
+layouts.
 
 `format` is the only `--dir` query key that selects anything. On the eight verbs
 that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`,
@@ -1416,11 +1500,19 @@ it will not do is walk past `9999999999`, the largest version its fixed-width
 `NNNNNNNNNN` name can hold. It refuses instead, because the eleven-digit name it
 used to write was one the reader silently skipped.
 
-`migrate diff` still refuses a non-`atlas` layout under both spellings: it emits
-planned SQL, and nothing writes a migration body in a foreign tool's convention
-yet. Import the directory with `ptah-compat migrate import` before diffing into
-it. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
+`migrate diff` writes every selected layout under both spellings. It writes the
+forward and rollback pair for `golang-migrate` and `flyway`, one file with both
+directive sections for `goose` and `dbmate`, and a Liquibase changeset with
+`--rollback:` lines. The refreshed `atlas.sum` covers the selected layout's file
+set. `migrate apply` registers no `--dir-format` at all, matching Atlas, and
 selects a converted source directory through `?format=` on `--dir`.
+
+Goose writes `-- +goose NO TRANSACTION` when either direction requires
+no-transaction execution; its directive governs the whole file and therefore
+both directions. golang-migrate, Flyway, dbmate, and Liquibase remain
+fail-closed for those plans because their safe transaction metadata has not
+been proven. Their refusal happens before any migration file or `atlas.sum` is
+written.
 
 `ptah-compat migrate set [version]` moves Atlas revision history to the
 selected boundary without executing migration SQL. It preserves existing clean
@@ -1447,20 +1539,23 @@ is rewritten, on a directory the gate refuses. A `--dir` naming a directory that
 does not exist yet is not a checksum error on either tool — both verbs create
 it, which is how the first migration of a project gets written.
 
-Because they create it, those same two verbs require `--dir` to name a scheme,
-which is what Atlas requires on every verb:
+The six shared scheme-hint consumers — `hash`, `validate`, `status`, `lint`,
+`new`, and `diff` — require their command-line `--dir` to name a scheme:
 
 ```bash
 ptah-compat migrate new add_users --dir migrations
 # Error: missing scheme for dir url. Did you mean "file://migrations"?
 ```
 
-Nothing is created. Ptah still accepts a bare path on the verbs that only read a
-directory, and on a directory named by `atlas.hcl` `migration.dir` — both remain
-looser than Atlas and are tracked in
-[#1186](https://github.com/stokaro/ptah/issues/1186). The requirement is a
-`PTAH_DIR` rule as much as a flag rule; `PTAH_MIGRATIONS_DIR`, which is the
-native `--migrations-dir` under its environment name, still takes a plain path.
+The stderr line ends with the bytes `20 0a`: one ASCII space followed by the
+line feed. Nothing is created. The requirement applies to `PTAH_DIR` as well as
+the flag.
+
+A directory named by `atlas.hcl` `migration.dir` still accepts a bare path and
+remains looser than Atlas, as tracked in
+[#1186](https://github.com/stokaro/ptah/issues/1186). `PTAH_MIGRATIONS_DIR`,
+which is the native `--migrations-dir` under its environment name, still takes a
+plain path.
 
 ### A migration name cannot contain a path separator
 
@@ -1491,18 +1586,34 @@ migration was edited, added to, or removed from, both `lint` implementations
 exit 1 on the checksum mismatch, so this is not a route for inspecting a
 directory that has already drifted.
 
-`down` does not enforce it either, for a different reason than `lint`: the
-community binary refuses that verb outright, so there is no behavior to match.
-It still reads a native Atlas directory and executes rollback SQL, so on a
-hashed directory whose migration was edited, `status` exits 1 while `down`
-reports normally and exits 0. No issue tracks gating it yet.
+`down` enforces it too, and did not always. It reads a native Atlas directory
+and executes rollback SQL from it, so a hashed directory whose migration was
+edited is now refused there exactly as it is on `status`. Before that, `status`
+exited 1 on such a directory while `down` reported normally and exited 0 —
+integrity verification guarding the constructive direction and not the
+destructive one, which is backwards, because `down` is the direction where the
+result cannot be inspected afterwards.
 
-`rm`, `rebase`, `checkpoint` and `edit` remain divergent — they write an
-`atlas.sum` over a directory whose previous contents were never verified,
-turning drift into apparent cleanliness. All four are verbs the community binary
-refuses outright, so like `down` they have no behavior to match; they are listed
-because the hazard is the same one, not because a comparison exists. No issue
-tracks closing that gap yet. `new` and `diff` used to be on this list and were
+The refusal is not a parity claim. The community binary refuses `migrate down`
+outright, so there is no behavior to match: gating it cannot exit 0 where that
+binary exits 1, and "matching is the floor, not the ceiling" is what leaves room
+for the refusal. The two paths through the verb refuse with different text for
+that reason. The default forward inherits the native refusal from
+`ptah migrations down` and prints ptah's own drift report; `--format` runs the
+compat gate and prints the same guidance block `apply` and `status` do.
+
+`checkpoint` also enforces it now, on the native verb the compat surface
+forwards to. It was the worst of the ungated set: it replays the whole history
+onto a shadow database and writes what it observed there into a new migration
+under a fresh checksum, so drift was not merely executed but laundered into a
+directory that verifies clean afterwards.
+
+`rm`, `rebase` and `edit` remain divergent — they write an `atlas.sum` over a
+directory whose previous contents were never verified, turning drift into
+apparent cleanliness. All three are verbs the community binary refuses outright,
+so like `down` they have no behavior to match; they are listed because the
+hazard is the same one, not because a comparison exists. No issue tracks closing
+that gap yet. `new` and `diff` used to be on this list and were
 gated by [#1086](https://github.com/stokaro/ptah/issues/1086); the predicate
 they now share is the one described above, so the remaining four need a decision
 about the missing-`atlas.sum` case rather than new machinery.
@@ -1545,6 +1656,18 @@ not in that list: they are converted onto a reserved version slot above every
 versioned migration, and the destination file name carries that slot rather than
 an R suffix, so the imported directory keeps one-time migration semantics
 instead of Flyway-style reapply semantics.
+
+For Liquibase formatted SQL, a directory containing only numbered SQL names
+keeps the one-source-file-to-one-Atlas-file conversion. If any covered SQL file
+has a conventional name such as `changelog.sql`, the importer parses the entire
+covered SQL set as formatted SQL, orders files lexically and changesets by
+appearance, and writes global versions `1..N` with the changeset author and ID
+in each file name. Version tokens are left-padded to the digit width of `N`, so
+an 11-changeset stream is named `01_...` through `11_...` and `atlas.sum` keeps
+the same order as Liquibase. A headerless or malformed member refuses the whole
+import before the destination is created. The resulting numeric Atlas directory
+and its `atlas.sum` validate and apply under both Ptah and Atlas CE. Liquibase
+XML, YAML, and JSON changelogs remain unsupported.
 
 **The source directory's `atlas.sum` is verified first.** If the source carries
 one, it must cover the source before anything is converted, and the source

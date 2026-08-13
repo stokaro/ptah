@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -266,13 +267,18 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t 
 		},
 	}
 
-	addMySQLFamilyForeignKeyBackingIndexRemovals(
+	err := addMySQLFamilyForeignKeyBackingIndexRemovals(
 		reverseDiff,
 		upDiff,
 		&dbschematypes.DBSchema{},
 		platform.MySQL,
+		[]ast.Node{
+			foreignKeyAdditionNode("orders", "fk_tenant", "tenant_id"),
+			foreignKeyAdditionNode("users", "fk_tenant", "tenant_id"),
+		},
 	)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(reverseDiff.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
 		{Name: "fk_tenant", TableName: "orders"},
 		{Name: "fk_tenant", TableName: "users"},
@@ -297,16 +303,27 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_DoesNotCollideOnDots(t *te
 		},
 	}
 
-	addMySQLFamilyForeignKeyBackingIndexRemovals(
+	err := addMySQLFamilyForeignKeyBackingIndexRemovals(
 		reverseDiff,
 		upDiff,
 		live,
 		platform.MySQL,
+		[]ast.Node{foreignKeyAdditionNode("a.b", "c", "tenant_id")},
 	)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(reverseDiff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
 		{Name: "c", TableName: "a.b"},
 	})
+}
+
+func foreignKeyAdditionNode(table, name, column string) ast.Node {
+	return &ast.AlterTableNode{
+		Name: table,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{
+			Constraint: ast.NewForeignKeyConstraint(name, []string{column}, &ast.ForeignKeyRef{}),
+		}},
+	}
 }
 
 func TestCollectShadowMismatches_ReportsQualifiedIndex(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -128,8 +129,169 @@ func TestRender_PostgreSQLStillEmitsMaterializedViews(t *testing.T) {
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `CREATE MATERIALIZED VIEW "mv1"`)
 }
 
-// clickHouseSchema declares one of every object kind ClickHouse cannot host,
-// plus a table carrying a column CHECK.
+func TestRender_PostgreSQLExtensionCreatesItsInstallationSchemaFirst(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name:        "pgcrypto",
+			Schema:      " Extension Store ",
+			IfNotExists: true,
+		}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE SCHEMA IF NOT EXISTS \" Extension Store \";\n",
+		"CREATE EXTENSION IF NOT EXISTS \"pgcrypto\" WITH SCHEMA \" Extension Store \";\n",
+	})
+}
+
+func TestRender_PostgreSQLExtensionCreatesWhitespaceOnlyInstallationSchemaFirst(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE SCHEMA IF NOT EXISTS \" \";\n",
+		"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \" \";\n",
+	})
+}
+
+func TestRender_PostgreSQLExtensionKeepsDistinctWhitespaceInSchemaIdentity(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: "Extension Store"}},
+		Extensions: []goschema.Extension{{
+			Name: "pgcrypto", Schema: " Extension Store ",
+		}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE SCHEMA IF NOT EXISTS \"Extension Store\";\n",
+		"CREATE SCHEMA IF NOT EXISTS \" Extension Store \";\n",
+		"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \" Extension Store \";\n",
+	})
+}
+
+func TestRender_PostgreSQLExtensionDoesNotDuplicateDeclaredSchema(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Schemas:    []goschema.Schema{{Name: "extensions"}},
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE SCHEMA IF NOT EXISTS \"extensions\";\n",
+		"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \"extensions\";\n",
+	})
+}
+
+func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{
+			Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
+		}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE EXTENSION IF NOT EXISTS \"plpgsql\" WITH SCHEMA \"pg_catalog\" VERSION '1.0';\n",
+	})
+}
+
+func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{
+				"CREATE SCHEMA IF NOT EXISTS \"extensions\";\n",
+				"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \"extensions\";\n",
+			})
+		})
+	}
+}
+
+func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: "extensions"}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
+			c.Assert(statements, qt.IsNil)
+
+			direct, directErr := renderer.RenderSQL(dialect, node)
+			c.Assert(directErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(direct, qt.Equals, "")
+		})
+	}
+}
+
+func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	}
+	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: " "}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
+			c.Assert(statements, qt.IsNil)
+
+			direct, directErr := renderer.RenderSQL(dialect, node)
+			c.Assert(directErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(direct, qt.Equals, "")
+		})
+	}
+}
+
+func TestRender_UnsupportedExtensionDoesNotCreateItsPostgreSQLSchema(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.MySQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CREATE DATABASE")
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "Extension pgcrypto not supported in MySQL")
+}
+
+// clickHouseSchema declares a plain view alongside the object kinds Ptah's
+// ClickHouse model cannot express, plus a table carrying a column CHECK.
 func clickHouseSchema() *goschema.Database {
 	return &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pg_trgm"}},
@@ -150,15 +312,16 @@ func clickHouseSchema() *goschema.Database {
 	}
 }
 
-// TestRender_ClickHouseNamesEveryObjectItCannotHost pins that ClickHouse reports
-// the object kinds it drops.
+// TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects pins that plain
+// views are executable while the remaining unsupported object kinds stay
+// visible as diagnostics.
 //
 // The ClickHouse renderer has implemented a notSupported() diagnostic for each
 // of these kinds all along; the converter dropped the AST nodes before any of
 // them ran. A schema declaring all of them rendered one CREATE TABLE and exited
 // 0, against a PostgreSQL control that planned eight statements
 // (stokaro/ptah#931 item 7).
-func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
+func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(clickHouseSchema(), platform.ClickHouse)
@@ -173,7 +336,6 @@ func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "chk_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "chk_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "chk_f" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: CREATE VIEW "chk_v" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "chk_mv" is not supported`},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "chk_trg" is not supported`},
 	}
@@ -183,6 +345,7 @@ func TestRender_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 			c.Assert(rendered, qt.Contains, test.want)
 		})
 	}
+	c.Assert(rendered, qt.Contains, "CREATE VIEW `chk_v` AS\nSELECT id FROM t")
 }
 
 // TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint pins that a column

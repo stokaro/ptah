@@ -604,7 +604,6 @@ func TestCompatMigrateDirQuery_RejectedFormatValueReportsOnlyItsOwnRefusal(t *te
 		"--dir", "file://"+writeQueryFixtureDir(c)+"?format=totally-bogus&nonsense=1",
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
-	c.Assert(err, qt.ErrorMatches,
-		`atlas migrate status --dir: unknown Atlas migration directory format "totally-bogus".*`)
+	c.Assert(err, qt.ErrorMatches, `unknown dir format "totally-bogus"`)
 	c.Assert(stderr, qt.Not(qt.Contains), "ignoring migration directory URL query")
 }

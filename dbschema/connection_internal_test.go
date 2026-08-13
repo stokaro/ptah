@@ -54,14 +54,33 @@ func (w *connectionTestWriter) IsDryRun() bool {
 	return false
 }
 
-type connectionTestExecutor struct{}
+type connectionTestExecutor struct {
+	executed string
+}
 
-func (*connectionTestExecutor) ExecuteSQL(context.Context, string, ...any) error {
+func (e *connectionTestExecutor) ExecuteSQL(_ context.Context, statement string, _ ...any) error {
+	e.executed = statement
 	return nil
 }
 
 func (*connectionTestExecutor) IsDryRun() bool {
 	return false
+}
+
+type connectionQueryExecutor struct {
+	runner   sqlrunner.Runner
+	executed string
+}
+
+func (e *connectionQueryExecutor) ExecuteSQL(_ context.Context, statement string, _ ...any) error {
+	e.executed = statement
+	return nil
+}
+
+func (*connectionQueryExecutor) IsDryRun() bool { return false }
+
+func (e *connectionQueryExecutor) SchemaQueryRunner() sqlrunner.Runner {
+	return e.runner
 }
 
 func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *testing.T) {
@@ -71,8 +90,62 @@ func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *
 	conn := &DatabaseConnection{writer: root}
 
 	scoped := conn.WithExecutor(executor)
+	_, err := scoped.ExecContext(t.Context(), "DIRECT")
 
+	c.Assert(err, qt.IsNil)
+	c.Assert(executor.executed, qt.Equals, "DIRECT")
 	c.Assert(scoped.SchemaWriter(), qt.Equals, types.SchemaWriter(root))
+	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+}
+
+func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *testing.T) {
+	c := qt.New(t)
+	queried := false
+	db := dbtest.OpenWithExec(
+		t,
+		func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+			queried = true
+			return dbtest.QueryResult{
+				Columns: []string{"value"},
+				Rows:    [][]driver.Value{{int64(1)}},
+			}, nil
+		},
+		func(string, []driver.NamedValue) (driver.Result, error) {
+			return driver.RowsAffected(0), nil
+		},
+	)
+	runner := sqlrunner.Runner(db.SQL)
+	newReader := func(readerRunner sqlrunner.Runner) types.SchemaReader {
+		return &connectionSessionReader{runner: readerRunner}
+	}
+	conn := &DatabaseConnection{newReader: newReader}
+	executor := &connectionQueryExecutor{runner: runner}
+
+	scoped := conn.WithExecutor(executor)
+	_, err := scoped.Reader().ReadSchema()
+	_, execErr := scoped.ExecContext(t.Context(), "SET search_path = app")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(execErr, qt.IsNil)
+	c.Assert(queried, qt.IsTrue)
+	c.Assert(executor.executed, qt.Equals, "SET search_path = app")
+	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+}
+
+func TestDatabaseConnectionWithExecutor_DoesNotRebindUnavailableRunner(t *testing.T) {
+	c := qt.New(t)
+	root := &connectionSessionReader{}
+	conn := &DatabaseConnection{
+		reader: root,
+		newReader: func(runner sqlrunner.Runner) types.SchemaReader {
+			return &connectionSessionReader{runner: runner}
+		},
+	}
+	executor := new(connectionQueryExecutor)
+
+	scoped := conn.WithExecutor(executor)
+
+	c.Assert(scoped.Reader(), qt.Equals, types.SchemaReader(root))
 	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
 }
 
@@ -211,12 +284,10 @@ func captureResolutionReport(t *testing.T, level slog.Level, info types.DBInfo) 
 // version-aware selector.
 //
 // Every row asserts the same thing first: nothing is written at the level a
-// default command runs at. A saturated resolution is not an incident — the
-// integration matrix runs postgres:18, which is saturated against the
-// PostgreSQL 17 line, so a WARN there fires on every connection to a server
-// Ptah supports. It did, and it broke 25 subtests that assert a clean error
-// stream. cliobs.QuietDefaultLogger's contract is that a clean run emits
-// nothing at WARN or above; a supported server is a clean run.
+// default command runs at. A saturated resolution is not an incident, so a
+// WARN there would fire on every connection after a vendor ships a new major.
+// cliobs.QuietDefaultLogger's contract is that a clean run emits nothing at
+// WARN or above; a supported server is a clean run.
 //
 // The debug column is the other half: the fact is recorded, not dropped, and
 // `--log-level debug` shows it. The quiet row is the non-interference control
@@ -235,24 +306,39 @@ func TestReportCapabilityResolution(t *testing.T) {
 			wantDebugQuiet: true,
 		},
 		{
+			name:           "mysql current measured line says nothing at all",
+			info:           types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
+			wantDebugQuiet: true,
+		},
+		{
+			name:           "mariadb current measured line says nothing at all",
+			info:           types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
+			wantDebugQuiet: true,
+		},
+		{
+			name:           "postgres current measured line says nothing at all",
+			info:           types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
+			wantDebugQuiet: true,
+		},
+		{
 			name:      "mysql past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
-			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=26.7.0", "newest_measured=9.x"},
+			info:      types.DBInfo{Dialect: "mysql", Version: "99.0"},
+			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
 		},
 		{
 			name:      "mariadb past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
-			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=12.3.0-MariaDB", "newest_measured=11.x"},
+			info:      types.DBInfo{Dialect: "mariadb", Version: "99.0-MariaDB"},
+			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.3"},
 		},
 		{
 			name:      "postgres past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
-			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=17.x"},
+			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 99.0"},
+			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=18.x"},
 		},
 		{
 			name:      "an unparseable version stays a debug-level fallback",
 			info:      types.DBInfo{Dialect: "mysql", Version: "who knows"},
-			wantDebug: []string{"level=DEBUG", "falling back to dialect default capabilities"},
+			wantDebug: []string{"level=DEBUG", "falling back from an unmeasured server version"},
 		},
 	}
 	for _, tt := range tests {

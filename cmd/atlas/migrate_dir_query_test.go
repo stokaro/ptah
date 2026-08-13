@@ -173,8 +173,7 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 // binary does NOT do: measured on v1.3.0, `?format=totally-bogus` exits 1 with
 // `unknown dir format "totally-bogus"` on every verb that reads the query.
 func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
-	const want = `atlas migrate \w+ --dir: unknown Atlas migration directory format ` +
-		`"totally-bogus": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`
+	const want = `unknown dir format "totally-bogus"`
 
 	tests := []struct {
 		name string

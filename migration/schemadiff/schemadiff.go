@@ -48,6 +48,18 @@ func CompareWithDatabaseInfo(
 	info types.DBInfo,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, error) {
+	diff, _, err := compareWithDatabaseInfoReportingUndecidedAdditions(
+		generated, database, info, opts,
+	)
+	return diff, err
+}
+
+func compareWithDatabaseInfoReportingUndecidedAdditions(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	info types.DBInfo,
+	opts *config.CompareOptions,
+) (*difftypes.SchemaDiff, []coverage.Object, error) {
 	merged := config.DefaultCompareOptions()
 	if opts != nil {
 		*merged = *opts
@@ -60,31 +72,32 @@ func CompareWithDatabaseInfo(
 	// here instead, before anything is compared (stokaro/ptah#1312).
 	if generated != nil {
 		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
 	if !info.IdentifierSemantics.IsZero() &&
 		!info.IdentifierSemantics.Equal(semantics) {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"%w: invalid identifier semantics snapshot",
 			ptaherr.ErrInvalidSchemaDiff,
 		)
 	}
 	names := collectIdentifierNames(generated, database, semantics.DefaultSchema)
 	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := identifiervalidation.ValidateTarget(
 		generated,
 		info.Dialect,
 		semantics,
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	merged.IdentifierSemantics = &semantics
-	return CompareWithOptions(generated, database, merged), nil
+	diff, undecided := CompareReportingUndecidedAdditions(generated, database, merged)
+	return diff, undecided, nil
 }
 
 // CompareWithOptions performs schema comparison between generated and database schemas
@@ -198,7 +211,7 @@ func CompareReportingUndecidedAdditions(
 	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 
 	// Compare PostgreSQL extensions with configuration options
-	compare.Extensions(generated, database, diff, opts, cov)
+	compare.ExtensionsWithSemantics(generated, database, diff, opts, cov, identifierSemantics)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.FunctionsWithSemantics(generated, database, diff, identifierSemantics)

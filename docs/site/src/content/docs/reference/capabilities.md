@@ -22,6 +22,8 @@ Capabilities answer questions that a dialect name alone cannot answer:
   `enum_inline_column`, `enum_custom_type`
 - Can PostgreSQL-style concurrent indexes be emitted?
   `create_index_concurrently`, `drop_index_concurrently`
+- Can PostgreSQL emit `SPGIST` indexes with `INCLUDE` payload columns?
+  `index_include_spgist`
 - Does the target support roles, RLS, XML, or advisory locks?
   `role_management`, `row_level_security`, `xml_type`, `advisory_locks`
 - Which schema objects can this target host?
@@ -57,8 +59,10 @@ as views, materialized views, functions, and triggers.
 For the PostgreSQL family, that refusal path currently applies to Spanner. A
 role, grant, sequence, row-level security enablement, or policy is written as a
 named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a plan
-in silence. CockroachDB v26.2.5 and YugabyteDB 2026.1 were measured with live
-servers and accept those three categories, so their presets enable them.
+in silence. CockroachDB 25.4 and 26.2 plus YugabyteDB 2026.1 were measured with
+live servers and accept those three categories, so their presets enable them.
+CockroachDB's two measured resolver arms differ where the 25.4 server refuses
+generic and guarded `DROP CONSTRAINT` and `CREATE OR REPLACE TRIGGER`.
 
 A refused object is reported again every time the plan is rebuilt, rather than
 reported once and then called synced. The skip comment is not a change a
@@ -95,6 +99,11 @@ names are shortened deterministically before collision checks.
 The Go API exposes `capability.DefaultDialects()` for guards and UIs that must
 cover every normalized dialect with a default `capability.ForDialect` preset
 without maintaining a second list.
+
+`capability.IndexIncludeSPGiST` records PostgreSQL's version boundary for
+`SPGIST` indexes with `INCLUDE` payload columns. It is disabled for PostgreSQL
+12–13 and enabled for PostgreSQL 14 and newer; whole-schema and direct-AST
+rendering both consume the resolved key and fail closed on older servers.
 
 ## Declarative database testing
 

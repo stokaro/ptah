@@ -24,6 +24,10 @@ all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
 supported dialect.
 
+Relative schema-file inputs are confined to the process working directory after
+symbolic-link resolution; pass an absolute pathname for an intentional source
+outside it.
+
 ## Supported Shape
 
 The parser supports the schema-object subset that maps directly to Ptah's
@@ -58,7 +62,8 @@ current schema IR:
 - `default = sql("...")` as a default expression
 - `row_security` blocks inside `table` with `enabled = true` and an optional
   `comment`
-- PostgreSQL `extension` blocks with `if_not_exists`, `version`, and `comment`
+- PostgreSQL `extension` blocks with `schema`, `if_not_exists`, `version`, and
+  `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, `password`, and `comment`
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
@@ -84,6 +89,28 @@ current schema IR:
 - PostgreSQL `range` blocks with `subtype`, `subtype_opclass`, `collation`,
   `canonical`, `subtype_diff`, and `comment`
 - Ptah `data` blocks with a table reference, key columns, and a data-file path
+
+Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
+explicit schema declaration, even when an extension also refers to it, and is
+refused before SQL. To preserve an extension already installed in a
+server-owned namespace without requesting `CREATE SCHEMA`, write the placement
+as a string, for example `schema = "pg_catalog"`, and omit the schema block.
+Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
+`crdb_internal` namespace. Quoted lookalikes such as
+`schema "PG_CATALOG" {}` or `schema "CRDB_INTERNAL" {}` remain user schemas.
+
+The `extension.schema` attribute accepts an HCL string template or an exact
+one-name schema traversal such as `schema.extensions` or
+`schema["Extension Store"]`. A string template may evaluate declared variables;
+a direct `var.*` traversal, another object namespace such as `table.*`, and an
+over-qualified traversal such as `schema.extensions.extra` are refused instead
+of being reinterpreted as schema names.
+
+The two-label form `extension "extensions" "citext" {}` uses its first label
+as the installation schema. If the block also carries a `schema` attribute,
+that value must resolve exactly to the first label. An explicit empty value is
+still present, so `schema = ""` conflicts with a nonempty schema label; on the
+one-label form it explicitly selects the target's default schema.
 
 Unsupported schema semantics are rejected with an explicit parse error instead
 of being silently dropped from the generated Ptah IR.
@@ -473,8 +500,10 @@ rendering.
 
 ```hcl
 schema "public" {}
+schema "extensions" {}
 
 extension "pg_trgm" {
+  schema        = schema.extensions
   if_not_exists = true
   version       = "1.6"
   comment       = "trigram search"
@@ -583,10 +612,9 @@ permission {
 ```
 
 Ptah intentionally supports the subset it can round-trip through its IR. For
-example, `extension.schema`, `row_security.enforced`, materialized-view column
-blocks, trigger `execute` blocks, policy `as`, and permission targets other
-than `table`, `schema`, or `sequence` are rejected instead of being accepted and
-dropped.
+example, `row_security.enforced`, materialized-view column blocks, trigger
+`execute` blocks, policy `as`, and permission targets other than `table`,
+`schema`, or `sequence` are rejected instead of being accepted and dropped.
 Function arguments are accepted as Atlas `arg` blocks. Ptah also accepts a raw
 `params` string and rejects a function that mixes the two representations.
 
@@ -600,7 +628,6 @@ OSS.
 The HCL schema frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
-- `extension.schema`
 - forced row-level security (`row_security.enforced`)
 - grantor metadata
 - function options outside Ptah's current IR, such as `leakproof`, `parallel`,

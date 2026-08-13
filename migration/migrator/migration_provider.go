@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlashash"
 )
 
 // MigrationProvider provides a list of migrations
@@ -254,6 +255,21 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 		if hash := hashes[migrationFile.Path]; hash != "" && migrationFile.Direction == "up" {
 			parts.migration.Checksum = hash
 		}
+		raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
+		if err != nil {
+			return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+		}
+		_, hasHashEntry := hashes[migrationFile.Path]
+		ignored := atlashash.IsSumIgnored(raw)
+		parts.migration.atlasSumContributions = append(
+			parts.migration.atlasSumContributions,
+			atlasSumContribution{
+				name:          migrationFile.Path,
+				data:          raw,
+				includeData:   !ignored,
+				revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
+			},
+		)
 		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
 			return err
 		}
@@ -372,10 +388,11 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 
 func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.upTxModeErr != nil {
-			return migration.upTxModeErr
+		txMode := migration.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return txMode.err
 		}
-		return up.fn(ctx, conn, migration.upExecutionMode())
+		return up.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	migration.upSQLFunc = up.fn
 	migration.upHasStatementInterceptor = up.statementIntercepted
@@ -383,6 +400,8 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts
 	migration.UpTxMode = up.txMode
+	migration.upParsedTxMode = up.txMode
+	migration.upTxModeFromSQL = true
 	migration.upTxModeSource = up.txModeSource
 	migration.upTxModeErr = up.txModeErr
 	migration.upSourcePath = up.sourcePath
@@ -395,16 +414,19 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 
 func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		if migration.downTxModeErr != nil {
-			return migration.downTxModeErr
+		txMode := migration.parsedDownTxModeForDialect(databaseConnectionDialect(conn))
+		if txMode.err != nil {
+			return txMode.err
 		}
-		return down.fn(ctx, conn, migration.downExecutionMode())
+		return down.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
 	}
 	migration.downSQLFunc = down.fn
 	migration.downHasStatementInterceptor = down.statementIntercepted
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.DownTxMode = down.txMode
+	migration.downParsedTxMode = down.txMode
+	migration.downTxModeFromSQL = true
 	migration.downTxModeSource = down.txModeSource
 	migration.downTxModeErr = down.txModeErr
 	migration.downSourcePath = down.sourcePath

@@ -79,11 +79,12 @@ func atlasDirFormatSpelling(query url.Values) string {
 // reverse SQL as well as forward SQL, in five different shapes, and planned no
 // reverse at all.
 //
-// stokaro/ptah#1013 closed that. `migration/generator.ReverseSchemaDiff` is now
-// injected into the writer as [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanReverse],
-// the plan carries both directions, and each layout composes its own files. The
-// refusal is gone because the capability it stood in for arrived, which is the
-// only reason to remove a refusal of this kind.
+// stokaro/ptah#1013 closed that. The shared bidirectional generator plan is now
+// injected into the writer as
+// [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanBidirectional], the plan
+// carries both directions, and each layout composes its own files. The refusal
+// is gone because the capability it stood in for arrived, which is the only
+// reason to remove a refusal of this kind.
 //
 // What did NOT change is the position of the two checks around it:
 // [resolveWritingVerbDirFormat] still refuses an unparsable value ahead of the
@@ -106,9 +107,11 @@ func atlasDirFormatSpelling(query url.Values) string {
 // WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah refused every `--dir` query on
 // every verb until stokaro/ptah#1087 and #1135 relaxed it, on the eight verbs
 // that read the query, to match — `checkpoint`, `down`, `edit`, `rebase`, `rm`
-// and `test` register `--dir` and still refuse one, which is tracked in
-// stokaro/ptah#1013 and is why this doc says "the verbs this variable governs"
-// rather than "every verb". That refusal caught something real on its way out:
+// and `test` register `--dir` only on Ptah and still refuse one. Those richer
+// verbs are outside stokaro/ptah#1013's eight-verb CE contract; keeping their
+// generic query parsing fail closed is why this doc says "the verbs this
+// variable governs" rather than "every verb". That refusal caught something
+// real on its way out:
 // a misspelled key such as `?fromat=goose` selects nothing on either binary, so
 // the directory is read in the native Atlas layout while the operator believes
 // it is being read as Goose. Reaching parity means the default can no longer fail that run —

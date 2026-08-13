@@ -55,6 +55,11 @@ Internal packages worth knowing, none of them importable from another module:
 - `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
   selects between.
 - `internal/envbool` — the one grammar for boolean `PTAH_*` variables.
+- `internal/capabilityprobe` — the declared database release lines and the
+  probe that measures a live server against the preset each line claims.
+- `internal/capmatrix` — the tiered pipeline built on that declaration: the CI
+  fan-out, one cell's result, and the aggregation that fails when a declared
+  cell reports nothing.
 
 Command tree:
 
@@ -189,6 +194,34 @@ and its per-database variants such as `make integration-test-postgres`. Those
 targets bind fixed host ports and `make docker-clean` prunes system-wide Docker
 state, so look at what is already running before invoking either.
 
+### The version matrix
+
+Which database release lines Ptah covers as matrix cells is declared in exactly
+one place, `internal/capabilityprobe/cells.go`. Exact measured-line identifiers
+shared with the version resolver live in `internal/capabilityline`; the cell
+slice references those identifiers instead of duplicating their spelling.
+
+```bash
+# What the pipeline fans out over, and which declared lines it cannot run
+go run ./internal/cmd/capmatrix matrix
+
+# Fail when a declared line has no capability preset
+go run ./internal/cmd/capmatrix presets
+
+# Probe one cell against a server already listening for it
+go run ./internal/cmd/capmatrix probe --cell postgres-17
+
+# Keep the documented matrix tied to the declaration
+scripts/check-version-matrix.sh
+scripts/check-version-matrix.sh --write
+```
+
+`.github/workflows/capability-matrix.yml` runs the capability probe once per
+cell on every pull request, and `capability-matrix-nightly.yml` runs the
+integration suite over the same cells on a schedule. Both read the declaration
+through `capmatrix matrix`, so adding a release line is a data change: one
+literal in `cells.go`, then `scripts/check-version-matrix.sh --write`.
+
 Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
 script is committed without an executable bit, so `./test-ptah.sh` cannot be
 invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
@@ -227,13 +260,28 @@ through native `ptah` does not help someone porting a Pro pipeline.
 
 The shape that satisfies both:
 
-- the compatibility surface **defaults** to what the community binary accepts,
-  so drop-in output stays drop-in;
-- the fuller behavior stays reachable on that same surface behind a `PTAH_*`
-  environment variable -- never a new flag, because the conformance
-  `cli-surface` tier asserts flag parity with the pinned binary and an
-  environment variable is invisible to the help surface. Precedent:
-  `PTAH_ALLOW_EXTERNAL_SCHEMA`;
+- the normal compatibility surface keeps every implemented Atlas Pro-like and
+  best-effort capability reachable. This is the default, because
+  `ptah-compat` is also the migration path for those pipelines;
+- `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas CE-only policy for
+  oracle and conformance runs. It constructs the CE command and flag tree
+  before Cobra dispatch, refuses extension environment values, and rejects
+  authored or inspected content whose semantics CE cannot represent instead of
+  silently dropping it. A strict inspect, apply, or clean run refuses a live
+  Pro-only object before output or mutation. Strict schema workflows also
+  refuse YAML sources and an authored `schema apply` lint policy that their CE
+  execution path cannot enforce. Commands that execute, convert, or replay
+  migration bodies refuse Atlas txtar, Ptah directives, and SQL templates;
+  checksum-only migration reads preserve those bytes. The default profile
+  retains every extension;
+- strict mode rejects the known `PTAH_<FLAG>` twins and Ptah feature toggles
+  that would otherwise be ignored or restore an extension. It must not reject
+  an arbitrary `PTAH_*` name merely because of its prefix: `atlas.hcl` may read
+  ordinary user inputs through `getenv`, and those values are not product
+  feature switches;
+- the strict selector is an environment variable, never a new flag, because
+  the conformance `cli-surface` tier asserts flag parity with the pinned binary
+  and an environment variable is invisible to the help surface;
 - what the default leaves out is reported, not dropped in silence, so an
   operator is never told less than the truth about their database;
 - the capability is written down -- feature matrix row, user documentation, and
@@ -271,10 +319,13 @@ healthy pipeline. Validate on every invocation of the command or subsystem that
 recognizes the variable, and on no others: an invalid PostgreSQL-inspection
 variable must not break an unrelated SQLite command.
 
-Every boolean `PTAH_*` variable today opts IN to the more permissive side, so a
-typo lands on the strict default and fails closed. If one ever defaults to the
-permissive side, a typo on it fails OPEN and this stops being a usability rule.
-Do not add one.
+Boolean feature toggles opt in to the more permissive side, so a typo lands on
+the strict default and fails closed. `PTAH_ATLAS_STRICT_COMPAT` is the one
+policy selector that intentionally opts in to a narrower surface; it still
+defaults to the complete compatibility surface and malformed values fail
+before help, version, argument handling, configuration, filesystem, or database
+work. Do not add another restrictive boolean without documenting why it cannot
+be expressed as a capability gate.
 
 ### Compatibility with older Ptah is a different axis, and it is not owed
 

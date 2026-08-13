@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
@@ -27,7 +28,10 @@ const atlasNativeEnvPrefix = "PTAH"
 
 // atlasMigrateIntegrityRunner reads or writes the Atlas integrity file of a
 // migration directory laid out in a foreign tool's convention.
-type atlasMigrateIntegrityRunner func(*cobra.Command, atlasMigrateSource) error
+type atlasMigrateIntegrityRunner func(
+	*cobra.Command,
+	atlasMigrateSource,
+) error
 
 // atlasMigrateSource is the migration directory an integrity verb reads,
 // resolved once from both spellings Atlas accepts for the source layout.
@@ -78,6 +82,7 @@ type atlasMigrateSource struct {
 // same resolver `migrate apply` uses, so the three verbs cannot drift on which
 // spelling wins.
 func newAtlasMigrateIntegrityCommand(
+	policy atlascompatpolicy.Policy,
 	verb atlasVerb,
 	run atlasMigrateIntegrityRunner,
 ) *cobra.Command {
@@ -91,6 +96,11 @@ func newAtlasMigrateIntegrityCommand(
 		defer func() {
 			runErr = errors.Join(runErr, cleanup.Close())
 		}()
+		// The unknown-format adaptation used to be an errors.As block here,
+		// which is why it reached `migrate hash` and `migrate validate` and no
+		// other verb. It now lives on the refusal itself, inside
+		// resolveAtlasMigrateSource, so `migrate new` -- which shares that
+		// resolver but not this wrapper -- gets it too.
 		source, err := resolveAtlasMigrateSource(cmd, verb, args, cleanup)
 		if err != nil {
 			return err
@@ -115,7 +125,22 @@ func newAtlasMigrateIntegrityCommand(
 		if err := checkAtlasMigrateSourceArgs(cmd, verb, source.projectArgs); err != nil {
 			return err
 		}
-		if atlasmigrate.ReadsNativeAtlasDir(source.format) {
+		directStrictReplay := policy.IsStrictCE() &&
+			verb.use == atlasMigrateValidateVerb().use &&
+			source.devURL != ""
+		// A --dev-url this surface refuses is answered on the direct branch too,
+		// and the reason is ordering rather than wording. Measured on the pinned
+		// community binary v1.3.0 on 2026-08-13, `migrate validate` against an
+		// UNHASHED directory with `--dev-url notadriver://x` prints `checksum
+		// file not found`, so the URL must be settled after the integrity gate.
+		// Only the direct branch runs that gate before it reaches the URL; a
+		// refusal placed in this wrapper, in front of the forward, would answer
+		// the driver on a directory the community binary answers the checksum on.
+		// The forwarded native command owns its own, clearer wording for the same
+		// value, which is why this cannot simply be left to it.
+		directRefusedDevURL := verb.use == atlasMigrateValidateVerb().use &&
+			atlasDevURLDriverDiagnostic(source.devURL) != nil
+		if atlasmigrate.ReadsNativeAtlasDir(source.format) && !directStrictReplay && !directRefusedDevURL {
 			return forward(cmd, source.forwardArgs)
 		}
 		// Only the directly executed path can report what the project file
@@ -185,8 +210,7 @@ func resolveAtlasMigrateSource(
 	configured, _ := atlasNativeArgValue(mapped, atlasVerbNativeName(verb, "dir-format"))
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, localDir.Query)
 	if err != nil {
-		return atlasMigrateSource{}, fmt.Errorf(
-			"atlas migrate %s %s: %w",
+		return atlasMigrateSource{}, atlasDirFormatError(
 			verb.use,
 			atlasDirFormatSpelling(localDir.Query),
 			err,

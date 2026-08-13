@@ -28,6 +28,75 @@ results. They do not, by themselves, prove every Atlas OSS command, flag,
 dialect feature, and output mode. Use the comparison gap register for product
 and coverage gaps that are outside the current measured corpus.
 
+## CE oracle policy
+
+Atlas CE comparisons run the compatibility binary with
+`PTAH_ATLAS_STRICT_COMPAT=1`. That opt-in policy constructs the CE command and
+flag tree and refuses extension inputs or inspected live objects before output
+or mutation. The normal `ptah-compat` surface does not set it and retains
+implemented Atlas Pro-like and best-effort capabilities.
+
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
+strict inventory through the transaction session, compares the rebuilt cleanup
+plan with the confirmed plan, and refuses catalog drift before the first drop.
+A trigger, policy, view, or foreign key created while the prompt is open cannot
+disappear with its table.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply` lint
+policy that the CE execution path cannot enforce. Commands that execute,
+convert, or replay migration bodies refuse Atlas txtar, every Ptah directive —
+including malformed or bare `-- +ptah` markers — and SQL templates;
+checksum-only reads preserve those bytes. Desired migration directories are
+captured and validated before a target or dev database is opened or a migration
+lock is acquired, and replay uses that same stable snapshot. Default mode keeps
+the extensions.
+
+After a target connection opens, strict `schema apply` inventories an explicit
+`--schema` scope before acquiring the apply lock or replaying a desired
+migration directory. Without that explicit scope, a PostgreSQL-family target
+inventories the user realm because desired replay may name a schema beyond the
+URL's `search_path`. The locked planning phase validates it again before
+producing or executing a plan. Default mode performs no supplemental
+strict-policy inventory.
+
+Strict process startup also rejects both Atlas-facing `PTAH_*` flag bindings
+and native aliases consumed after forwarding, such as
+`PTAH_MIGRATIONS_DIR`. Ordinary environment variables used by `getenv` in
+`atlas.hcl` remain available.
+
+A required companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must keep the two environments separate: CE parity probes inject strict mode
+into each subprocess, while Pro-retention and native Ptah probes leave it
+absent. Until that change lands, invoke CE probes with per-process injection
+rather than enabling strict mode for the whole harness. Strict mode still keeps
+deliberate safety and correctness improvements, so a green result never
+depends on copying a CE behavior that silently drops authored content or
+corrupts migration state.
+
+### SQL inspect statement terminators
+
+Finding 4.6 in
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) was measured
+on August 7, 2026, against the pinned Atlas CE v1.3.0 binary:
+
+| Result | Empty SQLite database | Populated SQLite database |
+| --- | --- | --- |
+| Atlas CE v1.3.0 | 0 bytes | no semicolon-only lines |
+| Ptah before | `;\n` | a semicolon-only line after every statement |
+| Ptah now | 0 bytes | no semicolon-only lines |
+
+The shared report serializer now keeps each renderer-produced statement
+verbatim instead of adding another terminator. An indent argument still
+prefixes every line of nonempty SQL, while empty SQL stays empty. Exact tests
+cover `ptah schema inspect --format sql`, the Atlas-compatible
+`ptah-compat schema inspect --format '{{ sql . }}'`, and HCL and JSON controls.
+This closes only finding 4.6; the issue's comment, indentation, view, and object
+ordering findings remain separate.
+
 ## How to read green and red checks
 
 The conformance repository separates regression budgets from full parity:
@@ -45,6 +114,32 @@ Even when both regression-budget and full-conformance checks are green, the
 claim is limited to the corpus represented by the generated reports. Expanding
 live and differential coverage is tracked in
 [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167).
+
+## `migrate new` success streams
+
+Findings 3.1 and 3.2 in
+[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) were measured
+against the pinned Atlas CE v1.3.0 binary on August 11, 2026. Both tools exit 0
+and write the same migration and `atlas.sum` artifacts; only their process
+output differed.
+
+| Directory layout | Pinned binary | Ptah before | Ptah now |
+| --- | --- | --- | --- |
+| Atlas | Stdout and stderr are byte-empty | Stdout names the migration by absolute path | Both streams are byte-empty |
+| Converted | Stdout and stderr are byte-empty | Stdout names one or two migrations by absolute path | Both streams are byte-empty |
+
+The change is limited to the `ptah-compat migrate new` adapter. Migration
+names, file contents, `atlas.sum`, editor execution, warnings, and failure
+diagnostics remain unchanged. Native `ptah migrations create` still reports the
+paths it creates.
+
+Re-run the focused evidence from the Ptah repository:
+
+```bash
+go test ./cmd/atlas -run '^TestCompatMigrateNew' -count=1
+go test ./cmd/ptah-compat -run '^TestCompatBinaryMigrateNew' -count=1
+go test ./cmd/ptah -run '^TestPtahNativeMigrationsCreateKeepsSuccessReport$' -count=1
+```
 
 ## Workflow parity
 
@@ -119,15 +214,25 @@ make conformance
 
 Ptah's own CI also rebuilds the pinned Atlas CE oracle from an immutable source
 archive on every run. It verifies the release tag's locked commit, the archive
-SHA-256, and exact version output. It then runs differential migration-sum
-tests, regenerates the recorded corpus, and fails if the committed corpus
-changes. This is a black-box executable used only by tests; Atlas source and
-compiled code are not imported, vendored, or linked into Ptah.
+SHA-256, and exact version output. It then runs the migration-directory query
+contract and migrate-apply interoperability controls through both command-line
+processes, runs differential migration-sum tests, regenerates the recorded
+corpus, and fails if the committed corpus changes. This is a black-box
+executable used only by tests; Atlas source and compiled code are not imported,
+vendored, or linked into Ptah.
 
 Atlas Cloud and commercial binaries are outside this oracle workflow.
 
 ```bash
 scripts/build-atlas-ce-oracle.sh
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/migratedirquery
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/migrateapply
 GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   PTAH_ATLAS_FUZZ_N=200 \

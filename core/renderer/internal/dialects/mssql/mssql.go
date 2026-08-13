@@ -250,6 +250,19 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+// VisitCreateSequence names the sequence Ptah declines to generate for SQL
+// Server. It does NOT claim SQL Server has no sequences -- it has had them since
+// 2012, and the T-SQL spelling is close enough to the standard that emitting one
+// would be easy.
+//
+// What is missing is the other two thirds. capability.SQLServer2022 sets
+// Sequences: false because internal/dbschema/mssql does not read sequences back
+// into goschema.Database.Sequences and internal/planner/dialects/mssql plans
+// nothing for them, so a CREATE SEQUENCE emitted here would be a statement
+// `schema apply` never plans and `db read` never sees again: an apply loop that
+// re-adds the same object forever. core/renderer.TestRender_SequencesCapability
+// AgreesWithTheGenerator holds the two sides together, so flipping this to emit
+// requires the reader and the planner to land in the same change.
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	r.notSupported("CREATE SEQUENCE", node.Name)
 	return nil
@@ -417,12 +430,33 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return nil
 }
 
+// notSupported records that Ptah does not generate the named object for a SQL
+// Server target.
+//
+// The sentence is about the generator, not about the engine, and that is the
+// whole point of the wording. It used to read "... is not supported", which is
+// a claim about SQL Server, and on this renderer several of those claims are
+// false: SQL Server has had CREATE SEQUENCE since 2012, it has database roles,
+// it has scalar and table-valued functions, it has alias types (CREATE TYPE
+// <name> FROM <base>), and it has row-level security through security policies.
+// Ptah declines all of them for a reason that has nothing to do with the
+// engine: capability.SQLServer2022 leaves Sequences, RoleManagement and
+// RowLevelSecurity off because there is no SQL Server reader and no SQL Server
+// planner for those kinds, and a CREATE the reader never sees again and the
+// planner never plans is a schema that cannot converge -- the same reason
+// capability.MariaDB1011 keeps Sequences off for an engine that has had them
+// since 10.3.
+//
+// Getting that sentence right became load-bearing when the converter stopped
+// gating emission by dialect name: before, these nodes were deleted before they
+// reached this renderer, so a false diagnostic was invisible. Now every declared
+// object arrives here (stokaro/ptah#929 item 5).
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
-		r.w.WriteLinef("-- SQLSERVER: %s is not supported", feature)
+		r.w.WriteLinef("-- SQLSERVER: %s is not generated for this target; skipped.", feature)
 		return
 	}
-	r.w.WriteLinef("-- SQLSERVER: %s %q is not supported", feature, name)
+	r.w.WriteLinef("-- SQLSERVER: %s %q is not generated for this target; skipped.", feature, name)
 }
 
 func renderColumn(column *ast.ColumnNode) (string, error) {

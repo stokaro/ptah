@@ -9,21 +9,26 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// `migrate down` is the one verb that reads a NATIVE Atlas migration directory,
-// executes SQL from it, and sits outside the stokaro/ptah#974 integrity gate.
+// `migrate down` reads a NATIVE Atlas migration directory and executes rollback
+// SQL from it, and until this change it sat outside the stokaro/ptah#974
+// integrity gate — the one verb in that position.
 //
-// It is not a parity divergence. Measured 2026-08-03, the pinned community
-// binary v1.3.0 answers `'atlas migrate down' is not supported by the community
-// version`, so there is no behavior to match and no oracle to measure against.
-// That is exactly why it needs a test: an ungated mutating verb with no oracle
-// is invisible to scripts/probe-atlas-integrity-verbs.sh, which compares the two
-// tools, and it was missing from the enumeration in the compat migrate-commands
-// page for that reason.
+// Its absence was never a parity divergence. Measured 2026-08-03, the pinned
+// community binary v1.3.0 answers `'atlas migrate down' is not supported by the
+// community version`, so there is no behavior to match and no oracle to measure
+// against. That is exactly why it needed a test: an ungated mutating verb with
+// no oracle is invisible to scripts/probe-atlas-integrity-verbs.sh, which
+// compares the two tools.
 //
-// The two assertions below move together on purpose. Gating `migrate down`
-// later is a defensible decision; doing it while the page still tells readers
-// that `down` reports normally is not, and the pair is what stops the
-// enumeration and the behavior from drifting apart again.
+// Having no oracle is also why gating it is permitted rather than blocked.
+// Compatibility policy (a) forbids exiting 0 where the community binary exits
+// 1, and refusing cannot violate that; policy (b) says matching is the floor
+// and not the ceiling, which is what a verb with no oracle at all leaves room
+// for.
+//
+// The two assertions below move together on purpose. The behavior and the
+// enumeration in the compat migrate-commands page change in the same commit,
+// which is what stops them from drifting apart again.
 
 const atlasSumSectionHeading = "### Which verbs enforce `atlas.sum`"
 
@@ -54,14 +59,27 @@ func TestCompatMigrateDown_NamedInAtlasSumEnumeration(t *testing.T) {
 	c.Assert(atlasSumSectionBody(c), qt.Contains, "`down`")
 }
 
-// TestCompatMigrateDown_UngatedOnDirectoryStatusRefuses is the measurement the
-// enumeration line describes, asserted on one directory so the two verbs cannot
+// TestCompatMigrateDown_RefusesWhereStatusRefuses is the measurement the
+// enumeration line describes, asserted on ONE directory so the two verbs cannot
 // be compared across different fixtures.
 //
-// This is a BOUNDARY row, not a discriminator: it passes with and without #974,
-// because #974 did not touch `migrate down`. It fails the day `down` is gated,
-// which is the point — that day the page has to change with it.
-func TestCompatMigrateDown_UngatedOnDirectoryStatusRefuses(t *testing.T) {
+// It used to assert the opposite. Until this change `down` read the same
+// directory `status` refuses and reported normally at exit 0, and the row was
+// written as a boundary marker whose comment said it would fail the day `down`
+// was gated. That day is this change: `down` executes rollback SQL from the
+// directory, so it is a member of the executing class and gates with the rest
+// of it.
+//
+// The two verbs still refuse through different machinery, and the assertions
+// are deliberately not identical because of it. `status` runs the compat gate
+// and reproduces the community binary's stdout guidance block byte for byte.
+// `down` has no community behavior to reproduce — the pinned binary v1.3.0
+// answers `'atlas migrate down' is not supported by the community version` —
+// so the default forward inherits the NATIVE refusal from
+// `ptah migrations down`, which names ptah's own drift report instead. Pinning
+// `status`'s exact bytes onto `down` would invent a parity claim that has no
+// oracle behind it.
+func TestCompatMigrateDown_RefusesWhereStatusRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m")
@@ -82,10 +100,11 @@ func TestCompatMigrateDown_UngatedOnDirectoryStatusRefuses(t *testing.T) {
 	c.Assert(statusErr, qt.IsNotNil)
 	c.Assert(statusErr.Error(), qt.Equals, "checksum mismatch")
 	c.Assert(statusOut, qt.Equals, atlasChecksumGuidanceWith("L2: "+statusIntegrityMigration+" was edited"))
-	// down reads the same directory and reports normally. The positive
-	// assertion is load-bearing: without it, "no checksum text" would also hold
-	// for output that was never captured.
-	c.Assert(downErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", downOut, downErrOut))
-	c.Assert(downOut, qt.Contains, "=== MIGRATE DOWN ===")
-	c.Assert(downOut, qt.Not(qt.Contains), "checksum")
+	// down now refuses the same directory. The negative assertion on the banner
+	// is load-bearing: it is what separates "refused before executing" from
+	// "started the rollback and failed partway through".
+	c.Assert(downErr, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", downOut, downErrOut))
+	c.Assert(downErr.Error(), qt.Contains, "migration sum verification failed")
+	c.Assert(downErr.Error(), qt.Contains, statusIntegrityMigration)
+	c.Assert(downOut, qt.Not(qt.Contains), "=== MIGRATE DOWN ===")
 }

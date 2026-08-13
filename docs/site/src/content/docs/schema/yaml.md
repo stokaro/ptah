@@ -25,6 +25,10 @@ tables:
       accounts_email_key:
         fields: [email]
         unique: true
+extensions:
+  pgcrypto:
+    schema: extensions
+    if_not_exists: true
 ```
 
 ## Render it
@@ -38,6 +42,10 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 Expected output includes:
 
 ```sql
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+
 CREATE TABLE "accounts" (
   "id" SERIAL PRIMARY KEY NOT NULL,
   "email" VARCHAR(255) NOT NULL
@@ -51,6 +59,10 @@ accepted wherever Ptah needs a desired schema: `ptah schema render`,
 `ptah schema compare`, `ptah schema drift`, the migration commands
 (`ptah migrations plan` / `ptah migrations generate`), and the API targets of
 [`ptah schema export`](../export/#sources).
+
+Relative `--schema-file` inputs are confined to the process working directory
+after symbolic-link resolution; use an absolute pathname for an intentional
+source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
 
 ## Use it for migrations
 

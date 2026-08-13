@@ -10,6 +10,7 @@ package capabilityprobe
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"testing"
@@ -121,10 +122,101 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	}
 }
 
+func TestIndexIncludeSPGiSTObservation(t *testing.T) {
+	c := qt.New(t)
+
+	accepted := Attempt{Statement: "CREATE INDEX", Accepted: true}
+	inspected := Attempt{Statement: "SELECT index metadata", Accepted: true}
+	for _, tc := range []struct {
+		name      string
+		created   Attempt
+		inspected Attempt
+		matches   int64
+		want      observation
+	}{
+		{
+			name:    "create rejection proves the capability false",
+			created: Attempt{Statement: "CREATE INDEX", ServerErr: "syntax error"},
+			want:    decided(false),
+		},
+		{
+			name:      "metadata failure after acceptance is undecidable",
+			created:   accepted,
+			inspected: Attempt{Statement: "SELECT index metadata", ServerErr: "catalog unavailable"},
+			want: cannotDecide(
+				"the index statement was accepted but metadata inspection %q failed (%s), so the run cannot tell "+
+					"whether the requested SP-GiST INCLUDE shape was created",
+				"SELECT index metadata", "catalog unavailable",
+			),
+		},
+		{
+			name:      "exact semantic shape proves the capability true",
+			created:   accepted,
+			inspected: inspected,
+			matches:   1,
+			want:      decided(true),
+		},
+		{
+			name:      "accepted but absent semantic shape is false",
+			created:   accepted,
+			inspected: inspected,
+			want: annotated(false,
+				"the index statement was accepted but metadata found no SP-GiST index with exactly one key and one "+
+					"included column, so the server did not preserve the requested semantics",
+			),
+		},
+		{
+			name:      "multiple exact shapes violate the unique-name invariant",
+			created:   accepted,
+			inspected: inspected,
+			matches:   2,
+			want: cannotDecide(
+				"the index statement was accepted but metadata found %d exact SP-GiST index shapes with one key and one "+
+					"included column; more than one match violates the probe's unique-name invariant",
+				2,
+			),
+		},
+	} {
+		c.Run(tc.name, func(c *qt.C) {
+			got := indexIncludeSPGiSTObservation(tc.created, tc.inspected, tc.matches)
+			c.Assert(got, qt.Equals, tc.want)
+		})
+	}
+}
+
+func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
+	c := qt.New(t)
+
+	for _, tc := range []struct {
+		name    string
+		created Attempt
+		want    observation
+	}{
+		{
+			name:    "rejection proves the capability false",
+			created: Attempt{Statement: "CREATE INDEX", ServerErr: "syntax error"},
+			want:    decided(false),
+		},
+		{
+			name:    "unexpected acceptance is undecidable",
+			created: Attempt{Statement: "CREATE INDEX", Accepted: true},
+			want: cannotDecide(
+				"the index statement was accepted, but this dialect has no portable metadata proof that the payload " +
+					"is a non-key included column; syntax acceptance alone does not establish SP-GiST INCLUDE support",
+			),
+		},
+	} {
+		c.Run(tc.name, func(c *qt.C) {
+			got := uninspectableIndexIncludeSPGiSTObservation(tc.created)
+			c.Assert(got, qt.Equals, tc.want)
+		})
+	}
+}
+
 // TestDecidable_IsDerivedFromThePlanAndTheLine pins the floor's derivation
-// against what live servers actually decided on 2026-08-09: postgres:17 decided
-// 24 of 24, mysql:9.7 decided 23, mariadb:10.11 decided 22. Those runs are the
-// reason the floor can be this strict without failing a healthy server.
+// against the current registry, plan and preset prerequisites: postgres:17
+// owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
+// 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	c := qt.New(t)
 
@@ -132,10 +224,12 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		cell Cell
+		caps capability.Capabilities
 		want int
 	}{{
 		name: "postgres declares nothing undecidable, so every registered row is owed",
 		cell: measuredCell,
+		caps: capability.Postgres17(),
 		want: registered,
 	}, {
 		name: "mysql owes one fewer: role_management names a surface no MySQL path reads",
@@ -144,6 +238,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
+		caps: capability.MySQL84(),
 		want: registered - 1,
 	}, {
 		name: "mariadb owes two fewer: sequences is a claim about the generator, not the engine",
@@ -152,22 +247,34 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
+		caps: capability.MariaDB1011(),
 		want: registered - 2,
 	}, {
-		name: "a directly measured release line owes the plan even when its resolver is banner-based",
+		name: "cockroachdb 26.2 owes every row because its preset enables both experiment prerequisites",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
-			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
-			Refinement: RefinedByMeasuredLine,
+			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
+			Refinement: RefinedByVersion,
 		},
+		caps: capability.CockroachDB26(),
 		want: registered,
 	}, {
-		name: "a banner-refined line owes nothing, because no observation there can be credited to it",
+		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "25.4",
-			Preset: capability.CockroachDB23, PresetName: "CockroachDB23",
+			Preset: capability.CockroachDB25, PresetName: "CockroachDB25",
+			Refinement: RefinedByVersion,
+		},
+		caps: capability.CockroachDB25(),
+		want: registered - 1,
+	}, {
+		name: "a banner-refined line owes nothing because no observation can be credited to it",
+		cell: Cell{
+			Dialect: platform.YugabyteDB, Line: "2025.2",
+			Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
 			Refinement: RefinedByBanner,
 		},
+		caps: capability.YugabyteDB25(),
 		want: 0,
 	}, {
 		name: "a line with no measured preset owes nothing either",
@@ -176,12 +283,13 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 			Note:       "no measured MySQL 26 preset",
 		},
+		caps: capability.MySQL84(),
 		want: 0,
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
 			dialectPlan, ok := planFor(tc.cell.Dialect)
 			c.Assert(ok, qt.IsTrue)
-			report := reportOn(tc.cell, true, capability.Postgres17())
+			report := reportOn(tc.cell, true, tc.caps)
 			c.Assert(decidable(report, dialectPlan), qt.Equals, tc.want)
 		})
 	}
@@ -409,7 +517,7 @@ func TestReportErr(t *testing.T) {
 // TestReportErr_TheFloorIsWhatThePlanPromised covers the erosion a
 // "decided at least one row" guard cannot see.
 //
-// A run that answered one row of twenty-four is not a run that measured this
+// A run that answered one row of twenty-five is not a run that measured this
 // server, and before the floor existed it exited zero. The rows below move the
 // decided count around a fixed promise, so the boundary is exercised from both
 // sides rather than only from the failing one.
@@ -432,19 +540,28 @@ func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
 		build: func() *Report {
 			return promisedReport(registered, capability.XMLType)
 		},
-		want: `(?s).*decided 23 of 24 capability rows, 1 fewer than the 24 the postgres plan promised to answer.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided %d of %d capability rows, 1 fewer than the %d the postgres plan promised to answer.*`,
+			registered-1, registered, registered,
+		),
 	}, {
-		name: "the shape the old floor let through: one row decided out of twenty-four",
+		name: "the shape the old floor let through: one row decided out of twenty-five",
 		build: func() *Report {
 			return promisedReport(registered, everyKeyExcept(capability.XMLType)...)
 		},
-		want: `(?s).*decided 1 of 24 capability rows, 23 fewer than the 24 the postgres plan promised to answer.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided 1 of %d capability rows, %d fewer than the %d the postgres plan promised to answer.*`,
+			registered, registered-1, registered,
+		),
 	}, {
 		name: "a plan that promised nothing still may not decide nothing",
 		build: func() *Report {
 			return promisedReport(0, everyKeyExcept()...)
 		},
-		want: `(?s).*decided 0 of 24 capability rows; a probe that measured nothing.*`,
+		want: fmt.Sprintf(
+			`(?s).*decided 0 of %d capability rows; a probe that measured nothing.*`,
+			registered,
+		),
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
 			assertErrMatches(c, tc.build().Err(), tc.want)

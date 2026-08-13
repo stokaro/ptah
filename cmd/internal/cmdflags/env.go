@@ -16,9 +16,40 @@ import (
 
 const (
 	disableEnvAnnotation   = "ptah.env.disabled"
+	forwardedEnvAnnotation = "ptah.env.forwarded"
 	installedEnvAnnotation = "ptah.env.installed"
 	appliedEnvAnnotation   = "ptah.env.applied"
 )
+
+// AddForwardedEnvBinding records an environment variable the command's native
+// forwarding target will bind after Atlas arguments are mapped. It does not
+// advertise or apply that variable on the adapter flag itself; policy
+// preflights use the annotation to account for work reachable only after
+// dispatch.
+func AddForwardedEnvBinding(flags *pflag.FlagSet, name, envName string) error {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return fmt.Errorf("flag %q does not exist", name)
+	}
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[forwardedEnvAnnotation] = append(
+		flag.Annotations[forwardedEnvAnnotation],
+		envName,
+	)
+	return nil
+}
+
+// ForwardedEnvBindings returns environment variables consumed by a flag's
+// native forwarding target. The returned slice is detached from pflag's
+// annotation storage.
+func ForwardedEnvBindings(flag *pflag.Flag) []string {
+	if flag == nil {
+		return nil
+	}
+	return slices.Clone(flag.Annotations[forwardedEnvAnnotation])
+}
 
 // DisableEnvBinding makes a flag explicit-only even when the command tree has
 // Ptah environment binding installed.
@@ -235,6 +266,16 @@ func MutuallyExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error
 func EnvName(prefix, flagName string) string {
 	name := strings.NewReplacer("-", "_", ".", "_").Replace(flagName)
 	return strings.ToUpper(prefix + "_" + name)
+}
+
+// EnvBindingName returns the environment variable bound to flag when generic
+// binding is installed with prefix. Explicit-only flags and help have no
+// binding.
+func EnvBindingName(prefix string, flag *pflag.Flag) (string, bool) {
+	if flag == nil || flag.Name == "help" || envBindingDisabled(flag) {
+		return "", false
+	}
+	return EnvName(prefix, flag.Name), true
 }
 
 func usageContainsEnv(usage string) bool {

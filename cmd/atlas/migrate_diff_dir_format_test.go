@@ -88,8 +88,10 @@ func runCompatDiff(c *qt.C, query string, dirFormat []string) (wrote bool, err e
 // wrong reason: a `migrate diff` broken for an unrelated reason fails it too,
 // rather than reporting three green refusals.
 func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
-	const want = `atlas migrate diff --dir-format: unknown Atlas migration directory format ` +
-		`"[^"]*": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`
+	// The rejected value is quoted verbatim in the community binary's own
+	// wording, which is what this surface now prints; the semantic diagnostic
+	// stays reachable through the chain. See migrate_dir_format_error.go.
+	const want = `unknown dir format "[^"]*"`
 
 	tests := []struct {
 		name  string

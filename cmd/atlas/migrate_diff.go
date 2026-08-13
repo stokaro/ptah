@@ -1,6 +1,8 @@
 package atlas
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -11,8 +13,10 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -24,8 +28,15 @@ import (
 )
 
 type atlasMigrateDiffOptions struct {
-	toURLs      []string
-	devURL      string
+	toURLs []string
+	devURL string
+	// devURLGiven records whether the operator supplied a dev database URL by
+	// either spelling, which is a different question from whether devURL is
+	// empty. The pinned community binary refuses an absent `--dev-url` with
+	// cobra's required-flag wording and answers an explicitly empty one with the
+	// client layer's missing-driver verdict, so the two rows need both facts.
+	// See [requireAtlasDevURL].
+	devURLGiven bool
 	dirURL      string
 	dirFormat   string
 	format      string
@@ -34,10 +45,31 @@ type atlasMigrateDiffOptions struct {
 	dryRun      bool
 	qualifier   string
 	edit        bool
+	policy      atlascompatpolicy.Policy
 }
 
-func newAtlasMigrateDiffCommand() *cobra.Command {
-	opts := atlasMigrateDiffOptions{}
+type atlasMigrateDiffRunner func(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	atlasmigrate.DiffOptions,
+) (atlasmigrate.DiffResult, error)
+
+func newAtlasMigrateDiffCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	return newAtlasMigrateDiffCommandWithPolicyAndRunner(
+		policy,
+		atlasmigrate.GenerateDiff,
+	)
+}
+
+func newAtlasMigrateDiffCommandWithRunner(run atlasMigrateDiffRunner) *cobra.Command {
+	return newAtlasMigrateDiffCommandWithPolicyAndRunner(atlascompatpolicy.Full(), run)
+}
+
+func newAtlasMigrateDiffCommandWithPolicyAndRunner(
+	policy atlascompatpolicy.Policy,
+	run atlasMigrateDiffRunner,
+) *cobra.Command {
+	opts := atlasMigrateDiffOptions{policy: policy}
 	cmd := &cobra.Command{
 		Use:   "diff [flags] [name]",
 		Short: "Compute migration diff against a desired schema",
@@ -68,7 +100,7 @@ diff policy values.`,
 			if len(args) == 1 {
 				name = args[0]
 			}
-			return runAtlasMigrateDiff(cmd, opts, name)
+			return runAtlasMigrateDiff(cmd, opts, name, run)
 		},
 	}
 	flags := cmd.Flags()
@@ -100,6 +132,7 @@ func runAtlasMigrateDiff(
 	cmd *cobra.Command,
 	opts atlasMigrateDiffOptions,
 	name string,
+	run atlasMigrateDiffRunner,
 ) (runErr error) {
 	formatConfigured := cmd.Flags().Changed("format")
 	// dirURLSpelled is --dir as the command line, its environment twin and the
@@ -140,15 +173,20 @@ func runAtlasMigrateDiff(
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	// Captured after the atlas.hcl merge, because an env supplying `dev` counts
+	// as having given the flag: the pinned binary runs such an invocation rather
+	// than refusing it.
+	opts.devURLGiven = atlasDevURLGiven(cmd, opts.devURL)
 	// This verb creates the directory it was pointed at, so it requires the
 	// scheme the community binary requires: `migrate diff demo --dir mig2` exits
 	// 1 there with `missing scheme for dir url. Did you mean "file://mig2"?` and
 	// creates nothing, measured on the pinned v1.3.0 on 2026-08-06. The flag's
 	// own default carries `file://`, so an omitted --dir passes.
 	//
-	// The read verbs still accept a scheme-less --dir, and so does a directory
-	// named by atlas.hcl on either writing verb; that half is stokaro/ptah#1186
-	// and is deliberately not closed here.
+	// Hash, validate, status and lint apply the same requirement to their
+	// command-line --dir. A directory named by atlas.hcl on either writing verb
+	// remains separate work in stokaro/ptah#1186 and is deliberately not closed
+	// here.
 	if err := atlasargs.RequireDirScheme(dirURLSpelled); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -172,8 +210,8 @@ func runAtlasMigrateDiff(
 	// [resolveWritingVerbDirFormat] for the measured table.
 	dirFormat, err := resolveWritingVerbDirFormat(opts.dirFormat, localDir.Query)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"atlas migrate diff %s: %w",
+		return cmdutil.Fail(cmd, atlasDirFormatError(
+			"diff",
 			atlasDirFormatSpelling(localDir.Query),
 			err,
 		))
@@ -191,6 +229,9 @@ func runAtlasMigrateDiff(
 	// both call clean.
 	if err := verifyAtlasWriteDirChecksum(cmd, project, localDir, dirFormat); err != nil {
 		return err
+	}
+	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy, opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
 	}
 	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
 	if err != nil {
@@ -211,6 +252,14 @@ func runAtlasMigrateDiff(
 	desired, err := prepareAtlasMigrateDiffSource(opts, dirFormat, projectEnv)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
+	if err := desired.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+	}
+	desired, err = desired.PrepareMigrationSource(migrationSourceValidator)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 	}
 	qualifier, err := atlasmigrate.ParseQualifier(opts.qualifier)
 	if err != nil {
@@ -246,7 +295,7 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	diffResult, err := atlasmigrate.GenerateDiff(cmd.Context(), conn, atlasmigrate.DiffOptions{
+	diffResult, err := run(cmd.Context(), conn, atlasmigrate.DiffOptions{
 		Dir: migrationsDir,
 		// The same handle the preflight gate captured through. Handing it to the
 		// writer is what keeps the publication bound to the project root the
@@ -264,20 +313,29 @@ func runAtlasMigrateDiff(
 		// The writer converts the existing directory through it, names and
 		// composes the new files in it, and hashes its covered set.
 		DirFormat: dirFormat,
-		// The reverse rule `migration/generator` has always applied to its own
-		// `.down.sql` half, injected rather than imported: that package imports
-		// this command tree's library half in ten places, so the dependency
-		// cannot be pointed the other way (stokaro/ptah#1013). Every layout but
-		// the native Atlas one carries a rollback half, and this is what fills
-		// it.
-		PlanReverse:        generator.ReverseSchemaDiff,
-		Schemas:            opts.schemas,
-		LockTimeout:        lockTimeout,
-		Policy:             policy,
-		Qualifier:          qualifier,
-		DryRun:             opts.dryRun,
-		Vars:               schemaVars,
-		PreparePublication: preparePublication,
+		// The shared bidirectional planner is injected rather than imported by
+		// internal/atlasmigrate: migration/generator already imports that package
+		// for its directory and qualifier primitives. The adapter below preserves
+		// that dependency direction while making every layout that publishes a
+		// rollback share native reverse refinements and exact concurrent-index
+		// identity. The native Atlas layout omits this hook because it publishes
+		// no rollback half; its valid forward plan must not be refused for a
+		// capability an unpublished reverse would require.
+		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat),
+		Schemas:                   opts.schemas,
+		LockTimeout:               lockTimeout,
+		Policy:                    policy,
+		Qualifier:                 qualifier,
+		DryRun:                    opts.dryRun,
+		Diagnostics:               cmd.ErrOrStderr(),
+		Vars:                      schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
+		ValidateMigrationSource:   migrationSourceValidator,
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		PreparePublication:        preparePublication,
 		// The same predicate the preflight above already applied, re-applied to
 		// the locked snapshot. Passing it in is what keeps this verb from
 		// carrying a second definition of a verified directory: without it the
@@ -311,6 +369,75 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func validateAtlasMigrateDiffCurrentSource(
+	project atlasProject,
+	dir atlasargs.LocalDir,
+	format atlasmigrateimport.Format,
+	policy atlascompatpolicy.Policy,
+	devURL string,
+) error {
+	if !policy.IsStrictCE() {
+		return nil
+	}
+	source, err := project.captureLocal(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	fSys := source.FileSystem
+	if !atlasmigrate.ReadsNativeAtlasDir(format) {
+		loaded, err := atlasmigrateimport.LoadFS(fSys, dir.Path, format)
+		if err != nil {
+			return fmt.Errorf("read migration directory as %s: %w", format, err)
+		}
+		fSys = loaded.FS()
+	}
+	return policy.ValidateMigrationSourceForURL(fSys, devURL)
+}
+
+func compatBidirectionalPlannerForFormat(
+	format atlasmigrateimport.Format,
+) func(atlasmigrate.BidirectionalPlanInput) (atlasmigrate.BidirectionalPlan, error) {
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return nil
+	}
+	return planCompatBidirectionalSchemaDiff
+}
+
+func planCompatBidirectionalSchemaDiff(
+	input atlasmigrate.BidirectionalPlanInput,
+) (atlasmigrate.BidirectionalPlan, error) {
+	createMode := generator.ConcurrentIndexDisabled
+	if input.ConcurrentIndexCreate && platform.IsPostgresFamily(input.Dialect) {
+		createMode = generator.ConcurrentIndexAll
+	}
+	dropMode := generator.ConcurrentIndexDisabled
+	if input.ConcurrentIndexDrop && platform.IsPostgresFamily(input.Dialect) {
+		dropMode = generator.ConcurrentIndexAll
+	}
+	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+		Diff:          input.Diff,
+		DesiredSchema: input.DesiredSchema,
+		CurrentSchema: input.CurrentSchema,
+		Dialect:       input.Dialect,
+		Capabilities:  input.Capabilities,
+		Policy: generator.BidirectionalPlanPolicy{
+			Create: createMode,
+			Drop:   dropMode,
+		},
+	})
+	if err != nil {
+		return atlasmigrate.BidirectionalPlan{}, err
+	}
+	return atlasmigrate.BidirectionalPlan{
+		ForwardNodes:                 plan.Forward.Nodes,
+		ReverseNodes:                 plan.Reverse.Nodes,
+		ReverseRequiresNoTransaction: plan.Reverse.RequiresNoTransaction,
+	}, nil
 }
 
 // resolveAtlasMigrateDiffDir parses the --dir value into the directory this run
@@ -384,8 +511,14 @@ func prepareAtlasMigrateDiffSource(
 	if len(opts.toURLs) == 0 {
 		return atlassource.Set{}, fmt.Errorf("--to is required")
 	}
-	if strings.TrimSpace(opts.devURL) == "" {
-		return atlassource.Set{}, fmt.Errorf("--dev-url is required")
+	// The community wording, and the absent/empty split behind it, are owned by
+	// [requireAtlasDevURL]: an absent flag is refused as a required flag, an
+	// explicitly empty one is opened and answered `sql/sqlclient: missing
+	// driver`, and a scheme naming no driver is named. Measured on the pinned
+	// binary v1.3.0 on 2026-08-13.
+	devURL := atlasDevURLInput{value: opts.devURL, given: opts.devURLGiven}
+	if err := devURL.refuse(); err != nil {
+		return atlassource.Set{}, err
 	}
 	if opts.edit && !atlasmigrate.ReadsNativeAtlasDir(dirFormat) {
 		// `migrate new` draws the same line, for the same reason: the editor

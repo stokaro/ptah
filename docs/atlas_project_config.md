@@ -56,7 +56,7 @@ env "local" {
 
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
       apply   = "{{ sql . \"  \" }}"
       diff    = "{{ sql . \"\" }}"
     }
@@ -117,6 +117,13 @@ The supported attributes map to Ptah settings as follows:
 | `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
 | `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 
+`format.schema.inspect` follows the Atlas-compatible command's template
+semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
+literal bytes with no line feed. Surrounding whitespace is also preserved; for
+example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
+`"{{ sql . }}"`, or `"{{ json . }}"` to render the inspected schema. The native
+`ptah schema inspect --format hcl|sql|json` shorthands continue to render.
+
 `env.src` and `env.schema.src` accept either one string or a list of strings.
 The nested `schema.src` form matches Atlas project config syntax. Ptah
 currently uses these values as local schema-file defaults for `schema apply`
@@ -139,14 +146,14 @@ a supported local file or database URL. `env://url` and `env://dev` resolve the
 corresponding database URL; `env://migration.dir` resolves the configured
 local migration directory. Nested `env://` references fail explicitly.
 
-Relative `migration.dir` values resolve from the directory containing
-`atlas.hcl`. Apply, down, status, lint, set, and native repair commands open the
-resolved directory through a rooted handle and capture an immutable snapshot
-before database work. Relative CLI `--dir` paths remain rooted at the process
-working directory, symlink escapes are rejected, and explicit absolute paths
-remain supported. Intentional config-relative paths such as
-`../shared-migrations` retain their meaning and are captured at the resolved
-location.
+`migration.dir` values resolve from the directory containing `atlas.hcl` and
+must remain inside that project root after symbolic-link resolution. This rule
+also applies to absolute values declared in the project file. Apply, down,
+status, lint, set, and native repair commands open the resolved directory
+through the project handle and capture an immutable snapshot before database
+work. Relative CLI `--dir` paths remain rooted at the process working
+directory, symlink escapes are rejected, and explicit absolute CLI paths remain
+supported.
 
 Ptah's `ptah.yaml external_schema` block is a separate native configuration
 surface. It supplies an explicit external-program argument list and SQL, HCL,
@@ -184,8 +191,10 @@ ptah-compat migrate apply --env local \
   --dir "file://migrations?format=goose"
 ```
 
-The reusable format-loading layer is shared with `ptah-compat migrate import`, so
-apply and import agree on every format's up/down semantics. See
+Apply and `ptah-compat migrate import` share the format parsers and up/down
+semantics. Conventional Liquibase import adds a persistence adapter that emits
+one numeric Atlas file per changeset; direct apply retains its numbered-file
+requirement and source-file boundary. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.exclude` accepts either one string or a list of strings. `ptah-compat schema
@@ -297,8 +306,25 @@ per-migration timeout, and pre-migration check in the selected batch. Under
 global `none`, an explicit file mode restores a per-file transaction and may
 use migration timeouts.
 
-The Atlas header must be in the initial line-comment block. A blank line after
-the header is accepted but not required. Unknown, duplicate, and file-level
+The Atlas header must be in the initial line-comment block: the unbroken run of
+line comments that begins on line 1, each starting in column 1. A blank line
+after the header is accepted but not required.
+
+Both directive families answer to one rule about where a directive is
+significant, and to separate rules about what a bad one costs:
+
+- `-- +ptah no_transaction` is significant in the same region — before the
+  first executable statement — but accepts indentation and blank lines inside
+  it.
+- A directive of either family outside its region is reported at `WARN` on
+  stderr naming the file and line, never dropped in silence.
+- A `-- +ptah` directive whose key is recognized but whose value cannot be read
+  fails the run wherever the line sits.
+- The `atlas:` spelling is only reported, never refused, outside its block:
+  Atlas CE applies a directory whose `-- atlas:txmode bogus` sits below the
+  statement.
+`PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier file-wide scope for
+`-- +ptah` directives only. Unknown, duplicate, and file-level
 `all` values fail before the affected migration body or revision row changes.
 Validation applies only to the migrations selected after amount and baseline
 processing.
@@ -308,9 +334,11 @@ When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `atlas_schema_revisions` unless an explicit CLI flag overrides it. `file://`
 migration directories are normalized to local paths. Relative migration
 directories declared in `atlas.hcl` resolve relative to the directory containing
-that `atlas.hcl` file, not the process working directory. Explicit CLI `--dir`
-values keep CLI semantics and resolve relative to the process working directory
-unless they are absolute. Other URI schemes are rejected.
+that `atlas.hcl` file, not the process working directory. Both relative and
+absolute project values must resolve inside that directory after symbolic-link
+resolution. Explicit CLI `--dir` values keep CLI semantics and resolve relative
+to the process working directory unless they are absolute. Other URI schemes
+are rejected.
 
 ## Expression evaluation
 
@@ -629,6 +657,15 @@ warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compa
 This distinction preserves Atlas CE's unknown-name behavior without hiding a
 likely typo or a policy that does nothing. The warning goes to stderr; stdout
 and the success exit code remain unchanged.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
+runs. The strict policy refuses an ignored construct before command work, and
+it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,
+object, and set collections. It also refuses YAML schema sources and an
+authored `schema apply` lint policy because the strict CE apply path cannot
+enforce that policy without silently discarding it. The normal `ptah-compat`
+process leaves the complete best-effort evaluator and apply policy enabled and
+continues to report ignored names.
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested

@@ -43,6 +43,25 @@ type ConstraintRemovalInfo struct {
 	Type string `json:"type"`
 }
 
+// ForeignKeyRemovalInfo supplies the local and referenced columns needed to
+// order a foreign-key removal around column changes. It is supplemental to a
+// matching ConstraintRemovalInfo, correlated by table and constraint name; it
+// does not independently describe a schema change and is ignored without that
+// base removal. The separate collection keeps ConstraintRemovalInfo a
+// comparable three-field identity value.
+type ForeignKeyRemovalInfo struct {
+	// Name is the foreign-key constraint name.
+	Name string `json:"name"`
+	// TableName is the local table that owns the foreign key.
+	TableName string `json:"table_name"`
+	// Columns are the local columns in constraint order.
+	Columns []string `json:"columns,omitempty"`
+	// ForeignTable is the referenced table.
+	ForeignTable string `json:"foreign_table"`
+	// ForeignColumns are the referenced columns in constraint order.
+	ForeignColumns []string `json:"foreign_columns,omitempty"`
+}
+
 // ConstraintAdditionInfo contains the table-qualified definition of a
 // constraint that needs to be added, in parallel to the bare ConstraintsAdded
 // name list (mirroring ConstraintsRemovedWithTables).
@@ -189,6 +208,10 @@ type SchemaDiff struct {
 	// ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	ExtensionsRemoved []string `json:"extensions_removed"`
+
+	// ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
+	// PostgreSQL extension names are database-wide identities; schema is placement, not identity.
+	ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
 
 	// FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
 	// but not in the current database schema
@@ -348,6 +371,14 @@ type SchemaDiff struct {
 	// (ConstraintsRemoved by name, this one by table then name), so consumers must
 	// correlate entries by constraint name, never by position.
 	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+
+	// ForeignKeysRemovedWithTables carries the local and referenced column
+	// definitions needed to order foreign-key drops before column removals. It
+	// is a table-qualified subset of ConstraintsRemovedWithTables, correlated by
+	// table and constraint name rather than slice position. It is supplemental:
+	// an entry without a matching ConstraintsRemovedWithTables value is ignored
+	// and does not independently make the diff non-empty.
+	ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables"`
 }
 
 // EffectiveIdentifierSemantics returns live semantics stored on the diff, or
@@ -519,7 +550,8 @@ func sortedIndexRefs(refs []IndexRef) []IndexRef {
 // hasExtensionChanges returns true if there are any extension-related changes
 func (d *SchemaDiff) hasExtensionChanges() bool {
 	return len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0
+		len(d.ExtensionsRemoved) > 0 ||
+		len(d.ExtensionsModified) > 0
 }
 
 // hasFunctionChanges returns true if there are any function-related changes
@@ -804,6 +836,13 @@ type SequenceDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// ExtensionDiff represents a PostgreSQL extension installation-schema change.
+type ExtensionDiff struct {
+	Name       string `json:"name"`
+	FromSchema string `json:"from_schema"`
+	ToSchema   string `json:"to_schema"`
 }
 
 // ViewDiff represents changes to a view definition.

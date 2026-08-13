@@ -166,6 +166,7 @@ func (s *enumSpec) UnmarshalYAML(value *yaml.Node) error {
 
 type extensionSpec struct {
 	Name        stringScalar `yaml:"name"`
+	Schema      stringScalar `yaml:"schema"`
 	IfNotExists bool         `yaml:"if_not_exists"`
 	Version     stringScalar `yaml:"version"`
 	Comment     stringScalar `yaml:"comment"`
@@ -593,6 +594,7 @@ func (d document) addExtensions(db *goschema.Database) {
 		spec := d.Extensions[key]
 		db.Extensions = append(db.Extensions, goschema.Extension{
 			Name:        valueOrDefault(spec.Name, key),
+			Schema:      string(spec.Schema),
 			IfNotExists: spec.IfNotExists,
 			Version:     string(spec.Version),
 			Comment:     string(spec.Comment),

@@ -33,9 +33,16 @@ produced the underlying error. In particular, a `ptah-compat` verb that
 delegates to a native command still prints `Error: `, because the user invoked
 the compatibility surface.
 
-The rule covers the prefix only. The message text after it stays Ptah-owned
-prose, so `ptah-compat schema inspect` with no `--url` reports Ptah's own
-`--url is required` rather than any wording copied from another tool.
+The rule covers the prefix only. The message text after it is decided per
+diagnostic, and the two surfaces decide it differently. Where a cell of the
+output-shape register pins a wording, `ptah-compat` matches the pinned community
+binary byte for byte: `ptah-compat schema inspect` with no `--url` reports
+`required flag(s) "url" not set`, and `ptah-compat migrate status` with none
+reports `sql/sqlclient: missing driver. See: https://atlasgo.io/url`. Native
+`ptah` keeps its own prose for the same mistake — `ptah migrations status`
+reports `database URL is required` — because matching is a promise the
+compatibility surface makes and the native tree does not. See the `--url`
+diagnostics section of `docs/conformance.md`.
 
 Other stderr output is outside the class and keeps its own format. Report
 bodies are the main case: the `Error:` field inside a `migrate status`
@@ -81,6 +88,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
 | `ptah schema compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |
 | `ptah schema drift` | No drift that meets `--severity`, or `--exit-code=false`. | Drift meets `--severity` while `--exit-code=true`. | Usage error, connection failure, parse failure, or report error. |
+| `ptah schema diff` | Diff printed, or no diff. | Not used. | Usage error, source failure, invalid selector, an explicit include selection matching neither side, or diff generation failure. |
 | `ptah schema test` | Every schema test case passed. | One or more cases failed. | Usage error (including a `--root-dir` database source whose dialect differs from `--db-url`, or a non-SQLite database source with no `--db-url`), invalid or unreadable cases, connection failure, interrupted run, desired-schema parse/apply failure, or report error. |
 | `ptah migrations lint` | No findings above `--fail-on`, or `--fail-on=none`. | Findings meet `--fail-on`. | Usage error, invalid config, unreadable migration directory, dev-database connection failure, SQL replay failure, or report error. |
 | `ptah migrations test` | Every migration test case passed. | One or more cases failed. | Usage error, invalid or unreadable cases, connection failure, interrupted run, migration/schema setup failure, or report error. |

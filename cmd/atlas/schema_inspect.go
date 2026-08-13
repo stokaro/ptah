@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -22,10 +24,11 @@ type atlasSchemaInspectOptions struct {
 	exclude []string
 	format  string
 	output  string
+	policy  atlascompatpolicy.Policy
 }
 
-func newAtlasSchemaInspectCommand() *cobra.Command {
-	opts := atlasSchemaInspectOptions{}
+func newAtlasSchemaInspectCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	opts := atlasSchemaInspectOptions{policy: policy}
 	cmd := &cobra.Command{
 		Use:   "inspect",
 		Short: "Inspect a database schema",
@@ -52,10 +55,14 @@ type ` + "`isbn`" + `. Every decision is reported on standard error. Set
 this surface. SQL output keeps them all, and native
 ` + "`ptah schema inspect`" + ` omits nothing.
 
-The default output is HCL. SQL output is supported with --format sql or
---format '{{ sql . }}', JSON with --format json, and custom Go templates
-through the same --format flag. Split/write exports support the documented
-Atlas split strategies — per object (default), ` + "`split \"schema\"`" + `,
+The default output is HCL. Use --format '{{ hcl . }}' for explicit rendered
+HCL, --format '{{ sql . }}' for rendered SQL, and --format '{{ json . }}' for
+rendered JSON. Atlas CE treats the bare values --format hcl, --format sql, and
+--format json as literal text; surrounding whitespace preserves those template
+bodies byte for byte. Custom Go templates use the same --format flag.
+Split/write exports support the documented
+Atlas split strategies — per object (default),
+` + "`split \"schema\"`" + `,
 and ` + "`split \"type\"`" + ` with an optional file extension — through
 ` + "`{{ hcl . | split | write \"dir\" }}`" + ` and
 ` + "`{{ sql . | split | write \"dir\" }}`" + `. The OSS --exclude filter
@@ -93,17 +100,37 @@ and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 			return runAtlasSchemaInspect(cmd, opts)
 		},
 	}
+	if policy.IsStrictCE() {
+		cmd.Long = strictAtlasSchemaInspectLong()
+	}
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL, schema file, migration directory, or env:// reference to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to evaluate non-database inspection sources")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
-	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
-	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
-	flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
-	registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
+	flags.StringVar(&opts.format, "format", "", "Output Go template: exact hcl/sql/json and whitespace-wrapped variants are literal text")
+	if !policy.IsStrictCE() {
+		flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
+		flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
+		registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
+	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
 	return cmd
+}
+
+func strictAtlasSchemaInspectLong() string {
+	return `Atlas OSS ` + "`atlas schema inspect`" + ` command path.
+
+Inspects the --url source and writes Atlas-compatible schema output to stdout
+without Ptah status banners. The source is a live database URL, a local schema
+file, a migration directory, or an env:// reference. Non-database sources
+require --dev-url and are validated before that dev database is reset.
+
+The default output is HCL. Atlas CE treats the bare values --format hcl,
+--format sql, and --format json as literal text. Rendered SQL and JSON remain
+available through explicit ` + "`{{ sql . }}`" + ` and ` + "`{{ json . }}`" + ` templates.
+Strict compatibility refuses the Pro-only hcl, split, and write helpers before
+source or database work. The default ptah-compat policy retains all three.`
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
@@ -155,17 +182,21 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if formatConfigured && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
-	if _, err := atlasschema.NormalizeInspectFormat(opts.format); err != nil {
+	opts.format = atlasSchemaInspectCompatibilityFormat(opts.format)
+	normalizedFormat, err := atlasschema.NormalizeInspectFormat(opts.format)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
+	if err := opts.policy.ValidateSchemaInspectFormat(normalizedFormat); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := validateAtlasSchemaInspectOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	schemaVars, err := atlasVarFlagValues(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
 		URL:            opts.url,
 		DevURL:         opts.devURL,
@@ -176,11 +207,22 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		Diagnostics:    cmd.ErrOrStderr(),
 		ProjectEnv:     projectEnv,
 		ConnectTimeout: dbcli.DefaultConnectTimeout,
+		// Strict CE owns the pinned process output contract. Suppress only the
+		// Ptah-specific role coverage note; selector and safety diagnostics keep
+		// their ordinary writer.
+		SuppressRoleCoverageNote: opts.policy.IsStrictCE(),
 
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames:  true,
-		OmitAtlasRefusedBlocks: omitRefusedBlocks,
-		Vars:                   schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		PrepareInspectedSchema:    opts.policy.PrepareInspectedSchema,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
+		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
+		CompatibilityHCLFraming:   true,
+		DevURLDiagnostic:          atlasDevURLDriverDiagnostic,
+		Vars:                      schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -193,6 +235,18 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+// atlasSchemaInspectCompatibilityFormat preserves the pinned Atlas CE v1.3.0
+// interpretation of shorthand-looking template text. Exact bare hcl/sql/json
+// and their whitespace-wrapped forms remain literal text, byte for byte.
+// Explicit helper calls still reach the shared renderer.
+func atlasSchemaInspectCompatibilityFormat(format string) string {
+	switch strings.TrimSpace(format) {
+	case "hcl", "sql", "json":
+		return "{{ " + strconv.Quote(format) + " }}"
+	}
+	return format
 }
 
 // atlasInspectOmitsRefusedBlocks is this surface's default for the top-level
@@ -222,9 +276,20 @@ func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("url")
 }
 
-func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
-	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+// validateAtlasSchemaInspectOptions settles this verb's --url before any source
+// is resolved.
+//
+// Three measured answers, not one. On the pinned community binary v1.3.0 an
+// absent --url is the plural required-flag refusal; an explicitly empty one
+// gets past that check and is answered `missing scheme` by the desired-state
+// layer -- this verb's URL names a source, not a connection, so it carries no
+// `sql/sqlclient:` prefix; and a scheme that names no source kind at all is
+// answered `sql/sqlclient: unknown driver`. A url supplied by atlas.hcl is
+// already folded into opts.url by the caller, so it satisfies the first check
+// exactly as a flag does. See cmd/atlas/compat_url_diagnostic.go.
+func validateAtlasSchemaInspectOptions(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
+	if !cmd.Flags().Changed("url") && strings.TrimSpace(opts.url) == "" {
+		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
-	return nil
+	return atlasDesiredStateURLDiagnostic(opts.url)
 }

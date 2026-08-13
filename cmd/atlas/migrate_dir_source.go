@@ -1,7 +1,6 @@
 package atlas
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
 	"net/url"
@@ -92,11 +91,13 @@ func resolveAtlasVerbDirFormat(
 	// than the configured one, so it is the only thing that can be blamed for a
 	// rejected one. A query holding only ignored keys selects nothing, and the
 	// blame stays on --dir-format.
-	spelling := "--dir-format"
-	if atlasmigrate.DirFormatFromQuery(query) {
-		spelling = "--dir"
-	}
-	return "", fmt.Errorf("atlas migrate %s %s: %w", verb, spelling, err)
+	//
+	// [atlasDirFormatError] builds that semantic wrapper and adapts the
+	// DISPLAYED text of a rejected format value to the community binary's. It
+	// is shared with every other verb that resolves a directory layout; see
+	// migrate_dir_format_error.go for why the adaptation belongs on the refusal
+	// rather than in one verb's wrapper.
+	return "", atlasDirFormatError(verb, atlasDirFormatSpelling(query), err)
 }
 
 // atlasDirCapture is a migration directory a read-only verb has read but not

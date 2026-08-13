@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -36,7 +37,8 @@ const DialectName = "clickhouse"
 
 // Renderer renders an AST node tree to ClickHouse SQL.
 type Renderer struct {
-	w *bufwriter.Writer
+	w    *bufwriter.Writer
+	caps capability.Capabilities
 
 	// forceNotNullSet, when non-nil, lists the set of column names that must
 	// not be wrapped in Nullable(...) regardless of their declared nullability.
@@ -49,7 +51,18 @@ type Renderer struct {
 
 // New constructs a ClickHouse renderer with an empty output buffer.
 func New() *Renderer {
-	return &Renderer{w: &bufwriter.Writer{}}
+	return NewWithCapabilities(capability.ClickHouse24())
+}
+
+// NewWithCapabilities constructs a ClickHouse renderer for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change
+// rendering behavior.
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
+	return &Renderer{w: &bufwriter.Writer{}, caps: caps.Clone()}
+}
+
+func (r *Renderer) capabilities() capability.Capabilities {
+	return r.caps
 }
 
 // Dialect returns the dialect identifier.
@@ -951,12 +964,57 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 }
 
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
-	r.notSupported("CREATE VIEW", node.Name)
+	statement := "CREATE VIEW"
+	if node.Replace {
+		statement = "CREATE OR REPLACE VIEW"
+	}
+	if !r.capabilities().Has(capability.Views) {
+		r.notSupported(statement, node.Name)
+		return nil
+	}
+	if strings.TrimSpace(node.Body) == "" {
+		return fmt.Errorf(
+			"%w: clickhouse: %s %q requires a non-empty body",
+			ptaherr.ErrInvalidSchemaDiff,
+			statement,
+			node.Name,
+		)
+	}
+	if node.WithCheck {
+		return fmt.Errorf(
+			"%w: clickhouse: WITH CHECK OPTION is not supported for views",
+			ptaherr.ErrUnsupportedFeature,
+		)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("%s %s AS", statement, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	r.w.WriteLine(";")
 	return nil
 }
 
 func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
-	r.notSupported("DROP VIEW", node.Name)
+	if !r.capabilities().Has(capability.Views) {
+		r.notSupported("DROP VIEW", node.Name)
+		return nil
+	}
+	if node.Cascade {
+		return fmt.Errorf(
+			"%w: clickhouse: DROP VIEW CASCADE is not supported",
+			ptaherr.ErrUnsupportedFeature,
+		)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 

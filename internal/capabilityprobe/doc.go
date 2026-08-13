@@ -21,7 +21,7 @@
 // row must not read as a probe that passed every row.
 //
 // It fails a run that decided LESS THAN ITS PLAN PROMISED for the same reason.
-// A floor of one row is barely a floor: twenty-three of twenty-four could go
+// A floor of one row is barely a floor: twenty-four of twenty-five could go
 // quietly unmeasured and the run would still exit zero. [Report.Decidable]
 // counts the keys the dialect's plan did not declare undecidable in advance —
 // derived from the plan, not written down per dialect, because a hand-kept
@@ -32,7 +32,7 @@
 //
 // # Why the deciding statement is not always the obvious one
 //
-// Four shapes of statement decide nothing on their own, and each of them was
+// Five shapes of statement decide nothing on their own, and each of them was
 // measured rather than assumed:
 //
 //   - Acceptance without enforcement. MySQL before 8.0.16 accepted a CHECK
@@ -49,6 +49,12 @@
 //     CONCURRENTLY without changing behavior. Real PostgreSQL refuses that
 //     statement inside an explicit transaction block and a keyword-only parser
 //     has no reason to, so the transaction block is the discriminator.
+//   - Acceptance of index syntax a server rewrites or drops. The SP-GiST
+//     INCLUDE probe reads the created index back from the server catalog and
+//     requires one SP-GiST key plus one non-key included column; accepting the
+//     statement without that exact shape is false, not support. A
+//     MySQL-family acceptance stays undecidable because its catalog cannot
+//     portably prove the distinction between key and included columns.
 //   - Acceptance of a same-spelled feature that is a different surface. MySQL
 //     9.7.1 accepts CREATE ROLE and GRANT while [capability.RoleManagement] is
 //     false for it, because that key names the PostgreSQL role surface Ptah's

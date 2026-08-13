@@ -188,6 +188,12 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 type AtlasLoadOptions struct {
     EnvName string
     Vars    []string
+    // RejectListMapForEach refuses dynamic env expansion over list and map
+    // values. Atlas Community Edition accepts tuple, object and set values but
+    // refuses list and map values; compatibility adapters select this option
+    // when they need that exact boundary. The default retains Ptah's complete
+    // dynamic-env capability.
+    RejectListMapForEach bool
 }
     AtlasLoadOptions selects Atlas project config evaluation settings.
 
@@ -2201,6 +2207,8 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type ExtensionNode struct {
     // Name is the extension name (pg_trgm, postgis, etc.)
     Name string
+    // Schema is the PostgreSQL installation schema. Empty uses the connection default.
+    Schema string
     // IfNotExists indicates whether to use IF NOT EXISTS clause
     IfNotExists bool
     // Version specifies a specific version requirement (optional)
@@ -2217,6 +2225,7 @@ func NewExtension(name string) *ExtensionNode
 func (n *ExtensionNode) Accept(visitor Visitor) error
 func (n *ExtensionNode) SetComment(comment string) *ExtensionNode
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode
+func (n *ExtensionNode) SetSchema(schema string) *ExtensionNode
 func (n *ExtensionNode) SetVersion(version string) *ExtensionNode
 
 ### go.5x5.cz/ptah/core/ast.ForeignKeyRef
@@ -2369,7 +2378,8 @@ type IndexNode struct {
     Condition string
     // Operator specifies the operator class (gin_trgm_ops, etc.)
     Operator string
-    // IncludeColumns contains PostgreSQL INCLUDE columns for covering indexes.
+    // IncludeColumns contains INCLUDE payload columns for PostgreSQL,
+    // YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
     IncludeColumns []string
     // StorageParams contains PostgreSQL index storage parameters rendered as
     // WITH (key='value'), for example pages_per_range for BRIN indexes.
@@ -3997,6 +4007,7 @@ package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type Extension struct {
     Name        string // Extension name (pg_trgm, postgis, etc.)
+    Schema      string // PostgreSQL installation schema (optional; empty selects the connection default)
     IfNotExists bool   // Whether to use IF NOT EXISTS clause
     Version     string // Specific version requirement (optional)
     Comment     string // Extension comment/description
@@ -4038,7 +4049,7 @@ type Extension struct {
         type DatabaseExtensions struct{}
 
         // Enable PostGIS for geographic data
-        //ptah:schema:extension name="postgis" version="3.0" if_not_exists="true"
+        //ptah:schema:extension name="postgis" schema="extensions" version="3.0" if_not_exists="true"
         type GeoExtensions struct{}
 
 
@@ -4236,7 +4247,8 @@ type Index struct {
     Condition string
     // Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
     Operator string
-    // IncludeColumns carries PostgreSQL INCLUDE columns for covering indexes.
+    // IncludeColumns carries INCLUDE payload columns for PostgreSQL,
+    // YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
     IncludeColumns []string
     // StorageParams carries PostgreSQL index storage parameters rendered as
     // WITH (key='value'), for example pages_per_range for BRIN indexes.
@@ -4844,6 +4856,8 @@ func Doc(key Capability) string
 type Capabilities map[Capability]bool
     func ClickHouse24() Capabilities
     func CockroachDB23() Capabilities
+    func CockroachDB25() Capabilities
+    func CockroachDB26() Capabilities
     func ForDialect(dialect string) Capabilities
     func ForServerVersion(dialect, version string) Capabilities
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -4878,6 +4892,8 @@ type Capabilities map[Capability]bool
 
 func ClickHouse24() Capabilities
 func CockroachDB23() Capabilities
+func CockroachDB25() Capabilities
+func CockroachDB26() Capabilities
 func ForDialect(dialect string) Capabilities
 func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -4916,11 +4932,10 @@ package capability // import "go.5x5.cz/ptah/core/platform/capability"
 type VersionResolution struct {
     // Capabilities is the resolved preset, never nil for a known dialect.
     Capabilities Capabilities
-    // VersionSpecific is false when no version-specific preset could be
-    // selected and the dialect default was used instead. It carries exactly
-    // the meaning of ForServerVersionResult's second return value, and it is
-    // false for a saturated version because the preset such a version lands
-    // on is exactly ForDialect's.
+    // VersionSpecific is false when no exact measured release line selected the
+    // preset. Most ladders use the dialect default in that case; a ladder with
+    // measured minor lines may use the preceding conservative preset between
+    // those lines.
     VersionSpecific bool
     // Saturated is true when the resolved preset is the top of a version
     // ladder and the server is newer than the newest line that ladder was
@@ -4928,7 +4943,7 @@ type VersionResolution struct {
     // never true at the same time as VersionSpecific.
     Saturated bool
     // NewestMeasured names the newest measured version line for the dialect,
-    // for example "9.x". It is empty for dialects with no version ladder.
+    // for example "26.7" or "26.2". It is empty for dialects with no ladder.
     NewestMeasured string
 }
     VersionResolution reports how a server version string was mapped onto a
@@ -4939,16 +4954,17 @@ type VersionResolution struct {
     itself newer than the newest line that ladder was measured against — so the
     preset is a stand-in and any capability the newer server gained or lost
     is unmodeled. That is not a version-specific answer, so VersionSpecific is
-    false whenever Saturated is true, and the two fields together say which of
-    the two ways a caller ended up on the dialect default: the version could not
-    be parsed at all, or it parsed and ran off the top of the ladder.
+    false whenever Saturated is true, and the two fields together say which
+    of the reasons a caller did not receive an exact measured-line answer:
+    the version could not be parsed, it fell between measured lines, or it ran
+    off the top of the ladder.
 
-    Saturation is only defined where this package has a version ladder: MySQL,
-    MariaDB and PostgreSQL. CockroachDB, YugabyteDB and Spanner are resolved
-    from the banner without consulting a version at all, and ClickHouse, SQLite
-    and SQL Server have no ladder to saturate; all six report Saturated=false
-    and an empty NewestMeasured. Refining those dialects is the remaining scope
-    of issue #916 and is deliberately not answered here.
+    Saturation is defined where this package has a version ladder: MySQL,
+    MariaDB, PostgreSQL, and CockroachDB. YugabyteDB and Spanner are resolved
+    from the banner without consulting a version at all, and ClickHouse, SQLite,
+    and SQL Server have no ladder to saturate; those five report Saturated=false
+    and an empty NewestMeasured. Refining those dialects is remaining scope of
+    issue #916 and is deliberately not answered here.
 
 func ResolveServerVersion(dialect, version string) VersionResolution
 
@@ -5730,13 +5746,21 @@ type DBFunction struct {
     // default. Without it a schema-qualified `--exclude app.fn_app` matched
     // nothing and silently kept the function (stokaro/ptah#933).
     Schema     string `json:"schema,omitempty"`
-    Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
-    Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
-    Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
-    Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
-    Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-    Body       string `json:"body"`       // Function body/implementation
-    Comment    string `json:"comment"`    // Function comment/description
+    Parameters string `json:"parameters"` // Full declaration parameters (e.g., "tenant_id_param TEXT DEFAULT 'public'")
+    // IdentityArguments is PostgreSQL's canonical input-argument type list for
+    // identifying an overload in ALTER or DROP FUNCTION. It deliberately stays
+    // separate from Parameters: declaration parameters may contain names,
+    // defaults, and OUT-only arguments that are not part of a function's drop
+    // identity. Nil means a reader did not capture the identity; a non-nil empty
+    // string is the valid identity of a zero-input or OUT-only function. This
+    // reader-only execution fact is not part of serialized schema descriptions.
+    IdentityArguments *string `json:"-"`
+    Returns           string  `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+    Language          string  `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+    Security          string  `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+    Volatility        string  `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+    Body              string  `json:"body"`       // Function body/implementation
+    Comment           string  `json:"comment"`    // Function comment/description
 }
     DBFunction represents a PostgreSQL custom function read from the database
 
@@ -6612,14 +6636,19 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
-func ReverseSchemaDiff(diff *types.SchemaDiff, desired *goschema.Database, ...) *types.SchemaDiff
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error)
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 type BaselineShadowVerifyOptions struct{ ... }
+type BidirectionalPlanPolicy struct{ ... }
+type BidirectionalSchemaPlan struct{ ... }
+    func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
+type BidirectionalSchemaPlanOptions struct{ ... }
 type CheckpointFromShadowOptions struct{ ... }
+type ConcurrentIndexMode uint8
+    const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
@@ -6630,6 +6659,7 @@ type MigrationFiles struct{ ... }
 type MigrationPlan struct{ ... }
     func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
 type RollbackFromShadowOptions struct{ ... }
+type SchemaDirectionPlan struct{ ... }
 type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
 type ShadowVerificationResult struct{ ... }
@@ -6652,6 +6682,59 @@ type BaselineShadowVerifyOptions struct {
 }
     BaselineShadowVerifyOptions configures shadow verification before metadata
     baselining.
+
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalPlanPolicy
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalPlanPolicy struct {
+    Create ConcurrentIndexMode
+    Drop   ConcurrentIndexMode
+}
+    BidirectionalPlanPolicy selects concurrent-index behavior for the forward
+    migration. The reverse keeps the exact table-qualified index identities but
+    selects each concurrent modifier independently from the capability available
+    for that reverse operation. A valid rollback therefore falls back to an
+    ordinary statement when only the counterpart concurrent operation is absent.
+
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalSchemaPlan
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalSchemaPlan struct {
+    Dialect       string
+    Capabilities  capability.Capabilities
+    DesiredSchema *goschema.Database
+    CurrentSchema *dbschematypes.DBSchema
+    Policy        BidirectionalPlanPolicy
+    Forward       SchemaDirectionPlan
+    Reverse       SchemaDirectionPlan
+}
+    BidirectionalSchemaPlan is one validated forward and reverse schema plan.
+
+    DesiredSchema and CurrentSchema are the exact inputs the two directions were
+    planned against. They are retained so adapters can apply the same qualifier
+    or rendering policy without reconstructing either side. Treat them and both
+    direction plans as read-only.
+
+func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
+
+### go.5x5.cz/ptah/migration/generator.BidirectionalSchemaPlanOptions
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type BidirectionalSchemaPlanOptions struct {
+    Diff          *types.SchemaDiff
+    DesiredSchema *goschema.Database
+    CurrentSchema *dbschematypes.DBSchema
+    Dialect       string
+    Capabilities  capability.Capabilities
+    Policy        BidirectionalPlanPolicy
+}
+    BidirectionalSchemaPlanOptions contains the complete state needed to plan a
+    schema change and the rollback that restores its pre-change state.
 
 
 ### go.5x5.cz/ptah/migration/generator.CheckpointFromShadowOptions
@@ -6686,6 +6769,16 @@ type CheckpointFromShadowOptions struct {
 }
     CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
 
+
+### go.5x5.cz/ptah/migration/generator.ConcurrentIndexMode
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type ConcurrentIndexMode uint8
+    ConcurrentIndexMode selects which index changes one direction plans with
+    PostgreSQL's CONCURRENTLY modifier.
+
+const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 
 ### go.5x5.cz/ptah/migration/generator.DiffPolicy
 
@@ -6800,7 +6893,7 @@ type MigrationFilePair struct {
     DownFile      string // Path to the down migration file
     ReportFile    string // Path to the safety report file, when requested
     Version       int64  // Migration version (timestamp)
-    NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
+    NoTransaction bool   // Whether either direction requires +ptah no_transaction
 }
     MigrationFilePair represents one generated up/down migration file pair.
 
@@ -6857,6 +6950,21 @@ type RollbackFromShadowOptions struct {
     ConnectTimeout time.Duration
 }
     RollbackFromShadowOptions configures VerifyRollbackFromShadow.
+
+
+### go.5x5.cz/ptah/migration/generator.SchemaDirectionPlan
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type SchemaDirectionPlan struct {
+    Diff                    *types.SchemaDiff
+    Nodes                   []ast.Node
+    ConcurrentIndexRefs     []types.IndexRef
+    ConcurrentIndexDropRefs []types.IndexRef
+    RequiresNoTransaction   bool
+}
+    SchemaDirectionPlan is one half of a bidirectional schema migration plan.
+    Its slices and diff are planning inputs and must be treated as read-only.
 
 
 ### go.5x5.cz/ptah/migration/generator.ShadowMismatch
@@ -6972,16 +7080,19 @@ func Parsers() []Parser
 package importer // import "go.5x5.cz/ptah/migration/importer"
 
 type SourceMigration struct {
-    Version    int64
-    Name       string
-    UpSQL      string
-    DownSQL    string
-    Repeatable bool
+    Version       int64
+    Name          string
+    UpSQL         string
+    DownSQL       string
+    Repeatable    bool
+    NoTransaction bool
 }
     SourceMigration is one migration read from a source tool's directory,
     normalized to Ptah's up/down model. Version is the source tool's numeric
     version (integer counter or timestamp); it is preserved so ordering and
     collisions are detectable. DownSQL is empty when the source has no rollback.
+    NoTransaction reports a source-level whole-migration directive that applies
+    to both directions and must be translated to Ptah's native file directives.
 
 func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 
@@ -8659,6 +8770,7 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 func CompareReportingUndecidedAdditions(generated *goschema.Database, database *types.DBSchema, ...) (*difftypes.SchemaDiff, []coverage.Object)
 func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSchema, info types.DBInfo, ...) (*difftypes.SchemaDiff, error)
+func CompareWithDatabaseReportingUndecidedAdditions(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, []coverage.Object, error)
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, ...) *difftypes.SchemaDiff
 
@@ -8670,6 +8782,8 @@ type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
 type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
+type ExtensionDiff struct{ ... }
+type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
 type IndexRef struct{ ... }
@@ -8895,6 +9009,42 @@ type EnumDiff struct {
             ValuesAdded: []string{"pending", "archived"},
             ValuesRemoved: []string{"deprecated"},
         }
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ExtensionDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ExtensionDiff struct {
+    Name       string `json:"name"`
+    FromSchema string `json:"from_schema"`
+    ToSchema   string `json:"to_schema"`
+}
+    ExtensionDiff represents a PostgreSQL extension installation-schema change.
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ForeignKeyRemovalInfo
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ForeignKeyRemovalInfo struct {
+    // Name is the foreign-key constraint name.
+    Name string `json:"name"`
+    // TableName is the local table that owns the foreign key.
+    TableName string `json:"table_name"`
+    // Columns are the local columns in constraint order.
+    Columns []string `json:"columns,omitempty"`
+    // ForeignTable is the referenced table.
+    ForeignTable string `json:"foreign_table"`
+    // ForeignColumns are the referenced columns in constraint order.
+    ForeignColumns []string `json:"foreign_columns,omitempty"`
+}
+    ForeignKeyRemovalInfo supplies the local and referenced columns needed to
+    order a foreign-key removal around column changes. It is supplemental to a
+    matching ConstraintRemovalInfo, correlated by table and constraint name;
+    it does not independently describe a schema change and is ignored without
+    that base removal. The separate collection keeps ConstraintRemovalInfo a
+    comparable three-field identity value.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.FunctionDiff
@@ -9193,6 +9343,10 @@ type SchemaDiff struct {
     // but not in the target schema (potentially dangerous - may break existing functionality)
     ExtensionsRemoved []string `json:"extensions_removed"`
 
+    // ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
+    // PostgreSQL extension names are database-wide identities; schema is placement, not identity.
+    ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
+
     // FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
     // but not in the current database schema
     FunctionsAdded []string `json:"functions_added"`
@@ -9351,6 +9505,14 @@ type SchemaDiff struct {
     // (ConstraintsRemoved by name, this one by table then name), so consumers must
     // correlate entries by constraint name, never by position.
     ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+
+    // ForeignKeysRemovedWithTables carries the local and referenced column
+    // definitions needed to order foreign-key drops before column removals. It
+    // is a table-qualified subset of ConstraintsRemovedWithTables, correlated by
+    // table and constraint name rather than slice position. It is supplemental:
+    // an entry without a matching ConstraintsRemovedWithTables value is ignored
+    // and does not independently make the diff non-empty.
+    ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables"`
 }
     SchemaDiff represents comprehensive differences between two database
     schemas.

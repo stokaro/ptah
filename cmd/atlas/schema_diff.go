@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -24,14 +25,12 @@ type atlasSchemaDiffOptions struct {
 	include  []string
 	exclude  []string
 	format   string
+	policy   atlascompatpolicy.Policy
 }
 
-func newAtlasSchemaDiffCommand() *cobra.Command {
-	opts := atlasSchemaDiffOptions{}
-	cmd := &cobra.Command{
-		Use:   "diff",
-		Short: "Diff desired schema against another schema",
-		Long: `Atlas OSS ` + "`atlas schema diff`" + ` command path.
+func newAtlasSchemaDiffCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	opts := atlasSchemaDiffOptions{policy: policy}
+	long := `Atlas OSS ` + "`atlas schema diff`" + ` command path.
 
 Calculates SQL statements that migrate the --from schema state to the --to
 schema state. Each side accepts local file:// schema files with .hcl, .yaml,
@@ -49,14 +48,24 @@ positively select what both comparison sides see: --schema names define the
 schema universe, --include selectors pick top-level resources inside it, and
 --exclude plus env.schema.mode subtract from the result. A selected object
 that depends on an unselected object refuses the diff with an explicit
-diagnostic. An --include selection that matches nothing on either side keeps
-the exit status and the standard-output bytes it would have had, and reports
-the empty selection on standard error, so a CI check comparing stdout is
-unaffected while a mistyped selector is no longer silent.
+diagnostic. An --include selection that matches nothing on either side leaves
+no plan to compare and is refused instead of reporting a synced schema to a CI
+check.`
+	if !policy.IsStrictCE() {
+		long += `
+
 Hosted report output is not implemented. --export is registered and refused:
 it selects an exporter declared by an atlas.hcl ` + "`exporter`" + ` block,
-which Ptah does not evaluate.`,
+which Ptah does not evaluate.`
+	}
+	cmd := &cobra.Command{
+		Use:   "diff",
+		Short: "Diff desired schema against another schema",
+		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if policy.IsStrictCE() && cmd.Flags().Changed("include") {
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema diff --include")
+			}
 			return runAtlasSchemaDiff(cmd, opts)
 		},
 	}
@@ -68,7 +77,9 @@ which Ptah does not evaluate.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
-	registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
+	if !policy.IsStrictCE() {
+		registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
+	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the states with --from and --to"))
 	return cmd
 }
@@ -148,9 +159,13 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		ProjectEnv:  projectEnv,
 		Diagnostics: cmd.ErrOrStderr(),
 
-		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateSchema:            opts.policy.ValidateDesiredSchema,
+		ValidateInspectedSchema:   opts.policy.ValidateInspectedSchema,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
+		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		Vars:                      schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -175,6 +190,17 @@ func validateAtlasSchemaDiffOptions(
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
+	}
+	// A `--dev-url` naming no driver is refused before the sources are
+	// classified, which is where the pinned community binary v1.3.0 refuses it:
+	// measured on 2026-08-13, this verb answers `sql/sqlclient: unknown driver
+	// "notadriver"` for both database and local-file sources, so unlike `schema
+	// inspect` the check is not scoped to what the sources turned out to be. An
+	// empty value is left to [atlassource.Set.EnsureDevDatabase] below, whose
+	// own refusal is scoped to the sources that need a dev database -- both
+	// binaries exit 0 on two database sources with no `--dev-url` at all.
+	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+		return err
 	}
 	// Malformed or unsupported --include selectors fail before any database
 	// is contacted.

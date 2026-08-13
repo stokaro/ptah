@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/migratesum"
 )
 
@@ -78,7 +80,25 @@ func runCompatExit(args ...string) (stdout, stderr string, err error) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs(args)
 	executed, execErr := cmd.ExecuteC()
-	return out.String(), errOut.String(), cmdutil.NormalizeCommandError(executed, execErr, 2)
+	normalizedErr := cmdutil.NormalizeCommandError(executed, execErr, 2)
+	return out.String(), errOut.String(), normalizedErr
+}
+
+func errorChainContainsText(err error, want string) bool {
+	if err == nil {
+		return false
+	}
+	if err.Error() == want {
+		return true
+	}
+	if multiErr, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range multiErr.Unwrap() {
+			if errorChainContainsText(child, want) {
+				return true
+			}
+		}
+	}
+	return errorChainContainsText(errors.Unwrap(err), want)
 }
 
 func writeIntegrityFixture(c *qt.C) string {
@@ -507,32 +527,32 @@ func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
 		{
 			name: "unknown query value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format=sqitch"} },
-			want: `atlas migrate hash --dir: unknown Atlas migration directory format "sqitch": .*`,
+			want: `unknown dir format "sqitch"`,
 		},
 		{
 			name: "unknown flag value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "sqitch"} },
-			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "sqitch": .*`,
+			want: `unknown dir format "sqitch"`,
 		},
 		{
 			name: "uppercase query value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir + "?format=GOOSE"} },
-			want: `atlas migrate hash --dir: unknown Atlas migration directory format "GOOSE": .*`,
+			want: `unknown dir format "GOOSE"`,
 		},
 		{
 			name: "uppercase flag value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "GOOSE"} },
-			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "GOOSE": .*`,
+			want: `unknown dir format "GOOSE"`,
 		},
 		{
 			name: "uppercase atlas flag value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", "ATLAS"} },
-			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format "ATLAS": .*`,
+			want: `unknown dir format "ATLAS"`,
 		},
 		{
 			name: "padded flag value",
 			args: func(dir string) []string { return []string{"--dir", "file://" + dir, "--dir-format", " goose "} },
-			want: `atlas migrate hash --dir-format: unknown Atlas migration directory format " goose ": .*`,
+			want: `unknown dir format " goose "`,
 		},
 	}
 
@@ -548,6 +568,80 @@ func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
 			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 		})
 	}
+}
+
+func TestCompatMigrateIntegrityUnknownFormatPreservesSemanticErrorChain(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "validate",
+		"--dir", "file://migrations",
+		"--dir-format", " bogus ",
+	)
+	var unknownFormat *atlasmigrate.UnknownDirFormatError
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err.Error(), qt.Equals, `unknown dir format " bogus "`)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: unknown dir format \" bogus \"\n")
+	c.Assert(err, qt.ErrorAs, &unknownFormat)
+	c.Assert(unknownFormat.Value, qt.Equals, " bogus ")
+	c.Assert(errorChainContainsText(err,
+		`atlas migrate validate --dir-format: unknown Atlas migration directory format " bogus ": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`),
+		qt.IsTrue)
+}
+
+func TestCompatMigrateIntegrityUnknownFormatAdapterLeavesOtherErrorsUnchanged(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "hash",
+		"--dir", "file://migrations?format=flyway;x=1",
+	)
+	const want = "atlas migrate hash --dir: parse migration directory URL query: invalid semicolon separator in query"
+	var unknownFormat *atlasmigrate.UnknownDirFormatError
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err.Error(), qt.Equals, want)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
+	c.Assert(err, qt.Not(qt.ErrorAs), &unknownFormat)
+}
+
+// TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable is what
+// is left of TestCompatMigrateNewUnknownFormatKeepsVerboseDiagnostic, and the
+// rename records a decision that changed.
+//
+// That test pinned `migrate new` PRINTING the semantic wording, on the reading
+// that the verb was outside the adaptation. It was not outside it — the pinned
+// community binary v1.3.0 answers `unknown dir format "bogus"` on `migrate new`
+// exactly as it does on `migrate hash` and `migrate validate`
+// (stokaro/ptah#1235 cell 9.8), and the split existed only because the adapter
+// was a block inside a wrapper this verb does not use.
+//
+// What survives is the half that is still true and is the reason the adapter is
+// a display layer: the semantic diagnostic, with the list of accepted layouts,
+// is still in the chain. The printed text is now pinned with every other verb's
+// in TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb.
+func TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "new", "demo",
+		"--dir", "file://migrations",
+		"--dir-format", "bogus",
+	)
+	var unknownFormat *atlasmigrate.UnknownDirFormatError
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err.Error(), qt.Equals, `unknown dir format "bogus"`)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: unknown dir format \"bogus\"\n")
+	c.Assert(err, qt.ErrorAs, &unknownFormat)
+	c.Assert(unknownFormat.Value, qt.Equals, "bogus")
+	c.Assert(errorChainContainsText(err,
+		`atlas migrate new --dir-format: unknown Atlas migration directory format "bogus": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`),
+		qt.IsTrue)
 }
 
 // TestCompatMigrateSourceFormatQuery_HappyPath pins the two query-parsing rules
@@ -636,12 +730,12 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 		{
 			name:  "unknown format value",
 			query: "?format=totally-bogus",
-			want:  `atlas migrate hash --dir: unknown Atlas migration directory format "totally-bogus": expected .*`,
+			want:  `unknown dir format "totally-bogus"`,
 		},
 		{
 			name:  "unknown format value beside an ignored key",
 			query: "?format=totally-bogus&other=1",
-			want:  `atlas migrate hash --dir: unknown Atlas migration directory format "totally-bogus": expected .*`,
+			want:  `unknown dir format "totally-bogus"`,
 		},
 	}
 
@@ -920,34 +1014,6 @@ func TestCompatMigrateIntegritySemicolonQuery_FailurePath(t *testing.T) {
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			_, statErr := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
 			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-		})
-	}
-}
-
-// TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory keeps the
-// missing-directory diagnostic identical on both layouts.
-func TestCompatMigrateIntegrityConvertedDir_FailurePathMissingDirectory(t *testing.T) {
-	c := qt.New(t)
-
-	tests := []struct {
-		name string
-		verb string
-	}{
-		{name: "hash", verb: "hash"},
-		{name: "validate", verb: "validate"},
-	}
-
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			missing := filepath.Join(c.TempDir(), "missing")
-
-			convertedOut, _, convertedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing+"?format=goose")
-			forwardedOut, _, forwardedErr := runCompatExit("migrate", tt.verb, "--dir", "file://"+missing)
-
-			c.Assert(convertedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
-			c.Assert(forwardedErr, qt.ErrorMatches, "migrations directory "+missing+": .*no such file or directory")
-			c.Assert(convertedOut, qt.Equals, forwardedOut)
-			c.Assert(exitcode.Code(convertedErr, 0), qt.Equals, 1)
 		})
 	}
 }

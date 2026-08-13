@@ -596,8 +596,15 @@ func (s *exclusionState) unmatchedSelectors() []string {
 // schema of its own lives in the default schema, so it is the same object the
 // schema-qualified spelling names.
 func (s *exclusionState) effectiveSchema(schema string) string {
-	if trimmed := strings.TrimSpace(schema); trimmed != "" {
-		return trimmed
+	if strings.TrimSpace(schema) != "" {
+		return schema
+	}
+	return s.defaultSchema
+}
+
+func (s *exclusionState) effectiveExtensionSchema(schema string) string {
+	if schema != "" {
+		return schema
 	}
 	return s.defaultSchema
 }
@@ -660,7 +667,7 @@ func (s *exclusionState) childNameCandidates(schema, table, child string) []stri
 // subtracts more, and it cannot turn a protected object into a dropped one.
 func (s *exclusionState) filterSchemas(schemas []dbschematypes.DBSchemaInfo) []dbschematypes.DBSchemaInfo {
 	return keep(schemas, func(schema dbschematypes.DBSchemaInfo) bool {
-		excluded := s.matches("schema", strings.TrimSpace(schema.Name))
+		excluded := s.matches("schema", schemaNameCandidates(schema.Name)...)
 		if excluded {
 			s.excludeSchema(schema.Name)
 		}
@@ -672,7 +679,7 @@ func (s *exclusionState) filterSchemas(schemas []dbschematypes.DBSchemaInfo) []d
 // side, so both sides of a comparison subtract the same schemas.
 func (s *exclusionState) filterGeneratedSchemas(schemas []goschema.Schema) []goschema.Schema {
 	return keep(schemas, func(schema goschema.Schema) bool {
-		excluded := s.matches("schema", strings.TrimSpace(schema.Name))
+		excluded := s.matches("schema", schemaNameCandidates(schema.Name)...)
 		if excluded {
 			s.excludeSchema(schema.Name)
 		}
@@ -826,8 +833,8 @@ func (s *exclusionState) filterConstraints(constraints []dbschematypes.DBConstra
 func (s *exclusionState) filterExtensions(extensions []dbschematypes.DBExtension) []dbschematypes.DBExtension {
 	result := make([]dbschematypes.DBExtension, 0, len(extensions))
 	for _, extension := range extensions {
-		names := s.nameCandidates(extension.Schema, extension.Name)
-		if s.matches("extension", names...) || s.schemaExcluded(extension.Schema) {
+		names := extensionNameCandidates(s.effectiveExtensionSchema(extension.Schema), extension.Name)
+		if s.matches("extension", names...) || s.extensionSchemaExcluded(extension.Schema) {
 			continue
 		}
 		if s.matchesField("extension", "version", names...) {
@@ -1067,13 +1074,14 @@ func (s *exclusionState) filterGeneratedEmbeddedFields(
 }
 
 // filterGeneratedEnums mirrors the database-side enum exclusion, so excluding
-// an enum removes it from both sides of a comparison. A generated enum carries
-// its schema the way a generated view does — as an optional "schema." prefix on
-// its name — so the candidates come from that prefix and the default schema.
+// an enum removes it from both sides of a comparison. Current enum models keep
+// schema and name separately; SQL-source legacy values may still carry the
+// qualifier in Name when Schema is empty.
 func (s *exclusionState) filterGeneratedEnums(enums []goschema.Enum) []goschema.Enum {
 	return keep(enums, func(enum goschema.Enum) bool {
-		named := s.matches("enum", s.qualifiedNameCandidatesFor(enum.Name)...)
-		return !named && !s.qualifiedSchemaExcluded(enum.Name)
+		schema, name := enumIdentity(enum.Schema, enum.Name)
+		named := s.matches("enum", s.nameCandidates(schema, name)...)
+		return !named && !s.schemaExcluded(schema)
 	})
 }
 
@@ -1120,8 +1128,8 @@ func (s *exclusionState) filterGeneratedRanges(ranges []goschema.Range) []gosche
 func (s *exclusionState) filterGeneratedExtensions(extensions []goschema.Extension) []goschema.Extension {
 	result := make([]goschema.Extension, 0, len(extensions))
 	for _, extension := range extensions {
-		names := s.qualifiedNameCandidatesFor(extension.Name)
-		if s.matches("extension", names...) || s.qualifiedSchemaExcluded(extension.Name) {
+		names := extensionNameCandidates(s.effectiveExtensionSchema(extension.Schema), extension.Name)
+		if s.matches("extension", names...) || s.extensionSchemaExcluded(extension.Schema) {
 			continue
 		}
 		if s.matchesField("extension", "version", names...) {
@@ -1281,7 +1289,7 @@ func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) boo
 }
 
 func (s *exclusionState) excludeSchema(name string) {
-	if name = strings.TrimSpace(name); name != "" {
+	if name != "" {
 		s.excludedSchemas[name] = struct{}{}
 	}
 }
@@ -1291,6 +1299,15 @@ func (s *exclusionState) excludeSchema(name string) {
 // object the schema-qualified spelling names and it leaves with that schema.
 func (s *exclusionState) schemaExcluded(schema string) bool {
 	name := s.effectiveSchema(schema)
+	if name == "" {
+		return false
+	}
+	_, excluded := s.excludedSchemas[name]
+	return excluded
+}
+
+func (s *exclusionState) extensionSchemaExcluded(schema string) bool {
+	name := s.effectiveExtensionSchema(schema)
 	if name == "" {
 		return false
 	}
@@ -1501,6 +1518,24 @@ func qualifiedNameCandidates(schema, name string) []string {
 		return []string{name}
 	}
 	return []string{name, qualified}
+}
+
+func extensionNameCandidates(schema, name string) []string {
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	qualified := tableref.CanonicalExact(schema, name)
+	if qualified == name {
+		return []string{name}
+	}
+	return []string{name, qualified}
+}
+
+func schemaNameCandidates(name string) []string {
+	if name == "" {
+		return nil
+	}
+	return []string{tableref.CanonicalExact("", name)}
 }
 
 func generatedTableByStruct(tables []goschema.Table) map[string]goschema.Table {

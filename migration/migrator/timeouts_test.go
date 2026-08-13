@@ -208,7 +208,7 @@ func TestParseMigrationTimeoutDirectives_ToleratesEveryDirectiveFamily(t *testin
 			sql := tt.line + "\nALTER TABLE users ADD COLUMN email TEXT;"
 			tt.recognize(c, sql)
 
-			_, err := parseMigrationTimeoutDirectives(sql)
+			_, err := parseMigrationTimeoutDirectives(sql, directiveScopeHeader)
 			c.Assert(err, qt.IsNil,
 				qt.Commentf("timeout scanner must tolerate the %s directive family or files carrying it cannot load", tt.name))
 		})

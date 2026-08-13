@@ -1,6 +1,7 @@
 package atlasfilter
 
 import (
+	"slices"
 	"strings"
 
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -39,12 +40,15 @@ func (s *scopeSelection) projectDatabase(db *dbschematypes.DBSchema) *dbschematy
 
 	s.projectDatabaseTopLevel(db, out, keptTables)
 	s.projectDatabaseSupport(db, out)
+	s.projectDatabaseExtensions(db, out)
 	out.Schemas = s.keepDatabaseSchemas(db, out)
 	return out
 }
 
 // projectDatabaseTopLevel selects independently includable top-level database
-// resources and their riding grants and roles.
+// resources and their riding grants and roles. Extensions are projected after
+// support objects, when the selection knows whether a non-extension resource
+// matched.
 func (s *scopeSelection) projectDatabaseTopLevel(
 	db, out *dbschematypes.DBSchema,
 	keptTables map[tableIdentity]struct{},
@@ -56,10 +60,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 		return s.selected(typeList("materialized_view"), view.Schema, view.Name)
 	})
 	out.Functions = keep(db.Functions, func(function dbschematypes.DBFunction) bool {
-		return s.selectedQualifiedName(typeList("function"), function.Name)
-	})
-	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
-		return s.selectedNames(typeList("extension"), qualifiedNameCandidates(extension.Schema, extension.Name)...)
+		return s.selected(typeList("function"), function.Schema, function.Name)
 	})
 	out.Sequences = keep(db.Sequences, func(sequence dbschematypes.DBSequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
@@ -79,6 +80,19 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 }
 
+func (s *scopeSelection) projectDatabaseExtensions(db, out *dbschematypes.DBSchema) {
+	if s.extensionSupport || s.nonExtensionMatched {
+		for _, extension := range db.Extensions {
+			s.selectedExtension(extension.Schema, extension.Name)
+		}
+		out.Extensions = slices.Clone(db.Extensions)
+		return
+	}
+	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
+		return s.selectedExtension(extension.Schema, extension.Name)
+	})
+}
+
 // projectDatabaseSupport retains type objects referenced by kept columns:
 // enums via user-defined column types, and domains, composite types, and
 // ranges via column type names.
@@ -90,7 +104,8 @@ func (s *scopeSelection) projectDatabaseSupport(db, out *dbschematypes.DBSchema)
 		func(c dbschematypes.DBComposite) (string, string) { return c.Schema, c.Name })
 	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
 		func(r dbschematypes.DBRange) (string, string) { return r.Schema, r.Name })
-	out.Enums = keepEnumObjects(s, db.Enums, referenced, func(e dbschematypes.DBEnum) string { return e.Name })
+	out.Enums = keepEnumObjects(s, db.Enums, referenced,
+		func(e dbschematypes.DBEnum) (string, string) { return e.Schema, e.Name })
 }
 
 // databaseGrantSelected mirrors generatedGrantSelected for introspected
@@ -142,6 +157,15 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 	for _, view := range out.MatViews {
 		owning[s.effectiveSchema(view.Schema)] = struct{}{}
 	}
+	for _, function := range out.Functions {
+		owning[s.effectiveSchema(function.Schema)] = struct{}{}
+	}
+	for _, enum := range out.Enums {
+		owning[s.effectiveSchema(enum.Schema)] = struct{}{}
+	}
+	for _, extension := range out.Extensions {
+		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
 	return keep(db.Schemas, func(schema dbschematypes.DBSchemaInfo) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
@@ -149,7 +173,7 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, ok := owning[strings.TrimSpace(schema.Name)]
+		_, ok := owning[schema.Name]
 		return ok
 	})
 }

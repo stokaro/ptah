@@ -64,6 +64,64 @@ inspection variable does not break an unrelated SQLite command or
 Non-boolean `PTAH_*` variables are unchanged: an empty value still reads as
 unset for them.
 
+### Atlas CE strict compatibility
+
+`PTAH_ATLAS_STRICT_COMPAT` is a `ptah-compat`-only boolean policy selector. It
+defaults to `false`, which keeps the complete Pro-like and best-effort
+compatibility surface. Set it to `true` only for Atlas Community Edition oracle
+or conformance runs:
+
+```bash
+PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat migrate validate --dir file://migrations
+```
+
+The process resolves the selector before command construction. In strict mode,
+generic `PTAH_<FLAG>` environment twins are not installed because Atlas CE does
+not expose them. A present extension variable, including one whose command flag
+is absent from the strict tree, is rejected rather than ignored. False values
+for known boolean extension toggles remain valid; malformed values retain the
+normal boolean diagnostic.
+
+The check is based on Ptah's actual flag bindings and feature-toggle registry,
+not on the `PTAH_` prefix alone. An ordinary value that an `atlas.hcl` reads
+through `getenv`, such as `PTAH_DATABASE_PASSWORD`, remains available in strict
+mode. Naming project inputs with that prefix does not turn them into Ptah
+features.
+
+Strict mode also applies its object inventory to live schemas. `schema inspect`,
+`schema apply`, `schema diff`, and `schema clean` refuse a Pro-only object
+before rendering, comparison, or mutation instead of copying CE behavior that
+could omit, miscompare, or destroy it. On `schema clean`, the CE-registered
+`--dry-run` and `--format` flags remain gated. The diagnostic names
+`ptah-compat` and tells the operator to unset the selector; Ptah never directs
+the operator to install Atlas. Leave strict mode off for Ptah's complete
+cleanup, inspection, diff, and apply capabilities.
+
+Strict inspection omits PostgreSQL's server-installed `plpgsql` extension and
+baseline `PUBLIC USAGE` grant from rendered output. Strict cleanup executes the
+validated plan after confirmation. On PostgreSQL it locks the planned tables,
+revalidates the live inventory, compares the rebuilt cleanup plan with the
+confirmed plan, and refuses drift before the first drop. Full mode preserves
+the complete reader output and its established unscoped writer path.
+
+The cleanup check covers the writer's complete destruction inventory. That
+includes PostgreSQL procedures, aggregates, foreign tables, collations,
+default privileges, and dependent objects such as triggers that disappear
+with a table without appearing as a separate cleanup plan line.
+
+Strict schema workflows also refuse YAML sources and an authored `schema apply`
+lint policy that the CE execution path cannot enforce. Commands that execute,
+convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
+and SQL templates; checksum-only reads preserve those bytes. All inputs remain
+available in the default, complete compatibility profile.
+
+Four opt-in correctness controls remain available because they do not add an
+Atlas capability: `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
+`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`, and
+`PTAH_ALLOW_NONINTERACTIVE_EDIT`. The last one permits a scripted editor in a
+non-interactive process; it does not add an editor or migration capability.
+Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
+
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being
 treated as absent. This includes an empty string, zero, `false`, or an empty
@@ -120,6 +178,12 @@ schema URLs, and relative `migration.dir` values declared in `atlas.hcl` resolve
 relative to the directory containing that `atlas.hcl` file. Explicit CLI path
 flags such as `--to`, `--from`, and `--dir` keep CLI semantics and resolve
 relative to the process working directory unless they are absolute.
+
+A project-configured `migration.dir`, whether relative or absolute, must remain
+inside the directory containing `atlas.hcl` after symbolic-link resolution.
+Parent traversal that resolves outside, an absolute outside path, and a
+symbolic-link escape fail as `outside allowed root`. An explicit CLI `--dir` is
+operator-owned and retains the CLI path behavior above.
 
 ## Minimal `ptah.yaml`
 

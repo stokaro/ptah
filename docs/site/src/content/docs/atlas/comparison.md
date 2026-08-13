@@ -47,6 +47,22 @@ and the migration fails partway through. Ptah honors it.
 Differences of this kind are listed in the [gap register](#gap-register) with
 the measurement behind them, so you can see which way each one goes.
 
+`ptah-compat` therefore has two explicit policy profiles. The default profile
+retains every implemented Atlas Pro-like and best-effort capability on the
+drop-in surface. `PTAH_ATLAS_STRICT_COMPAT=1` is an oracle profile: it exposes
+the pinned CE command and flag inventory and rejects extended authored or live
+schema content before output or mutation. The strict profile is for CE
+conformance testing, not a replacement for the default migration surface. It
+still preserves the deliberate correctness differences listed under
+[Retained divergences](../retained-divergences/).
+
+The authored-content boundary makes strict schema workflows refuse YAML sources
+and a `schema apply` lint policy that the CE path cannot enforce. Commands that
+execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
+directives, and SQL templates; checksum-only reads preserve those bytes. The
+default profile continues to support the extensions instead of silently
+dropping their semantics.
+
 ### Capability parity, not interface parity
 
 Ptah's Atlas compatibility layer does not define a separate feature set.
@@ -171,8 +187,10 @@ files, migration directories, and `env://` references, and emits Atlas-shaped
 output without Ptah status banners:
 
 - HCL by default
-- SQL with `--format sql` or `--format '{{ sql . }}'`
-- JSON with `--format json` or `--format '{{ json . }}'`
+- SQL with `--format '{{ sql . }}'`
+- JSON with `--format '{{ json . }}'`
+- the literal text `hcl`, `sql`, or `json`, without a line feed, when that exact bare value is the whole `--format` template
+- the original literal bytes when surrounding whitespace wraps `hcl`, `sql`, or `json`
 - custom Go-template output using `.MarshalHCL`, `hcl`, `sql`, `json`, `base64url`, and `mermaid`
 - HCL/SQL split-write exports through `split` and `write` with the documented Atlas split strategies (per object by default with a `main.sql` `atlas:import` entry point for SQL, `split "schema"`, `split "type"`, optional file-extension argument)
 
@@ -182,7 +200,7 @@ existing-directory destinations.
 
 Non-database sources require `--dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect); a missing dev database fails with Atlas's `--dev-url cannot be empty` message.
 
-The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors and type selectors on non-final pattern segments fail explicitly; exporter blocks remain a gap.
+The OSS `--exclude` flag filters inspected resources with Atlas-style globs and type selectors, including the Atlas-documented `*[type=extension].version` field selector with schema-qualified globs. Other field-level exclude selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector); exporter blocks remain a gap.
 
 The pinned Atlas CE binary rejects `split`, `write`, and `hcl` template functions as non-community features, so Ptah's split-write exports are an open extension beyond the pinned CE binary.
 
@@ -243,7 +261,7 @@ policy from `atlas.hcl`, including local variable defaults, locals, `getenv`,
 `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
 references.
 
-`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target (acquired before target inspection and planning, released on every exit path; dialects without advisory locks proceed unlocked with a stderr note).
+`schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target. Strict CE mode preflights an explicit `--schema` target scope before that lock or any desired-source replay; without one, PostgreSQL-family targets inventory the user realm because desired replay may extend the URL scope. The authoritative inspection and planning remain inside the lock, which is released on every exit path; dialects without advisory locks proceed unlocked with a stderr note.
 
 `ptah-compat schema diff` implements local schema-file diffs, reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`, prints migration SQL, supports Atlas-style `--format` templates with `sql` and `.MarshalSQL`, and applies the same Atlas-style filters to local `--from` and `--to` inputs.
 
@@ -253,13 +271,19 @@ Both declarative paths accept desired-state URL sources through one typed resolv
 
 Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the dev database (reset, current target schema recreated, planned or edited statements executed under the apply's transaction mode); a failed rehearsal refuses the apply with the target unchanged.
 
-`schema apply --schema/--include` and `schema diff --schema/--include` positively scope both comparison sides: `--schema` names define the schema universe, `--include` selects top-level resources with Atlas-style glob selectors and `[type=...]` filters (repeated values union deterministically), `--exclude` plus disabled `schema.mode` values subtract afterward, cross-scope dependencies refuse the plan with explicit diagnostics, and an empty selection reports a synced schema.
+`schema apply --schema/--include` and `schema diff --schema/--include` positively scope both comparison sides. `--schema` names define the universe for schema-owned resources, while database-wide extensions remain in both projections regardless of installation placement. An extension-only `--include` selects extension identities; when any non-extension resource matches, all extensions ride as non-removing support even beside extension selectors. Schema-only and extension-only scopes remain authoritative for extension removal. Other top-level resources use Atlas-style glob selectors and `[type=...]` filters; repeated values union. `--exclude` plus disabled `schema.mode` values subtract afterward. Cross-scope dependencies refuse the plan with explicit diagnostics. An explicit include selection matching neither side fails instead of reporting a synced schema.
 
 Atlas CE aborts `--include` as a non-community feature, so Ptah's implementation is an open extension beyond the pinned CE binary. `ptah-compat schema fmt` formats local `.hcl` files with HCL canonical layout.
 
+A qualified selector matches a live PostgreSQL extension outside the default
+schema. Identical live placements compare as synced, an asymmetric create
+preserves placement with `CREATE EXTENSION ... WITH SCHEMA ...`, and drops
+remain available. A placement difference is detected but fails before SQL
+output because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`.
+
 `ptah-compat schema clean` plans supported cleanup objects from the live database, supports `--dry-run`, preserves destructive confirmation unless `--auto-approve` is explicit, reads `env.url` and `format.schema.clean` from `atlas.hcl`, and supports Atlas-style `--format` templates such as `{{ json . }}` over `.Env`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`.
 
-Cleanup report changes cover the object kinds the target dialect's cleanup really destroys, so the report is not narrower than the apply: foreign keys, tables, views, materialized views, enum/domain/composite/range types and functions on the PostgreSQL family (plus standalone sequences on PostgreSQL itself); foreign keys, tables, views, stored functions and procedures, events and MariaDB sequences on MySQL and MariaDB; tables and views on SQLite; foreign keys and tables on SQL Server; base tables on ClickHouse. Objects that vanish as collateral of a listed drop — indexes, triggers, non-foreign-key constraints, RLS policies, comments — are not listed separately.
+Cleanup report changes cover the object kinds the target dialect's cleanup really destroys, so the report is not narrower than the apply: foreign keys, tables, views, materialized views, enum/domain/composite/range types and functions on the PostgreSQL family (plus standalone sequences on PostgreSQL itself); foreign keys, tables, views, stored functions and procedures, events and MariaDB sequences on MySQL and MariaDB; tables and views on SQLite; foreign keys and tables on SQL Server; base tables on ClickHouse. Objects that vanish as collateral of a listed drop — indexes, triggers, non-foreign-key constraints, RLS policies, comments — are not listed separately. Scoped PostgreSQL cleanup uses catalog dependency depth and one transaction, so selected same-kind dependents run first and a later `RESTRICT` refusal rolls back the complete narrowed plan.
 
 **Atlas OSS.** Atlas OSS documents schema diffing, declarative migrations, HCL formatting, and schema cleanup as open CLI features.
 
@@ -274,7 +298,7 @@ Cleanup report changes cover the object kinds the target dialect's cleanup reall
 
 `ptah-compat migrate apply` executes Atlas-format migration directories with Atlas revision-table metadata by default, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`, and supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--dry-run`, and Go-template `--format` output over a Ptah apply result that mirrors Atlas's public apply-template fields.
 
-External `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate` formats are read and converted in memory to Atlas single-file, up-only migrations and applied directly, reusing the format-loading layer shared with `ptah-compat migrate import` ([`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742)); native Atlas directories preserve `R`/`<number>R` repeatable migration tokens and execute them once. Converted Flyway repeatables are represented as one-time versioned migrations. Unknown formats still fail before the target database is opened.
+External `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate` formats are read and converted in memory to Atlas single-file, up-only migrations and applied directly, sharing format parsers and up/down semantics with `ptah-compat migrate import` ([`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742)); native Atlas directories preserve `R`/`<number>R` repeatable migration tokens and execute them once. Conventional Liquibase import additionally splits changesets into numeric Atlas files, while direct apply retains its numbered-file requirement and source-file boundary. Converted Flyway repeatables are represented as one-time versioned migrations. Unknown formats still fail before the target database is opened.
 
 `ptah-compat migrate validate` verifies `atlas.sum`, emits Atlas-compatible exit-1 checksum diagnostics across stdout and stderr, and, with `--dev-url`, cleans the dev database and replays the migration directory to validate SQL execution. `ptah-compat migrate apply` runs the same `atlas.sum` verification before applying anything from a hashed directory and refuses tampered directories with the identical checksum-mismatch output, matching official Atlas apply-time enforcement ([`stokaro/ptah#955`](https://github.com/stokaro/ptah/issues/955)).
 
@@ -301,7 +325,7 @@ Docker dev databases remain a gap.
 
 `ptah-compat migrate down` executes Ptah's pre-planned down-file rollback path, maps Atlas-compatible flags, and renders Atlas Go-template reports with `--format`. Dynamic down planning remains a recorded gap and fails explicitly.
 
-`ptah-compat migrate import` imports local `file://` directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations are converted to one-time versioned files instead of Atlas `R`-suffixed files.
+`ptah-compat migrate import` imports local `file://` directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations are converted to one-time versioned files instead of Atlas `R`-suffixed files. If a Liquibase directory contains a conventional formatted-SQL name, the complete covered SQL set becomes one globally numbered changeset stream; malformed or headerless members refuse the import before destination creation.
 
 **Atlas OSS.** Atlas OSS includes versioned migrations and documents `atlas migrate apply`, `atlas migrate diff`, `atlas migrate down`, and `atlas migrate import` for applying, generating, reverting, and importing local migration directories.
 
@@ -709,6 +733,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
 | [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
+| [Leading schema type selector](#leading-schema-type-selector) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 
 ### Atlas-compatible command runtime placeholders
 
@@ -764,13 +789,13 @@ The registry-bound `--push`, `--pending`, and `--repo` plan flags are recorded w
 
 **Current boundary.** `schema inspect --url` now accepts local schema files, one migration directory, and one `env://` reference in addition to database URLs; non-database sources require `schema inspect --dev-url` and are evaluated Atlas-style on the dev database (reset, materialize, introspect), with Atlas's `--dev-url cannot be empty` failure when the dev database is missing.
 
-`schema apply --schema/--include` and `schema diff --schema/--include` now positively scope both comparison sides (schema universe, then include selection, then exclusion), with cross-scope dependency diagnostics and synced output for empty selections; Atlas CE aborts `--include` as non-community, so this is an open Ptah extension.
+`schema apply --schema/--include` and `schema diff --schema/--include` now positively scope both comparison sides (schema-owned universe, then include selection, then exclusion), with cross-scope dependency diagnostics. Database-wide extensions stay in both schema-scoped projections. An extension-only include filters extension identities; when a non-extension resource matches, all extensions ride as non-removing support even beside extension selectors. Schema-only and extension-only scopes remain authoritative for extension removal. An include selection matching neither side fails instead of returning a false synced result; Atlas CE aborts `--include` as non-community, so this is an open Ptah extension.
 
 `migrate down --dev-url` now verifies the rollback plan on the dev database before the target is touched, and `migrate down --format` renders an Atlas Go-template down report; `migrate down --to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly with their rationale.
 
 `schema apply --edit`, `migrate diff --edit`, and `migrate new --edit` now open the operator's `$VISUAL`/`$EDITOR`. `schema apply --plan file://<path>` executes a pre-approved local plan file — the Atlas `.plan.hcl` format or the native JSON plan — after verifying it against the target (fingerprint check, dev-database replay against `--to`, and post-apply end-state verification, per format); registry `atlas://` plan URLs are rejected.
 
-`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs; other field selectors and type selectors on non-final pattern segments fail explicitly.
+`ptah-compat schema inspect --exclude` now filters inspection output with Atlas-style resource globs and type selectors, including the documented `*[type=extension].version` field selector with schema-qualified globs. Other field selectors fail explicitly. Type selectors on non-final pattern segments fail too, except for the leading `[type=schema]` segment documented under [Leading schema type selector](#leading-schema-type-selector).
 
 `ptah-compat schema inspect --include` positively selects which top-level resources inspection keeps, through the same engine as `schema apply` and `schema diff`. The pinned Atlas CE binary rejects the flag with `unknown flag: --include`, so this is a Pro-surface spelling Ptah implements openly; the two measured divergences from Atlas are tabulated under [Schema inspection](#schema-inspect---include).
 
@@ -784,7 +809,7 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah
 
 `ptah-compat schema inspect --env` reads `env.url`, `env.exclude`, `env.schema.mode`, and `format.schema.inspect`. `ptah-compat schema diff --env` reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
 
-`ptah-compat schema inspect --format` now supports HCL, SQL, JSON, custom templates, Mermaid helper output, and HCL/SQL `split | write` file exports with the documented Atlas split strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), rendered as one output plan and applied by a single writer with explicit failures for duplicate paths, traversal, and overwrite hazards; the pinned Atlas CE binary rejects `split`, `write`, and `hcl` as non-community template functions, so these exports are an open Ptah extension.
+`ptah-compat schema inspect --format` supports rendered HCL, explicit `{{ sql . }}` and `{{ json . }}` helpers, custom templates, Mermaid helper output, and HCL/SQL `split | write` file exports. Bare `hcl`, `sql`, and `json` remain literal template text; surrounding whitespace is preserved byte for byte, matching the pinned Atlas CE binary. Split/write uses the documented Atlas strategies (per object by default, `split "schema"`, `split "type"`, optional file-extension argument), rendered as one output plan and applied by a single writer with explicit failures for duplicate paths, traversal, and overwrite hazards. The pinned Atlas CE binary rejects `split`, `write`, and `hcl` as non-community template functions, so these exports are an open Ptah extension.
 
 `ptah-compat schema diff --format` now supports Atlas-style SQL/custom output with `sql` and `.MarshalSQL` for local schema-file diffs.
 
@@ -794,9 +819,9 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah
 
 `ptah-compat migrate hash`, `lint`, `new`, `set`, `status`, and `validate` now register Atlas `--dir-format` with default `atlas`; `hash` writes `atlas.sum` by default, `new` creates a single Atlas `.sql` skeleton and updates `atlas.sum`, and `set`/`status` use Atlas revision-table metadata with `--revisions-schema` support.
 
-Atlas's external migration-tool `--dir-format` values are read directly by `hash`, `validate`, `lint`, `status`, and `set`, under both that spelling and `?format=` on `--dir`, and `migrate new` writes the selected layout. `migrate diff` is the one verb that still refuses a foreign layout under either spelling, because every foreign layout it would write carries reverse SQL that Ptah's diff does not plan yet ([#1013](https://github.com/stokaro/ptah/issues/1013)); convert that directory through `ptah-compat migrate import` first.
+Atlas's external migration-tool `--dir-format` values are read directly by `hash`, `validate`, `lint`, `status`, and `set`, under both that spelling and `?format=` on `--dir`; `migrate new` and `migrate diff` write the selected layout. Diff planning carries the prior database state into an exact rollback for all five foreign layouts. Goose writes its whole-file `-- +goose NO TRANSACTION` directive when either direction needs it. golang-migrate, Flyway, dbmate, and Liquibase refuse such plans before publication because their safe transaction metadata has not been proven. Ordinary transactional forward and rollback plans write normally.
 
-A `--dir` query key other than `format` is ignored on the eight verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`, `status` and `validate` — as Atlas ignores it, and named on standard error so a misspelled one is not silent; `PTAH_STRICT_DIR_QUERY=1` refuses it instead. `checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` still refuse a `--dir` query outright, which is an internal inconsistency tracked in [#1013](https://github.com/stokaro/ptah/issues/1013) rather than a parity gap: the pinned community binary answers `unknown flag: --dir` on all of them.
+A `--dir` query key other than `format` is ignored on the eight verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`, `status` and `validate` — as Atlas ignores it, and named on standard error so a misspelled one is not silent; `PTAH_STRICT_DIR_QUERY=1` refuses it instead. `checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` still refuse a `--dir` query outright. This is stricter than a CLI with no contract on those verbs rather than a parity gap: the pinned community binary answers `unknown flag: --dir` on all of them.
 
 `ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; Docker dev databases and web reports remain gaps.
 
@@ -1063,6 +1088,35 @@ refuses the identical pattern on a schema-bound URL as
 `too many parts in pattern: "public.public.*[type=table].comment"`, and Ptah
 applies one depth rule to every scope, so accepting it would exit `0` where that
 binary exits `1`.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
+
+### Leading schema type selector
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `--exclude '*[type=schema].*[type=table]'` means every
+table inside every schema on every Ptah schema source. The leading schema glob
+may be narrowed, as in `app[type=schema].*[type=table]`.
+
+The pinned community binary v1.3.0 gives source-dependent answers. On a live
+PostgreSQL database containing tables and enums in `public` and `app`, the
+selector removes both tables and keeps both enums. On a SQLite file diff between
+one table and the same schema plus a second table, it exits `0` but leaves the
+second table's `CREATE TABLE` plan unchanged. Removing the selector from that
+SQLite run produces byte-identical output; `*[type=table]` is the control that
+does remove the plan.
+
+Ptah keeps the literal PostgreSQL answer on both source kinds. Making the
+selector a no-op only for a file diff would make one accepted scoping instruction
+mean two things depending on its input. It would also report success while
+leaving exactly the table the selector names in the migration plan. This is a
+defect Ptah does not copy; the complete compatibility surface keeps the coherent
+behavior rather than narrowing it to this Atlas CE result.
+
+The integration contour pins the file-diff result in
+`TestAtlasCompatLeadingSchemaTypeSelectorE2E`. The filter tests separately pin
+the schema glob, the final resource type, and the surviving non-table objects.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 

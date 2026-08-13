@@ -58,6 +58,16 @@ func TestValidateSchemaInspectTemplate_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "unknown" not defined.*`)
 }
 
+func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T) {
+	functions, err := atlasreport.SchemaInspectTemplateFunctions(
+		`literal hcl {{ "split" }} {{ if sql . }}{{ write (hcl .) }}{{ end }}` +
+			`{{ define "nested" }}{{ split (hcl .) }}{{ end }}{{ template "nested" . }}`,
+	)
+
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, functions, qt.DeepEquals, []string{"hcl", "split", "sql", "write"})
+}
+
 func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
 	c := qt.New(t)
 	report := sampleSchemaInspectReport()
@@ -397,12 +407,11 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 				},
 				types.DBInfo{Dialect: "postgres", Schema: "public"},
 				nil,
-				false,
 				// The run did not choose its own scope, so the SQL format would
 				// leave the schema row out. This case renders JSON, which
-				// describes it either way; the value is the connected-schema one
-				// the fixture represents.
-				false,
+				// describes it either way; the zero-value option is the
+				// connected-schema one the fixture represents.
+				atlasreport.SchemaInspectReportOptions{},
 			)
 
 			output, err := atlasreport.RenderSchemaInspect(`{{ json . }}`, report)
@@ -437,7 +446,6 @@ func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 		},
 		types.DBInfo{Dialect: "sqlite", Schema: "main"},
 		nil,
-		false,
-		true,
+		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)
 }

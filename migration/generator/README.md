@@ -335,6 +335,34 @@ type GenerateMigrationOptions struct {
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)
 
+### Bidirectional schema planning
+
+`PlanBidirectionalSchemaDiff` is the shared semantic boundary used by the
+native generator and compatibility adapters. It accepts the forward diff, the
+desired and introspected current schemas, the dialect capability set, and a
+concurrent-index policy. Its result contains both directional diffs and AST
+plans, the exact table-qualified concurrent create/drop references in each
+direction, and a separate no-transaction classification for each direction.
+
+The reverse plan restores the introspected current schema. On MySQL and MariaDB,
+adding a foreign key creates a same-named backing index only when no suitable
+index already covers the foreign-key columns as its leading key columns. The
+planner checks both prior indexes and indexes added earlier in the same forward
+plan. It removes a generated backing index after dropping the foreign key,
+preserves any differently named covering index, and refuses a forward plan that
+would remove every covering index after adding the foreign key. MySQL and
+MariaDB also refuse to add a foreign key when a same-named index exists but does
+not cover its columns, so the planner detects that collision before publication
+instead of assuming a backing index can be created.
+
+`ConcurrentIndexAutomatic` uses the generator's populated-table heuristic,
+`ConcurrentIndexDisabled` uses ordinary statements, and `ConcurrentIndexAll`
+requires the requested forward capability. The reverse selects its modifier
+independently: it uses the matching concurrent capability when present and an
+ordinary blocking statement when that reverse-only capability is absent.
+Planning fails before files are published when an explicit forward operation
+cannot honor the policy or targets a PostgreSQL partitioned parent.
+
 ### PostgreSQL concurrent indexes
 
 When Ptah generates a new PostgreSQL index on an existing table whose
@@ -349,10 +377,13 @@ transactional migration first, then the `no_transaction` concurrent-index
 migration at the next version. Rollbacks naturally run in the reverse order, so
 the index is dropped before prerequisite schema changes are reverted.
 
-Ptah only enables this policy when the live target capabilities include
-PostgreSQL `CREATE INDEX CONCURRENTLY`. PostgreSQL-wire engines such as
-YugabyteDB and CockroachDB keep regular `CREATE INDEX` output when their
-capability preset disables the keyword.
+Ptah only selects this automatic policy when the live target capabilities
+include PostgreSQL `CREATE INDEX CONCURRENTLY`. A target that lacks that
+capability keeps regular `CREATE INDEX` output. If the target supports the
+concurrent create but not concurrent drop, the forward migration stays
+concurrent and the exact rollback uses ordinary `DROP INDEX`. YugabyteDB has
+that measured capability combination. The forward file requires
+`no_transaction`; its blocking rollback does not.
 
 ### Database URL examples
 

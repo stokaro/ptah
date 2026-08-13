@@ -48,7 +48,7 @@ func TestSchemaInspectOutputWritesTheFile(t *testing.T) {
 		{
 			name:     "the chosen format is what lands in the file",
 			flagName: "--output",
-			format:   []string{"--format", "sql"},
+			format:   []string{"--format", `{{ sql . }}`},
 			contains: "CREATE TABLE",
 		},
 	}

@@ -205,6 +205,17 @@ database that is reset destructively). `--format json` emits a stable
 `--exclude` scope both sides. Synced states print
 `Schemas are synced, no changes to be made.`
 
+An explicit `--include` selection that matches neither side is invalid. The
+command prints no diff and exits 2 instead of reporting a synced schema. This
+is outcome-based: a matching top-level identifier that contains a dot remains
+selectable with a dotted spelling.
+
+When the desired side is a live PostgreSQL database, a selected extension keeps
+its installation schema. Creating a non-default placement emits `CREATE SCHEMA`
+and `CREATE EXTENSION ... WITH SCHEMA ...`; an identical placement is synced,
+and extension drops remain supported. A placement change exits 2 before SQL
+output because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`.
+
 ## Failure modes
 
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —

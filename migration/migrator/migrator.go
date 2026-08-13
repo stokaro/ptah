@@ -1397,7 +1397,8 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		currentVersionKey = strconv.FormatInt(assumedCurrent, 10)
 	}
 
-	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 
@@ -1439,6 +1440,11 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
+			return err
+		}
+	}
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
@@ -1594,8 +1600,10 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		return &CheckpointRollbackError{TargetVersion: targetVersion, CheckpointVersion: boundary}
 	}
 
-	migrationMap := migrationsByVersion(m.migrationProvider.Migrations())
-	if err := m.verifyAppliedMigrationChecksums(ctx, m.migrationProvider.Migrations()); err != nil {
+	migrations := m.migrationProvider.Migrations()
+	migrationMap := migrationsByVersion(migrations)
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
@@ -1629,6 +1637,11 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 
 	for _, migration := range migrationsToRollback {
 		if err := m.rollbackMigration(ctx, migration, deleteSQL); err != nil {
+			return err
+		}
+	}
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
 			return err
 		}
 	}
@@ -1698,7 +1711,8 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
-	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
+	if err != nil {
 		return err
 	}
 	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, appliedIdentities, targetVersion)
@@ -1719,6 +1733,11 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
 	if _, err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
 		return err
+	}
+	if reconcileChecksums {
+		if err := m.reconcileAppliedMigrationChecksums(ctx, migrations); err != nil {
+			return err
+		}
 	}
 
 	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
@@ -1801,12 +1820,55 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 // pre-migration checks were parsed and statically validated but not evaluated
 // against the database. That list is empty outside a dry run.
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionUp); err != nil {
+		return nil, err
+	}
 	switch m.txMode {
 	case MigrationTxModeAll:
 		return m.applyUpMigrationsInSingleTransaction(ctx, migrations)
 	default:
 		return m.applyUpMigrationsPerFile(ctx, migrations)
 	}
+}
+
+// reportMisplacedDirectives warns about every directive line the run recognized
+// and did not honor because of where it sits.
+//
+// It runs once per direction per run, on the execution path, so a dry run
+// reports the same finding a real apply would -- the operator who is about to
+// discover that `txmode none` did nothing is the one running `--dry-run` first.
+// A migration whose directives are all honored produces nothing, which keeps a
+// clean run silent on stderr the way Atlas is.
+func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction MigrationDirection) error {
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		return err
+	}
+	dialect := m.connectionDialect()
+	for _, migration := range migrations {
+		source, sourcePath := migration.UpSQL, migration.upSourcePath
+		if direction == MigrationDirectionDown {
+			source, sourcePath = migration.DownSQL, migration.downSourcePath
+		}
+		for _, misplaced := range misplacedDirectives(source, dialect, scope) {
+			if misplaced.err != nil {
+				// Reported as the run's refusal by [misplacedDirectiveError],
+				// which names the line too. Warning about it here as well would
+				// print the same line twice on a run that is about to abort.
+				continue
+			}
+			m.logger.Warn(
+				"Migration directive was not honored because of where it appears in the file",
+				"version", migration.Version,
+				"direction", string(direction),
+				"file", migrationTxModeSourceName(sourcePath, migration.Description),
+				"line", misplaced.line,
+				"directive", misplaced.text,
+				"remedy", misplaced.remedy,
+			)
+		}
+	}
+	return nil
 }
 
 func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) ([]int64, error) {
@@ -1938,7 +2000,8 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 		}
 	case MigrationTxModeNone:
 		for _, migration := range migrations {
-			if migration.UpTxMode == MigrationFileTxModeFile || migration.upTxModeErr != nil {
+			fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
+			if fileMode.mode == MigrationFileTxModeFile || fileMode.err != nil {
 				continue
 			}
 			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
@@ -2997,6 +3060,9 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 }
 
 func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
+	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
 	for _, migration := range migrations {
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{

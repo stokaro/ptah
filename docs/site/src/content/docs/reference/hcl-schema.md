@@ -21,6 +21,10 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 configuration in `atlas.hcl` is a different file type; see
 [Atlas project config](../../atlas/project-config/).
 
+Relative schema-file inputs are confined to the process working directory after
+symbolic-link resolution; use an absolute pathname for an intentional source
+outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
+
 `ptah schema fmt [path ...]` rewrites `.hcl` schema files into HashiCorp
 HCL's canonical layout, walking directory arguments recursively and printing
 only the files that changed. `--check` reports non-canonical files without
@@ -88,7 +92,7 @@ for the message and the flag it names.
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |
 | `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
-| `extension` | PostgreSQL `if_not_exists`, `version`, and comments. |
+| `extension` | PostgreSQL installation `schema`, `if_not_exists`, `version`, and comments. |
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
@@ -100,6 +104,28 @@ for the message and the flag it names.
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
+
+Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
+explicit schema declaration, even when an extension also refers to it, and is
+refused before SQL. To preserve an extension already installed in a
+server-owned namespace without requesting `CREATE SCHEMA`, write the placement
+as a string, for example `schema = "pg_catalog"`, and omit the schema block.
+Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
+`crdb_internal` namespace. Quoted lookalikes such as
+`schema "PG_CATALOG" {}` or `schema "CRDB_INTERNAL" {}` remain user schemas.
+
+The `extension.schema` attribute accepts an HCL string template or an exact
+one-name schema traversal such as `schema.extensions` or
+`schema["Extension Store"]`. A string template may evaluate declared variables;
+a direct `var.*` traversal, another object namespace such as `table.*`, and an
+over-qualified traversal such as `schema.extensions.extra` are refused instead
+of being reinterpreted as schema names.
+
+The two-label form `extension "extensions" "citext" {}` uses its first label
+as the installation schema. If the block also carries a `schema` attribute,
+that value must resolve exactly to the first label. An explicit empty value is
+still present, so `schema = ""` conflicts with a nonempty schema label; on the
+one-label form it explicitly selects the target's default schema.
 
 Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
 that it cannot represent in the schema IR. The Ptah `ops` index attribute

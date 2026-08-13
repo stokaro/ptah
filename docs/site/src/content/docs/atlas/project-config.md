@@ -69,7 +69,7 @@ env "local" {
 
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
       apply   = "{{ sql . \"  \" }}"
       diff    = "{{ sql . \"\" }}"
     }
@@ -122,11 +122,21 @@ env "local" {
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
 
+`format.schema.inspect` follows the Atlas-compatible command's template
+semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
+literal bytes with no line feed. Surrounding whitespace is also preserved; for
+example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
+`"{{ sql . }}"`, or `"{{ json . }}"` to render the inspected schema. Native
+`ptah schema inspect --format hcl|sql|json` keeps its rendered shorthands.
+
 `migration.tx_mode` accepts `file`, `all`, or `none`. A migration's leading
 `atlas:txmode file` or `atlas:txmode none` header overrides global `file` or
 `none`; global `all` rejects every explicit file mode before the selected batch
 starts. An explicit file mode under global `none` restores a per-file
-transaction and permits migration timeouts.
+transaction and permits migration timeouts. The header is significant only in
+the unbroken run of line comments that begins on line 1; a directive outside
+that block is ignored, as it is on Atlas CE, and reported at `WARN` rather than
+dropped in silence.
 
 Project config precedence is explicit CLI flags, environment variables,
 `atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
@@ -147,9 +157,14 @@ Atlas project values to explicit native command arguments.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:
-`--schema` names define the schema universe, `--include` selectors pick
-resources inside it, and the configured exclusions subtract from that
-selection last, exactly like CLI `--exclude`. See
+`--schema` names define the universe for schema-owned resources, `--include`
+selectors pick resources, and the configured exclusions subtract last, exactly
+like CLI `--exclude`. Database-wide extensions skip the schema ownership
+restriction. An extension-only include filters their identities; a matching
+non-extension resource carries all extensions as support even beside extension
+selectors without treating an omitted desired extension as a removal.
+Schema-only and extension-only scopes remain authoritative. Exclusions still
+subtract afterward. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
 `env.schema.mode.sensitive` accepts Atlas's `DENY` and `ALLOW` values. Both are
@@ -179,8 +194,10 @@ ptah-compat migrate apply --env local \
   --dir "file://migrations?format=goose"
 ```
 
-Apply and `ptah-compat migrate import` share one format-loading implementation,
-so they agree on every format's up/down semantics. See
+Apply and `ptah-compat migrate import` share the format parsers and up/down
+semantics. Conventional Liquibase import adds a persistence adapter that emits
+one numeric Atlas file per changeset; direct apply retains its numbered-file
+requirement and source-file boundary. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.src` and `env.schema.src` provide local schema-file defaults for
@@ -329,9 +346,11 @@ above.
 
 When an `atlas.hcl` `migration` block is present, Ptah defaults
 `revision-format` to `atlas`, so migration commands use
-`atlas_schema_revisions` unless an explicit CLI flag overrides it. Relative
-`migration.dir` values declared in `atlas.hcl` resolve relative to the
-directory containing that `atlas.hcl` file.
+`atlas_schema_revisions` unless an explicit CLI flag overrides it.
+`migration.dir` values declared in `atlas.hcl` resolve relative to the directory
+containing that `atlas.hcl` file and must remain inside that project root after
+symbolic-link resolution. The same confinement applies when the project file
+uses an absolute value.
 
 Explicit CLI `--dir` values keep CLI semantics and resolve relative to the
 process working directory unless they are absolute. Apply, down, status, lint,
@@ -340,11 +359,11 @@ handle and capture an immutable snapshot before database work. Relative CLI
 traversal and symlink escapes are rejected; explicit absolute paths remain
 supported.
 
-Intentional project-relative paths such as `../shared-migrations` retain their
-config-relative meaning and are captured at the resolved location. Non-local
-URI schemes in `migration.dir` and `schema.src` fail explicitly when a command
-needs that configured value; an explicit CLI path flag still wins before URI
-validation.
+Parent-relative paths that resolve outside the project root, absolute paths
+outside it, and symbolic links that leave it fail as `outside allowed root`.
+Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
+a command needs that configured value; an explicit CLI path flag still wins
+before URI validation.
 
 ## Environment selection
 

@@ -5,11 +5,12 @@
 // It is the shared format-loading layer for both apply-side and import-side
 // Atlas commands. LoadFS converts a caller-owned filesystem snapshot into
 // in-memory Atlas single-file entries; LoadDir securely snapshots a local
-// directory first. Import writes converted entries plus atlas.sum. Because
-// Atlas single-file migrations are up-only, conversion keeps each migration's
-// up SQL and drops its down/rollback section, so a converted directory can be
-// executed by the Atlas-format migrator without silently changing the source
-// tool's semantics.
+// directory first. Import writes converted entries plus atlas.sum. Conventional
+// Liquibase formatted-SQL names require an import-only adapter that splits each
+// changeset into a numbered Atlas migration; direct foreign-format apply keeps
+// its existing per-file behavior. Because Atlas single-file migrations are
+// up-only, conversion keeps each migration's up SQL and drops its down/rollback
+// section.
 package atlasmigrateimport
 
 import (
@@ -23,11 +24,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/importer"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -256,7 +259,7 @@ func CaptureImport(opts Options) (*CapturedImport, error) {
 // migrations plus atlas.sum into the target directory. It reads only the
 // captured bytes, never the source directory again.
 func (c *CapturedImport) Write() (*Result, error) {
-	loaded, err := loadCaptured(c.Source, c.FromDir, c.Format)
+	loaded, err := loadCapturedForImport(c.Source, c.FromDir, c.Format)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +291,91 @@ func (c *CapturedImport) Write() (*Result, error) {
 		return nil, fmt.Errorf("atlas.sum contains %d entries, want %d", len(sum.Entries), len(entries))
 	}
 	return &Result{Files: files, SumFile: sumFile}, nil
+}
+
+// loadCapturedForImport adds the one format adapter that belongs only to the
+// persisted Atlas output. A conventional Liquibase SQL name carries no numeric
+// migration version, so every covered SQL file must be parsed as formatted SQL
+// and each changeset assigned a global version. Direct foreign-format apply
+// continues through loadCaptured and preserves its per-file behavior.
+func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Format) (*Loaded, error) {
+	if format != FormatLiquibase {
+		return loadCaptured(snapshot, dir, format)
+	}
+	covered, err := SumFileNames(snapshot, format)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(covered, func(name string) bool {
+		return !numberedSQLFileRe.MatchString(name)
+	}) {
+		return loadCaptured(snapshot, dir, format)
+	}
+	entries, err := loadConventionalLiquibaseImportEntries(snapshot, covered)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkDuplicateConvertedVersions(entries); err != nil {
+		return nil, err
+	}
+	return &Loaded{Format: format, Dir: dir, Entries: entries}, nil
+}
+
+func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered []string) ([]Entry, error) {
+	files, err := fs.ReadDir(snapshot, ".")
+	if err != nil {
+		return nil, fmt.Errorf("read source migration directory: %w", err)
+	}
+	if err := rejectUnsupportedLiquibaseChangelogs(snapshot, files); err != nil {
+		return nil, err
+	}
+	parser, err := importer.ParserByName(string(FormatLiquibase))
+	if err != nil {
+		return nil, err
+	}
+
+	type changeset struct {
+		identity string
+		data     []byte
+	}
+	changesets := make([]changeset, 0, len(covered))
+	for _, name := range covered {
+		singleFile, err := fsnapshot.CaptureMatching(snapshot, func(candidate string, _ fs.DirEntry) bool {
+			return candidate == name
+		})
+		if err != nil {
+			return nil, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
+		}
+		migrations, err := parser.Parse(singleFile)
+		if err != nil {
+			return nil, fmt.Errorf("parse liquibase source file %s: %w", name, err)
+		}
+		for _, migration := range migrations {
+			identity := sanitizeName(migration.Name)
+			if identity == "" {
+				return nil, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
+			}
+			changesets = append(changesets, changeset{
+				identity: identity,
+				data:     normalizeSQL([]byte(migration.UpSQL)),
+			})
+		}
+	}
+
+	// atlas.sum orders entries lexically, and Ptah executes a hashed Atlas
+	// directory in that order. Pad every version to the width of the final
+	// version so 10 never sorts before 2. Atlas CE v1.3.0 accepts the resulting
+	// leading-zero versions and executes 01..11 in that order.
+	width := len(strconv.Itoa(len(changesets)))
+	entries := make([]Entry, 0, len(changesets))
+	for index, changeset := range changesets {
+		entries = append(entries, Entry{
+			Name: fmt.Sprintf("%0*d_%s.sql", width, index+1, changeset.identity),
+			Data: changeset.data,
+		})
+	}
+	sortEntries(entries)
+	return entries, nil
 }
 
 // LoadDir securely snapshots the source migration directory at dir and
@@ -618,6 +706,13 @@ func loadGooseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 }
 
 func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
+	if err := rejectUnsupportedLiquibaseChangelogs(fsys, files); err != nil {
+		return nil, err
+	}
+	return loadDirectiveSectionEntries(fsys, files, liquibaseSQL)
+}
+
+func rejectUnsupportedLiquibaseChangelogs(fsys fs.FS, files []fs.DirEntry) error {
 	var changelogFiles []string
 	for _, file := range files {
 		if file.IsDir() || !liquibaseChangelogExtensions[strings.ToLower(filepath.Ext(file.Name()))] {
@@ -625,20 +720,20 @@ func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 		}
 		data, err := fs.ReadFile(fsys, file.Name())
 		if err != nil {
-			return nil, fmt.Errorf("read migration file %s: %w", file.Name(), err)
+			return fmt.Errorf("read migration file %s: %w", file.Name(), err)
 		}
 		if liquibaseRootRe.Match(data) {
 			changelogFiles = append(changelogFiles, file.Name())
 		}
 	}
 	if len(changelogFiles) > 0 {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"liquibase XML/YAML/JSON changelogs are not yet supported (only formatted-SQL changelogs beginning with %q); found %s",
 			"--liquibase formatted sql",
 			strings.Join(changelogFiles, ", "),
 		)
 	}
-	return loadDirectiveSectionEntries(fsys, files, liquibaseSQL)
+	return nil
 }
 
 func loadAtlasEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
@@ -1282,10 +1377,14 @@ func readRawImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
 //
 // "NO TRANSACTION" is deliberately absent, and so is every other "-- +goose ..."
 // line. Goose leaves them in the migration body, and because they cannot open or
-// close a section, recognizing them would change nothing: measured on the
-// community binary v1.3.0, both "-- +goose NO TRANSACTION" and the meaningless
-// "-- +goose Frobnicate" survive into the SQL it executes, whether they sit above
-// the Up directive or inside the up section.
+// close a section, recognizing them here would change the section state:
+// measured on the community binary v1.3.0, both "-- +goose NO TRANSACTION" and
+// the meaningless "-- +goose Frobnicate" survive into the SQL it executes,
+// whether they sit above the Up directive or inside the up section. gooseUpSQL
+// separately translates the exact whole-file NO TRANSACTION directive into an
+// Atlas txmode header while preserving the Goose line in that body, so direct
+// apply honors the source execution semantics rather than treating it as only a
+// comment.
 type goosePragma string
 
 const (
@@ -1305,6 +1404,18 @@ var goosePragmas = []goosePragma{
 	goosePragmaStatementBegin,
 	goosePragmaStatementEnd,
 }
+
+const (
+	gooseNoTransactionDirective = "-- +goose NO TRANSACTION"
+	atlasTxModeNoneDirective    = "-- atlas:txmode none"
+)
+
+type gooseTransactionMode uint8
+
+const (
+	gooseTransactionModeDefault gooseTransactionMode = iota
+	gooseTransactionModeNone
+)
 
 // gooseSection is which directive section the parser is currently inside.
 type gooseSection int
@@ -1409,23 +1520,22 @@ func gooseNearMissPragma(line string) (goosePragma, bool) {
 // binary executes it, records it honestly, and drops nothing.
 func gooseUpSQL(name string, data []byte) ([]byte, error) {
 	var body []string
+	bodyTarget := &body
 	section := gooseSectionNone
 	inStatement := false
-	collecting := true
+	transactionMode := gooseTransactionModeDefault
 
 	for i, line := range strings.Split(string(data), "\n") {
 		lineNo := i + 1
+		lineTransactionMode := gooseTransactionModeOfLine(line)
+		transactionMode = max(transactionMode, lineTransactionMode)
+		if lineTransactionMode == gooseTransactionModeNone {
+			continue
+		}
 		pragma, ok := goosePragmaOf(line)
 		if !ok {
-			if near, isNear := gooseNearMissPragma(line); isNear {
-				return nil, fmt.Errorf(
-					"migration file %s line %d: %q is not a goose directive because directive names are case- and space-sensitive; "+
-						"as written it is an ordinary comment and the SQL below it would be executed as part of the up migration. Write %q instead",
-					name, lineNo, strings.TrimSpace(line), goosePragmaPrefix+string(near),
-				)
-			}
-			if collecting {
-				body = append(body, line)
+			if err := appendGooseBodyLine(name, lineNo, line, bodyTarget); err != nil {
+				return nil, err
 			}
 			continue
 		}
@@ -1449,7 +1559,7 @@ func gooseUpSQL(name string, data []byte) ([]byte, error) {
 				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
 			}
 			section = gooseSectionDown
-			collecting = false
+			bodyTarget = nil
 		case goosePragmaStatementBegin:
 			if section == gooseSectionNone {
 				return nil, gooseUnexpectedPragma(name, lineNo, pragma, "no up section has been opened yet")
@@ -1460,14 +1570,56 @@ func gooseUpSQL(name string, data []byte) ([]byte, error) {
 		}
 	}
 
+	var converted []byte
 	if section == gooseSectionNone {
 		// No section directive appeared anywhere: the file IS the migration.
 		// Reached only when nothing errored above, and Down, StatementBegin and
 		// StatementEnd all error while the section is None, so this really does
 		// mean "carries no goose directives" rather than "carries a broken set".
-		return trimSQL(data), nil
+		if transactionMode == gooseTransactionModeNone {
+			converted = normalizeSQL([]byte(strings.Join(body, "\n")))
+		} else {
+			converted = trimSQL(data)
+		}
+	} else {
+		converted = normalizeSQL([]byte(strings.Join(body, "\n")))
 	}
-	return normalizeSQL([]byte(strings.Join(body, "\n"))), nil
+	return applyGooseTransactionMode(converted, transactionMode), nil
+}
+
+func appendGooseBodyLine(name string, lineNo int, line string, body *[]string) error {
+	if near, isNear := gooseNearMissPragma(line); isNear {
+		return fmt.Errorf(
+			"migration file %s line %d: %q is not a goose directive because directive names are case- and space-sensitive; "+
+				"as written it is an ordinary comment and the SQL below it would be executed as part of the up migration. Write %q instead",
+			name, lineNo, strings.TrimSpace(line), goosePragmaPrefix+string(near),
+		)
+	}
+	if body != nil {
+		*body = append(*body, line)
+	}
+	return nil
+}
+
+func gooseTransactionModeOfLine(line string) gooseTransactionMode {
+	if strings.TrimSpace(line) != gooseNoTransactionDirective {
+		return gooseTransactionModeDefault
+	}
+	return gooseTransactionModeNone
+}
+
+func applyGooseTransactionMode(data []byte, mode gooseTransactionMode) []byte {
+	if mode != gooseTransactionModeNone {
+		return data
+	}
+	return addAtlasNoTransactionDirective(data)
+}
+
+func addAtlasNoTransactionDirective(data []byte) []byte {
+	out := make([]byte, 0, len(atlasTxModeNoneDirective)+2+len(data))
+	out = append(out, atlasTxModeNoneDirective...)
+	out = append(out, '\n', '\n')
+	return append(out, data...)
 }
 
 // gooseUnexpectedPragma reports a directive that cannot appear where it does.

@@ -8,14 +8,194 @@ package schemaclean
 // table it never destroys, are invisible to it. Every exported-API test on
 // PostgreSQL passes whether or not the SQL Server placeholders are spelled for
 // the right driver; only the unexported builder's output distinguishes them.
+// The scoped execution order and PostgreSQL relation-lock statement are also
+// deliberately hidden from the alphabetical report, so proving their exact
+// order and quoting without database I/O needs access to unexported helpers.
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/revisiontable"
 )
+
+func TestPlanExecutionOrdersKnownDependentsWithoutChangingReport(t *testing.T) {
+	c := qt.New(t)
+	plan := PlanFromObjects([]Object{
+		{
+			Type:     ObjectTypeSequence,
+			Schema:   "public",
+			Table:    "users",
+			Name:     "users_id_seq",
+			Implicit: true,
+			Command:  `DROP SEQUENCE IF EXISTS "public"."users_id_seq" RESTRICT`,
+		},
+		{Type: ObjectTypeTable, Schema: "public", Name: "users"},
+		{Type: ObjectTypeView, Schema: "public", Name: "active_users"},
+		{Type: ObjectTypeForeignKey, Schema: "public", Table: "users", Name: "fk_users_team"},
+		{Type: ObjectTypeFunction, Schema: "public", Name: "normalize", Parameters: "status"},
+		{Type: ObjectTypeEnum, Schema: "public", Name: "status"},
+	}, "postgres")
+
+	c.Assert(changeTypes(plan.Changes), qt.DeepEquals, []string{
+		ObjectTypeEnum,
+		ObjectTypeForeignKey,
+		ObjectTypeFunction,
+		ObjectTypeSequence,
+		ObjectTypeTable,
+		ObjectTypeView,
+	})
+	c.Assert(changeTypes(plan.executionChanges), qt.DeepEquals, []string{
+		ObjectTypeForeignKey,
+		ObjectTypeView,
+		ObjectTypeTable,
+		ObjectTypeSequence,
+		ObjectTypeFunction,
+		ObjectTypeEnum,
+	})
+}
+
+func TestPlanExecutionOrdersSameKindDependentsByCatalogDepth(t *testing.T) {
+	c := qt.New(t)
+	objects := []Object{
+		{
+			Type:   ObjectTypeView,
+			Schema: "public",
+			Name:   "a_base",
+		},
+		{
+			Type:   ObjectTypeView,
+			Schema: "public",
+			Name:   "z_child",
+		},
+	}
+	plan := planFromObjects(objects, "postgres", map[executionObjectIdentity]int{
+		objectExecutionIdentity(objects[1]): 1,
+	})
+
+	c.Assert(changeNames(plan.Changes), qt.DeepEquals, []string{"a_base", "z_child"})
+	c.Assert(changeNames(plan.executionChanges), qt.DeepEquals, []string{"z_child", "a_base"})
+}
+
+func TestPostgresFamilyScopedExecutionRetriesSelectedDependencies(t *testing.T) {
+	c := qt.New(t)
+	tx := &cleanupRetryTransaction{
+		failQuery:         `DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		remainingFailures: 1,
+	}
+	changes := []Change{
+		{Type: ObjectTypeView, Name: "a_base", Cmd: `DROP VIEW IF EXISTS "a_base" RESTRICT`},
+		{Type: ObjectTypeView, Name: "z_child", Cmd: `DROP VIEW IF EXISTS "z_child" RESTRICT`},
+	}
+
+	err := applyPostgresFamilyPlanChanges(t.Context(), tx, changes)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.queries, qt.DeepEquals, []string{
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		"ROLLBACK TO SAVEPOINT ptah_scoped_cleanup_object",
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "z_child" RESTRICT`,
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+		"SAVEPOINT ptah_scoped_cleanup_object",
+		`DROP VIEW IF EXISTS "a_base" RESTRICT`,
+		"RELEASE SAVEPOINT ptah_scoped_cleanup_object",
+	})
+}
+
+func TestPostgresPlanRelationsLockEveryTableOwner(t *testing.T) {
+	c := qt.New(t)
+	tx := &cleanupRetryTransaction{}
+	changes := []Change{
+		{Type: ObjectTypeView, Schema: "public", Name: "active_users"},
+		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
+		{Type: ObjectTypeForeignTable, Schema: "public", Name: "remote_users"},
+		{Type: ObjectTypeTable, Schema: "tenant", Name: "users"},
+	}
+
+	err := lockPostgresPlanRelations(t.Context(), tx, changes)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.queries, qt.DeepEquals, []string{
+		`LOCK TABLE "public"."remote_users", "tenant"."users" IN ACCESS EXCLUSIVE MODE`,
+	})
+}
+
+func TestEmptyPlanStillRunsExecutionBoundaryValidation(t *testing.T) {
+	c := qt.New(t)
+	wantErr := errors.New("schema changed after confirmation")
+	called := false
+
+	err := ApplyPlanWithOptions(t.Context(), nil, Plan{}, ApplyPlanOptions{
+		ValidateBeforeExecute: func(dbschematypes.SchemaExecutor) error {
+			called = true
+			return wantErr
+		},
+	})
+
+	c.Assert(err, qt.ErrorIs, wantErr)
+	c.Assert(called, qt.IsTrue)
+}
+
+func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
+	for _, test := range []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: "postgres", want: true},
+		{dialect: "postgresql", want: true},
+		{dialect: "cockroachdb", want: true},
+		{dialect: "yugabytedb", want: true},
+		{dialect: "mysql", want: false},
+	} {
+		t.Run(test.dialect, func(t *testing.T) {
+			qt.Assert(t, isPostgresFamily(test.dialect), qt.Equals, test.want)
+		})
+	}
+}
+
+type cleanupRetryTransaction struct {
+	queries           []string
+	failQuery         string
+	remainingFailures int
+}
+
+func (tx *cleanupRetryTransaction) ExecuteSQL(_ context.Context, query string, _ ...any) error {
+	tx.queries = append(tx.queries, query)
+	if query == tx.failQuery && tx.remainingFailures > 0 {
+		tx.remainingFailures--
+		return errors.New("selected dependent still exists")
+	}
+	return nil
+}
+
+func (*cleanupRetryTransaction) IsDryRun() bool { return false }
+
+func (*cleanupRetryTransaction) Commit() error { return nil }
+
+func (*cleanupRetryTransaction) Rollback() error { return nil }
+
+func changeTypes(changes []Change) []string {
+	types := make([]string, 0, len(changes))
+	for _, change := range changes {
+		types = append(types, change.Type)
+	}
+	return types
+}
+
+func changeNames(changes []Change) []string {
+	names := make([]string, 0, len(changes))
+	for _, change := range changes {
+		names = append(names, change.Name)
+	}
+	return names
+}
 
 // TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax pins the two
 // things the probe cannot get wrong without failing at runtime: the placeholder
@@ -237,4 +417,28 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 			c.Assert(coverageFor(test.dialect).revisionTables, qt.Equals, test.want)
 		})
 	}
+}
+
+func TestPostgresRuntimeObjectTypeCoversEveryWriterOnlyKind(t *testing.T) {
+	c := qt.New(t)
+
+	tests := map[string]string{
+		"aggregate":         ObjectTypeAggregate,
+		"collation":         ObjectTypeCollation,
+		"default_privilege": ObjectTypeDefaultPrivilege,
+		"foreign_table":     ObjectTypeForeignTable,
+		"function":          ObjectTypeFunction,
+		"procedure":         ObjectTypeProcedure,
+		"sequence":          ObjectTypeSequence,
+	}
+	for kind, want := range tests {
+		got, ok := postgresRuntimeObjectType(kind)
+		c.Assert(ok, qt.IsTrue, qt.Commentf("kind %s", kind))
+		c.Assert(got, qt.Equals, want, qt.Commentf("kind %s", kind))
+	}
+
+	_, ok := postgresRuntimeObjectType("extension")
+	c.Assert(ok, qt.IsFalse)
+	qt.Assert(t, coverageFor("postgres").postgresRuntimeObjects, qt.IsTrue)
+	qt.Assert(t, coverageFor("cockroachdb").postgresRuntimeObjects, qt.IsFalse)
 }

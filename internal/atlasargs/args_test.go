@@ -92,11 +92,79 @@ func TestParseLocalDir_FailurePath(t *testing.T) {
 
 func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
 	c := qt.New(t)
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "meaningful format key", query: "format=atlas"},
+		{name: "unknown key", query: "nonsense=1"},
+		{name: "meaningful and unknown keys", query: "format=atlas&nonsense=1"},
+	}
 
-	got, err := atlasargs.LocalDirValue("file://migrations?format=atlas")
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasargs.LocalDirValue("file://migrations?" + tt.query)
 
-	c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
-	c.Assert(got, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+func TestRequireDirScheme_HappyPathLeavesNamedSchemesToTheParser(t *testing.T) {
+	c := qt.New(t)
+	values := []string{
+		"file://migrations",
+		"atlas://repo/migrations",
+		"oci://registry.example/repository:tag",
+	}
+
+	for _, value := range values {
+		c.Run(value, func(c *qt.C) {
+			err := atlasargs.RequireDirScheme(value)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+func TestRequireDirScheme_FailurePathMatchesAtlasBytes(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{
+			name:  "bare path",
+			value: "migrations",
+			want:  `missing scheme for dir url. Did you mean "file://migrations"? `,
+		},
+		{
+			name:  "query is omitted from the suggestion",
+			value: "migrations?format=goose",
+			want:  `missing scheme for dir url. Did you mean "file://migrations"? `,
+		},
+		{
+			name:  "fragment is omitted from the suggestion",
+			value: "migrations#frag",
+			want:  `missing scheme for dir url. Did you mean "file://migrations"? `,
+		},
+		{
+			name:  "empty value",
+			value: "",
+			want:  `missing scheme for dir url. Did you mean "file://"? `,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			err := atlasargs.RequireDirScheme(tt.value)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, tt.want)
+		})
+	}
 }
 
 func TestMap_HappyPathMigrateDownNativeFlags(t *testing.T) {

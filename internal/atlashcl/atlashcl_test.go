@@ -1,6 +1,7 @@
 package atlashcl_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1409,16 +1410,92 @@ permission {
 	c.Assert(schemaGrant.Role, qt.Equals, "PUBLIC")
 }
 
-func TestParseRejectsUnsupportedExtensionSchema(t *testing.T) {
+func TestParseExtensionSchema(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse([]byte(`
+schema "extensions" {}
 extension "pg_trgm" {
-  schema = schema.public
+  schema = schema.extensions
 }
 `), "schema.hcl")
 
-	c.Assert(err, qt.ErrorMatches, `.*unsupported extension attribute "schema".*`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{Name: "pg_trgm", Schema: "extensions"}})
+}
+
+func TestParseExtensionSchemaPlacementForms(t *testing.T) {
+	tests := []struct {
+		name       string
+		prefix     string
+		expression string
+		want       string
+	}{
+		{name: "string literal", expression: `"Extension Store"`, want: "Extension Store"},
+		{
+			name: "evaluated string literal",
+			prefix: `
+variable "target" {
+  type    = string
+  default = "extensions"
+}
+`,
+			expression: `"${var.target}"`,
+			want:       "extensions",
+		},
+		{name: "exact traversal", expression: `schema.extensions`, want: "extensions"},
+		{name: "indexed exact traversal", expression: `schema["Extension Store"]`, want: "Extension Store"},
+		{name: "whitespace-only string literal", expression: `" "`, want: " "},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := atlashcl.Parse(fmt.Appendf(nil, `%s
+extension "pg_trgm" {
+  schema = %s
+}
+`, test.prefix, test.expression), "schema.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{Name: "pg_trgm", Schema: test.want}})
+		})
+	}
+}
+
+func TestParseExtensionRejectsNonSchemaPlacementExpressions(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		expr   string
+	}{
+		{name: "table traversal", expr: `table.users`},
+		{
+			name: "variable traversal",
+			prefix: `
+variable "target" {
+  type    = string
+  default = "extensions"
+}
+`,
+			expr: `var.target`,
+		},
+		{name: "over-qualified schema traversal", expr: `schema.extensions.extra`},
+		{name: "raw SQL call", expr: `sql("extensions")`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := atlashcl.Parse(fmt.Appendf(nil, `%s
+extension "pg_trgm" {
+  schema = %s
+}
+`, test.prefix, test.expr), "schema.hcl")
+
+			c.Assert(err, qt.ErrorMatches, `.*extension attribute "schema" must be a string template or exact schema reference.*`)
+		})
+	}
 }
 
 func TestParseRejectsIncompleteSchemaObjects(t *testing.T) {

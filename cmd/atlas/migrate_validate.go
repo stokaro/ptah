@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -22,8 +23,11 @@ import (
 // Atlas directory forwards to `ptah migrations validate` unchanged; a directory
 // in a foreign tool's layout, named with either spelling Atlas accepts, is
 // verified against that tool's file set here.
-func newAtlasMigrateValidateCommand() *cobra.Command {
-	return newAtlasMigrateIntegrityCommand(atlasMigrateValidateVerb(), runAtlasMigrateValidate)
+func newAtlasMigrateValidateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	run := func(cmd *cobra.Command, source atlasMigrateSource) error {
+		return runAtlasMigrateValidate(cmd, policy, source)
+	}
+	return newAtlasMigrateIntegrityCommand(policy, atlasMigrateValidateVerb(), run)
 }
 
 func atlasMigrateValidateVerb() atlasVerb {
@@ -57,9 +61,13 @@ func atlasMigrateValidateVerb() atlasVerb {
 // Integrity is checked before the directory is parsed, matching Atlas CE:
 // a tampered file that the source tool can no longer parse is still reported as
 // a checksum mismatch rather than as a conversion failure.
-func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) error {
+func runAtlasMigrateValidate(
+	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
+	source atlasMigrateSource,
+) error {
 	if err := cmdutil.StatDir(source.dir); err != nil {
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, migratevalidate.AtlasDirectoryError(source.dir, err))
 	}
 	fsys := os.DirFS(source.dir)
 	names, err := atlasmigrateimport.SumFileNames(fsys, source.format)
@@ -93,6 +101,18 @@ func runAtlasMigrateValidate(cmd *cobra.Command, source atlasMigrateSource) erro
 
 	if source.devURL == "" {
 		return nil
+	}
+	// Placed after the integrity gate and in front of the replay, which is the
+	// order the pinned community binary v1.3.0 was measured in: with no
+	// `--dev-url` at all this verb exits 0, so the URL cannot be settled ahead of
+	// the directory. `--dev-url notadriver://x` answers `sql/sqlclient: unknown
+	// driver "notadriver"` there, where Ptah wrapped a connector error into a
+	// 130-byte sentence naming an internal replay step.
+	if err := atlasDevURLDriverDiagnostic(source.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := policy.ValidateMigrationSourceForURL(fsys, source.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	return replayAtlasMigrateSource(cmd, source, fsys)
 }

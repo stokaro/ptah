@@ -222,8 +222,7 @@ refuse any query on it — `migration directory URL query parameters are not
 supported for this command` — so neither the note nor the variable applies
 there. The pinned community binary answers `unknown flag: --dir` on all six, so
 this is stricter than a CLI with no contract on those verbs rather than a parity
-gap; it is tracked in
-[#1013](https://github.com/stokaro/ptah/issues/1013).
+gap.
 
 Inputs that stay refused where Atlas CE exits 0, all of them loudly:
 
@@ -290,7 +289,7 @@ fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 
 | Flag | Behavior |
 | --- | --- |
-| `--latest N` | Maps to native changeset linting. Required unless `--git-base` is given; `N` must be greater than zero. Atlas `R` and `<number>R` repeatable files are selected by their revision token; bare `R` sorts after numeric files. |
+| `--latest N` | Positive N selects the latest revision keys and remains exclusive with `--git-base`. Zero disables latest selection and configured `lint.latest`; explicit or configured Git may still select. With neither, the command returns `--latest or --git-base is required`. |
 | `--git-base`, `--git-dir` | Map to native changeset linting. `--git-base` is the alternative to `--latest`. Changed Atlas repeatable files are selected by `R` or `<number>R`, not by a lossy numeric version. |
 | `--dev-url` | Required. Infers the lint dialect, and cleans and replays migrations on directly connectable dev databases. |
 | `--format` | Atlas Go-template output over `.Env`, `.Steps`, and `.Files`. The default is Atlas's migration-analysis text report. |
@@ -347,11 +346,12 @@ as it is on the other seven verbs that accept a `--dir` query — `apply`,
 `checkpoint`, `down`, `edit`, `rebase`, `rm` or `test`: those refuse a `--dir`
 query outright, as the shared rules above record.
 
-`--dir` must name a scheme on this verb and on `migrate diff`, as it must on
-every Atlas verb: `--dir migrations` is refused with
+`--dir` must name a scheme on `migrate new`, `diff`, `hash`, `validate`,
+`status`, and `lint`: `--dir migrations` is refused on those consumers with
 `missing scheme for dir url. Did you mean "file://migrations"?` and creates
-nothing. The same applies to its `PTAH_DIR` twin. The verbs that only read a
-directory still accept a bare path, as does `atlas.hcl` `migration.dir`
+nothing. The stderr line ends with the bytes `20 0a`: one ASCII space followed
+by the line feed. The same applies to its `PTAH_DIR` twin. A directory selected
+by `atlas.hcl` `migration.dir` still accepts a bare path
 ([#1186](https://github.com/stokaro/ptah/issues/1186)).
 
 Omitted entirely, `--dir` defaults to `file://migrations`, so
@@ -408,9 +408,9 @@ refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
 
 ### `ptah-compat migrate diff`
 
-Verifies the directory's `atlas.sum`, replays a local Atlas migration directory
-on `--dev-url`, diffs it against `--to`, and writes new Atlas-style migration
-files. `atlas.sum` updates only after every file was written; a failed write
+Verifies the directory's `atlas.sum`, replays the selected migration layout on
+`--dev-url`, diffs it against `--to`, and writes new migration files in that
+layout. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
 
 The checksum refusal comes first — before the dev database is connected to and
@@ -418,9 +418,17 @@ before `--to` and `--dev-url` are required at all, which is the order Atlas uses
 — so nothing is created on a directory it refuses. A directory that has never
 been hashed and already holds a migration is refused; one that does not exist
 yet, or holds no top-level `*.sql`, is not, which is how a project's first
-migration gets written. An unrecognized `--dir` query key is ignored; a
-`?format=` or `--dir-format` naming a non-`atlas` layout is refused, because
-nothing writes planned migration SQL in a foreign tool's convention yet.
+migration gets written. An unrecognized `--dir` query key is ignored;
+`?format=` and `--dir-format` select any of the six writable layouts. The
+directory is verified over that layout's covered file set before the dev
+database is opened.
+
+Goose carries a whole-file `-- +goose NO TRANSACTION` directive when either the
+forward or exact reverse plan requires no-transaction execution. The directive
+governs both sections. golang-migrate, Flyway, dbmate, and Liquibase remain
+fail-closed for those plans because their safe transaction metadata has not
+been proven. The Atlas layout remains forward-only and carries `-- atlas:txmode
+none` on its own file when required.
 
 Both spellings of the layout are read the way the other verbs that accept a
 `--dir` query read them. The value is matched verbatim, so `--dir-format ATLAS`
@@ -490,10 +498,30 @@ Imports local `file://` migration directories from `atlas`, `golang-migrate`,
 single-file directory and writes `atlas.sum`. Flyway repeatable migrations are
 converted to one-time versioned Atlas files rather than emitted with an `R`
 suffix, so the imported directory remains stable under Ptah's revision model.
+
+A conventional Liquibase formatted-SQL name such as `changelog.sql` makes the
+importer parse every covered SQL file and emit one numeric Atlas file per
+changeset, in lexical file and changeset appearance order. Versions are padded
+to the digit width of the final version so lexical checksum order stays numeric.
+Headerless or malformed members refuse the whole import before destination
+creation.
+
 A successful compatibility import is silent; inspect the destination directory
 and its `atlas.sum` instead of relying on a progress message. Failures are still
 reported on stderr. The native `ptah migrations import` converts the same source
 formats into Ptah-native migrations instead, and reports what it wrote.
+
+`--from` and `--to` are resolved by the same rules as every other verb's
+`--dir`. Both require a scheme, the source layout comes from `--from`'s
+`?format=` query or from `--dir-format` with the query winning, and the value is
+matched verbatim — `FLYWAY` and `" flyway "` are refused. An empty `?format=`
+selects the Atlas layout and outranks `--dir-format`, which makes the import a
+no-op that is refused rather than performed.
+
+Refusals are answered in Atlas's order: the source scheme, then the layout
+value, then whether the source directory exists, then whether it is already in
+the Atlas layout, then the target scheme. A source directory that is not there
+is reported as missing rather than as a layout conflict.
 
 ### `ptah-compat migrate checkpoint [name]`
 
@@ -578,11 +606,8 @@ an Atlas CE stub.
 `?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
 aborts every `migrate checkpoint` invocation, so there is no CE behavior to
 diverge from here and refusing an unimplemented spelling loudly is the intended
-outcome. `migrate diff` is now the only other verb that refuses it, and there
-the refusal **is** a parity defect rather than a deliberate choice: CE exits 0
-and writes the migration in the named layout, reverse SQL included. It is
-tracked in the feature matrix and its linked issues. `migrate lint`, `new`,
-`set` and `status` honor the parameter today.
+outcome. The eight verbs that accept a `--dir` query honor the parameter today;
+`migrate diff` writes forward and reverse SQL in the selected layout.
 
 ### `ptah-compat migrate test [paths]`
 
@@ -654,10 +679,17 @@ without `--dev-url` fails with Atlas's `--dev-url cannot be empty` message.
 
 | Output | How to request it |
 | --- | --- |
-| HCL | The default. |
-| SQL | `--format sql` or `--format '{{ sql . }}'`. |
-| JSON | `--format json` or `{{ json . }}`. |
+| HCL | The default, or `--format '{{ hcl . }}'`. |
+| SQL | `--format '{{ sql . }}'`. |
+| JSON | `--format '{{ json . }}'`. |
 | Custom templates | `{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, `{{ mermaid . }}`. |
+
+Bare `--format hcl`, `--format sql`, and `--format json` write those literal
+words. They add no line feed, and database contents do not change the values.
+Surrounding whitespace is also preserved: `--format ' hcl '` writes hex
+`20 68 63 6c 20`, with no line feed. Those literal cases match Atlas CE v1.3.0.
+Native `ptah schema inspect --format hcl|sql|json` keeps its rendered
+shorthands.
 
 **Split-write exports.** `{{ hcl . | split | write "schema" }}` and
 `{{ sql . | split | write "schema" }}` support the documented Atlas split
@@ -693,13 +725,16 @@ non-community template functions, so these exports are an open Ptah extension.
 - Whether a selector matched is decided by the projection, not by the selector
   text: `path.Match` treats `.` as an ordinary character, so `table.column`,
   `table*column`, `table?column`, and `table[.]column` all reach past a
-  top-level resource and select nothing. `schema apply` refuses an empty
-  `--include` selection; `schema diff` and `schema inspect` keep exit status 0
-  and report it on standard error.
+  top-level resource and select nothing. `schema apply` and `schema diff`
+  refuse an empty `--include` selection; `schema inspect` keeps exit status 0
+  and reports it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
-- Other field-level exclude selectors and type selectors on non-final pattern
-  segments fail explicitly; exporter blocks remain an explicit gap.
+- Other field-level exclude selectors fail explicitly. Type selectors on
+  non-final pattern segments fail too, except for the leading `[type=schema]`
+  segment documented in the
+  [Atlas comparison](../../atlas/comparison/#leading-schema-type-selector);
+  exporter blocks remain an explicit gap.
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
 `unknown flag: --include`; Atlas registers it. The measured
@@ -778,7 +813,15 @@ with the same sentence whether or not the variable is exported.
 selects top-level resources with Atlas-style glob selectors and `[type=...]`
 filters. Repeated values union deterministically, `--exclude` plus disabled
 `schema.mode` values subtract afterward, cross-scope dependencies refuse the
-plan with explicit diagnostics, and an empty selection reports a synced schema.
+plan with explicit diagnostics, and an explicit include selection matching
+nothing refuses the apply.
+
+For a live PostgreSQL desired schema, a selected extension outside the default
+schema retains its installation schema. A create plans `CREATE SCHEMA IF NOT
+EXISTS` followed by `CREATE EXTENSION ... WITH SCHEMA ...`, identical live
+placements compare as synced, and drops remain supported. A placement change
+is detected but fails before SQL output because Ptah does not yet plan `ALTER
+EXTENSION ... SET SCHEMA`.
 
 **`--plan file://<path>`** executes a pre-approved local plan file instead of
 re-planning. Both plan formats are accepted, detected by content: the Atlas
@@ -1064,9 +1107,15 @@ schema files alone still require `--dev-url`.
 | `--schema`/`-s`, `--include` | Positively scope both sides, with the same selection semantics as `schema apply`. |
 | `--env` | Reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`. |
 
-Selection order matches `schema apply`: schema universe first, include selection
-inside it, exclusion last, cross-scope dependency diagnostics, and synced output
-for empty selections.
+Selection order matches `schema apply`: schema universe for schema-owned
+resources, include selection, exclusion last, and cross-scope dependency
+diagnostics. Database-wide extensions remain on both sides regardless of
+installation placement. An extension-only `--include` selects their qualified
+or bare identities; when a non-extension resource matches, all extensions ride
+as non-removing support even beside extension selectors. Schema-only and
+extension-only scopes remain authoritative for extension removal. Exclusions
+still subtract afterward. A selection that matches neither side exits 1 with
+no diff output rather than reporting a synced schema.
 
 Native twin: [`ptah schema diff`](../native-commands/).
 
@@ -1084,6 +1133,8 @@ runtime.
 | --- | --- |
 | `--dry-run` | Prints the planned cleanup. |
 | `--auto-approve` | Skips the interactive confirmation, which is otherwise preserved. |
+| `--include` | Full mode only. Keeps objects matched by Atlas resource selectors; dependent cleanup rows such as foreign keys and implicit sequences ride with their table. An owned sequence cannot be selected without its table. |
+| `--exclude` | Full mode only. Subtracts objects matched by Atlas resource selectors. Every independently writer-owned object kind remains selectable; an owned sequence cannot be preserved while its table is selected for removal. |
 | `--format` | Renders Atlas-style templates over the cleanup plan. |
 | `--env` | Reads `env.url` and `format.schema.clean` from `atlas.hcl`. |
 
@@ -1092,7 +1143,7 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 
 | Dialect | Reported and destroyed |
 | --- | --- |
-| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions; standalone sequences on PostgreSQL itself. |
+| PostgreSQL family | Foreign keys, tables, views, materialized views, enum, domain, composite and range types, and functions. PostgreSQL itself also reports standalone sequences, foreign tables, procedures, aggregates, collations, and default privileges. |
 | MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
 | SQLite | Tables and views. |
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
@@ -1109,9 +1160,29 @@ any other name is reported as the ordinary table it is.
 
 Objects that vanish as collateral of a listed drop are not listed separately:
 indexes, triggers, non-foreign-key constraints, RLS policies, and comments. The
-rendered `Cmd` describes the object being destroyed; it is not the exact
-statement the cleanup runtime executes, and the report order is alphabetical by
-object kind rather than an execution order.
+report order is alphabetical by object kind rather than an execution order. An
+unscoped cleanup rebuilds its statements from the live catalog; a scoped
+cleanup executes the reported `Cmd` values in a separate deterministic order
+that removes known dependents before their dependencies. PostgreSQL uses live
+catalog depth to order dependent views and materialized views of the same kind.
+Every PostgreSQL-family target executes the complete scoped plan in one
+transaction and retries selected dependencies after a `RESTRICT` refusal. An
+external dependency rolls back earlier selected drops instead of leaving a
+partially cleaned schema.
+
+PostgreSQL `SERIAL` and identity sequences are recognized as implicit table
+children, execute after their parent table, and are not reported as forbidden
+standalone sequences by the strict CE oracle profile. A selector that tries to
+make the owned sequence and its table disagree is refused before mutation.
+Function objects and changes expose full declaration `Parameters`.
+
+PostgreSQL-family scoped drops use `RESTRICT`, so the database refuses a
+selected parent when an unselected view, foreign key, or other catalog
+dependency still refers to it. The narrowed command cannot cascade beyond the
+objects its plan reports.
+
+Function `Cmd` values use PostgreSQL identity arguments, so overloaded,
+defaulted, and OUT-only functions remain distinct and executable.
 
 Native twin: [`ptah schema clean`](../native-commands/).
 

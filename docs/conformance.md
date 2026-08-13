@@ -46,6 +46,56 @@ stay out of and the migration fails partway through. Ptah honors it. A change
 that once removed that capability in the name of parity was reverted -- see
 `AGENTS.md`, "Compatibility Policy".
 
+## CE Oracle Policy
+
+The default `ptah-compat` process is the complete migration surface. It retains
+implemented Atlas Pro-like and best-effort capabilities.
+
+A CE differential or CLI-surface probe must set
+`PTAH_ATLAS_STRICT_COMPAT=1` on each `ptah-compat` subprocess. A required
+companion change in the separate conformance harness
+([`stokaro/ptah-atlas-conformance#277`](https://github.com/stokaro/ptah-atlas-conformance/pull/277))
+must inject that value only for CE comparisons; Pro-retention and native
+capability probes must run with it absent. Until that companion change lands,
+run CE probes with the variable injected per subprocess and do not enable it
+for the whole harness.
+
+Strict mode constructs the CE command and flag tree before help or dispatch.
+It rejects extension environment values and validates authored schema,
+project-config, migration, and inspected live-schema content before work.
+Local source-format and current-migration checks run before database or lock
+artifacts can be created.
+After the target connection opens, strict `schema apply` inventories an
+explicit `--schema` scope before acquiring the apply lock or replaying a
+desired migration directory on the dev database. Without an explicit scope, a
+PostgreSQL-family target inventories the user realm because desired replay may
+name a schema beyond the URL's `search_path`. Planning repeats the validation
+while the lock is held so a catalog change cannot bypass the policy.
+
+A strict inspect, apply, diff, or clean run refuses a live Pro-only object
+before it can be omitted from output, mistaken for absence, or destroyed.
+Inspection, apply planning, and live or replayed schema- and migration-diff
+sources supplement the ordinary schema reader with a read-only catalog
+inventory in the selected schema scope; cleanup validates the writer's full
+destruction inventory. Both inventories include PostgreSQL catalog objects
+absent from the ordinary reader. The policy narrows the capability inventory
+without copying a data-loss or state-corruption defect.
+
+Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
+and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+the original reader snapshot. Strict cleanup executes the validated and
+confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
+strict inventory through the transaction session, compares the rebuilt cleanup
+plan with the confirmed plan, and refuses catalog drift before the first drop.
+A trigger, policy, view, or foreign key created while the prompt is open cannot
+disappear with its table.
+
+Strict schema workflows refuse YAML sources and an authored `schema apply`
+lint policy that the CE path cannot enforce. Commands that execute, convert,
+or replay migration bodies refuse Atlas txtar, every Ptah directive, and SQL
+templates; checksum-only reads preserve those bytes. Default mode retains the
+extensions. Such cases remain in the retained-divergence evidence.
+
 ## Current Scoreboard
 
 As of Ptah `18ae5f9d4d63136248986263732524e2314f9d7c`:
@@ -267,28 +317,59 @@ Atlas CE, never looser. See
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) items 6
 and 13.
 
-### The same running hash makes the gate fire on files nobody edited
+### An insertion between applied revisions preserves checksum verification
 
-The property above has a second consequence, and there Ptah is the one that is
-wrong. `migration/migrator` treats the stored `atlas.sum` entry as a content
-hash of one file; it is not. Inserting a migration ahead of applied ones
-rewrites the entry of every later file, and the gate then refuses citing a file
-whose bytes never changed.
+An `atlas.sum` entry is a running hash, not a content hash for one file.
+Inserting a migration ahead of applied ones therefore changes every later
+entry, even when none of those files changed. Ptah verifies those rows against
+the chain projected from the migrations that were applied when the row was
+written.
 
-Measured on SQLite and on PostgreSQL 17, 2026-08-08, applying `one` and `three`
-and then adding `two` between them:
+Measured on SQLite and PostgreSQL 17.10, 2026-08-10, by applying `one` and
+`three` and then adding `two` between them. This is an interval insertion: an
+applied revision exists on each side of the new file.
 
 | | Atlas CE v1.3.0 | Ptah |
 | --- | --- | --- |
-| `migrate apply` (default `--exec-order linear`) | 1, `migration file …_two.sql was added out of order` | 1, `migration …_three checksum mismatch` |
-| `migrate apply --exec-order non-linear` | **0**, applies `two` | **1**, same checksum mismatch |
+| `migrate apply` (default `--exec-order linear`) | 1, out-of-order migration | 1, out-of-order migration |
+| `migrate apply --exec-order non-linear` | 0, applies `two` | 0, applies `two` |
+| repeat non-linear apply | 0, no migrations execute | 0, no migrations execute |
 
-`…_three.sql` is byte-identical in both directories; only its position in the
-sum chain moved. Both binaries stored the same value, so this is Ptah reading
-its own recorded data under the wrong contract, and the second row is a
-`ptah-compat exits 1 where Atlas CE exits 0` cell. It is open and tracked as
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5; the
-repair above is the operator's route through it in the meantime.
+The default refusal happens before any checksum row changes. Non-linear apply
+excludes pending insertions from its initial proof, then reconciles clean
+applied rows to the new chain only after the insertion succeeds. Dry runs and
+failed transactional or non-transactional migrations do not reconcile rows.
+
+A prefix insertion below the oldest applied revision is a different oracle
+cell. Measured on SQLite on 2026-08-12, Atlas CE exits 0, prints
+`No migration files to execute`, and silently leaves the prefix migration
+unapplied. Ptah refuses that default outcome, while `linear-skip` reproduces it
+on request and `non-linear` applies the insertion. The retained-divergences
+page records that deliberate refusal. The lower applied revision in the
+interval fixture above is the observable state that distinguishes the two
+Atlas CE results.
+
+Ptah computes every checksum change before writing and, on transaction-capable
+databases, commits the changes in one transaction. If one row update fails,
+every affected row retains the prior hash; a later apply retries the complete
+reconciliation.
+
+Recovery tests non-zero application-time groups as candidate prior applied
+sets. Rows sharing a timestamp stay in one group, which supports databases that
+store several applications at second precision without guessing their order.
+Recovery proceeds only when exactly one candidate explains the entire history:
+the affected prior cohort must still have its prior hashes, and each later row
+must retain the projection from its own application-time group. A zero
+timestamp, ambiguous candidate, mix of prior and current hashes, or edited file
+fails closed.
+
+ClickHouse exposes no multi-statement transaction through the configured
+driver. Ptah permits one synchronous checksum mutation there, but refuses a
+reconciliation that needs two or more row updates before changing either row.
+
+This closes
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 5
+without weakening the retained edited-file refusal in item 6.
 
 ### `migrate lint` does not require `--dev-url`
 
@@ -328,6 +409,15 @@ rule any caller can satisfy by respelling the argument is not a boundary, and
 recording this cell as deliberate strictness would record something the second
 row refutes.
 
+A third row was measured on 2026-08-12 and has since been closed: the native
+surface did not apply even the relative half. `ptah schema render --schema-file
+../outside/schema.sql` exited `0`, because the native desired-schema resolver
+called `filepath.Abs` on the operator's path before handing it to the same
+guard, and the absolute branch has no root. So the same helper returned opposite
+verdicts for the same destination depending on which command reached it. That is
+fixed; the absolute-pathname exemption above is untouched and remains the open
+decision.
+
 It is **not** the confinement this project does defend. That one is `file()`
 inside an `atlas.hcl` — a config-derived path, held by a different mechanism
 (`LocalDir.AllowedRoot`), where matching Atlas CE would turn config authorship
@@ -341,39 +431,32 @@ what every one of them accepts and needs its own change with its own controls.
 Tracked as [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241)
 item 11.
 
-### `migrate import --dir-format liquibase` refuses a changelog whose name has no leading number
+### `migrate import --dir-format liquibase` preserves conventional changesets
 
-Measured 2026-08-09, one Liquibase formatted-SQL changelog carrying two
-`--changeset` markers, each cell in its own directory:
+Measured 2026-08-10 with Atlas CE v1.3.0 and Ptah, using conventional
+Liquibase formatted-SQL changelogs:
 
-| source | Atlas CE v1.3.0 | Ptah |
+| source | Atlas CE v1.3.0 import | Ptah import |
 | --- | --- | --- |
-| `src/changelog.sql` | 0, writes `dst/changelog.sql` and `atlas.sum` | 1, `no importable migration files found in src for format "liquibase"` |
-| `src/1_changelog.sql` | 0 | **0**, and the written directory is byte-identical to Atlas CE's, `atlas.sum` included |
+| `changelog.sql`, two changesets | writes one unnumbered `changelog.sql` | writes `1_<author>_<id>.sql` and `2_<author>_<id>.sql` |
+| `1_numbered.sql` plus `changelog.sql` | writes both source names | converts both files into one globally numbered changeset stream |
 
-The second row is the root cause. The converter is not missing — it runs, and
-agrees to the byte. `loadDirectiveSectionEntries` selects source files with
-`^[0-9]+_.+\.sql$`, and a Liquibase changelog is conventionally named
-`changelog.sql`.
+The output-shape divergence is deliberate. Atlas CE's unnumbered output applies
+under Atlas, but Ptah's Atlas migrator refuses it because Ptah migration versions
+are integers. Numeric changeset files are accepted by both Atlas CE and Ptah,
+and they retain the source changeset identity that one collapsed file loses.
 
-Removing that filter is not on its own the fix, because the name Atlas CE writes
-carries no version. Measured on Atlas CE's **own** import output:
-
-| | Atlas CE v1.3.0 | Ptah |
-| --- | --- | --- |
-| `migrate apply --dir file://dst` over `changelog.sql` | 0, `migrating version changelog` | 1, `no migration files matched format "atlas"; unrecognized SQL files: changelog.sql` |
-
-Ptah models a migration version as an `int64`, so matching that import writes a
-directory this tool then refuses to apply — trading a refusal at import time for
-one at apply time, after the files have been written.
-
-Ptah's own importer already reads the same changelog and produces one migration
-per `--changeset`, carrying the author and id into the name, which keeps the two
-changeset identities that Atlas CE's single-file collapse loses. Choosing
-between "match the bytes, and teach the migrator non-numeric versions" and
-"import the layout Ptah's way, and diverge on output shape" is a design decision
-rather than a parity fix. Tracked as
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) item 8.
+The compatibility adapter reuses Ptah's public Liquibase formatted-SQL parser.
+If any covered top-level SQL file has a conventional, unnumbered name, every
+covered SQL file must be valid formatted SQL. Files are ordered lexically,
+changesets keep appearance order within each file, and the complete set receives
+global versions `1..N`. File-name versions are left-padded to the digit width of
+`N` — `01` through `11` for an 11-changeset stream — so `atlas.sum` lexical
+order remains execution order. Atlas CE v1.3.0 validated and applied that
+11-file shape in order. A malformed or headerless member fails the whole import
+before destination creation, so the mixed layout cannot partially import. A
+directory containing only numbered SQL names keeps the established one-file
+conversion. Liquibase XML, YAML, and JSON changelogs remain unsupported.
 
 ## PostgreSQL Introspection: Index and Domain Attributes
 
@@ -664,8 +747,8 @@ comment is not one of the four: it is a relation-level attribute like
 through, and that criterion has a fifth surface the list above does not name:
 Ptah's own Go annotation surface. `//ptah:schema:index` parses `name`,
 `fields`/`columns`, `table`, `unique`, `comment`, `type`, `where`/`condition`,
-`ops`, `nulls_distinct` and `granularity` — no storage parameters, and no
-`include` either.
+`ops`, `include`, `nulls_distinct` and `granularity` — but no storage
+parameters.
 
 The consequence is measured. Against a database holding
 `CREATE INDEX i ON t USING brin (ts) WITH (pages_per_range = 32)`, a model
@@ -676,13 +759,15 @@ DROP INDEX IF EXISTS "i";
 CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
 ```
 
-which drops the parameter. This is a pre-existing class rather than a new one:
-with the storage-parameter comparison removed, the identical plan is produced
-for `CREATE INDEX i ON t (a) INCLUDE (b)` against a model declaring
-`//ptah:schema:index name="i" fields="a"` — measured, both on PostgreSQL 17.10.
-Closing the class means adding index attributes to the annotation surface for
-everything the HCL surface can already say, which is its own change and is not
-attempted here.
+which drops the parameter. `include` is no longer part of this loss class: a
+model can declare `include="b"`, and PostgreSQL, YugabyteDB, and the Spanner
+PostgreSQL dialect preserve it as `INCLUDE ("b")`. Validation refuses
+CockroachDB and other dialects rather than dropping the payload. It also limits
+methods to default/`BTREE`/`GIST` on PostgreSQL 12–13, adds `SPGIST` on
+PostgreSQL 14 and newer, and accepts default/`LSM` on YugabyteDB. YugabyteDB's
+documented `BTREE` alias renders identically to its default LSM. Spanner accepts
+only the default. Closing the remaining class means adding a storage-parameter
+attribute to the annotation surface, which is not attempted here.
 
 ### The access-method loss was not silent in general
 
@@ -727,8 +812,8 @@ against one database holding `CREATE DOMAIN positive AS integer CHECK (VALUE >
 | Surface | Atlas CE v1.3.0 | Ptah before | Ptah now |
 | --- | --- | --- | --- |
 | `schema inspect`, HCL | `type = sql("positive")` | `type = sql("positive")` | `type = sql("positive")` |
-| `schema inspect --format json` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
-| `schema inspect --format json`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
+| `schema inspect --format '{{ json . }}'` | `"type":"positive"` | `"type":"integer"` | `"type":"positive"` |
+| `schema inspect --format '{{ json . }}'`, domain off the search path | `"type":"doms.positive"` | `"type":"integer"` | `"type":"doms.positive"` |
 | `schema diff --from X --to X`, one database against itself | Schemas are synced | `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive;` | Schemas are synced |
 | `schema apply` run twice against the same target | — | plans and executes the same `ALTER` on every run, exit 0 each time | second run reports the schema synced |
 
@@ -803,7 +888,7 @@ against the composite and range shapes beside them:
 | --- | --- | --- |
 | `schema diff --from X --to X`, one database against itself | Schemas are synced | Schemas are synced |
 | `schema apply` of a byte-identical twin | — | Schema is synced, no changes to be made |
-| `schema inspect --format json` | `"type":"d_enum"` | `"type":"d_enum"` |
+| `schema inspect --format '{{ json . }}'` | `"type":"d_enum"` | `"type":"d_enum"` |
 | `schema inspect`, HCL | `type = sql("d_enum")` | `type = sql("d_enum")` |
 | `schema inspect`, HCL, plain enum column beside it | `type = enum.color` | `type = enum.color` |
 | `schema diff` from empty, replayed with psql, then compared to the source by CE | — | psql exit 0, Schemas are synced |
@@ -1269,19 +1354,28 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output Shape: Three Cells From The #1235 Register
+## Output shape: twelve cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Three of them are closed here. Every row was
+exit code and disagree on the bytes. Twelve of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
 | Finding | Command | Pinned binary | Ptah, before | Ptah, now |
 | --- | --- | --- | --- | --- |
 | 6.2 | `schema inspect --format '{{ json . }}'` over `a TEXT UNIQUE, b TEXT UNIQUE` plus `CREATE UNIQUE INDEX ux_t_c` | 3 indexes | 5 — each implicit autoindex listed twice | 3 |
+| 9.1–9.2 | `migrate validate --dir migrations`; the same on `migrate status` | The scheme hint ends with one ASCII space and a line feed (`20 0a`, 70 bytes) | The hint ended directly with a line feed (`3f 0a`, 69 bytes) | byte-identical |
 | 9.3 | `migrate apply` over an already-applied directory | `No migration files to execute\n` | the same plus a period | byte-identical |
 | 9.4 | `schema apply --auto-approve` against a synced database | `Schema is synced, no changes to be made\n` | the same plus a period | byte-identical |
+| 9.5, 9.8 | A rejected migration-directory layout, on every verb that can name one: `new`, `hash`, `validate`, `lint`, `status`, `set`, `diff` and `import` under both `?format=bogus` and `--dir-format bogus`, and `apply` under `?format=bogus` | Exit 1, empty stdout, stderr `Error: unknown dir format "bogus"\n` (34 bytes) | Exit 1 with a contextual semantic diagnostic that differed by verb and spelling | byte-identical on all 17 rows |
+| 9.8 | `migrate import --from file://nope` for a source directory that does not exist | Exit 1, stderr `Error: sql/migrate: stat nope: no such file or directory\n` | Exit 1, stderr `Error: cannot import a migration directory already in "atlas" format\n` — the format comparison ran ahead of any read of the source | byte-identical, and the format comparison still answers first for a source that exists |
+| 9.6 | `migrate validate --dir file://migrations` with no directory; the same under `--dir-format goose` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat migrations: no such file or directory\n` (63 bytes) | Exit 1, empty stdout, stderr `Error: migrations directory migrations: stat migrations: no such file or directory\n` (83 bytes) | byte-identical on both layouts |
+| 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
+| 9.12 | `migrate lint --git-base nosuchbranch --dir file://migrations --dev-url <SQLite>` inside a two-branch repository | Exit 1, empty stdout, stderr `Error: git diff: exit status 128\n` (33 bytes) | Exit 1, empty stdout, stderr naming the whole `git diff --name-only --diff-filter=ACMR --end-of-options nosuchbranch...HEAD -- migrations` invocation and git's own `fatal:` line (203 bytes) | byte-identical |
+| 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, escaped, symlinked, directory-member and absolute `--to` |
+| 9.14 | A missing or undriveable `--url`, on every verb where the pinned binary registers one: `migrate apply`, `migrate set`, `migrate status`, `schema apply`, `schema clean` and `schema inspect` | Exit 1, empty stdout, and one of four strings depending on the verb and on whether the flag was absent or empty — see the table below | Exit 1 with four different Ptah wordings that did not track the verb: `database URL is required`, `database URL is required; pass --url`, `--url is required`, and a 184-byte desired-state scheme message | byte-identical on all 18 measured cells |
+| 9.15 | A missing or undriveable `--dev-url`, on the six verbs where the pinned binary registers one: `migrate diff`, `migrate lint`, `migrate validate`, `schema apply`, `schema diff` and `schema inspect` (twelve register it here) | Exit 1 with `required flag(s) "dev-url" not set`, `sql/sqlclient: missing driver`, `sql/sqlclient: unknown driver "notadriver"` or `--dev-url cannot be empty` by verb and by whether the flag was absent or empty — see the table below; `migrate validate` and `schema apply` exit 0 with no dev database | Exit 1 with `unsupported --dev-url dialect "notadriver://x"` on five verbs, a 130-byte wrapped connector error on `migrate validate`, and `--dev-url is required` where the required-flag wording belonged | byte-identical on 14 of 18 measured cells, up from 5; the four still open are named below |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1307,6 +1401,111 @@ connection's.
 `Schemas are synced, no changes to be made.`, does carry a period and already
 matched; only the `apply` spelling grew one. The native `ptah schema apply`
 sentence is untouched: no parity is owed on that surface.
+
+**9.6 changes only the compatibility diagnostic.** The adapter recognizes the
+command's own missing-directory `stat` error and changes its displayed text
+while preserving the complete original error chain. Permission errors, regular
+files, and unrelated errors keep their prior diagnostics. Native
+`ptah migrations validate --dir nope` also stays distinct: exit 2, empty
+stdout, and
+`error: migrations directory nope: stat nope: no such file or directory\n` on
+stderr.
+
+**9.5 changes only the shared integrity adapter.** Both format spellings on
+`migrate hash` and `migrate validate` now print the pinned diagnostic before
+filesystem or database work. The invalid value stays verbatim, and the semantic
+resolver retains its detailed error in the unwrap chain. Native `ptah` and
+other Atlas-compatible errors keep their existing diagnostics.
+
+**9.1–9.2 change only the compatibility diagnostic.** The final two stderr
+bytes are `20 0a`: one ASCII space followed by the line feed. Hex makes the
+space visible without relying on Markdown trailing whitespace. The shared
+helper gives the same bytes to `hash`, `validate`, `status`, `lint`, `new` and
+`diff`; named schemes, refusal ordering, no-write behavior and native `ptah`
+commands keep their prior behavior.
+
+**9.13 changes only the compatibility error adapter.** Measured 2026-08-11
+with the file body `schema "main" {\n`, both binaries exited 1, wrote no stdout,
+and terminated stderr with a line feed. `ptah-compat` inserted the exact
+36-byte `load --to schema: parse HCL schema: ` prefix before the otherwise
+identical body. It now strips only that pair. Missing-file and other loader
+errors keep their context, and native `ptah schema apply` keeps both wrappers.
+
+The cell has a second half, found by re-measuring on 2026-08-12: the pinned
+binary echoes the `--to` path in the form it was given, and this surface
+resolved every form to an absolute path. Four spellings, one fixture:
+
+| `--to` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `file://fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
+| `file://./fx/bad.hcl` | `fx/bad.hcl:5,15-16: …` — the `./` is normalized away, not echoed | the absolute path | byte-identical |
+| `file://fx/sub/bad.hcl` | `fx/sub/bad.hcl:5,15-16: …` | the absolute path | byte-identical |
+| `file://fx/escaped%20name.hcl` | `fx/escaped name.hcl:5,15-16: …` | the absolute decoded path | byte-identical |
+| `file://fx/linked.hcl` | `fx/linked.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
+| `file://schemas` with malformed `schemas/bad.hcl` | `schemas/bad.hcl:5,15-16: …` | the absolute member path | byte-identical |
+| `file://schemas` with `schemas/bad.hcl` linked to a malformed file elsewhere in the working tree | `schemas/bad.hcl:5,15-16: …` | the resolved symlink target | byte-identical |
+| `file://<abs>/fx/bad.hcl` | the absolute path | the absolute path | unchanged, and it must stay so |
+
+The absolute row is the reason the rewrite is conditional rather than a blanket
+relativization: it already agreed before this adapter existed, and widening the
+rewrite to cover it would break a passing cell. The match is anchored on the
+resolved absolute path followed by the `:` that starts the HCL position. For a
+schema directory, the adapter retains the loader's filename-ordered mapping
+from each resolved HCL member to its authored entry, so a symlinked member does
+not expose its target name. A diagnostic about a different file, a path-prefix
+collision, or one that merely mentions the path is left alone. Native `ptah
+schema apply` keeps the resolved absolute path.
+
+**9.12 changes only the compatibility diagnostic.** This is one of the two cells
+the original sweep carried over unverified, because it needs a throwaway git
+repository with two branches and two commits. Measured 2026-08-12 on exactly
+that fixture, with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` neutralized so
+the run cannot inherit host configuration. Both binaries exit 1 and write no
+stdout. The pinned binary reports the git verb and the process status alone;
+`ptah-compat` reported the full argument vector and git's own `fatal:` line,
+203 bytes against 33.
+
+A control runs alongside it: with a resolvable `--git-base main`, both binaries
+analyze the changeset and report `1 version ok`. Without that control a fixture
+whose git plumbing never worked would satisfy the failing row anyway, because an
+unreadable repository fails the same way as a bad revision.
+
+Only the `diff` invocation is adapted. A run started outside a git repository
+fails this package's `rev-parse` preflight with status 128, where the pinned
+binary reaches its own `git diff` and reports 129 — a different event, and
+rendering one as the other would print a status no process returned. That case
+keeps its own diagnostic and remains a divergence, recorded here rather than
+silently folded into the adapted one. Native `ptah migrations lint` keeps the
+full invocation, which is what makes a failed selection reproducible by hand.
+
+### Shorthand-looking inspect format values can be literal text
+
+Finding 6.6 in the same register was measured on August 11, 2026, against the
+pinned Atlas CE v1.3.0 binary. Each invocation inspected an empty or populated
+SQLite database, and each exit code came from an unpiped process:
+
+| Format | Database | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- | --- |
+| `--format sql` | empty | `sql` (3 bytes) | 0 bytes | byte-identical |
+| `--format sql` | populated | `sql` (3 bytes) | rendered SQL | byte-identical |
+| `--format json` | empty | `json` (4 bytes) | rendered JSON | byte-identical |
+| `--format json` | populated | `json` (4 bytes) | rendered JSON | byte-identical |
+| `--format hcl` | both | `hcl` (3 bytes) | rendered HCL | byte-identical |
+| `--format ' sql '` | both | ` sql ` (hex `20 73 71 6c 20`) | rendered SQL | byte-identical |
+| `--format ' json '` | both | ` json ` (hex `20 6a 73 6f 6e 20`) | rendered JSON | byte-identical |
+| `--format ' hcl '` | both | ` hcl ` (hex `20 68 63 6c 20`) | rendered HCL | byte-identical |
+
+None of those pinned literal outputs carries a line feed. The format value is a
+Go-template body there, so a bare helper name is text and surrounding template
+whitespace remains part of the output. The explicit
+`--format '{{ hcl . }}'`, `--format '{{ sql . }}'`, and
+`--format '{{ json . }}'` controls still render the empty or populated database
+on both binaries. Omitting `--format` still renders HCL.
+
+This is a compatibility-adapter rule after CLI/project-config precedence and
+empty-value validation. Shared format normalization is unchanged. Native
+`ptah schema inspect --format hcl|sql|json` still renders the named format,
+with exact process tests guarding SQL and JSON over empty and populated SQLite.
 
 ### `migrate new` writes the name it was given
 
@@ -1345,6 +1544,251 @@ up migration`, where it exits 0. That divergence is in the
 "Ptah exits 1, the binary exits 0" direction the register lists as unfiled, and
 it is reported here rather than closed.
 
+### A rejected directory layout is one string on every CE-comparable path
+
+Cell 9.8 was recorded as a rewording on two commands. Measured on 2026-08-12 it
+is one string on nine CE-comparable paths: `unknown dir format "bogus"` is the
+pinned binary's whole answer on `migrate new`, `hash`, `validate`, `lint`,
+`status`, `set`, `diff` and `import`, under both `?format=bogus` and
+`--dir-format bogus`, and on
+`migrate apply` under the query — that verb registers no `--dir-format` on
+either binary, and both answer `unknown flag: --dir-format` when it is passed.
+Ptah answered it on `hash` and `validate` and printed its own longer wording on
+the other seven, because the adaptation lived inside one wrapper rather than on
+the refusal. All seventeen rows are byte-identical now.
+
+The semantic diagnostic — the command, the flag that carried the value, and the
+list of accepted layouts — is not discarded. It stays reachable through the
+error chain, which is what makes this a display adapter rather than a loss of
+information.
+
+**Fuller-surface verbs deliberately keep the longer wording.** Commands such as
+`migrate checkpoint`, `test`, `edit`, `rebase`, and `rm` do not reach a
+comparable layout refusal in the pinned binary (see *Verbs Beyond the CE Pin*).
+There is no CE text to match there and nothing to gain from shortening Ptah's
+own diagnostic.
+
+### `migrate import` shares the CE directory-resolution rules
+
+Closing the cell above meant hoisting `migrate import` onto the shared
+resolution, because it was the one verb still running a private one. That
+resolver lowercased and trimmed its input, read a present-but-empty `?format=`
+as no selection at all, and never required a scheme on either directory URL.
+Measured on 2026-08-12 against the pinned binary on a Flyway source directory,
+each exit code read from an unpiped invocation:
+
+| `migrate import …` | Pinned binary | Ptah, before | Ptah, now |
+| --- | --- | --- | --- |
+| `--dir-format FLYWAY` | Exit 1, `unknown dir format "FLYWAY"` | **Exit 0, wrote the target** | matches |
+| `--dir-format ' flyway '` | Exit 1, `unknown dir format " flyway "` | **Exit 0, wrote the target** | matches |
+| `--from 'file://src?format=FLYWAY'` | Exit 1, `unknown dir format "FLYWAY"` | **Exit 0, wrote the target** | matches |
+| `--from 'file://src?format=' --dir-format flyway` | Exit 1, the already-in-target-format refusal — an empty query value selects atlas and outranks the flag | **Exit 0, wrote the target** | matches |
+| `--from src` | Exit 1, the missing-scheme hint | **Exit 0, wrote the target** | matches |
+| `--from file://src --to dst` | Exit 1, the missing-scheme hint | **Exit 0, wrote the target** | matches |
+
+Every one of those six was `ptah-compat` exiting 0 where the pinned binary exits
+1, on the compatibility verb that WRITES a directory, and every one of them left
+a converted directory and a fresh `atlas.sum` behind. The first four are the
+same lower-and-trim coercion removed from `migrate diff` and `migrate lint`
+earlier. None of them is in the #1235 register, which records only cells where
+the two binaries agree on the exit code; they were found while measuring cell
+9.8 and are closed with it.
+
+The rows that had to stay, same fixture and same binary, all exit 0 on both:
+`--dir-format flyway`, `--from 'file://src?format=flyway'`,
+`--from 'file://src?nonsense=1' --dir-format flyway` (an unrecognized key selects
+nothing and leaves the flag deciding), and
+`--from 'file://src?format=flyway&format=goose'` (a repeated key takes the FIRST
+value). The fixture is plain SQL that no other layout can read, so those rows
+measure which layout won rather than that some layout was accepted.
+
+The refusal order is the pinned binary's, measured rather than assumed: the
+source scheme, then the layout value, then whether the source directory exists,
+then whether it is already in the target layout, then the target scheme. Only
+the third of those moved. The importer's own refusal for a source already in the
+target layout stays exactly where it was — its position is deliberate and
+documented — and the existence check is a read-only `stat` at the compatibility
+boundary in front of it. Native `ptah migrations import` takes a plain
+`--source-dir` path through a different command and is unchanged.
+
+**One `migrate import` divergence is measured and NOT closed here.** With
+`--from` and `--to` naming the same directory under an explicit non-atlas
+layout, the pinned binary answers `target migration directory must be empty` and
+Ptah answers `import --to must be different from --from for format "flyway"`.
+Both exit 1. The register's own probe for that cell uses the default layout,
+where the two are already byte-identical; this spelling is a different refusal
+with a different predicate — Ptah refuses the same directory whatever it holds —
+and folding it into the layout comparison was out of scope for this change.
+
+### A missing `--url` is four strings, and which one is a property of the verb
+
+Cell 9.14 was recorded as six probes. Measured on 2026-08-13, each binary run in
+its own directory and every exit code read from an unpiped invocation, it is
+eighteen cells over the six verbs where the pinned binary registers `--url`.
+Every cell exits 1 and leaves standard output empty; the message is on standard
+error, and there is no single string that produces it:
+
+| `--url` on … | absent | `--url ""` | `--url notadriver://x` |
+| --- | --- | --- | --- |
+| `migrate apply` | `required flag "url" not set` (35 B) | the same | `sql/sqlclient: unknown driver "notadriver". See: https://atlasgo.io/url` (79 B) |
+| `migrate set` | `sql/sqlclient: missing driver. See: https://atlasgo.io/url` (66 B) | the same | the unknown-driver string |
+| `migrate status` | the missing-driver string | the same | the unknown-driver string |
+| `schema apply` | `required flag(s) "url" not set` (38 B) | the same | the unknown-driver string |
+| `schema clean` | the plural refusal | **the missing-driver string** | the unknown-driver string |
+| `schema inspect` | the plural refusal | **`missing scheme. See: https://atlasgo.io/url`** (51 B) | the unknown-driver string |
+
+Byte counts include the `Error: ` prefix and the trailing line feed. Three
+separate facts are in that table, and matching one of them does not match the
+others:
+
+- **Singular against plural.** `migrate apply` answers `required flag "url" not
+  set`; the three schema verbs answer `required flag(s) "url" not set`. Adopting
+  the plural everywhere matches three of those four rows and quietly un-matches
+  the fourth, so the spelling is carried to the refusal as per-verb data rather
+  than decided at it.
+- **Absent against empty.** `schema clean` and `schema inspect` refuse only a
+  flag that was never given; an explicitly empty value passes their check and is
+  answered further in. `migrate apply` and `schema apply` answer the value, so
+  for them empty and absent read alike.
+- **No check at all.** `migrate set` and `migrate status` have no required-flag
+  check. Their absent `--url` is opened as the empty string and the client layer
+  answers it, which is why the adaptation is a gate immediately in front of the
+  open rather than an early refusal: an adapter that rejected an empty value up
+  front could not produce those two rows. A bare word with no scheme reaches the
+  same answer as an empty one, measured on both verbs.
+
+Placement is measured as well as wording. On `migrate set` and `migrate
+status` the directory integrity gate outranks the URL: against an unhashed
+directory with no `--url` at all, both binaries print `checksum file not found`
+on standard error and the same 143-byte guidance block on standard output. On
+`schema apply` an absent `--url` outranks the missing desired state, while an
+undriveable one loses to it. Those orderings are pinned alongside the wordings,
+because a correct string emitted at the wrong point is still a divergence.
+
+**Native Ptah keeps the clearer message, deliberately.** `ptah migrations
+status` with no database URL still reports `database URL is required`, which
+names the flag the caller forgot; `sql/sqlclient: missing driver` reports a
+driver problem for what is actually a missing flag. Matching is this surface's
+contract, not an improvement to be propagated (AGENTS.md compatibility rule
+(b)). Measured before and after this change, native `ptah schema inspect`,
+`migrations status`, `migrations up`, `migrations set`, `schema apply` and
+`schema diff` are byte-identical on the same inputs.
+
+**Two verbs register `--url` with nothing to match.** `migrate down` and
+`schema test` accept one here; the pinned binary answers
+`unknown flag: --url` on both, and reports `migrate down` itself as unavailable
+in the community version. There is no wording to copy, so their own diagnostics
+are unchanged — inventing an oracle would be worse than having none, and
+dropping the flags would remove a capability (rule (c)). A guard walks the built
+command tree and requires every verb registering `--url` to be either pinned by
+a row or named here, so a seventh cannot appear carrying the old wording.
+
+**Two retained divergences, both measured.** `schema inspect --url <bare path>`
+answers `missing scheme` on the pinned binary; Ptah resolves a bare path as a
+local schema file, and refusing it would delete a capability, so that value is
+still accepted. And `schema apply --plan` has no row at all: the pinned binary
+answers every `--url` spelling under it with
+`Abort: 'atlas schema apply --plan' is not supported by the community version.`
+The plan path carries the same plural spelling as the plan-free path so one verb
+does not answer the same mistake two ways, but that is an internal-consistency
+choice and is not claimed as a match.
+
+**The `--dev-url` family is the same string, and cell 9.15 closes most of it.**
+`--to` and `--from` remain open and are still reported rather than claimed.
+
+### A missing `--dev-url` is three strings, and the empty one is not the absent one
+
+Cell 9.15 is the sibling 9.14 named. Measured on 2026-08-13, each binary run in
+its own directory and every exit code read from an unpiped invocation, twelve
+compat verbs register `--dev-url` — enumerated by walking the built command tree,
+not by hand — and six of them have a row on the pinned binary. Every message is
+on standard error with standard output empty:
+
+| `--dev-url` on … | absent | `--dev-url ""` | `--dev-url notadriver://x` |
+| --- | --- | --- | --- |
+| `migrate diff` | `required flag(s) "dev-url" not set` (42 B) | **`sql/sqlclient: missing driver. See: https://atlasgo.io/url`** (66 B) | `sql/sqlclient: unknown driver "notadriver". See: https://atlasgo.io/url` (79 B) |
+| `migrate lint` | the required refusal | **the missing-driver string** | the unknown-driver string |
+| `migrate validate` | exit 0, both streams empty | exit 0, both streams empty | the unknown-driver string |
+| `schema apply` | exit 0, plan on stdout | exit 0, plan on stdout | the unknown-driver string |
+| `schema diff` | `--dev-url cannot be empty` (33 B) | the same | the unknown-driver string |
+| `schema inspect` | `--dev-url cannot be empty` (33 B) | the same | the unknown-driver string |
+
+Byte counts include the `Error: ` prefix and the trailing line feed. Before this
+change five verbs answered the last column `unsupported --dev-url dialect
+"notadriver://x"` (54 B) and `migrate validate` wrapped a connector failure into
+130 B. **Fourteen of the eighteen cells are now byte-identical, up from five**;
+the four still open are named below.
+
+Two facts are in that table, and matching one does not match the other:
+
+- **Absent against empty.** `migrate diff` and `migrate lint` refuse only a flag
+  that was never given: an explicitly empty value passes their required check and
+  is answered by the client layer. That is the difference between asking pflag's
+  Changed bit and asking the string, and a build that asks the string matches
+  both absent rows while un-matching both empty ones.
+- **The unknown-driver row is shared with `--url`.** It is spelled once and
+  reused, so the two flags cannot drift apart on a scheme one of them learns to
+  open later.
+
+Placement is measured as well as wording, and it splits inside one family.
+Against an unhashed directory, `migrate diff` and `migrate validate` print
+`checksum file not found` with the same 143-byte guidance block on standard
+output, while `migrate lint` answers the URL there instead. That is cobra's own
+order — `ValidateRequiredFlags` runs after the pre-run hooks — so a verb gating
+integrity in a hook answers the checksum first. On `migrate validate` this is
+what decides the call site: the refusal cannot sit in the forwarding wrapper,
+because that wrapper runs before the integrity gate.
+
+**cobra's `MarkFlagRequired` is deliberately not used**, for the reason 9.14 gave
+for `--url`: it tests the Changed bit, which an `atlas.hcl` env supplying `dev`
+never sets. Measured, the pinned binary runs `migrate lint --env local` with such
+an env to exit 0, and so does ptah-compat; marking the flag required would refuse
+both and delete a capability (rule (c)).
+
+**Six verbs register `--dev-url` with nothing to match.** `migrate checkpoint`,
+`migrate down`, `migrate test`, `schema plan new`, `schema plan validate` and
+`schema test` all answer `unknown flag: --dev-url` on the pinned binary, and
+`migrate checkpoint` reports the verb itself as unavailable in the community
+version. Their own diagnostics are unchanged, and the same tree walk that
+enumerated the twelve requires every verb registering the flag to be either
+pinned by a row or named here, so a thirteenth cannot appear carrying the old
+wording.
+
+**Four cells stay open, each measured.**
+
+- `schema diff` with no usable dev database answers `--dev-url is required for
+  local schema file diffing` (59 B) where the pinned binary answers `--dev-url
+  cannot be empty` (33 B). Both exit 1 on the same inputs; Ptah's names the
+  sources that need the dev database, and the refusal is shared with native
+  `ptah schema diff`, so matching it is a separate change.
+- `schema apply` with a local-file desired state and no dev database exits 1 here
+  and 0 there: the pinned binary plans and applies without one on both SQLite and
+  PostgreSQL. The gate is deliberate — it is the verb that modifies the target —
+  and the fuller behavior is already reachable through
+  `PTAH_ATLAS_APPLY_WITHOUT_DEV_URL`, so the default is left where its own
+  measurement put it rather than widened here.
+
+Two more measured divergences are recorded without being closed. A `.sql`
+desired-state source moves the pinned binary's empty-value answer to `--dev-url
+cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database` (88 B) on
+all three schema verbs — the split is the source kind, not the verb — while Ptah
+prints the 33-byte form for both kinds. And `schema inspect --url <database>
+--dev-url notadriver://x` exits 0 on the pinned binary, which never opens the dev
+URL when the source is a database, where Ptah still validates it; the
+unknown-driver row above is measured on the file source, which is the scope the
+pinned binary was measured to check.
+
+**Native Ptah keeps the clearer message, deliberately.** `ptah schema inspect`
+still answers `unsupported --dev-url dialect "notadriver://x"`, which names the
+flag the operator has to change and quotes the whole value they typed; the
+community wording reports a driver problem and shows only `"notadriver"`, so the
+operator cannot see what they wrote. Matching is this surface's contract, not an
+improvement to be propagated (rule (b)). Measured before and after this change
+across fifteen cells on all seven native verbs registering the flag — `schema
+inspect`, `schema diff`, `schema apply`, `schema plan`, `migrations lint`,
+`migrations validate` and `migrations generate` — native is byte-identical on
+both streams.
+
 ## Reports
 
 - Offline corpus report:
@@ -1371,11 +1815,21 @@ make conformance
 The repository's Atlas-oracle workflow independently rebuilds Atlas CE from an
 immutable source archive, verifies that the release tag resolves to the locked
 commit, checks the committed SHA-256 digest and exact
-`atlas community version v1.3.0` output, then runs the differential migration
-sum tests and regenerates the committed corpus. Reproduce that oracle locally:
+`atlas community version v1.3.0` output, then runs the migration-directory
+query and migrate-apply interoperability controls, runs the
+differential migration-sum tests, and regenerates the committed corpus.
+Reproduce that oracle locally:
 
 ```bash
 scripts/build-atlas-ce-oracle.sh
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/migratedirquery
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/migrateapply
 GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   PTAH_ATLAS_FUZZ_N=200 \

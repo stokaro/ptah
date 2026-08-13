@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -196,6 +197,14 @@ func openAtlasProject(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 ) (atlasProject, bool, error) {
+	return openAtlasProjectWithPolicy(flags, requirement, atlascompatpolicy.Full())
+}
+
+func openAtlasProjectWithPolicy(
+	flags atlasProjectFlagValues,
+	requirement atlasProjectRequirement,
+	policy atlascompatpolicy.Policy,
+) (atlasProject, bool, error) {
 	source, loaded, err := openAtlasProjectSource(flags, requirement)
 	if err != nil || !loaded {
 		return atlasProject{}, loaded, err
@@ -204,7 +213,7 @@ func openAtlasProject(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		projectconfig.AtlasLoadOptions{EnvName: flags.envName, Vars: flags.vars},
+		atlasProjectLoadOptions(flags, policy),
 	)
 	if err != nil {
 		return atlasProject{}, false, errors.Join(err, source.Close())
@@ -214,9 +223,10 @@ func openAtlasProject(
 	return atlasProject{Config: cfg, root: root}, true, nil
 }
 
-func openAtlasProjects(
+func openAtlasProjectsWithPolicy(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
+	policy atlascompatpolicy.Policy,
 ) (atlasProjectSet, bool, error) {
 	source, loaded, err := openAtlasProjectSource(flags, requirement)
 	if err != nil || !loaded {
@@ -226,7 +236,7 @@ func openAtlasProjects(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		projectconfig.AtlasLoadOptions{EnvName: flags.envName, Vars: flags.vars},
+		atlasProjectLoadOptions(flags, policy),
 	)
 	if err != nil {
 		return atlasProjectSet{}, false, errors.Join(err, source.Close())
@@ -238,6 +248,17 @@ func openAtlasProjects(
 	root := source.root
 	source.root = nil
 	return atlasProjectSet{projects: projects, root: root}, true, nil
+}
+
+func atlasProjectLoadOptions(
+	flags atlasProjectFlagValues,
+	policy atlascompatpolicy.Policy,
+) projectconfig.AtlasLoadOptions {
+	return projectconfig.AtlasLoadOptions{
+		EnvName:              flags.envName,
+		Vars:                 flags.vars,
+		RejectListMapForEach: policy.IsStrictCE(),
+	}
 }
 
 func openAtlasProjectSource(
@@ -271,10 +292,11 @@ func openAtlasProjectSource(
 	return atlasProjectSource{path: path, raw: raw, root: root}, true, nil
 }
 
-func openRequiredMergedProjectConfig(
+func openRequiredMergedProjectConfigWithPolicy(
 	flags atlasProjectFlagValues,
+	policy atlascompatpolicy.Policy,
 ) (project atlasProject, mergedConfig projectconfig.Config, err error) {
-	project, _, err = openAtlasProject(flags, requiredAtlasProject)
+	project, _, err = openAtlasProjectWithPolicy(flags, requiredAtlasProject, policy)
 	if err != nil {
 		return atlasProject{}, projectconfig.Config{}, err
 	}
@@ -325,24 +347,10 @@ func atlasProjectConfigLocalDirWithQueryFromBaseDir(
 	if err != nil {
 		return atlasargs.LocalDir{}, err
 	}
-	parsed, err := atlasargs.ParseLocalDir(raw)
-	if err != nil {
-		return atlasargs.LocalDir{}, err
-	}
-	allowedRoot := ""
-	if !filepath.IsAbs(parsed.Path) {
-		relative, relativeErr := filepath.Rel(baseDir, filepath.Join(baseDir, parsed.Path))
-		if relativeErr == nil &&
-			relative != ".." &&
-			!strings.HasPrefix(relative, ".."+string(filepath.Separator)) &&
-			!filepath.IsAbs(relative) {
-			allowedRoot = baseDir
-		}
-	}
 	return atlasargs.LocalDir{
 		Path:        path,
 		Query:       query,
-		AllowedRoot: allowedRoot,
+		AllowedRoot: baseDir,
 	}, nil
 }
 
@@ -393,7 +401,11 @@ func openAtlasProjectForCommand(
 	if changed {
 		requirement = requiredAtlasProject
 	}
-	project, loaded, err := openAtlasProject(flags, requirement)
+	project, loaded, err := openAtlasProjectWithPolicy(
+		flags,
+		requirement,
+		atlasCompatibilityPolicy(cmd),
+	)
 	if err != nil {
 		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
 			return atlasProject{}, false, nil
@@ -401,6 +413,9 @@ func openAtlasProjectForCommand(
 		return atlasProject{}, false, err
 	}
 	if loaded {
+		if err := atlasCompatibilityPolicy(cmd).ValidateProjectConfig(project.Config); err != nil {
+			return atlasProject{}, false, errors.Join(err, project.Close())
+		}
 		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), project.Config); err != nil {
 			return atlasProject{}, false, errors.Join(err, project.Close())
 		}
@@ -420,7 +435,11 @@ func openAtlasProjectsForCommand(
 	if changed {
 		requirement = requiredAtlasProject
 	}
-	projects, loaded, err := openAtlasProjects(flags, requirement)
+	projects, loaded, err := openAtlasProjectsWithPolicy(
+		flags,
+		requirement,
+		atlasCompatibilityPolicy(cmd),
+	)
 	if err != nil {
 		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
 			return atlasProjectSet{}, false, nil
@@ -428,6 +447,12 @@ func openAtlasProjectsForCommand(
 		return atlasProjectSet{}, false, err
 	}
 	if loaded && len(projects.projects) > 0 {
+		policy := atlasCompatibilityPolicy(cmd)
+		for _, project := range projects.projects {
+			if err := policy.ValidateProjectConfig(project.Config); err != nil {
+				return atlasProjectSet{}, false, errors.Join(err, projects.Close())
+			}
+		}
 		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), projects.projects[0].Config); err != nil {
 			return atlasProjectSet{}, false, errors.Join(err, projects.Close())
 		}

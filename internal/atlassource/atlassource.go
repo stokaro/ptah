@@ -26,6 +26,7 @@ package atlassource
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -115,6 +116,46 @@ type Set struct {
 	Kind Kind
 	// Sources are the classified URLs.
 	Sources []Source
+	// migrationSnapshot is the checksum-verified directory image captured by
+	// PrepareMigrationSource. Keeping it on the immutable classified value lets
+	// a command validate before unrelated database or lock work and then replay
+	// those exact bytes instead of reopening the pathname.
+	migrationSnapshot fs.FS
+}
+
+// PrepareMigrationSource captures and validates a migration-directory source
+// before a caller starts unrelated database or lock work. The returned Set
+// retains the stable snapshot for Resolve. Nil validators and non-migration
+// sources are no-ops, preserving the full compatibility policy's behavior.
+func (s Set) PrepareMigrationSource(validate func(fs.FS) error) (Set, error) {
+	if s.Kind != KindMigrationDir || validate == nil {
+		return s, nil
+	}
+	snapshot, err := CaptureVerifiedMigrationDir(s.Sources[0].Path)
+	if err != nil {
+		return Set{}, err
+	}
+	if err := validate(snapshot); err != nil {
+		return Set{}, err
+	}
+	s.migrationSnapshot = snapshot
+	return s, nil
+}
+
+// ValidateLocalSchemaSources applies validate to every local schema source in
+// the already-classified set. It is deliberately separate from Resolve so a
+// caller can enforce a source policy before opening an unrelated database or
+// acquiring a lock. Nil and non-local sets are no-ops.
+func (s Set) ValidateLocalSchemaSources(validate func(string) error) error {
+	if s.Kind != KindLocalFile || validate == nil {
+		return nil
+	}
+	for _, source := range s.Sources {
+		if err := validate(source.Path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Classify determines the source kind of one desired-state URL. env://
@@ -160,8 +201,34 @@ func Classify(rawURL string) (Source, error) {
 		// generic unknown-scheme default below staying strict.
 		return Source{}, errors.New("ptah-external-schema:// is a reserved internal marker scheme; reference data.external_schema.<name>.url from an atlas.hcl env src instead")
 	default:
-		return Source{}, fmt.Errorf("unsupported desired-state URL scheme %q: supported sources are local schema files, migration directories, database URLs, and env:// references", scheme)
+		return Source{}, &UnsupportedSchemeError{Scheme: scheme}
 	}
+}
+
+// UnsupportedSchemeError reports a desired-state URL whose scheme names no
+// source kind this build resolves. It is the generic default of [Classify]:
+// docker://, atlas:// and the reserved internal marker are refused by named
+// branches above it and never produce this error.
+//
+// The type exists so a caller can recognize that verdict without matching the
+// message, and it carries the scheme so a caller that words the refusal
+// differently does not have to re-parse the URL. The Atlas-compatible surface
+// is the caller that needs both: the pinned community binary answers an
+// unknown scheme on `schema inspect --url` from its client layer rather than
+// from a desired-state resolver, so cmd/atlas re-words exactly this verdict
+// and leaves every other classification failure alone. Its Error text is the
+// message this branch has always produced, so native Ptah is unchanged.
+type UnsupportedSchemeError struct {
+	// Scheme is the lowercased scheme that named no source kind.
+	Scheme string
+}
+
+func (e *UnsupportedSchemeError) Error() string {
+	return fmt.Sprintf(
+		"unsupported desired-state URL scheme %q: supported sources are local schema files,"+
+			" migration directories, database URLs, and env:// references",
+		e.Scheme,
+	)
 }
 
 // ClassifySet classifies all URLs of one flag, expands env:// references

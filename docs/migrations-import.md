@@ -32,7 +32,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | Tool | Status | Notes |
 | --- | --- | --- |
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
-| Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` and `NO TRANSACTION` directives are stripped; Go-based migrations are rejected). |
+| Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` directives are stripped, the exact line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both output directions, and Go-based migrations are rejected). |
 | Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (imported as a one-time migration ordered after the versioned ones). |
 | Liquibase | **Supported** (formatted SQL) | Formatted-SQL changelogs (a `.sql` file beginning with `--liquibase formatted sql`): each `--changeset <author>:<id>` becomes a migration, and its `--rollback` lines become the down. XML, YAML, and JSON changelogs are detected and rejected with a message — they are a follow-up. |
 

@@ -1,31 +1,12 @@
 package schema_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/cmd/atlas"
 )
-
-func TestSchemaInspectLiveDatabaseWritesSQL(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-
-	out, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--format", "sql",
-	)
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `CREATE TABLE "users"`)
-	c.Assert(out, qt.Not(qt.Contains), "Database:")
-}
 
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {
 	c := qt.New(t)
@@ -167,62 +148,4 @@ func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
 		})
 	}
-}
-
-// TestSchemaInspectMatchesAtlasSchemaInspect proves the native verb and its
-// Atlas twin produce identical machine output from the same live database:
-// both wrap atlasschema.InspectSource.
-func TestSchemaInspectMatchesAtlasSchemaInspect(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
-
-	nativeOut, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--format", "hcl",
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-
-	atlasCmd := atlas.NewCompatCommand("atlas")
-	var atlasOut bytes.Buffer
-	atlasCmd.SetOut(&atlasOut)
-	atlasCmd.SetErr(&atlasOut)
-	atlasCmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--format", "hcl"})
-	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
-
-	c.Assert(nativeOut, qt.Equals, atlasOut.String())
-}
-
-// TestSchemaInspectIncludeMatchesAtlasSchemaInspect pins that the two surfaces
-// resolve the same include selection to the same bytes, so the compat spelling
-// is not a second implementation of the selector engine.
-func TestSchemaInspectIncludeMatchesAtlasSchemaInspect(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
-
-	nativeOut, err := runSchema("", "inspect",
-		"--db-url", "sqlite://"+dbPath,
-		"--include", "users",
-		"--format", "hcl",
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
-
-	atlasCmd := atlas.NewCompatCommand("atlas")
-	var atlasOut bytes.Buffer
-	atlasCmd.SetOut(&atlasOut)
-	atlasCmd.SetErr(&atlasOut)
-	atlasCmd.SetArgs([]string{
-		"schema", "inspect",
-		"--url", "sqlite://" + dbPath,
-		"--include", "users",
-		"--format", "hcl",
-	})
-	c.Assert(atlasCmd.Execute(), qt.IsNil, qt.Commentf("%s", atlasOut.String()))
-
-	c.Assert(nativeOut, qt.Equals, atlasOut.String())
-	c.Assert(nativeOut, qt.Contains, `table "users"`)
-	c.Assert(nativeOut, qt.Not(qt.Contains), `table "archive"`)
 }

@@ -56,6 +56,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -123,7 +124,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.MariaDB:
 		raw = mariadb.NewWithCapabilities(caps)
 	case platform.ClickHouse:
-		raw = clickhouse.New()
+		raw = clickhouse.NewWithCapabilities(caps)
 	case platform.SQLite:
 		raw = sqlite.New()
 	case platform.SQLServer:
@@ -231,6 +232,32 @@ func (r *validatingRenderer) VisitConstraint(node *ast.ConstraintNode) error {
 	return nil
 }
 
+func (r *validatingRenderer) VisitIndex(node *ast.IndexNode) error {
+	prepared, err := prepareIndexNode(r.dialect, r.capabilities, node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if err := r.RenderVisitor.VisitIndex(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
+func (r *validatingRenderer) VisitExtension(node *ast.ExtensionNode) error {
+	prepared, err := prepareExtensionNode(r.dialect, node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if err := r.RenderVisitor.VisitExtension(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
 //
 // This function is useful for one-off SQL generation where you don't need to reuse the renderer.
@@ -314,12 +341,69 @@ func prepareASTNodeForRendering(
 		return prepareConstraintNode(dialect, caps, typed)
 	case *ast.ColumnNode:
 		return prepareColumnNode(dialect, caps, typed)
+	case *ast.IndexNode:
+		return prepareIndexNode(dialect, caps, typed)
+	case *ast.ExtensionNode:
+		return prepareExtensionNode(dialect, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
 	}
+}
+
+func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "extension node is nil",
+		}
+	}
+	if !extensionInstallationSchemaRejected(dialect) || node.Schema == "" {
+		cloned := *node
+		return &cloned, nil
+	}
+	return nil, unsupportedExtensionInstallationSchema(dialect, node.Name, node.Schema)
+}
+
+func extensionInstallationSchemaRejected(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
+}
+
+func unsupportedExtensionInstallationSchema(dialect, name, schema string) error {
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "PostgreSQL extension installation schemas",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support PostgreSQL extension installation schema %q for extension %q",
+			normalized,
+			schema,
+			name,
+		),
+	}
+}
+
+func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.IndexNode) (*ast.IndexNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "index node is nil",
+		}
+	}
+	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 func prepareStatementListNode(
@@ -777,16 +861,8 @@ func prepareDatabaseForRendering(
 	dialect string,
 	caps capability.Capabilities,
 ) (goschema.Database, error) {
-	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
-	// guaranteed to reject, so it is refused here, in the validation phase both
-	// whole-schema rendering and migration planning run before they emit
-	// anything (stokaro/ptah#1312).
-	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
-		return goschema.Database{}, &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     err,
-			Message: err.Error(),
-		}
+	if err := validateDatabaseDeclarations(dialect, caps, database); err != nil {
+		return goschema.Database{}, err
 	}
 
 	prepared := *database
@@ -855,6 +931,160 @@ func prepareDatabaseForRendering(
 		makeMySQLForeignKeyTableEnginesExplicit(&prepared, dialect)
 	}
 	return prepared, nil
+}
+
+func validateDatabaseDeclarations(
+	dialect string,
+	caps capability.Capabilities,
+	database *goschema.Database,
+) error {
+	if err := validateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+		return err
+	}
+	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
+		return err
+	}
+	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
+	// guaranteed to reject, so it is refused here, in the validation phase both
+	// whole-schema rendering and migration planning run before they emit
+	// anything (stokaro/ptah#1312).
+	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+func validateDeclaredPostgresSystemSchemas(dialect string, schemas []goschema.Schema) error {
+	normalized := platform.NormalizeDialect(dialect)
+	if !platform.IsPostgresFamily(normalized) {
+		return nil
+	}
+	for _, schema := range schemas {
+		if !schemaselection.IsPostgresFamilySystemSchema(normalized, schema.Name) {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: normalized,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"schema declares server-owned PostgreSQL schema %q; extension placement may reference it, but a migration cannot create it",
+				schema.Name,
+			),
+		}
+	}
+	return nil
+}
+
+func validateExtensionInstallationSchemas(dialect string, extensions []goschema.Extension) error {
+	if !extensionInstallationSchemaRejected(dialect) {
+		return nil
+	}
+	for _, extension := range extensions {
+		if extension.Schema != "" {
+			return unsupportedExtensionInstallationSchema(dialect, extension.Name, extension.Schema)
+		}
+	}
+	return nil
+}
+
+func validateDeclaredIndexIncludes(
+	dialect string,
+	caps capability.Capabilities,
+	indexes []goschema.Index,
+) error {
+	for _, index := range indexes {
+		if err := validateIndexInclude(dialect, caps, index.Name, index.Type, index.IncludeColumns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateIndexInclude(
+	dialect string,
+	caps capability.Capabilities,
+	indexName, indexType string,
+	includeColumns []string,
+) error {
+	if len(includeColumns) == 0 {
+		return nil
+	}
+	for i, column := range includeColumns {
+		if strings.TrimSpace(column) != "" {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf("index %q has an empty INCLUDE column at position %d", indexName, i+1),
+		}
+	}
+	trimmedIndexType := strings.TrimSpace(indexType)
+	if trimmedIndexType != indexType {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"index %q access method %q has leading or trailing whitespace",
+				indexName,
+				indexType,
+			),
+		}
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	switch normalizedDialect {
+	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
+	default:
+		return &ptaherr.CapabilityError{
+			Dialect: dialect,
+			Feature: "index INCLUDE columns",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"%s does not support INCLUDE columns on index %q; target postgres, yugabytedb, or spanner",
+				normalizedDialect,
+				indexName,
+			),
+		}
+	}
+
+	method := strings.ToUpper(trimmedIndexType)
+	var allowed bool
+	var supportedMethods string
+	switch normalizedDialect {
+	case platform.Postgres:
+		allowed = method == "" || method == "BTREE" || method == "GIST" ||
+			(method == "SPGIST" && caps.Has(capability.IndexIncludeSPGiST))
+		supportedMethods = "the default, BTREE, or GIST access method"
+		if caps.Has(capability.IndexIncludeSPGiST) {
+			supportedMethods = "the default, BTREE, GIST, or SPGIST access method"
+		}
+	case platform.YugabyteDB:
+		allowed = method == "" || method == "LSM" || method == "BTREE"
+		supportedMethods = "the default, LSM, or BTREE access method"
+	case platform.Spanner:
+		allowed = method == ""
+		supportedMethods = "the default access method"
+	}
+	if allowed {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "index INCLUDE access method",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s INCLUDE columns on index %q require %s; access method %q is not supported",
+			normalizedDialect,
+			indexName,
+			supportedMethods,
+			method,
+		),
+	}
 }
 
 func makeMySQLForeignKeyTableEnginesExplicit(database *goschema.Database, dialect string) {

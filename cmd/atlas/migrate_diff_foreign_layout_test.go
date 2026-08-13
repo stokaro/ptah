@@ -25,9 +25,9 @@ import (
 //	liquibase       one file: "--changeset atlas:<v>-1" … "--rollback: …"
 //
 // Ptah refused every one of them until this change, because its `migrate diff`
-// planned forward statements only. It now injects the reverse rule
-// `migration/generator` has always applied to its own `.down.sql` half, so the
-// plan carries both directions and each layout composes its own files.
+// planned forward statements only. It now injects the shared bidirectional
+// `migration/generator` planner for layouts that carry rollback, so the plan
+// includes both directions and each layout composes its own files.
 //
 // The SQL text is Ptah's own renderer's on every layout, including the native
 // one, and always was. Matching the LAYOUT is what these close.

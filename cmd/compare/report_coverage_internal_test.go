@@ -30,6 +30,7 @@ import (
 var nonCategoryFields = map[string]string{
 	"IdentifierSemantics":           "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
 	"ConstraintBackedIndexRemovals": "a subset of IndexesRemoved, naming the removals whose object a UNIQUE constraint enforces so the planner spells the drop as a constraint drop; reporting it would print the same removed index a second time, and on its own it removes nothing",
+	"ForeignKeysRemovedWithTables":  "supplements matching ConstraintsRemovedWithTables entries with local and referenced columns for drop ordering; it is ignored without a base removal and reporting it would print the same foreign-key removal twice",
 }
 
 // TestWriteComparisonReportsEveryDiffCategory is the guard for

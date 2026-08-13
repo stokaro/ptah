@@ -617,7 +617,8 @@ type IndexNode struct {
 	Condition string
 	// Operator specifies the operator class (gin_trgm_ops, etc.)
 	Operator string
-	// IncludeColumns contains PostgreSQL INCLUDE columns for covering indexes.
+	// IncludeColumns contains INCLUDE payload columns for PostgreSQL,
+	// YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
 	IncludeColumns []string
 	// StorageParams contains PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.
@@ -643,6 +644,8 @@ type IndexNode struct {
 type ExtensionNode struct {
 	// Name is the extension name (pg_trgm, postgis, etc.)
 	Name string
+	// Schema is the PostgreSQL installation schema. Empty uses the connection default.
+	Schema string
 	// IfNotExists indicates whether to use IF NOT EXISTS clause
 	IfNotExists bool
 	// Version specifies a specific version requirement (optional)
@@ -676,6 +679,12 @@ func (n *ExtensionNode) Accept(visitor Visitor) error {
 //	extension.SetIfNotExists()
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode {
 	n.IfNotExists = true
+	return n
+}
+
+// SetSchema sets the PostgreSQL installation schema for the extension.
+func (n *ExtensionNode) SetSchema(schema string) *ExtensionNode {
+	n.Schema = schema
 	return n
 }
 

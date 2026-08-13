@@ -664,6 +664,13 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
 	})
+	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
+		{
+			Name: "fk_orders_accounts", TableName: "orders",
+			Columns: []string{"tenant_id", "owner_id"}, ForeignTable: "accounts",
+			ForeignColumns: []string{"tenant_id", "account_id"},
+		},
+	})
 	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
 		{
 			Name:           "fk_orders_accounts",
@@ -716,6 +723,13 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+	})
+	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
+		{
+			Name: "fk_orders_accounts", TableName: "orders",
+			Columns: []string{"tenant_id", "account_owner_id"}, ForeignTable: "accounts",
+			ForeignColumns: []string{"tenant_id", "id"},
+		},
 	})
 	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
 		{

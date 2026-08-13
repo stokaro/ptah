@@ -33,6 +33,19 @@ labeled output only if every target can render the schema. An unsupported
 feature fails atomically with empty standard output. The combined output is a
 review artifact, not one executable SQL script.
 
+### Schema file paths
+
+Native `--schema-file` inputs use the process working directory as their path
+boundary. A relative path must resolve inside that directory after symbolic
+links are followed. Ptah accepts a path that temporarily contains `..` when its
+resolved destination is still inside the boundary, and refuses a symbolic link
+whose destination is outside it.
+
+Pass an absolute pathname when you intentionally read a schema file outside the
+working directory, such as `--schema-file /srv/schemas/app.sql`. Absolute
+pathnames retain their existing reach and are not confined to the working
+directory.
+
 ## Migration lifecycle: `ptah migrations`
 
 | Command | Purpose |

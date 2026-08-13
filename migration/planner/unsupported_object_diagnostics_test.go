@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -97,9 +98,9 @@ func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []s
 	return statements
 }
 
-// TestPlan_ClickHouseNamesEveryObjectItCannotHost pins the plan path to the
-// rule the render path was already held to: neither surface may drop a declared
-// object in silence.
+// TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects pins the plan path
+// to the rule the render path is held to: executable views are planned, and no
+// unsupported object disappears in silence.
 //
 // stokaro/ptah#931 item 7 was closed on `schema render` only. The ClickHouse
 // planner ignored every PostgreSQL-shaped diff category, so measured on live
@@ -108,7 +109,7 @@ func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []s
 // trigger planned the single CREATE TABLE and said nothing about the other
 // seven, while `ptah schema render --dialect clickhouse` on the same model
 // named all of them.
-func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
+func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
@@ -121,7 +122,6 @@ func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: CREATE VIEW "v1" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls enable", want: `-- CLICKHOUSE: ALTER TABLE ENABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: CREATE POLICY "p1" is not supported`},
@@ -134,6 +134,7 @@ func TestPlan_ClickHouseNamesEveryObjectItCannotHost(t *testing.T) {
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
+	c.Assert(planned, qt.Contains, "CREATE VIEW `v1` AS\nSELECT id FROM t")
 }
 
 // TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer states the governing rule
@@ -150,16 +151,13 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	c.Assert(rendered, qt.HasLen, 10)
+	c.Assert(rendered, qt.HasLen, 9)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
-// TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced covers the worst shape
-// of the same defect: a schema whose only declared object is one ClickHouse
-// cannot host produced NO statements at all, so `schema apply` printed
-// "Schema is synced, no changes to be made." and exited 0 against an empty
-// database. That is an affirmative false report, not under-generation.
-func TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced(t *testing.T) {
+// TestPlan_ClickHouseViewAloneIsNotReportedAsSynced covers the smallest
+// executable view plan against an empty database.
+func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	c := qt.New(t)
 
 	generated := &goschema.Database{
@@ -170,7 +168,7 @@ func TestPlan_ClickHouseObjectsAloneAreNotReportedAsSynced(t *testing.T) {
 	statements := planStatements(c, diff, generated, platform.ClickHouse)
 
 	c.Assert(statements, qt.HasLen, 1)
-	c.Assert(statements[0], qt.Contains, `-- CLICKHOUSE: CREATE VIEW "v_only" is not supported`)
+	c.Assert(statements[0], qt.Contains, "CREATE VIEW `v_only` AS\nSELECT 1")
 }
 
 // TestPlan_ClickHouseNamesRemovedObjectsToo pins the other direction: an object
@@ -204,7 +202,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: DROP ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
-		{name: "view", want: `-- CLICKHOUSE: DROP VIEW "v1" is not supported`},
 		{name: "materialized view", want: `-- CLICKHOUSE: DROP MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls disable", want: `-- CLICKHOUSE: ALTER TABLE DISABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: DROP POLICY "p1" is not supported`},
@@ -217,6 +214,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
+	c.Assert(planned, qt.Contains, "DROP VIEW IF EXISTS `v1`")
 }
 
 // TestPlan_PostgreSQLStillPlansTheObjects is the non-interference control for
@@ -312,21 +310,134 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 	}
 }
 
-// TestPlan_SQLServerKeepsTheSequenceOutOfThePlan is the inverse control for the
-// MySQL-family fix. SQL Server has had sequences since 2012, and its renderer
-// answers a sequence node with a flat "CREATE SEQUENCE is not supported" that
-// would be a false statement about the engine, so the converter that feeds
-// `render` deliberately withholds the node there. The plan path has to withhold
-// it for the same reason: routing every kind to every planner would satisfy the
-// test above and be wrong here.
-func TestPlan_SQLServerKeepsTheSequenceOutOfThePlan(t *testing.T) {
+func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{{
+		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
+	}}}
+
+	tests := []struct {
+		dialect string
+		want    string
+	}{
+		{dialect: platform.MySQL, want: "-- Extension pgcrypto not supported in MySQL"},
+		{dialect: platform.MariaDB, want: "-- Extension pgcrypto not supported in MariaDB"},
+		{dialect: platform.ClickHouse, want: `-- CLICKHOUSE: CREATE EXTENSION "pgcrypto" is not supported`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.dialect, func(c *qt.C) {
+			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, test.dialect), "\n")
+			c.Assert(planned, qt.Contains, test.want)
+		})
+	}
+}
+
+func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
+		c.Run(dialect, func(c *qt.C) {
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{
+				"CREATE SCHEMA IF NOT EXISTS \"extensions\"",
+				"CREATE EXTENSION \"pgcrypto\" WITH SCHEMA \"extensions\"",
+			})
+		})
+	}
+}
+
+func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	generated := &goschema.Database{
+		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	}
+
+	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+		c.Run(dialect, func(c *qt.C) {
+			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate is what replaced the
+// hold-out.
+//
+// Both surfaces used to withhold the SQL Server sequence entirely, and the
+// reason given was the renderer's answer: a flat "CREATE SEQUENCE is not
+// supported", which is a false statement about an engine that has had sequences
+// since 2012. Withholding traded that falsehood for a silent omission -- exit 0,
+// no statement, no diagnostic, on a sequence the author declared. The renderer's
+// sentence now names Ptah's generator rather than the engine, so both surfaces
+// can say what is true instead of saying nothing (stokaro/ptah#929 item 5).
+//
+// The executable half is still asserted: naming the object must not become
+// emitting a CREATE SEQUENCE Ptah cannot read back or plan again.
+func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
-	c.Assert(planned, qt.Not(qt.Contains), "CREATE SEQUENCE")
-	c.Assert(rendered, qt.Not(qt.Contains), "CREATE SEQUENCE")
-	c.Assert(planned, qt.Contains, `-- SQLSERVER: extensions "pg_trgm" is not supported`)
-	c.Assert(rendered, qt.Contains, `-- SQLSERVER: extensions "pg_trgm" is not supported`)
+	c.Assert(executableSQL(planned), qt.Not(qt.Contains), "CREATE SEQUENCE")
+	c.Assert(executableSQL(rendered), qt.Not(qt.Contains), "CREATE SEQUENCE")
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "extension", want: `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`},
+		{name: "sequence", want: `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated for this target; skipped.`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(planned, qt.Contains, test.want)
+			c.Assert(rendered, qt.Contains, test.want)
+		})
+	}
+}
+
+// executableSQL drops every SQL line comment, leaving only what a server would
+// run. A named skip repeats the object's own DDL keywords inside a comment, so
+// Contains over the raw text cannot separate an emitted statement from a
+// diagnostic about one.
+func executableSQL(sqlText string) string {
+	kept := make([]string, 0, strings.Count(sqlText, "\n")+1)
+	for line := range strings.SplitSeq(sqlText, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }

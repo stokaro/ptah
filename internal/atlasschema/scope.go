@@ -25,22 +25,22 @@ func scopeGeneratedSide(
 	db *goschema.Database,
 	scope atlasfilter.Scope,
 	side string,
-) (*goschema.Database, atlasfilter.ExcludeReport, error) {
+) (*goschema.Database, atlasfilter.ScopeReports, error) {
 	if scope.Positive() {
-		filtered, report, err := atlasfilter.ScopeGeneratedReport(db, scope)
+		filtered, reports, err := atlasfilter.ScopeGeneratedSelectionReport(db, scope)
 		if emptySelection(err) {
-			return filtered, report, err
+			return filtered, reports, err
 		}
 		if err != nil {
-			return nil, atlasfilter.ExcludeReport{}, fmt.Errorf("apply --schema/--include to %s: %w", side, err)
+			return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --schema/--include to %s: %w", side, err)
 		}
-		return filtered, report, nil
+		return filtered, reports, nil
 	}
 	filtered, report, err := atlasfilter.ExcludeGeneratedReport(db, scope.Exclude, scope.DefaultSchema)
 	if err != nil {
-		return nil, atlasfilter.ExcludeReport{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
+		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
 	}
-	return filtered, report, nil
+	return filtered, atlasfilter.ScopeReports{Exclude: report}, nil
 }
 
 // scopeDatabaseSide filters one introspected comparison side with the same
@@ -50,22 +50,62 @@ func scopeDatabaseSide(
 	db *types.DBSchema,
 	scope atlasfilter.Scope,
 	side string,
-) (*types.DBSchema, atlasfilter.ExcludeReport, error) {
+) (*types.DBSchema, atlasfilter.ScopeReports, error) {
 	if scope.Positive() {
-		filtered, report, err := atlasfilter.ScopeDatabaseReport(db, scope)
+		filtered, reports, err := atlasfilter.ScopeDatabaseSelectionReport(db, scope)
 		if emptySelection(err) {
-			return filtered, report, err
+			return filtered, reports, err
 		}
 		if err != nil {
-			return nil, atlasfilter.ExcludeReport{}, fmt.Errorf("apply --schema/--include to %s: %w", side, err)
+			return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --schema/--include to %s: %w", side, err)
 		}
-		return filtered, report, nil
+		return filtered, reports, nil
 	}
 	filtered, report, err := atlasfilter.ExcludeDatabaseReport(db, scope.Exclude, scope.DefaultSchema)
 	if err != nil {
-		return nil, atlasfilter.ExcludeReport{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
+		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
 	}
-	return filtered, report, nil
+	return filtered, atlasfilter.ScopeReports{Exclude: report}, nil
+}
+
+// applyExtensionSupportCoverage aggregates the two positive-selection outcomes
+// before comparison. A non-extension match on either side makes extensions
+// support objects: desired declarations can still add them, but desired
+// silence cannot request removal of an unrelated current extension.
+func applyExtensionSupportCoverage(
+	desired *goschema.Database,
+	reports ...atlasfilter.SelectionReport,
+) {
+	if desired == nil {
+		return
+	}
+	for _, report := range reports {
+		if report.NonExtensionMatched {
+			desired.NotDescribed = desired.NotDescribed.WithKind(coverage.Extension)
+			return
+		}
+	}
+}
+
+// extensionSupportScope turns a positive comparison scope into its second-pass
+// projection when either side selected a non-extension resource. Both original
+// sides must be projected again with this scope: carrying extensions on only
+// the side that observed the match can manufacture an extension addition or
+// removal that the database-wide object never underwent.
+func extensionSupportScope(
+	scope atlasfilter.Scope,
+	reports ...atlasfilter.SelectionReport,
+) (atlasfilter.Scope, bool) {
+	if scope.ExtensionSupport {
+		return scope, false
+	}
+	for _, report := range reports {
+		if report.NonExtensionMatched {
+			scope.ExtensionSupport = true
+			return scope, true
+		}
+	}
+	return scope, false
 }
 
 // emptySelection reports whether err is the empty-include-selection signal.
@@ -75,9 +115,8 @@ func emptySelection(err error) bool {
 }
 
 // reportEmptySelection writes the selection-matched-nothing notice to the
-// command's diagnostics stream. Verbs that keep exit 0 for an empty selection
-// still have to say so: stdout is what CI compares, and an empty render there
-// is indistinguishable from an empty database.
+// command's diagnostics stream. Inspection keeps exit 0 because an empty read
+// is a legitimate result, but still says which selection produced it.
 func reportEmptySelection(diagnostics io.Writer, err error) {
 	if diagnostics == nil || err == nil {
 		return
@@ -118,27 +157,33 @@ func refuseUnmatchedExclude(selectors []string) error {
 		atlasfilter.AllowUnmatchedExcludeEnvVar)
 }
 
-// reportUndecidedAdditions names every object the comparison declined to plan a
-// creation for because the CURRENT side's document declared it does not describe
-// that kind (`// ptah:not-described <kind>`) and the creation Ptah would emit
-// carries no IF NOT EXISTS guard.
+// ReportUndecidedAdditions names every object the comparison declined to plan a
+// creation for because the CURRENT side's coverage record says it does not
+// describe that kind (`// ptah:not-described <kind>` in a document) and the
+// creation Ptah would emit cannot safely converge from an unknown current
+// state. That includes an unguarded creation, and a guarded PostgreSQL extension
+// whose existing installation may be in another schema.
 //
 // Withholding one is defensible; withholding it in silence is not. Only a
-// document can be the current side of `schema diff` -- an introspected database
-// declares no limits -- so a `--from` file is the one place this arises today,
-// and the notice goes here for the same reason [reportEmptySelection] does:
-// stdout is what CI compares, and "Schemas are synced" there says the two
-// states agree, which is not what a withheld addition means.
-func reportUndecidedAdditions(diagnostics io.Writer, undecided []coverage.Object) {
+// currentDescription and desiredDescription name the two command-specific
+// inputs in prose, so schema diff can say `--from` and migrate diff can name
+// the replayed migration directory without producing a misleading diagnostic.
+func ReportUndecidedAdditions(
+	diagnostics io.Writer,
+	undecided []coverage.Object,
+	currentDescription string,
+	desiredDescription string,
+) {
 	if diagnostics == nil {
 		return
 	}
 	for _, object := range undecided {
 		fmt.Fprintf(diagnostics,
-			"Warning: %s %q is declared by --to but no change was planned for it:"+
-				" --from records `%s %s`, so this comparison cannot tell it apart from one that already exists,"+
-				" and the creation Ptah renders for it has no IF NOT EXISTS guard.\n",
-			object.Kind, object.Name, coverage.DirectiveMarker, object.Kind)
+			"Warning: %s %q is declared by %s but no change was planned for it:"+
+				" %s records `%s %s`, so this comparison cannot tell it apart from one that already exists,"+
+				" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n",
+			object.Kind, object.Name, desiredDescription, currentDescription,
+			coverage.DirectiveMarker, object.Kind)
 	}
 }
 

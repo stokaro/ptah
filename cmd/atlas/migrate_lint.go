@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
@@ -50,7 +51,7 @@ type atlasMigrateLintOptions struct {
 	atlasEnv  string
 }
 
-func newAtlasMigrateLintCommand() *cobra.Command {
+func newAtlasMigrateLintCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasMigrateLintOptions{
 		dir:       "file://migrations",
 		dirFormat: atlasDirFormatDefault,
@@ -76,7 +77,7 @@ Native ` + "`ptah migrations lint`" + ` needs neither and is unaffected by both.
 
 Native Ptah equivalent: ptah migrations lint.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAtlasMigrateLint(cmd, opts)
+			return runAtlasMigrateLint(cmd, policy, opts)
 		},
 	}
 	flags := cmd.Flags()
@@ -93,6 +94,7 @@ Native Ptah equivalent: ptah migrations lint.`,
 
 func runAtlasMigrateLint(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	opts atlasMigrateLintOptions,
 ) (runErr error) {
 	// Both variables this verb owns are resolved first, before the project file
@@ -142,7 +144,12 @@ func runAtlasMigrateLint(
 			opts.atlasEnv,
 			projectCfg.StringValue(projectconfig.StringEnvName),
 		)
-		if !cmd.Flags().Changed("latest") {
+		// Atlas CE treats an explicit --latest 0 as no latest selector. It
+		// still suppresses lint.latest from the project, but it does not
+		// suppress a project Git selector: `--latest 0 --git-base ...` is a
+		// Git-selected run there, not a mutually-exclusive pair.
+		latestChanged := cmd.Flags().Changed("latest")
+		if !latestChanged || opts.latest == 0 {
 			opts.gitBase = dbcli.EffectiveString(
 				cmd,
 				"git-base",
@@ -169,7 +176,7 @@ func runAtlasMigrateLint(
 	// atlas.hcl env that supplies `dev` satisfies it there and here, which is why
 	// this reads the merged value rather than the flag.
 	if !withoutDevURL {
-		if err := requireAtlasMigrateLintDevURL(opts.devURL); err != nil {
+		if err := requireAtlasMigrateLintDevURL(cmd, opts.devURL); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
@@ -229,7 +236,7 @@ func runAtlasMigrateLint(
 	}
 	source, err := project.captureLocal(localDir)
 	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+		return cmdutil.Fail(cmd, atlasMigrateLintDirCaptureError(localDir.Path, localDir.AllowedRoot, err))
 	}
 	dir := source.Display
 	lintOptions := migrationlintreport.Options{
@@ -293,6 +300,9 @@ func runAtlasMigrateLint(
 		}
 		return exitcode.New(1, errors.New(integrity.Error))
 	}
+	if err := policy.ValidateMigrationSourceForURL(captured.gateFS(), opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	// A foreign layout is rebuilt here as up-only Atlas migrations, so what the
 	// analyzers replay is the Atlas layout on either branch and the native
@@ -311,7 +321,7 @@ func runAtlasMigrateLint(
 			}
 			return exitcode.New(1, err)
 		}
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, atlasMigrateLintGitError(err))
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
@@ -399,9 +409,10 @@ func atlasMigrateLintAllVersions() (bool, error) {
 
 // atlasMigrateLintScopeGiven reports whether anything named the set of versions
 // to lint, mirroring how internal/migrationlintreport resolves the same two
-// selectors: --latest wins outright, an atlas.hcl `lint.latest` counts unless
-// --git-base was spelled, and a --git-base counts once opts.gitBase has taken
-// the project value (which the caller does only when --latest was not spelled).
+// selectors: a positive --latest wins outright, while an explicit zero clears
+// configured lint.latest and leaves Git eligible. An atlas.hcl `lint.latest`
+// counts unless --git-base was spelled, and a --git-base counts once
+// opts.gitBase has taken the project value.
 //
 // No "was a project loaded" argument is needed: a run that loaded none carries
 // the zero projectconfig.Config, whose LintLatestValue reports Present false.
@@ -410,11 +421,17 @@ func atlasMigrateLintScopeGiven(
 	opts atlasMigrateLintOptions,
 	projectCfg projectconfig.Config,
 ) bool {
-	if cmd.Flags().Changed("latest") {
+	latestChanged := cmd.Flags().Changed("latest")
+	if latestChanged && opts.latest > 0 {
 		return true
 	}
 	if strings.TrimSpace(opts.gitBase) != "" {
 		return true
+	}
+	// An explicit zero clears a configured lint.latest. With no usable Git
+	// selector it therefore names no scope, matching Atlas CE v1.3.0.
+	if latestChanged {
+		return false
 	}
 	return !cmd.Flags().Changed("git-base") && projectCfg.LintLatestValue().Present
 }
@@ -480,11 +497,14 @@ func requireAtlasMigrateLintScope(
 // both refuse. The scope requirement is #1241's and arrived separately; this one
 // is stokaro/ptah#1231 case 2, which #1307 explicitly left open rather than
 // widening into itself.
-func requireAtlasMigrateLintDevURL(devURL string) error {
-	if strings.TrimSpace(devURL) != "" {
-		return nil
-	}
-	return errors.New(`required flag(s) "dev-url" not set`)
+//
+// It asks whether the flag was GIVEN rather than whether its value is empty,
+// because those are two different rows on the pinned binary: an absent
+// `--dev-url` is the refusal above, while `--dev-url ""` passes the required
+// check there and is answered `sql/sqlclient: missing driver` by the client
+// layer. See [requireAtlasDevURL], which owns both halves.
+func requireAtlasMigrateLintDevURL(cmd *cobra.Command, devURL string) error {
+	return requireAtlasDevURL(cmd, devURL)
 }
 
 // atlasLintWithoutDevURL is the declaration of the variable, made once, on the

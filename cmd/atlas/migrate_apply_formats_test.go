@@ -400,7 +400,10 @@ func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) 
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate apply --dir: unknown Atlas migration directory format "custom": expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate`)
+	// The community binary's own wording; the semantic diagnostic stays in the
+	// chain. See migrate_dir_format_error.go and
+	// TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb.
+	c.Assert(err, qt.ErrorMatches, `unknown dir format "custom"`)
 	// The failure happens before the database is opened, so SQLite never creates
 	// the database file.
 	_, statErr := os.Stat(dbPath)

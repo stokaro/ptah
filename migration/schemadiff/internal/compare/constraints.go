@@ -172,6 +172,7 @@ func ConstraintsWithSemantics(
 		if _, exists := genConstraints[constraintKey]; !exists {
 			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 			diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
+			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
 		}
 	}
 
@@ -183,6 +184,7 @@ func ConstraintsWithSemantics(
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
+				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
 				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
 				diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint)
 			}
@@ -203,6 +205,13 @@ func ConstraintsWithSemantics(
 	})
 	sort.Slice(diff.ConstraintsRemovedWithTables, func(i, j int) bool {
 		a, b := diff.ConstraintsRemovedWithTables[i], diff.ConstraintsRemovedWithTables[j]
+		if a.TableName != b.TableName {
+			return a.TableName < b.TableName
+		}
+		return a.Name < b.Name
+	})
+	sort.Slice(diff.ForeignKeysRemovedWithTables, func(i, j int) bool {
+		a, b := diff.ForeignKeysRemovedWithTables[i], diff.ForeignKeysRemovedWithTables[j]
 		if a.TableName != b.TableName {
 			return a.TableName < b.TableName
 		}
@@ -261,6 +270,22 @@ func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstrai
 		Name:      dbConstraint.Name,
 		TableName: dbConstraint.QualifiedTableName(),
 		Type:      dbConstraint.Type,
+	})
+}
+
+func appendForeignKeyRemoval(
+	infos []difftypes.ForeignKeyRemovalInfo,
+	dbConstraint types.DBConstraint,
+) []difftypes.ForeignKeyRemovalInfo {
+	if !strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") {
+		return infos
+	}
+	return append(infos, difftypes.ForeignKeyRemovalInfo{
+		Name:           dbConstraint.Name,
+		TableName:      dbConstraint.QualifiedTableName(),
+		Columns:        append([]string(nil), dbConstraint.ColumnNamesOrDefault()...),
+		ForeignTable:   dbConstraint.QualifiedForeignTableName(),
+		ForeignColumns: append([]string(nil), dbConstraint.ForeignColumnsOrDefault()...),
 	})
 }
 

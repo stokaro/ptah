@@ -40,6 +40,13 @@ table "accounts" {
     include = [column.created_at]
   }
 }
+
+schema "extensions" {}
+
+extension "pgcrypto" {
+  schema        = schema.extensions
+  if_not_exists = true
+}
 ```
 
 ## Render it
@@ -52,6 +59,10 @@ Expected output includes:
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS "public";
+
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 
 CREATE TABLE "public"."accounts" (
   "id" int NOT NULL,
@@ -67,6 +78,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "public"."accounts" ("
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
 migration commands (`ptah migrations plan` / `ptah migrations generate`), and
 the API targets of [`ptah schema export`](../export/#sources).
+
+Relative `--schema-file` inputs are confined to the process working directory
+after symbolic-link resolution; use an absolute pathname for an intentional
+source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
 
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).

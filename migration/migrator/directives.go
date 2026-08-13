@@ -1,23 +1,30 @@
 package migrator
 
 import (
+	"iter"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/dialectlexer"
+	"go.5x5.cz/ptah/internal/ptahdirective"
 )
 
-// directivePrefix marks a ptah directive inside a SQL line comment:
-//
-//	-- +ptah key=value [key=value ...]
-//	-- +ptah no_transaction
-const directivePrefix = "+ptah"
-
 // ParseFileDirectives extracts `-- +ptah key=value` annotations from migration
-// SQL. Directives are file-scoped: every annotated line contributes to one
-// merged map (later lines win on duplicate keys). Bare no_transaction is a
-// boolean shorthand for no_transaction=true; other tokens without an equals
-// sign and malformed lines are ignored so directives never make a migration
-// file unreadable.
+// SQL. Every annotated line in the file's directive HEADER -- the run of blank
+// lines and line comments before the first executable SQL statement --
+// contributes to one merged map (later lines win on duplicate keys). Bare
+// no_transaction is a boolean shorthand for no_transaction=true; other tokens
+// without an equals sign and malformed lines are ignored so directives never
+// make a migration file unreadable.
+//
+// A directive written BELOW the statements it claims to govern is not honored,
+// because it does not govern them: it is read after the fact by a file the
+// database has already been shown. The migrator reports such a line rather than
+// dropping it, and the `-- atlas:txmode` family answers to the same rule, so a
+// reader does not have to know which spelling a file used to know where its
+// directives take effect. Setting PTAH_DIRECTIVES_ANYWHERE=1 restores the
+// earlier file-wide scope for a directory that depends on it; a malformed value
+// for that variable fails the migration run, and this function -- which reports
+// no error -- falls back to the header rule.
 //
 // The scan is lexer-driven with the same SQL-standard string handling the
 // dialect-blind SplitSQLStatements uses, so a `-- +ptah` sequence inside a
@@ -26,28 +33,33 @@ const directivePrefix = "+ptah"
 // comment that begins its physical line (leading whitespace allowed), so an
 // ordinary trailing comment after a statement is not treated as a directive
 // either.
+//
+// Ordered `-- +ptah check` directives are not part of this map and keep their
+// own, position-insensitive rule; see [ParseChecks].
 func ParseFileDirectives(sql string) map[string]string {
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		scope = directiveScopeHeader
+	}
+	return parseFileDirectivesForDialectInScope(sql, "", scope)
+}
+
+func parseFileDirectivesForDialectInScope(sql, dialect string, scope directiveScope) map[string]string {
+	region := directiveRegion(sql, scope)
+	return parseFileDirectives(ptahdirective.Bodies(region, dialectlexer.Options(dialect)))
+}
+
+// parseFileDirectivesConservativelyInScope extracts only directives whose token
+// boundaries agree across every supported dialect. Callers use it while a
+// migration has no target connection yet; dialect-specific strings remain SQL
+// until the execution dialect can make the final decision.
+func parseFileDirectivesConservativelyInScope(sql string, scope directiveScope) map[string]string {
+	return parseFileDirectives(ptahdirective.ConservativeBodies(directiveRegion(sql, scope)))
+}
+
+func parseFileDirectives(bodies iter.Seq[string]) map[string]string {
 	directives := map[string]string{}
-	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{StandardStrings: true})
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		if tok.Type != lexer.TokenComment {
-			continue
-		}
-		body, ok := strings.CutPrefix(tok.Value, "--")
-		if !ok {
-			continue // block comment: not a directive carrier
-		}
-		if !commentStartsLine(sql, tok.Start) {
-			continue // trailing comment: not a directive
-		}
-		body, ok = strings.CutPrefix(strings.TrimSpace(body), directivePrefix)
-		if !ok || (body != "" && body[0] != ' ' && body[0] != '\t') {
-			continue
-		}
+	for body := range bodies {
 		if isCheckDirectiveBody(body) {
 			continue // `-- +ptah check ...` is an ordered check, parsed by ParseChecks
 		}
@@ -62,20 +74,4 @@ func ParseFileDirectives(sql string) map[string]string {
 		}
 	}
 	return directives
-}
-
-// commentStartsLine reports whether only whitespace precedes the byte at pos
-// on its physical line.
-func commentStartsLine(sql string, pos int) bool {
-	for i := pos - 1; i >= 0; i-- {
-		switch sql[i] {
-		case '\n':
-			return true
-		case ' ', '\t', '\r':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
 }

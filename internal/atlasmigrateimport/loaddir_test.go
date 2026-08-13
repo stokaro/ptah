@@ -135,6 +135,42 @@ func TestLoadDir_FSConformsToStdlibAndOmitsAtlasSum(t *testing.T) {
 	c.Assert(string(up), qt.Equals, "CREATE TABLE fs_t (id int);\n")
 }
 
+func TestLoadFSLiquibaseDirectApplyKeepsNumberedFileIdentity(t *testing.T) {
+	c := qt.New(t)
+	source := fstest.MapFS{
+		"7_changelog.sql": &fstest.MapFile{Data: []byte(`--liquibase formatted sql
+--changeset alice:first
+CREATE TABLE first_table (id int);
+--rollback DROP TABLE first_table;
+--changeset bob:second
+CREATE TABLE second_table (id int);
+--rollback DROP TABLE second_table;
+`)},
+	}
+
+	loaded, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(entryNames(loaded), qt.DeepEquals, []string{"7_changelog.sql"})
+	c.Assert(string(loaded.Entries[0].Data), qt.Contains, "--changeset alice:first")
+	c.Assert(string(loaded.Entries[0].Data), qt.Contains, "--changeset bob:second")
+	c.Assert(string(loaded.Entries[0].Data), qt.Not(qt.Contains), "--rollback")
+}
+
+func TestLoadFSLiquibaseDirectApplyStillRefusesConventionalName(t *testing.T) {
+	c := qt.New(t)
+	source := fstest.MapFS{
+		"changelog.sql": &fstest.MapFile{Data: []byte(`--liquibase formatted sql
+--changeset alice:first
+CREATE TABLE first_table (id int);
+`)},
+	}
+
+	_, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
+
+	c.Assert(err, qt.ErrorMatches, `no importable migration files found in migrations for format "liquibase"`)
+}
+
 func TestLoadDir_FailurePath(t *testing.T) {
 	c := qt.New(t)
 

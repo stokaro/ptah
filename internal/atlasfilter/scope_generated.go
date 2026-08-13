@@ -1,6 +1,7 @@
 package atlasfilter
 
 import (
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -53,6 +54,7 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 
 	s.projectGeneratedTopLevel(db, out)
 	s.projectGeneratedSupport(db, out)
+	s.projectGeneratedExtensions(db, out)
 	out.Schemas = s.keepGeneratedSchemas(db, out)
 
 	out.Dependencies = nil
@@ -63,10 +65,11 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 }
 
 // projectGeneratedTopLevel selects independently includable top-level
-// resources: views, materialized views, functions, extensions, and roles.
+// resources: views, materialized views, functions, sequences, and roles.
 // Views, materialized views, and functions carry their schema in an optional
-// "schema." name prefix; extensions and roles are database-scoped and skip
-// the schema universe.
+// "schema." name prefix. Roles are database-scoped and skip the schema
+// universe. Extensions are projected after support objects, when the selection
+// knows whether a non-extension resource matched.
 func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	out.Views = keep(db.Views, func(view goschema.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
@@ -76,9 +79,6 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	})
 	out.Functions = keep(db.Functions, func(function goschema.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
-	})
-	out.Extensions = keep(db.Extensions, func(extension goschema.Extension) bool {
-		return s.selectedNames(typeList("extension"), extension.Name)
 	})
 	out.Sequences = keep(db.Sequences, func(sequence goschema.Sequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
@@ -97,12 +97,26 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	})
 }
 
+func (s *scopeSelection) projectGeneratedExtensions(db, out *goschema.Database) {
+	if s.extensionSupport || s.nonExtensionMatched {
+		for _, extension := range db.Extensions {
+			s.selectedExtension(extension.Schema, extension.Name)
+		}
+		out.Extensions = slices.Clone(db.Extensions)
+		return
+	}
+	out.Extensions = keep(db.Extensions, func(extension goschema.Extension) bool {
+		return s.selectedExtension(extension.Schema, extension.Name)
+	})
+}
+
 // projectGeneratedSupport retains type objects used by selected tables even
 // when no selector names them: enums, domains, composite types, and ranges
 // referenced by kept column types.
 func (s *scopeSelection) projectGeneratedSupport(db, out *goschema.Database) {
 	referenced := generatedFieldTypeSet(out.Fields)
-	out.Enums = keepEnumObjects(s, db.Enums, referenced, func(e goschema.Enum) string { return e.Name })
+	out.Enums = keepEnumObjects(s, db.Enums, referenced,
+		func(e goschema.Enum) (string, string) { return e.Schema, e.Name })
 	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
 		func(d goschema.Domain) (string, string) { return d.Schema, d.Name })
 	out.CompositeTypes = keepTypeObjects(s, db.CompositeTypes, "composite_type", referenced,
@@ -112,20 +126,29 @@ func (s *scopeSelection) projectGeneratedSupport(db, out *goschema.Database) {
 }
 
 // keepEnumObjects keeps enums that are either selected by the scope or
-// referenced by kept column types. Enums carry their optional schema in the
-// name, so selection resolves it from the qualified name.
+// referenced by kept column types. Current enum models carry schema and name
+// separately. An empty schema retains support for SQL-source enum values whose
+// legacy conversion parked the qualifier in Name.
 func keepEnumObjects[T any](
 	s *scopeSelection,
 	items []T,
 	referenced map[string]struct{},
-	name func(T) string,
+	key func(T) (schema, name string),
 ) []T {
 	return keep(items, func(item T) bool {
-		if s.selectedQualifiedName(typeList("enum"), name(item)) {
+		schema, name := enumIdentity(key(item))
+		if s.selected(typeList("enum"), schema, name) {
 			return true
 		}
-		return typeNameReferenced(referenced, "", name(item))
+		return typeNameReferenced(referenced, schema, name)
 	})
+}
+
+func enumIdentity(schema, name string) (resolvedSchema, resolvedName string) {
+	if strings.TrimSpace(schema) != "" {
+		return schema, name
+	}
+	return splitQualified(name)
 }
 
 // keepTypeObjects keeps type objects that are either selected by the scope or
@@ -198,6 +221,17 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 		schema, _ := splitQualified(view.Name)
 		owning[s.effectiveSchema(schema)] = struct{}{}
 	}
+	for _, function := range out.Functions {
+		schema, _ := splitQualified(function.Name)
+		owning[s.effectiveSchema(schema)] = struct{}{}
+	}
+	for _, enum := range out.Enums {
+		schema, _ := enumIdentity(enum.Schema, enum.Name)
+		owning[s.effectiveSchema(schema)] = struct{}{}
+	}
+	for _, extension := range out.Extensions {
+		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
 	return keep(db.Schemas, func(schema goschema.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
@@ -205,7 +239,7 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, ok := owning[strings.TrimSpace(schema.Name)]
+		_, ok := owning[schema.Name]
 		return ok
 	})
 }

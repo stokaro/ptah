@@ -64,6 +64,44 @@ func TestPtahNativeSchemaApplyHelpResolves(t *testing.T) {
 	c.Assert(stderr.String(), qt.Equals, "")
 }
 
+// TestPtahNativeMigrationsCreateKeepsSuccessReport is the negative control for
+// the compatibility-only silence of `ptah-compat migrate new`. Native Ptah
+// keeps reporting the two paths it created.
+func TestPtahNativeMigrationsCreateKeepsSuccessReport(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildPtahBinary(c)
+	dir := c.TempDir()
+	run := newPtahProcess(
+		binPath,
+		"migrations", "create", "manual_hotfix",
+		"--migrations-dir", dir,
+	)
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+
+	err := run.Run()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr.String()))
+	c.Assert(stderr.String(), qt.Equals, "")
+	files, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.*.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	downPath := files[0]
+	upPath := files[1]
+	c.Assert(downPath, qt.Matches, `^.*\.down\.sql$`)
+	c.Assert(upPath, qt.Matches, `^.*\.up\.sql$`)
+	upPath, pathErr := filepath.EvalSymlinks(upPath)
+	c.Assert(pathErr, qt.IsNil)
+	downPath, pathErr = filepath.EvalSymlinks(downPath)
+	c.Assert(pathErr, qt.IsNil)
+	c.Assert(stdout.String(), qt.Equals,
+		"Generated empty migration files:\n"+
+			"UP:   "+upPath+"\n"+
+			"DOWN: "+downPath+"\n",
+	)
+}
+
 func TestPtahNativeMigrationsUpRejectsMalformedAtlasTxMode(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildPtahBinary(c)

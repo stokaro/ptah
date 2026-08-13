@@ -77,6 +77,22 @@ func TestClassifySchemaDiff_AggregatesRepeatedCategories(t *testing.T) {
 	c.Assert(safety.Highest(findings), qt.Equals, safety.Warning)
 }
 
+func TestClassifySchemaDiff_ExtensionPlacementIsAWarning(t *testing.T) {
+	c := qt.New(t)
+
+	findings := safety.ClassifySchemaDiff(&types.SchemaDiff{
+		ExtensionsModified: []types.ExtensionDiff{{
+			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
+		}},
+	})
+
+	c.Assert(findings, qt.DeepEquals, []safety.Finding{{
+		Category: "extensions_modified",
+		Count:    1,
+		Severity: safety.Warning,
+	}})
+}
+
 func TestClassifyASTStatements(t *testing.T) {
 	c := qt.New(t)
 

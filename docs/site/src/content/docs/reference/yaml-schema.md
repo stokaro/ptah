@@ -17,7 +17,9 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
 `--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` inputs. This page
-documents the YAML shape only.
+documents the YAML shape only. Relative inputs are confined to the process
+working directory after symbolic-link resolution; use an absolute pathname for
+an intentional source outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
 
 ## Minimal schema
 
@@ -64,6 +66,26 @@ Top-level objects are maps. Their keys are used as default object names when a
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
+
+## Extensions
+
+Each entry under `extensions` declares one PostgreSQL extension. The map key is
+the default extension name.
+
+| Key | Meaning |
+| --- | --- |
+| `name` | Extension name. Defaults to the map key. |
+| `schema` | PostgreSQL installation schema. Empty uses the target's default schema. |
+| `if_not_exists` | Adds `IF NOT EXISTS` to creation SQL. |
+| `version` | Requested extension version. |
+| `comment` | Extension comment. |
+
+```yaml
+extensions:
+  pgcrypto:
+    schema: extensions
+    if_not_exists: true
+```
 
 ## Tables
 

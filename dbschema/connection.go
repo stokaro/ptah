@@ -187,15 +187,13 @@ func getDatabaseInfoWithCapabilities(
 // match: the version could not be parsed at all, or it parsed and ran off the
 // top of its dialect's ladder.
 //
-// Both stay at DEBUG, and that level is the point. The default logger
+// All stay at DEBUG, and that level is the point. The default logger
 // cmd/internal/cliobs installs keeps WARN and above precisely because a clean
 // run against a supported server emits nothing there; anything it does emit is
 // a diagnostic that exists nowhere else. Connecting to a server Ptah supports
 // and runs in CI is not such an event. A saturated resolution fires on every
-// single connection to that server — the integration matrix runs postgres:18,
-// which is saturated against the PostgreSQL 17 line — so reporting it at WARN
-// wrote a line to stderr on every command and broke every test that asserts a
-// clean error stream.
+// connection to an unmeasured newer major, so reporting it at WARN writes a
+// line to stderr on every command and breaks the clean error-stream contract.
 //
 // The fact itself is not lost. capability.ResolveServerVersion returns
 // Saturated and NewestMeasured to any caller that wants to act on them, and
@@ -214,7 +212,7 @@ func reportCapabilityResolution(info types.DBInfo, resolution capability.Version
 	}
 	if !resolution.VersionSpecific {
 		slog.Debug(
-			"falling back to dialect default capabilities",
+			"falling back from an unmeasured server version",
 			"dialect", info.Dialect,
 			"version", info.Version,
 		)
@@ -345,15 +343,32 @@ func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
 	return dc.writer
 }
 
-// WithExecutor returns a shallow connection copy that uses executor as the active
-// SQL executor while keeping the same database handle, reader, and metadata.
+// WithExecutor returns a shallow connection copy that uses executor as the
+// active SQL executor. When executor exposes a live transaction runner, the
+// copy's reader and direct SQL use that same execution session.
 //
 // This is used to pass transaction-scoped writers into migration callbacks
 // without storing the active transaction on the root writer.
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection {
 	cloned := *dc
 	cloned.executor = executor
+	provider, ok := executor.(schemaTransactionRunnerProvider)
+	if !ok {
+		return &cloned
+	}
+	runner := provider.SchemaQueryRunner()
+	if runner == nil {
+		return &cloned
+	}
+	cloned.runner = runner
+	if dc.newReader != nil {
+		cloned.reader = dc.newReader(runner)
+	}
 	return &cloned
+}
+
+type schemaTransactionRunnerProvider interface {
+	SchemaQueryRunner() sqlrunner.Runner
 }
 
 // WithIsolatedQuerySession runs use with a query-only handle on one physical
@@ -564,6 +579,12 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(context.Background(), query, args...)
 	}
+	if dc.executor != nil {
+		if err := dc.executor.ExecuteSQL(context.Background(), query, args...); err != nil {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
+	}
 	return dc.sqlRunner().Exec(query, args...)
 }
 
@@ -571,6 +592,12 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(ctx, query, args...)
+	}
+	if dc.executor != nil {
+		if err := dc.executor.ExecuteSQL(ctx, query, args...); err != nil {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
 	}
 	return dc.sqlRunner().ExecContext(ctx, query, args...)
 }

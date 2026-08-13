@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/lintartifact"
 	"go.5x5.cz/ptah/internal/lintdialect"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
@@ -154,6 +155,25 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		},
 	)
 	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	// The shared integrity gate. Lint belongs to the class through --dev-url:
+	// migrationlintreport.Build replays the directory's migrations on that
+	// database to validate execution semantics and read baseline schema state.
+	//
+	// It also closes an asymmetry the compat page already describes as closed.
+	// `ptah-compat migrate lint` refuses a hashed directory that drifted, and
+	// the page states plainly that lint "is not a route for inspecting a
+	// directory that has already drifted" — but the native verb was exactly
+	// that route, because the compat refusal lives in internal/atlasreport and
+	// never ran here. Tolerating a MISSING integrity file is the part that is
+	// deliberate on both surfaces: linting a directory nobody has hashed is how
+	// you inspect one before adopting it, and the gate keeps that.
+	if _, err := migrationintegrity.Gate(
+		cmd.ErrOrStderr(),
+		reportOpts.FS,
+		migrator.MigrationDirFormat(reportOpts.DirFormat),
+	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	report, err := migrationlintreport.Build(cmd.Context(), reportOpts, projectCfg)

@@ -17,8 +17,9 @@ var gooseGoFileRE = regexp.MustCompile(`^(\d+)_(.+)\.go$`)
 
 // gooseUpMarker and gooseDownMarker start the up and down sections of a Goose
 // migration file. Goose also emits StatementBegin/End and NO TRANSACTION
-// annotations, which are directives to Goose's splitter, not SQL, so they are
-// dropped from the imported output.
+// annotations, which are directives to Goose's splitter, not SQL. The section
+// directives are dropped; NO TRANSACTION becomes typed whole-migration metadata
+// that Emit translates to Ptah's directive on both directions.
 const (
 	gooseUpMarker   = "up"
 	gooseDownMarker = "down"
@@ -81,15 +82,16 @@ func (gooseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid goose version in %q: %w", entry.Name(), err)
 		}
-		up, down := splitGooseSQL(string(content))
+		up, down, noTransaction := splitGooseSQL(string(content))
 		if strings.TrimSpace(up) == "" {
 			return nil, fmt.Errorf("goose migration %q has an empty up section", entry.Name())
 		}
 		migrations = append(migrations, SourceMigration{
-			Version: version,
-			Name:    match[2],
-			UpSQL:   up,
-			DownSQL: down,
+			Version:       version,
+			Name:          match[2],
+			UpSQL:         up,
+			DownSQL:       down,
+			NoTransaction: noTransaction,
 		})
 	}
 	if len(migrations) == 0 {
@@ -102,12 +104,13 @@ func (gooseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 // the goose annotation lines. Content before the first `-- +goose Up` is ignored.
 //
 // Statements wrapped in `-- +goose StatementBegin` / `StatementEnd` are copied
-// verbatim: inside such a block Goose suspends annotation parsing (that is the
-// block's whole purpose — the body legitimately contains semicolons or lines
-// that look like annotations, for example a `-- +goose Down` comment inside a
-// function body). Honoring only `StatementEnd` inside a block prevents a marker
-// in a statement body from silently flipping the section mid-statement.
-func splitGooseSQL(content string) (up, down string) {
+// verbatim except for the whole-file `-- +goose NO TRANSACTION` annotation,
+// which Goose recognizes even inside a statement block. Other annotations in a
+// block remain statement text: the body may legitimately contain semicolons or
+// annotation lookalikes, for example a `-- +goose Down` comment inside a
+// function body. Honoring only `NO TRANSACTION` and `StatementEnd` inside a
+// block prevents a marker in a statement body from silently flipping sections.
+func splitGooseSQL(content string) (up, down string, noTransaction bool) {
 	var upBuilder, downBuilder strings.Builder
 	section := ""
 	inStatement := false
@@ -123,6 +126,10 @@ func splitGooseSQL(content string) (up, down string) {
 	}
 	for line := range strings.SplitSeq(content, "\n") {
 		marker := gooseMarker(line)
+		if marker == gooseNoTxMarker {
+			noTransaction = true
+			continue // whole-file annotation, even inside StatementBegin/End
+		}
 		if inStatement {
 			if marker == gooseStatementEndMarker {
 				inStatement = false
@@ -138,13 +145,13 @@ func splitGooseSQL(content string) (up, down string) {
 			section = gooseDownMarker
 		case gooseStatementBeginMarker:
 			inStatement = true // strip the StatementBegin annotation
-		case gooseStatementEndMarker, gooseNoTxMarker, gooseOtherMarker:
+		case gooseStatementEndMarker, gooseOtherMarker:
 			// directive, not SQL — drop it
 		default:
 			writeLine(line) // ordinary SQL line
 		}
 	}
-	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String())
+	return strings.TrimSpace(upBuilder.String()), strings.TrimSpace(downBuilder.String()), noTransaction
 }
 
 // gooseSection reports the first section marker (up/down) in content, or "" when
@@ -166,15 +173,26 @@ const (
 	gooseStatementEndMarker   = "statement_end"
 	gooseNoTxMarker           = "notx"
 	gooseOtherMarker          = "other"
+	gooseNoTxDirective        = "-- +goose NO TRANSACTION"
 )
 
 // gooseMarker classifies a line as a goose annotation: the up/down section
 // markers, the StatementBegin/End and NO TRANSACTION directives (not SQL), or ""
 // for an ordinary SQL line.
 func gooseMarker(line string) string {
+	if strings.TrimSuffix(line, "\r") == gooseNoTxDirective {
+		return gooseNoTxMarker
+	}
+
 	trimmed := strings.TrimSpace(line)
 	directive, ok := strings.CutPrefix(trimmed, "-- +goose")
 	if !ok {
+		return ""
+	}
+	// Goose recognizes NO TRANSACTION only in the exact spelling above. Keep
+	// whitespace- or case-normalized lookalikes in the SQL body instead of
+	// silently changing the migration's transaction mode.
+	if strings.EqualFold(strings.Join(strings.Fields(directive), " "), "no transaction") {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(directive)) {
@@ -186,8 +204,6 @@ func gooseMarker(line string) string {
 		return gooseStatementBeginMarker
 	case "statementend":
 		return gooseStatementEndMarker
-	case "no transaction":
-		return gooseNoTxMarker
 	default:
 		return gooseOtherMarker
 	}

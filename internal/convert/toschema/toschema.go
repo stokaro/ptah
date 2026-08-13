@@ -475,7 +475,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 // ToExtension converts an ast.ExtensionNode to a goschema.Extension for database extension definitions.
 //
 // This function extracts extension metadata from an AST node, including the extension name,
-// version requirements, and configuration options.
+// installation schema, version requirements, and configuration options.
 //
 // # Parameters
 //
@@ -484,6 +484,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 // # Extension Features
 //
 //   - Extension name extraction (pg_trgm, postgis, etc.)
+//   - PostgreSQL installation schema
 //   - IF NOT EXISTS clause handling
 //   - Version specification support
 //   - Extension comments for documentation
@@ -501,11 +502,12 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 // Extension with version:
 //
 //	extension := ast.NewExtension("postgis").
+//		SetSchema("extensions").
 //		SetVersion("3.0").
 //		SetComment("Geographic data support")
 //	extensionSchema := ToExtension(extension)
 //	// Results in: goschema.Extension{
-//	//   Name: "postgis", Version: "3.0",
+//	//   Name: "postgis", Schema: "extensions", Version: "3.0",
 //	//   Comment: "Geographic data support"
 //	// }
 //
@@ -514,7 +516,8 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 // Returns a goschema.Extension with all extension attributes extracted from the AST node.
 func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 	return goschema.Extension{
-		Name:        normalizeSQLIdentifier(extension.Name),
+		Name:        catalogPostgresIdentifierPart(strings.TrimSpace(extension.Name)),
+		Schema:      catalogPostgresIdentifierPart(strings.TrimSpace(extension.Schema)),
 		IfNotExists: extension.IfNotExists,
 		Version:     extension.Version,
 		Comment:     extension.Comment,

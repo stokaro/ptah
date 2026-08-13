@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -19,11 +21,13 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -46,6 +50,7 @@ type atlasSchemaApplyOptions struct {
 	lock        atlasLockOptions
 	edit        bool
 	skipLint    bool
+	policy      atlascompatpolicy.Policy
 	// formatOutput is derived at run time: true when --format was passed or
 	// atlas.hcl provides format.schema.apply.
 	formatOutput bool
@@ -55,8 +60,164 @@ type atlasSchemaApplyOptions struct {
 	lintPolicy projectconfig.LintConfig
 }
 
-func newAtlasSchemaApplyCommand() *cobra.Command {
-	opts := atlasSchemaApplyOptions{}
+type atlasSchemaApplyDisplayError struct {
+	text string
+	err  error
+}
+
+func (e atlasSchemaApplyDisplayError) Error() string { return e.text }
+func (e atlasSchemaApplyDisplayError) Unwrap() error { return e.err }
+
+type atlasSchemaApplyDiagnosticPath struct {
+	authored  string
+	resolved  string
+	directory bool
+	members   []atlasSchemaApplyDiagnosticPath
+}
+
+const atlasSchemaApplyHCLContext = "load --to schema: parse HCL schema: "
+
+// displayAtlasSchemaApplyError renders a desired-schema HCL parse failure the
+// way the pinned community binary v1.3.0 renders it.
+//
+// Two measured differences, both display-only (#1235 cell 9.13). The loader's
+// context pair is dropped, and the diagnostic's leading path is rendered
+// relative to the working directory when the operator wrote a relative --to.
+// The pinned binary echoes the path in the form it was given: `file://fx/b.hcl`
+// reports `fx/b.hcl`, `file://./fx/b.hcl` reports `fx/b.hcl` too, and an
+// absolute --to reports the absolute path — which already matched, so the
+// rewrite must not fire for it.
+//
+// toURLs is the resolved --to set. A run with none, or one whose values are all
+// absolute or non-local, gets the prefix half alone.
+func displayAtlasSchemaApplyError(err error, toURLs []string) error {
+	if !strings.HasPrefix(err.Error(), atlasSchemaApplyHCLContext) {
+		return err
+	}
+	return displayAtlasSchemaApplyErrorFrom(err, atlasSchemaApplyDiagnosticPaths(toURLs))
+}
+
+// displayAtlasSchemaApplyErrorFrom contains the deterministic display
+// adaptation. Keeping the authored/resolved pairs explicit lets the unit
+// contour exercise the composed error without touching the filesystem; the
+// process-level integration test covers URL decoding and symlink resolution.
+func displayAtlasSchemaApplyErrorFrom(err error, paths []atlasSchemaApplyDiagnosticPath) error {
+	message, found := strings.CutPrefix(err.Error(), atlasSchemaApplyHCLContext)
+	if !found {
+		return err
+	}
+	message = atlasSchemaApplyRelativeDiagnosticFrom(message, paths)
+	return atlasSchemaApplyDisplayError{text: message, err: err}
+}
+
+// atlasSchemaApplyRelativeDiagnostic rewrites the leading absolute path of an
+// HCL diagnostic back to the working-directory-relative form, for the one --to
+// value that produced it.
+//
+// The match is anchored and exact: the message must begin with the resolved
+// absolute path followed by the ':' that starts the HCL position, so a
+// diagnostic about some other file, or one that merely mentions the path, is
+// left alone. A --to that is already absolute is skipped, because the pinned
+// binary reports an absolute path for it and this surface already agrees.
+// atlasSchemaApplyRelativeDiagnosticFrom contains the deterministic comparison
+// used after the loader context has been removed.
+func atlasSchemaApplyRelativeDiagnosticFrom(message string, paths []atlasSchemaApplyDiagnosticPath) string {
+	for _, path := range paths {
+		rest, found := strings.CutPrefix(message, path.resolved+":")
+		if found {
+			return path.authored + ":" + rest
+		}
+		if !path.directory {
+			continue
+		}
+		if mapped := atlasSchemaApplyRelativeDiagnosticFrom(message, path.members); mapped != message {
+			return mapped
+		}
+		member, found := strings.CutPrefix(message, path.resolved+string(filepath.Separator))
+		if !found {
+			continue
+		}
+		memberPath, position, found := strings.Cut(member, ":")
+		if !found || memberPath == "" {
+			continue
+		}
+		return filepath.Join(path.authored, memberPath) + ":" + position
+	}
+	return message
+}
+
+// atlasSchemaApplyDiagnosticPaths derives the same resolved paths used by the
+// schema loader while retaining the decoded, normalized relative spelling for
+// Atlas-compatible display. This matters for URL-escaped names and in-tree
+// symlinks: a lexical workdir join does not match the loader's diagnostic.
+func atlasSchemaApplyDiagnosticPaths(toURLs []string) []atlasSchemaApplyDiagnosticPath {
+	paths := make([]atlasSchemaApplyDiagnosticPath, 0, len(toURLs))
+	for _, raw := range toURLs {
+		authored, err := schemafile.LocalFilePath(raw)
+		if err != nil || filepath.IsAbs(authored) {
+			continue
+		}
+		resolved, err := pathguard.ResolveCLIPath(authored)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			continue
+		}
+		paths = append(paths, atlasSchemaApplyDiagnosticPath{
+			authored:  filepath.Clean(authored),
+			resolved:  resolved,
+			directory: info.IsDir(),
+			members:   atlasSchemaApplyDirectoryDiagnosticPaths(authored, resolved, info),
+		})
+	}
+	return paths
+}
+
+// atlasSchemaApplyDirectoryDiagnosticPaths records the loader's resolved path
+// for each supported entry while retaining the authored directory-entry
+// spelling. The loader selects entries by their authored extension, then
+// selects the parser after resolving a symlink, so both .hcl and .sql names
+// can produce an HCL diagnostic.
+// os.ReadDir returns filename order, matching the loader, so two symlinks to
+// the same malformed target map to the first entry the loader attempts.
+func atlasSchemaApplyDirectoryDiagnosticPaths(authored, resolved string, info os.FileInfo) []atlasSchemaApplyDiagnosticPath {
+	if !info.IsDir() {
+		return nil
+	}
+	entries, err := os.ReadDir(resolved)
+	if err != nil {
+		return nil
+	}
+	members := make([]atlasSchemaApplyDiagnosticPath, 0, len(entries))
+	for _, entry := range entries {
+		extension := strings.ToLower(filepath.Ext(entry.Name()))
+		if entry.IsDir() || (extension != ".hcl" && extension != ".sql") {
+			continue
+		}
+		memberResolved, err := pathguard.ResolveCLIPath(filepath.Join(resolved, entry.Name()))
+		if err != nil {
+			continue
+		}
+		members = append(members, atlasSchemaApplyDiagnosticPath{
+			authored: filepath.Join(filepath.Clean(authored), entry.Name()),
+			resolved: memberResolved,
+		})
+	}
+	return members
+}
+
+func newAtlasSchemaApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
+	opts := atlasSchemaApplyOptions{
+		policy: policy,
+		// The pinned community binary accepts lint policy in atlas.hcl but
+		// does not run a plan-lint pass during schema apply. Full compatibility
+		// retains Ptah's Pro-like pre-apply lint gate. Strict mode has no such
+		// pass, so it refuses an authored apply policy before work instead of
+		// silently dropping the operator's safety contract.
+		skipLint: policy.IsStrictCE(),
+	}
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a desired schema to a database",
@@ -113,8 +274,17 @@ executed, and a finding the policy rates as an error refuses the apply.
 --skip-lint runs the apply without that check. A project with no lint policy
 has no lint pass to skip, so --skip-lint changes nothing there.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.policy.IsStrictCE() && cmd.Flags().Changed("plan") {
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --plan")
+			}
+			if opts.policy.IsStrictCE() && cmd.Flags().Changed("include") {
+				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --include")
+			}
 			return runAtlasSchemaApply(cmd, opts)
 		},
+	}
+	if policy.IsStrictCE() {
+		cmd.Long = strictAtlasSchemaApplyLong()
 	}
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply to")
@@ -131,9 +301,11 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
-	registerAtlasLockNameFlag(flags, &opts.lock)
-	registerAtlasSkipLockFlag(flags, &opts.lock)
-	flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
+	if !policy.IsStrictCE() {
+		registerAtlasLockNameFlag(flags, &opts.lock)
+		registerAtlasSkipLockFlag(flags, &opts.lock)
+		flags.BoolVar(&opts.skipLint, "skip-lint", false, "Skip linting the planned migration")
+	}
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -166,6 +338,20 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	return cmd
 }
 
+func strictAtlasSchemaApplyLong() string {
+	return `Atlas OSS ` + "`atlas schema apply`" + ` command path.
+
+Compares the live database from --url with the --to desired state and applies
+the generated changes. A local desired schema or migration directory requires
+--dev-url so the plan can be rehearsed before the target is touched. --dry-run
+prints the plan without applying it, and --auto-approve skips the prompt.
+
+Strict compatibility exposes only the pinned Community Edition command and
+flag surface. The Pro-only --plan execution path is community-gated, and the
+default ptah-compat policy retains Ptah's complete plan, lint, and lock
+capabilities.`
+}
+
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
@@ -178,6 +364,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if loaded {
+		if err := opts.policy.ValidateSchemaApplyConfig(projectCfg); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 		opts.url = dbcli.EffectiveString(
 			cmd,
 			"url",
@@ -237,6 +426,22 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
+	var preparedTo *atlassource.Set
+	if migrationSourceValidator != nil {
+		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if err := toSet.ValidateLocalSchemaSources(opts.policy.ValidateLocalSchemaSource); err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		toSet, err = toSet.PrepareMigrationSource(migrationSourceValidator)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		preparedTo = &toSet
+	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -253,6 +458,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// before the target database is contacted, which is the order the community
 	// binary reports in: an unparseable --tx-mode or --lock-timeout is named
 	// there even when --dev-url is also missing.
+	//
+	// The driver verdict on a value that WAS given comes first, because it is
+	// the one that binary reports regardless of what --to turned out to be:
+	// measured on 2026-08-13, `--to` a database and `--dev-url notadriver://x`
+	// answers `sql/sqlclient: unknown driver "notadriver"` there, on the argv
+	// where ensureAtlasSchemaApplyDevURL below deliberately exempts the source.
+	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -264,10 +478,22 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if opts.policy.IsStrictCE() {
+		if err := atlasschema.PreflightApplyTarget(
+			cmd.Context(),
+			conn,
+			opts.schemas,
+			opts.policy.ValidateInspectedSchema,
+			atlasLiveSchemaObjectValidator(opts.policy),
+		); err != nil {
+			return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
+		}
+	}
 
-	// The apply lock is held across inspection, planning, simulation,
-	// confirmation, and execution, so the plan cannot go stale between
-	// planning and applying. The deferred release covers every exit path.
+	// After the before-work policy preflight above, the apply lock is held across
+	// the authoritative target reinspection, planning, simulation, confirmation,
+	// and execution, so the plan cannot go stale between planning and applying.
+	// The deferred release covers every exit path.
 	applyLock, err := acquireAtlasSchemaApplyLock(cmd, conn, lockRequest, lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -289,15 +515,26 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		TxMode:      txMode,
 		DryRun:      opts.dryRun,
 		ProjectEnv:  projectEnv,
+		PreparedTo:  preparedTo,
 		Diagnostics: cmd.ErrOrStderr(),
 
 		// Atlas-compatible surface: a schema file written for another tool
 		// must not be refused over a name this parser does not model.
-		IgnoreUnknownHCLNames: true,
-		Vars:                  schemaVars,
+		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
+		ValidateCurrentSchema:     opts.policy.ValidateInspectedSchema,
+		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
+		ValidateMigrationSource:   migrationSourceValidator,
+		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
+		Vars:                      schemaVars,
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		// The pinned community binary v1.3.0 reports the HCL diagnostic itself
+		// for this command. The loader's two context wrappers are useful on the
+		// native surface, but they are extra bytes on the compatibility boundary.
+		// Strip only that measured pair so every unrelated apply error retains
+		// its existing context (stokaro/ptah#1235 cell 9.13).
+		return cmdutil.Fail(cmd, displayAtlasSchemaApplyError(err, opts.toURLs))
 	}
 	if !plan.HasChanges() {
 		if formatOutput {
@@ -472,12 +709,15 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.url, "url")
 		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
 			Dialect:               conn.Info().Dialect,
-			IgnoreUnknownHCLNames: true,
+			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
 			SchemaScope:           schemaScope,
 			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  schemaVars,
 		})
 		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
+		}
+		if err := opts.policy.ValidateDesiredSchema(desired); err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
 		}
 	}
@@ -733,9 +973,21 @@ func rehearseAtlasSchemaApplyPlan(
 // --to and --dev-url combine with --plan the way Atlas
 // combines them: --to names the desired state the plan is verified against
 // and --dev-url hosts the pre-apply rehearsal.
+//
+// The --url wording here is a consistency choice, not an oracle match, and the
+// distinction is deliberate: measured on 2026-08-13, the pinned community
+// binary v1.3.0 answers `schema apply --plan` with
+// `Abort: 'atlas schema apply --plan' is not supported by the community
+// version.` whether --url is absent, empty or unopenable, so this branch has no
+// row to match. It carries the same spelling as the plan-free path above so one
+// verb does not answer the same mistake two ways depending on a flag that
+// changes nothing about the mistake.
 func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+		return atlasRequiredURLError(atlasRequiredURLPlural)
+	}
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return err
 	}
 	conflicts := []struct {
 		flag   string
@@ -889,11 +1141,22 @@ func validateAtlasSchemaApplyOptions(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
+	// Plural, and tested on the value rather than on cobra's Changed bit: the
+	// pinned community binary v1.3.0 answers `--url ""` here the same way it
+	// answers an absent one, which is what separates this verb from
+	// `schema clean`. See cmd/atlas/compat_url_diagnostic.go.
 	if strings.TrimSpace(opts.url) == "" {
-		return fmt.Errorf("--url is required")
+		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
+	}
+	// The URL's driver is settled after the desired state is required and
+	// before anything is opened, because that is the measured order: with a
+	// bad --url and no --to the pinned binary names the missing desired state,
+	// and with both present it names the driver.
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return err
 	}
 	// Malformed or unsupported --include selectors fail before the target
 	// database is contacted.

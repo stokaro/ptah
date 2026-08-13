@@ -51,11 +51,18 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 			Name:   "status_type",
 			Values: []string{"active", "inactive"},
 		}},
+		Extensions: []goschema.Extension{{
+			Name:        "pgcrypto",
+			Schema:      "extensions",
+			IfNotExists: true,
+			Version:     "1.3",
+		}},
 		Indexes: []goschema.Index{{
-			StructName: "OrderItem",
-			Name:       "idx_order_items_status",
-			Fields:     []string{"status"},
-			Condition:  "status <> 'inactive'",
+			StructName:     "OrderItem",
+			Name:           "idx_order_items_status",
+			Fields:         []string{"status"},
+			IncludeColumns: []string{"created_at", "tenant_id"},
+			Condition:      "status <> 'inactive'",
 		}},
 		Constraints: []goschema.Constraint{
 			{
@@ -129,12 +136,14 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	parsed, err := goschema.ParseDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Enums, qt.DeepEquals, db.Enums)
+	c.Assert(parsed.Extensions, qt.DeepEquals, db.Extensions)
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].Name, qt.Equals, "order_items")
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
 	c.Assert(parsed.Fields, qt.HasLen, 3)
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
 	c.Assert(parsed.Indexes[0].Condition, qt.Equals, "status <> 'inactive'")
+	c.Assert(parsed.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"created_at", "tenant_id"})
 	c.Assert(parsed.Constraints, qt.DeepEquals, db.Constraints)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Functions[0].Body, qt.Equals, "BEGIN RAISE NOTICE \"touch\";\nRETURN NEW; END;")
@@ -169,6 +178,73 @@ func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
 	c.Assert(files, qt.HasLen, 1)
 	c.Assert(files[0].Name, qt.Equals, "schema.go")
 	c.Assert(string(files[0].Data), qt.Contains, "type User struct")
+}
+
+func TestRenderRejectsUnrepresentableIndexIncludeColumns(t *testing.T) {
+	tests := []struct {
+		name   string
+		column string
+		err    string
+	}{
+		{
+			name:   "empty",
+			column: "",
+			err:    `index "idx_accounts_email" INCLUDE column 2 is empty and cannot be represented in a Go annotation`,
+		},
+		{
+			name:   "leading whitespace",
+			column: " display_name",
+			err:    `index "idx_accounts_email" INCLUDE column 2 " display_name" cannot be represented in a Go annotation: leading or trailing whitespace is not allowed`,
+		},
+		{
+			name:   "trailing whitespace",
+			column: "display_name ",
+			err:    `index "idx_accounts_email" INCLUDE column 2 "display_name " cannot be represented in a Go annotation: leading or trailing whitespace is not allowed`,
+		},
+		{
+			name:   "comma",
+			column: "display,name",
+			err:    `index "idx_accounts_email" INCLUDE column 2 "display,name" cannot be represented in a Go annotation: commas delimit column names`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := &goschema.Database{Indexes: []goschema.Index{{
+				Name:           "idx_accounts_email",
+				IncludeColumns: []string{"created_at", test.column},
+			}}}
+
+			files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+
+			c.Assert(files, qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, test.err)
+		})
+	}
+}
+
+func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Account", Name: "accounts"}},
+		Indexes: []goschema.Index{{
+			StructName:     "Account",
+			Name:           "idx_accounts_email",
+			Fields:         []string{"email"},
+			IncludeColumns: []string{"display_name", "created_at"},
+		}},
+	}
+
+	files, err := goschematogo.Render(database, goschematogo.Options{SingleFile: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(
+		string(files[0].Data),
+		qt.Contains,
+		`include="display_name,created_at"`,
+	)
 }
 
 func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {

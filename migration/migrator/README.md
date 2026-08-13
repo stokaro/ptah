@@ -321,6 +321,20 @@ current high-water mark. Use `WithExecOrder(migrator.ExecOrderNonLinear)` or
 logs a warning for each skipped version and `migrations status` continues to report it as
 pending and out of order.
 
+For an Atlas-format directory, revision hashes keep the cumulative `atlas.sum`
+encoding. Verification projects that chain from applied migrations, so adding
+an earlier pending migration does not make an unchanged later file look edited.
+After a non-linear insertion succeeds, the migrator reconciles clean applied
+rows under the migration lock. It computes the full update set before writing
+and commits transaction-capable databases as one transaction. A failed update
+therefore leaves every affected hash on the prior chain, and a later run can
+retry the whole reconciliation. Dry runs and failed migrations leave those
+rows unchanged.
+
+ClickHouse has no multi-statement transaction through its configured driver.
+The migrator permits one synchronous checksum mutation, but refuses a
+reconciliation that needs two or more row updates before changing either row.
+
 ### Migration Providers
 
 - **`RegisteredMigrationProvider`**: In-memory provider for programmatically registered migrations
@@ -569,8 +583,11 @@ Rows are written as `pending` before migration SQL executes, then marked
 `applied` after success. Failed or interrupted runs leave a dirty row with
 statement progress and error details; later migration operations refuse to
 continue until `RepairMigration` or the `migrations repair` CLI resolves it.
-Applied rows store an up-SQL checksum, so editing an already-applied migration
-file is detected before new work starts.
+Applied Ptah migrations store an up-SQL checksum. Atlas-format migrations store
+the cumulative `atlas.sum` value in either revision-table layout. Both encodings
+detect an edited already-applied migration before new work starts; the Atlas
+verification path also distinguishes an unchanged file whose chain position
+moved because an earlier pending migration was inserted.
 
 A row written while rolling back stores its direction alongside the state, as
 `pending:down` or `failed:down`. The `state` column is free-form text and is
@@ -593,7 +610,11 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 2. **Use descriptive names**: Make migration purposes clear from the filename
 3. **Keep migrations small**: Each migration should make one focused change
 4. **Test migrations**: Always test both up and down migrations before deploying
-5. **Use transactions**: The migrator automatically wraps migrations in transactions
+5. **Know which transaction mode you are in**: by default (`file`) each migration
+   runs in its own transaction, but that is a default and not a guarantee —
+   `--tx-mode=none` creates none, a file may opt out of its own, and on MySQL and
+   MariaDB DDL can commit server-side regardless. See
+   [Transaction Modes](#transaction-modes) before relying on a rollback
 6. **Backup before rollbacks**: Down migrations can cause data loss
 7. **Handle out-of-order files deliberately**: Use the default `linear` policy in CI so
    a migration merged below the current version cannot be skipped silently
@@ -763,6 +784,12 @@ later statement in the same migration, or PostgreSQL `CREATE INDEX
 CONCURRENTLY` operations. Programmatic migrations set `UpTxMode` or
 `DownTxMode` to `MigrationFileTxModeNone`; the two directions never share an
 execution-mode value.
+
+Ptah recognizes the directive with the target database's string and comment
+rules. Before a target is available, loaders accept only marker boundaries that
+all supported dialects agree on and defer dialect-specific cases until
+execution; directive-looking text inside a valid dialect-specific string never
+changes that migration's transaction mode.
 
 Migration timeouts are rejected for `no_transaction` migrations because Ptah
 cannot safely apply writer/session timeouts to raw autocommit statements. Ptah

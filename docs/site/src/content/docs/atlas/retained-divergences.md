@@ -12,14 +12,59 @@ refusal is more useful than the acceptance.
 
 This page holds those cases. Each one carries what both binaries did, so a
 reader can argue with the decision rather than only with the outcome. The wider
-gap register lives in [Comparison](../comparison/); these entries are the
-subset that came out of
-[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241).
+gap register lives in [Comparison](../comparison/). Most entries came out of
+[`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241); the project
+migration-directory boundary is tracked in
+[`stokaro/ptah#1118`](https://github.com/stokaro/ptah/issues/1118).
 
-Every measurement below was taken on 2026-08-09 against that binary, each exit
-status read on its own line rather than through a pipe. Where a fixture needed
-a hashed migration directory, that binary authored and hashed it, so no
-checksum quoted here was computed by Ptah.
+These boundaries also remain active under
+`PTAH_ATLAS_STRICT_COMPAT=1`. Strict mode limits the CE capability inventory;
+it does not reproduce an acceptance that discards an argument, hides an edited
+migration, or loses recoverable state.
+
+The same rule protects richer live schemas. The pinned community inspector can
+omit object kinds outside its edition, and its cleanup can leave or handle a
+catalog differently from Ptah's complete cleanup. Strict mode therefore
+refuses a live Pro-only object before `schema inspect`, `schema apply`,
+`schema diff`, or `schema clean` emits output, compares incomplete states, or
+mutates the target. Default `ptah-compat` keeps Ptah's complete modeled-object
+behavior; the refusal exists only in the CE oracle profile.
+
+The command-specific inventory remains read-only. Cleanup validates the
+writer's complete destruction inventory, including PostgreSQL procedures,
+aggregates, foreign tables, collations, and default privileges. Inspection,
+apply planning, and database-backed or replayed schema- and migration-diff
+sources query those catalog-only kinds in the same schema scope. A dependent
+Pro-only object such as a trigger cannot disappear with a table merely because
+the cleanup plan does not print it as a separate line.
+
+Cleanup validation uses the writer's schema scope: a global
+extension installed in another PostgreSQL schema does not block cleaning the
+selected schema. A sequence backing a `SERIAL` or identity column is likewise
+not treated as a forbidden standalone sequence, because it rides with the
+table that owns it. A selector cannot split that ownership: selecting the
+sequence without its table, or excluding it while the table remains selected,
+is refused before mutation.
+
+`PTAH_ALLOW_NONINTERACTIVE_EDIT=1` remains available in strict mode. It permits
+an already-configured scripted editor to run without a terminal; it does not
+add an editor, command, flag, or migration semantic, so it is retained as an
+execution-safety control rather than classified as a Pro capability.
+
+The same fail-closed boundary covers authored extensions. Strict schema
+workflows refuse YAML sources and a `schema apply` lint policy that the CE path
+cannot enforce. Commands that execute, convert, or replay migration bodies
+refuse Atlas txtar, Ptah directives, and SQL templates; a bare or unknown
+`-- +ptah` directive marker is refused rather than ignored. Checksum-only reads
+preserve those bytes. Default mode retains and executes the extensions. The
+strict profile never turns an authored safety contract into an ignored comment
+or configuration block merely to copy an edition limit.
+
+Every measurement below was taken on 2026-08-09 against that binary, except
+where a section gives its own date, each exit status read on its own line
+rather than through a pipe. Where a fixture needed a hashed migration
+directory, that binary authored and hashed it, so no checksum quoted here was
+computed by Ptah.
 
 ## A trailing positional argument
 
@@ -49,9 +94,10 @@ is the reasoning the `--dir` defaults landed under, where a default that
 silently swallowed a typo would have migrated the wrong directory at exit `0`.
 
 The refusal is not carried behind an environment variable. A variable that
-restored the acceptance would have to default to the permissive side, and every
-boolean `PTAH_*` variable opts in to the more permissive side so that a typo
-lands on the strict default.
+restored the acceptance would have to default to the permissive side. Feature
+toggles instead opt in to more permissive behavior so that a typo lands on the
+strict default. The separate `PTAH_ATLAS_STRICT_COMPAT` policy selector narrows
+the command inventory for CE oracle runs and does not relax this refusal.
 
 `migrate hash` takes no positional either and refuses through the same helper,
 `cmdutil.NoPositionalArgsHint`. No reading of that binary was taken for it: the
@@ -82,6 +128,65 @@ that as a no-op means the migration directory stops describing the database it
 was applied to, and the difference surfaces later as a diff nobody can explain.
 The refusal names the version and both checksums, and `--allow-dirty` is not
 involved.
+
+## A prefix migration inserted below the oldest applied revision
+
+**Type.** Deliberate divergence
+
+**Current boundary.** This entry covers a prefix migration that sorts below
+every applied revision. `ptah-compat migrate apply` refuses at its default
+`--exec-order linear` and names both ways forward. `--exec-order linear-skip`
+leaves the insertion unapplied; `--exec-order non-linear` applies it. Those are
+that binary's own flag and its own three values, not a Ptah addition.
+
+An insertion between two applied revisions is a different observable state.
+Measured on SQLite and PostgreSQL 17.10 on 2026-08-10, both binaries refuse
+that interval insertion at the default order and apply it under `non-linear`.
+The lower applied revision is the state that distinguishes that parity cell
+from the prefix divergence below.
+
+Measured on SQLite on 2026-08-12. Both directories were authored and hashed by
+that binary through `migrate import`, so no checksum here was computed by Ptah.
+`dirA` holds only the later migration; `dirB` prefixes it with an earlier one
+and holds a byte-identical copy of the later one. `diff` between the two copies
+exits `0`.
+
+| step | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| apply `dirA` | exit `0`, later migration applied | exit `0`, later migration applied |
+| apply `dirB`, default order | exit `0`, `No migration files to execute` | exit `1`, names the version and both remedies |
+| apply `dirB`, `--exec-order linear-skip` | — | exit `0`, insertion left unapplied |
+| apply `dirB`, `--exec-order non-linear` | — | exit `0`, insertion applied |
+
+The second row is the entry. That binary's default order is `linear` by its own
+`--help`, and on that row it exits `0` while never applying the inserted
+migration: the table that migration creates is absent from the catalog
+afterwards, and only the later revision is recorded. It prints nothing about
+the file it passed over. An operator who adds a migration to a directory,
+runs apply, and reads exit `0` has been told the directory is applied when one
+of its migrations never ran and never will.
+
+That is the argument for the refusal, and it is not a strictness preference.
+Reproducing an exit `0` that discards an operator's migration silently is the
+kind of defect the parity rule declines to copy. The refusal names the version
+it will not apply and both flags that resolve it, so the operator chooses
+between skipping and applying rather than having the choice made and not
+reported.
+
+Nothing is removed by refusing it as the default. The third row is the pinned
+binary's own outcome, reachable on request through its own flag, and it is
+pinned by a test so it stays reachable. The fourth row is the outcome an
+operator who inserted the migration on purpose usually wants, which that
+binary's default order does not offer at all.
+
+One thing here changed rather than being retained. The refusal used to be
+reported as a checksum mismatch on the later migration, whose bytes had not
+changed: the per-file entry in an integrity file is chained over the entries
+before it, so inserting anything earlier changes the recorded value of every
+applied migration above it. The value is an ordering key, not a content
+identity, and the message claimed otherwise. That is fixed; the diagnostic now
+describes the ordering fact it actually found. The genuine content-change case
+keeps the checksum wording and is the section above.
 
 ## A dirty revision left by a non-transactional body
 
@@ -121,60 +226,88 @@ index. Discarding the row automatically in that mode would hand the next run a
 clean slate over a database that is not clean. `--allow-dirty` remains the way
 through, and the operator, unlike the tool, can look first.
 
-## An out-of-order insert, and a diagnostic that is not retained
+## A project migration directory outside its root
 
-**Type.** Product behavior, tracked rather than argued
+**Type.** Deliberate divergence
 
-Inserting a migration whose version sorts below an already applied one is
-refused by `ptah-compat` and is exit `0` on that binary. The refusal is
-defensible. The message it prints is not, and this entry exists so that
-distinction is written down rather than assumed.
+**Current boundary.** A `migration.dir` declared in `atlas.hcl` must remain
+inside the directory containing that project file after symbolic-link
+resolution. The rule applies to relative and absolute values. An explicit CLI
+`--dir` remains operator-owned: a directly named absolute directory keeps its
+normal CLI behavior.
 
-The per-file `h1` entry in an integrity file is chained over the entries before
-it, not computed from the file alone. Two directories were authored and hashed
-by that binary; one holds only `20240102000000_b.sql`, the other holds an
-earlier `20240101000000_a.sql` and a byte-identical copy of that same file.
-`diff` between the two copies reports no difference, and the two integrity
-files still disagree about it:
+Measured on 2026-08-12 with `migrate diff`, a local SQL desired schema, and a
+SQLite dev database:
 
-```text
-dirA:  20240102000000_b.sql h1:DYNKQS6GeTazipONZLq7+IhAl/67sJqipvGfoLz/fPU=
-dirB:  20240102000000_b.sql h1:QeKXUEPrs5mM3XbCdSiRc6R/tUDmX4otsW0tB5L0Mmc=
-```
+| project `migration.dir` | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `file://migrations` | exit `0`, writes migration and `atlas.sum` inside the project | exit `0`, same artifacts inside the project |
+| `file://../outside` | exit `0`, writes migration and `atlas.sum` outside the project | exit `1`, `outside allowed root`, outside directory untouched |
+| `file:///absolute/outside` | exit `0`, writes migration and `atlas.sum` outside the project | exit `1`, `outside allowed root`, outside directory untouched |
 
-A third directory built independently with the same two files in the same order
-reproduces `dirB`'s pair exactly, which is the control that says this is
-ordering rather than noise. Both binaries store the chained value in the
-revision table's `hash` column and the stored strings are identical; only Ptah
-compares it on the next apply.
+The project file is repository-controlled input. Letting it select an arbitrary
+write destination means a configuration change in a pull request can publish a
+migration and replace an `atlas.sum` anywhere the process can write. That is not
+equivalent to an operator explicitly naming an absolute `--dir` at the command
+line. Binding the project value to the already-open project handle preserves
+the useful explicit CLI capability while refusing the implicit external write.
 
-So inserting any earlier migration changes the stored checksum of every applied
-migration above it, and the refusal names a file whose bytes did not change.
-Ptah already has a gate that describes the situation correctly — with the
-checksum comparison mutated, the refusal becomes
-
-```text
-out-of-order pending migrations below current version 20240102000000:
-[20240101000000] (use --exec-order=non-linear to apply or
---exec-order=linear-skip to ignore)
-```
-
-which is true and names the flag that resolves it. The checksum gate answers
-first because `verifyAppliedMigrationChecksums` runs before `migrationsToApply`
-in `migrateUpLocked`. Either the comparison needs a content identity, or the
-out-of-order insert needs to be detected and reported as one; until then this
-is a gap rather than a decision.
+The refusal also closes the spelling hole. Previously a contained relative
+value carried the project root, while parent-relative and absolute spellings
+silently dropped the root and fell through to unbounded CLI resolution. The
+destination now determines the answer: every project-owned value is checked
+against the same root before output or mutation.
 
 ## What holds these
 
-Each entry above is pinned by a test in
+The issue #1241 entries above are pinned by a test in
 `cmd/atlas/compat_1241_retained_divergence_test.go`, and the trailing-positional
 rows for `migrate status`, `migrate validate` and `schema inspect` are pinned in
-`cmd/atlas/compat_overstrict_test.go`. The out-of-order entry pins the refusal
-and records today's message as a characterization row, so closing the gap
-changes that row rather than deleting the test.
+`cmd/atlas/compat_overstrict_test.go`. The same focused file also pins all three
+orders of the prefix insertion: the default refuses, `--exec-order
+non-linear` applies and remains idempotent, and `--exec-order linear-skip`
+leaves the insertion unapplied and stays that way on a repeat run. The last of
+those is the one that keeps the entry honest — it is the claim that the pinned
+binary's own outcome is still reachable, so it is guarded rather than asserted.
+
+The project-root boundary is pinned through the real `ptah-compat` process in
+`integration/atlas_project_migration_dir_confinement_e2e_test.go` and its Unix
+symbolic-link companion. The tests prove both outside spellings and an escaping
+symbolic link fail without artifacts, relative and absolute inside paths and a
+linked project root succeed, and an explicit absolute CLI `--dir` remains
+reachable.
 
 Every case here is SQLite-measured; the two noted as also measured on
 PostgreSQL 17.10 were re-run against a live server. The rest carry the
 SQLite-only caveat that
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) declares.
+
+## Not on this page
+
+Two cells from that issue are still open and are deliberately not argued here,
+because no argument has been established for them.
+
+`--to file://../schema.sql` and `--dir file://../dir` are refused as `outside
+allowed root` where that binary exits `0` (item 11). The containment that
+produces the refusal applies to relative CLI paths only: the identical file
+named by an absolute path is accepted, and `migrate diff --to` against it
+succeeds. A boundary that refuses one spelling of a path and accepts another
+spelling of the same path does not contain anything, so the refusal cannot yet
+be defended as a safety control. Resolving it changes a shared path helper used
+by native `ptah` verbs as well as the compatibility surface, so it is a decision
+recorded on the issue rather than a divergence retained here.
+
+Until that decision is taken, the two surfaces at least give the same answer.
+They did not: the native desired-schema resolver rewrote the operator's path to
+an absolute one before the guard saw it, so `ptah schema render --schema-file
+../outside/schema.sql` loaded the file while `ptah-compat migrate diff --to
+file://../outside/schema.sql` refused that identical destination through that
+identical guard. The rewrite was a canonicalization, not a decision about what
+should be reachable. The native surface now applies the relative boundary that
+the compatibility surface always applied, which narrows what native `ptah`
+accepts and leaves the absolute-pathname question exactly where it was.
+
+`migrate hash` carries the trailing-positional and `--var` cells of items 13 and
+12. No reading of the pinned binary was taken for either: the sandbox these
+sweeps ran in refuses any command containing that bare word, and the refusal was
+not scripted around.

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/buildinfo"
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
@@ -28,6 +29,7 @@ import (
 	"go.5x5.cz/ptah/cmd/schema"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlassource"
 )
 
@@ -52,11 +54,10 @@ type atlasVerb struct {
 	// Atlas flags. When nil, the generic applyAtlasProjectConfigToArgs is used.
 	projectConfig atlasProjectArgsApplier
 	// writesDir marks a verb that can CREATE the migration directory it was
-	// pointed at. It selects the scheme requirement in resolveAtlasMigrateSource
-	// (stokaro/ptah#1186): the community binary refuses a --dir naming no scheme
-	// on every verb, and the verbs that merely read one still accept it here,
-	// but a verb that writes turns that leniency into a directory materialised
-	// somewhere the operator did not name.
+	// pointed at. New uses this marker for its command-line scheme gate; diff
+	// owns the same gate separately, as do the read-only hash, validate, status
+	// and lint adapters. A directory named by atlas.hcl remains separate work in
+	// stokaro/ptah#1186.
 	writesDir bool
 }
 
@@ -89,6 +90,9 @@ const (
 	// the root carries it whether it is printed here or by shared cmdutil
 	// machinery.
 	atlasErrorPrefix = "Error"
+	// atlasStrictCompatAnnotation carries the immutable process policy through
+	// shared compatibility helpers without re-reading the environment.
+	atlasStrictCompatAnnotation = "ptah.atlas.strict-compat"
 )
 
 func failAtlasCommand(cmd *cobra.Command, err error) error {
@@ -111,6 +115,14 @@ var unsupportedAtlasDirFormats = []string{
 
 // NewCompatCommand returns an Atlas-compatible root command.
 func NewCompatCommand(use string) *cobra.Command {
+	return NewCompatCommandWithPolicy(use, atlascompatpolicy.Full())
+}
+
+// NewCompatCommandWithPolicy returns an Atlas-compatible root command under
+// policy. The ptah-compat process resolves the policy once before calling this
+// constructor; tests and embedded callers choose it explicitly so command-tree
+// reuse never depends on mutable process environment.
+func NewCompatCommandWithPolicy(use string, policy atlascompatpolicy.Policy) *cobra.Command {
 	use = strings.TrimSpace(use)
 	if use == "" {
 		use = "ptah-compat"
@@ -119,8 +131,10 @@ func NewCompatCommand(use string) *cobra.Command {
 
 This executable exposes Atlas-style commands at process root for scripts that
 expect commands such as migrate apply or schema inspect. Commands that have an
-existing Ptah equivalent forward to that native command.`)
-	cmdflags.InstallEnvBinding("PTAH", cmd)
+existing Ptah equivalent forward to that native command.`, policy)
+	if !policy.IsStrictCE() {
+		cmdflags.InstallEnvBinding("PTAH", cmd)
+	}
 	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
 	// The prefix is a property of the surface, exactly like the exit code
 	// above: declaring it on the root is what makes every diagnostic below it
@@ -131,16 +145,69 @@ existing Ptah equivalent forward to that native command.`)
 	return cmd
 }
 
-func newAtlasCommand(use, short, long string) *cobra.Command {
+// ValidateStrictCompatFlagEnvironment refuses environment twins that the full
+// compatibility tree binds but the strict CE tree intentionally omits. It is
+// called by the ptah-compat process before help, version, argument handling, or
+// command work. Unknown PTAH-prefixed values are left alone so atlas.hcl may
+// read ordinary user inputs through getenv.
+func ValidateStrictCompatFlagEnvironment(policy atlascompatpolicy.Policy) error {
+	if !policy.IsStrictCE() {
+		return nil
+	}
+	root := NewCompatCommand("atlas")
+	visited := make(map[*pflag.Flag]bool)
+	var validationErr error
+	var visit func(*cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		for _, flags := range []*pflag.FlagSet{cmd.Flags(), cmd.PersistentFlags()} {
+			flags.VisitAll(func(flag *pflag.Flag) {
+				if validationErr != nil || visited[flag] {
+					return
+				}
+				visited[flag] = true
+				bindings := cmdflags.ForwardedEnvBindings(flag)
+				if name, bound := cmdflags.EnvBindingName("PTAH", flag); bound {
+					bindings = append(bindings, name)
+				}
+				for _, name := range slices.Compact(bindings) {
+					value, present := os.LookupEnv(name)
+					if !present {
+						continue
+					}
+					validationErr = policy.ValidateFlagEnvironment(name, value, flag.Value.Type())
+					if validationErr != nil {
+						return
+					}
+				}
+			})
+		}
+		for _, child := range cmd.Commands() {
+			visit(child)
+		}
+	}
+	visit(root)
+	return validationErr
+}
+
+func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Long:  long,
 		RunE:  runAtlasGroupHelp,
 	}
+	if policy.IsStrictCE() {
+		cmd.Annotations = map[string]string{atlasStrictCompatAnnotation: "true"}
+		cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+			if err := validateAtlasStrictCompatURLFlags(cmd, policy); err != nil {
+				return failAtlasCommand(cmd, err)
+			}
+			return nil
+		}
+	}
 	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
-	schemaCommand := newAtlasSchemaCommand()
-	migrateCommand := newAtlasMigrateCommand()
+	schemaCommand := newAtlasSchemaCommand(policy)
+	migrateCommand := newAtlasMigrateCommand(policy)
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(schemaCommand)
@@ -153,7 +220,45 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 	return cmd
 }
 
-func newAtlasSchemaCommand() *cobra.Command {
+func atlasCompatibilityPolicy(cmd *cobra.Command) atlascompatpolicy.Policy {
+	if cmd != nil && cmd.Root().Annotations[atlasStrictCompatAnnotation] == "true" {
+		return atlascompatpolicy.StrictCE()
+	}
+	return atlascompatpolicy.Full()
+}
+
+func validateAtlasStrictCompatURLFlags(cmd *cobra.Command, policy atlascompatpolicy.Policy) error {
+	for _, name := range []string{"url", "dev-url", "from", "to"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || !flag.Changed {
+			continue
+		}
+		values, err := atlasFlagStringValues(cmd, name, flag.Value.Type())
+		if err != nil {
+			return fmt.Errorf("read --%s for strict compatibility: %w", name, err)
+		}
+		for _, value := range values {
+			if err := policy.ValidateURL(value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func atlasFlagStringValues(cmd *cobra.Command, name, valueType string) ([]string, error) {
+	switch valueType {
+	case "stringArray":
+		return cmd.Flags().GetStringArray(name)
+	case "stringSlice":
+		return cmd.Flags().GetStringSlice(name)
+	default:
+		value, err := cmd.Flags().GetString(name)
+		return []string{value}, err
+	}
+}
+
+func newAtlasSchemaCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema [command]",
 		Short: "Atlas schema commands",
@@ -163,20 +268,24 @@ func newAtlasSchemaCommand() *cobra.Command {
 	// group's help, so the group intentionally accepts positional arguments.
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
-	cmd.AddCommand(newAtlasSchemaCleanCommand())
-	cmd.AddCommand(newAtlasSchemaInspectCommand())
-	cmd.AddCommand(newAtlasSchemaApplyCommand())
-	cmd.AddCommand(newAtlasSchemaDiffCommand())
+	cmd.AddCommand(newAtlasSchemaCleanCommand(policy))
+	cmd.AddCommand(newAtlasSchemaInspectCommand(policy))
+	cmd.AddCommand(newAtlasSchemaApplyCommand(policy))
+	cmd.AddCommand(newAtlasSchemaDiffCommand(policy))
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
-	cmd.AddCommand(newAtlasSchemaPlanCommand())
-	cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
-	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
-		{use: "push", short: "Push schema state to a remote registry"},
-	})
+	if policy.IsStrictCE() {
+		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "test"})
+	} else {
+		cmd.AddCommand(newAtlasSchemaPlanCommand())
+		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
+		addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+			{use: "push", short: "Push schema state to a remote registry"},
+		})
+	}
 	return cmd
 }
 
-func newAtlasMigrateCommand() *cobra.Command {
+func newAtlasMigrateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate [command]",
 		Short: "Atlas migrate commands",
@@ -186,22 +295,28 @@ func newAtlasMigrateCommand() *cobra.Command {
 	// group's help, so the group intentionally accepts positional arguments.
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
-	cmd.AddCommand(newAtlasMigrateApplyCommand())
-	cmd.AddCommand(newAtlasMigrateLintCommand())
+	cmd.AddCommand(newAtlasMigrateApplyCommand(policy))
+	cmd.AddCommand(newAtlasMigrateLintCommand(policy))
 	cmd.AddCommand(newAtlasMigrateStatusCommand())
-	cmd.AddCommand(newAtlasMigrateDownCommand())
 	cmd.AddCommand(newAtlasMigrateSetCommand())
-	for _, verb := range atlasMigrateForwardVerbs() {
-		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
-	}
-	cmd.AddCommand(newAtlasMigrateHashCommand())
-	cmd.AddCommand(newAtlasMigrateValidateCommand())
+	cmd.AddCommand(newAtlasMigrateHashCommand(policy))
+	cmd.AddCommand(newAtlasMigrateValidateCommand(policy))
 	cmd.AddCommand(newAtlasMigrateNewCommand())
-	cmd.AddCommand(newAtlasMigrateDiffCommand())
-	cmd.AddCommand(newAtlasMigrateImportCommand())
-	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
-		{use: "push", short: "Push migration directory to a remote registry"},
-	})
+	cmd.AddCommand(newAtlasMigrateDiffCommand(policy))
+	cmd.AddCommand(newAtlasMigrateImportCommand(policy))
+	if policy.IsStrictCE() {
+		addAtlasCommunityGatedCommands(cmd, "migrate", []string{
+			"checkpoint", "down", "edit", "push", "rebase", "rm", "test",
+		})
+	} else {
+		cmd.AddCommand(newAtlasMigrateDownCommand())
+		for _, verb := range atlasMigrateForwardVerbs() {
+			cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
+		}
+		addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
+			{use: "push", short: "Push migration directory to a remote registry"},
+		})
+	}
 	return cmd
 }
 
@@ -326,6 +441,47 @@ func addAtlasUnsupportedCommands(parent *cobra.Command, verbs []atlasUnsupported
 	for _, verb := range verbs {
 		parent.AddCommand(newAtlasUnsupportedCommand(verb))
 	}
+}
+
+func addAtlasCommunityGatedCommands(parent *cobra.Command, group string, verbs []string) {
+	for _, verb := range verbs {
+		parent.AddCommand(newAtlasStrictCompatGatedCommand(group, verb))
+	}
+}
+
+func newAtlasStrictCompatGatedCommand(group, verb string) *cobra.Command {
+	path := "ptah-compat " + group + " " + verb
+	body := atlasStrictCompatGateBody(path)
+	cmd := &cobra.Command{
+		Use:    verb,
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return failAtlasStrictCompatGate(cmd, path)
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), body)
+	})
+	cmd.Annotations = map[string]string{atlasPreserveHelpAnnotation: "true"}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
+	return cmd
+}
+
+func atlasStrictCompatGateBody(path string) string {
+	return fmt.Sprintf(`'%s' is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
+
+Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
+`, path) + "\n"
+}
+
+func failAtlasStrictCompatGate(cmd *cobra.Command, path string) error {
+	body := atlasStrictCompatGateBody(path)
+	unsupportedErr := errors.New(strings.TrimSpace(strings.SplitN(body, "\n", 2)[0]))
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Abort: %s", body); err != nil {
+		return exitcode.New(atlasErrorExitCode,
+			fmt.Errorf("%w: write strict-compatibility diagnostic: %w", unsupportedErr, err))
+	}
+	return exitcode.New(atlasErrorExitCode, unsupportedErr)
 }
 
 func newAtlasUnsupportedCommand(verb atlasUnsupportedVerb) *cobra.Command {
@@ -925,6 +1081,15 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 			// pipeline passing `--schema a,b` expects.
 			cmd.Flags().StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
 		}
+		if flag.NativeName != "" {
+			if err := cmdflags.AddForwardedEnvBinding(
+				cmd.Flags(),
+				flag.Name,
+				cmdflags.EnvName("PTAH", flag.NativeName),
+			); err != nil {
+				panic(err)
+			}
+		}
 		if !flag.EnvDisabled {
 			continue
 		}
@@ -1034,7 +1199,13 @@ func resolveAtlasVerbProject(
 		requirement = optionalAtlasProject
 	}
 
-	selected, err := loadAtlasAdapterProjectConfig(verb, project.flags, requirement)
+	compatibilityPolicy := atlasCompatibilityPolicy(cmd)
+	selected, err := loadAtlasAdapterProjectConfig(
+		verb,
+		project.flags,
+		requirement,
+		compatibilityPolicy,
+	)
 	if err != nil {
 		return atlasVerbArgs{}, err
 	}
@@ -1043,6 +1214,9 @@ func resolveAtlasVerbProject(
 	}
 	loadedProject, targetCfg := selected.project, selected.targetConfig
 	cleanup.Add(loadedProject.Close)
+	if err := compatibilityPolicy.ValidateProjectConfig(loadedProject.Config); err != nil {
+		return atlasVerbArgs{}, err
+	}
 	if err := loadedProject.resolveMigrationDirForArgs(verb.flags, resolved.args); err != nil {
 		return atlasVerbArgs{}, err
 	}
@@ -1090,20 +1264,21 @@ func loadAtlasAdapterProjectConfig(
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
+	policy atlascompatpolicy.Policy,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProject(flags, requirement)
+		project, loaded, err := openAtlasProjectWithPolicy(flags, requirement, policy)
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
 	if requirement == requiredAtlasProject {
-		project, targetConfig, err := openRequiredMergedProjectConfig(flags)
+		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(flags, policy)
 		return selectedAtlasProject{
 			project:      project,
 			targetConfig: targetConfig,
 			loaded:       err == nil,
 		}, err
 	}
-	project, loaded, err := openAtlasProject(flags, optionalAtlasProject)
+	project, loaded, err := openAtlasProjectWithPolicy(flags, optionalAtlasProject, policy)
 	if err != nil || !loaded {
 		return selectedAtlasProject{}, err
 	}

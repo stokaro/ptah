@@ -55,6 +55,10 @@ through that filesystem. Use `ParseAtlasFSCollectionWithOptions`,
 `ParseAtlasCollectionWithOptions`, or `LoadCollection` when an env `for_each`
 can select several independent configs. The singular functions require exactly
 one selected instance and return an error rather than discarding the others.
+
+`AtlasLoadOptions.RejectListMapForEach` lets a compatibility adapter retain
+tuple, object, and set expansion while refusing Ptah's list/map extension. Its
+zero value keeps the complete dynamic-environment capability.
 `Config.IgnoredConstructs` identifies names that
 Atlas CE accepts without acting on, with kind and source location. `Merge`
 preserves this diagnostic metadata from both inputs. Ptah's command layer warns
@@ -71,6 +75,13 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
 
+`goschema.Extension.Schema` records a PostgreSQL extension's installation
+schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
+SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
+`IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
+default schema. Embedders should preserve the field when converting or copying
+schema IR; dropping it can move an extension into the wrong namespace.
+
 `core/coverage` carries what a schema description does **not** claim to
 describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
 hold one, and schema comparison consults both: the desired state's record gates
@@ -79,6 +90,13 @@ claims everything, so an embedder that never sets one gets exactly the
 comparison it got before the field existed. Set it when a reader was asked about
 less than the whole database, or a projection left something out on purpose;
 leaving it zero there is how an object nobody looked at becomes a `DROP`.
+
+`schemadiff.CompareReportingUndecidedAdditions` exposes desired additions that
+an offline comparison could not plan safely, and
+`schemadiff.CompareWithDatabaseReportingUndecidedAdditions` provides the same
+report while resolving the connected catalog's identifier semantics and
+default comparison options. Command adapters use that report for warnings;
+embedders can choose their own diagnostic policy.
 
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
@@ -99,6 +117,12 @@ generic `DROP CONSTRAINT` support starts at MySQL 8.0.19, and MySQL 8.4 changes
 the default foreign-key referenced-key policy. Pre-GA callers must select the
 explicit `MySQL8016`, `MySQL8019`, or `MySQL84` preset that matches their server
 instead of relying on an ambiguous compatibility alias.
+
+`CockroachDB25` and `CockroachDB26` are the measured CockroachDB resolver arms.
+CockroachDB 25.4 refuses generic and guarded `DROP CONSTRAINT` plus
+`CREATE OR REPLACE TRIGGER`; CockroachDB 26.2 accepts those statements. Use
+`ResolveServerVersion` when a live banner is available so the correct arm is
+selected instead of choosing a preset by its name.
 
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
@@ -155,6 +179,28 @@ down value as `file`.
 Atlas transaction-mode directive validation errors expose
 `migrator.AtlasTxModeDirectiveError` through `errors.As`. The leaf error keeps
 the source file and transaction-mode details in its message.
+
+`migration/migrator.ParseFileDirectives` reads the file's directive header —
+the run of blank lines and line comments before the first executable statement
+— rather than the whole file. Both directive families answer to that one rule,
+so a `-- +ptah` line written below the statements it claims to govern is no
+longer honored, matching what `-- atlas:txmode` already did and what Atlas CE
+does. A directive outside its region is reported at `WARN` by the migrator
+rather than dropped in silence. `PTAH_DIRECTIVES_ANYWHERE=1` restores the
+earlier file-wide scope for `-- +ptah` directives; `ParseFileDirectives`
+reports no error, so a malformed value for that variable fails the migration
+run instead and this function keeps the header rule. Ordered
+`-- +ptah check` directives are unaffected: they are position-insensitive by
+design and `ParseChecks` still reads the whole file.
+
+Position and value stay separate verdicts. A `-- +ptah` directive whose key is
+recognized but whose value cannot be read fails `ParseMigrationUp`, `Migration.Up`
+and `Migration.Down` wherever the line sits, and the error names the line, so a
+typo is never demoted to a position warning and the verdict does not depend on
+`PTAH_DIRECTIVES_ANYWHERE`. An unrecognized bare token and an unknown
+`key=value` pair are not directives and produce neither. The `-- atlas:txmode`
+spelling is reported but not refused outside its block, because Atlas CE applies
+such a directory.
 
 This pre-GA API replaces the former `UpNoTransaction` and
 `DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
@@ -241,6 +287,39 @@ plan records the migration-directory snapshot used during planning and refuses
 publication with `generator.ErrMigrationDirectoryChanged` if that history
 changed.
 
+`migration/generator.PlanBidirectionalSchemaDiff` is the lower-level planning
+boundary for callers that already hold a schema diff. Its input binds the diff,
+desired and current schemas, normalized dialect capabilities, and concurrent
+index policy into one result with forward and reverse diffs, AST nodes, exact
+table-qualified concurrent-index references, and an independent
+`RequiresNoTransaction` classification for each direction. The reverse restores
+the introspected current schema rather than only exchanging structural lists.
+On MySQL and MariaDB, that includes removing a foreign-key backing index created
+by the forward migration while preserving any prior or same-run index whose
+leading key columns cover the foreign key. Planning refuses an ambiguous
+incomplete-index shape or a plan that later removes every covering index.
+
+`SchemaDiff.ForeignKeysRemovedWithTables` carries the local and referenced
+columns needed for that ordering as supplemental metadata keyed by table and
+constraint name. It does not independently represent a removal and is ignored
+without a matching `ConstraintsRemovedWithTables` entry, leaving the existing
+comparable `ConstraintRemovalInfo` value unchanged.
+
+`ConcurrentIndexAutomatic` uses the native populated-table heuristic,
+`ConcurrentIndexDisabled` selects ordinary index statements, and
+`ConcurrentIndexAll` requires the requested forward target capability. The
+reverse selects its concurrent modifier independently: it uses the matching
+concurrent capability when available and an ordinary blocking statement when
+the reverse-only capability is absent. An explicitly requested unsupported
+forward operation still fails. This bidirectional API replaces the pre-v1
+structural-only `ReverseSchemaDiff` function; no compatibility wrapper is
+retained.
+
+For generated pairs, `MigrationFilePair.NoTransaction` is true when either the
+forward or reverse file requires non-transactional execution; inspect the two
+directional `RequiresNoTransaction` values when a caller needs to distinguish
+which side carries the requirement.
+
 `WriteFilesContext` additionally lets an embedder cancel waiting for the
 cross-process publication lock and rejects concurrent use of one plan with
 `generator.ErrMigrationPlanInUse`. `GenerateMigration` remains the convenience
@@ -302,6 +381,13 @@ canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
+
+`SchemaDiff.ExtensionsModified` contains `ExtensionDiff` entries with the
+extension name and its `FromSchema`/`ToSchema` placement. Empty and explicit
+default-schema spellings compare under the diff's identifier semantics. The
+PostgreSQL planner currently rejects a placement change with
+`ptaherr.ErrInvalidSchemaDiff` before emitting any AST; additions and removals
+remain independently plannable.
 
 Row-level security policies are carried the same way. `RLSPoliciesAdded` and
 `RLSPoliciesRemoved` are `[]RLSPolicyRef`, and `RLSPoliciesModified` is

@@ -44,6 +44,10 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 		Schemas: []goschema.Schema{{Name: "app"}},
 		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
 		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []goschema.Extension{{
+			Name:   "pgcrypto",
+			Schema: "app",
+		}},
 		Sequences: []goschema.Sequence{{
 			Name:   "order_seq",
 			Schema: "app",
@@ -134,6 +138,10 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 		Schemas: []goschema.Schema{{Name: "app", Comment: "Application"}},
 		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
 		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []goschema.Extension{{
+			Name:   "pgcrypto",
+			Schema: "app",
+		}},
 		Sequences: []goschema.Sequence{{
 			Name:      "order_seq",
 			Schema:    "app",
@@ -173,6 +181,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
 	c.Assert(got.Tables[0].RLSEnabled, qt.IsTrue)
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Name: "pgcrypto", Schema: "app"}})
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
 	c.Assert(got.Domains, qt.HasLen, 1)
@@ -316,6 +325,34 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	c.Assert(got.Triggers[1].QualifiedTable(), qt.Equals, "tenant.data")
 	c.Assert(got.Grants[0].QualifiedTarget(), qt.Equals, `"tenant.data"`)
 	c.Assert(got.Grants[1].QualifiedTarget(), qt.Equals, "tenant.data")
+
+	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
+// TestToDBSchema_PreservesFunctionIdentities pins the local-schema conversion
+// used as the current side of schema diff. A qualified function must keep its
+// schema separate from its name, while a quoted literal dot remains part of
+// the name rather than becoming a qualification boundary.
+func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{Functions: []goschema.Function{
+		{Name: `"tenant.data"`, Parameters: "literal INTEGER", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+		{Name: "tenant.data", Parameters: "value TEXT", Returns: "integer", Language: "sql", Body: "SELECT 2"},
+	}}
+	goschema.Finalize(db)
+
+	got := schemafile.ToDBSchema(db, platform.Postgres)
+
+	c.Assert(got.Functions, qt.HasLen, 2)
+	c.Assert(got.Functions[0].Name, qt.Equals, "tenant.data")
+	c.Assert(got.Functions[0].Schema, qt.Equals, "")
+	c.Assert(got.Functions[0].QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Functions[0].Parameters, qt.Equals, "literal integer")
+	c.Assert(got.Functions[1].Name, qt.Equals, "data")
+	c.Assert(got.Functions[1].Schema, qt.Equals, "tenant")
+	c.Assert(got.Functions[1].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(got.Functions[1].Parameters, qt.Equals, "value text")
 
 	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))

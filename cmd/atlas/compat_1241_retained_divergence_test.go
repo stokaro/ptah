@@ -11,9 +11,8 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// The three cells of stokaro/ptah#1241 that are retained divergences rather
-// than cells to close, plus the one that closed itself and had nothing holding
-// it.
+// The retained divergences from stokaro/ptah#1241, plus the checksum-chain cell
+// closed here and the tx-mode cell that closed itself without a focused guard.
 //
 // Every expectation here was measured against the pinned community binary
 // v1.3.0 on 2026-08-09, each exit status read on its own line rather than
@@ -26,10 +25,11 @@ import (
 //   - item 6, an already-applied file whose bytes changed: binary 0
 //     ("No migration files to execute"), ptah 1. Retained; see
 //     "An edited already-applied migration file" in the Atlas comparison page.
-//   - item 5, a migration inserted below the applied high-water mark: binary 0,
-//     ptah 1. Retained as a refusal, but the diagnostic it prints is recorded
-//     as an open product-behavior gap, so this file pins the refusal and not
-//     the wording.
+//   - item 5, a prefix migration inserted below every applied version: the
+//     binary's default silently leaves it pending. Ptah refuses by default,
+//     reproduces that outcome with linear-skip, and applies it with non-linear.
+//     An insertion between two applied versions is a different oracle cell:
+//     both binaries refuse it by default.
 //   - item 1 under the default --tx-mode: binary 0 on the retry, and ptah now
 //     agrees. Closed incidentally by #1342, which never referenced #1241 and
 //     left no test tied to it. The first test below is that missing guard.
@@ -105,35 +105,21 @@ func TestCompatCommand_AnEditedAppliedFileIsRefused(t *testing.T) {
 	c.Assert(editedErr.Error(), qt.Contains, retainedVersionEarly)
 }
 
-// TestCompatCommand_AnOutOfOrderInsertIsRefused pins item 5.
+// TestCompatCommand_APrefixInsertionRequiresNonLinear pins Ptah's two explicit
+// answers for the prefix-insertion shape of item 5.
 //
-// The late migration is byte-identical in both directories — only its position
-// differs — and the pinned community binary v1.3.0 exits 0 with
-// "No migration files to execute", leaving the early migration unapplied. Ptah
-// refuses.
-//
-// Two independent gates refuse this, and which one answers is the open gap.
-// Measured by mutating the checksum comparison to compare lengths instead of
-// values: the refusal does not disappear, it changes to
+// The late migration is byte-identical in both directories; only a migration
+// before it was inserted. The default linear order still refuses with
 //
 //	out-of-order pending migrations below current version 20240102000000:
 //	[20240101000000] (use --exec-order=non-linear to apply or
 //	--exec-order=linear-skip to ignore)
 //
-// which is true about what happened and names the flag that resolves it. The
-// checksum gate runs first — verifyAppliedMigrationChecksums is called before
-// migrationsToApply in migrateUpLocked — so what an operator actually sees is a
-// checksum mismatch against the LATE migration, whose bytes did not change.
-//
-// The assertion below therefore records today's message on purpose, as a
-// characterization row rather than as a contract. When the gap recorded in
-// "A checksum refusal that names an unchanged file" is closed, this row should
-// flip to the out-of-order message above; it must not be deleted, because the
-// refusal itself is retained either way.
-//
-// Mutated so the checksums are compared by length instead of by value, the
-// message assertion below fails while the refusal assertions hold.
-func TestCompatCommand_AnOutOfOrderInsertIsRefused(t *testing.T) {
+// With --exec-order non-linear, Ptah proves the late row against the applied
+// directory projection, applies the insertion, and reconciles both clean rows
+// to the current Atlas chain. A second apply proves the reconciled rows are
+// stable.
+func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dbPath := filepath.Join(root, "order.db")
@@ -159,8 +145,100 @@ func TestCompatCommand_AnOutOfOrderInsertIsRefused(t *testing.T) {
 		"--dir", "file://"+bothFiles,
 	)
 	c.Assert(insertErr, qt.IsNotNil)
-	c.Assert(insertErr.Error(), qt.Contains, "checksum mismatch")
-	c.Assert(insertErr.Error(), qt.Contains, retainedVersionLate)
+	c.Assert(insertErr.Error(), qt.Contains, "out-of-order pending migrations")
+	c.Assert(insertErr.Error(), qt.Contains, retainedVersionEarly)
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+
+	_, _, nonLinearErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "non-linear",
+	)
+	c.Assert(nonLinearErr, qt.IsNil)
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
+
+	_, _, secondErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "non-linear",
+	)
+	c.Assert(secondErr, qt.IsNil)
+}
+
+// TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion pins the half
+// of item 5 that makes the retained refusal legitimate: the outcome the pinned
+// community binary v1.3.0 produces for a prefix insertion is still reachable
+// here, so nothing is removed by refusing it as the default.
+//
+// Measured 2026-08-12 on the item 5 prefix fixture, both directories authored
+// and hashed by that binary through `migrate import`, exit status read on its
+// own line rather than through a pipe. At its DEFAULT --exec-order (linear, per
+// its own --help) that binary exits 0 on the inserted directory, prints "No
+// migration files to execute", and leaves the prefix migration unapplied: the
+// table it would have created is absent from the catalog and only the late
+// revision is recorded. It reports nothing about the file it passed over.
+//
+// This is not the interval fixture recorded in docs/conformance.md. There,
+// applied revisions exist on both sides of the insertion, and both binaries
+// refuse at the default order. The lower applied floor is the observable state
+// that distinguishes the two oracle results.
+//
+// That silent discard is the argument for Ptah's default refusal, and this test
+// is the reason the refusal costs nothing: --exec-order=linear-skip reproduces
+// that outcome exactly, on request and in writing.
+//
+// The sibling test above covers the other two orders. This one is separate
+// because it is the only row whose claim is an equivalence with the oracle
+// rather than a divergence from it.
+//
+// Mutated so the skip branch tests ExecOrderNonLinear instead of
+// ExecOrderLinearSkip in migrator.go, this test fails: linear-skip applies the
+// inserted migration and rt_early appears.
+func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dbPath := filepath.Join(root, "skip.db")
+	lateOnly := writeRetainedDir(c, filepath.Join(root, "late"), map[string]string{
+		retainedVersionLate + "_late.sql": retainedLateBody,
+	})
+	bothFiles := writeRetainedDir(c, filepath.Join(root, "both"), map[string]string{
+		retainedVersionEarly + "_early.sql": retainedEarlyBody,
+		retainedVersionLate + "_late.sql":   retainedLateBody,
+	})
+
+	_, _, err := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+lateOnly,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+
+	_, _, skipErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "linear-skip",
+	)
+	c.Assert(skipErr, qt.IsNil)
+	// The inserted migration is passed over rather than applied, which is what
+	// that binary's default order does with it.
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+
+	// Repeating it is stable: skipping is not a one-shot that later promotes the
+	// migration into the applied set.
+	_, _, secondErr := runCompatStreams(c,
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+bothFiles,
+		"--exec-order", "linear-skip",
+	)
+	c.Assert(secondErr, qt.IsNil)
 	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
 	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 }

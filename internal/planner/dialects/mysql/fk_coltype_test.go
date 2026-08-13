@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -97,6 +98,71 @@ func TestPlanner_ColumnTypeChange_ReferencedColumn_DropsReferencingFK(t *testing
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id);")
 		})
 	}
+}
+
+func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAddition(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForDialect("mysql")
+	semantics.DefaultSchema = "app"
+	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
+	diff.IdentifierSemantics = &semantics
+	diff.ConstraintsAdded = []string{"fk_posts_user_id"}
+	diff.ConstraintsAddedWithTables = []types.ConstraintAdditionInfo{{
+		Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
+		Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumns: []string{"id"},
+	}}
+	diff.ConstraintsRemoved = []string{"fk_posts_user_id"}
+	diff.ConstraintsRemovedWithTables = []types.ConstraintRemovalInfo{{
+		Name: "fk_posts_user_id", TableName: "app.posts", Type: "FOREIGN KEY",
+	}}
+	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+		Name: "fk_posts_user_id", TableName: "app.posts", Columns: []string{"user_id"},
+		ForeignTable: "users", ForeignColumns: []string{"id"},
+	}}
+	desired := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "posts", StructName: "Post"},
+		},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
+			{
+				Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false,
+				Foreign: "users(id)", ForeignKeyName: "fk_posts_user_id",
+			},
+		},
+	}
+
+	sql := renderMySQLFamily(c, "mysql", diff, desired)
+
+	assertContainsBefore(c, sql,
+		"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
+		"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;")
+	assertContainsBefore(c, sql,
+		"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;",
+		"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id);")
+	c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1)
+	c.Assert(strings.Count(sql, "ADD CONSTRAINT fk_posts_user_id"), qt.Equals, 1)
+}
+
+func TestPlanner_ColumnTypeChange_IgnoresUnmatchedSupplementalForeignKeyRemoval(t *testing.T) {
+	c := qt.New(t)
+	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
+	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+		Name: "fk_posts_user_id", TableName: "posts", Columns: []string{"user_id"},
+		ForeignTable: "users", ForeignColumns: []string{"id"},
+	}}
+	desired := &goschema.Database{
+		Tables: []goschema.Table{{Name: "posts", StructName: "Post"}},
+		Fields: []goschema.Field{{
+			Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false,
+		}},
+	}
+
+	sql := renderMySQLFamily(c, "mysql", diff, desired)
+
+	c.Assert(sql, qt.Contains, "ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;")
+	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 }
 
 func TestPlanner_ColumnTypeChange_BothEnds_SingleDropAndReadd(t *testing.T) {

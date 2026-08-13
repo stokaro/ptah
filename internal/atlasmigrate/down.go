@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -86,7 +84,7 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.RevisionsSchema, "").
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
-		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		WithLogger(compatMigratorLogger())
 
 	conn.SchemaWriter().SetDryRun(opts.DryRun)
 	status, err := mig.GetMigrationStatus(ctx)

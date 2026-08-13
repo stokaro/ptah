@@ -311,7 +311,8 @@ type Index struct {
 	Condition string
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
-	// IncludeColumns carries PostgreSQL INCLUDE columns for covering indexes.
+	// IncludeColumns carries INCLUDE payload columns for PostgreSQL,
+	// YugabyteDB, and Spanner PostgreSQL-dialect covering indexes.
 	IncludeColumns []string
 	// StorageParams carries PostgreSQL index storage parameters rendered as
 	// WITH (key='value'), for example pages_per_range for BRIN indexes.
@@ -435,10 +436,11 @@ func (c Constraint) ForeignColumnsOrDefault() []string {
 //	type DatabaseExtensions struct{}
 //
 //	// Enable PostGIS for geographic data
-//	//ptah:schema:extension name="postgis" version="3.0" if_not_exists="true"
+//	//ptah:schema:extension name="postgis" schema="extensions" version="3.0" if_not_exists="true"
 //	type GeoExtensions struct{}
 type Extension struct {
 	Name        string // Extension name (pg_trgm, postgis, etc.)
+	Schema      string // PostgreSQL installation schema (optional; empty selects the connection default)
 	IfNotExists bool   // Whether to use IF NOT EXISTS clause
 	Version     string // Specific version requirement (optional)
 	Comment     string // Extension comment/description

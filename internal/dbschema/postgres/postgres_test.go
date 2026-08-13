@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/sqlrunner"
 	"go.5x5.cz/ptah/internal/testutils"
 )
 
@@ -389,9 +391,28 @@ func TestPostgreSQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNil)
 		c.Assert(tx, qt.IsNotNil)
+		provider, ok := tx.(interface {
+			SchemaQueryRunner() sqlrunner.Runner
+		})
+		c.Assert(ok, qt.IsTrue)
+		c.Assert(provider.SchemaQueryRunner(), qt.IsNil)
 		c.Assert(tx.ExecuteSQL(context.Background(), "SELECT 1"), qt.IsNil)
 		c.Assert(tx.Commit(), qt.IsNil)
 	})
+}
+
+func TestPostgresTransactionRunnerClosedTransactionReturnsError(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(t, nil, nil)
+	tx, err := db.SQL.BeginTx(t.Context(), nil)
+	c.Assert(err, qt.IsNil)
+	runner := postgresTransactionRunner{tx: tx}
+	c.Assert(tx.Rollback(), qt.IsNil)
+
+	var value int
+	err = runner.QueryRowContext(t.Context(), "SELECT 1").Scan(&value)
+
+	c.Assert(err, qt.ErrorIs, sql.ErrTxDone)
 }
 
 func TestPostgreSQLWriter_SchemaWriterInterface(t *testing.T) {

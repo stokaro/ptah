@@ -30,24 +30,24 @@ import (
 // report the schemas themselves rather than only their tables, which is the
 // other half of the same issue: an empty database rendered as `{}` where the
 // binary renders its schema.
-func readInspectSchema(
+func readInspectSchemaWithNames(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
-) (*dbschematypes.DBSchema, error) {
+) (*dbschematypes.DBSchema, []string, error) {
 	names, err := inspectSchemaNames(ctx, conn, requested)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	schema = withConnectedSchemaRow(schema, conn.Info(), requested)
 	if err := inspectSchemaAttributes(ctx, conn, schema); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return schema, nil
+	return schema, names, nil
 }
 
 // inspectSchemaNames resolves the schema names to read.

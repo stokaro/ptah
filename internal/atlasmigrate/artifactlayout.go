@@ -43,6 +43,10 @@ const (
 	// not an empty migration, it is an unparseable one.
 	gooseUpDirective   = "-- +goose Up"
 	gooseDownDirective = "-- +goose Down"
+	// gooseNoTransactionDirective opts the whole Goose migration file out of
+	// transaction wrapping. Because Goose keeps both directions in that file,
+	// one leading directive represents a requirement from either half.
+	gooseNoTransactionDirective = "-- +goose NO TRANSACTION"
 	// dbmateUpDirective and dbmateDownDirective are dbmate's equivalents.
 	dbmateUpDirective   = "-- migrate:up"
 	dbmateDownDirective = "-- migrate:down"
@@ -87,6 +91,9 @@ func composeMigrationArtifacts(
 	}
 	artifacts := make([]PublicationArtifact, 0, 2*len(contents))
 	for i, content := range contents {
+		if err := validateForeignTransactionMode(format, content); err != nil {
+			return nil, err
+		}
 		fileVersion := version + int64(i)
 		slug := migrationSlug(name + content.NameSuffix)
 		composed, err := composeMigrationArtifact(format, slug, fileVersion, content)
@@ -117,10 +124,8 @@ func composeMigrationArtifact(
 		stem := fmt.Sprintf("%d__%s", version, slug)
 		return pairedArtifacts("V"+stem+".sql", "U"+stem+".sql", content), nil
 	case atlasmigrateimport.FormatGoose:
-		return directiveArtifact(
+		return gooseArtifact(
 			fmt.Sprintf("%d_%s.sql", version, slug),
-			gooseUpDirective,
-			gooseDownDirective,
 			content,
 		), nil
 	case atlasmigrateimport.FormatDBMate:
@@ -135,6 +140,22 @@ func composeMigrationArtifact(
 	default:
 		return nil, fmt.Errorf("unknown migration import format %q", format)
 	}
+}
+
+func gooseArtifact(name string, content MigrationFileContent) []PublicationArtifact {
+	// BuildMigrationFileContents carries Atlas's directive in SQL because the
+	// native layout writes that string directly. Goose needs its own whole-file
+	// directive instead, so do not leak Atlas metadata into the source format.
+	content.SQL = strings.TrimPrefix(content.SQL, AtlasTxModeNoneDirective+"\n\n")
+	artifacts := directiveArtifact(name, gooseUpDirective, gooseDownDirective, content)
+	if !content.NoTransaction && !content.ReverseNoTransaction {
+		return artifacts
+	}
+	artifacts[0].Contents = append(
+		[]byte(gooseNoTransactionDirective+"\n"),
+		artifacts[0].Contents...,
+	)
+	return artifacts
 }
 
 // pairedArtifacts composes the two layouts that keep the rollback in a file of
@@ -186,8 +207,8 @@ func directiveArtifact(
 // difference is deliberate.
 //
 // Pairing forward statement i with reverse statement i would be a guess. Ptah
-// plans the reverse of the RUN — [DiffOptions.PlanReverse] answers a whole
-// diff with a whole diff, and the planner then orders it by reverse dependency
+// plans the reverse of the RUN — [DiffOptions.PlanBidirectional] answers the
+// whole forward and reverse plan, ordered by reverse dependency
 // — so the two lists are not index-aligned and need not even be the same
 // length: one added table with two indexes reverses into one DROP TABLE.
 // Emitting a changeset per forward statement would therefore attach some

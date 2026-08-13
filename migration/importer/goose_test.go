@@ -1,6 +1,8 @@
 package importer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -62,12 +64,14 @@ func TestGooseParse(t *testing.T) {
 	c.Assert(normalized[0].UpSQL, qt.Contains, "CREATE INDEX idx_users ON users (id);")
 	c.Assert(normalized[0].UpSQL, qt.Not(qt.Contains), "+goose")
 	c.Assert(normalized[0].DownSQL, qt.Contains, "DROP TABLE users;")
+	c.Assert(normalized[0].NoTransaction, qt.IsFalse)
 
-	// Second migration: NO TRANSACTION directive dropped, no down section.
+	// Second migration: NO TRANSACTION becomes typed metadata, with no down section.
 	c.Assert(normalized[1].Version, qt.Equals, int64(20230102))
 	c.Assert(normalized[1].UpSQL, qt.Contains, "CREATE INDEX CONCURRENTLY idx2 ON users (id);")
 	c.Assert(normalized[1].UpSQL, qt.Not(qt.Contains), "+goose")
 	c.Assert(normalized[1].DownSQL, qt.Equals, "")
+	c.Assert(normalized[1].NoTransaction, qt.IsTrue)
 }
 
 // TestGooseParseStatementBlockKeepsBodyVerbatim guards against a `-- +goose`
@@ -104,6 +108,112 @@ DROP FUNCTION f();
 	// The StatementBegin/End annotations themselves are stripped.
 	c.Assert(migrations[0].UpSQL, qt.Not(qt.Contains), "StatementBegin")
 	c.Assert(migrations[0].UpSQL, qt.Not(qt.Contains), "StatementEnd")
+}
+
+func TestGooseParseStatementBlockConsumesNoTransaction(t *testing.T) {
+	c := qt.New(t)
+	const sql = `-- +goose Up
+-- +goose StatementBegin
+CREATE FUNCTION f() RETURNS int AS $$
+BEGIN
+-- +goose NO TRANSACTION
+  -- +goose NO TRANSACTION extra
+  -- +goose Down
+  RETURN 1;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose Down
+DROP FUNCTION f();
+`
+	const wantUp = `CREATE FUNCTION f() RETURNS int AS $$
+BEGIN
+  -- +goose NO TRANSACTION extra
+  -- +goose Down
+  RETURN 1;
+END;
+$$ LANGUAGE plpgsql;`
+
+	parser, _ := importer.ParserByName("goose")
+	migrations, err := parser.Parse(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].UpSQL, qt.Equals, wantUp)
+	c.Assert(migrations[0].DownSQL, qt.Equals, "DROP FUNCTION f();")
+
+	out := t.TempDir()
+	result, err := importer.Import(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}}, nil, out, importer.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Files, qt.HasLen, 2)
+	up, err := os.ReadFile(filepath.Join(out, "0000000001_fn.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(up), qt.Equals, "-- +ptah no_transaction\n"+wantUp)
+	down, err := os.ReadFile(filepath.Join(out, "0000000001_fn.down.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(down), qt.Equals, "-- +ptah no_transaction\nDROP FUNCTION f();")
+}
+
+func TestGooseParseNoTransactionRequiresExactMarker(t *testing.T) {
+	tests := []struct {
+		name          string
+		marker        string
+		noTransaction bool
+		wantSQL       string
+	}{
+		{
+			name:          "exact",
+			marker:        "-- +goose NO TRANSACTION",
+			noTransaction: true,
+			wantSQL:       "SELECT 0;\nSELECT 1;",
+		},
+		{
+			name:          "exact CRLF line",
+			marker:        "-- +goose NO TRANSACTION\r",
+			noTransaction: true,
+			wantSQL:       "SELECT 0;\nSELECT 1;",
+		},
+		{
+			name:    "lowercase",
+			marker:  "-- +goose no transaction",
+			wantSQL: "SELECT 0;\n-- +goose no transaction\nSELECT 1;",
+		},
+		{
+			name:    "space after prefix",
+			marker:  "-- +goose  NO TRANSACTION",
+			wantSQL: "SELECT 0;\n-- +goose  NO TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "space between words",
+			marker:  "-- +goose NO  TRANSACTION",
+			wantSQL: "SELECT 0;\n-- +goose NO  TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "leading space",
+			marker:  " -- +goose NO TRANSACTION",
+			wantSQL: "SELECT 0;\n -- +goose NO TRANSACTION\nSELECT 1;",
+		},
+		{
+			name:    "trailing space",
+			marker:  "-- +goose NO TRANSACTION ",
+			wantSQL: "SELECT 0;\n-- +goose NO TRANSACTION \nSELECT 1;",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			parser, err := importer.ParserByName("goose")
+			c.Assert(err, qt.IsNil)
+
+			sql := "-- +goose Up\nSELECT 0;\n" + tt.marker + "\nSELECT 1;\n"
+			migrations, err := parser.Parse(fstest.MapFS{"1_marker.sql": {Data: []byte(sql)}})
+			c.Assert(err, qt.IsNil)
+			c.Assert(migrations, qt.HasLen, 1)
+			c.Assert(migrations[0].NoTransaction, qt.Equals, tt.noTransaction)
+			c.Assert(migrations[0].UpSQL, qt.Equals, tt.wantSQL)
+		})
+	}
 }
 
 func TestGooseParseErrors(t *testing.T) {
@@ -168,4 +278,12 @@ func TestGooseImportEndToEnd(t *testing.T) {
 	c.Assert(result.Files, qt.Contains, "0020230101_init.down.sql")
 	c.Assert(result.Remapped, qt.IsFalse)
 	c.Assert(result.SumFile, qt.Equals, "ptah.sum")
+	up, readErr := os.ReadFile(filepath.Join(out, "0020230102_up_only.up.sql"))
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(up), qt.Equals,
+		"-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx2 ON users (id);")
+	down, readErr := os.ReadFile(filepath.Join(out, "0020230102_up_only.down.sql"))
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(down), qt.Equals,
+		"-- +ptah no_transaction\n-- No rollback was provided by the source migration.\n")
 }

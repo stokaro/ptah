@@ -20,6 +20,10 @@ all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
 supported dialect. This page documents Ptah's YAML format only.
 
+Relative schema-file inputs are confined to the process working directory after
+symbolic-link resolution; pass an absolute pathname for an intentional source
+outside it.
+
 ## Minimal Example
 
 ```yaml
@@ -78,6 +82,7 @@ enums:
 
 extensions:
   pg_trgm:
+    schema: extensions
     if_not_exists: true
 
 functions:
@@ -297,7 +302,7 @@ YAML input supports these schema objects. Extensions, functions, materialized
 views, RLS, roles, and grants are PostgreSQL-specific; views and triggers are
 also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 
-- `extensions`: `name`, `if_not_exists`, `version`, `comment`
+- `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
 - `views`: `name`, `body`, `with_check`, `comment`

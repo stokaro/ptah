@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,7 +157,7 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 		// and not a usage failure.
 		return FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, AtlasDirectoryError(dir, err))
 	}
 
 	if !result.Integrity.OK() {
@@ -165,6 +166,37 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 
 	return nil
 }
+
+// AtlasDirectoryError adapts cmdutil.StatDir's missing-directory diagnostic for
+// dir to the Atlas CE `sql/migrate` wording. Other failures keep their original
+// text, including permission errors, unrelated nested stat errors, and paths
+// that exist but are not directories.
+//
+// The display wrapper unwraps to the complete original error rather than only
+// the extracted [os.PathError], so callers retain every contextual layer for
+// errors.Is and errors.As while the compatibility surface prints Atlas's text.
+func AtlasDirectoryError(dir string, err error) error {
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) ||
+		pathErr.Op != "stat" ||
+		pathErr.Path != dir ||
+		!errors.Is(pathErr, fs.ErrNotExist) ||
+		err.Error() != "migrations directory "+dir+": "+pathErr.Error() {
+		return err
+	}
+	return atlasDirectoryDisplayError{
+		text: "sql/migrate: " + pathErr.Error(),
+		err:  err,
+	}
+}
+
+type atlasDirectoryDisplayError struct {
+	text string
+	err  error
+}
+
+func (e atlasDirectoryDisplayError) Error() string { return e.text }
+func (e atlasDirectoryDisplayError) Unwrap() error { return e.err }
 
 // DirectoryHoldsNoSQLFiles reports whether dir holds no `.sql` file at its top
 // level, which is the shape an integrity file has nothing to cover.

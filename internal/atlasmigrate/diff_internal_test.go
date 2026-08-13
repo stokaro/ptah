@@ -5,6 +5,7 @@ package atlasmigrate
 // GenerateDiff API.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
@@ -27,8 +33,218 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
+	" the replayed migration directory records `ptah:not-described sequence`," +
+	" so this comparison cannot tell it apart from one that already exists," +
+	" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n"
+
+func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
+	}
+	desired := &goschema.Database{
+		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed, qt.Equals, current)
+	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+}
+
+func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+
+	_, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema,
+		&goschema.Database{}, nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+}
+
+func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	schemas := []string{"app"}
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{
+			{Name: "pgcrypto", Schema: "public"},
+			{Name: "citext", Schema: "extensions"},
+			{Name: "unrelated", Schema: "other"},
+		},
+	}
+	desired := schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{
+		Extensions: []goschema.Extension{
+			{Name: "pgcrypto", Schema: "public"},
+			{Name: "citext", Schema: "extensions"},
+			{Name: "unrelated", Schema: "other"},
+		},
+	}, schemas, "public")
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, schemas, "public", desired, nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	schemas := []string{"app"}
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "citext", Schema: "extensions"}},
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, schemas, "public",
+		schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{}, schemas, "public"), nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"citext"})
+}
+
+func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	current := &dbschematypes.DBSchema{
+		NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return current, nil
+		},
+	}
+	diagnostics := &bytes.Buffer{}
+
+	_, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, nil, conn.Info().Schema,
+		&goschema.Database{Sequences: []goschema.Sequence{{Name: "order_seq"}}},
+		diagnostics, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
+}
+
+func connectDiffComparisonSQLite(c *qt.C) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		atlasurl.SQLiteURLFromPath(c.TempDir()+"/catalog.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
+
+func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	desiredPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(
+		desiredPath,
+		[]byte("sequence \"order_seq\" {}\n"),
+		0o600,
+	), qt.IsNil)
+	desired, err := atlassource.ClassifySet(
+		"--to",
+		[]string{"file://" + desiredPath},
+		atlassource.ProjectEnv{},
+	)
+	c.Assert(err, qt.IsNil)
+	conn := connectDiffComparisonSQLite(c)
+	diagnostics := &bytes.Buffer{}
+
+	result, err := generateDiff(c.Context(), conn, DiffOptions{
+		Dir:         migrationsDir,
+		Desired:     desired,
+		Name:        "undecided_sequence",
+		Diagnostics: diagnostics,
+	}, diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return &dbschematypes.DBSchema{
+				NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+			}, nil
+		},
+		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
+	})
+	artifacts, readErr := os.ReadDir(migrationsDir)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Synced, qt.IsTrue)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	c.Assert(result.SumPath, qt.Equals, "")
+	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(artifacts, qt.HasLen, 0)
+}
 
 func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 	c := qt.New(t)
@@ -278,6 +494,133 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 	c.Assert(entries, qt.HasLen, 1)
 	c.Assert(entries[0].Name(), qt.Equals, "atlas.sum")
 	c.Assert(entries[0].IsDir(), qt.IsTrue)
+}
+
+func TestWriteDiffArtifacts_ReverseNoTransactionRefusesUnrepresentedForeignLayoutsBeforePublication(t *testing.T) {
+	formats := []atlasmigrateimport.Format{
+		atlasmigrateimport.FormatGolangMigrate,
+		atlasmigrateimport.FormatFlyway,
+		atlasmigrateimport.FormatDBMate,
+		atlasmigrateimport.FormatLiquibase,
+	}
+
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+			c.Assert(err, qt.IsNil)
+			writer := openTestWriter(c, dir)
+
+			result, err := writeDiffArtifacts(
+				t.Context(),
+				writer,
+				"concurrent_index",
+				[]MigrationFileContent{{
+					SQL:                  "CREATE INDEX CONCURRENTLY idx_widgets_id ON widgets (id);",
+					DownSQL:              "DROP INDEX CONCURRENTLY idx_widgets_id;",
+					ReverseNoTransaction: true,
+				}},
+				baseSnapshot,
+				nil,
+				diffWriteLayout{format: format},
+			)
+
+			c.Assert(result, qt.DeepEquals, DiffResult{})
+			c.Assert(err, qt.ErrorMatches,
+				`migration directory format "`+string(format)+`" cannot safely express a rollback that requires no-transaction execution; no migration files or atlas\.sum were written`)
+			entries, readErr := os.ReadDir(dir)
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(entries, qt.HasLen, 0,
+				qt.Commentf("a refused %s rollback published artifacts", format))
+		})
+	}
+}
+
+func TestWriteDiffArtifacts_GooseNoTransactionPublishesWholeFileDirective(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+	writer := openTestWriter(c, dir)
+
+	result, err := writeDiffArtifacts(
+		t.Context(),
+		writer,
+		"concurrent_index",
+		[]MigrationFileContent{{
+			SQL:                  "CREATE INDEX CONCURRENTLY idx_widgets_id ON widgets (id);",
+			DownSQL:              "DROP INDEX CONCURRENTLY idx_widgets_id;",
+			NoTransaction:        true,
+			ReverseNoTransaction: true,
+			Statements:           []string{"CREATE INDEX CONCURRENTLY idx_widgets_id ON widgets (id)"},
+			ReverseStatements:    []string{"DROP INDEX CONCURRENTLY idx_widgets_id"},
+		}},
+		baseSnapshot,
+		nil,
+		diffWriteLayout{format: atlasmigrateimport.FormatGoose},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.MigrationPaths, qt.HasLen, 1)
+	contents, readErr := os.ReadFile(result.MigrationPaths[0])
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(contents), qt.Equals,
+		"-- +goose NO TRANSACTION\n-- +goose Up\n"+
+			"CREATE INDEX CONCURRENTLY idx_widgets_id ON widgets (id);\n\n"+
+			"-- +goose Down\nDROP INDEX CONCURRENTLY idx_widgets_id;\n")
+	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(statErr, qt.IsNil)
+}
+
+func TestWriteDiffArtifacts_EnumAddRefusesUnrepresentedForeignLayoutsBeforePublication(t *testing.T) {
+	c := qt.New(t)
+	contents, err := BuildMigrationFileContents(
+		platform.Postgres,
+		capability.Postgres17(),
+		"",
+		[]ast.Node{
+			ast.NewAlterType("status").AddOperation(ast.NewAddEnumValueOperation("archived")),
+		},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(contents, qt.HasLen, 1)
+	c.Assert(contents[0].NoTransaction, qt.IsTrue)
+
+	formats := []atlasmigrateimport.Format{
+		atlasmigrateimport.FormatGolangMigrate,
+		atlasmigrateimport.FormatFlyway,
+		atlasmigrateimport.FormatDBMate,
+		atlasmigrateimport.FormatLiquibase,
+	}
+
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+			c.Assert(err, qt.IsNil)
+			writer := openTestWriter(c, dir)
+
+			result, err := writeDiffArtifacts(
+				t.Context(),
+				writer,
+				"enum_add",
+				contents,
+				baseSnapshot,
+				nil,
+				diffWriteLayout{format: format},
+			)
+
+			c.Assert(result, qt.DeepEquals, DiffResult{})
+			c.Assert(err, qt.ErrorMatches,
+				`migration directory format "`+string(format)+`" cannot safely express a forward migration that requires no-transaction execution; no migration files or atlas\.sum were written`)
+			entries, readErr := os.ReadDir(dir)
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(entries, qt.HasLen, 0,
+				qt.Commentf("a refused %s forward migration published artifacts", format))
+		})
+	}
 }
 
 func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {

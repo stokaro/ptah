@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -17,12 +19,107 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/schemaclean"
 	"go.5x5.cz/ptah/internal/testutils"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+func TestSchemaCleanScopeCarriesAnExplicitSchemaSequenceWithItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users[type=table]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Objects, qt.DeepEquals, []schemaclean.Object{
+		{
+			Type:         schemaclean.ObjectTypeSequence,
+			Schema:       "app",
+			Table:        "users",
+			Name:         "users_id_seq",
+			SelectorName: "users_id_seq",
+			Implicit:     true,
+			Command:      `DROP SEQUENCE IF EXISTS "app"."users_id_seq" RESTRICT`,
+		},
+		{Type: schemaclean.ObjectTypeTable, Name: "users"},
+	})
+}
+
+func TestSchemaCleanScopeRefusesAnExplicitSchemaSequenceWithoutItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users_id_seq[type=sequence]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.ErrorMatches,
+		`owned sequence "app\.users_id_seq" cannot be selected independently; select its owning table "app\.users"`)
+}
+
+func TestSchemaCleanScopeRefusesExcludingAnExplicitSchemaSequenceFromItsDefaultSchemaTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaCleanDefaultSchemaOwnershipPlan()
+
+	_, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Exclude:       []string{"users_id_seq[type=sequence]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.ErrorMatches,
+		`owned sequence "app\.users_id_seq" cannot be excluded while its owning table "app\.users" is selected; exclude the table instead`)
+}
+
+func TestSchemaCleanScopeUsesRestrictForASelectedPostgresTable(t *testing.T) {
+	c := qt.New(t)
+	plan := schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "users"},
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "posts"},
+		{Type: schemaclean.ObjectTypeForeignKey, Schema: "app", Table: "posts", Name: "posts_user_id_fkey"},
+		{Type: schemaclean.ObjectTypeView, Schema: "app", Name: "active_users"},
+	}, "postgres")
+
+	got, err := scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
+		Include:       []string{"users[type=table]"},
+		DefaultSchema: "app",
+	}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Objects, qt.DeepEquals, []schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Schema: "app", Name: "users"},
+	})
+	c.Assert(got.Changes, qt.DeepEquals, []schemaclean.Change{
+		{
+			Type:   schemaclean.ObjectTypeTable,
+			Schema: "app",
+			Name:   "users",
+			Cmd:    `DROP TABLE IF EXISTS "app"."users" RESTRICT`,
+		},
+	})
+}
+
+func schemaCleanDefaultSchemaOwnershipPlan() schemaclean.Plan {
+	return schemaclean.PlanFromObjects([]schemaclean.Object{
+		{Type: schemaclean.ObjectTypeTable, Name: "users"},
+		{
+			Type:         schemaclean.ObjectTypeSequence,
+			Schema:       "app",
+			Table:        "users",
+			Name:         "users_id_seq",
+			SelectorName: "users_id_seq",
+			Implicit:     true,
+			Command:      `DROP SEQUENCE IF EXISTS "app"."users_id_seq" RESTRICT`,
+		},
+	}, "postgres")
+}
 
 func TestCompatCommand_OSSCommandPathsResolve(t *testing.T) {
 	paths := [][]string{
@@ -742,7 +839,11 @@ func TestCompatCommand_ForwardsSupportedCommands(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required")
+	// The refusal stands in for "the verb was reached and ran its own body".
+	// Its wording is the compatibility surface's, pinned against the pinned
+	// community binary in compat_url_diagnostic_test.go; `migrate apply` is the
+	// one verb of the family that answers in the singular.
+	c.Assert(err, qt.ErrorMatches, `required flag "url" not set`)
 }
 
 func TestCompatCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
@@ -1027,7 +1128,7 @@ func TestCompatCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testi
 	c.Assert(out.String(), qt.Not(qt.Contains), "Connected to sqlite database successfully")
 }
 
-func TestCompatCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
+func TestCompatCommand_SchemaInspectOutputsExplicitHCLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-hcl.db")
@@ -1040,7 +1141,7 @@ func TestCompatCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", "hcl",
+		"--format", "{{ hcl . }}",
 	})
 
 	err := cmd.Execute()
@@ -1088,7 +1189,7 @@ func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", "json",
+		"--format", "{{ json . }}",
 	})
 
 	err := cmd.Execute()
@@ -1307,7 +1408,7 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
   }
   format {
     schema {
-      inspect = "json"
+      inspect = "{{ json . }}"
     }
   }
 }
@@ -1373,7 +1474,9 @@ func TestCompatCommand_ForwardsParentedNativeCommand(t *testing.T) {
 
 	err := root.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required")
+	// As above: the refusal proves the parented verb was reached, and its
+	// wording is pinned in compat_url_diagnostic_test.go.
+	c.Assert(err, qt.ErrorMatches, `required flag "url" not set`)
 }
 
 func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T) {
@@ -1390,7 +1493,7 @@ func TestCompatCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
@@ -1413,7 +1516,7 @@ func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
@@ -1812,8 +1915,14 @@ func TestCompatCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "database URL is required; pass --url")
-	c.Assert(out.String(), qt.Contains, "database URL is required; pass --url")
+	// --revisions-schema is accepted, so the run gets as far as opening the
+	// database and the absent --url is answered by the client layer rather than
+	// by a flag validator. Measured on the pinned community binary v1.3.0, this
+	// exact invocation answers the same string, and `unknown flag` is what a
+	// rejected --revisions-schema would have produced instead.
+	const missingDriver = "sql/sqlclient: missing driver. See: https://atlasgo.io/url"
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(missingDriver))
+	c.Assert(out.String(), qt.Contains, missingDriver)
 	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
 }
 
@@ -3994,7 +4103,7 @@ func TestCompatCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(out.String(), qt.Equals, "")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
@@ -4194,7 +4303,7 @@ func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *test
 	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
 }
 
-func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T) {
+func TestCompatCommand_MigrateStatusRejectsParentRelativeProjectDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
@@ -4225,8 +4334,10 @@ func TestCompatCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T)
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: .*outside allowed root.*`)
+	c.Assert(out.String(), qt.Contains, "outside allowed root")
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
 func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {

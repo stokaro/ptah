@@ -11,6 +11,7 @@ package postgres
 
 import (
 	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 
@@ -21,7 +22,8 @@ import (
 )
 
 // enumFunctionCatalog answers the two reads this file exercises with one row
-// each, so the assertions are about the Schema field and nothing else.
+// each. The function row keeps its full declaration and overload identity
+// observably different so the reader cannot substitute one for the other.
 func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 	if strings.Contains(query, "pg_enum") {
 		return dbtest.QueryResult{
@@ -29,13 +31,17 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 			Rows:    [][]driver.Value{{"color", "r", int64(1)}},
 		}, nil
 	}
+	if !strings.Contains(query, "pg_get_function_identity_arguments(p.oid)") {
+		return dbtest.QueryResult{}, errors.New("function query does not request identity arguments")
+	}
 	return dbtest.QueryResult{
 		Columns: []string{
-			"function_name", "parameters", "returns", "language",
+			"function_name", "parameters", "identity_arguments", "returns", "language",
 			"security", "volatility", "body", "comment",
 		},
 		Rows: [][]driver.Value{{
-			"fn_app", "", "integer", "sql", "INVOKER", "VOLATILE", " SELECT 2 ", "",
+			"fn_app", "value integer DEFAULT 1, OUT doubled integer", "integer",
+			"integer", "sql", "INVOKER", "VOLATILE", " SELECT 2 ", "",
 		}},
 	}, nil
 }
@@ -43,7 +49,8 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 // TestReadEnumsAndFunctionsForSchema_StampTheSchemaTheyWereAskedFor asserts the
 // VALUE, not that the field compiles: a reader that left it empty would keep
 // every existing test green while `--exclude app.color` went on matching
-// nothing.
+// nothing. It also pins the declaration/identity split read from PostgreSQL's
+// two catalog helpers; a default or OUT argument belongs only to Parameters.
 //
 // The row shape is the outputSchema convention every other resource follows --
 // blank for the connection's own schema, named otherwise -- so both directions
@@ -51,6 +58,7 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 // turn the default-schema rows red; the pre-fix reader turns the non-default
 // rows red.
 func TestReadEnumsAndFunctionsForSchema_StampTheSchemaTheyWereAskedFor(t *testing.T) {
+	wantIdentityArguments := "integer"
 	tests := []struct {
 		name       string
 		schemas    []string
@@ -95,6 +103,8 @@ func TestReadEnumsAndFunctionsForSchema_StampTheSchemaTheyWereAskedFor(t *testin
 			c.Assert(functions, qt.HasLen, 1)
 			c.Assert(functions[0].Name, qt.Equals, "fn_app")
 			c.Assert(functions[0].Schema, qt.Equals, test.want)
+			c.Assert(functions[0].Parameters, qt.Equals, "value integer DEFAULT 1, OUT doubled integer")
+			c.Assert(functions[0].IdentityArguments, qt.DeepEquals, &wantIdentityArguments)
 		})
 	}
 }

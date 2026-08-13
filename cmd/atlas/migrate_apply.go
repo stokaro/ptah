@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasmigratereport"
@@ -52,7 +53,7 @@ type atlasMigrateApplyRunOptions struct {
 	skipChecks      bool
 }
 
-func newAtlasMigrateApplyCommand() *cobra.Command {
+func newAtlasMigrateApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasMigrateApplyOptions{
 		// `--dir` defaults to the same directory `migrate status` and
 		// `migrate set` already default to (stokaro/ptah#1241 item 2).
@@ -80,7 +81,7 @@ limits the run to the first N pending migrations.
 
 Native Ptah equivalent: ptah migrations up.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAtlasMigrateApply(cmd, opts, args)
+			return runAtlasMigrateApply(cmd, policy, opts, args)
 		},
 	}
 
@@ -97,11 +98,13 @@ Native Ptah equivalent: ptah migrations up.`,
 	// parsed like --baseline instead of as a typed integer flag: a
 	// non-numeric value must fail with Ptah's version diagnostic, not with
 	// pflag's "invalid argument" for an int flag.
-	flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
-	registerAtlasLockNameFlag(flags, &opts.lock)
-	registerAtlasSkipLockFlag(flags, &opts.lock)
+	if !policy.IsStrictCE() {
+		flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
+		registerAtlasLockNameFlag(flags, &opts.lock)
+		registerAtlasSkipLockFlag(flags, &opts.lock)
+	}
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 
 	cmdutil.ConfigureCommandArgs(cmd, atlasMigrateApplyArgs)
@@ -133,7 +136,11 @@ func resolveAtlasMigrateApplyDirFormat(
 ) (atlasmigrateimport.Format, error) {
 	format, err := atlasmigrate.ResolveApplyDirFormat(configured, query)
 	if err != nil {
-		return "", fmt.Errorf("atlas migrate apply --dir: %w", err)
+		// `migrate apply` registers no --dir-format on either binary, so the
+		// query is the only spelling that can carry a rejected value here and
+		// the blame is fixed. See migrate_dir_format_error.go for the shared
+		// display adaptation.
+		return "", atlasDirFormatError("apply", "--dir", err)
 	}
 	if err := reportIgnoredDirQuery(cmd.ErrOrStderr(), "apply", query); err != nil {
 		return "", err
@@ -143,6 +150,7 @@ func resolveAtlasMigrateApplyDirFormat(
 
 func runAtlasMigrateApply(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
@@ -193,7 +201,7 @@ func runAtlasMigrateApply(
 	cmd.SetOut(io.MultiWriter(out, &targetOutput))
 	defer cmd.SetOut(out)
 	for index, project := range targets {
-		formatted, err := runAtlasMigrateApplyTarget(cmd, project, opts, runOpts)
+		formatted, err := runAtlasMigrateApplyTarget(cmd, policy, project, opts, runOpts)
 		if err != nil {
 			return err
 		}
@@ -209,6 +217,7 @@ func runAtlasMigrateApply(
 
 func runAtlasMigrateApplyTarget(
 	cmd *cobra.Command,
+	policy atlascompatpolicy.Policy,
 	project atlasProject,
 	opts atlasMigrateApplyOptions,
 	runOpts atlasMigrateApplyRunOptions,
@@ -269,8 +278,12 @@ func runAtlasMigrateApplyTarget(
 			return formatOutput, err
 		}
 	}
+	// Singular, and the only verb of the family that answers this way. See
+	// cmd/atlas/compat_url_diagnostic.go for the measured per-verb table; this
+	// check tests the value rather than cobra's Changed bit because the pinned
+	// binary answers `--url ""` here exactly as it answers an absent one.
 	if opts.url == "" {
-		return formatOutput, fmt.Errorf("database URL is required")
+		return formatOutput, atlasRequiredURLError(atlasRequiredURLSingular)
 	}
 	if opts.dir == "" {
 		return formatOutput, fmt.Errorf("migrations directory is required")
@@ -349,12 +362,18 @@ func runAtlasMigrateApplyTarget(
 	if err := verifyAtlasApplyChecksum(cmd, captured, resolvedDirFormat); err != nil {
 		return formatOutput, err
 	}
+	if err := policy.ValidateMigrationSourceForURL(captured, opts.url); err != nil {
+		return formatOutput, err
+	}
 
 	migrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
 	if err != nil {
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return formatOutput, err
+	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
 	if err != nil {
 		return formatOutput, fmt.Errorf("error connecting to database: %w", err)

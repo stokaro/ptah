@@ -25,11 +25,80 @@
 # Exits non-zero if any comparison diverges. Scratch directories are created
 # under the system temp directory and removed on exit.
 #
-# Refs stokaro/ptah#973, #974, #983, #990, #991, #1086, #1095.
+# Refs stokaro/ptah#973, #974, #983, #990, #991, #1013, #1086, #1095.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMPAT="$ROOT/bin/ptah-compat"
+fail=0
+
+# compare_write_result <expected-exit> <expected-write> <expected-artifacts>
+#   <expected-validate> <ce-exit> <ptah-exit> <ce-write> <ptah-write>
+#   <ce-artifacts> <ptah-artifacts> <ce-validate> <ptah-validate>
+#
+# This is the fail-closed assertion behind the external-layout writer rows.
+# Equality alone is not enough: two refusals would agree while regressing the
+# outcome flip that stokaro/ptah#1013 requires.
+compare_write_result() {
+  local expected_exit="$1" expected_write="$2" expected_artifacts="$3" expected_validate="$4"
+  local ce_exit="$5" ptah_exit="$6" ce_write="$7" ptah_write="$8"
+  local ce_artifacts="$9" ptah_artifacts="${10}" ce_validate="${11}" ptah_validate="${12}"
+
+  if [ "$ce_exit" = "$expected_exit" ] && [ "$ptah_exit" = "$expected_exit" ] \
+    && [ "$ce_write" = "$expected_write" ] && [ "$ptah_write" = "$expected_write" ] \
+    && [ "$ce_artifacts" = "$expected_artifacts" ] \
+    && [ "$ptah_artifacts" = "$expected_artifacts" ] \
+    && [ "$ce_validate" = "$expected_validate" ] \
+    && [ "$ptah_validate" = "$expected_validate" ]; then
+    WRITE_VERDICT=MATCH
+    return
+  fi
+
+  WRITE_VERDICT=DIFFER
+  fail=1
+}
+
+probe_selftest() {
+  local selftest_fail=0
+
+  fail=0
+  compare_write_result 0 YES "up down" 0 0 0 YES YES "up down" "up down" 0 0
+  if [ "$fail" != 0 ] || [ "$WRITE_VERDICT" != MATCH ]; then
+    echo "selftest: matching success was rejected" >&2
+    selftest_fail=1
+  fi
+
+  # An exit-equality-only check accepts this regression. The live probe must
+  # require the successful outcome and artifacts, not only equal exit codes.
+  fail=0
+  compare_write_result 0 YES "up down" 0 1 1 no no "" "" - -
+  if [ "$fail" != 1 ] || [ "$WRITE_VERDICT" != DIFFER ]; then
+    echo "selftest: equal refusals did not fail closed" >&2
+    selftest_fail=1
+  fi
+
+  fail=0
+  compare_write_result 0 YES "up down" 0 0 0 YES YES "up down" up 0 0
+  if [ "$fail" != 1 ] || [ "$WRITE_VERDICT" != DIFFER ]; then
+    echo "selftest: artifact mismatch did not fail closed" >&2
+    selftest_fail=1
+  fi
+
+  fail=0
+  compare_write_result 1 no "" - 1 1 no no "" "" - -
+  if [ "$fail" != 0 ] || [ "$WRITE_VERDICT" != MATCH ]; then
+    echo "selftest: matching control refusal was rejected" >&2
+    selftest_fail=1
+  fi
+
+  [ "$selftest_fail" = 0 ] && echo "probe-atlas-integrity-verbs selftest passed"
+  return "$selftest_fail"
+}
+
+if [ "${1:-}" = --selftest ]; then
+  probe_selftest
+  exit $?
+fi
 
 # shellcheck source=scripts/lib/atlas-ce-oracle.sh
 source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
@@ -44,8 +113,6 @@ fi
 
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/ptah-integrity-probe.XXXXXX")"
 trap 'rm -rf "$BASE"' EXIT
-
-fail=0
 
 # seed <dir> — a layout every format reads differently.
 seed() {
@@ -467,11 +534,7 @@ out=$("$ATLAS" migrate lint --dir "file://$lintd" --dev-url "sqlite://$lintd.lin
 printf '    CE   lint  exit=%s [%s]\n' "$rc" "$(echo "$out" | tr '\n' '|' | cut -c1-90)"
 
 echo
-echo "  STILL DIVERGENT, and no issue tracks it yet: migrate new and migrate diff"
-echo "  write an atlas.sum over a directory nothing verified, turning drift into"
-echo "  apparent cleanliness. Deliberately out of scope for #974 — gating them"
-echo "  interacts with the empty-directory bootstrap flow and needs its own"
-echo "  predicate measurement."
+echo "  the writer gate refuses an unhashed non-empty directory before writing"
 newd=$(native_seed "g-new" unhashed)
 out=$("$COMPAT" migrate new addcol --dir "file://$newd" 2>&1); rc=$?
 printf '    ptah new   exit=%s sum=%s\n' "$rc" "$([ -f "$newd/atlas.sum" ] && echo WRITTEN || echo none)"
@@ -722,23 +785,100 @@ for verb in new diff; do
     "$(echo "$out" | tr '\n' '|' | cut -c1-70)" "$(echo "$pout" | tr '\n' '|' | cut -c1-70)"
 done
 
-echo
-echo "  STILL DIVERGENT by choice: a ?format= naming a foreign layout. The"
-echo "  community binary honors it on both verbs; refusing is the strict side,"
-echo "  because writing a layout whose covered file set Ptah does not compute"
-echo "  would gate the wrong set. Tracked by stokaro/ptah#1013 and #1002."
-for verb in new diff; do
-  ced=$(native_seed "wf-ce-$verb" clean); ptd=$(native_seed "wf-pt-$verb" clean)
-  case "$verb" in
-    new)  out=$("$ATLAS"  migrate new demo --dir "file://$ced?format=goose" 2>&1); rc=$?
-          pout=$("$COMPAT" migrate new demo --dir "file://$ptd?format=goose" 2>&1); prc=$? ;;
-    diff) out=$("$ATLAS"  migrate diff demo --dir "file://$ced?format=goose" \
-                 --dev-url "sqlite://$ced.f.db" --to "file://$BASE/write-target.sql" 2>&1); rc=$?
-          pout=$("$COMPAT" migrate diff demo --dir "file://$ptd?format=goose" \
-                 --dev-url "sqlite://$ptd.f.db" --to "file://$BASE/write-target.sql" 2>&1); prc=$? ;;
+write_artifact_signature() {
+  local d="$1"
+  (cd "$d" && find . -maxdepth 1 -type f -name '*demo*' \
+    | sed -E 's#^\./[0-9]+_demo#<version>_demo#; s#^\./([UV])[0-9]+__demo#\1<version>__demo#' \
+    | LC_ALL=C sort | paste -sd ' ' -)
+}
+
+expected_artifact_signature() {
+  case "$1" in
+    golang-migrate) echo "<version>_demo.down.sql <version>_demo.up.sql" ;;
+    flyway)         echo "U<version>__demo.sql V<version>__demo.sql" ;;
+    goose|dbmate|liquibase)
+                    echo "<version>_demo.sql" ;;
   esac
-  printf '  %-5s ?format=goose  CE exit=%s  ptah exit=%s [%s]\n' \
-    "$verb" "$rc" "$prc" "$(echo "$pout" | tr '\n' '|' | cut -c1-70)"
+}
+
+# foreign_write_row <verb> <format> — assert the query-driven outcome flip.
+# Both tools must accept, write that layout's artifact shape, refresh atlas.sum,
+# and leave a directory the pinned community binary validates.
+foreign_write_row() {
+  local verb="$1" format="$2"
+  local ce ptah ceout cerc ptout ptrc cebefore ptbefore cewrote ptwrote
+  local ceartifacts ptartifacts expected cevalidate ptvalidate
+  ce=$(import_seed "wf-ce-$verb-$format" "$format" clean)
+  ptah=$(import_seed "wf-pt-$verb-$format" "$format" clean)
+  cebefore=$(write_fingerprint "$ce"); ptbefore=$(write_fingerprint "$ptah")
+
+  case "$verb" in
+    new)  ceout=$("$ATLAS"  migrate new demo --dir "file://$ce?format=$format" 2>&1); cerc=$?
+          ptout=$("$COMPAT" migrate new demo --dir "file://$ptah?format=$format" 2>&1); ptrc=$? ;;
+    diff) ceout=$("$ATLAS"  migrate diff demo --dir "file://$ce?format=$format" \
+                    --dev-url "sqlite://$ce.f.db" --to "file://$BASE/write-target.sql" 2>&1); cerc=$?
+          ptout=$("$COMPAT" migrate diff demo --dir "file://$ptah?format=$format" \
+                    --dev-url "sqlite://$ptah.f.db" --to "file://$BASE/write-target.sql" 2>&1); ptrc=$? ;;
+  esac
+
+  cewrote=no; [ "$(write_fingerprint "$ce")" != "$cebefore" ] && cewrote=YES
+  ptwrote=no; [ "$(write_fingerprint "$ptah")" != "$ptbefore" ] && ptwrote=YES
+  ceartifacts=$(write_artifact_signature "$ce")
+  ptartifacts=$(write_artifact_signature "$ptah")
+  expected=$(expected_artifact_signature "$format")
+  "$ATLAS" migrate validate --dir "file://$ce?format=$format" >/dev/null 2>&1; cevalidate=$?
+  "$ATLAS" migrate validate --dir "file://$ptah?format=$format" >/dev/null 2>&1; ptvalidate=$?
+
+  compare_write_result 0 YES "$expected" 0 \
+    "$cerc" "$ptrc" "$cewrote" "$ptwrote" \
+    "$ceartifacts" "$ptartifacts" "$cevalidate" "$ptvalidate"
+  printf '  %-5s %-15s %-6s CE exit=%s wrote=%-3s validate=%s  ptah exit=%s wrote=%-3s validate=%s\n' \
+    "$verb" "$format" "$WRITE_VERDICT" "$cerc" "$cewrote" "$cevalidate" \
+    "$ptrc" "$ptwrote" "$ptvalidate"
+  if [ "$WRITE_VERDICT" = DIFFER ]; then
+    printf '       expected artifacts=[%s]\n' "$expected"
+    printf '       CE   artifacts=[%s] out=[%s]\n' "$ceartifacts" "$(echo "$ceout" | tr '\n' '|' | cut -c1-100)"
+    printf '       ptah artifacts=[%s] out=[%s]\n' "$ptartifacts" "$(echo "$ptout" | tr '\n' '|' | cut -c1-100)"
+  fi
+}
+
+# foreign_write_control <verb> — the same golang-migrate directory without a
+# layout selection must remain a checksum refusal and must stay byte-unchanged.
+foreign_write_control() {
+  local verb="$1" ce ptah ceout cerc ptout ptrc cebefore ptbefore cewrote ptwrote
+  ce=$(import_seed "wfc-ce-$verb" golang-migrate clean)
+  ptah=$(import_seed "wfc-pt-$verb" golang-migrate clean)
+  cebefore=$(write_fingerprint "$ce"); ptbefore=$(write_fingerprint "$ptah")
+
+  case "$verb" in
+    new)  ceout=$("$ATLAS"  migrate new demo --dir "file://$ce" 2>&1); cerc=$?
+          ptout=$("$COMPAT" migrate new demo --dir "file://$ptah" 2>&1); ptrc=$? ;;
+    diff) ceout=$("$ATLAS"  migrate diff demo --dir "file://$ce" \
+                    --dev-url "sqlite://$ce.control.db" --to "file://$BASE/write-target.sql" 2>&1); cerc=$?
+          ptout=$("$COMPAT" migrate diff demo --dir "file://$ptah" \
+                    --dev-url "sqlite://$ptah.control.db" --to "file://$BASE/write-target.sql" 2>&1); ptrc=$? ;;
+  esac
+
+  cewrote=no; [ "$(write_fingerprint "$ce")" != "$cebefore" ] && cewrote=YES
+  ptwrote=no; [ "$(write_fingerprint "$ptah")" != "$ptbefore" ] && ptwrote=YES
+  compare_write_result 1 no "" - \
+    "$cerc" "$ptrc" "$cewrote" "$ptwrote" \
+    "$(write_artifact_signature "$ce")" "$(write_artifact_signature "$ptah")" - -
+  printf '  %-5s %-15s %-6s CE exit=%s wrote=%-3s  ptah exit=%s wrote=%-3s\n' \
+    "$verb" "no query control" "$WRITE_VERDICT" "$cerc" "$cewrote" "$ptrc" "$ptwrote"
+  if [ "$WRITE_VERDICT" = DIFFER ]; then
+    printf '       CE   out=[%s]\n' "$(echo "$ceout" | tr '\n' '|' | cut -c1-100)"
+    printf '       ptah out=[%s]\n' "$(echo "$ptout" | tr '\n' '|' | cut -c1-100)"
+  fi
+}
+
+echo
+echo "  #1013: a foreign ?format= changes the writer outcome and artifact layout"
+for verb in new diff; do
+  for format in golang-migrate flyway goose dbmate liquibase; do
+    foreign_write_row "$verb" "$format"
+  done
+  foreign_write_control "$verb"
 done
 
 echo

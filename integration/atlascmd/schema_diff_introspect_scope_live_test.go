@@ -67,6 +67,13 @@ func seedDatabase(c *qt.C, dbURL string, statements ...string) {
 // exit code.
 func runCompatSchemaDiff(c *qt.C, args ...string) string {
 	c.Helper()
+	out, err := executeCompatSchemaDiff(c, args...)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	return out
+}
+
+func executeCompatSchemaDiff(c *qt.C, args ...string) (string, error) {
+	c.Helper()
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -75,9 +82,7 @@ func runCompatSchemaDiff(c *qt.C, args ...string) string {
 	cmd.SetArgs(append([]string{"schema", "diff"}, args...))
 
 	err := cmd.Execute()
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	return out.String()
+	return out.String(), err
 }
 
 // TestSchemaDiffIntrospectsRequestedSchemaLivePostgres pins that a
@@ -199,6 +204,177 @@ func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *t
 	c.Assert(out, qt.Contains, `ALTER TABLE "`+scoped+`"."users" ADD COLUMN "extra" text;`)
 	c.Assert(out, qt.Contains, `CREATE TABLE "`+scoped+`"."blatant"`)
 	c.Assert(out, qt.Not(qt.Contains), "Schemas are synced")
+}
+
+// TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres
+// pins that selector matching and the shared schema model preserve the
+// introspected qualified identity. Filtering must not make the real
+// `extensions.pgcrypto` objects on both sides look like empty selections.
+func TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	fromURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_to_"+suffix)
+	for _, targetURL := range []string{fromURL, toURL} {
+		seedDatabase(c, targetURL,
+			"CREATE SCHEMA extensions",
+			"CREATE EXTENSION pgcrypto WITH SCHEMA extensions",
+		)
+	}
+
+	out := runCompatSchemaDiff(c,
+		"--from", fromURL,
+		"--to", toURL,
+		"--include", "extensions.pgcrypto",
+	)
+
+	c.Assert(out, qt.Contains, "Schemas are synced")
+	c.Assert(out, qt.Not(qt.Contains), "matched no objects")
+}
+
+// TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres pins the separate
+// Schema and Name identity PostgreSQL introspection returns for functions. A
+// same-side live comparison must remain synced, while a local-to-live
+// comparison must not turn the authoritative catalog lookup into an empty
+// desired side and emit a DROP FUNCTION.
+func TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	fromURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_from_"+suffix)
+	toURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_to_"+suffix)
+	devURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_dev_"+suffix)
+	functionDDL := "CREATE SCHEMA extra;\n" +
+		"CREATE FUNCTION extra.fn() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$;\n"
+	for _, targetURL := range []string{fromURL, toURL} {
+		seedDatabase(c, targetURL,
+			"CREATE SCHEMA extra",
+			"CREATE FUNCTION extra.fn() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$",
+		)
+	}
+
+	synced := runCompatSchemaDiff(c,
+		"--from", fromURL,
+		"--to", toURL,
+		"--include", "extra.fn",
+	)
+	c.Assert(synced, qt.Contains, "Schemas are synced")
+	c.Assert(synced, qt.Not(qt.Contains), "matched no objects")
+
+	localPath := filepath.Join(t.TempDir(), "function.sql")
+	c.Assert(os.WriteFile(localPath, []byte(functionDDL), 0o600), qt.IsNil)
+	localToLive := runCompatSchemaDiff(c,
+		"--from", "file://"+localPath,
+		"--to", toURL,
+		"--dev-url", devURL,
+		"--include", "extra.fn",
+	)
+	c.Assert(localToLive, qt.Not(qt.Contains), "DROP FUNCTION")
+	c.Assert(localToLive, qt.Not(qt.Contains), "matched no objects")
+}
+
+// TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres pins that enum
+// identity is schema-aware in both the positive projection and the exclusion
+// applied after it. Two identical live states must stay synced rather than
+// reintroducing the enum as generated-only CREATE TYPE SQL.
+func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	fromURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_to_"+suffix)
+	for _, targetURL := range []string{fromURL, toURL} {
+		seedDatabase(c, targetURL,
+			"CREATE SCHEMA app",
+			"CREATE TYPE app.color AS ENUM ('red')",
+		)
+	}
+
+	out := runCompatSchemaDiff(c,
+		"--from", fromURL,
+		"--to", toURL,
+		"--include", "app.color",
+		"--exclude", "app.color",
+	)
+	c.Assert(out, qt.Contains, "Schemas are synced")
+	c.Assert(out, qt.Not(qt.Contains), "CREATE TYPE")
+	c.Assert(out, qt.Not(qt.Contains), "matched no objects")
+}
+
+// TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres distinguishes
+// creation, movement, and removal. Creation preserves the desired installation
+// schema; movement fails before SQL until the shared planner supports ALTER
+// EXTENSION SET SCHEMA; removal is independent of placement.
+func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	emptyURL := createDisposableDatabase(c, dbURL, "ptah_extplace_empty_"+suffix)
+	defaultURL := createDisposableDatabase(c, dbURL, "ptah_extplace_default_"+suffix)
+	scopedURL := createDisposableDatabase(c, dbURL, "ptah_extplace_scoped_"+suffix)
+	seedDatabase(c, defaultURL, "CREATE EXTENSION pgcrypto")
+	seedDatabase(c, scopedURL,
+		"CREATE SCHEMA extensions",
+		"CREATE EXTENSION pgcrypto WITH SCHEMA extensions",
+	)
+
+	createdNonDefault := runCompatSchemaDiff(c,
+		"--from", emptyURL,
+		"--to", scopedURL,
+		"--include", "extensions.pgcrypto",
+	)
+	c.Assert(createdNonDefault, qt.Contains, `CREATE SCHEMA IF NOT EXISTS "extensions";`)
+	c.Assert(createdNonDefault, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions"`)
+
+	moved, err := executeCompatSchemaDiff(c,
+		"--from", defaultURL,
+		"--to", scopedURL,
+		"--include", "*.pgcrypto",
+	)
+	c.Assert(err, qt.ErrorMatches, `.*cannot move PostgreSQL extension "pgcrypto" from schema "public" to schema "extensions".*`)
+	c.Assert(moved, qt.Not(qt.Contains), "CREATE EXTENSION")
+	c.Assert(moved, qt.Not(qt.Contains), "DROP EXTENSION")
+	c.Assert(moved, qt.Not(qt.Contains), "Atlas")
+
+	created := runCompatSchemaDiff(c,
+		"--from", emptyURL,
+		"--to", defaultURL,
+		"--include", "public.pgcrypto",
+	)
+	c.Assert(created, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
+
+	dropped := runCompatSchemaDiff(c,
+		"--from", scopedURL,
+		"--to", emptyURL,
+		"--include", "extensions.pgcrypto",
+	)
+	c.Assert(dropped, qt.Contains, "DROP EXTENSION")
+}
+
+// TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions pins that the
+// schema comparator uses the same ignored-extension policy on both sides.
+// Every ordinary PostgreSQL database exposes plpgsql in
+// pg_catalog, while a hand-authored current state does not describe it. The
+// ignored extension must not turn the diff into a refusal or extension DDL.
+func TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	currentURL := createDisposableDatabase(c, dbURL, "ptah_extignore_current_"+suffix)
+	devURL := createDisposableDatabase(c, dbURL, "ptah_extignore_dev_"+suffix)
+	seedDatabase(c, currentURL, "CREATE TABLE users (id INTEGER)")
+
+	currentPath := filepath.Join(t.TempDir(), "current.sql")
+	c.Assert(os.WriteFile(currentPath, []byte("CREATE TABLE users (id INTEGER);\n"), 0o600), qt.IsNil)
+	out := runCompatSchemaDiff(c,
+		"--from", "file://"+currentPath,
+		"--to", currentURL,
+		"--dev-url", devURL,
+	)
+
+	c.Assert(out, qt.Not(qt.Contains), "plpgsql")
+	c.Assert(out, qt.Not(qt.Contains), "CREATE EXTENSION")
 }
 
 // TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres

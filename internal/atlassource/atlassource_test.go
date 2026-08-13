@@ -1,6 +1,7 @@
 package atlassource_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -439,6 +440,28 @@ func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
 	err = set.EnsureDevIsolation("sqlite://dev.db")
 
 	c.Assert(err, qt.IsNil)
+}
+
+func TestSetValidateLocalSchemaSourcesRunsBeforeResolution(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet("--to", []string{
+		"file://schema.sql",
+		"file://schema.yaml",
+	}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+	seen := []string{}
+	validationErrors := map[string]error{
+		"schema.yaml": errors.New("YAML refused before resolution"),
+	}
+
+	err = set.ValidateLocalSchemaSources(func(source string) error {
+		base := filepath.Base(source)
+		seen = append(seen, base)
+		return validationErrors[base]
+	})
+
+	c.Assert(err, qt.ErrorMatches, "YAML refused before resolution")
+	c.Assert(seen, qt.DeepEquals, []string{"schema.sql", "schema.yaml"})
 }
 
 func TestPinDialect_DevURLWins(t *testing.T) {
