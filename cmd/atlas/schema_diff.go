@@ -109,6 +109,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaDiff)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatConfigured = formatConfigured || formatValue.Present

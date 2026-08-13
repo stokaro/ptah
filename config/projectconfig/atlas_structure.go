@@ -20,7 +20,7 @@ type atlasBlockStructure struct {
 
 func atlasEnvBodyStructure() atlasBodyStructure {
 	return atlasBodyStructure{
-		attributes:             []string{"dev", "exclude", "for_each", "name", "src", "url"},
+		attributes:             []string{"dev", "exclude", "for_each", "name", "schemas", "src", "url"},
 		allowUnknownAttributes: true,
 		allowUnknownBlocks:     true,
 		blocks: map[string]atlasBlockStructure{
