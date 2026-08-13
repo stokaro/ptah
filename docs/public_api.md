@@ -351,6 +351,13 @@ composition of planning and publication and propagates its context through
 both phases. The returned `generator.MigrationFiles.Files` slice is the
 authoritative list of generated pairs and published paths, in apply order.
 
+`GenerateMigrationOptions.PriorMigrationsFS` carries an immutable,
+already-authorized migration history into shadow verification. The same
+snapshot becomes a publication precondition: `WriteFiles` returns
+`generator.ErrMigrationDirectoryChanged` if the bound output directory no
+longer matches it, so a refreshed integrity file cannot legitimize different
+history.
+
 `migration/safety.RenderJSON` writes a `safety.Report` containing the highest
 risk, destructive verdict, and rendered statement assessments. The native
 `ptah migrations plan --report json` command writes that document to standard
@@ -461,6 +468,9 @@ Atlas filename.
 `FilterCases`, run against an ephemeral or explicit throwaway database, and
 render text, JSON, or HTML reports. See [Declarative database
 testing](testing.md).
+`dbtest.Options.MigrationsFS` supplies one immutable history to every
+`migrate_to` step; nil retains the pathname-based fallback for embedders that
+have not captured a snapshot.
 
 `core/schemasource` executes an explicitly configured program without a shell,
 bounds its runtime and captured output, cleans up descendant processes, and
@@ -527,6 +537,14 @@ without touching the filesystem, so previews cannot drift from what is
 written; the `AtlasCheckpointDirective` it emits is only honored on the file's
 first line. `ResolveAtlasCheckpointVersion` supplies the timestamp version,
 bumped past any newer migration already in the directory.
+
+`CheckpointWriteOptions.AuthorizedMigrationsFS` and the corresponding
+`WriteCheckpointFilesWithOptions` or `WriteAtlasCheckpointFileWithOptions`
+entry point bind publication to the history that produced the checkpoint body.
+The writer returns `generator.ErrMigrationDirectoryChanged` before creating a
+checkpoint, or withdraws the checkpoint before publishing the sum, when the
+rooted destination does not match the authorized expected state. The sum is
+computed from that state rather than from a newly reopened path.
 
 `migration/planner.Planner` exposes only checked planning; malformed
 references, unresolved additions, and target index-namespace conflicts fail

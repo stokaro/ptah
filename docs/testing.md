@@ -127,6 +127,16 @@ ptah migrations test \
 `--root-dir` is required only when a case uses `apply_schema`. A seed step must
 set `dir` unless `--seed-dir` supplies the run-level default.
 
+The migration test command captures `--migrations-dir` once, verifies its
+integrity file when present, and supplies that immutable filesystem to every
+`migrate_to` step. A pathname change during the test cannot switch later steps
+onto bytes that were not checked at command entry.
+
+A `--migrations-dir` that does not exist is an error rather than an empty
+history, so a `migrate_to` step cannot report success having executed nothing.
+The directory is required only when a selected case carries a `migrate_to` step;
+a suite of `apply_schema`, `exec`, `seed` and `assert` cases never reads it.
+
 ## Schema Tests
 
 ```bash
@@ -186,6 +196,9 @@ and `Assertion` values directly, or load YAML with `ParseCases` / `LoadCases`.
 Use `FilterCases` for the same regular-expression selection as `--run`. Call
 `RunMigrationTest` or `RunSchemaTest`; `Options.SeedDir` and
 `SchemaOptions.SeedDir` provide the same run-level seed default as `--seed-dir`.
+`dbtest.Options.MigrationsFS` lets an embedder pass an immutable, already
+authorized history for every `migrate_to` step; when it is nil, the engine opens
+`Options.MigrationsDir` for compatibility with existing callers.
 Render the returned `Report` and check `Report.Failed`.
 
 See [Public Go API](public_api.md) for the compatibility contract and the

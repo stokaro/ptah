@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -232,9 +233,21 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	//
 	// The warning goes to standard error under --json, because a `Warning:`
 	// line on standard output would corrupt the document a caller is parsing.
+	//
+	// The escape-hatch policy is resolved here rather than at the top of the
+	// command for the same reason the gate itself is conditional: status is
+	// outside the always-on integrity class, so a run that was never going to
+	// check anything has no configuration to refuse. It still resolves BEFORE
+	// the one gate it does run, so a malformed value refuses `--verify-sum`
+	// whatever state the directory is in — and status runs a single gate, so
+	// there is no second one that could observe a different value.
 	if opts.verifySum {
+		integrityPolicy, err := migrationintegrity.Resolve()
+		if err != nil {
+			return err
+		}
 		if err := migrationsource.Verify(
-			cmd.ErrOrStderr(), integrityEmitter(cmd, runtime, opts), runtime, source, dirFormat,
+			cmd.ErrOrStderr(), integrityEmitter(cmd, runtime, opts), runtime, source, dirFormat, integrityPolicy,
 			migrationsource.VerifyOptions{RequireSum: true, Verbose: opts.verbose},
 		); err != nil {
 			return err

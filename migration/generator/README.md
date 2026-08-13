@@ -324,6 +324,10 @@ type GenerateMigrationOptions struct {
 
     // ShadowDatabaseURL enables pre-write verification on a disposable database.
     ShadowDatabaseURL string
+
+    // PriorMigrationsFS is the immutable, already-authorized history used by
+    // replay-based verification and enforced again before publication.
+    PriorMigrationsFS fs.FS
 }
 ```
 
@@ -337,6 +341,9 @@ type GenerateMigrationOptions struct {
 - `AllowedOutputRoot`: Project or workspace root the output directory must stay inside (optional). It is opened, not merely compared against: the root, the migration directory and its parent are bound once and every read, create, checksum commit and rollback of the run goes through those handles, so replacing the directory or an ancestor after the path was validated cannot move the write outside the root
 - `CompareOptions`: Schema comparison options (optional)
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
+- `PriorMigrationsFS`: Immutable prior migration history for shadow or replay
+  verification (optional). When set, the verifier executes this filesystem and
+  `WriteFiles` refuses if the bound output directory no longer matches it
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks; it must identify a different live database realm from the target (optional)
 
 ### Bidirectional schema planning

@@ -173,7 +173,7 @@ func TestMigrationPlanBindReportsANonSymlinkDirectoryFailureUnchanged(t *testing
 //
 // //go:build unix because the swap is a symlink replacement.
 func TestMigrationPlanWriteFiles_RefusesDirectoryReplacedBeforePublication(t *testing.T) {
-	const wantErr = `migration directory changed after migration planning: ` +
+	const wantErr = `migration directory changed before publication: ` +
 		`opened directory path changed: .*`
 
 	tests := []struct {

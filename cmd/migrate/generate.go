@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +18,9 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationreplay"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -110,7 +114,172 @@ func validateGenerateIntrospectMode(cmd *cobra.Command) error {
 	return nil
 }
 
+type generatePriorMigrationOptions struct {
+	migrationsDir string
+	dirFormat     string
+	shadowDB      string
+	replay        bool
+	policy        migrationintegrity.Policy
+}
+
+func captureGeneratePriorMigrations(
+	ctx context.Context,
+	notice io.Writer,
+	opts generatePriorMigrationOptions,
+) (fs.FS, migrator.MigrationDirFormat, error) {
+	dirFormat := migrator.MigrationDirFormatPtah
+	if opts.replay {
+		parsed, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+		if err != nil {
+			return nil, "", err
+		}
+		dirFormat = parsed
+	}
+	if opts.replay || strings.TrimSpace(opts.shadowDB) == "" {
+		return nil, dirFormat, nil
+	}
+	priorSnapshot, err := recoverAndCaptureGeneratePriorMigrations(
+		ctx,
+		notice,
+		opts.migrationsDir,
+		dirFormat,
+		opts.policy,
+	)
+	return priorSnapshot, dirFormat, err
+}
+
+// recoverAndCaptureGeneratePriorMigrations settles an interrupted publication
+// and captures the authorized snapshot under one directory lock.
+//
+// The order is the whole point, and it is the same order the replay path holds
+// under its own lock. An interrupted publication leaves artifacts the recorded
+// checksum does not cover, so a gate that ran first would refuse a directory
+// the recovery journal was about to settle — and would refuse it on every
+// retry, because the journal is only ever processed further along the run that
+// the refusal ends. Recovery first, then a snapshot of what recovery left, then
+// the gate over exactly those bytes.
+func recoverAndCaptureGeneratePriorMigrations(
+	ctx context.Context,
+	notice io.Writer,
+	migrationsDir string,
+	dirFormat migrator.MigrationDirFormat,
+	policy migrationintegrity.Policy,
+) (fs.FS, error) {
+	var priorSnapshot fs.FS
+	err := atlasmigrate.WithMigrationDirectoryLock(ctx, migrationsDir, 0, func(context.Context) error {
+		if err := atlasmigrate.RecoverPendingPublicationLocked(migrationsDir); err != nil {
+			return fmt.Errorf("recover migration publication before shadow verification: %w", err)
+		}
+		captured, captureErr := captureAndAuthorizeGeneratePriorMigrations(
+			notice,
+			migrationsDir,
+			dirFormat,
+			policy,
+		)
+		priorSnapshot = captured
+		return captureErr
+	})
+	return priorSnapshot, err
+}
+
+func captureAndAuthorizeGeneratePriorMigrations(
+	notice io.Writer,
+	migrationsDir string,
+	dirFormat migrator.MigrationDirFormat,
+	policy migrationintegrity.Policy,
+) (fs.FS, error) {
+	priorSnapshot, err := migrationsnapshot.CaptureDirectory(migrationsDir)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration directory before replay: %w", err)
+	}
+	if _, err := migrationintegrity.GateWithPolicy(
+		notice, priorSnapshot, dirFormat, policy, migrationintegrity.Options{},
+	); err != nil {
+		return nil, err
+	}
+	return priorSnapshot, nil
+}
+
+// generateReplayOptions carries what the locked replay path needs beyond the
+// generator options it plans with.
+type generateReplayOptions struct {
+	migrationsDir  string
+	devURL         string
+	dirFormat      migrator.MigrationDirFormat
+	connectTimeout time.Duration
+	policy         migrationintegrity.Policy
+}
+
+// planGeneratedMigrationByReplay derives the current state by replaying the
+// migration directory on the disposable --dev-url database, and plans the next
+// migration from the difference between that state and the desired schema.
+//
+// Everything happens under the migration-directory lock, in this order: an
+// interrupted publication left by an earlier run is recovered FIRST, so the
+// snapshot taken next describes a settled directory rather than a half-written
+// one; the snapshot is captured and put through the integrity gate; only then is
+// the dev database connected and those exact bytes replayed. The connection
+// context is derived from the LOCKED context for the same reason — a timeout
+// started before the lock was held would be spent waiting for it.
+//
+// It lives outside migrateGenerateCommand because that function is a linear
+// sequence of flag reads and this is the one branch with an ordering contract
+// worth stating; keeping it inline also pushed the command past the length
+// limit.
+func planGeneratedMigrationByReplay(
+	cmd *cobra.Command,
+	generateOpts generator.GenerateMigrationOptions,
+	opts generateReplayOptions,
+) (*generator.MigrationPlan, error) {
+	var plan *generator.MigrationPlan
+	err := atlasmigrate.WithMigrationDirectoryLock(
+		cmd.Context(),
+		opts.migrationsDir,
+		0,
+		func(lockedCtx context.Context) error {
+			if err := atlasmigrate.RecoverPendingPublicationLocked(opts.migrationsDir); err != nil {
+				return fmt.Errorf("recover migration publication before replay: %w", err)
+			}
+			priorMigrations, err := captureAndAuthorizeGeneratePriorMigrations(
+				cmd.ErrOrStderr(),
+				opts.migrationsDir,
+				opts.dirFormat,
+				opts.policy,
+			)
+			if err != nil {
+				return err
+			}
+			connectCtx, cancelConnect := dbcli.ConnectContext(lockedCtx, opts.connectTimeout)
+			defer cancelConnect()
+			devConn, connectErr := dbschema.ConnectToDatabase(connectCtx, opts.devURL)
+			if connectErr != nil {
+				return fmt.Errorf("connect to --%s: %w", generateDevURLFlag, connectErr)
+			}
+			defer dbschema.CloseAndWarn(devConn)
+			return migrationreplay.WithReplayedSnapshot(
+				lockedCtx,
+				devConn,
+				priorMigrations,
+				opts.dirFormat,
+				func(replayConn *dbschema.DatabaseConnection) error {
+					replayOpts := generateOpts
+					replayOpts.DBConn = replayConn
+					replayOpts.PriorMigrationsFS = priorMigrations
+					var planErr error
+					plan, planErr = generator.PlanMigration(lockedCtx, replayOpts)
+					return planErr
+				},
+			)
+		},
+	)
+	return plan, err
+}
+
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	rootDirs, err := cmd.Flags().GetStringArray(generateRootDirFlag)
 	if err != nil {
 		return err
@@ -264,21 +433,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	defer cancelConnect()
-
-	var devConn *dbschema.DatabaseConnection
-	var dirFormat migrator.MigrationDirFormat
-	if replay {
-		dirFormat, err = migrator.ParseMigrationDirFormat(dirFormatValue)
-		if err != nil {
-			return err
-		}
-		devConn, err = dbschema.ConnectToDatabase(connectCtx, devURL)
-		if err != nil {
-			return fmt.Errorf("connect to --%s: %w", generateDevURLFlag, err)
-		}
-		defer dbschema.CloseAndWarn(devConn)
+	priorMigrations, dirFormat, err := captureGeneratePriorMigrations(
+		cmd.Context(),
+		cmd.ErrOrStderr(),
+		generatePriorMigrationOptions{
+			migrationsDir: migrationsDir,
+			dirFormat:     dirFormatValue,
+			shadowDB:      shadowDB,
+			replay:        replay,
+			policy:        integrityPolicy,
+		},
+	)
+	if err != nil {
+		return err
 	}
 
 	generateOpts := generator.GenerateMigrationOptions{
@@ -291,6 +458,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,
 		ShadowDatabaseURL: shadowDB,
+		PriorMigrationsFS: priorMigrations,
 		SchemaQualifier:   qualifierValue,
 		DiffPolicy: generator.DiffPolicy{
 			SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
@@ -301,32 +469,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	var files *generator.MigrationFiles
 	if replay {
 		var plan *generator.MigrationPlan
-		err = atlasmigrate.WithMigrationDirectoryLock(
-			cmd.Context(),
-			migrationsDir,
-			0,
-			func(lockedCtx context.Context) error {
-				if err := atlasmigrate.RecoverPendingPublicationLocked(migrationsDir); err != nil {
-					return fmt.Errorf("recover migration publication before replay: %w", err)
-				}
-				return migrationreplay.WithReplayedDirectory(
-					lockedCtx,
-					devConn,
-					migrationsDir,
-					dirFormat,
-					func(replayConn *dbschema.DatabaseConnection) error {
-						replayOpts := generateOpts
-						replayOpts.DBConn = replayConn
-						plan, err = generator.PlanMigration(lockedCtx, replayOpts)
-						return err
-					},
-				)
-			},
-		)
+		plan, err = planGeneratedMigrationByReplay(cmd, generateOpts, generateReplayOptions{
+			migrationsDir:  migrationsDir,
+			devURL:         devURL,
+			dirFormat:      dirFormat,
+			connectTimeout: connectTimeout,
+			policy:         integrityPolicy,
+		})
 		if err == nil && plan != nil {
 			files, err = plan.WriteFilesContext(cmd.Context())
 		}
 	} else {
+		connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+		defer cancelConnect()
 		files, err = generator.GenerateMigration(connectCtx, generateOpts)
 	}
 	if err != nil {
@@ -335,12 +490,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if files == nil {
 		return nil
 	}
-
-	writeGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
+	reportGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
 	return nil
 }
 
-func writeGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
+func reportGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)

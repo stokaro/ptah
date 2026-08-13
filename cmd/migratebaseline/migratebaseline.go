@@ -6,7 +6,7 @@ package migratebaseline
 import (
 	"context"
 	"fmt"
-	"os"
+	"io/fs"
 	"strconv"
 	"time"
 
@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -96,6 +97,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 
 func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error {
 	ctx := cmd.Context()
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	schemas := dbcli.ParseSchemas(opts.schemas)
 
 	if opts.dbURL == "" {
@@ -120,7 +125,13 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	// database already contains; deriving that claim from files that do not
 	// match the checksum recorded beside them records the wrong history under
 	// the right version numbers.
-	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), os.DirFS(opts.migrationsDir), dirFormat); err != nil {
+	migrationsFS, err := migrationsnapshot.CaptureExistingDirectory(opts.migrationsDir)
+	if err != nil {
+		return fmt.Errorf("capture migration directory: %w", err)
+	}
+	if _, err := migrationintegrity.GateWithPolicy(
+		cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+	); err != nil {
 		return err
 	}
 	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
@@ -131,7 +142,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
 	}
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(opts.migrationsDir), providerOpts...)
+	provider, err := migrator.NewFSMigrationProvider(migrationsFS, providerOpts...)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
@@ -180,6 +191,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		connectTimeout: connectTimeout,
 		schemas:        schemas,
 		migrationsDir:  opts.migrationsDir,
+		migrationsFS:   migrationsFS,
 		providerOpts:   providerOpts,
 	}); err != nil {
 		return err
@@ -202,6 +214,7 @@ type baselineVerifyOptions struct {
 	connectTimeout time.Duration
 	schemas        []string
 	migrationsDir  string
+	migrationsFS   fs.FS
 	providerOpts   []migrator.FSProviderOption
 }
 
@@ -212,6 +225,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 			ShadowDatabaseURL: opts.shadowDB,
 			TargetConn:        opts.conn,
 			MigrationsDir:     opts.migrationsDir,
+			MigrationsFS:      opts.migrationsFS,
 			Version:           opts.version,
 			Dialect:           opts.conn.Info().Dialect,
 			Capabilities:      opts.conn.Info().Capabilities,

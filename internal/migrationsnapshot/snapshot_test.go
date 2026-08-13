@@ -2,6 +2,8 @@ package migrationsnapshot_test
 
 import (
 	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"testing/fstest"
@@ -10,6 +12,63 @@ import (
 
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 )
+
+func TestCaptureDirectory_MissingRootIsEmptyHistory(t *testing.T) {
+	c := qt.New(t)
+
+	snapshot, err := migrationsnapshot.CaptureDirectory(filepath.Join(t.TempDir(), "missing"))
+
+	c.Assert(err, qt.IsNil)
+	entries, err := fs.ReadDir(snapshot, ".")
+	c.Assert(err, qt.IsNil)
+	c.Assert(entries, qt.HasLen, 0)
+}
+
+// TestCaptureExistingDirectory_MissingRootIsAnError is the other half of
+// TestCaptureDirectory_MissingRootIsEmptyHistory, and the pair is the point:
+// the two captures answer the same missing path differently, so a verb picks
+// the one that matches what an absent directory means to it.
+//
+// A verb that CREATES the directory it publishes into starts from no history; a
+// verb that READS one has been handed a path that is not there.
+func TestCaptureExistingDirectory_MissingRootIsAnError(t *testing.T) {
+	c := qt.New(t)
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	_, err := migrationsnapshot.CaptureExistingDirectory(missing)
+
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(err.Error(), qt.Contains, "read migration directory "+missing)
+}
+
+func TestCaptureExistingDirectory_HappyPathReadsThePresentDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+
+	snapshot, err := migrationsnapshot.CaptureExistingDirectory(dir)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(fstest.TestFS(snapshot, "1.sql"), qt.IsNil)
+}
+
+func TestRequireExistingDirectory_MissingRootIsAnError(t *testing.T) {
+	c := qt.New(t)
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	err := migrationsnapshot.RequireExistingDirectory(missing)
+
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(err.Error(), qt.Contains, "read migration directory "+missing)
+}
+
+func TestRequireExistingDirectory_HappyPathAcceptsAnEmptyDirectory(t *testing.T) {
+	c := qt.New(t)
+
+	err := migrationsnapshot.RequireExistingDirectory(t.TempDir())
+
+	c.Assert(err, qt.IsNil)
+}
 
 func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {
 	c := qt.New(t)

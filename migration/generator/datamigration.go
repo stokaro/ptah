@@ -1,6 +1,8 @@
 package generator
 
 import (
+	"io/fs"
+
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -40,5 +42,24 @@ func writeMigrationPair(
 	description, upSQL, downSQL, kind string,
 	nameFor func(version int64, description, direction string) string,
 ) (upPath, downPath string, err error) {
-	return writeRootedMigrationPair(outputDir, version, description, upSQL, downSQL, kind, nameFor)
+	return writeMigrationPairAuthorized(outputDir, version, description, upSQL, downSQL, kind, nameFor, nil)
+}
+
+func writeMigrationPairAuthorized(
+	outputDir string,
+	version int64,
+	description, upSQL, downSQL, kind string,
+	nameFor func(version int64, description, direction string) string,
+	authorizedMigrationsFS fs.FS,
+) (upPath, downPath string, err error) {
+	return writeRootedMigrationPair(
+		outputDir,
+		version,
+		description,
+		upSQL,
+		downSQL,
+		kind,
+		nameFor,
+		authorizedMigrationsFS,
+	)
 }

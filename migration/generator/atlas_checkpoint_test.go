@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -106,6 +107,31 @@ func TestWriteAtlasCheckpointFile_WritesFileAndSum(t *testing.T) {
 
 	_, err = os.Stat(filepath.Join(dir, "ptah.sum"))
 	c.Assert(os.IsNotExist(err), qt.IsTrue)
+}
+
+func TestWriteAtlasCheckpointFileWithOptions_RefusesChangedAuthorizedHistory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	prior := filepath.Join(dir, "20250801000001_init.sql")
+	c.Assert(os.WriteFile(prior, []byte("CREATE TABLE original (id integer);\n"), 0o600), qt.IsNil)
+	authorized, err := migrationsnapshot.CaptureDirectory(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(prior, []byte("CREATE TABLE tampered (id integer);\n"), 0o600), qt.IsNil)
+
+	_, err = generator.WriteAtlasCheckpointFileWithOptions(
+		dir,
+		20250801000003,
+		"snapshot",
+		"CREATE TABLE original (id integer);",
+		generator.CheckpointWriteOptions{AuthorizedMigrationsFS: authorized},
+	)
+
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
+	matches, globErr := filepath.Glob(filepath.Join(dir, "*_snapshot.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
+	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 func TestWriteAtlasCheckpointFile_RollsBackWhenTheSumCannotBeWritten(t *testing.T) {

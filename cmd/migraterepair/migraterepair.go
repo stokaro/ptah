@@ -83,6 +83,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -131,7 +135,9 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	// the same hazard as `down`, with the operator's attention already
 	// elsewhere.
 	if resumeFrom > 0 {
-		if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), source.FileSystem, dirFormat); err != nil {
+		if _, err := migrationintegrity.GateWithPolicy(
+			cmd.ErrOrStderr(), source.FileSystem, dirFormat, integrityPolicy, migrationintegrity.Options{},
+		); err != nil {
 			return err
 		}
 	}

@@ -196,6 +196,12 @@ The shadow database must be an ephemeral database of the same engine as the
 target and must identify a different live database realm. Never point it at a
 real environment.
 
+Before shadow verification, Ptah captures the existing migration directory
+once and checks `ptah.sum` when the directory is hashed. The shadow run replays
+that snapshot rather than reopening the path. Publication then compares the
+bound output directory with the authorized snapshot; if history changed during
+generation, no migration or refreshed checksum is written.
+
 ## Generate without the target database (replay)
 
 `--replay` derives the current state without any access to the target
@@ -218,6 +224,15 @@ of truth for the current state. `--dir-format` selects the replayed
 directory's layout (`auto`, `ptah`, or `atlas`), and `--qualifier` prefixes
 every object in the generated statements with a custom schema qualifier for
 single-schema plans on dialects with schema-qualified names.
+
+Replay mode uses the same integrity boundary as shadow verification: one
+captured snapshot is checked, replayed, and retained as the publication
+precondition. This prevents a file changed after replay from being folded into
+the newly generated `ptah.sum` or `atlas.sum` as if the changed bytes had
+produced the plan. Under the migration-directory lock, Ptah first recovers an
+interrupted prior publication and only then captures and authorizes the state
+that will be replayed. A recoverable journal therefore cannot leave temporary
+files that make the pre-replay integrity check fail forever.
 
 ## Write a migration by hand
 
