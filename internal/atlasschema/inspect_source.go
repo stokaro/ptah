@@ -87,6 +87,17 @@ type InspectSourceOptions struct {
 	// CompatibilityHCLFraming is the Atlas-compatible surface's independent
 	// single-document HCL framing policy; see [InspectOptions].
 	CompatibilityHCLFraming bool
+	// DevURLDiagnostic lets the Atlas-compatible surface answer a --dev-url in
+	// this package's own words before the shared resolution reaches it, and is
+	// nil on every native path.
+	//
+	// It exists because the two surfaces owe different sentences for the same
+	// value: the community binary reports a driver problem, and native Ptah
+	// names the flag and quotes what the operator actually typed. Consulted here
+	// rather than at the caller because only this function knows the source
+	// turned out to need a dev database at all -- a database --url never reaches
+	// it, which is the scope the community binary was measured to use.
+	DevURLDiagnostic func(string) error
 }
 
 // InspectSource classifies the --url inspection source and renders it with
@@ -138,6 +149,28 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 	return inspectOnDev(ctx, set, opts, inspectOpts)
 }
 
+// refuseInspectDevURL answers a dev database URL this inspection cannot use.
+//
+// The three verdicts are ordered as measured: an absent value first, then the
+// docker form Ptah does not start, then whatever the calling surface wants to
+// say about the remainder. Only the caller can supply that last one, because
+// the two surfaces owe different sentences for the same value; see
+// [InspectSourceOptions.DevURLDiagnostic].
+func refuseInspectDevURL(devURL string, surfaceDiagnostic func(string) error) error {
+	if devURL == "" {
+		// Atlas parity: `atlas schema inspect -u file://...` without a dev
+		// database fails with exactly this message.
+		return errors.New("--dev-url cannot be empty")
+	}
+	if isDockerSimulationURL(devURL) {
+		return errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema inspection")
+	}
+	if surfaceDiagnostic == nil {
+		return nil
+	}
+	return surfaceDiagnostic(devURL)
+}
+
 // inspectOnDev evaluates a local-file or migration-directory inspection
 // source on the dev database and renders the introspected result.
 func inspectOnDev(
@@ -147,13 +180,8 @@ func inspectOnDev(
 	inspectOpts InspectOptions,
 ) (string, error) {
 	devURL := strings.TrimSpace(opts.DevURL)
-	if devURL == "" {
-		// Atlas parity: `atlas schema inspect -u file://...` without a dev
-		// database fails with exactly this message.
-		return "", errors.New("--dev-url cannot be empty")
-	}
-	if isDockerSimulationURL(devURL) {
-		return "", errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema inspection")
+	if err := refuseInspectDevURL(devURL, opts.DevURLDiagnostic); err != nil {
+		return "", err
 	}
 	dialect, _, err := atlassource.PinDialect(devURL, set)
 	if err != nil {

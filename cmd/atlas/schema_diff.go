@@ -191,6 +191,17 @@ func validateAtlasSchemaDiffOptions(
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
 	}
+	// A `--dev-url` naming no driver is refused before the sources are
+	// classified, which is where the pinned community binary v1.3.0 refuses it:
+	// measured on 2026-08-13, this verb answers `sql/sqlclient: unknown driver
+	// "notadriver"` for both database and local-file sources, so unlike `schema
+	// inspect` the check is not scoped to what the sources turned out to be. An
+	// empty value is left to [atlassource.Set.EnsureDevDatabase] below, whose
+	// own refusal is scoped to the sources that need a dev database -- both
+	// binaries exit 0 on two database sources with no `--dev-url` at all.
+	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+		return err
+	}
 	// Malformed or unsupported --include selectors fail before any database
 	// is contacted.
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {

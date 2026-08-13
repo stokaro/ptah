@@ -221,6 +221,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
 		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
 		CompatibilityHCLFraming:   true,
+		DevURLDiagnostic:          atlasDevURLDriverDiagnostic,
 		Vars:                      schemaVars,
 	})
 	if err != nil {

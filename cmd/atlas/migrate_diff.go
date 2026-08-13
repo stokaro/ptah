@@ -28,8 +28,15 @@ import (
 )
 
 type atlasMigrateDiffOptions struct {
-	toURLs      []string
-	devURL      string
+	toURLs []string
+	devURL string
+	// devURLGiven records whether the operator supplied a dev database URL by
+	// either spelling, which is a different question from whether devURL is
+	// empty. The pinned community binary refuses an absent `--dev-url` with
+	// cobra's required-flag wording and answers an explicitly empty one with the
+	// client layer's missing-driver verdict, so the two rows need both facts.
+	// See [requireAtlasDevURL].
+	devURLGiven bool
 	dirURL      string
 	dirFormat   string
 	format      string
@@ -166,6 +173,10 @@ func runAtlasMigrateDiff(
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	// Captured after the atlas.hcl merge, because an env supplying `dev` counts
+	// as having given the flag: the pinned binary runs such an invocation rather
+	// than refusing it.
+	opts.devURLGiven = atlasDevURLGiven(cmd, opts.devURL)
 	// This verb creates the directory it was pointed at, so it requires the
 	// scheme the community binary requires: `migrate diff demo --dir mig2` exits
 	// 1 there with `missing scheme for dir url. Did you mean "file://mig2"?` and
@@ -500,8 +511,14 @@ func prepareAtlasMigrateDiffSource(
 	if len(opts.toURLs) == 0 {
 		return atlassource.Set{}, fmt.Errorf("--to is required")
 	}
-	if strings.TrimSpace(opts.devURL) == "" {
-		return atlassource.Set{}, fmt.Errorf("--dev-url is required")
+	// The community wording, and the absent/empty split behind it, are owned by
+	// [requireAtlasDevURL]: an absent flag is refused as a required flag, an
+	// explicitly empty one is opened and answered `sql/sqlclient: missing
+	// driver`, and a scheme naming no driver is named. Measured on the pinned
+	// binary v1.3.0 on 2026-08-13.
+	devURL := atlasDevURLInput{value: opts.devURL, given: opts.devURLGiven}
+	if err := devURL.refuse(); err != nil {
+		return atlassource.Set{}, err
 	}
 	if opts.edit && !atlasmigrate.ReadsNativeAtlasDir(dirFormat) {
 		// `migrate new` draws the same line, for the same reason: the editor
