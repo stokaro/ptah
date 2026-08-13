@@ -2,6 +2,7 @@ package atlasschema_test
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,6 +35,26 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
+}
+
+func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
+	c := qt.New(t)
+	dbPath := seedInspectSQLiteDB(c)
+	diagnosticCalled := false
+
+	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		URL:    "sqlite://" + dbPath,
+		DevURL: "notadriver://x",
+		Format: "hcl",
+		DevURLDiagnostic: func(string) error {
+			diagnosticCalled = true
+			return errors.New("unexpected compat diagnostic")
+		},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "notadriver://x"`)
+	c.Assert(rendered, qt.Equals, "")
+	c.Assert(diagnosticCalled, qt.IsFalse)
 }
 
 // TestInspectSource_LocalSQLFileOnDev mirrors the pinned Atlas
