@@ -76,6 +76,11 @@ func DefaultRules() []Rule {
 }
 
 func LintSource(source Source, opts Options) ([]Finding, error) {
+	caps, err := effectiveCapabilities(opts)
+	if err != nil {
+		return nil, err
+	}
+
 	var findings []Finding
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
@@ -86,7 +91,7 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 			findings = append(findings, unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset))
 			continue
 		}
-		statementFindings, err := lintParsedStatement(source, statement, opts)
+		statementFindings, err := lintParsedStatement(source, statement, opts, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -95,14 +100,18 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 	return findings, nil
 }
 
-func effectiveCapabilities(opts Options) capability.Capabilities {
+// effectiveCapabilities resolves once per source rather than once per
+// statement, and refuses a version string that names no server instead of
+// planning with the dialect default under that version's name.
+func effectiveCapabilities(opts Options) (capability.Capabilities, error) {
 	if opts.Capabilities != nil {
-		return opts.Capabilities
+		return opts.Capabilities, nil
 	}
-	if opts.Version != "" {
-		return capability.ForServerVersion(opts.Dialect, opts.Version)
+	target, err := ResolveTargetVersion(opts.Dialect, opts.Version)
+	if err != nil {
+		return nil, err
 	}
-	return capability.ForDialect(opts.Dialect)
+	return target.Capabilities, nil
 }
 
 type sourceStatement struct {
@@ -140,8 +149,12 @@ func unsupportedStatementFinding(source Source, statement sourceStatement, opts 
 	}
 }
 
-func lintParsedStatement(source Source, statement sourceStatement, opts Options) ([]Finding, error) {
-	caps := effectiveCapabilities(opts)
+func lintParsedStatement(
+	source Source,
+	statement sourceStatement,
+	opts Options,
+	caps capability.Capabilities,
+) ([]Finding, error) {
 	stmtList, err := parser.NewParser(statementParserSQL(statement.sql), parserOptions(opts, caps)...).Parse()
 	if err != nil {
 		return []Finding{parseErrorFinding(source, statement, opts, err)}, nil

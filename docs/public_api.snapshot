@@ -4946,6 +4946,26 @@ type VersionResolution struct {
     // NewestMeasured names the newest measured version line for the dialect,
     // for example "26.7" or "26.2". It is empty for dialects with no ladder.
     NewestMeasured string
+    // Recognized is false when the string named no server at all: the
+    // resolver found neither a product banner it answers from directly nor a
+    // numeric version its dialect's ladder could read, so the preset it
+    // returned was chosen without consulting the string.
+    //
+    // It is a separate field because the other three cannot express it.
+    // Measured on every dialect this package knows: an unreadable string on a
+    // laddered dialect (postgres "not-a-version") reports VersionSpecific
+    // false, Saturated false and an empty NewestMeasured — and so does a
+    // perfectly good version on a dialect with no ladder (sqlite "3.45.0",
+    // sqlserver "16.0.4025.1", clickhouse "24.8.4.13"). The two are opposite
+    // answers to "was the operator's string usable" and were indistinguishable
+    // before this field existed. internal/capabilityprobe.Refinement records
+    // the same collision from the other side.
+    //
+    // Recognized false implies VersionSpecific false; a caller that must
+    // refuse an unusable string therefore reads this field alone. A caller
+    // holding a live banner should keep ignoring it: SELECT version() is not
+    // a typo, and degrading quietly is right there.
+    Recognized bool
 }
     VersionResolution reports how a server version string was mapped onto a
     capability preset.

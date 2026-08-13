@@ -962,6 +962,26 @@ type VersionResolution struct {
 	// NewestMeasured names the newest measured version line for the dialect,
 	// for example "26.7" or "26.2". It is empty for dialects with no ladder.
 	NewestMeasured string
+	// Recognized is false when the string named no server at all: the
+	// resolver found neither a product banner it answers from directly nor a
+	// numeric version its dialect's ladder could read, so the preset it
+	// returned was chosen without consulting the string.
+	//
+	// It is a separate field because the other three cannot express it.
+	// Measured on every dialect this package knows: an unreadable string on a
+	// laddered dialect (postgres "not-a-version") reports VersionSpecific
+	// false, Saturated false and an empty NewestMeasured — and so does a
+	// perfectly good version on a dialect with no ladder (sqlite "3.45.0",
+	// sqlserver "16.0.4025.1", clickhouse "24.8.4.13"). The two are opposite
+	// answers to "was the operator's string usable" and were indistinguishable
+	// before this field existed. internal/capabilityprobe.Refinement records
+	// the same collision from the other side.
+	//
+	// Recognized false implies VersionSpecific false; a caller that must
+	// refuse an unusable string therefore reads this field alone. A caller
+	// holding a live banner should keep ignoring it: SELECT version() is not
+	// a typo, and degrading quietly is right there.
+	Recognized bool
 }
 
 // ForServerVersion refines ForDialect using a live server version string —
@@ -971,6 +991,11 @@ type VersionResolution struct {
 // "5.5.5-10.11.6-MariaDB" (the replication-protocol prefix MariaDB reports
 // over the MySQL protocol) and "PostgreSQL 16.3 (Debian ...)". When the
 // version cannot be parsed, the dialect's default preset is returned.
+//
+// The fallback is silent by design, which is correct for a live banner and
+// wrong for a string an operator typed. A caller holding operator input must
+// use ResolveServerVersion and refuse a resolution whose Recognized is false,
+// because nothing in the returned Capabilities says the string was ignored.
 func ForServerVersion(dialect, version string) Capabilities {
 	return ResolveServerVersion(dialect, version).Capabilities
 }
@@ -992,9 +1017,9 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 // ResolveServerVersion is ForServerVersionResult with the saturation answer
 // attached. It selects exactly the same preset and reports exactly the same
 // VersionSpecific value; Saturated and NewestMeasured say why a saturated
-// version is not version-specific and which line it was planned as. See
-// VersionResolution for what saturation means and which dialects can report
-// it.
+// version is not version-specific and which line it was planned as, and
+// Recognized says whether the string was read at all. See VersionResolution
+// for what saturation means and which dialects can report it.
 func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
 	versionLower := strings.ToLower(version)
@@ -1003,9 +1028,12 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 	case strings.Contains(versionLower, "cockroachdb"):
 		return cockroachDBResolution(version)
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
-		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true}
+		// The banner alone is the whole answer for these two: no version is
+		// consulted, so the string was recognized even though nothing in it
+		// was parsed as a number.
+		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true, Recognized: true}
 	case strings.Contains(versionLower, "spanner"):
-		return VersionResolution{Capabilities: SpannerPostgres(), VersionSpecific: true}
+		return VersionResolution{Capabilities: SpannerPostgres(), VersionSpecific: true, Recognized: true}
 	}
 
 	// MariaDB announces itself in the version string even when connected via
@@ -1016,6 +1044,8 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 
 	v, ok := parseVersion(version)
 	if !ok {
+		// Recognized stays false: the preset below is ForDialect's, picked
+		// without reading anything out of the string.
 		return VersionResolution{Capabilities: ForDialect(dialect)}
 	}
 
@@ -1027,7 +1057,9 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 	case platform.Postgres:
 		return postgresResolution(v)
 	default:
-		return VersionResolution{Capabilities: ForDialect(dialect)}
+		// The version parsed; this dialect simply has no ladder to spend it
+		// on. That is not the operator's mistake, so it is recognized.
+		return VersionResolution{Capabilities: ForDialect(dialect), Recognized: true}
 	}
 }
 
@@ -1047,6 +1079,8 @@ func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool
 		VersionSpecific: !saturated,
 		Saturated:       saturated,
 		NewestMeasured:  measuredLine(newestMeasuredMajor),
+		// Only reached with a parsed version in hand.
+		Recognized: true,
 	}
 }
 
@@ -1058,6 +1092,10 @@ func mysqlResolution(v serverVersion) VersionResolution {
 func mariaDBResolution(version string) VersionResolution {
 	v, ok := parseVersion(strings.TrimPrefix(version, mariaDBReplicationPrefix))
 	if !ok {
+		// The banner said MariaDB but carried no version, so the ladder was
+		// not consulted and mariaDBForVersion returned its own fallback.
+		// Recognized stays false for the same reason it does on any other
+		// laddered dialect: no version was read.
 		return VersionResolution{
 			Capabilities:   mariaDBForVersion(version),
 			NewestMeasured: capabilityline.MariaDB12,
@@ -1086,6 +1124,8 @@ func measuredMinorLineResolution(
 		}),
 		Saturated:      compareServerVersion(v, newest) > 0,
 		NewestMeasured: newestLine,
+		// Only reached with a parsed version in hand.
+		Recognized: true,
 	}
 }
 
@@ -1096,6 +1136,8 @@ func postgresResolution(v serverVersion) VersionResolution {
 func cockroachDBResolution(version string) VersionResolution {
 	v, ok := parseVersion(version)
 	if !ok {
+		// A CockroachDB banner with no version in it. The ladder was not
+		// consulted, so Recognized stays false.
 		return VersionResolution{Capabilities: CockroachDB26()}
 	}
 	newest, _ := parseVersion(capabilityline.CockroachDB26)
@@ -1105,6 +1147,7 @@ func cockroachDBResolution(version string) VersionResolution {
 		VersionSpecific: cockroachDBMeasuredLine(v),
 		Saturated:       saturated,
 		NewestMeasured:  capabilityline.CockroachDB26,
+		Recognized:      true,
 	}
 }
 
