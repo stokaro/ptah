@@ -44,7 +44,13 @@ services:
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ptah_user", "-pptah_password"]
+      # mariadb-admin, not mysqladmin: MariaDB dropped the mysqladmin binary by
+      # 12.x, so the older spelling fails with "executable file not found in
+      # $PATH" and the container never reports healthy even though the server is
+      # accepting connections. 10.11 ships both, so this spelling works on every
+      # line in the version matrix. The MySQL service above keeps mysqladmin --
+      # the MySQL image has no mariadb-admin.
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "ptah_user", "-pptah_password"]
       interval: 5s
       timeout: 5s
       retries: 5
