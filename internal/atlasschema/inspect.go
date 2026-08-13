@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -18,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
@@ -225,15 +227,12 @@ func reportOmittedVirtualTables(
 	output atlasreport.SchemaInspectOutput,
 	opts InspectOptions,
 ) error {
-	virtual := sqlitevirtual.Tables(schema)
-	if len(virtual) == 0 {
-		return nil
-	}
-	if renderingCarriesVirtualTables(output) {
+	omitted := virtualTablesTheRenderingDropped(schema, output)
+	if len(omitted) == 0 {
 		return nil
 	}
 
-	names := sqlitevirtual.Names(virtual)
+	names := sqlitevirtual.Names(omitted)
 	if opts.ValidateRenderedVirtualTables != nil {
 		if err := opts.ValidateRenderedVirtualTables(names); err != nil {
 			return err
@@ -253,14 +252,63 @@ func reportOmittedVirtualTables(
 	return nil
 }
 
-// renderingCarriesVirtualTables reports whether anything the render produced --
-// the printed text or any file it planned -- holds a CREATE VIRTUAL TABLE.
-func renderingCarriesVirtualTables(output atlasreport.SchemaInspectOutput) bool {
-	if strings.Contains(strings.ToUpper(output.Text), "CREATE VIRTUAL TABLE") {
-		return true
+// virtualTablesTheRenderingDropped returns the virtual tables whose own
+// declaration is absent from everything the render produced.
+//
+// It is asked per table, and per table it looks for THAT table's statement --
+// the keyword followed, before the module clause, by the table's quoted name.
+// Testing for the bare keyword anywhere in the output was wrong in the
+// direction that suppresses the answer: a virtual table literally named
+// `CREATE VIRTUAL TABLE` renders in HCL as `table "CREATE VIRTUAL TABLE"`,
+// whose text contains the keyword while the document still carries no module
+// declaration at all.
+//
+// Both halves of what the render produced count. A `split | write` template
+// leaves the printed text empty and puts the whole document in the planned
+// files.
+func virtualTablesTheRenderingDropped(
+	schema *dbschematypes.DBSchema,
+	output atlasreport.SchemaInspectOutput,
+) []sqlitevirtual.Table {
+	virtual := sqlitevirtual.Tables(schema)
+	if len(virtual) == 0 {
+		return nil
 	}
+
+	rendered := []string{strings.ToUpper(output.Text)}
 	for _, file := range output.Files {
-		if strings.Contains(strings.ToUpper(file.Data), "CREATE VIRTUAL TABLE") {
+		rendered = append(rendered, strings.ToUpper(file.Data))
+	}
+
+	var omitted []sqlitevirtual.Table
+	for _, table := range virtual {
+		if !declarationRendered(rendered, table) {
+			omitted = append(omitted, table)
+		}
+	}
+	return omitted
+}
+
+// declarationRendered reports whether one table's module declaration appears in
+// any of the rendered documents.
+//
+// The needle is the table's quoted name joined to its USING clause, which is
+// the shape the renderer emits and the shape no other construct produces. Two
+// looser rules were wrong on a table literally named `CREATE VIRTUAL TABLE`:
+// searching for the bare keyword matched the HCL block `table "CREATE VIRTUAL
+// TABLE"` and suppressed a real loss, and splitting the document on the keyword
+// cut that table's own name in half and reported a loss for the SQL rendering
+// that carried it. Joining the name to USING has neither failure, because HCL
+// and JSON emit no USING clause at all.
+//
+// A schema-qualified reference -- `"aux"."docs" USING fts5` -- still contains
+// the table's own quoted name immediately before the clause.
+func declarationRendered(rendered []string, table sqlitevirtual.Table) bool {
+	needle := strings.ToUpper(
+		sqlident.Quote(platform.SQLite, table.Name) + " USING " + table.Module,
+	)
+	for _, document := range rendered {
+		if strings.Contains(document, needle) {
 			return true
 		}
 	}

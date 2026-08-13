@@ -33,7 +33,9 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 		name           string
 		setup          []string
 		format         string
+		exclude        []string
 		wantDiagnostic []string
+		wantAbsent     []string
 		wantSilent     bool
 	}{
 		{
@@ -111,6 +113,41 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			wantDiagnostic: []string{`"docs" (module fts5)`},
 		},
 		{
+			// The adversarial name. A check for the bare keyword anywhere in the
+			// output matched the HCL block `table "CREATE VIRTUAL TABLE"` and
+			// suppressed a real loss.
+			name: "a table named after the keyword is still a loss in HCL",
+			setup: []string{
+				`CREATE VIRTUAL TABLE "CREATE VIRTUAL TABLE" USING fts5(t)`,
+			},
+			format:         "hcl",
+			wantDiagnostic: []string{`"CREATE VIRTUAL TABLE" (module fts5)`},
+		},
+		{
+			// The other half, and the one a keyword-splitting check got wrong:
+			// the SQL rendering does carry this table's declaration.
+			name: "a table named after the keyword is carried by SQL",
+			setup: []string{
+				`CREATE VIRTUAL TABLE "CREATE VIRTUAL TABLE" USING fts5(t)`,
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// Per table, not all-or-nothing. Both are virtual, one is scoped
+			// out of the rendered schema, and only the one that is actually in
+			// the document and actually lost gets named.
+			name: "only the table the rendering dropped is named",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+				`CREATE VIRTUAL TABLE geo USING rtree(id, x0, x1)`,
+			},
+			format:         "hcl",
+			exclude:        []string{"docs"},
+			wantDiagnostic: []string{`"geo" (module rtree)`},
+			wantAbsent:     []string{`"docs"`},
+		},
+		{
 			name: "a database with no virtual table reports nothing",
 			setup: []string{
 				`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
@@ -127,6 +164,7 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
 			},
 			format:     "hcl",
+			exclude:    []string{"docs"},
 			wantSilent: true,
 		},
 	}
@@ -141,8 +179,11 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			t.Chdir(t.TempDir())
 
 			var diagnostics bytes.Buffer
-			opts := atlasschema.InspectOptions{Format: tt.format, Diagnostics: &diagnostics}
-			opts.Exclude = excludeForVirtualTableCase(tt.name)
+			opts := atlasschema.InspectOptions{
+				Format:      tt.format,
+				Diagnostics: &diagnostics,
+				Exclude:     tt.exclude,
+			}
 
 			_, err := atlasschema.Inspect(context.Background(), conn, opts)
 
@@ -150,6 +191,9 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			c.Assert(diagnostics.String() == "", qt.Equals, tt.wantSilent)
 			for _, fragment := range tt.wantDiagnostic {
 				c.Assert(diagnostics.String(), qt.Contains, fragment)
+			}
+			for _, fragment := range tt.wantAbsent {
+				c.Assert(diagnostics.String(), qt.Not(qt.Contains), fragment)
 			}
 		})
 	}
@@ -225,15 +269,6 @@ func TestInspectRefusesAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 // no error are the ones that prove the hook is not asked.
 func refuseAnyVirtualTable(names []string) error {
 	return fmt.Errorf("strict refusal: %v", names)
-}
-
-// excludeForVirtualTableCase supplies the one case that needs a selector,
-// keeping the table free of a column every other row would leave empty.
-func excludeForVirtualTableCase(name string) []string {
-	if name == "an excluded virtual table reports nothing" {
-		return []string{"docs"}
-	}
-	return nil
 }
 
 func virtualTableFixture(c *qt.C, dir string, statements []string) string {

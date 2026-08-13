@@ -91,6 +91,24 @@ func DropAllowed() (bool, error) {
 	return allowDrop.Resolve()
 }
 
+// ValidateToggle resolves [AllowDropEnvVar] for a comparison on this dialect,
+// and nothing else.
+//
+// It exists because [ValidateComparison] needs both scoped schemas, which a
+// caller only has after selection has run -- and selection can return first. A
+// `schema diff` whose --include matched neither side returned before the
+// variable was ever parsed, so a malformed value stayed dormant on exactly the
+// runs an operator is already debugging. Callers resolve it as soon as the
+// dialect is known; ValidateComparison resolves it again, which is free and
+// keeps the direct caller honest.
+func ValidateToggle(dialect string) error {
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return nil
+	}
+	_, err := DropAllowed()
+	return err
+}
+
 // Table is one live virtual table and the module that owns it.
 type Table struct {
 	Schema string

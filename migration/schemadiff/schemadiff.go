@@ -68,6 +68,12 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.Dialect = info.Dialect
+	// Resolved before any of the validations below can return, so a malformed
+	// drop toggle is reported on every SQLite comparison rather than only the
+	// ones that get far enough to classify a virtual table (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
+		return nil, nil, err
+	}
 	// A reserved PostgreSQL role is in neither DBSchema.Roles nor
 	// DBSchema.RolesOutOfScope, so comparing it would read it as absent and
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration

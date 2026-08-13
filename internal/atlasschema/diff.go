@@ -120,6 +120,12 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
+	// Resolved before selection can return: an --include that matched neither
+	// side exits below, and a malformed drop toggle must not survive that exit
+	// unreported. See stokaro/ptah#1028.
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
 	fromSide, toSide := scopeDiffStates(fromState, toState, scope, dialect)
 	if fromSide.err != nil {
 		return atlasreport.SchemaDiff{}, fromSide.err
