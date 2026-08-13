@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/generator"
@@ -240,6 +241,18 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	migrationsFS := source.FileSystem
 	migrationsDir = source.Display
 	dirFormat = source.DirFormat
+
+	// The integrity gate runs before the database connection, before the
+	// confirmation prompt, and before any rollback SQL is read: a run that is
+	// going to refuse must not first ask the operator to type YES, and must not
+	// hold a connection while it decides. `migrations up` has verified here
+	// since stokaro/ptah#955; `down` did not, so a rewritten `_init.down.sql`
+	// under a stale ptah.sum executed at exit 0 while `up` on the same
+	// directory exited 2.
+	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), migrationsFS, dirFormat); err != nil {
+		return err
+	}
+
 	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err

@@ -16,10 +16,35 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 )
 
+// failingRollbackSQL is a down migration that cannot succeed, used by the tests
+// that assert how a failing rollback is reported.
+const failingRollbackSQL = "DROP TABLE no_such_table;"
+
 // writeMigrateDownFixture fills migrationsDir with two Atlas-format
 // migrations plus ptah-style supplementary down files, and applies them to
 // dbPath through `atlas migrate apply` so the revision table is Atlas-shaped.
 func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
+	c.Helper()
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, "DROP TABLE down_fmt_audit;")
+}
+
+// writeMigrateDownFixtureWithRollback is [writeMigrateDownFixture] with the
+// second migration's down SQL chosen by the caller, written BEFORE the
+// directory is hashed.
+//
+// The ordering is the point. These tests used to build the healthy fixture,
+// hash it, and only then overwrite `2_add_audit.down.sql` with SQL that fails —
+// leaving a directory whose atlas.sum no longer covered the bytes about to run,
+// and depending on `migrate down` executing them anyway. That dependency WAS the
+// defect: `migrate down` was the one verb reading a native Atlas directory and
+// executing SQL from it outside the integrity gate, so the fixture only worked
+// because the gate was missing.
+//
+// Writing the failing rollback before the hash keeps every assertion these
+// tests make — the rollback still fails at execution time, on the same
+// statement, with the same report — while making the fixture a directory that
+// verifies, which is what a real one would be.
+func writeMigrateDownFixtureWithRollback(c *qt.C, migrationsDir, dbPath, secondDownSQL string) {
 	c.Helper()
 	write := func(name, sql string) {
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
@@ -28,9 +53,10 @@ func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
 	write("1_init.sql", "CREATE TABLE down_fmt_users (id INTEGER PRIMARY KEY);")
 	write("1_init.down.sql", "DROP TABLE down_fmt_users;")
 	write("2_add_audit.sql", "CREATE TABLE down_fmt_audit (id INTEGER PRIMARY KEY);")
-	write("2_add_audit.down.sql", "DROP TABLE down_fmt_audit;")
-	// The apply below verifies atlas.sum first (stokaro/ptah#970), so the
-	// fixture directory must be hashed like a real Atlas directory.
+	write("2_add_audit.down.sql", secondDownSQL)
+	// The apply below verifies atlas.sum first (stokaro/ptah#970), and so does
+	// `migrate down` now, so the fixture directory must be hashed like a real
+	// Atlas directory — after every file it covers is in its final state.
 	writeAtlasApplyProjectSum(c, migrationsDir)
 
 	apply := atlas.NewCompatCommand("atlas")
@@ -182,15 +208,7 @@ func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-first-failure.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
-	c.Assert(
-		os.WriteFile(
-			filepath.Join(migrationsDir, "2_add_audit.down.sql"),
-			[]byte("DROP TABLE no_such_table;\n"),
-			0o600,
-		),
-		qt.IsNil,
-	)
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -289,10 +307,11 @@ func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) 
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dev-abort.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
-	// Break the newest down file after applying, so only the dev replay can
-	// catch it.
-	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "2_add_audit.down.sql"), []byte("DROP TABLE no_such_table;\n"), 0o600), qt.IsNil)
+	// The newest down file cannot succeed, so only the dev replay can catch it.
+	// It is written before the directory is hashed: the integrity gate is a
+	// separate refusal that would otherwise fire first and hide the replay this
+	// test is about.
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -352,8 +371,7 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-native-abort.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
-	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "2_add_audit.down.sql"), []byte("DROP TABLE no_such_table;\n"), 0o600), qt.IsNil)
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

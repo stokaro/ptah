@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/deploymentreport"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
@@ -341,7 +343,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
 
-	if err := runIntegrityGate(emit, runtime, source, settings.dirFormat, opts); err != nil {
+	if err := runIntegrityGate(cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, opts); err != nil {
 		return err
 	}
 
@@ -571,6 +573,7 @@ func lintPathPrefixForSource(requested string, source migrationsource.Source) st
 // against the sum stored beside it, so both get the same provenance qualifier
 // when the directory came from a movable OCI tag (#944).
 func runIntegrityGate(
+	notice io.Writer,
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
 	source migrationsource.Source,
@@ -593,7 +596,7 @@ func runIntegrityGate(
 		// migration — including a tampered checkpoint — never executes. An
 		// unhashed directory keeps its ungated behavior; --verify-sum keeps
 		// its stricter contract that a missing sum file is itself an error.
-		hashedSumFile, err := verifyHashedMigrationIntegrity(source.FileSystem, format)
+		hashedSumFile, err := verifyHashedMigrationIntegrity(notice, source.FileSystem, format)
 		if err != nil {
 			return err
 		}
@@ -636,18 +639,18 @@ func verifyMigrationIntegrity(
 // `ptah migrations validate` on the same directory. It returns the name of the
 // integrity file that verified, or the empty string when the directory was
 // never hashed and therefore nothing was checked.
-func verifyHashedMigrationIntegrity(fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
-	result, hashed, err := migratesum.VerifyHashed(fsys, format)
-	if err != nil {
-		return "", fmt.Errorf("migration sum verification failed: %w", err)
-	}
-	if !hashed {
-		return "", nil
-	}
-	if !result.OK() {
-		return "", fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
-	}
-	return result.SumFileName, nil
+//
+// The rule itself now lives in [migrationintegrity.Gate] and is shared with
+// every other verb that executes migration SQL. It moved there rather than
+// being copied because `up` owning it privately is exactly what let
+// `migrations down`, `test`, `checkpoint` and `baseline` execute a directory
+// this branch refuses. The empty-string-means-nothing-verified contract is
+// unchanged, and it now also covers a run that used
+// [migrationintegrity.AllowUnverifiedEnvVar] to override a real failure — such
+// a run has verified nothing and must not go on to qualify a verification it
+// did not perform.
+func verifyHashedMigrationIntegrity(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
+	return migrationintegrity.Gate(notice, fsys, format)
 }
 
 // mutableTagSumWarning returns the provenance sentence a sum verification
