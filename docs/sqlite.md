@@ -168,8 +168,11 @@ To proceed, say which one you meant:
   refused however it is set, because no value of it makes the planner able to
   convert one object into another.
 
-An unset variable and an explicit false both keep the refusal; a value that is
-not a boolean is a configuration error rather than a silent refusal.
+An unset variable and an explicit false both keep the refusal. A value that is
+not a boolean is a configuration error. Every SQLite comparison, baseline, or
+checkpoint command and public migration-generator call reports it before
+resolving filesystem paths, loading a schema source, connecting to a database,
+or running SQL. Non-SQLite operations do not consult the variable.
 
 ## ALTER TABLE Limits
 

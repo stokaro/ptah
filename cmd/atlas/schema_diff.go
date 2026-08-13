@@ -14,7 +14,9 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 type atlasSchemaDiffOptions struct {
@@ -118,6 +120,9 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
 		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
 		if err != nil {
@@ -173,6 +178,23 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), format, report); err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	return nil
+}
+
+func validateAtlasSchemaDiffSQLiteToggle(opts atlasSchemaDiffOptions) error {
+	// --dev-url owns the comparison dialect when present. Preserve errors from
+	// invalid URLs for the Atlas-compatible validation path below.
+	if strings.TrimSpace(opts.devURL) != "" {
+		if dialect, err := atlasurl.DialectFromURL(opts.devURL); err == nil {
+			return sqlitevirtual.ValidateToggle(dialect)
+		}
+		return nil
+	}
+	for _, rawURL := range append(append([]string{}, opts.fromURLs...), opts.toURLs...) {
+		if dialect, err := atlasurl.DialectFromURL(rawURL); err == nil && dialect != "" {
+			return sqlitevirtual.ValidateToggle(dialect)
+		}
 	}
 	return nil
 }

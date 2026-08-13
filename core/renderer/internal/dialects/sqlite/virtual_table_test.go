@@ -33,6 +33,16 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING fts5(title, body);\n",
 		},
 		{
+			name: "module owned surrounding whitespace is preserved",
+			build: func() *ast.CreateTableNode {
+				table := ast.NewCreateTable("docs")
+				table.SetOption(ast.SQLiteVirtualModuleOption, "fts5")
+				table.SetOption(ast.SQLiteVirtualArgumentsOption, " body ")
+				return table
+			},
+			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING fts5( body );\n",
+		},
+		{
 			// Verbatim: the comma inside the quoted identifier, the spaces
 			// around `=`, and the single-quoted option value are the module's
 			// to interpret, not the renderer's to normalize.
@@ -85,6 +95,18 @@ func TestRenderCreateVirtualTable(t *testing.T) {
 				return table
 			},
 			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING \"my module\"(body);\n",
+		},
+		{
+			// SQLite parses an unquoted keyword as syntax, not as the registered
+			// module identifier. Keep the catalog spelling while quoting it.
+			name: "a module name that is a SQLite keyword",
+			build: func() *ast.CreateTableNode {
+				table := ast.NewCreateTable("docs")
+				table.SetOption(ast.SQLiteVirtualModuleOption, "select")
+				table.SetOption(ast.SQLiteVirtualArgumentsOption, "body")
+				return table
+			},
+			wantSQL: "CREATE VIRTUAL TABLE \"docs\" USING \"select\"(body);\n",
 		},
 		{
 			// The non-interference control: without the module option nothing

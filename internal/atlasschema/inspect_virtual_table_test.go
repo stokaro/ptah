@@ -89,6 +89,146 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			wantSilent: true,
 		},
 		{
+			// SQLite compares the statement syntax, module, and ASCII parts of
+			// identifiers without regard to ASCII case.
+			name: "ASCII case differences still carry the declaration",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(body)`,
+			},
+			format:     "{{ hcl . }}\ncreate virtual table \"DOCS\" using FTS5(body);",
+			wantSilent: true,
+		},
+		{
+			// Even a comment that repeats the complete SQL is not a
+			// declaration. The rendered HCL still cannot recreate the table.
+			name: "a comment containing the complete declaration is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format:         "{{ hcl . }}\n# CREATE VIRTUAL TABLE \"docs\" USING fts5(title, body);",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// A complete declaration at a line boundary is still not executable
+			// when it lives inside a SQL block comment.
+			name: "a complete declaration in a block comment is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format: "{{ hcl . }}\n/*\nCREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body);\n*/",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// A block comment can close immediately before an executable
+			// declaration. The opening delimiter lives on another line, so a
+			// raw check of only the CREATE line cannot classify the leading
+			// trivia correctly.
+			name:  "a declaration after a multiline block comment is carried",
+			setup: []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format: "{{ hcl . }}\n/* retained\n*/ CREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body);",
+			wantSilent: true,
+		},
+		{
+			// A trailing line comment does not turn the complete executable
+			// declaration before it into documentation.
+			name:  "a declaration with a trailing line comment is carried",
+			setup: []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format: "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body); -- retained comment",
+			wantSilent: true,
+		},
+		{
+			// The same text inside a multiline SQL string is data. A raw
+			// line-boundary search cannot distinguish it from a statement, while
+			// the SQLite lexer emits the whole string as one token.
+			name: "a complete declaration in a string is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format: "{{ hcl . }}\nSELECT 'note\nCREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body);\n';",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// Comment markers inside a quoted module argument are data, not SQL
+			// comments. The lexer-backed comment pass must preserve them.
+			name: "comment markers in module argument strings are carried by SQL",
+			setup: []string{
+				forgedVirtualTable("docs", "CREATE VIRTUAL TABLE docs USING "+
+					`fts5(body, tokenize = "porter /* exact */")`),
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// SQLite also preserves unquoted comments inside the module argument
+			// span. They belong to the catalog declaration even though a SQL
+			// lexer classifies them as comments.
+			name: "an unquoted comment in module arguments is carried by SQL",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(body /* exact */)`,
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// The module arguments define the virtual table. Naming the right
+			// table and module without them does not recreate the inspected
+			// object.
+			name: "a declaration without the inspected arguments is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format:         "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" USING fts5;",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// Different arguments can define different columns and module
+			// behavior, so a declaration for another shape is not survival.
+			name: "a declaration with different arguments is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format:         "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" USING fts5(other);",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// Module arguments are interpreted by the module rather than as SQL
+			// identifiers. Their bytes remain significant even where the SQL
+			// statement prefix is ASCII-case-insensitive.
+			name: "ASCII case in module arguments remains significant",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(body, tokenize = 'porter')`,
+			},
+			format: "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(body, tokenize = 'PORTER');",
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
+			// SQLite preserves line breaks inside the module arguments, and the
+			// SQL renderer carries them exactly. Complete-statement matching must
+			// therefore span lines rather than regress a lossless SQL inspection.
+			name: "multiline inspected arguments are carried by SQL",
+			setup: []string{
+				"CREATE VIRTUAL TABLE docs USING fts5(title,\nbody)",
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// SQLite treats a missing argument list and an explicitly empty one
+			// as the same module declaration, and the catalog intentionally does
+			// not distinguish them.
+			name: "an explicitly empty argument list carries a no argument module",
+			setup: []string{
+				forgedVirtualTable("pages", `CREATE VIRTUAL TABLE pages USING dbstat`),
+			},
+			format:     "{{ hcl . }}\nCREATE VIRTUAL TABLE \"pages\" USING dbstat();",
+			wantSilent: true,
+		},
+		{
 			// A split/write template deliberately leaves the printed text empty
 			// and puts the whole document in the planned files. Reading the text
 			// alone reported a loss beside an out/main.sql that contained the
@@ -146,6 +286,62 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			exclude:        []string{"docs"},
 			wantDiagnostic: []string{`"geo" (module rtree)`},
 			wantAbsent:     []string{`"docs"`},
+		},
+		{
+			// A module name that needs identifier quoting. The renderer emits
+			// `USING "fts-5"`, so a check spelling the module bare looked for
+			// text the document never contains and called a lossless SQL
+			// rendering lossy -- which strict compatibility then refused.
+			name: "a module name needing quotes is carried by SQL",
+			setup: []string{
+				forgedVirtualTable("docs", `CREATE VIRTUAL TABLE docs USING "fts-5"(a, b)`),
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// The control: the same table in a format that really cannot carry
+			// it is still a loss.
+			name: "a module name needing quotes is still a loss in HCL",
+			setup: []string{
+				forgedVirtualTable("docs", `CREATE VIRTUAL TABLE docs USING "fts-5"(a, b)`),
+			},
+			format:         "hcl",
+			wantDiagnostic: []string{`"docs" (module fts-5)`},
+		},
+		{
+			// A keyword module is quoted by the renderer. The inspection check
+			// must search for that same spelling or it falsely reports loss.
+			name: "a module name that is a SQLite keyword is carried by SQL",
+			setup: []string{
+				forgedVirtualTable("docs", `CREATE VIRTUAL TABLE docs USING "select"(body)`),
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// Quoted whitespace belongs to the table identity. The SQL renderer
+			// and the loss detector must both retain it or a lossless inspection
+			// is reported as missing the original declaration.
+			name: "quoted whitespace in a table name is carried by SQL",
+			setup: []string{
+				`CREATE VIRTUAL TABLE " docs " USING fts5(body)`,
+			},
+			format:     "sql",
+			wantSilent: true,
+		},
+		{
+			// SQLite folds only ASCII letters in identifiers. These two names
+			// are therefore distinct, and a rendered statement for one must not
+			// pretend the other declaration survived the custom format.
+			name: "non ASCII case distinct table is checked independently",
+			setup: []string{
+				`CREATE VIRTUAL TABLE "Ä" USING fts5(body)`,
+				`CREATE VIRTUAL TABLE "ä" USING fts5(body)`,
+			},
+			format:         "{{ hcl . }}\nCREATE VIRTUAL TABLE \"Ä\" USING fts5(body);",
+			wantDiagnostic: []string{`"ä" (module fts5)`},
+			wantAbsent:     []string{`"Ä" (module fts5)`},
 		},
 		{
 			name: "a database with no virtual table reports nothing",
@@ -230,6 +426,43 @@ func TestInspectRefusesAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "a comment containing the complete declaration is refused",
+			setup:    []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format:   "{{ hcl . }}\n# CREATE VIRTUAL TABLE \"docs\" USING fts5(title, body);",
+			validate: refuseAnyVirtualTable,
+			wantErr:  true,
+		},
+		{
+			name:  "a declaration after a multiline block comment is not refused",
+			setup: []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format: "{{ hcl . }}\n/* retained\n*/ CREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body);",
+			validate: refuseAnyVirtualTable,
+			wantErr:  false,
+		},
+		{
+			name:  "a declaration with a trailing line comment is not refused",
+			setup: []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format: "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" " +
+				"USING fts5(title, body); -- retained comment",
+			validate: refuseAnyVirtualTable,
+			wantErr:  false,
+		},
+		{
+			name:     "a declaration with different arguments is refused",
+			setup:    []string{`CREATE VIRTUAL TABLE docs USING fts5(title, body)`},
+			format:   "{{ hcl . }}\nCREATE VIRTUAL TABLE \"docs\" USING fts5(other);",
+			validate: refuseAnyVirtualTable,
+			wantErr:  true,
+		},
+		{
+			name:     "quoted whitespace carried by SQL is not refused",
+			setup:    []string{`CREATE VIRTUAL TABLE " docs " USING fts5(body)`},
+			format:   "sql",
+			validate: refuseAnyVirtualTable,
+			wantErr:  false,
+		},
+		{
 			name:     "a database with no virtual table is not",
 			setup:    []string{`CREATE TABLE users (id INTEGER PRIMARY KEY)`},
 			format:   "hcl",
@@ -271,6 +504,18 @@ func refuseAnyVirtualTable(names []string) error {
 	return fmt.Errorf("strict refusal: %v", names)
 }
 
+// forgedVirtualTable writes a sqlite_master row directly, so a fixture can
+// present a module this build could never be asked to create -- which is the
+// only way a module name that needs quoting arises, since a name SQLite can
+// resolve bare does not need it. PRAGMA writable_schema is SQLite's own
+// mechanism for this.
+func forgedVirtualTable(name, ddl string) string {
+	return `PRAGMA writable_schema = ON;` +
+		`INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ` +
+		`('table', '` + name + `', '` + name + `', 0, '` + ddl + `');` +
+		`PRAGMA writable_schema = RESET;`
+}
+
 func virtualTableFixture(c *qt.C, dir string, statements []string) string {
 	c.Helper()
 
@@ -280,6 +525,8 @@ func virtualTableFixture(c *qt.C, dir string, statements []string) string {
 	defer func() { _ = db.Close() }()
 
 	for _, statement := range statements {
+		// A forged catalog row is three statements in one entry, so the whole
+		// script is executed rather than a single statement.
 		_, err := db.ExecContext(context.Background(), statement)
 		c.Assert(err, qt.IsNil)
 	}

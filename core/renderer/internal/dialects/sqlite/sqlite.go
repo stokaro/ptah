@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 const DialectName = "sqlite"
@@ -449,31 +450,23 @@ func (r *Renderer) writeCreateVirtualTable(node *ast.CreateTableNode, guard, mod
 		escapeQualifiedIdentifier(node.Name),
 		escapeModuleName(module),
 	)
-	if arguments := strings.TrimSpace(node.Options[ast.SQLiteVirtualArgumentsOption]); arguments != "" {
+	if arguments := node.Options[ast.SQLiteVirtualArgumentsOption]; arguments != "" {
 		r.w.Writef("(%s)", arguments)
 	}
 	r.w.WriteLine(";")
 }
 
-// escapeModuleName keeps a module name that is already a plain identifier
-// bare, the way SQLite records it, and quotes anything else. SQLite resolves
-// the module name as an identifier, so quoting is only needed when the name
-// could not be read as one.
+// escapeModuleName keeps a plain, nonreserved module identifier bare, the way
+// SQLite records it, and quotes punctuation, whitespace, empty names, and
+// SQLite keywords. SQLite resolves the module name as an identifier, while a
+// bare keyword is parsed as syntax instead.
+//
+// The rule lives in sqlident because the inspection check has to look for
+// exactly the spelling this produces; when the two disagreed, a SQL document
+// that carried `USING "fts-5"` was reported as lossy and refused under strict
+// compatibility. See stokaro/ptah#1028.
 func escapeModuleName(module string) string {
-	for i := 0; i < len(module); i++ {
-		char := module[i]
-		switch {
-		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char == '_':
-			continue
-		case char >= '0' && char <= '9' && i > 0:
-			continue
-		}
-		return escapeIdentifier(module)
-	}
-	if module == "" {
-		return escapeIdentifier(module)
-	}
-	return module
+	return sqlident.BareOrQuoted(DialectName, module)
 }
 
 func (r *Renderer) writeTableOptions(options map[string]string) {

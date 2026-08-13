@@ -144,11 +144,13 @@ PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1 \
   ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql
 ```
 
-An unset variable and an explicit false both keep the refusal; a value that is
-not a boolean is a configuration error, on every SQLite comparison rather than
-only the ones holding a virtual table. The opt-in covers only the first row of
-the table above — a kind collision and a changed declaration stay refused
-however it is set.
+An unset variable and an explicit false both keep the refusal. A value that is
+not a boolean is a configuration error. Every SQLite comparison, baseline, or
+checkpoint command and public migration-generator call reports it before
+resolving filesystem paths, loading a schema source, connecting to a database,
+or running SQL. Non-SQLite operations do not consult the variable. The opt-in
+covers only the first row of the table above — a kind collision and a changed
+declaration stay refused however it is set.
 
 ## Virtual table limitations
 

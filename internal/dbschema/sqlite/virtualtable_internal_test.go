@@ -31,6 +31,13 @@ func TestParseVirtualTableDDL(t *testing.T) {
 			wantArguments: "title, body",
 		},
 		{
+			name:          "surrounding argument whitespace is module owned",
+			ddl:           `CREATE VIRTUAL TABLE docs USING fts5( body )`,
+			wantOK:        true,
+			wantModule:    "fts5",
+			wantArguments: " body ",
+		},
+		{
 			// The comma lives inside a quoted identifier and the brackets are
 			// SQLite's fourth quoting. Splitting the arguments on commas, or
 			// stopping at the first `]`, both cut this in the wrong place.

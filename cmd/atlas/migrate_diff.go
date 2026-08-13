@@ -22,7 +22,9 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -178,6 +180,14 @@ func runAtlasMigrateDiff(
 	// as having given the flag: the pinned binary runs such an invocation rather
 	// than refusing it.
 	opts.devURLGiven = atlasDevURLGiven(cmd, opts.devURL)
+	// Resolve the comparison-owned toggle once the effective dev dialect is
+	// known, before resolving the migration directory, desired source, or dev
+	// database. Invalid non-SQLite URLs retain their measured diagnostics below.
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.devURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	// This verb creates the directory it was pointed at, so it requires the
 	// scheme the community binary requires: `migrate diff demo --dir mig2` exits
 	// 1 there with `missing scheme for dir url. Did you mean "file://mig2"?` and

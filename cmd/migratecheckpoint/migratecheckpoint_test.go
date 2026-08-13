@@ -83,6 +83,36 @@ func TestMigrateCheckpointCommand_RequiresShadowDB(t *testing.T) {
 	c.Assert(out, qt.Contains, "shadow database URL is required")
 }
 
+func TestMigrateCheckpointRejectsMalformedSQLiteToggleBeforeDirectoryAndDryRun(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	out, err := runCheckpoint(
+		"--shadow-db", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
+		"--migrations-dir", "",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(out, qt.Not(qt.Contains), "migrations directory")
+}
+
+func TestMigrateCheckpointDoesNotApplySQLiteToggleToPostgres(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	out, err := runCheckpoint(
+		"--shadow-db", "postgres://localhost/database",
+		"--migrations-dir", "",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "migrations directory is required")
+}
+
 func TestMigrateCheckpointCommand_RejectsVersionAtOrBelowHistory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

@@ -30,6 +30,39 @@ func TestVerifyBaselineShadow_MissingTargetReturnsStructuredError(t *testing.T) 
 	})
 }
 
+func TestVerifyBaselineShadowRejectsMalformedSQLiteToggleBeforeMissingTarget(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	err := generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+		Dialect: "sqlite",
+	})
+
+	c.Assert(err, qt.ErrorMatches,
+		`baseline shadow check failed: validate SQLite virtual-table drop toggle: invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	var shadowErr *generator.ShadowVerificationError
+	c.Assert(err, qt.ErrorAs, &shadowErr)
+	c.Assert(shadowErr.Result.Stage, qt.Equals, "configuration")
+}
+
+func TestVerifyBaselineShadowRejectsMalformedSQLiteVirtualDropToggleBeforeReplay(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	targetPath := filepath.Join(t.TempDir(), "target.db")
+	target, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+targetPath)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(target) })
+
+	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "missing", "shadow.db"),
+		TargetConn:        target,
+	})
+
+	c.Assert(err, qt.ErrorMatches,
+		`baseline shadow check failed: validate SQLite virtual-table drop toggle: invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "connect to shadow database")
+}
+
 func TestVerifyBaselineShadow_ConnectFailureReturnsStructuredError(t *testing.T) {
 	c := qt.New(t)
 	targetURL := "sqlite://" + filepath.Join(c.TempDir(), "target.db")

@@ -256,6 +256,9 @@ exits 0.
 - Set it to `1` and the removal is planned as before.
 - `--exclude <table>` is the other direction: the table is kept and the rest of
   the schema converges.
+- A malformed value refuses every SQLite comparison command and public
+  migration-generator call before filesystem path resolution, schema source
+  loading, database connection, or SQL. Non-SQLite operations ignore it.
 - The opt-in covers only the removal. A desired ordinary table colliding with a
   live virtual one stays refused however it is set, because the planner cannot
   convert one kind into the other.

@@ -9,6 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migrate"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -74,6 +76,23 @@ func TestMigratePlan_ValidatesConnectTimeoutBeforeExternalSchema(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `invalid --connect-timeout value "invalid": .*`)
 }
 
+func TestMigratePlan_ValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	cmd := migrate.NewMigrateCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--schema-cmd", "/path/that/does/not/exist",
+		"--db-url", "sqlite://test.db",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
+}
+
 func TestMigrateGenerate_ValidatesConnectTimeoutBeforeExternalSchema(t *testing.T) {
 	c := qt.New(t)
 
@@ -90,6 +109,24 @@ func TestMigrateGenerate_ValidatesConnectTimeoutBeforeExternalSchema(t *testing.
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `invalid --connect-timeout value "invalid": .*`)
+}
+
+func TestMigrateGenerate_ValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--schema-cmd", "/path/that/does/not/exist",
+		"--db-url", "sqlite://test.db",
+		"--migrations-dir", c.TempDir(),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
 }
 
 func TestMigrateGenerate_ValidatesReportFormatBeforeExternalSchema(t *testing.T) {

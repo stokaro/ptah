@@ -298,7 +298,7 @@ func (s *ddlScanner) parenthesizedGroup() (group string, ok bool) {
 		case ')':
 			depth--
 			if depth == 0 {
-				return strings.TrimSpace(s.text[contentStart:s.pos]), true
+				return s.text[contentStart:s.pos], true
 			}
 			s.pos++
 		default:

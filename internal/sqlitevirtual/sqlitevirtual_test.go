@@ -193,6 +193,29 @@ func TestValidateComparison(t *testing.T) {
 			wantContains:    []string{"cannot convert one kind into the other"},
 		},
 		{
+			// SQLite preserves leading and trailing whitespace in a quoted
+			// table name. These are two identities, so the opt-in may waive the
+			// virtual removal while the ordinary table remains an addition.
+			name:     "significant whitespace in a table name does not create a collision",
+			dialect:  "sqlite",
+			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
+			desired:  declaring("docs"),
+			database: []types.DBTable{{Name: " docs ", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			wantErr:  false,
+		},
+		{
+			// A quoted schema name has the same exact-identity rule. Only the
+			// truly empty spelling selects SQLite's default schema.
+			name:    "significant whitespace in a schema name does not create a collision",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
+			desired: &goschema.Database{Tables: []goschema.Table{{Schema: "aux", Name: "docs"}}},
+			database: []types.DBTable{{
+				Schema: " aux ", Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body",
+			}},
+			wantErr: false,
+		},
+		{
 			name:     "a database with no virtual table and a sound value is untouched",
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "false"),
@@ -353,11 +376,11 @@ func TestTables(t *testing.T) {
 			name: "the order is by schema then name, not catalog order",
 			database: &types.DBSchema{Tables: []types.DBTable{
 				{Name: "zeta", VirtualModule: "rtree"},
-				{Name: "alpha", VirtualModule: "fts5"},
+				{Name: "alpha", VirtualModule: "fts5", VirtualArguments: "title, body"},
 				{Name: "beta", Schema: "aux", VirtualModule: "geopoly"},
 			}},
 			want: []sqlitevirtual.Table{
-				{Name: "alpha", Module: "fts5"},
+				{Name: "alpha", Module: "fts5", Arguments: "title, body"},
 				{Name: "zeta", Module: "rtree"},
 				{Schema: "aux", Name: "beta", Module: "geopoly"},
 			},

@@ -53,12 +53,35 @@ func TestReadSchemaRoundTripsVirtualTables(t *testing.T) {
 			},
 		},
 		{
+			// Quoted whitespace is part of the SQLite identifier. Keeping the
+			// near-twin ordinary table in the same catalog proves the read cannot
+			// normalize either spelling without renaming or colliding the objects.
+			name: "quoted whitespace beside an ordinary near-twin",
+			setup: []string{
+				`CREATE TABLE docs (id INTEGER PRIMARY KEY)`,
+				`CREATE VIRTUAL TABLE " docs " USING fts5(body)`,
+			},
+			wantRender: []string{
+				`CREATE VIRTUAL TABLE " docs " USING fts5(body);`,
+				"CREATE TABLE \"docs\" (\n  \"id\" INTEGER PRIMARY KEY\n);",
+			},
+		},
+		{
 			name: "fts5 tokenizer and prefix options",
 			setup: []string{
 				`CREATE VIRTUAL TABLE docs USING fts5(a, b, tokenize = 'porter unicode61 remove_diacritics 2', prefix='2 3')`,
 			},
 			wantRender: []string{
 				`CREATE VIRTUAL TABLE "docs" USING fts5(a, b, tokenize = 'porter unicode61 remove_diacritics 2', prefix='2 3');`,
+			},
+		},
+		{
+			name: "module owned whitespace and comments",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5( body /* exact */ )`,
+			},
+			wantRender: []string{
+				`CREATE VIRTUAL TABLE "docs" USING fts5( body /* exact */ );`,
 			},
 		},
 		{

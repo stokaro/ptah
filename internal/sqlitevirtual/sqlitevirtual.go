@@ -109,11 +109,12 @@ func ValidateToggle(dialect string) error {
 	return err
 }
 
-// Table is one live virtual table and the module that owns it.
+// Table is one live virtual table and the module declaration that owns it.
 type Table struct {
-	Schema string
-	Name   string
-	Module string
+	Schema    string
+	Name      string
+	Module    string
+	Arguments string
 }
 
 func (t Table) String() string {
@@ -365,9 +366,10 @@ func Tables(database *types.DBSchema) []Table {
 			continue
 		}
 		virtual = append(virtual, Table{
-			Schema: table.Schema,
-			Name:   table.Name,
-			Module: table.VirtualModule,
+			Schema:    table.Schema,
+			Name:      table.Name,
+			Module:    table.VirtualModule,
+			Arguments: table.VirtualArguments,
 		})
 	}
 	sort.Slice(virtual, func(i, j int) bool {
@@ -392,11 +394,11 @@ func Tables(database *types.DBSchema) []Table {
 // the engine does not see and refuse a comparison that has nothing wrong with
 // it.
 func identity(schema, name string, semantics identifier.Semantics) string {
-	if strings.TrimSpace(schema) == "" {
+	if schema == "" {
 		schema = semantics.DefaultSchema
 	}
-	return semantics.TableIdentityKey(strings.TrimSpace(schema)) +
-		"\x00" + semantics.TableIdentityKey(strings.TrimSpace(name))
+	return semantics.TableIdentityKey(schema) +
+		"\x00" + semantics.TableIdentityKey(name)
 }
 
 func names(tables []Table) string {

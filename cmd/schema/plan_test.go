@@ -58,6 +58,18 @@ func TestSchemaPlanRequiresSaveOutputOrDryRun(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "pass --save or --output <path> to write a local plan file, .*", qt.Commentf("%s", out))
 }
 
+func TestSchemaPlanRejectsMalformedSQLiteVirtualDropToggleBeforeSourceWork(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	out, err := runSchema("", "plan", "--db-url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"))
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Not(qt.Contains), "desired schema source")
+}
+
 func TestSchemaPlanDryRunPrintsDocumentWithoutSaving(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
