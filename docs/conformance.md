@@ -1774,9 +1774,11 @@ cannot be empty. See: https://atlasgo.io/atlas-schema/sql#dev-database` (88 B) o
 all three schema verbs — the split is the source kind, not the verb — while Ptah
 prints the 33-byte form for both kinds. And `schema inspect --url <database>
 --dev-url notadriver://x` exits 0 on the pinned binary, which never opens the dev
-URL when the source is a database, where Ptah still validates it; the
-unknown-driver row above is measured on the file source, which is the scope the
-pinned binary was measured to check.
+URL when the source is a database, where Ptah still validates the dialect match
+in the shared inspection path after connecting to the source. The compat-only
+`DevURLDiagnostic` hook is not involved. The unknown-driver row above is
+measured on the file source, which is the scope the pinned binary was measured
+to check.
 
 **Native Ptah keeps the clearer message, deliberately.** `ptah schema inspect`
 still answers `unsupported --dev-url dialect "notadriver://x"`, which names the
