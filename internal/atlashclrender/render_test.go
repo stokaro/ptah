@@ -51,6 +51,16 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
+	neutral, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema "pg_catalog"`)
+	c.Assert(string(neutral.Data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
+	c.Assert(string(neutral.Data), qt.Contains, `schema = "pg_catalog"`)
+	parsedNeutral, err := atlashcl.Parse(neutral.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", neutral.Data))
+	c.Assert(parsedNeutral.Schemas, qt.HasLen, 0)
+	c.Assert(parsedNeutral.Extensions, qt.DeepEquals, db.Extensions)
+
 	inspected, err := atlashclrender.RenderInspected(db, "postgres", "public")
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(inspected.Data), qt.Contains, `extension "plpgsql"`)

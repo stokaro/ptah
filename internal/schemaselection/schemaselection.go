@@ -26,7 +26,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
@@ -73,6 +75,31 @@ func IsPostgresSystemSchema(name string) bool {
 func IsPostgresFamilySystemSchema(dialect, name string) bool {
 	return IsPostgresSystemSchema(name) ||
 		platform.NormalizeDialect(dialect) == platform.CockroachDB && name == "crdb_internal"
+}
+
+// ValidateDeclaredPostgresSystemSchemas refuses schema declarations that ask a
+// PostgreSQL-family migration to create a server-owned namespace. Extensions
+// may still name these schemas as installation placement without declaring a
+// schema block.
+func ValidateDeclaredPostgresSystemSchemas(dialect string, schemas []goschema.Schema) error {
+	normalized := platform.NormalizeDialect(dialect)
+	if !platform.IsPostgresFamily(normalized) {
+		return nil
+	}
+	for _, schema := range schemas {
+		if !IsPostgresFamilySystemSchema(normalized, schema.Name) {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: normalized,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"schema declares server-owned PostgreSQL schema %q; extension placement may reference it, but a migration cannot create it",
+				schema.Name,
+			),
+		}
+	}
+	return nil
 }
 
 // RowQuerier is the part of *sql.DB and *sql.Tx [Selection.Resolve] needs.

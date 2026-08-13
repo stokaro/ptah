@@ -82,6 +82,21 @@ func TestCapture_FailurePath(t *testing.T) {
 	})
 }
 
+func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{Extensions: []goschema.Extension{{
+		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
+	}}}
+
+	snapshot, err := schemaartifact.Capture(db)
+	c.Assert(err, qt.IsNil)
+	data, err := fs.ReadFile(snapshot, schemaartifact.FileName)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(data), qt.Not(qt.Contains), `schema "pg_catalog"`)
+	c.Assert(string(data), qt.Not(qt.Contains), `schema = schema.pg_catalog`)
+	c.Assert(string(data), qt.Contains, `schema = "pg_catalog"`)
+}
+
 func TestPullToFile_RejectsExistingOutputBeforeNetwork(t *testing.T) {
 	c := qt.New(t)
 	output := filepath.Join(t.TempDir(), "schema.hcl")

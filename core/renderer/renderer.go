@@ -938,7 +938,7 @@ func validateDatabaseDeclarations(
 	caps capability.Capabilities,
 	database *goschema.Database,
 ) error {
-	if err := validateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
@@ -956,27 +956,6 @@ func validateDatabaseDeclarations(
 		}
 	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
-}
-
-func validateDeclaredPostgresSystemSchemas(dialect string, schemas []goschema.Schema) error {
-	normalized := platform.NormalizeDialect(dialect)
-	if !platform.IsPostgresFamily(normalized) {
-		return nil
-	}
-	for _, schema := range schemas {
-		if !schemaselection.IsPostgresFamilySystemSchema(normalized, schema.Name) {
-			continue
-		}
-		return &ptaherr.RenderError{
-			Dialect: normalized,
-			Err:     ptaherr.ErrInvalidSchemaDiff,
-			Message: fmt.Sprintf(
-				"schema declares server-owned PostgreSQL schema %q; extension placement may reference it, but a migration cannot create it",
-				schema.Name,
-			),
-		}
-	}
-	return nil
 }
 
 func validateExtensionInstallationSchemas(dialect string, extensions []goschema.Extension) error {
