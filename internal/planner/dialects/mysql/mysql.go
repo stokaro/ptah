@@ -1175,6 +1175,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// else, mirroring the order `schema render` emits them in.
 	result = p.reportUnsupportedObjects(result, diff)
 
+	// 0b. Plan the stored functions this target does host. Functions are
+	// planned before tables because a generated column or a CHECK constraint
+	// may call one, and the function must exist first.
+	result = p.planFunctions(result, diff, generated)
+
 	// 1. Add enum change warnings (MySQL limitations)
 	result = p.addEnumChangeWarnings(result, diff)
 

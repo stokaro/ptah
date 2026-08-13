@@ -158,16 +158,12 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-// VisitCreateFunction renders CREATE FUNCTION statements for MariaDB (no-op)
+// VisitCreateFunction delegates to the mysqllike renderer, which emits the
+// engine's own CREATE FUNCTION spelling. This wrapper used to override the
+// method with `-- CREATE FUNCTION <name> not supported in MariaDB`, a claim
+// about the server that the server contradicts (stokaro/ptah#929).
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	// MariaDB doesn't support PostgreSQL-style functions
-	// Add a comment to indicate this feature is not supported
-	if node.Comment != "" {
-		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MariaDB: %s", node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MariaDB", node.Name)
-	}
-	return nil
+	return r.r.VisitCreateFunction(node)
 }
 
 // VisitCreatePolicy renders CREATE POLICY statements for MariaDB (no-op)

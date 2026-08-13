@@ -166,15 +166,22 @@ type Product struct {
 }
 
 // TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips pins that a
-// MySQL target emits no PostgreSQL-only DDL and says so for each object.
+// MySQL target emits no DDL for the PostgreSQL-only objects and says so for
+// each one, while the objects MySQL does host are rendered as real statements.
 //
 // It used to assert the objects were simply ABSENT from the output, which the
 // converter achieved by deleting the nodes before the renderer saw them: the
 // function, the RLS enablement and the policy vanished at exit 0 with nothing
 // said about any of them. Absence and a named skip are indistinguishable to a
-// `Not(Contains)` assertion, so this now asserts both halves separately -- no
+// `Not(Contains)` assertion, so this asserts both halves separately -- no
 // executable statement, and a diagnostic naming each object (stokaro/ptah#929
 // item 5).
+//
+// The function moved out of the skipped set: row-level security really is a
+// PostgreSQL-only surface, but a stored function is not, and MySQL 26.7.0
+// accepts one. It is asserted here as executable DDL so that a regression back
+// to the old `-- CREATE FUNCTION ... not supported in MySQL` comment -- a claim
+// about the server that the server contradicts -- fails this test.
 func TestRLSAndFunctionIntegration_MySQLNamesPostgreSQLFeaturesItSkips(t *testing.T) {
 	c := qt.New(t)
 
@@ -210,14 +217,17 @@ type TestTable struct {
 
 	// No PostgreSQL-only statement is executable on this target.
 	executable := executableSQL(sqlOutput)
-	c.Assert(executable, qt.Not(qt.Contains), "CREATE FUNCTION")
 	c.Assert(executable, qt.Not(qt.Contains), "CREATE POLICY")
 	c.Assert(executable, qt.Not(qt.Contains), "ENABLE ROW LEVEL SECURITY")
 
 	// And each one is named rather than dropped in silence.
-	c.Assert(sqlOutput, qt.Contains, "-- CREATE FUNCTION test_func not supported in MySQL")
 	c.Assert(sqlOutput, qt.Contains, "-- ALTER TABLE test_table ENABLE ROW LEVEL SECURITY not supported in MySQL")
 	c.Assert(sqlOutput, qt.Contains, "-- CREATE POLICY test_policy not supported in MySQL")
+
+	// The function is not in that set: MySQL hosts it, so it is real DDL.
+	// legacyRenderedSQL strips the backtick quoting, hence the bare name.
+	c.Assert(executable, qt.Contains, "CREATE FUNCTION test_func() RETURNS integer")
+	c.Assert(sqlOutput, qt.Not(qt.Contains), "CREATE FUNCTION test_func not supported in MySQL")
 
 	// But table creation should still work
 	c.Assert(sqlOutput, qt.Contains, "CREATE TABLE test_table")
