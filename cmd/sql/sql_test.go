@@ -155,6 +155,152 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
+// TestSQLLint_VersionThatNamesNoServerExitsTwo is the defect of issue #916
+// this command owned: `--version not-a-version` exited 0, linted against the
+// dialect default, and printed that string back as the version it had used.
+// docs/exit_codes.md reserves 2 for invalid input, and a version string that
+// resolves to nothing is invalid input.
+func TestSQLLint_VersionThatNamesNoServerExitsTwo(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+	}{
+		{name: "postgres word", dialect: "postgres", version: "not-a-version"},
+		{name: "postgres sentence", dialect: "postgres", version: "definitely-not-a-version"},
+		{name: "mysql word", dialect: "mysql", version: "latest"},
+		{name: "mariadb banner without a version", dialect: "mariadb", version: "MariaDB something"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+
+			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Contains, "--version")
+			c.Assert(stderr, qt.Contains, tt.version)
+			c.Assert(stderr, qt.Contains, "10.11.6-MariaDB")
+		})
+	}
+}
+
+// TestSQLLint_JSONNeverReportsAVersionThatDidNotResolve is the machine-facing
+// half. A report carrying "version": "definitely-not-a-version" beside an
+// empty findings list is a record of a lint run against a version that never
+// existed, and a consumer has no way to tell it from a real one.
+func TestSQLLint_JSONNeverReportsAVersionThatDidNotResolve(t *testing.T) {
+	c := qt.New(t)
+	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+
+	stdout, stderr, err := execute(
+		"lint", "--dialect", "postgres", "--version", "definitely-not-a-version", "--format", "json", path)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	var report struct {
+		Failed  bool   `json:"failed"`
+		Version string `json:"version"`
+		Error   string `json:"error"`
+	}
+	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(report.Failed, qt.IsTrue)
+	c.Assert(report.Version, qt.Equals, "")
+	c.Assert(report.Error, qt.Contains, "definitely-not-a-version")
+}
+
+// TestSQLLint_RecognizedVersionOutcomes pins what the three surviving
+// outcomes say. Silence belongs to the exact measured line alone: every other
+// resolution planned with a preset the operator did not name, and a run that
+// says nothing there reads as a run against the server they asked for.
+func TestSQLLint_RecognizedVersionOutcomes(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		assert  func(c *qt.C, stdout, stderr string, err error)
+	}{
+		{
+			name:    "exact measured line stays silent",
+			dialect: "postgres",
+			version: "17",
+			assert: func(c *qt.C, stdout, stderr string, err error) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(stderr, qt.Equals, "")
+				c.Assert(stdout, qt.Contains, "No SQL lint findings.")
+			},
+		},
+		{
+			name:    "a server newer than the ladder names the line it planned as",
+			dialect: "postgres",
+			version: "99.0",
+			assert: func(c *qt.C, stdout, stderr string, err error) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(stderr, qt.Contains, "warning: postgres 99.0 is newer than the newest measured release line 18.x")
+				c.Assert(stderr, qt.Contains, "planned as 18.x")
+				c.Assert(stdout, qt.Contains, "No SQL lint findings.")
+			},
+		},
+		{
+			name:    "a dialect with no ladder says the version changed nothing",
+			dialect: "sqlserver",
+			version: "16.0.4115.5",
+			assert: func(c *qt.C, stdout, stderr string, err error) {
+				c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+				c.Assert(stderr, qt.Contains, "warning: the sqlserver dialect has no measured version ladder")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+
+			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
+
+			tt.assert(c, stdout, stderr, err)
+		})
+	}
+}
+
+// TestSQLLint_JSONCarriesTheVersionNote gives the machine the same fact the
+// stderr warning gives a person, rather than leaving JSON consumers with a
+// version field they cannot qualify.
+func TestSQLLint_JSONCarriesTheVersionNote(t *testing.T) {
+	c := qt.New(t)
+	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+
+	stdout, _, err := execute(
+		"lint", "--dialect", "postgres", "--version", "99.0", "--format", "json", path)
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Version     string `json:"version"`
+		VersionNote string `json:"version_note"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Version, qt.Equals, "99.0")
+	c.Assert(report.VersionNote, qt.Contains, "planned as 18.x")
+}
+
+// TestSQLLint_VersionWithoutDialectStillReportsTheOlderError guards the
+// pre-existing rule at the seam the new refusal was added to. Resolving the
+// version before that rule ran would answer "invalid --version value" to
+// someone whose actual mistake was omitting --dialect.
+func TestSQLLint_VersionWithoutDialectStillReportsTheOlderError(t *testing.T) {
+	c := qt.New(t)
+
+	_, stderr, err := execute("lint", "--version", "not-a-version", "--stdin")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, "--version requires --dialect")
+	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version value")
+}
+
+const concurrentIndexSQL = "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"
+
 func writeSQLFile(c *qt.C, dir, name, statement string) string {
 	path := filepath.Join(dir, name)
 	c.Assert(os.WriteFile(path, []byte(statement), 0o600), qt.IsNil)
