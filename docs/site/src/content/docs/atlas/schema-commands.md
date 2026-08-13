@@ -1476,6 +1476,16 @@ Ptah can read `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
 The current implementation does not execute Atlas's dev-database simulation;
 the dev URL selects the dialect and hosts migration-directory replays.
 
+PostgreSQL-family server namespaces are not migration-managed desired state.
+An authored `schema "pg_catalog" {}`, `schema "information_schema" {}`, or
+CockroachDB `schema "crdb_internal" {}` is refused as a declaration. A database
+URL scoped to one of those exact namespaces is observed state instead, but it
+is also refused before comparison SQL: catalog objects do not round-trip
+faithfully through migration IR, so comparing the converted snapshot could
+produce an invalid plan. Quoted lookalikes such as `PG_CATALOG` and
+`CRDB_INTERNAL` remain ordinary user schemas. A migration directory that tries
+to create a protected namespace fails during dev-database replay.
+
 ```bash
 ptah-compat schema diff \
   -f file://old.hcl \
