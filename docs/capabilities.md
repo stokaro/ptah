@@ -236,7 +236,7 @@ The newest measured line per refined dialect:
 | PostgreSQL | 18.x (`Postgres17()`) | 18 |
 | CockroachDB | 26.2 (`CockroachDB26()`) | 26.2 |
 
-The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.0, and both
+The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.2, and both
 CockroachDB 25.4 and 26.2 before promoting those lines. MySQL, MariaDB, and
 CockroachDB match exact major/minor lines: an unmeasured sibling such as MySQL
 26.6, MariaDB 12.2, or CockroachDB 26.1 is not reported as a line-specific
