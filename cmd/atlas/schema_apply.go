@@ -381,6 +381,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		)
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaApply)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatOutput = formatOutput || formatValue.Present

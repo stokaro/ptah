@@ -281,4 +281,6 @@ Continue with [Atlas project config](../../atlas/project-config/) for the suppor
 
 :::note
 Ptah config parsing is intentionally explicit. Unknown `ptah.yaml` keys and structurally unsupported `atlas.hcl` constructs fail with their source location. Names that Atlas CE accepts without acting on are the exception: Ptah accepts them for compatibility and warns that they have no effect. A rejected `ptah.yaml` key is reported by name, with its line and the keys that section accepts — never by the Go type the decoder was filling.
+
+A name earns that exception only by measurement, never by not having been implemented yet. The test is to give the attribute a value its field cannot hold and run the community binary: a binary that refuses on the field's TYPE has decoded the field, and a name it truly ignores cannot produce that refusal. `env { schemas }` failed that test — it was warned about as having no effect while the community binary was acting on it — and it is now parsed and honored. See [Atlas project config](../../atlas/project-config/#envschemas).
 :::

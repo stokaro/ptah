@@ -165,6 +165,7 @@ func runAtlasMigrateDiff(
 			opts.dirURL,
 			projectCfg.StringValue(projectconfig.StringMigrationDir),
 		)
+		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatConfigured = formatConfigured || formatValue.Present

@@ -100,6 +100,7 @@ env "local" {
 | `env.schema.src` | Default desired schema source for `schema apply`, `schema diff`, and `migrate diff`. |
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |
 | `env.exclude` | Default Atlas-style resource exclusion filters. |
+| `env.schemas` | Restricts the schema universe that compatible `schema inspect`, `schema apply`, `schema diff`, `schema plan`, and `migrate diff` operate over. |
 | `migration.dir` | Default migration directory. |
 | `migration.format` | Default migration directory format where supported; safety gate for `migrate apply`. |
 | `migration.revisions_schema` | Default revision metadata schema. |
@@ -121,6 +122,45 @@ env "local" {
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+
+### `env.schemas`
+
+`schemas` names the schemas the environment operates over. It must be a list of
+strings; a bare string, an object, or a list holding anything but strings is
+refused with its source location, which is what Atlas CE does with the same
+file.
+
+The list restricts the schema universe rather than filtering the output, so a
+schema it does not name is not read at all:
+
+```hcl
+env "local" {
+  url     = getenv("DATABASE_URL")
+  schemas = ["app", "audit"]
+}
+```
+
+Semantics, all measured against a PostgreSQL database holding schemas `one`,
+`two`, and `public`:
+
+| Value | Schemas described |
+| --- | --- |
+| `schemas = ["one"]` | `one` |
+| `schemas = ["one", "two"]` | `one` and `two` |
+| `schemas = ["nosuchschema"]` | none; the command still exits 0 |
+| `schemas = []` | all of them — an empty list is not a selection |
+| attribute absent | all of them |
+
+`--schema` outranks the attribute outright and does not intersect with it: with
+`schemas = ["one"]` in the file, `--schema two` describes `two` alone.
+
+Restricting the universe means Ptah describes less than it did before the
+attribute was honored. Set `PTAH_ATLAS_IGNORE_ENV_SCHEMAS=1` to keep the
+realm-wide description; the attribute is then reported as having no effect, as
+any other tolerated name is. The variable governs the selection only — a value
+the field cannot hold is refused with it set exactly as it is without it,
+because Atlas CE refuses that file and compatibility never exits 0 where the
+community binary exits 1.
 
 `format.schema.inspect` follows the Atlas-compatible command's template
 semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
