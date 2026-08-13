@@ -228,6 +228,33 @@ invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
 `MARIADB_TEST_DSN` unconditionally, which makes its `unit` mode depend on
 databases listening on those exact ports.
 
+### The Go toolchain
+
+`go.mod` carries two Go versions and they are different facts with different
+lifecycles. Do not collapse them.
+
+- `go 1.26.5` is the published compatibility floor. `go.5x5.cz/ptah` and
+  `go.5x5.cz/ptah/testkit` are separately released import paths, so raising this
+  forces every consumer of both onto the newer language version. It moves on a
+  human decision.
+- `toolchain go1.26.6` is what CI builds and scans with. It moves on every patch
+  release and Renovate's built-in gomod manager proposes those bumps without
+  configuration. A dependency's `toolchain` line does not propagate to its
+  consumers, so this one is free to move.
+
+Every `actions/setup-go` step reads `go-version-file: go.mod`, which honors the
+`toolchain` directive in preference to the `go` directive. Never write a
+`go-version:` literal into a workflow, never restate the version in
+`.golangci.yml` (its `run.go` already defaults to the go directive), and never
+raise the `go` directive to clear a standard-library advisory — that is a
+consumer contract break for a reason that has nothing to do with the language.
+Raise `toolchain` instead.
+
+```bash
+# Fail when the toolchain grows a second declaration
+scripts/check-go-toolchain-single-source.sh
+```
+
 ## Compatibility Policy
 
 Ptah aims to be a drop-in replacement for the Atlas CLI. That goal has two
