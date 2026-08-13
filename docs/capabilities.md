@@ -169,6 +169,18 @@ conservative floor `ForServerVersion` assigns to pre-10.2 servers.
 `Postgres13()` covers 12–13 (no
 `CREATE OR REPLACE TRIGGER` and no `SPGIST` indexes with `INCLUDE` columns).
 
+A preset that covers a newer line than the one it is named after is making a
+claim about a server, so the evidence for those claims is kept in the tree
+rather than in a commit message.
+`core/platform/capability/capability_measured_lines_test.go` holds PostgreSQL
+18, MySQL 26 and MariaDB 12 against the servers they were read from, one row
+per registry key, recording the statement that decided each key and the
+server's verdict. It also separates keys the probe actually asked about from
+keys carried over from the line below, because a carried row is not a
+measurement of the newer line. Each entry names the probe run's per-cell
+artifact, so a reader can fetch the transcript instead of trusting the
+transcription.
+
 `CockroachDB25()` and `CockroachDB26()` are the measured CockroachDB release
 arms. The 25.x arm disables generic and guarded `DROP CONSTRAINT` plus
 `CREATE OR REPLACE TRIGGER`; the 26.x arm supports them. `CockroachDB23()`
