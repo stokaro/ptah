@@ -40,6 +40,9 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 	for _, name := range diff.ExtensionsRemoved {
 		result = append(result, ast.NewDropExtension(name))
 	}
+	for _, extension := range diff.ExtensionsModified {
+		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))
+	}
 	for _, name := range diff.SequencesAdded {
 		result = append(result, ast.NewCreateSequence(name))
 	}

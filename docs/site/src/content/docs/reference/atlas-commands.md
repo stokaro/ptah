@@ -817,12 +817,11 @@ plan with explicit diagnostics, and an explicit include selection matching
 nothing refuses the apply.
 
 For a live PostgreSQL desired schema, a selected extension outside the default
-schema is safe only when the current side has the same placement. A create or
-placement difference fails before SQL output because the shared schema model
-cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...`; default-schema
-creates and extension drops remain supported. Full installation-schema
-modeling is tracked in
-[issue #1441](https://github.com/stokaro/ptah/issues/1441).
+schema retains its installation schema. A create plans `CREATE SCHEMA IF NOT
+EXISTS` followed by `CREATE EXTENSION ... WITH SCHEMA ...`, identical live
+placements compare as synced, and drops remain supported. A placement change
+is detected but fails before SQL output because Ptah does not yet plan `ALTER
+EXTENSION ... SET SCHEMA`.
 
 **`--plan file://<path>`** executes a pre-approved local plan file instead of
 re-planning. Both plan formats are accepted, detected by content: the Atlas
@@ -1108,10 +1107,15 @@ schema files alone still require `--dev-url`.
 | `--schema`/`-s`, `--include` | Positively scope both sides, with the same selection semantics as `schema apply`. |
 | `--env` | Reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`. |
 
-Selection order matches `schema apply`: schema universe first, include selection
-inside it, exclusion last, and cross-scope dependency diagnostics. An explicit
-`--include` selection that matches neither side exits 1 with no diff output,
-rather than reporting a synced schema.
+Selection order matches `schema apply`: schema universe for schema-owned
+resources, include selection, exclusion last, and cross-scope dependency
+diagnostics. Database-wide extensions remain on both sides regardless of
+installation placement. An extension-only `--include` selects their qualified
+or bare identities; when a non-extension resource matches, all extensions ride
+as non-removing support even beside extension selectors. Schema-only and
+extension-only scopes remain authoritative for extension removal. Exclusions
+still subtract afterward. A selection that matches neither side exits 1 with
+no diff output rather than reporting a synced schema.
 
 Native twin: [`ptah schema diff`](../native-commands/).
 

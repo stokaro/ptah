@@ -311,6 +311,31 @@ func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {
 			expected: "CREATE EXTENSION postgis VERSION '3.0';\n",
 		},
 		{
+			name: "extension with schema and version",
+			extension: &ast.ExtensionNode{
+				Name:    `uuid-ossp`,
+				Schema:  `Extension Store`,
+				Version: "1.1",
+			},
+			expected: `CREATE EXTENSION "uuid-ossp" WITH SCHEMA "Extension Store" VERSION '1.1';` + "\n",
+		},
+		{
+			name: "extension and schema may have the same name",
+			extension: &ast.ExtensionNode{
+				Name:   "pgcrypto",
+				Schema: "pgcrypto",
+			},
+			expected: "CREATE EXTENSION pgcrypto WITH SCHEMA pgcrypto;\n",
+		},
+		{
+			name: "extension name containing a literal dot is one identifier",
+			extension: &ast.ExtensionNode{
+				Name:   "audit.tools",
+				Schema: "extensions",
+			},
+			expected: "CREATE EXTENSION \"audit.tools\" WITH SCHEMA extensions;\n",
+		},
+		{
 			name: "extension with comment",
 			extension: &ast.ExtensionNode{
 				Name:    "btree_gin",

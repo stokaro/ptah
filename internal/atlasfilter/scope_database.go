@@ -1,6 +1,7 @@
 package atlasfilter
 
 import (
+	"slices"
 	"strings"
 
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -39,12 +40,15 @@ func (s *scopeSelection) projectDatabase(db *dbschematypes.DBSchema) *dbschematy
 
 	s.projectDatabaseTopLevel(db, out, keptTables)
 	s.projectDatabaseSupport(db, out)
+	s.projectDatabaseExtensions(db, out)
 	out.Schemas = s.keepDatabaseSchemas(db, out)
 	return out
 }
 
 // projectDatabaseTopLevel selects independently includable top-level database
-// resources and their riding grants and roles.
+// resources and their riding grants and roles. Extensions are projected after
+// support objects, when the selection knows whether a non-extension resource
+// matched.
 func (s *scopeSelection) projectDatabaseTopLevel(
 	db, out *dbschematypes.DBSchema,
 	keptTables map[tableIdentity]struct{},
@@ -57,9 +61,6 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 	out.Functions = keep(db.Functions, func(function dbschematypes.DBFunction) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
-	})
-	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
-		return s.selectedNames(typeList("extension"), qualifiedNameCandidates(extension.Schema, extension.Name)...)
 	})
 	out.Sequences = keep(db.Sequences, func(sequence dbschematypes.DBSequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
@@ -76,6 +77,19 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 			return true
 		}
 		return databaseGrantRoleReferenced(out.Grants, role.Name)
+	})
+}
+
+func (s *scopeSelection) projectDatabaseExtensions(db, out *dbschematypes.DBSchema) {
+	if s.extensionSupport || s.nonExtensionMatched {
+		for _, extension := range db.Extensions {
+			s.selectedExtension(extension.Schema, extension.Name)
+		}
+		out.Extensions = slices.Clone(db.Extensions)
+		return
+	}
+	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
+		return s.selectedExtension(extension.Schema, extension.Name)
 	})
 }
 
@@ -149,6 +163,9 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 	for _, enum := range out.Enums {
 		owning[s.effectiveSchema(enum.Schema)] = struct{}{}
 	}
+	for _, extension := range out.Extensions {
+		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
+	}
 	return keep(db.Schemas, func(schema dbschematypes.DBSchemaInfo) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
@@ -156,7 +173,7 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, ok := owning[strings.TrimSpace(schema.Name)]
+		_, ok := owning[schema.Name]
 		return ok
 	})
 }

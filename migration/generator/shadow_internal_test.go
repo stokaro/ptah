@@ -88,10 +88,13 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 			ValuesAdded:   []string{"missing_value"},
 			ValuesRemoved: []string{"extra_value"},
 		}},
-		IndexesAdded:              []types.IndexRef{{TableName: "users", Name: "missing_index"}},
-		IndexesRemoved:            []types.IndexRef{{TableName: "users", Name: "extra_index"}},
-		ExtensionsAdded:           []string{"missing_extension"},
-		ExtensionsRemoved:         []string{"extra_extension"},
+		IndexesAdded:      []types.IndexRef{{TableName: "users", Name: "missing_index"}},
+		IndexesRemoved:    []types.IndexRef{{TableName: "users", Name: "extra_index"}},
+		ExtensionsAdded:   []string{"missing_extension"},
+		ExtensionsRemoved: []string{"extra_extension"},
+		ExtensionsModified: []types.ExtensionDiff{{
+			Name: "changed_extension", FromSchema: "public", ToSchema: "extensions",
+		}},
 		FunctionsAdded:            []string{"missing_function"},
 		FunctionsRemoved:          []string{"extra_function"},
 		FunctionsModified:         []types.FunctionDiff{{FunctionName: "changed_function", Changes: changes}},
@@ -156,6 +159,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		"extra_index",
 		"missing_extension",
 		"extra_extension",
+		"extension_mismatch",
 		"missing_function",
 		"extra_function",
 		"function_mismatch",
@@ -198,6 +202,12 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
+	c.Assert(mismatches[15], qt.DeepEquals, ShadowMismatch{
+		Kind:    "extension_mismatch",
+		Object:  "changed_extension",
+		Changes: map[string]string{"schema": "public -> extensions"},
+		Message: "extension mismatch changed_extension: schema public -> extensions",
+	})
 }
 
 func mismatchKinds(mismatches []ShadowMismatch) []string {

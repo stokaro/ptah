@@ -25,6 +25,10 @@ func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 			{Name: "auth"},
 			{Name: "billing"},
 		},
+		Extensions: []goschema.Extension{
+			{Schema: "auth", Name: "pgcrypto"},
+			{Schema: "billing", Name: "citext"},
+		},
 		Tables: []goschema.Table{
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
 			{StructName: "BillingInvoice", Schema: "billing", Name: "invoices"},
@@ -86,6 +90,7 @@ func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 
 	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"auth"})
+	c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"auth.pgcrypto", "billing.citext"})
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"id", "status", "invoice_id"})
 	c.Assert(got.Fields[2].Foreign, qt.Equals, "")
 	c.Assert(got.Fields[2].ForeignKeyName, qt.Equals, "")
@@ -130,6 +135,29 @@ func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testin
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"id"})
 	c.Assert(generatedViewNames(got.Views), qt.DeepEquals, []string{"active_users"})
 	c.Assert(generatedGrantTargets(got.Grants), qt.DeepEquals, []string{"schema:public", "table:users"})
+}
+
+func TestFilterGeneratedKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Extensions: []goschema.Extension{
+			{Name: "pgcrypto"},
+			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
+			{Name: "unrelated", Schema: "other"},
+		},
+		Tables: []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "email", Type: "extensions.citext"},
+		},
+	}
+
+	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"app"}, "public")
+
+	c.Assert(generatedSchemaNames(got.Schemas), qt.DeepEquals, []string{"app"})
+	c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals,
+		[]string{"pgcrypto", "extensions.citext", "other.unrelated"})
+	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"email"})
 }
 
 func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
@@ -217,7 +245,7 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c.Assert(databaseEnumNames(got.Enums), qt.DeepEquals, []string{"user_status"})
 	c.Assert(databaseIndexNames(got.Indexes), qt.DeepEquals, []string{"idx_users_status"})
 	c.Assert(databaseConstraintNames(got.Constraints), qt.DeepEquals, []string{"users_status_check"})
-	c.Assert(databaseExtensionNames(got.Extensions), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(databaseExtensionNames(got.Extensions), qt.DeepEquals, []string{"auth.pg_trgm", "billing.btree_gin"})
 	c.Assert(databaseViewNames(got.Views), qt.DeepEquals, []string{"auth.active_users"})
 	c.Assert(databaseMatViewNames(got.MatViews), qt.DeepEquals, []string{"auth.user_stats"})
 	c.Assert(databaseTriggerNames(got.Triggers), qt.DeepEquals, []string{"users_updated_at"})
@@ -265,6 +293,32 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 	c.Assert(databaseGrantTargets(got.Grants), qt.DeepEquals, []string{"schema:public", "table:users"})
 }
 
+func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
+	c := qt.New(t)
+	db := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{
+				Schema: "app",
+				Name:   "users",
+				Columns: []dbschematypes.DBColumn{
+					{Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext"},
+				},
+			},
+		},
+		Extensions: []dbschematypes.DBExtension{
+			{Name: "pgcrypto", Schema: "public"},
+			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
+			{Name: "unrelated", Schema: "other"},
+		},
+	}
+
+	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"app"}, "public")
+
+	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"app.users"})
+	c.Assert(databaseExtensionNames(got.Extensions), qt.DeepEquals,
+		[]string{"public.pgcrypto", "extensions.citext", "other.unrelated"})
+}
+
 func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
 	db := &dbschematypes.DBSchema{
@@ -296,6 +350,14 @@ func generatedSchemaNames(schemas []goschema.Schema) []string {
 	names := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
 		names = append(names, schema.Name)
+	}
+	return names
+}
+
+func generatedExtensionNames(extensions []goschema.Extension) []string {
+	names := make([]string, 0, len(extensions))
+	for _, extension := range extensions {
+		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }
@@ -422,7 +484,7 @@ func databaseConstraintNames(constraints []dbschematypes.DBConstraint) []string 
 func databaseExtensionNames(extensions []dbschematypes.DBExtension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, extension.Name)
+		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }

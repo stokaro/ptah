@@ -355,6 +355,10 @@
               "description": "Extension name.",
               "type": "string"
             },
+            "schema": {
+              "description": "PostgreSQL installation schema.",
+              "type": "string"
+            },
             "version": {
               "description": "Extension version.",
               "type": "string"

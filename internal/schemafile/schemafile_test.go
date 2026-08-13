@@ -44,6 +44,10 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 		Schemas: []goschema.Schema{{Name: "app"}},
 		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
 		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []goschema.Extension{{
+			Name:   "pgcrypto",
+			Schema: "app",
+		}},
 		Sequences: []goschema.Sequence{{
 			Name:   "order_seq",
 			Schema: "app",
@@ -134,6 +138,10 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 		Schemas: []goschema.Schema{{Name: "app", Comment: "Application"}},
 		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
 		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []goschema.Extension{{
+			Name:   "pgcrypto",
+			Schema: "app",
+		}},
 		Sequences: []goschema.Sequence{{
 			Name:      "order_seq",
 			Schema:    "app",
@@ -173,6 +181,7 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
 	c.Assert(got.Tables[0].RLSEnabled, qt.IsTrue)
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Name: "pgcrypto", Schema: "app"}})
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
 	c.Assert(got.Domains, qt.HasLen, 1)

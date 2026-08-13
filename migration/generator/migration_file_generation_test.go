@@ -79,6 +79,23 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 				"DROP EXTENSION",
 			},
 		},
+		{
+			name:            "nondefault extension removal restores its schema on rollback",
+			generatedSchema: &goschema.Database{},
+			databaseSchema: &types.DBSchema{Extensions: []types.DBExtension{{
+				Name: "pgcrypto", Version: "1.3", Schema: "Extension Store",
+			}}},
+			expectedUpSQL: []string{
+				"DROP EXTENSION IF EXISTS pgcrypto;",
+			},
+			expectedDownSQL: []string{
+				`CREATE SCHEMA IF NOT EXISTS "Extension Store";`,
+				`CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA "Extension Store" VERSION '1.3';`,
+			},
+			unexpectedDownSQL: []string{
+				"CREATE EXTENSION IF NOT EXISTS pgcrypto VERSION",
+			},
+		},
 	}
 
 	for _, tt := range tests {

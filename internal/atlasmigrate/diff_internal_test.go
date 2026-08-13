@@ -33,13 +33,14 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
 	" the replayed migration directory records `ptah:not-described sequence`," +
 	" so this comparison cannot tell it apart from one that already exists," +
-	" and the creation Ptah renders for it has no IF NOT EXISTS guard.\n"
+	" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n"
 
 func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	c := qt.New(t)
@@ -92,6 +93,70 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+}
+
+func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	schemas := []string{"app"}
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{
+			{Name: "pgcrypto", Schema: "public"},
+			{Name: "citext", Schema: "extensions"},
+			{Name: "unrelated", Schema: "other"},
+		},
+	}
+	desired := schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{
+		Extensions: []goschema.Extension{
+			{Name: "pgcrypto", Schema: "public"},
+			{Name: "citext", Schema: "extensions"},
+			{Name: "unrelated", Schema: "other"},
+		},
+	}, schemas, "public")
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, schemas, "public", desired, nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *testing.T) {
+	c := qt.New(t)
+	conn := connectDiffComparisonSQLite(c)
+	schemas := []string{"app"}
+	current := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{{Name: "citext", Schema: "extensions"}},
+	}
+	runtime := diffRuntime{
+		readDevSchema: func(
+			*dbschema.DatabaseConnection,
+			[]string,
+			string,
+		) (*dbschematypes.DBSchema, error) {
+			return schemascope.FilterDatabaseWithDefaultSchema(current, schemas, "public"), nil
+		},
+	}
+
+	replayed, diff, err := compareReplayedState(
+		c.Context(), conn, runtime, schemas, "public",
+		schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{}, schemas, "public"), nil, nil,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"citext"})
 }
 
 func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {

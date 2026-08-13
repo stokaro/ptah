@@ -22,6 +22,7 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 		{name: "literal dot", table: "tenant.data", want: `"tenant.data"`},
 		{name: "literal dot in schema", schema: "tenant.archive", table: "data", want: `"tenant.archive".data`},
 		{name: "embedded quote", table: `user"events`, want: `"user""events"`},
+		{name: "legacy mixed case", schema: "ExtensionStore", table: "uuid-ossp", want: "ExtensionStore.uuid-ossp"},
 	}
 
 	for _, tt := range tests {
@@ -31,6 +32,15 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 			c.Assert(got, qt.Equals, tt.want)
 		})
 	}
+}
+
+func TestCanonicalExact_PreservesQuotedIdentifierWhitespace(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(tableref.CanonicalExact(" Extension Store ", "pgcrypto"), qt.Equals, `" Extension Store ".pgcrypto`)
+	c.Assert(tableref.CanonicalExact("Extension Store", " pgcrypto "), qt.Equals, `"Extension Store"." pgcrypto "`)
+	c.Assert(tableref.CanonicalExact("extensions", "uuid-ossp"), qt.Equals, `extensions."uuid-ossp"`)
+	c.Assert(tableref.CanonicalExact("Extensions", "pgcrypto"), qt.Equals, `"Extensions".pgcrypto`)
 }
 
 func TestParse_HappyPath(t *testing.T) {

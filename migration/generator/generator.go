@@ -1554,6 +1554,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.ConstraintBackedIndexRemovals = slices.Clone(diff.ConstraintBackedIndexRemovals)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
+	clone.ExtensionsModified = slices.Clone(diff.ExtensionsModified)
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
 	clone.FunctionsRemoved = slices.Clone(diff.FunctionsRemoved)
 	clone.FunctionsModified = slices.Clone(diff.FunctionsModified)
@@ -1946,8 +1947,9 @@ func reverseSchemaDiffWithSchemaForDialect(
 		EnumsModified: reverseEnumDiffs(diff.EnumsModified),
 
 		// Reverse extension operations
-		ExtensionsAdded:   diff.ExtensionsRemoved, // Extensions to remove become extensions to add
-		ExtensionsRemoved: diff.ExtensionsAdded,   // Extensions to add become extensions to remove
+		ExtensionsAdded:    diff.ExtensionsRemoved, // Extensions to remove become extensions to add
+		ExtensionsRemoved:  diff.ExtensionsAdded,   // Extensions to add become extensions to remove
+		ExtensionsModified: reverseExtensionDiffs(diff.ExtensionsModified),
 
 		// Reverse function operations
 		FunctionsAdded:    diff.FunctionsRemoved, // Functions to remove become functions to add
@@ -2049,6 +2051,21 @@ func reverseSchemaDiffWithSchemaForDialect(
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
 		reversed.ConstraintsAddedWithTables = append(reversed.ConstraintsAddedWithTables, restored)
+	}
+	return reversed
+}
+
+func reverseExtensionDiffs(diffs []types.ExtensionDiff) []types.ExtensionDiff {
+	if diffs == nil {
+		return nil
+	}
+	reversed := make([]types.ExtensionDiff, len(diffs))
+	for i, diff := range diffs {
+		reversed[i] = types.ExtensionDiff{
+			Name:       diff.Name,
+			FromSchema: diff.ToSchema,
+			ToSchema:   diff.FromSchema,
+		}
 	}
 	return reversed
 }

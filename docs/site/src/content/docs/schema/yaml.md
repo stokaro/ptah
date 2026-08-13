@@ -25,6 +25,10 @@ tables:
       accounts_email_key:
         fields: [email]
         unique: true
+extensions:
+  pgcrypto:
+    schema: extensions
+    if_not_exists: true
 ```
 
 ## Render it
@@ -38,6 +42,10 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 Expected output includes:
 
 ```sql
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+
 CREATE TABLE "accounts" (
   "id" SERIAL PRIMARY KEY NOT NULL,
   "email" VARCHAR(255) NOT NULL

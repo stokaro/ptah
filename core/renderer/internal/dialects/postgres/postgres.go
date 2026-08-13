@@ -824,7 +824,14 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 		parts = append(parts, "IF NOT EXISTS")
 	}
 
-	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	// Extension names are database-wide single identifiers. Treating a dot as
+	// a schema separator would render an extension named `audit.tools` as the
+	// invalid two-part identity `"audit"."tools"`, even though extension
+	// placement belongs exclusively to the separate SCHEMA option.
+	parts = append(parts, r.escapeIdentifier(node.Name))
+	if node.Schema != "" {
+		parts = append(parts, "WITH", "SCHEMA", r.escapeIdentifier(node.Schema))
+	}
 
 	// Add version specification if provided
 	if node.Version != "" {

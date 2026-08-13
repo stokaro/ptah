@@ -23,6 +23,10 @@ var supplementalDiffCategories = map[string]string{
 	"ForeignKeysRemovedWithTables": "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 }
 
+var refusedDiffCategories = map[string]string{
+	"ExtensionsModified": "PostgreSQL extension placement drift is detected but refused before emission until ALTER EXTENSION SET SCHEMA planning is supported",
+}
+
 // TestEveryDiffCategoryRendersSQL walks the change categories of SchemaDiff and
 // asserts the PostgreSQL planner emits at least one node for each.
 //
@@ -67,6 +71,9 @@ func uncoveredDiffCategories(fixtures []categoryFixture) []string {
 		if _, supplemental := supplementalDiffCategories[field.Name]; supplemental {
 			continue
 		}
+		if _, refused := refusedDiffCategories[field.Name]; refused {
+			continue
+		}
 		uncovered = append(uncovered, field.Name)
 	}
 	return uncovered
@@ -76,6 +83,11 @@ func TestSupplementalDiffCategoriesAreDocumented(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(supplementalDiffCategories["ForeignKeysRemovedWithTables"], qt.Not(qt.Equals), "")
+}
+
+func TestRefusedDiffCategoriesAreDocumented(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(refusedDiffCategories["ExtensionsModified"], qt.Not(qt.Equals), "")
 }
 
 func diffCategoryFixtures() []categoryFixture {

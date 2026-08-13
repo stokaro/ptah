@@ -20,6 +20,16 @@ func Canonical(schema, name string) string {
 	return canonicalPart(schema) + "." + canonicalPart(name)
 }
 
+// CanonicalExact formats schema and name without normalizing their contents.
+// It is for already parsed identifiers whose leading or trailing spaces are
+// significant because the source quoted them.
+func CanonicalExact(schema, name string) string {
+	if schema == "" {
+		return canonicalExactPart(name)
+	}
+	return canonicalExactPart(schema) + "." + canonicalExactPart(name)
+}
+
 // Parse parses an unqualified or schema-qualified SQL identifier reference.
 // It accepts SQL-standard quotes, MySQL backticks, and SQL Server brackets.
 func Parse(value string) (Ref, bool) {
@@ -42,6 +52,28 @@ func canonicalPart(value string) string {
 		return value
 	}
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func canonicalExactPart(value string) string {
+	if postgresUnquotedIdentifier(value) {
+		return canonicalPart(value)
+	}
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func postgresUnquotedIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := range len(value) {
+		character := value[i]
+		if character >= 'a' && character <= 'z' || character == '_' ||
+			i > 0 && (character >= '0' && character <= '9' || character == '$') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func split(value string) ([]string, bool) {

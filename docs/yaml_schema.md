@@ -82,6 +82,7 @@ enums:
 
 extensions:
   pg_trgm:
+    schema: extensions
     if_not_exists: true
 
 functions:
@@ -301,7 +302,7 @@ YAML input supports these schema objects. Extensions, functions, materialized
 views, RLS, roles, and grants are PostgreSQL-specific; views and triggers are
 also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 
-- `extensions`: `name`, `if_not_exists`, `version`, `comment`
+- `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
 - `views`: `name`, `body`, `with_check`, `comment`

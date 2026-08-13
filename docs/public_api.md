@@ -75,6 +75,13 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
 
+`goschema.Extension.Schema` records a PostgreSQL extension's installation
+schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
+SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
+`IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
+default schema. Embedders should preserve the field when converting or copying
+schema IR; dropping it can move an extension into the wrong namespace.
+
 `core/coverage` carries what a schema description does **not** claim to
 describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
 hold one, and schema comparison consults both: the desired state's record gates
@@ -374,6 +381,13 @@ canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
 planning use one source of truth.
+
+`SchemaDiff.ExtensionsModified` contains `ExtensionDiff` entries with the
+extension name and its `FromSchema`/`ToSchema` placement. Empty and explicit
+default-schema spellings compare under the diff's identifier semantics. The
+PostgreSQL planner currently rejects a placement change with
+`ptaherr.ErrInvalidSchemaDiff` before emitting any AST; additions and removals
+remain independently plannable.
 
 Row-level security policies are carried the same way. `RLSPoliciesAdded` and
 `RLSPoliciesRemoved` are `[]RLSPolicyRef`, and `RLSPoliciesModified` is

@@ -11,12 +11,14 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/rlsscope"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -482,10 +484,14 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 // The schema is taken from the qualified name each comparison already puts on
 // the diff -- tables, enums, domains, composites, ranges, sequences, functions,
 // views, materialized views and a trigger's target relation are all named that
-// way -- so a kind added later is covered by adding its list here and nothing
-// else. Names that carry no schema contribute none, which is every name on a
-// single-schema migration.
-func (p *Planner) addSchemaPreconditions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+// way. Extensions keep installation schema on their desired definitions, so
+// their additions contribute that exact identifier directly. Names that carry
+// no schema contribute none, which is every name on a single-schema migration.
+func (p *Planner) addSchemaPreconditions(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded...)
 	names = append(names, diff.EnumsAdded...)
@@ -499,7 +505,6 @@ func (p *Planner) addSchemaPreconditions(result []ast.Node, diff *types.SchemaDi
 	for _, trigger := range diff.TriggersAdded {
 		names = append(names, trigger.TableName)
 	}
-
 	seen := make(map[string]struct{}, len(names))
 	schemas := make([]string, 0, len(names))
 	for _, name := range names {
@@ -517,9 +522,22 @@ func (p *Planner) addSchemaPreconditions(result []ast.Node, diff *types.SchemaDi
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
 	}
+	for _, name := range diff.ExtensionsAdded {
+		for _, extension := range generated.Extensions {
+			if extension.Name != name || extension.Schema == "" ||
+				schemaselection.IsPostgresSystemSchema(extension.Schema) {
+				continue
+			}
+			if _, ok := seen[extension.Schema]; !ok {
+				seen[extension.Schema] = struct{}{}
+				schemas = append(schemas, extension.Schema)
+			}
+			break
+		}
+	}
 	slices.Sort(schemas)
 	for _, schema := range schemas {
-		result = append(result, ast.NewRawSQL("CREATE SCHEMA IF NOT EXISTS "+schema))
+		result = append(result, &ast.CreateSchemaNode{Name: schema, IfNotExists: true})
 	}
 	return result
 }
@@ -1507,6 +1525,19 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
+	if err := p.validateExtensionInstallationSchemas(diff, generated); err != nil {
+		return nil, err
+	}
+	if diff != nil && len(diff.ExtensionsModified) > 0 {
+		change := diff.ExtensionsModified[0]
+		return nil, fmt.Errorf(
+			"%w: cannot move PostgreSQL extension %q from schema %q to schema %q; extension schema moves are not yet supported",
+			ptaherr.ErrInvalidSchemaDiff,
+			change.Name,
+			change.FromSchema,
+			change.ToSchema,
+		)
+	}
 	// One set of identifier rules for the whole plan. Every question of the form
 	// "do these two spellings name the same object" is answered with it, so the
 	// resolvers below and the statements that accompany what they resolve cannot
@@ -1550,7 +1581,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 0. Create the schemas this migration adds objects to, before anything is
 	// created in them. Every phase below can name a schema, so this cannot sit
 	// inside one of them.
-	result = p.addSchemaPreconditions(result, diff)
+	result = p.addSchemaPreconditions(result, diff, generated)
 
 	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
@@ -1678,6 +1709,35 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeExtensions(result, diff)
 
 	return result, nil
+}
+
+func (p *Planner) validateExtensionInstallationSchemas(diff *types.SchemaDiff, generated *goschema.Database) error {
+	if p.targetDialect() == platform.Postgres || p.targetDialect() == platform.YugabyteDB || diff == nil {
+		return nil
+	}
+	for _, name := range diff.ExtensionsAdded {
+		for _, extension := range generated.Extensions {
+			if extension.Name == name && extension.Schema != "" {
+				return fmt.Errorf(
+					"%w: %s does not support PostgreSQL extension installation schema %q for extension %q",
+					ptaherr.ErrUnsupportedFeature,
+					p.targetDialect(),
+					extension.Schema,
+					extension.Name,
+				)
+			}
+		}
+	}
+	if len(diff.ExtensionsModified) > 0 {
+		change := diff.ExtensionsModified[0]
+		return fmt.Errorf(
+			"%w: %s does not support PostgreSQL extension installation schema placement for extension %q",
+			ptaherr.ErrUnsupportedFeature,
+			p.targetDialect(),
+			change.Name,
+		)
+	}
+	return nil
 }
 
 func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

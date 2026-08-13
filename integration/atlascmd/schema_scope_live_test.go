@@ -182,6 +182,86 @@ func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), auditSchema)
 }
 
+func TestSchemaDiffSchemaScopeKeepsDatabaseWideExtensionLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	dbURL := livePostgresURLForScope(t)
+	appSchema, _ := createScopeSchemas(t, dbURL)
+	schemaPath := filepath.Join(t.TempDir(), "schema.hcl")
+	desired := `
+schema "extensions" {}
+extension "citext" {
+  schema = schema.extensions
+}
+
+schema "` + appSchema + `" {}
+table "users" {
+  schema = schema.` + appSchema + `
+  column "id" {
+    type = serial
+  }
+  column "email" {
+    type = sql("extensions.citext")
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`
+	c.Assert(os.WriteFile(schemaPath, []byte(desired), 0o600), qt.IsNil)
+
+	out := runCompatSchemaDiff(c,
+		"--from", dbURL,
+		"--to", "file://"+schemaPath,
+		"--schema", appSchema,
+		"--include", appSchema+".users",
+	)
+
+	// Extension installation placement is not object ownership. Selecting only
+	// the app table retains citext as database-wide support, synthesizes its
+	// schema precondition, and plans it before the selected table starts using
+	// extensions.citext.
+	schemaSQL := `CREATE SCHEMA IF NOT EXISTS "extensions"`
+	extensionSQL := `CREATE EXTENSION "citext" WITH SCHEMA "extensions"`
+	c.Assert(out, qt.Contains, schemaSQL)
+	c.Assert(out, qt.Contains, extensionSQL)
+	c.Assert(out, qt.Contains, `"email" extensions.citext`)
+	c.Assert(strings.Index(out, schemaSQL) < strings.Index(out, extensionSQL), qt.IsTrue)
+}
+
+func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	adminURL := livePostgresURLForScope(t)
+	suffix := uniqueScopeSuffix()
+	targetURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_target_"+suffix)
+	devURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_dev_"+suffix)
+	seedDatabase(c, targetURL,
+		`CREATE SCHEMA app`,
+		`CREATE TABLE app.users (id bigint PRIMARY KEY)`,
+		`CREATE EXTENSION pgcrypto`,
+	)
+	schemaPath := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(schemaPath, []byte(`schema "elsewhere" {}`), 0o600), qt.IsNil)
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", targetURL,
+		"--dev-url", devURL,
+		"--to", "file://" + schemaPath,
+		"--schema", "app",
+		"--include", "app.users",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, `DROP TABLE IF EXISTS "app"."users" CASCADE`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "DROP EXTENSION")
+}
+
 // createScopeInspectSchema provisions one uniquely named schema holding the
 // PostgreSQL-only object kinds the include projection has to reason about: an
 // enum used by a kept column, a SERIAL-owned sequence, an independent table,
