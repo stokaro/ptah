@@ -206,8 +206,12 @@ func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
 		{name: "fixed is decimal", in: "fixed(10,2)", want: "decimal(10,2)"},
 		{name: "bool is tinyint", in: "bool", want: "tinyint"},
 		{name: "boolean is tinyint", in: "boolean", want: "tinyint"},
-		{name: "real is double", in: "real", want: "double"},
 		{name: "double precision is double", in: "double precision", want: "double"},
+		// REAL and the NATIONAL spellings are deliberately NOT folded; they are
+		// refused instead, so they pass through here unchanged. See
+		// TestValidateSignature_RefusesTypesThatCannotRoundTrip.
+		{name: "real is left alone", in: "real", want: "real"},
+		{name: "national varchar is left alone", in: "national varchar(10)", want: "national varchar(10)"},
 		{name: "character varying is varchar", in: "character varying(20)", want: "varchar(20)"},
 		{name: "character is char", in: "character(5)", want: "char(5)"},
 		{name: "uppercase alias is resolved", in: "INTEGER", want: "int"},
@@ -233,6 +237,70 @@ func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			c.Check(mysqlroutine.NormalizeType(test.in), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestValidateSignature_RefusesTypesThatCannotRoundTrip pins the two families
+// whose catalog form the declaration alone does not decide.
+//
+// Both were measured on MySQL 26.7.0. REAL depends on the connection's SQL
+// mode: `RETURNS REAL` reports DTD_IDENTIFIER `double` under the image's
+// default sql_mode and `float` with REAL_AS_FLOAT added to the same session,
+// while DOUBLE, DOUBLE PRECISION and FLOAT report `double`, `double` and
+// `float` under BOTH -- so the unambiguous spellings stay accepted and are the
+// control here. The NATIONAL family reports the SAME DTD_IDENTIFIER as the
+// plain spelling and differs only in CHARACTER_SET_NAME (`utf8mb3` against
+// `utf8mb4`), a column this comparison does not read, so folding them made a
+// real character-set change invisible.
+//
+// They are refused rather than merely left out of the synonym table, and that
+// distinction is the whole point: leaving them unfolded would keep the declared
+// spelling on the desired side against a different catalog spelling, which is
+// permanent drift -- the failure this package exists to end.
+func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
+	c := qt.New(t)
+
+	refused := []struct {
+		name       string
+		parameters string
+		returns    string
+		want       string
+	}{
+		{name: "real return", returns: "REAL", want: "REAL_AS_FLOAT"},
+		{name: "real parameter", parameters: "a REAL", returns: "int", want: "REAL_AS_FLOAT"},
+		{name: "national varchar return", returns: "NATIONAL VARCHAR(10)", want: "character set"},
+		{name: "national char parameter", parameters: "a NATIONAL CHAR(5)", returns: "int", want: "character set"},
+		{name: "nvarchar return", returns: "NVARCHAR(10)", want: "character set"},
+		{name: "nchar parameter", parameters: "a NCHAR(5)", returns: "int", want: "character set"},
+		{name: "national varchar without a length", returns: "NATIONAL VARCHAR", want: "character set"},
+	}
+
+	for _, test := range refused {
+		c.Run("refused/"+test.name, func(c *qt.C) {
+			err := mysqlroutine.ValidateSignature(test.parameters, test.returns)
+			c.Assert(err, qt.IsNotNil)
+			c.Check(err.Error(), qt.Contains, test.want)
+		})
+	}
+
+	accepted := []struct {
+		name       string
+		parameters string
+		returns    string
+	}{
+		{name: "double is unambiguous", returns: "DOUBLE"},
+		{name: "double precision is unambiguous", returns: "DOUBLE PRECISION"},
+		{name: "float is unambiguous", returns: "FLOAT"},
+		{name: "plain varchar", parameters: "a VARCHAR(10)", returns: "VARCHAR(10)"},
+		{name: "plain char", parameters: "a CHAR(5)", returns: "int"},
+		{name: "integer alias is still folded, not refused", parameters: "a INTEGER", returns: "INTEGER"},
+		{name: "empty signature", parameters: "", returns: "int"},
+	}
+
+	for _, test := range accepted {
+		c.Run("accepted/"+test.name, func(c *qt.C) {
+			c.Check(mysqlroutine.ValidateSignature(test.parameters, test.returns), qt.IsNil)
 		})
 	}
 }

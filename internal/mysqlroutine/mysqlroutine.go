@@ -153,6 +153,9 @@ func SecurityClause(security string) (string, error) {
 // MariaDB 12.3.2 and reading DTD_IDENTIFIER back. Both engines agreed on the
 // base type for every row, so one table serves the family; they disagree only
 // about the legacy display width, which [NormalizeType] strips separately.
+// A spelling belongs here only if the catalog form is decided by the
+// declaration ALONE. Two families are deliberately absent and refused instead;
+// see [ambiguousRoutineTypes].
 var routineTypeAliases = map[string]string{
 	"integer":           "int",
 	"int4":              "int",
@@ -166,13 +169,95 @@ var routineTypeAliases = map[string]string{
 	"fixed":             "decimal",
 	"bool":              "tinyint",
 	"boolean":           "tinyint",
-	"real":              "double",
 	"double precision":  "double",
 	"character":         "char",
 	"character varying": "varchar",
-	"national varchar":  "varchar",
-	"national char":     "char",
 	"long varchar":      "mediumtext",
+}
+
+// ambiguousRoutineTypes are declared spellings whose catalog form is NOT
+// decided by the declaration alone, mapped to the reason and the unambiguous
+// spellings that replace them.
+//
+// They are refused rather than folded, and refused rather than merely left out
+// of [routineTypeAliases], because leaving them out is not neutral: the desired
+// side would keep the declared spelling, the catalog would report something
+// else, and the comparator would plan the same destructive replacement on every
+// apply -- the very drift this package exists to end. A spelling that cannot
+// round-trip has to be refused at the point of declaration or it becomes a
+// permanent diff.
+//
+//   - REAL depends on the connection's SQL mode. Measured on MySQL 26.7.0,
+//     `RETURNS REAL` reports DTD_IDENTIFIER `double` under the image's default
+//     sql_mode and `float` with REAL_AS_FLOAT added to the same session. Folding
+//     it to `double` is therefore right for one deployment and wrong for the
+//     other, and nothing in the declaration says which. DOUBLE, DOUBLE PRECISION
+//     and FLOAT are all mode-independent -- measured under REAL_AS_FLOAT, they
+//     still report `double`, `double` and `float` -- so the operator has an
+//     unambiguous way to say either thing.
+//
+//   - The NATIONAL spellings carry a character set that DTD_IDENTIFIER does not
+//     show. Measured on the same server, `NATIONAL VARCHAR(10)` and `VARCHAR(10)`
+//     BOTH report `varchar(10)`, and they differ only in a column this reader
+//     does not select:
+//
+//     DTD_IDENTIFIER  CHARACTER_SET_NAME  COLLATION_NAME
+//     varchar(10)     utf8mb3             utf8mb3_general_ci   <- NATIONAL
+//     varchar(10)     utf8mb4             utf8mb4_0900_ai_ci   <- plain
+//
+//     NCHAR, NVARCHAR and NATIONAL CHAR behave identically. Treating them as
+//     equivalent made a real character-set change invisible: switching a
+//     parameter between the two spellings produced no modification at all, so
+//     the authored change was never applied. Comparing the charset properly
+//     needs it read on the catalog side AND derived from the declaration on the
+//     desired side, which is a larger change than this one.
+var ambiguousRoutineTypes = map[string]string{
+	"real": "REAL is read back as `double` or `float` depending on whether the " +
+		"connection's sql_mode includes REAL_AS_FLOAT, so Ptah cannot tell which " +
+		"type this declaration means; declare DOUBLE or FLOAT",
+	"national char":    nationalCharsetReason,
+	"national varchar": nationalCharsetReason,
+	"nchar":            nationalCharsetReason,
+	"nvarchar":         nationalCharsetReason,
+}
+
+const nationalCharsetReason = "the NATIONAL spellings select the server's national " +
+	"character set, which information_schema reports in CHARACTER_SET_NAME rather than " +
+	"in the type Ptah compares, so a change to or from one would be invisible; declare " +
+	"CHAR or VARCHAR and set the character set on the column or the schema"
+
+// ValidateSignature refuses a routine signature Ptah cannot compare faithfully.
+//
+// It is the type half of the same rule [Characteristic] and [SecurityClause]
+// hold for volatility and the security mode: a value this target cannot
+// represent is refused at the point of declaration rather than reinterpreted
+// into something that reads back as a different value forever.
+func ValidateSignature(parameters, returns string) error {
+	if err := validateType(returns); err != nil {
+		return fmt.Errorf("return type: %w", err)
+	}
+	for declaration := range strings.SplitSeq(parameters, ",") {
+		fields := strings.Fields(declaration)
+		if len(fields) < 2 {
+			continue
+		}
+		if err := validateType(strings.Join(fields[1:], " ")); err != nil {
+			return fmt.Errorf("parameter %s: %w", fields[0], err)
+		}
+	}
+	return nil
+}
+
+func validateType(dataType string) error {
+	trimmed := strings.TrimSpace(dataType)
+	if trimmed == "" {
+		return nil
+	}
+	base, _ := splitTypeBase(trimmed)
+	if reason, ambiguous := ambiguousRoutineTypes[strings.ToLower(base)]; ambiguous {
+		return fmt.Errorf("%s cannot be compared faithfully on this target: %s", base, reason)
+	}
+	return nil
 }
 
 // integerRoutineTypes are the types whose parenthesized argument is a display
@@ -251,7 +336,13 @@ func splitTypeBase(dataType string) (base, rest string) {
 	fields := strings.Fields(dataType)
 	for size := min(len(fields), 2); size >= 1; size-- {
 		candidate := strings.ToLower(strings.Join(fields[:size], " "))
-		if _, ok := routineTypeAliases[candidate]; ok {
+		_, isAlias := routineTypeAliases[candidate]
+		// The ambiguous table is consulted too, or `NATIONAL VARCHAR` written
+		// without a length would split at the space and be validated as the
+		// base name `national`, which is in neither table -- so the refusal
+		// would not fire and the spelling would pass through unnoticed.
+		_, isAmbiguous := ambiguousRoutineTypes[candidate]
+		if isAlias || isAmbiguous {
 			return strings.Join(fields[:size], " "), strings.Join(fields[size:], " ")
 		}
 	}

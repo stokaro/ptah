@@ -71,22 +71,23 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 }
 
 // TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun pins which
-// declarations this target generates DDL for, and which it refuses.
+// declarations this target generates DDL for, and which it names and skips.
 //
 // MySQL and MariaDB run exactly one routine language, SQL. A function declared
 // LANGUAGE plpgsql is PostgreSQL procedural code and no envelope makes it run
-// here: `RETURNS VOID ... BEGIN PERFORM set_config(...); END;` reaches Error
-// 1064 on MySQL 26.7.0 at the return type, before the body is parsed.
+// here: the shared 014-rls-functions fixture declares
+// `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, and rendering that as
+// MySQL DDL reached Error 1064 on MySQL 26.7.0 at the return type, before the
+// body was parsed.
 //
-// It is a refusal rather than the comment this used to emit. The comment was
-// accurate and the outcome was not: nothing was created, the comparator kept
-// the function in FunctionsAdded, `schema apply` exited 0 having done nothing,
-// and the next run planned the same creation. Measured on MySQL 26.7.0 and
-// MariaDB 12.3.2, a function annotated WITHOUT `language=` reached this branch
-// too, because [goschema.Function.Canonicalize] defaults an unset language to
-// plpgsql -- so the case that should never have skipped was skipping.
+// It is a SKIP and not a refusal, deliberately. A refusal breaks applying one
+// schema across postgres, mysql and mariadb, and Ptah has no way to scope a
+// declared object to a dialect: `//ptah:schema:function` takes no `platform=`
+// or `dialect=` attribute, and unknown attributes are a hard parse error. Until
+// a declaration can say "this object is PostgreSQL's", the skip is what lets a
+// multi-dialect schema exist at all.
 //
-// The `sql` and unset rows are the control, and they are the point. Refusing
+// The `sql` and unset rows are the control, and they are the point. Skipping
 // EVERY function would be `-- CREATE FUNCTION f1 not supported in MySQL` in a
 // new spelling -- the false claim about the engine that stokaro/ptah#929 is
 // about -- and it would make capability.Functions vacuous again. A body this
@@ -95,7 +96,7 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 	c := qt.New(t)
 
-	generated := []struct {
+	tests := []struct {
 		name     string
 		language string
 		want     string
@@ -112,18 +113,18 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 			name: "uppercase SQL is generated", language: "SQL",
 			want: "CREATE FUNCTION `fn`() RETURNS int DETERMINISTIC RETURN 1;",
 		},
-	}
-
-	refused := []struct {
-		name     string
-		language string
-	}{
-		{name: "plpgsql is refused", language: "plpgsql"},
-		{name: "plpython is refused", language: "plpython3u"},
+		{
+			name: "plpgsql is named and skipped", language: "plpgsql",
+			want: "CREATE FUNCTION `fn` declares language plpgsql, which this target does not run; skipped.",
+		},
+		{
+			name: "plpython is named and skipped", language: "plpython3u",
+			want: "CREATE FUNCTION `fn` declares language plpython3u, which this target does not run; skipped.",
+		},
 	}
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
-		for _, test := range generated {
+		for _, test := range tests {
 			c.Run(dialect+"/"+test.name, func(c *qt.C) {
 				r := newRenderer(dialect)
 
@@ -138,26 +139,42 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 				c.Check(r.Output(), qt.Not(qt.Contains), "not supported in")
 			})
 		}
-		for _, test := range refused {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
-				r := newRenderer(dialect)
+	}
+}
 
-				err := r.VisitCreateFunction(&ast.CreateFunctionNode{
-					Name: "fn", Returns: "int", Volatility: "IMMUTABLE",
-					Language: test.language, Body: "RETURN 1",
-				})
+// TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault pins the part of the
+// skip message that is new.
+//
+// [goschema.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
+// function annotated without `language=` reaches the skip branch and is passed
+// over when it should have been generated. Measured on MySQL 26.7.0 and MariaDB
+// 12.3.2, `schema apply` then exits 0 having created nothing and the diff asks
+// for the same function on every run. The renderer cannot tell that case apart
+// from a deliberate plpgsql declaration -- both arrive as the same value -- so
+// it cannot choose for the operator, but it can say which two readings exist
+// and which word settles it.
+func TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault(t *testing.T) {
+	c := qt.New(t)
 
-				c.Assert(err, qt.IsNotNil)
-				c.Check(err.Error(), qt.Contains, test.language)
-				// It names the language it was given, and the word that fixes it.
-				c.Check(err.Error(), qt.Contains, `language="sql"`)
-				c.Check(err.Error(), qt.Not(qt.Contains), "not supported in")
-				// Nothing is emitted: a refused function must not leave a
-				// statement behind for an object this target never creates.
-				c.Check(r.Output(), qt.Not(qt.Contains), "DROP FUNCTION")
-				c.Check(r.Output(), qt.Not(qt.Contains), "CREATE FUNCTION")
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		c.Run(dialect, func(c *qt.C) {
+			r := newRenderer(dialect)
+
+			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
+				Name: "fn", Returns: "int", Volatility: "IMMUTABLE",
+				Language: "plpgsql", Body: "RETURN 1",
 			})
-		}
+
+			c.Assert(err, qt.IsNil)
+			c.Check(r.Output(), qt.Contains, `language="sql"`)
+			c.Check(r.Output(), qt.Contains, "defaulted to plpgsql")
+			// Every added line is a comment: a skipped function must leave no
+			// executable statement behind.
+			for line := range strings.SplitSeq(strings.TrimSpace(r.Output()), "\n") {
+				c.Check(strings.HasPrefix(strings.TrimSpace(line), "--"), qt.IsTrue,
+					qt.Commentf("line is not a comment: %s", line))
+			}
+		})
 	}
 }
 
@@ -289,6 +306,26 @@ func TestVisitCreateFunction_RefusesValuesItCannotRepresent(t *testing.T) {
 				Language: "sql", Body: "RETURN 1",
 			},
 			want: "STABEL",
+		},
+		{
+			// REAL reads back as double or float depending on the connection's
+			// sql_mode, so no single normalization is right for both.
+			name: "sql-mode-dependent REAL",
+			node: &ast.CreateFunctionNode{
+				Name: "fn", Returns: "REAL", Volatility: "IMMUTABLE",
+				Language: "sql", Body: "RETURN 1",
+			},
+			want: "REAL_AS_FLOAT",
+		},
+		{
+			// NATIONAL VARCHAR and VARCHAR report the same DTD_IDENTIFIER and
+			// differ only in a charset column this comparison does not read.
+			name: "national character set parameter",
+			node: &ast.CreateFunctionNode{
+				Name: "fn", Parameters: "a NATIONAL VARCHAR(10)", Returns: "int",
+				Volatility: "IMMUTABLE", Language: "sql", Body: "RETURN 1",
+			},
+			want: "character set",
 		},
 	}
 

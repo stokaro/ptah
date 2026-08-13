@@ -1103,37 +1103,44 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// return type alone is Error 1064 on MySQL 26.7.0 before the body is even
 	// reached.
 	//
-	// This used to write a comment and return nil. The comment was accurate and
-	// the silence was not: nothing was created, so the comparator kept the
-	// function in FunctionsAdded, `schema apply` exited 0 having done nothing,
-	// and the next run planned the same creation again. A skip that cannot
-	// converge is a permanent diff wearing a polite message.
+	// It stays a SKIP rather than becoming a refusal, and that was measured
+	// rather than assumed. A refusal breaks a workflow that works today:
+	// applying ONE schema across postgres, mysql and mariadb. Ptah has no way to
+	// scope a declared object to a dialect -- `//ptah:schema:function` accepts
+	// name, params, returns, language, security, volatility, body and comment,
+	// and internal/annotationmeta grants `platform.<dialect>.<key>` overrides to
+	// exactly three directives (field, embedded, table), none of which is a
+	// function. An unknown attribute is a hard parse error, so `platform=` or
+	// `dialect=` cannot even be written. Until a declaration can say "this
+	// object is PostgreSQL's", refusing here would leave an operator with a
+	// multi-dialect schema no way to express what they already express by
+	// declaring a plpgsql function and letting non-PostgreSQL targets pass it
+	// by. The only alternative available today is `exclude` in ptah.yaml, which
+	// is an operator-side filter at invocation, not a property of the
+	// declaration.
 	//
-	// It is a refusal now, and the refusal is what makes the ambiguity visible.
-	// [goschema.Function.Canonicalize] defaults an unset language to plpgsql --
-	// PostgreSQL's default, baked into a dialect-neutral type -- so by the time
-	// a parsed annotation reaches this renderer, "the operator wrote plpgsql"
-	// and "the operator wrote nothing" are the same value and cannot be told
-	// apart here. Guessing either way is wrong for the other, so this names both
-	// readings and asks for the one word that settles it. Measured: a function
-	// annotated without `language=` canonicalizes to plpgsql and was skipped on
-	// both engines, which is the case that should never have skipped.
+	// What the message says is new, and it is the part worth keeping. The skip
+	// used to name only the language. [goschema.Function.Canonicalize] defaults
+	// an UNSET language to plpgsql -- PostgreSQL's default, baked into a
+	// dialect-neutral type -- so a function annotated without `language=` lands
+	// here too and is skipped when it should have been generated. Measured on
+	// MySQL 26.7.0 and MariaDB 12.3.2: `schema apply` exits 0 having created
+	// nothing, and the diff asks for the same function forever. That trap costs
+	// an afternoon to find, so the comment names it and names the one word that
+	// settles it.
 	//
 	// The message still never blames the engine. `-- CREATE FUNCTION f1 not
 	// supported in MySQL` was false because MySQL hosts functions perfectly well
 	// (stokaro/ptah#929); this is about the declaration, and it says so.
 	if language := strings.ToLower(strings.TrimSpace(node.Language)); language != "" && language != "sql" {
-		return &ptaherr.RenderError{
-			Dialect: r.dialect,
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf(
-				"function %s declares language %s, which %s does not run. This target runs "+
-					"exactly one routine language, SQL. If the body is SQL, declare "+
-					"language=\"sql\" -- an annotation that omits the language is defaulted to "+
-					"plpgsql and reaches here as this same value. If the body really is %s, it "+
-					"belongs to a PostgreSQL target; remove the declaration for this one",
-				node.Name, language, r.dialectUpper, language),
-		}
+		r.w.WriteLinef(
+			"-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
+			r.dialectUpper, escapeIdentifier(node.Name), language)
+		r.w.WriteLinef(
+			"--   If this body is SQL, declare language=\"sql\": an annotation that omits the")
+		r.w.WriteLinef(
+			"--   language is defaulted to plpgsql and is skipped here for the same reason.")
+		return nil
 	}
 	// Both refusals happen before anything is written. A value this target
 	// cannot represent must not reach the output at all: the planner emits a
@@ -1150,6 +1157,13 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	}
 	security, err := mysqlroutine.SecurityClause(node.Security)
 	if err != nil {
+		return &ptaherr.RenderError{
+			Dialect: r.dialect,
+			Err:     err,
+			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+		}
+	}
+	if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
 		return &ptaherr.RenderError{
 			Dialect: r.dialect,
 			Err:     err,

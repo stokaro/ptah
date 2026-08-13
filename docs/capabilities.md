@@ -575,24 +575,47 @@ remaining resolver refinement work.
   server applied its `DEFINER` default and every later comparison reported
   `security: DEFINER -> INVKOER` — an operator who asked for invoker rights got
   definer rights and a permanent diff. It is an error now, raised before the
-  leading drop is planned. An unknown volatility is refused the same way.
+  leading drop is planned. An unknown volatility is refused the same way, and so
+  are two type spellings whose catalog form the declaration alone does not
+  decide: `REAL` reads back as `double` or `float` depending on whether the
+  connection's `sql_mode` includes `REAL_AS_FLOAT` (measured both ways on MySQL
+  26.7.0, while `DOUBLE`, `DOUBLE PRECISION` and `FLOAT` are mode-independent),
+  and the `NATIONAL`/`NCHAR`/`NVARCHAR` spellings report the SAME
+  `DTD_IDENTIFIER` as the plain ones and differ only in `CHARACTER_SET_NAME`
+  (`utf8mb3` against `utf8mb4`), a column this comparison does not read. Both
+  are refused rather than merely left out of the synonym table, because leaving
+  a spelling unfolded keeps it on the desired side against a different catalog
+  spelling — permanent drift, the failure this whole section is about.
 
   What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function
   declared `language="plpgsql"` is PostgreSQL procedural code that no envelope
   makes runnable there — `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`
   is Error 1064 on MySQL 26.7.0 at the return type, before the body is parsed.
-  Such a declaration is refused with a message naming the language it was given
-  and the one word that settles it, `language="sql"`. It used to be a named skip
-  comment, which was accurate and silent: nothing was created, the comparator
-  kept the function in `FunctionsAdded`, `schema apply` exited 0 having done
-  nothing, and the next run planned the same creation. Because
-  `Function.Canonicalize` defaults an unset language to `plpgsql`, an annotation
-  that omits `language=` reached that branch too — so the case that should never
-  have skipped was skipping. A function whose body the target can run still gets
-  real DDL. That distinction is the point: refusing every function would be
-  `-- CREATE FUNCTION f1 not supported in MySQL` in a new spelling, and would
-  make this key vacuous again.
+  Such a declaration gets a named skip comment. A function whose body the target
+  can run still gets real DDL. That distinction is the point: skipping every
+  function would be `-- CREATE FUNCTION f1 not supported in MySQL` in a new
+  spelling, and would make this key vacuous again.
+
+  It is a skip rather than a refusal because Ptah cannot yet say which targets a
+  declared object belongs to. `//ptah:schema:function` accepts `name`, `params`,
+  `returns`, `language`, `security`, `volatility`, `body` and `comment`, and
+  `platform.<dialect>.<key>` overrides are granted to exactly three directives —
+  field, embedded and table — none of which is a function. An unknown attribute
+  is a parse error, so there is no spelling for "this object is PostgreSQL's".
+  Refusing here would therefore make one schema applied across postgres, mysql
+  and mariadb impossible, and the only alternative available today is `exclude`
+  in `ptah.yaml`, which is an operator-side filter at invocation rather than a
+  property of the declaration.
+
+  The skip does say more than it used to. `Function.Canonicalize` defaults an
+  unset language to `plpgsql`, so an annotation that omits `language=` lands on
+  this branch as well and is passed over when it should have been generated —
+  `schema apply` exits 0 having created nothing and the diff asks for the same
+  function on every run. The renderer cannot tell that case apart from a
+  deliberate `plpgsql` declaration, because both arrive as the same value, so
+  the comment names both readings and the one word that settles it,
+  `language="sql"`.
 
   **Routine identity is the engine's, not the table rules'.** Stored-routine
   names are case-insensitive on both engines — with `foo` in the catalog,
