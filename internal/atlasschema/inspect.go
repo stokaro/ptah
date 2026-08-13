@@ -190,7 +190,7 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
-	if err := reportOmittedVirtualTables(schema, output.Text, opts); err != nil {
+	if err := reportOmittedVirtualTables(schema, output, opts); err != nil {
 		return "", err
 	}
 	if err := applyInspectFileExports(output.Files); err != nil {
@@ -210,21 +210,26 @@ func renderInspectSchema(
 // that captures inspection output a document that looks complete and is not.
 // Documentation cannot reach that pipeline. See stokaro/ptah#1028.
 //
-// Whether the declaration survived is read off the rendered text rather than
+// Whether the declaration survived is read off the rendered output rather than
 // classified from the template, because --format takes an arbitrary Go
 // template: one that calls `sql` carries the declarations whatever else it
-// does, and one that does not, does not. The output either contains a
-// CREATE VIRTUAL TABLE or it does not.
+// does, and one that does not, does not.
+//
+// The planned FILES count as rendered output, not just the printed text. A
+// `split | write` template deliberately leaves Text empty and puts the whole
+// document in Files, so reading Text alone reported a loss for an export whose
+// file holds the correct CREATE VIRTUAL TABLE -- measured as a note beside an
+// `out/main.sql` that contained the statement.
 func reportOmittedVirtualTables(
 	schema *dbschematypes.DBSchema,
-	rendered string,
+	output atlasreport.SchemaInspectOutput,
 	opts InspectOptions,
 ) error {
 	virtual := sqlitevirtual.Tables(schema)
 	if len(virtual) == 0 {
 		return nil
 	}
-	if strings.Contains(strings.ToUpper(rendered), "CREATE VIRTUAL TABLE") {
+	if renderingCarriesVirtualTables(output) {
 		return nil
 	}
 
@@ -246,6 +251,20 @@ func reportOmittedVirtualTables(
 		omittedVerb(len(names)),
 	)
 	return nil
+}
+
+// renderingCarriesVirtualTables reports whether anything the render produced --
+// the printed text or any file it planned -- holds a CREATE VIRTUAL TABLE.
+func renderingCarriesVirtualTables(output atlasreport.SchemaInspectOutput) bool {
+	if strings.Contains(strings.ToUpper(output.Text), "CREATE VIRTUAL TABLE") {
+		return true
+	}
+	for _, file := range output.Files {
+		if strings.Contains(strings.ToUpper(file.Data), "CREATE VIRTUAL TABLE") {
+			return true
+		}
+	}
+	return false
 }
 
 func omittedVerb(count int) string {

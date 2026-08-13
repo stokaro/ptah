@@ -87,6 +87,30 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			wantSilent: true,
 		},
 		{
+			// A split/write template deliberately leaves the printed text empty
+			// and puts the whole document in the planned files. Reading the text
+			// alone reported a loss beside an out/main.sql that contained the
+			// correct CREATE VIRTUAL TABLE.
+			name: "a split/write SQL export carries it in the planned files",
+			setup: []string{
+				`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format:     `{{ sql . | split | write "out" }}`,
+			wantSilent: true,
+		},
+		{
+			// The control for the row above: scanning the planned files must not
+			// silence everything. An HCL export has no CREATE VIRTUAL TABLE in
+			// its files either, and is still a loss.
+			name: "a split/write HCL export is still a loss",
+			setup: []string{
+				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
+			},
+			format:         `{{ hcl . | split | write "out" }}`,
+			wantDiagnostic: []string{`"docs" (module fts5)`},
+		},
+		{
 			name: "a database with no virtual table reports nothing",
 			setup: []string{
 				`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
@@ -112,6 +136,9 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			c := qt.New(t)
 			conn := connectSQLite(c, virtualTableFixture(c, t.TempDir(), tt.setup))
 			defer dbschema.CloseAndWarn(conn)
+			// The split/write rows plan real files against the working
+			// directory, so give every row a throwaway one.
+			t.Chdir(t.TempDir())
 
 			var diagnostics bytes.Buffer
 			opts := atlasschema.InspectOptions{Format: tt.format, Diagnostics: &diagnostics}
