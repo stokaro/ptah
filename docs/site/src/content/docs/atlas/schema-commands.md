@@ -563,12 +563,19 @@ these" but "this side never looked". That is a reason to distrust the conclusion
 asked for.
 
 So the record withholds a creation only when the creation would need that
-conclusion to be true. A statement Ptah renders with `IF NOT EXISTS` is correct
-either way and is planned:
+conclusion to be true. A statement Ptah renders with `IF NOT EXISTS` is planned
+only when the guard converges every modeled semantic. A guarded sequence meets
+that rule. An extension does not: if `citext` already exists in `public`, the
+following request for `extensions` succeeds as a no-op and leaves the requested
+placement unapplied, so Ptah withholds and diagnoses it when the current side
+does not describe extensions:
 
 ```console
 $ ptah-compat schema diff --from file://schema.hcl --to file://desired.hcl --dev-url "$DEV_URL"
-CREATE EXTENSION IF NOT EXISTS "citext";
+Warning: extension "citext" is declared by --to but no change was planned for
+it: --from records `ptah:not-described extension`, so this comparison cannot
+tell it apart from one that already exists, and the creation Ptah renders for
+it cannot safely converge from an unknown current state.
 ```
 
 A statement with no guard — `CREATE SEQUENCE` for a sequence declared without
@@ -580,12 +587,13 @@ standard error rather than dropped in silence:
 Warning: sequence "public.order_seq" is declared by --to but no change was
 planned for it: --from records `ptah:not-described sequence`, so this comparison
 cannot tell it apart from one that already exists, and the creation Ptah renders
-for it has no IF NOT EXISTS guard.
+for it cannot safely converge from an unknown current state.
 ```
 
-Adding `if_not_exists = true` to the declaration is how you ask for it anyway.
-Deleting the directive line from `--from` is how you assert that side really did
-look.
+For a sequence, adding `if_not_exists = true` is how you ask for it anyway.
+For an extension, the current side must describe extensions so Ptah can verify
+the installation schema. Deleting the directive line from `--from` is how you
+assert that side really did look.
 
 #### A referenced block is kept, and the document says so
 
@@ -856,8 +864,18 @@ to the same target, so applying that document issues `GRANT SELECT ON TABLE
 `--include` positively selects which top-level resources survive inspection,
 with the same selector engine as [`schema apply` and `schema
 diff`](#scope-the-comparison-with---schema-and---include): `--schema` names
-the schema universe, `--include` picks resources inside it, and `--exclude`
-subtracts from the result. Repeated and comma-separated values union.
+the universe for schema-owned resources, `--include` picks resources, and
+`--exclude` subtracts from the result. Database-wide extensions remain visible
+regardless of installation placement. An extension-only `--include` selects
+their qualified or bare identities; when a non-extension resource matches, all
+extensions ride as support even beside extension selectors. Repeated and
+comma-separated values union.
+
+For inspection, an extension-only selection controls which extension identities
+are rendered. On comparison verbs, an extension omitted from the desired
+description is not a removal request in support mode; schema-only and
+extension-only scopes remain authoritative.
+
 Selectors that match nothing render no objects; an empty value carries no
 selection, so inspection stays unfiltered.
 
@@ -1150,12 +1168,14 @@ of a domain, so the two are told apart by the catalog rather than by the name.
 `--schema/-s` and `--include` positively select what both comparison sides
 see, on `schema apply` and `schema diff` alike:
 
-- `--schema` names define the schema universe. Repeated and comma-separated
-  values union deterministically. On PostgreSQL-family targets the names are
-  schema namespaces and unqualified objects belong to the connection's default
-  schema (`public`). On MySQL and MariaDB a schema is a database, and because
-  a Ptah connection is bound to one database, only the connected database's
-  name selects anything. SQLite has the single schema `main`.
+- `--schema` names define the universe for schema-owned resources. Repeated and
+  comma-separated values union deterministically. PostgreSQL extensions remain
+  in both comparison projections regardless of installation placement because
+  they are database-wide capabilities. On PostgreSQL-family targets the names
+  are schema namespaces and unqualified objects belong to the connection's
+  default schema (`public`). On MySQL and MariaDB a schema is a database, and
+  because a Ptah connection is bound to one database, only the connected
+  database's name selects anything. SQLite has the single schema `main`.
 - `--include` picks top-level resources inside that universe with Atlas-style
   glob selectors, optionally constrained with `[type=...]`. Selectable types:
   `table`, `view`, `materialized_view`, `function`, `enum`, `extension`,
@@ -1165,6 +1185,12 @@ see, on `schema apply` and `schema diff` alike:
   data — ride along with it, and support objects the selection depends on
   (enums and other types used by kept columns, sequences owned by kept
   tables, roles named by kept grants, owning schemas) are retained.
+  Extensions skip the schema universe. An extension-only selection such as
+  `--schema app --include extensions.citext` selects only that database-wide
+  extension. When any non-extension resource matches, all extensions ride as
+  support even when the selection also contains extension selectors. An
+  extension omitted from the desired description is not removed in support
+  mode; schema-only and extension-only scopes remain authoritative.
   Child-resource selectors such as `[type=column]` or `[type=index]`, field
   selectors, and unknown resource types are rejected loudly because Ptah
   cannot project a partial parent faithfully. A positional spelling such as
@@ -1223,17 +1249,20 @@ outcome on plan-producing verbs. `--schema` on its own is unaffected here:
 narrowing to a schema that holds nothing stays an ordinary answer.
 
 A qualified selector can match a live PostgreSQL extension installed outside
-the comparison's default schema. Identical live placements compare as synced,
-and a drop remains representable. Creating that placement or comparing two
-different installation schemas fails before SQL is emitted, because Ptah
-cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...` from its shared schema
-model. [Issue #1441](https://github.com/stokaro/ptah/issues/1441) owns the
-end-to-end model rather than silently moving the extension into the default
-schema.
+the comparison's default or selected schema. Identical live placements compare as synced,
+creating that placement emits `CREATE EXTENSION ... WITH SCHEMA ...`, and a
+drop remains representable. Comparing two different installation schemas fails
+before SQL is emitted because Ptah does not yet plan `ALTER EXTENSION ... SET
+SCHEMA`; it never silently moves the extension into the default schema.
 
 - `--exclude` and disabled `schema.mode` values subtract from the positive
-  selection afterward. The composition order is fixed: schema universe first,
-  include selection inside it, exclusion last.
+  selection afterward. The composition order is fixed: schema universe for
+  schema-owned resources, include selection, then exclusion. Database-wide
+  extensions skip the ownership restriction. An extension-only include filters
+  their identities; a matching non-extension resource carries all extensions
+  as non-removing support even beside extension selectors. Schema-only and
+  extension-only scopes remain authoritative. Exclude selectors still subtract
+  afterward.
 
 The same projection is applied to the current database state and the desired
 schema, so out-of-scope objects are invisible to the comparison and are never

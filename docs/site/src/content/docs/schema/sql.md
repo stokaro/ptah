@@ -18,6 +18,29 @@ CREATE TABLE users (
 );
 ```
 
+PostgreSQL extension placement is preserved too. In a separate
+`extensions.sql`, Ptah accepts both the optional `WITH` spelling and the bare
+`SCHEMA` clause:
+
+```sql
+CREATE SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions VERSION '1.3';
+```
+
+Render that PostgreSQL-specific file with the PostgreSQL dialect:
+
+```bash
+ptah schema render --schema-file extensions.sql --dialect postgres
+```
+
+Expected output includes the schema precondition before the extension:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS "extensions";
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" VERSION '1.3';
+```
+
 ## Render it
 
 ```bash

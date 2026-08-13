@@ -157,9 +157,14 @@ Atlas project values to explicit native command arguments.
 
 `env.exclude` and disabled `env.schema.mode` values compose with the
 `schema apply`/`schema diff` positive selection flags in a fixed order:
-`--schema` names define the schema universe, `--include` selectors pick
-resources inside it, and the configured exclusions subtract from that
-selection last, exactly like CLI `--exclude`. See
+`--schema` names define the universe for schema-owned resources, `--include`
+selectors pick resources, and the configured exclusions subtract last, exactly
+like CLI `--exclude`. Database-wide extensions skip the schema ownership
+restriction. An extension-only include filters their identities; a matching
+non-extension resource carries all extensions as support even beside extension
+selectors without treating an omitted desired extension as a removal.
+Schema-only and extension-only scopes remain authoritative. Exclusions still
+subtract afterward. See
 [Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
 
 `env.schema.mode.sensitive` accepts Atlas's `DENY` and `ALLOW` values. Both are

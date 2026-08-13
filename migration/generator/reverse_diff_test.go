@@ -22,14 +22,16 @@ func TestReverseSchemaDiff_Extensions(t *testing.T) {
 		expected *types.SchemaDiff
 	}{
 		{
-			name: "reverse extensions added and removed",
+			name: "reverse added, removed, and moved extensions",
 			input: &types.SchemaDiff{
-				ExtensionsAdded:   []string{"pg_trgm", "btree_gin"},
-				ExtensionsRemoved: []string{"postgis", "uuid-ossp"},
+				ExtensionsAdded:    []string{"pg_trgm", "btree_gin"},
+				ExtensionsRemoved:  []string{"postgis", "uuid-ossp"},
+				ExtensionsModified: []types.ExtensionDiff{{Name: "citext", FromSchema: "public", ToSchema: "extensions"}},
 			},
 			expected: &types.SchemaDiff{
-				ExtensionsAdded:   []string{"postgis", "uuid-ossp"},
-				ExtensionsRemoved: []string{"pg_trgm", "btree_gin"},
+				ExtensionsAdded:    []string{"postgis", "uuid-ossp"},
+				ExtensionsRemoved:  []string{"pg_trgm", "btree_gin"},
+				ExtensionsModified: []types.ExtensionDiff{{Name: "citext", FromSchema: "extensions", ToSchema: "public"}},
 			},
 		},
 		{
@@ -86,6 +88,7 @@ func TestReverseSchemaDiff_Extensions(t *testing.T) {
 
 			c.Assert(result.ExtensionsAdded, qt.DeepEquals, tt.expected.ExtensionsAdded)
 			c.Assert(result.ExtensionsRemoved, qt.DeepEquals, tt.expected.ExtensionsRemoved)
+			c.Assert(result.ExtensionsModified, qt.DeepEquals, tt.expected.ExtensionsModified)
 		})
 	}
 }

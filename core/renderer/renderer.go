@@ -56,6 +56,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -244,6 +245,19 @@ func (r *validatingRenderer) VisitIndex(node *ast.IndexNode) error {
 	return nil
 }
 
+func (r *validatingRenderer) VisitExtension(node *ast.ExtensionNode) error {
+	prepared, err := prepareExtensionNode(r.dialect, node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if err := r.RenderVisitor.VisitExtension(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
 //
 // This function is useful for one-off SQL generation where you don't need to reuse the renderer.
@@ -329,11 +343,52 @@ func prepareASTNodeForRendering(
 		return prepareColumnNode(dialect, caps, typed)
 	case *ast.IndexNode:
 		return prepareIndexNode(dialect, caps, typed)
+	case *ast.ExtensionNode:
+		return prepareExtensionNode(dialect, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
+	}
+}
+
+func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "extension node is nil",
+		}
+	}
+	if !extensionInstallationSchemaRejected(dialect) || node.Schema == "" {
+		cloned := *node
+		return &cloned, nil
+	}
+	return nil, unsupportedExtensionInstallationSchema(dialect, node.Name, node.Schema)
+}
+
+func extensionInstallationSchemaRejected(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
+}
+
+func unsupportedExtensionInstallationSchema(dialect, name, schema string) error {
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: "PostgreSQL extension installation schemas",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support PostgreSQL extension installation schema %q for extension %q",
+			normalized,
+			schema,
+			name,
+		),
 	}
 }
 
@@ -806,18 +861,7 @@ func prepareDatabaseForRendering(
 	dialect string,
 	caps capability.Capabilities,
 ) (goschema.Database, error) {
-	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
-	// guaranteed to reject, so it is refused here, in the validation phase both
-	// whole-schema rendering and migration planning run before they emit
-	// anything (stokaro/ptah#1312).
-	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
-		return goschema.Database{}, &ptaherr.RenderError{
-			Dialect: dialect,
-			Err:     err,
-			Message: err.Error(),
-		}
-	}
-	if err := validateDeclaredIndexIncludes(dialect, caps, database.Indexes); err != nil {
+	if err := validateDatabaseDeclarations(dialect, caps, database); err != nil {
 		return goschema.Database{}, err
 	}
 
@@ -887,6 +931,64 @@ func prepareDatabaseForRendering(
 		makeMySQLForeignKeyTableEnginesExplicit(&prepared, dialect)
 	}
 	return prepared, nil
+}
+
+func validateDatabaseDeclarations(
+	dialect string,
+	caps capability.Capabilities,
+	database *goschema.Database,
+) error {
+	if err := validateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+		return err
+	}
+	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
+		return err
+	}
+	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is
+	// guaranteed to reject, so it is refused here, in the validation phase both
+	// whole-schema rendering and migration planning run before they emit
+	// anything (stokaro/ptah#1312).
+	if err := reservedrole.ValidateDeclared(dialect, database.Roles); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
+	}
+	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+func validateDeclaredPostgresSystemSchemas(dialect string, schemas []goschema.Schema) error {
+	normalized := platform.NormalizeDialect(dialect)
+	if !platform.IsPostgresFamily(normalized) {
+		return nil
+	}
+	for _, schema := range schemas {
+		if !schemaselection.IsPostgresFamilySystemSchema(normalized, schema.Name) {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: normalized,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"schema declares server-owned PostgreSQL schema %q; extension placement may reference it, but a migration cannot create it",
+				schema.Name,
+			),
+		}
+	}
+	return nil
+}
+
+func validateExtensionInstallationSchemas(dialect string, extensions []goschema.Extension) error {
+	if !extensionInstallationSchemaRejected(dialect) {
+		return nil
+	}
+	for _, extension := range extensions {
+		if extension.Schema != "" {
+			return unsupportedExtensionInstallationSchema(dialect, extension.Name, extension.Schema)
+		}
+	}
+	return nil
 }
 
 func validateDeclaredIndexIncludes(

@@ -255,6 +255,7 @@ func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes
 	for _, dbExtension := range dbExtensions {
 		extension := goschema.Extension{
 			Name:        dbExtension.Name,
+			Schema:      dbExtension.Schema,
 			IfNotExists: true, // Default to true for down migrations for safety
 			Version:     dbExtension.Version,
 			// Carried rather than recomputed: only the reader has the catalog,

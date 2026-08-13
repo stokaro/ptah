@@ -32,9 +32,12 @@ import (
 // intent, spelled out by the author, and "the reader did not look" is not a
 // reason to discard it. It is only a reason to distrust the conclusion "this
 // object is missing". Where the creation the planner would emit carries its own
-// IF NOT EXISTS guard, that conclusion is not needed -- the statement is correct
-// whether the object is there or not -- so the record withholds nothing. Where
-// it does not, the addition is withheld AND collected in
+// IF NOT EXISTS guard that converges every modeled semantic, that conclusion is
+// not needed -- the statement is correct whether the object is there or not --
+// so the record withholds nothing. PostgreSQL extension placement is the
+// counterexample: CREATE EXTENSION IF NOT EXISTS can no-op in the wrong schema,
+// so its comparator deliberately passes an unguarded policy. Where creation is
+// not convergent, the addition is withheld AND collected in
 // [Coverage.UndecidedAdditions], because a plan that quietly drops something the
 // author wrote is the defect this package exists to prevent, not a conservative
 // version of it.
@@ -101,22 +104,23 @@ func (c Coverage) PlansRemoval(kind coverage.Kind, schema string, names ...strin
 // authoritative enough to conclude the object is missing.
 //
 // It answers only that question. Whether the creation is planned is
-// [Coverage.keepPlannedAdditions], because a guarded creation does not need the
-// answer.
+// [Coverage.keepPlannedAdditions], because a creation that converges every
+// modeled semantic does not need the answer.
 func (c Coverage) PlansAddition(kind coverage.Kind, schema string, names ...string) bool {
 	return c.Current.DescribesIn(kind, schema, names...)
 }
 
-// creationGuard reports whether the statement the planner emits to create one
-// planned addition succeeds when the object is already there.
+// creationGuard reports whether the statement the planner emits for one
+// planned addition converges every modeled semantic when the object is already
+// there.
 //
 // It is asked per object rather than per kind because the guard is per object.
 // Measured on PostgreSQL 17.10 through `ptah-compat schema diff` against a
 // desired document declaring one of each:
 //
-//	extension "citext" { if_not_exists = true }   CREATE EXTENSION IF NOT EXISTS "citext";
+//	extension "citext" { if_not_exists = true }   placement may remain wrong, false
 //	extension "citext" {}                         CREATE EXTENSION "citext";
-//	sequence "s2" { if_not_exists = true, ... }   CREATE SEQUENCE IF NOT EXISTS "public"."s2" AS bigint;
+//	sequence "s2" { if_not_exists = true, ... }   converges existence, true
 //	sequence "s1" { ... }                         CREATE SEQUENCE "public"."s1" AS bigint;
 //
 // so a table keyed by [coverage.Kind] alone would be wrong in both directions.
@@ -149,12 +153,12 @@ func alwaysGuardedCreations() creationGuard {
 // comparison plans and the ones it withholds.
 //
 // An addition is planned when the read's silence is authoritative, and ALSO
-// when it is not but the creation is guarded: an object the desired state names
-// is an explicit request, and a guarded creation grants it without needing to
-// know whether the object is already there. Only the remainder -- a request the
-// comparison can neither confirm nor safely grant -- is withheld, and the
-// caller records it so that no surface reports a synced schema while holding it
-// back (stokaro/ptah#1276).
+// when it is not but the caller says creation converges every modeled semantic:
+// an object the desired state names is an explicit request, and such a creation
+// grants it without needing to know whether the object is already there. Only
+// the remainder -- a request the comparison can neither confirm nor safely
+// grant -- is withheld, and the caller records it so that no surface reports a
+// synced schema while holding it back (stokaro/ptah#1276).
 //
 // names maps a planned entry to every spelling of it the coverage record might
 // use.

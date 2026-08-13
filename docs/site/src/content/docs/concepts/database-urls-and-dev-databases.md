@@ -79,10 +79,14 @@ exercise a real server dialect — see
   fail closed across different endpoints because DNS aliases and replicated
   members cannot be proven independent before destructive cleanup. Cleanup
   rejects known system, template, metadata, and administrative database names.
-- **Comparison scope does not reduce the replay realm.** Repeated
-  `--schema` values select which schemas Ptah compares and emits. They do not
+- **Migration-diff scope does not reduce the replay realm.** Repeated
+  `--schema` values select which schemas `migrate diff` compares and emits. They do not
   limit which schemas a migration may create or which user schemas final
-  cleanup removes.
+  cleanup removes. PostgreSQL extensions remain in both scoped projections:
+  an extension is a database-wide identity, and its schema records installation
+  placement rather than ownership by that schema. An extension declared on
+  both sides remains synced even when installed outside the named schemas; an
+  extension omitted from desired state remains an explicit global removal.
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
   in the selected database as one dependency graph. MySQL, MariaDB, and

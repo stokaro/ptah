@@ -30,6 +30,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 			expected: []goschema.Extension{
 				{
 					Name:        "pg_trgm",
+					Schema:      "public",
 					IfNotExists: true,
 					Version:     "1.6",
 					Comment:     "",
@@ -51,6 +52,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 			expected: []goschema.Extension{
 				{
 					Name:        "postgis",
+					Schema:      "public",
 					IfNotExists: true,
 					Version:     "3.0",
 					Comment:     "Geographic data support",
@@ -77,12 +79,14 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 			expected: []goschema.Extension{
 				{
 					Name:        "pg_trgm",
+					Schema:      "public",
 					IfNotExists: true,
 					Version:     "1.6",
 					Comment:     "",
 				},
 				{
 					Name:        "btree_gin",
+					Schema:      "public",
 					IfNotExists: true,
 					Version:     "1.3",
 					Comment:     "Enable GIN indexes on btree types",
@@ -115,6 +119,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 			for i, expectedExt := range tt.expected {
 				actualExt := result.Extensions[i]
 				c.Assert(actualExt.Name, qt.Equals, expectedExt.Name)
+				c.Assert(actualExt.Schema, qt.Equals, expectedExt.Schema)
 				c.Assert(actualExt.IfNotExists, qt.Equals, expectedExt.IfNotExists)
 				c.Assert(actualExt.Version, qt.Equals, expectedExt.Version)
 				c.Assert(actualExt.Comment, qt.Equals, expectedExt.Comment)
@@ -1116,6 +1121,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 
 	// Verify default values
 	c.Assert(ext.Name, qt.Equals, "test_extension")
+	c.Assert(ext.Schema, qt.Equals, "public")
 	c.Assert(ext.IfNotExists, qt.Equals, true) // Should default to true for safety
 	c.Assert(ext.Version, qt.Equals, "1.0")
 	c.Assert(ext.Comment, qt.Equals, "") // Should be empty string when nil

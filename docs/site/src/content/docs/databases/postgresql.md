@@ -257,6 +257,19 @@ created when your schema declares it, but it is never dropped and never
 appears in a diff. Embedders can replace or extend the ignore list through the
 Go API — see [Reusable components](../../extend/components/).
 
+Set the annotation's `schema` attribute, or the equivalent HCL/YAML field, to
+install an extension outside the default schema. Ptah creates the schema first
+and renders `CREATE EXTENSION ... WITH SCHEMA ...`; live inspection preserves
+that placement, so a second comparison is synced. Moving an existing extension
+between schemas is detected but currently refused before SQL is emitted,
+because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`. Creation,
+removal, and identical-placement comparisons remain supported.
+
+```go
+//ptah:schema:extension name="pgcrypto" schema="extensions" if_not_exists="true"
+type PostgreSQLExtensions struct{}
+```
+
 ## Standalone sequences
 
 PostgreSQL creates an implicit sequence for every `SERIAL` column and identity

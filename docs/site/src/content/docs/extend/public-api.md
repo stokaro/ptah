@@ -68,6 +68,12 @@ a complete `goschema.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
 
+`goschema.Extension.Schema` is the PostgreSQL installation namespace.
+`ast.ExtensionNode.Schema` and `SetSchema` preserve it through SQL rendering;
+the renderer emits `CREATE EXTENSION ... WITH SCHEMA ...` in PostgreSQL's
+required clause order. Empty means the target's default schema. Preserve the
+field in custom schema codecs so an extension is not relocated silently.
+
 `goschema.Finalize` can be called again after mutating schema input. It rebuilds
 materialized embedded fields and marks them with
 `Field.GeneratedFromEmbedded`; source declarations should leave that derived
@@ -237,6 +243,12 @@ canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
 truth.
+
+`SchemaDiff.ExtensionsModified` contains `ExtensionDiff` values with the name
+and `FromSchema`/`ToSchema` placement. Default-schema normalization follows the
+diff's identifier semantics. PostgreSQL extension moves currently return
+`ptaherr.ErrInvalidSchemaDiff` before any AST is emitted; creates and drops are
+still planned.
 
 Row-level security policies use the same shape. `RLSPoliciesAdded` and
 `RLSPoliciesRemoved` are `[]RLSPolicyRef`, `RLSPoliciesModified` is

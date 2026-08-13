@@ -233,7 +233,7 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.MaterializedViewsAdded) > 0 || len(diff.MaterializedViewsModified) > 0 || len(diff.MaterializedViewsRemoved) > 0 {
 		return unsupportedFeaturef("materialized views are not supported")
 	}
-	if len(diff.ExtensionsAdded) > 0 || len(diff.ExtensionsRemoved) > 0 {
+	if len(diff.ExtensionsAdded) > 0 || len(diff.ExtensionsModified) > 0 || len(diff.ExtensionsRemoved) > 0 {
 		return unsupportedFeaturef("extensions are not supported")
 	}
 	if len(diff.FunctionsAdded) > 0 || len(diff.FunctionsModified) > 0 || len(diff.FunctionsRemoved) > 0 {

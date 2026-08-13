@@ -435,6 +435,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "Extension name.", valueString, false, false),
+			attr("schema", "PostgreSQL installation schema.", valueString, false, false),
 			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, false),
 			attr("version", "Extension version.", valueString, false, false),
 			attr("comment", "Extension comment.", valueString, false, false),

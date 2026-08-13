@@ -296,6 +296,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	for _, extension := range sortedExtensions(ctx.db.Extensions) {
 		w.writeComment(annotation("ptah:schema:extension",
 			attr{name: "name", value: extension.Name, set: true},
+			attr{name: "schema", value: extension.Schema, set: extension.Schema != ""},
 			attr{name: "if_not_exists", value: strconv.FormatBool(extension.IfNotExists), set: extension.IfNotExists},
 			attr{name: "version", value: extension.Version, set: extension.Version != ""},
 			attr{name: "comment", value: extension.Comment, set: extension.Comment != ""},

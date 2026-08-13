@@ -2978,6 +2978,7 @@ func TestParser_ParseCreateExtension(t *testing.T) {
 		extension   string
 		ifNotExists bool
 		version     string
+		schema      string
 	}{
 		{
 			name:      "plain",
@@ -2989,6 +2990,32 @@ func TestParser_ParseCreateExtension(t *testing.T) {
 			sql:         "CREATE EXTENSION IF NOT EXISTS unaccent;",
 			extension:   "unaccent",
 			ifNotExists: true,
+		},
+		{
+			name:      "schema and version",
+			sql:       `CREATE EXTENSION "uuid-ossp" WITH SCHEMA "Extension Store" VERSION '1.1';`,
+			extension: `"uuid-ossp"`,
+			schema:    `"Extension Store"`,
+			version:   "1.1",
+		},
+		{
+			name:      "version before schema",
+			sql:       `CREATE EXTENSION hstore WITH VERSION '1.8' SCHEMA extensions;`,
+			extension: "hstore",
+			schema:    "extensions",
+			version:   "1.8",
+		},
+		{
+			name:      "bare schema",
+			sql:       "CREATE EXTENSION pgcrypto SCHEMA extensions;",
+			extension: "pgcrypto",
+			schema:    "extensions",
+		},
+		{
+			name:      "version after with",
+			sql:       "CREATE EXTENSION postgis WITH VERSION '3.1';",
+			extension: "postgis",
+			version:   "3.1",
 		},
 		{
 			name:      "version",
@@ -3011,9 +3038,55 @@ func TestParser_ParseCreateExtension(t *testing.T) {
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(extension.Name, qt.Equals, tt.extension)
 			c.Assert(extension.IfNotExists, qt.Equals, tt.ifNotExists)
+			c.Assert(extension.Schema, qt.Equals, tt.schema)
 			c.Assert(extension.Version, qt.Equals, tt.version)
 		})
 	}
+}
+
+func TestParser_ParseCreateExtensionRejectsUnsupportedWithOption(t *testing.T) {
+	tests := []string{
+		"CREATE EXTENSION pgcrypto WITH;",
+		"CREATE EXTENSION pgcrypto WITH bogus;",
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := parser.NewParser(sql).Parse()
+			c.Assert(err, qt.ErrorMatches, `expected SCHEMA or VERSION after WITH in CREATE EXTENSION`)
+		})
+	}
+}
+
+func TestParser_ParseCreateExtensionRejectsDuplicateOptions(t *testing.T) {
+	tests := []struct {
+		sql  string
+		want string
+	}{
+		{
+			sql:  "CREATE EXTENSION pgcrypto WITH SCHEMA extensions SCHEMA public;",
+			want: `duplicate SCHEMA option in CREATE EXTENSION`,
+		},
+		{
+			sql:  "CREATE EXTENSION pgcrypto VERSION '1.0' VERSION '1.1';",
+			want: `duplicate VERSION option in CREATE EXTENSION`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.sql, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := parser.NewParser(test.sql).Parse()
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+func TestParser_ParseCreateExtensionRejectsUnknownOptionAfterSupportedOption(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser("CREATE EXTENSION pgcrypto WITH VERSION '1.0' bogus;").Parse()
+
+	c.Assert(err, qt.ErrorMatches, `unsupported CREATE EXTENSION option "bogus" at position [0-9]+`)
 }
 
 func TestParser_ParseCreateEnum(t *testing.T) {

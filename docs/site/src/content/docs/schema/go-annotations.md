@@ -106,6 +106,20 @@ PostgreSQL dialect accepts only the default. CockroachDB and every other
 dialect reject `include` before emitting SQL. Omit `include` when there are no
 payload columns; a present list with an empty element is a parse error.
 
+### Install a PostgreSQL extension in a schema
+
+An extension annotation belongs on a type declaration. Set `schema` when the
+extension must live outside PostgreSQL's default namespace:
+
+```go
+//ptah:schema:extension name="pgcrypto" schema="extensions" if_not_exists="true"
+type PostgreSQLExtensions struct{}
+```
+
+Ptah creates `extensions` first and renders `CREATE EXTENSION ... WITH SCHEMA
+extensions`. The same installation schema survives parsing from HCL or YAML,
+Go-to-HCL export, live inspection, comparison, and a later apply.
+
 ## Compare before changing data
 
 For an existing database, inspect and compare first:

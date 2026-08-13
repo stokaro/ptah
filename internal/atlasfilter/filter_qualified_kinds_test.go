@@ -215,9 +215,9 @@ func TestExcludeDatabase_EnumsAndFunctionsKeepBareOnlyCandidatesWithoutDefault(t
 	c.Assert(qualifiedFunctionNames(nonDefault.Functions), qt.DeepEquals, []string{"fn_audit"})
 }
 
-// generatedQualifiedKindsFixture is the desired-side mirror. A generated enum,
-// function or extension carries its schema the way a generated view does: as an
-// optional "schema." prefix on the name.
+// generatedQualifiedKindsFixture is the desired-side mirror. Extensions carry
+// installation schema separately; enums and functions retain their established
+// identity representations.
 func generatedQualifiedKindsFixture() *goschema.Database {
 	return &goschema.Database{
 		Enums: []goschema.Enum{
@@ -230,7 +230,7 @@ func generatedQualifiedKindsFixture() *goschema.Database {
 		},
 		Extensions: []goschema.Extension{
 			{Name: "pgcrypto", Version: "1.3"},
-			{Name: "app.postgis", Version: "3.4"},
+			{Name: "postgis", Schema: "app", Version: "3.4"},
 		},
 	}
 }
@@ -246,7 +246,11 @@ func generatedFunctionNames(functions []goschema.Function) []string {
 func generatedExtensionNames(extensions []goschema.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, extension.Name)
+		if extension.Schema == "" {
+			names = append(names, extension.Name)
+		} else {
+			names = append(names, extension.Schema+"."+extension.Name)
+		}
 	}
 	return names
 }
@@ -329,6 +333,13 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"app.postgis"})
 			},
 		},
+		{
+			name:    "extension, qualified with an absent schema matches nothing",
+			pattern: "nosuch.postgis",
+			assert: func(c *qt.C, got *goschema.Database) {
+				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"pgcrypto", "app.postgis"})
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -342,4 +353,116 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 			test.assert(c, got)
 		})
 	}
+}
+
+func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
+	c := qt.New(t)
+	database := &dbschematypes.DBSchema{
+		Schemas: []dbschematypes.DBSchemaInfo{
+			{Name: "Extension Store"},
+			{Name: " Extension Store "},
+		},
+		Extensions: []dbschematypes.DBExtension{
+			{Schema: "Extension Store", Name: "citext"},
+			{Schema: " Extension Store ", Name: "pgcrypto"},
+		},
+	}
+
+	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Include: []string{`" Extension Store ".pgcrypto`},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+		Schema: " Extension Store ", Name: "pgcrypto",
+	}})
+	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: " Extension Store "}})
+}
+
+func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Schemas: []goschema.Schema{
+			{Name: "Extension Store"},
+			{Name: " Extension Store "},
+		},
+		Extensions: []goschema.Extension{
+			{Schema: "Extension Store", Name: "citext"},
+			{Schema: " Extension Store ", Name: "pgcrypto"},
+		},
+	}
+
+	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Include: []string{`" Extension Store ".pgcrypto`},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Extensions, qt.DeepEquals, []goschema.Extension{{
+		Schema: " Extension Store ", Name: "pgcrypto",
+	}})
+	c.Assert(got.Schemas, qt.DeepEquals, []goschema.Schema{{Name: " Extension Store "}})
+}
+
+func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
+	c := qt.New(t)
+	database := &dbschematypes.DBSchema{
+		Schemas: []dbschematypes.DBSchemaInfo{{Name: " "}, {Name: "public"}},
+		Extensions: []dbschematypes.DBExtension{
+			{Schema: " ", Name: "pgcrypto"},
+			{Schema: "public", Name: "citext"},
+		},
+	}
+
+	got, err := atlasfilter.ScopeDatabase(database, atlasfilter.Scope{
+		Include: []string{`" ".pgcrypto`},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+		Schema: " ", Name: "pgcrypto",
+	}})
+	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: " "}})
+}
+
+func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		Schemas: []goschema.Schema{{Name: " "}, {Name: "public"}},
+		Extensions: []goschema.Extension{
+			{Schema: " ", Name: "pgcrypto"},
+			{Schema: "public", Name: "citext"},
+		},
+	}
+
+	got, err := atlasfilter.ScopeGenerated(database, atlasfilter.Scope{
+		Include: []string{`" ".pgcrypto`},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Extensions, qt.DeepEquals, []goschema.Extension{{
+		Schema: " ", Name: "pgcrypto",
+	}})
+	c.Assert(got.Schemas, qt.DeepEquals, []goschema.Schema{{Name: " "}})
+}
+
+func TestScopeExtensionSchemasWithInternalWhitespaceUseQuotedCandidates(t *testing.T) {
+	c := qt.New(t)
+	scope := atlasfilter.Scope{Include: []string{`"Extension Store".pgcrypto`}}
+	database, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
+		Schemas:    []dbschematypes.DBSchemaInfo{{Name: "Extension Store"}},
+		Extensions: []dbschematypes.DBExtension{{Schema: "Extension Store", Name: "pgcrypto"}},
+	}, scope)
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+		Schema: "Extension Store", Name: "pgcrypto",
+	}})
+
+	generated, err := atlasfilter.ScopeGenerated(&goschema.Database{
+		Schemas:    []goschema.Schema{{Name: "Extension Store"}},
+		Extensions: []goschema.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
+	}, scope)
+	c.Assert(err, qt.IsNil)
+	c.Assert(generated.Extensions, qt.DeepEquals, []goschema.Extension{{
+		Schema: "Extension Store", Name: "pgcrypto",
+	}})
 }

@@ -210,13 +210,11 @@ command prints no diff and exits 2 instead of reporting a synced schema. This
 is outcome-based: a matching top-level identifier that contains a dot remains
 selectable with a dotted spelling.
 
-When the desired side is a live PostgreSQL database, a selected extension in a
-non-default schema compares safely only against the same live placement. A
-create or installation-schema difference exits 2 before SQL output because the
-shared schema model cannot yet render `CREATE EXTENSION ... WITH SCHEMA ...`.
-Default-schema creates and extension drops remain supported; full schema
-modeling is tracked in
-[issue #1441](https://github.com/stokaro/ptah/issues/1441).
+When the desired side is a live PostgreSQL database, a selected extension keeps
+its installation schema. Creating a non-default placement emits `CREATE SCHEMA`
+and `CREATE EXTENSION ... WITH SCHEMA ...`; an identical placement is synced,
+and extension drops remain supported. A placement change exits 2 before SQL
+output because Ptah does not yet plan `ALTER EXTENSION ... SET SCHEMA`.
 
 ## Failure modes
 

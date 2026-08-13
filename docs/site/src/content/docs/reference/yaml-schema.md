@@ -67,6 +67,26 @@ Top-level objects are maps. Their keys are used as default object names when a
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
 
+## Extensions
+
+Each entry under `extensions` declares one PostgreSQL extension. The map key is
+the default extension name.
+
+| Key | Meaning |
+| --- | --- |
+| `name` | Extension name. Defaults to the map key. |
+| `schema` | PostgreSQL installation schema. Empty uses the target's default schema. |
+| `if_not_exists` | Adds `IF NOT EXISTS` to creation SQL. |
+| `version` | Requested extension version. |
+| `comment` | Extension comment. |
+
+```yaml
+extensions:
+  pgcrypto:
+    schema: extensions
+    if_not_exists: true
+```
+
 ## Tables
 
 Each entry under `tables` declares one table.
