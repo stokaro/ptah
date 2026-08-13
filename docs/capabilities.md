@@ -177,9 +177,13 @@ rather than in a commit message.
 per registry key, recording the statement that decided each key and the
 server's verdict. It also separates keys the probe actually asked about from
 keys carried over from the line below, because a carried row is not a
-measurement of the newer line. Each entry names the probe run's per-cell
-artifact, so a reader can fetch the transcript instead of trusting the
-transcription.
+measurement of the newer line.
+
+Each entry names the probe run's per-cell artifact. GitHub Actions retains
+those artifacts for seven days, so a reader can fetch the supporting transcript
+only during that window. The checked-in statement and verdict are the durable
+record; rerun the capability matrix to produce a fresh transcript after the
+artifact expires.
 
 `CockroachDB25()` and `CockroachDB26()` are the measured CockroachDB release
 arms. The 25.x arm disables generic and guarded `DROP CONSTRAINT` plus
