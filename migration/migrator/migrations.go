@@ -1187,7 +1187,18 @@ func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMig
 	if dialect != "" {
 		directives = parseFileDirectivesForDialectInScope(sql, dialect, scope)
 	}
-	return parseMigrationFileTxModeWithDirectives(filename, sql, directives)
+	parsed := parseMigrationFileTxModeWithDirectives(filename, sql, directives)
+	if parsed.err != nil {
+		return parsed
+	}
+	// A directive the region does not honor still has to be well formed. The
+	// mode above came from the header; this is the separate question of whether
+	// a recognized directive elsewhere in the file carries a value nobody can
+	// read. See [misplacedDirectiveError].
+	if err := misplacedDirectiveError(sql, dialect, scope); err != nil {
+		return parsedMigrationFileTxMode{source: migrationFileTxModeSourcePtah, err: err}
+	}
+	return parsed
 }
 
 func parseMigrationFileTxModeWithDirectives(

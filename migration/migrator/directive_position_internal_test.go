@@ -210,6 +210,107 @@ func TestMisplacedDirectivesAreReportedNotDropped(t *testing.T) {
 	}
 }
 
+// TestMalformedDirectiveValueIsRefusedWhereverItSits is the severity half of
+// the rule, and the half the two families answer differently.
+//
+// Position and value are independent facts. A recognized `-- +ptah` key with a
+// value nobody can read is a typo the operator wants to hear about, and
+// demoting it to a position warning would let two failures mask each other --
+// and would make the verdict depend on PTAH_DIRECTIVES_ANYWHERE, so the same
+// file would be accepted in one mode and refused in the other.
+//
+// The `atlas:` spelling gets no equivalent, by measurement rather than by
+// preference: on the pinned community binary, `migrate apply` over a SQLite
+// directory carrying `-- atlas:txmode bogus` exits 1 when the line is the
+// header and 0 when it sits below the statement. Refusing the second here would
+// exit non-zero where the binary accepts.
+func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
+	tests := []struct {
+		name   string
+		sql    string
+		assert func(c *qt.C, err error)
+	}{
+		{
+			name:   "malformed bool below the statement",
+			sql:    directiveStatement + "-- +ptah no_transaction=maybe\n",
+			assert: refusedWith(`invalid \+ptah no_transaction value "maybe": expected true or false \(on line 2, .*\)`),
+		},
+		{
+			name:   "malformed lock timeout below the statement",
+			sql:    directiveStatement + "-- +ptah lock_timeout=soon\n",
+			assert: refusedWith(`invalid \+ptah lock_timeout value: .* \(on line 2, .*\)`),
+		},
+		{
+			name:   "malformed statement timeout below the statement",
+			sql:    directiveStatement + "-- +ptah statement_timeout=0s\n",
+			assert: refusedWith(`invalid \+ptah statement_timeout value: .* \(on line 2, .*\)`),
+		},
+		{
+			name:   "a well-formed directive below the statement is not an error",
+			sql:    directiveStatement + "-- +ptah no_transaction\n",
+			assert: notRefused,
+		},
+		{
+			// The merged parser does not recognize a bare token that is not
+			// no_transaction, so there is no grammar for it to be wrong
+			// against. Refusing it would turn every `-- +ptah TODO` note below
+			// a statement into a failed migration.
+			name:   "an unrecognized bare token below the statement is not an error",
+			sql:    directiveStatement + "-- +ptah revisit_this\n",
+			assert: notRefused,
+		},
+		{
+			// Nothing consumes an unknown key=value pair, so nothing can say
+			// its value is malformed.
+			name:   "an unknown key below the statement is not an error",
+			sql:    directiveStatement + "-- +ptah future_knob=whatever\n",
+			assert: notRefused,
+		},
+		{
+			name:   "the atlas spelling below the statement is reported, not refused",
+			sql:    directiveStatement + "-- atlas:txmode bogus\n",
+			assert: notRefused,
+		},
+		{
+			name:   "a malformed value in the header is not this function's finding",
+			sql:    "-- +ptah no_transaction=maybe\n\n" + directiveStatement,
+			assert: notRefused,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			test.assert(c, misplacedDirectiveError(test.sql, "", directiveScopeHeader))
+		})
+	}
+}
+
+// refusedWith and notRefused are the two verdicts a row can carry, so the table
+// body needs no branch of its own.
+func refusedWith(pattern string) func(c *qt.C, err error) {
+	return func(c *qt.C, err error) {
+		c.Check(err, qt.ErrorMatches, pattern)
+	}
+}
+
+func notRefused(c *qt.C, err error) {
+	c.Check(err, qt.IsNil)
+}
+
+// TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis proves the row above does
+// not mean "a malformed header value is fine": it is refused by the parser that
+// honors it, with no position clause, because its position is correct.
+func TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis(t *testing.T) {
+	c := qt.New(t)
+
+	got := parseMigrationFileTxMode("1_x.sql", "-- +ptah no_transaction=maybe\n\n"+directiveStatement)
+
+	c.Check(got.err, qt.ErrorMatches, `invalid \+ptah no_transaction value "maybe": expected true or false`)
+	c.Check(got.source, qt.Equals, migrationFileTxModeSourcePtah)
+}
+
 func misplacedLines(found []misplacedDirective) []int {
 	var lines []int
 	for _, one := range found {

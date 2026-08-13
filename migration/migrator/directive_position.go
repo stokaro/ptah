@@ -1,6 +1,8 @@
 package migrator
 
 import (
+	"fmt"
+	"iter"
 	"slices"
 	"strings"
 
@@ -173,6 +175,80 @@ type misplacedDirective struct {
 	text string
 	// remedy names what the operator can do about it.
 	remedy string
+	// err is set when the directive's key is one the merged parser recognizes
+	// and its VALUE is one no parser can read. Position and value are separate
+	// facts about a line, and a malformed value stays an error wherever the
+	// line sits -- see [misplacedDirectiveError].
+	err error
+}
+
+// validateRecognizedDirectives reports the first recognized `-- +ptah` key
+// whose value cannot be read.
+//
+// Only keys some parser consumes are checked. A `key=value` pair nobody reads
+// has no grammar to be wrong against, and a bare token that is not
+// no_transaction is not a directive at all -- treating `-- +ptah TODO revisit`
+// as a malformed directive would refuse ordinary comments this tree has always
+// accepted below a statement.
+//
+// The bool and duration rules are not restated here; the two functions that own
+// them are called, so a change to either reaches this check.
+func validateRecognizedDirectives(directives map[string]string) error {
+	if _, err := parseNoTransactionDirective(directives); err != nil {
+		return err
+	}
+	for _, key := range []string{"lock_timeout", "lock-timeout", "statement_timeout", "statement-timeout"} {
+		value, ok := directives[key]
+		if !ok {
+			continue
+		}
+		if _, err := parsePositiveDuration(value); err != nil {
+			return fmt.Errorf("invalid +ptah %s value: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// misplacedDirectiveError returns the first malformed-value error among the
+// directives sql places outside the region where they are significant.
+//
+// This is the half of the position rule that is NOT a warning, and the reason
+// is that position and value are independent facts. Demoting a typo to a
+// position warning lets two failures mask each other: the operator is told the
+// line is in the wrong place, moves it into the header, and only then learns
+// the value was nonsense all along. Worse, the verdict would depend on
+// PTAH_DIRECTIVES_ANYWHERE -- the same file accepted in one mode and refused in
+// the other -- when whether `maybe` is a boolean is a property of the file.
+//
+// The `atlas:` family deliberately gets no equivalent. Measured on the pinned
+// community binary, `-- atlas:txmode bogus` in the header exits 1 and the same
+// line below the statement exits 0, so refusing it here would exit non-zero
+// where the binary accepts, which the compatibility policy forbids by default.
+// That divergence in SEVERITY between the families is real, measured, and loud
+// on both sides: the `atlas:` line is still reported, just not fatal.
+func misplacedDirectiveError(sql, dialect string, scope directiveScope) error {
+	for _, misplaced := range misplacedDirectives(sql, dialect, scope) {
+		if misplaced.err == nil {
+			continue
+		}
+		return fmt.Errorf("%w (on line %d, below the first SQL statement, where it would not have been honored)",
+			misplaced.err, misplaced.line)
+	}
+	return nil
+}
+
+// misplacedDirectiveMarkers yields the `-- +ptah` markers to judge, using the
+// same marker set the transaction mode itself was decided from.
+//
+// With no target dialect the scan must be conservative, because a marker only
+// one dialect's string rules expose is not yet known to be a directive. Asking
+// a different question here than [parseMigrationFileTxModeForDialect] asked
+// would let load time refuse a file the target dialect reads as string content.
+func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marker] {
+	if dialect == "" {
+		return ptahdirective.ConservativeMarkers(sql)
+	}
+	return ptahdirective.Markers(sql, dialectlexer.Options(dialect))
 }
 
 // misplacedDirectives returns every directive line in sql that a reader would
@@ -195,17 +271,19 @@ func misplacedDirectives(sql, dialect string, scope directiveScope) []misplacedD
 
 	if scope == directiveScopeHeader {
 		headerLength := directiveHeaderLength(sql)
-		for marker := range ptahdirective.Markers(sql, options) {
+		for marker := range misplacedDirectiveMarkers(sql, dialect) {
 			if marker.Start < headerLength {
 				continue
 			}
-			if len(parseFileDirectives(slices.Values([]string{marker.Body}))) == 0 {
+			directives := parseFileDirectives(slices.Values([]string{marker.Body}))
+			if len(directives) == 0 {
 				continue // a marker the merged parser would have ignored anyway
 			}
 			found = append(found, misplacedDirective{
 				line:   lineNumberAt(sql, marker.Start),
 				text:   directiveLineAt(sql, marker.Start),
 				remedy: "move it above the first SQL statement, or set " + directivesAnywhereEnvVar + "=1",
+				err:    validateRecognizedDirectives(directives),
 			})
 		}
 	}

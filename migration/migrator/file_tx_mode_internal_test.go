@@ -332,12 +332,18 @@ func dialectAmbiguousMarker(body string) string {
 	return "SELECT 'prefix \\'\n-- +ptah " + body + "\nsuffix';\n"
 }
 
-func TestMigrationTxModeParsingIgnoresDialectAmbiguousMarkersBelowTheStatement(t *testing.T) {
+// TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect separates the
+// two verdicts a misplaced directive earns.
+//
+// A WELL-FORMED directive below the statement is not honored and not refused --
+// refusing it would remove behavior this tree shipped. The malformed sibling in
+// the next test is refused. Both are reported.
+func TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset(directivesAnywhereEnvVar)(t)
-	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
+	wellFormed := dialectAmbiguousMarker("no_transaction")
 
-	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
+	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", wellFormed, statementExecutionHooks{})
 	c.Assert(err, qt.IsNil)
 	c.Check(loaded.txMode, qt.Equals, MigrationFileTxModeUnspecified)
 	c.Check(loaded.txModeErr, qt.IsNil)
@@ -352,19 +358,22 @@ func TestMigrationTxModeParsingIgnoresDialectAmbiguousMarkersBelowTheStatement(t
 	c.Check(postgresMode.err, qt.IsNil)
 	c.Check(postgresMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 
-	parsed, err := ParseMigrationUp("1_ambiguous.sql", invalidForPostgres)
-	c.Assert(err, qt.IsNil)
-	c.Check(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
-
-	// The line is a directive a reader would recognize, so it is reported
-	// rather than dropped -- but only on the dialect that sees it as a comment.
-	c.Check(misplacedDirectives(invalidForPostgres, platform.Postgres, directiveScopeHeader), qt.HasLen, 1)
-	c.Check(misplacedDirectives(invalidForPostgres, platform.MySQL, directiveScopeHeader), qt.HasLen, 0)
+	// It is a directive a reader would recognize, so it is reported rather than
+	// dropped -- but only on the dialect that sees it outside a string.
+	c.Check(misplacedDirectives(wellFormed, platform.Postgres, directiveScopeHeader), qt.HasLen, 1)
+	c.Check(misplacedDirectives(wellFormed, platform.MySQL, directiveScopeHeader), qt.HasLen, 0)
 }
 
+// TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget is the
+// property the tagged contour protects, measured where it is live.
+//
+// A malformed VALUE is refused wherever the line sits, so the refusal still
+// depends entirely on whether the target dialect's lexer sees a directive or a
+// string literal. Without a dialect the conservative scan keeps nothing, which
+// is why load time defers rather than refuses.
 func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Set(directivesAnywhereEnvVar, "1")(t)
+	envbooltest.Unset(directivesAnywhereEnvVar)(t)
 	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
 
 	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
@@ -378,7 +387,10 @@ func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T
 	c.Assert(mysqlMode.err, qt.IsNil)
 	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
-	c.Assert(postgresMode.err, qt.ErrorMatches, `invalid \+ptah no_transaction value "maybe": expected true or false`)
+	c.Assert(postgresMode.err, qt.ErrorMatches,
+		`invalid \+ptah no_transaction value "maybe": expected true or false `+
+			`\(on line 2, below the first SQL statement, where it would not have been honored\)`)
+	c.Assert(postgresMode.source, qt.Equals, migrationFileTxModeSourcePtah)
 
 	parsed, err := ParseMigrationUp("1_ambiguous.sql", invalidForPostgres)
 	c.Assert(err, qt.IsNil)

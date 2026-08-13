@@ -101,6 +101,21 @@ func LineComments(sql string, options lexer.Options) iter.Seq[LineComment] {
 // while an actual line-anchored directive is common to every scan.
 func ConservativeBodies(sql string) iter.Seq[string] {
 	return func(yield func(string) bool) {
+		for found := range ConservativeMarkers(sql) {
+			if !yield(found.Body) {
+				return
+			}
+		}
+	}
+}
+
+// ConservativeMarkers is [ConservativeBodies] carrying each marker's byte
+// offset, for the same reason [Markers] exists: a caller deciding whether a
+// directive lies inside the region where directives are significant needs to
+// know where it is, and it must ask that question of the same marker set the
+// directive parser used or the two answers can disagree.
+func ConservativeMarkers(sql string) iter.Seq[Marker] {
+	return func(yield func(Marker) bool) {
 		dialects := []string{
 			platform.Postgres,
 			platform.MySQL,
@@ -124,7 +139,7 @@ func ConservativeBodies(sql string) iter.Seq[string] {
 			}
 		}
 		for _, found := range common {
-			if !yield(found.body) {
+			if !yield(Marker{Start: found.start, Body: found.body}) {
 				return
 			}
 		}

@@ -1851,6 +1851,12 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 			source, sourcePath = migration.DownSQL, migration.downSourcePath
 		}
 		for _, misplaced := range misplacedDirectives(source, dialect, scope) {
+			if misplaced.err != nil {
+				// Reported as the run's refusal by [misplacedDirectiveError],
+				// which names the line too. Warning about it here as well would
+				// print the same line twice on a run that is about to abort.
+				continue
+			}
 			m.logger.Warn(
 				"Migration directive was not honored because of where it appears in the file",
 				"version", migration.Version,
