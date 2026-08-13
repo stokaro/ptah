@@ -494,7 +494,11 @@ func atlasSQLMigrationFileFromSQL(filename, sql string, hooks statementExecution
 }
 
 func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statementExecutionHooks) (sqlMigrationFile, error) {
-	timeouts, err := parseMigrationTimeoutDirectives(sql)
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		return sqlMigrationFile{}, err
+	}
+	timeouts, err := parseMigrationTimeoutDirectives(sql, scope)
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
@@ -948,6 +952,28 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 	return nil
 }
 
+// observedFileDirectives reads the migration's `-- +ptah` directives for the
+// hooks that consume them, in the region where directives are significant.
+//
+// Nothing reads them when no hook is installed, so the parse is skipped
+// entirely rather than computed and thrown away. The scope resolution is here
+// and not inside the parser because a malformed PTAH_DIRECTIVES_ANYWHERE must
+// fail the migration rather than read as the default.
+func observedFileDirectives(
+	conn *dbschema.DatabaseConnection,
+	sql string,
+	hooks statementExecutionHooks,
+) (map[string]string, error) {
+	if hooks.interceptor == nil && hooks.observer == nil {
+		return nil, nil
+	}
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		return nil, err
+	}
+	return parseFileDirectivesForDialectInScope(sql, databaseConnectionDialect(conn), scope), nil
+}
+
 func executeMigrationFileSQL(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -959,9 +985,9 @@ func executeMigrationFileSQL(
 	// Directives live in comments, so they must be read from the raw file
 	// before comment stripping, and validated before any statement runs so an
 	// invalid directive leaves nothing half-applied.
-	var fileDirectives map[string]string
-	if hooks.interceptor != nil || hooks.observer != nil {
-		fileDirectives = parseFileDirectivesForDialect(sql, databaseConnectionDialect(conn))
+	fileDirectives, err := observedFileDirectives(conn, sql, hooks)
+	if err != nil {
+		return err
 	}
 	interceptorDirectives := maps.Clone(fileDirectives)
 	if hooks.interceptor != nil {
@@ -1146,15 +1172,33 @@ func parseNoTransactionDirective(directives map[string]string) (bool, error) {
 }
 
 func parseMigrationFileTxMode(filename, sql string) parsedMigrationFileTxMode {
-	return parseMigrationFileTxModeWithDirectives(filename, sql, parseFileDirectivesConservatively(sql))
+	return parseMigrationFileTxModeForDialect(filename, sql, "")
 }
 
 func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMigrationFileTxMode {
-	directives := parseFileDirectivesConservatively(sql)
-	if dialect != "" {
-		directives = parseFileDirectivesForDialect(sql, dialect)
+	// The scope opt-in is resolved here because this is the error-carrying seam
+	// every apply and rollback passes through: a typo in the variable must fail
+	// the run rather than read as "the default is still in force".
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		return parsedMigrationFileTxMode{source: migrationFileTxModeSourcePtah, err: err}
 	}
-	return parseMigrationFileTxModeWithDirectives(filename, sql, directives)
+	directives := parseFileDirectivesConservativelyInScope(sql, scope)
+	if dialect != "" {
+		directives = parseFileDirectivesForDialectInScope(sql, dialect, scope)
+	}
+	parsed := parseMigrationFileTxModeWithDirectives(filename, sql, directives)
+	if parsed.err != nil {
+		return parsed
+	}
+	// A directive the region does not honor still has to be well formed. The
+	// mode above came from the header; this is the separate question of whether
+	// a recognized directive elsewhere in the file carries a value nobody can
+	// read. See [misplacedDirectiveError].
+	if err := misplacedDirectiveError(sql, dialect, scope); err != nil {
+		return parsedMigrationFileTxMode{source: migrationFileTxModeSourcePtah, err: err}
+	}
+	return parsed
 }
 
 func parseMigrationFileTxModeWithDirectives(

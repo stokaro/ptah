@@ -55,10 +55,19 @@ func (t MigrationTimeouts) IsZero() bool {
 	return !t.HasLockTimeout && !t.HasStatementTimeout
 }
 
-func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
+// parseMigrationTimeoutDirectives reads the `-- +ptah lock_timeout=` and
+// `-- +ptah statement_timeout=` directives from the region where directives are
+// significant.
+//
+// It takes that region from [directiveRegion] rather than re-deciding where the
+// header ends. This loop used to stop at the first executable line while
+// [ParseFileDirectives] scanned the whole file, so two `+ptah` keys written on
+// one misplaced line had different fates -- the timeout was dropped and the
+// transaction mode was honored. One region is what keeps them the same fact.
+func parseMigrationTimeoutDirectives(sql string, scope directiveScope) (MigrationTimeouts, error) {
 	var timeouts MigrationTimeouts
 
-	for line := range strings.SplitSeq(sql, "\n") {
+	for line := range strings.SplitSeq(directiveRegion(sql, scope), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue

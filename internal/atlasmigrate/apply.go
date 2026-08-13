@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -435,7 +433,7 @@ func newApplyMigrator(
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
-		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		WithLogger(compatMigratorLogger())
 	if opts.skipMigrationLock {
 		mig = mig.WithoutMigrationLock()
 	}
