@@ -855,9 +855,14 @@ Ptah also applies those modes independently to `migration.sql` and `down.sql`
 inside txtar files. Atlas CE `v1.3.0` ignores section-local modes. Ptah rejects
 a transaction-mode header before the `atlas:txtar` marker instead of treating
 the archive as plain SQL, because plain execution could run both directions.
-This is an intentional safety difference. Transactional failure revision
-bookkeeping remains tracked separately in
-[`stokaro/ptah#887`](https://github.com/stokaro/ptah/issues/887).
+This is an intentional safety difference. Partial-progress revision
+bookkeeping is covered by a pinned Atlas CE v1.3.0 process oracle in both
+directions: global `none` and a file-level `atlas:txmode none` each let Ptah
+resume Atlas's failed row and Atlas resume Ptah's, with exact `applied`, `total`,
+and `partial_hashes` metadata verified before the resume. The failure must be
+nonempty and identify the failing `CREATE TABLE` statement; its prose is not
+claimed as byte-identical.
+[`stokaro/ptah#887`](https://github.com/stokaro/ptah/issues/887) is closed.
 
 **Tracking.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#622`](https://github.com/stokaro/ptah/issues/622), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640)
 
