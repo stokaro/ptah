@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
@@ -314,9 +315,57 @@ func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
 	}
 }
 
+// dialectAmbiguousMarker is a `-- +ptah` line that only one dialect's string
+// rules leave outside a string literal.
+//
+// With PostgreSQL's standard-conforming strings the backslash is an ordinary
+// character, so the quote after it CLOSES the literal and the next line is a
+// real line comment. MySQL treats the backslash as an escape, so the same bytes
+// are one multi-line string and the marker is data.
+//
+// The line can only sit below executable SQL -- a string literal is executable
+// SQL, and a marker inside one has to follow the statement that opens it. Under
+// the default header rule it is therefore inert on every dialect, which is the
+// stronger property and the one asserted first. The dialect still decides under
+// the scope opt-in, and for ordered checks, which are file-wide by design.
+func dialectAmbiguousMarker(body string) string {
+	return "SELECT 'prefix \\'\n-- +ptah " + body + "\nsuffix';\n"
+}
+
+func TestMigrationTxModeParsingIgnoresDialectAmbiguousMarkersBelowTheStatement(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Unset(directivesAnywhereEnvVar)(t)
+	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
+
+	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
+	c.Assert(err, qt.IsNil)
+	c.Check(loaded.txMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Check(loaded.txModeErr, qt.IsNil)
+
+	migration := &Migration{Description: "ambiguous"}
+	setMigrationUp(migration, loaded)
+	// Both dialects, because the position decided before the quoting did.
+	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
+	c.Check(mysqlMode.err, qt.IsNil)
+	c.Check(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
+	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
+	c.Check(postgresMode.err, qt.IsNil)
+	c.Check(postgresMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
+
+	parsed, err := ParseMigrationUp("1_ambiguous.sql", invalidForPostgres)
+	c.Assert(err, qt.IsNil)
+	c.Check(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
+
+	// The line is a directive a reader would recognize, so it is reported
+	// rather than dropped -- but only on the dialect that sees it as a comment.
+	c.Check(misplacedDirectives(invalidForPostgres, platform.Postgres, directiveScopeHeader), qt.HasLen, 1)
+	c.Check(misplacedDirectives(invalidForPostgres, platform.MySQL, directiveScopeHeader), qt.HasLen, 0)
+}
+
 func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T) {
 	c := qt.New(t)
-	invalidForPostgres := "SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\nsuffix';\n"
+	envbooltest.Set(directivesAnywhereEnvVar, "1")(t)
+	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
 
 	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
 	c.Assert(err, qt.IsNil)
@@ -338,7 +387,8 @@ func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T
 
 func TestMigrationTxModeParsingUsesTargetDialectForActualMarker(t *testing.T) {
 	c := qt.New(t)
-	markerForPostgres := "SELECT 'prefix \\'\n-- +ptah no_transaction\nsuffix';\n"
+	envbooltest.Set(directivesAnywhereEnvVar, "1")(t)
+	markerForPostgres := dialectAmbiguousMarker("no_transaction")
 	migration := CreateMigrationFromSQL(1, "target-aware", markerForPostgres, markerForPostgres)
 
 	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)

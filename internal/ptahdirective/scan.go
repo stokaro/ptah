@@ -18,6 +18,27 @@ type marker struct {
 	body  string
 }
 
+// Marker is one line-anchored `-- +ptah` directive together with where it was
+// found. The offset is what lets a caller decide whether the directive lies in
+// the region where directives are significant, which no scan of the bodies
+// alone can answer.
+type Marker struct {
+	// Start is the byte offset of the comment's first `-` in the scanned SQL.
+	Start int
+	// Body is the text after the `+ptah` marker, exactly as [Bodies] yields it.
+	Body string
+}
+
+// LineComment is one `--` comment that begins its physical line, which is the
+// only shape either directive family accepts as a directive carrier. A trailing
+// comment after a statement is deliberately not one.
+type LineComment struct {
+	// Start is the byte offset of the comment's first `-` in the scanned SQL.
+	Start int
+	// Text is the comment token, beginning with `--`.
+	Text string
+}
+
 // Bodies yields the text after every line-anchored -- +ptah marker. The lexer
 // options select the owning SQL dialect's string and comment rules. Bare and
 // malformed marker bodies are yielded too, so policy callers can refuse them
@@ -26,6 +47,47 @@ func Bodies(sql string, options lexer.Options) iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, found := range scan(sql, options) {
 			if !yield(found.body) {
+				return
+			}
+		}
+	}
+}
+
+// Markers is [Bodies] carrying each marker's byte offset. A caller that must
+// know WHERE a directive sits -- to honor it in one region and report it in
+// another -- needs the offset that Bodies drops.
+func Markers(sql string, options lexer.Options) iter.Seq[Marker] {
+	return func(yield func(Marker) bool) {
+		for _, found := range scan(sql, options) {
+			if !yield(Marker{Start: found.start, Body: found.body}) {
+				return
+			}
+		}
+	}
+}
+
+// LineComments yields every `--` comment that begins its physical line, in
+// source order. It is the shared reading of "a line that could carry a
+// directive", so the `+ptah` and `atlas:` families answer the position question
+// against one scan of the file rather than two hand-rolled line loops.
+func LineComments(sql string, options lexer.Options) iter.Seq[LineComment] {
+	return func(yield func(LineComment) bool) {
+		lexr := lexer.NewLexerWithOptions(sql, options)
+		for {
+			tok := lexr.NextToken()
+			if tok.Type == lexer.TokenEOF {
+				return
+			}
+			if tok.Type != lexer.TokenComment {
+				continue
+			}
+			if !strings.HasPrefix(tok.Value, "--") {
+				continue // block comment: not a directive carrier
+			}
+			if !commentStartsLine(sql, tok.Start) {
+				continue // trailing comment: not a directive
+			}
+			if !yield(LineComment{Start: tok.Start, Text: tok.Value}) {
 				return
 			}
 		}
@@ -81,28 +143,15 @@ func keepMarkers(candidates []marker, present map[marker]struct{}) []marker {
 
 func scan(sql string, options lexer.Options) []marker {
 	var markers []marker
-	lexr := lexer.NewLexerWithOptions(sql, options)
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			return markers
-		}
-		if tok.Type != lexer.TokenComment {
-			continue
-		}
-		body, ok := strings.CutPrefix(tok.Value, "--")
-		if !ok {
-			continue // block comment: not a directive carrier
-		}
-		if !commentStartsLine(sql, tok.Start) {
-			continue // trailing comment: not a directive
-		}
-		body, ok = strings.CutPrefix(strings.TrimSpace(body), prefix)
+	for comment := range LineComments(sql, options) {
+		body := strings.TrimPrefix(comment.Text, "--")
+		body, ok := strings.CutPrefix(strings.TrimSpace(body), prefix)
 		if !ok || (body != "" && body[0] != ' ' && body[0] != '\t') {
 			continue
 		}
-		markers = append(markers, marker{start: tok.Start, body: body})
+		markers = append(markers, marker{start: comment.Start, body: body})
 	}
+	return markers
 }
 
 // HasMarker reports whether SQL contains any Ptah directive marker recognized

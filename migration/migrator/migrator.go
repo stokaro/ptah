@@ -1820,12 +1820,49 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 // pre-migration checks were parsed and statically validated but not evaluated
 // against the database. That list is empty outside a dry run.
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionUp); err != nil {
+		return nil, err
+	}
 	switch m.txMode {
 	case MigrationTxModeAll:
 		return m.applyUpMigrationsInSingleTransaction(ctx, migrations)
 	default:
 		return m.applyUpMigrationsPerFile(ctx, migrations)
 	}
+}
+
+// reportMisplacedDirectives warns about every directive line the run recognized
+// and did not honor because of where it sits.
+//
+// It runs once per direction per run, on the execution path, so a dry run
+// reports the same finding a real apply would -- the operator who is about to
+// discover that `txmode none` did nothing is the one running `--dry-run` first.
+// A migration whose directives are all honored produces nothing, which keeps a
+// clean run silent on stderr the way Atlas is.
+func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction MigrationDirection) error {
+	scope, err := resolveDirectiveScope()
+	if err != nil {
+		return err
+	}
+	dialect := m.connectionDialect()
+	for _, migration := range migrations {
+		source, sourcePath := migration.UpSQL, migration.upSourcePath
+		if direction == MigrationDirectionDown {
+			source, sourcePath = migration.DownSQL, migration.downSourcePath
+		}
+		for _, misplaced := range misplacedDirectives(source, dialect, scope) {
+			m.logger.Warn(
+				"Migration directive was not honored because of where it appears in the file",
+				"version", migration.Version,
+				"direction", string(direction),
+				"file", migrationTxModeSourceName(sourcePath, migration.Description),
+				"line", misplaced.line,
+				"directive", misplaced.text,
+				"remedy", misplaced.remedy,
+			)
+		}
+	}
+	return nil
 }
 
 func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) ([]int64, error) {
@@ -3017,6 +3054,9 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 }
 
 func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
+	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
 	for _, migration := range migrations {
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{

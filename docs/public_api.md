@@ -173,6 +173,19 @@ Atlas transaction-mode directive validation errors expose
 `migrator.AtlasTxModeDirectiveError` through `errors.As`. The leaf error keeps
 the source file and transaction-mode details in its message.
 
+`migration/migrator.ParseFileDirectives` reads the file's directive header —
+the run of blank lines and line comments before the first executable statement
+— rather than the whole file. Both directive families answer to that one rule,
+so a `-- +ptah` line written below the statements it claims to govern is no
+longer honored, matching what `-- atlas:txmode` already did and what Atlas CE
+does. A directive outside its region is reported at `WARN` by the migrator
+rather than dropped in silence. `PTAH_DIRECTIVES_ANYWHERE=1` restores the
+earlier file-wide scope for `-- +ptah` directives; `ParseFileDirectives`
+reports no error, so a malformed value for that variable fails the migration
+run instead and this function keeps the header rule. Ordered
+`-- +ptah check` directives are unaffected: they are position-insensitive by
+design and `ParseChecks` still reads the whole file.
+
 This pre-GA API replaces the former `UpNoTransaction` and
 `DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
 interceptor variant return a complete `Migration`, preserving both directions'
