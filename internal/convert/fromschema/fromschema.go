@@ -129,15 +129,12 @@ func canonicalPlatform(targetPlatform string) string {
 // isPostgreSQLFamilyPlatform reports whether the target renders PostgreSQL
 // object DDL: PostgreSQL itself and the wire-compatible engines.
 //
-// It asks about the family rather than about the one name because the live path
-// already does. registerBuiltInPlanners routes cockroachdb, yugabytedb and
-// spanner through the PostgreSQL planner, so `schema apply --dry-run` planned
-// sequences, domains, roles, views, functions and triggers for those targets
-// while `schema render` dropped every one of them -- silently, no comment, no
-// warning, exit 0. Two commands answering differently about the same file is
-// the defect; whether an engine of the family should then refuse a particular
-// object kind is a capability question, and there is no capability key for
-// views, functions or triggers to ask it with yet (stokaro/ptah#929).
+// It survives only where the answer changes how a COLUMN is modeled -- the
+// default persistence of a generated column, which PostgreSQL spells STORED and
+// SQL Server spells PERSISTED. It no longer decides whether any declared object
+// is converted at all: FromDatabase hands every object to the renderer and the
+// capability set answers there, so that `schema render` and `schema apply`
+// cannot disagree about the same file (stokaro/ptah#929).
 func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
 	return platform.IsPostgresFamily(targetPlatform)
 }
@@ -2051,6 +2048,25 @@ func assignedSelfReferencingForeignKeyName(
 // applied based on the targetPlatform parameter. This ensures that the generated
 // AST nodes contain the appropriate configurations for the target database.
 //
+// # Every declared object reaches a renderer
+//
+// Whether an object kind is emitted is NOT a question this function answers.
+// Every object the schema declares is converted to a node and handed to the
+// target's renderer, which answers from its capability set with a statement, a
+// supported equivalent, or a named skip. The dialect predicates left in this
+// function decide ORDER (MySQL wants a foreign key's indexes before ADD
+// CONSTRAINT) and COLUMN MODELING (SQLite carries foreign keys inline; four
+// engines model an enum on the column rather than as a type) -- never presence.
+//
+// It is written that way because the alternative was measured and it is silent.
+// Deleting a node here leaves nothing to report it: `ptah schema render`
+// dropped a declared sequence, domain, role or function on five dialects and
+// exited 0 with no comment and no warning, fifteen omissions in all, because
+// reaching the renderer was gated by a list of dialect names
+// (stokaro/ptah#929 item 5). Each earlier fix added a name to one of those
+// lists, which closed an instance and left the class. A predicate added here
+// that decides whether to append is that defect again.
+//
 // # Return Value
 //
 // Returns an *ast.StatementList containing all DDL statements in proper execution order.
@@ -2076,22 +2092,12 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// 2b. Add standalone sequence definitions before any tables, because a
 	// sequence may back a column DEFAULT. The OWNED BY association is emitted
-	// later (after tables) via appendPostgreSQLPostForeignKeyFeatureStatements
-	// on the PostgreSQL path; it has no MySQL-family equivalent.
-	//
-	// The MySQL family is included because MariaDB has had real SEQUENCE objects
-	// since 10.3 and capability.MariaDB1011 says so. Gating this on the
-	// PostgreSQL family alone made `--dialect mariadb` drop a declared sequence
-	// with no statement and no diagnostic while the capability registry
-	// advertised Sequences: true (stokaro/ptah#931 item 8). The renderer decides
-	// what a sequence means for the concrete target: MariaDB emits CREATE
-	// SEQUENCE, MySQL emits a not-supported comment.
-	if emitsStandaloneSequences(targetPlatform) {
-		for _, sequence := range database.Sequences {
-			sequenceNode := FromSequence(sequence)
-			sequenceNode.OwnedBy = ""
-			statements.Statements = append(statements.Statements, sequenceNode)
-		}
+	// later (after tables) by appendPostTableObjectStatements, because it names
+	// a column that does not exist yet here.
+	for _, sequence := range database.Sequences {
+		sequenceNode := FromSequence(sequence)
+		sequenceNode.OwnedBy = ""
+		statements.Statements = append(statements.Statements, sequenceNode)
 	}
 
 	// 3. Add enum definitions when the dialect has standalone enum types.
@@ -2105,21 +2111,18 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		}
 	}
 
-	// 3b. Add PostgreSQL user-defined types before tables so columns can
-	// reference them, ordered by what each definition names rather than by
-	// kind. Enums are already out, above, and reference nothing.
-	if isPostgreSQLFamilyPlatform(targetPlatform) {
-		statements.Statements = append(statements.Statements, orderedUserTypeStatements(database)...)
-	}
+	// 3b. Add user-defined types before tables so columns can reference them,
+	// ordered by what each definition names rather than by kind. Enums are
+	// already out, above, and reference nothing.
+	statements.Statements = append(statements.Statements, orderedUserTypeStatements(database)...)
 
 	// 4. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
 	appendTableStatements(statements, database, allFields, targetPlatform)
 
-	isPostgreSQL := isPostgreSQLFamilyPlatform(targetPlatform)
-	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
-		appendPostgreSQLPreIndexFeatureStatements(statements, database)
-	}
+	// 5. Roles and functions precede the objects that name them: a grant names
+	// a role, and a trigger names a function.
+	appendRoleAndFunctionStatements(statements, database)
 
 	// 6. Add unique indexes before foreign keys. PostgreSQL accepts a unique
 	// index as the referenced key for a foreign key, so it must exist before
@@ -2135,13 +2138,8 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
 	}
 
-	if isPostgreSQL || reportsUnsupportedSchemaObjects(targetPlatform) {
-		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database, targetPlatform)
-	}
-
-	if supportsStandaloneViewsAndTriggers(targetPlatform) {
-		appendViewAndTriggerStatements(statements, database)
-	}
+	// 8. Everything that needs the tables to exist first.
+	appendPostTableObjectStatements(statements, database, targetPlatform)
 
 	// 9. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
@@ -2244,7 +2242,9 @@ func appendMatchingIndexStatements(
 	}
 }
 
-func appendPostgreSQLPreIndexFeatureStatements(statements *ast.StatementList, database goschema.Database) {
+// appendRoleAndFunctionStatements appends every declared role and function, for
+// every target. A target that cannot host one says so through its renderer.
+func appendRoleAndFunctionStatements(statements *ast.StatementList, database goschema.Database) {
 	for _, role := range database.Roles {
 		statements.Statements = append(statements.Statements, FromRole(role))
 	}
@@ -2253,7 +2253,14 @@ func appendPostgreSQLPreIndexFeatureStatements(statements *ast.StatementList, da
 	}
 }
 
-func appendPostgreSQLPostForeignKeyFeatureStatements(
+// appendPostTableObjectStatements appends every declared object whose statement
+// names a table or a column, for every target: a sequence's OWNED BY, views and
+// materialized views, row-level security and its policies, grants, and triggers.
+//
+// Views and materialized views share one dependency ordering because a view may
+// select from another; emitting the two kinds one after the other gets that
+// wrong whichever kind goes first.
+func appendPostTableObjectStatements(
 	statements *ast.StatementList,
 	database goschema.Database,
 	targetPlatform string,
@@ -2307,77 +2314,6 @@ func appendOrderedViewLikeStatements(
 		}
 		statements.Statements = append(statements.Statements, FromView(viewsByName[object.Name]))
 	}
-}
-
-// supportsStandaloneViewsAndTriggers reports whether a target OUTSIDE the
-// PostgreSQL family gets view and trigger nodes appended. The family itself is
-// served by appendPostgreSQLPostForeignKeyFeatureStatements above.
-//
-// This stays a list of engines rather than a capability question because the
-// PostgreSQL family and ClickHouse already receive view nodes through the two
-// feature-statement phases above. Their renderers make the capability decision.
-// Only MySQL, MariaDB, SQL Server, and SQLite need this additional route.
-//
-// Within the PostgreSQL family the question is already asked by capability, in
-// the renderer, so that `schema render` and the apply planner cannot disagree
-// (stokaro/ptah#929).
-func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite:
-		return true
-	default:
-		return false
-	}
-}
-
-func appendViewAndTriggerStatements(statements *ast.StatementList, database goschema.Database) {
-	for _, view := range database.Views {
-		statements.Statements = append(statements.Statements, FromView(view))
-	}
-	// Materialized views are appended even though none of these targets can
-	// host one. Dropping them here made `schema render` exit 0 having silently
-	// under-generated, while `schema apply` on the same model refused with an
-	// unsupported-feature error -- and render is the documented way to check a
-	// model before applying it. The renderer for each of these dialects refuses
-	// the node, so the two surfaces now give the same answer.
-	for _, view := range database.MaterializedViews {
-		statements.Statements = append(statements.Statements, FromMaterializedView(view))
-	}
-	for _, trigger := range database.Triggers {
-		statements.Statements = append(statements.Statements, FromTrigger(trigger))
-	}
-}
-
-// emitsStandaloneSequences reports whether a declared //ptah:schema:sequence
-// should reach the target's renderer as a CREATE SEQUENCE node.
-//
-// It answers "does this dialect's renderer have something to say about a
-// sequence", not "does this engine have sequences" -- the renderer makes the
-// second call from the capability set, and emits either the statement or a
-// named skip diagnostic. Dropping the node here instead is what made a declared
-// sequence disappear from `schema render` with no trace.
-//
-// SQLite and SQL Server are absent deliberately. Their renderers answer with a
-// flat "CREATE SEQUENCE is not supported", which is true of SQLite and false of
-// SQL Server (it has had sequences since 2012), so routing the node to SQL
-// Server would trade a silent omission for a wrong statement. Both belong to
-// the SQL-schema-file object-kind work, not here.
-func emitsStandaloneSequences(targetPlatform string) bool {
-	return isPostgreSQLFamilyPlatform(targetPlatform) ||
-		isMySQLFamilyTarget(targetPlatform) ||
-		reportsUnsupportedSchemaObjects(targetPlatform)
-}
-
-// reportsUnsupportedSchemaObjects reports whether a target should receive the
-// PostgreSQL-family feature AST nodes so its own renderer can either emit a
-// supported equivalent or name what it cannot represent.
-//
-// ClickHouse emits plain views now. It keeps notSupported() diagnostics for
-// sequences, roles, functions, materialized views, triggers, policies, RLS,
-// and grants. Routing all of those nodes here prevents either executable DDL or
-// a named refusal from disappearing before rendering.
-func reportsUnsupportedSchemaObjects(targetPlatform string) bool {
-	return platform.NormalizeDialect(targetPlatform) == platform.ClickHouse
 }
 
 func isSQLiteTarget(targetPlatform string) bool {

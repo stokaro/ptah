@@ -309,21 +309,55 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 	}
 }
 
-// TestPlan_SQLServerKeepsTheSequenceOutOfThePlan is the inverse control for the
-// MySQL-family fix. SQL Server has had sequences since 2012, and its renderer
-// answers a sequence node with a flat "CREATE SEQUENCE is not supported" that
-// would be a false statement about the engine, so the converter that feeds
-// `render` deliberately withholds the node there. The plan path has to withhold
-// it for the same reason: routing every kind to every planner would satisfy the
-// test above and be wrong here.
-func TestPlan_SQLServerKeepsTheSequenceOutOfThePlan(t *testing.T) {
+// TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate is what replaced the
+// hold-out.
+//
+// Both surfaces used to withhold the SQL Server sequence entirely, and the
+// reason given was the renderer's answer: a flat "CREATE SEQUENCE is not
+// supported", which is a false statement about an engine that has had sequences
+// since 2012. Withholding traded that falsehood for a silent omission -- exit 0,
+// no statement, no diagnostic, on a sequence the author declared. The renderer's
+// sentence now names Ptah's generator rather than the engine, so both surfaces
+// can say what is true instead of saying nothing (stokaro/ptah#929 item 5).
+//
+// The executable half is still asserted: naming the object must not become
+// emitting a CREATE SEQUENCE Ptah cannot read back or plan again.
+func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
-	c.Assert(planned, qt.Not(qt.Contains), "CREATE SEQUENCE")
-	c.Assert(rendered, qt.Not(qt.Contains), "CREATE SEQUENCE")
-	c.Assert(planned, qt.Contains, `-- SQLSERVER: extensions "pg_trgm" is not supported`)
-	c.Assert(rendered, qt.Contains, `-- SQLSERVER: extensions "pg_trgm" is not supported`)
+	c.Assert(executableSQL(planned), qt.Not(qt.Contains), "CREATE SEQUENCE")
+	c.Assert(executableSQL(rendered), qt.Not(qt.Contains), "CREATE SEQUENCE")
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "extension", want: `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`},
+		{name: "sequence", want: `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated for this target; skipped.`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			c.Assert(planned, qt.Contains, test.want)
+			c.Assert(rendered, qt.Contains, test.want)
+		})
+	}
+}
+
+// executableSQL drops every SQL line comment, leaving only what a server would
+// run. A named skip repeats the object's own DDL keywords inside a comment, so
+// Contains over the raw text cannot separate an emitted statement from a
+// diagnostic about one.
+func executableSQL(sqlText string) string {
+	kept := make([]string, 0, strings.Count(sqlText, "\n")+1)
+	for line := range strings.SplitSeq(sqlText, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }

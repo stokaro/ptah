@@ -625,7 +625,13 @@ func TestCreateType_Integration(t *testing.T) {
 				return ast.NewCreateType("status", enumDef).
 					SetComment("Status enumeration")
 			},
-			contains:   []string{"MYSQL does not support CREATE TYPE", "enums are handled inline"},
+			// The diagnostic names the type. It used to name none --
+			// "MYSQL does not support CREATE TYPE - enums are handled inline in
+			// column definitions" -- which said nothing about WHICH type when a
+			// schema declared several, and described enums while the node could
+			// equally be a domain, a composite or a range. Those three now reach
+			// this renderer for every dialect (stokaro/ptah#929 item 5).
+			contains:   []string{`MYSQL: CREATE TYPE status is not generated for this target; skipped.`},
 			shouldExec: false,
 		},
 		{
@@ -638,7 +644,7 @@ func TestCreateType_Integration(t *testing.T) {
 				return ast.NewCreateType("size", enumDef).
 					SetComment("Size enumeration")
 			},
-			contains:   []string{"MARIADB does not support CREATE TYPE", "enums are handled inline"},
+			contains:   []string{`MARIADB: CREATE TYPE size is not generated for this target; skipped.`},
 			shouldExec: false,
 		},
 	}

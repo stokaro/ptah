@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -23,20 +22,23 @@ import (
 // identity is all they read, and the resulting comments are stripped before
 // execution by atlasschema.SplitApplyStatements.
 //
-// Sequences are routed to the MySQL family only, matching the converter that
-// feeds `render`. The SQL Server renderer answers a sequence node with a flat
-// "CREATE SEQUENCE is not supported", which is false of an engine that has had
-// sequences since 2012, so routing it there would trade a silent omission for a
-// wrong statement.
+// Sequences used to be withheld from SQL Server here, by name, because the SQL
+// Server renderer answered a sequence node with a flat "CREATE SEQUENCE is not
+// supported" -- false of an engine that has had sequences since 2012. That
+// message now names Ptah's generator rather than the engine, so the hold-out
+// has nothing left to protect and the target no longer decides whether the
+// object is reported (stokaro/ptah#929 item 5).
+//
+// Roles and functions join sequences because the converter that feeds `render`
+// hands both to the renderer for every target now, and a plan that says nothing
+// about an object `render` names is the same disagreement between the two
+// surfaces that #929 is about, pointing the other way.
 func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, name := range diff.ExtensionsAdded {
 		result = append(result, ast.NewExtension(name))
 	}
 	for _, name := range diff.ExtensionsRemoved {
 		result = append(result, ast.NewDropExtension(name))
-	}
-	if p.targetDialect() == platform.SQLServer {
-		return result
 	}
 	for _, name := range diff.SequencesAdded {
 		result = append(result, ast.NewCreateSequence(name))
@@ -46,6 +48,26 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 	}
 	for _, name := range diff.SequencesRemoved {
 		result = append(result, ast.NewDropSequence(name))
+	}
+	return p.reportUnsupportedRoutinesAndRoles(result, diff)
+}
+
+// reportUnsupportedRoutinesAndRoles appends the identity-only nodes for the role
+// and function kinds these targets do not generate. It is split from
+// reportUnsupportedObjects so that adding a kind does not push that function
+// past the cyclomatic-complexity gate.
+func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.RolesAdded {
+		result = append(result, ast.NewCreateRole(name))
+	}
+	for _, name := range diff.RolesRemoved {
+		result = append(result, ast.NewDropRole(name))
+	}
+	for _, name := range diff.FunctionsAdded {
+		result = append(result, ast.NewCreateFunction(name))
+	}
+	for _, name := range diff.FunctionsRemoved {
+		result = append(result, ast.NewDropFunction(name))
 	}
 	return result
 }
