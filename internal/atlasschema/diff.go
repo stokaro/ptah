@@ -82,6 +82,16 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	toSet := prepared.to
 	dialect := prepared.dialect
 
+	// The first thing after the dialect is known, and deliberately ahead of
+	// source resolution. Everything below can return before the comparison is
+	// reached -- a source that will not load, a selection matching neither
+	// side -- and resolution is not free: a migration-directory source replays
+	// into the dev database. A malformed drop toggle must not survive any of
+	// that unreported, nor let that work start. See stokaro/ptah#1028.
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
+
 	// Both sides are desired states here, so --dev-url is the only URL that can
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
@@ -119,12 +129,6 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Include:       opts.Include,
 		Exclude:       opts.Exclude,
 		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
-	}
-	// Resolved before selection can return: an --include that matched neither
-	// side exits below, and a malformed drop toggle must not survive that exit
-	// unreported. See stokaro/ptah#1028.
-	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-		return atlasreport.SchemaDiff{}, err
 	}
 	fromSide, toSide := scopeDiffStates(fromState, toState, scope, dialect)
 	if fromSide.err != nil {
