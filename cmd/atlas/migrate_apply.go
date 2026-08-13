@@ -278,8 +278,12 @@ func runAtlasMigrateApplyTarget(
 			return formatOutput, err
 		}
 	}
+	// Singular, and the only verb of the family that answers this way. See
+	// cmd/atlas/compat_url_diagnostic.go for the measured per-verb table; this
+	// check tests the value rather than cobra's Changed bit because the pinned
+	// binary answers `--url ""` here exactly as it answers an absent one.
 	if opts.url == "" {
-		return formatOutput, fmt.Errorf("database URL is required")
+		return formatOutput, atlasRequiredURLError(atlasRequiredURLSingular)
 	}
 	if opts.dir == "" {
 		return formatOutput, fmt.Errorf("migrations directory is required")
@@ -367,6 +371,9 @@ func runAtlasMigrateApplyTarget(
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
+	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+		return formatOutput, err
+	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.url)
 	if err != nil {
 		return formatOutput, fmt.Errorf("error connecting to database: %w", err)

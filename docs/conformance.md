@@ -1354,11 +1354,11 @@ A desired type names a domain when the desired schema declares one by that
 name, which is how every source Ptah reads carries it. A bare name with no
 declaration behind it stays an ordinary type name.
 
-## Output shape: eleven cells from the #1235 register
+## Output shape: twelve cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
 places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
-exit code and disagree on the bytes. Eleven of them are closed here. Every row was
+exit code and disagree on the bytes. Twelve of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.
 
@@ -1374,6 +1374,7 @@ unpiped invocation.
 | 9.11 | `migrate lint --dir file://nope --dev-url <SQLite> --latest 1`; the same for the default directory, Goose, absolute and nested paths, and `atlas.hcl` | Exit 1, empty stdout, stderr `Error: sql/migrate: stat nope: no such file or directory\n` (57 bytes) | Exit 1, empty stdout, stderr `Error: atlas migrate lint --dir: open migrations directory: openat nope: no such file or directory\n` (99 bytes) | byte-identical across every measured source and layout |
 | 9.12 | `migrate lint --git-base nosuchbranch --dir file://migrations --dev-url <SQLite>` inside a two-branch repository | Exit 1, empty stdout, stderr `Error: git diff: exit status 128\n` (33 bytes) | Exit 1, empty stdout, stderr naming the whole `git diff --name-only --diff-filter=ACMR --end-of-options nosuchbranch...HEAD -- migrations` invocation and git's own `fatal:` line (203 bytes) | byte-identical |
 | 9.13 | `schema apply --to file://schema.hcl --dry-run` with an unclosed HCL block | HCL parser diagnostic without loader context, path echoed in the form it was given | the same body prefixed by `load --to schema: parse HCL schema: `, path always absolute | byte-identical for relative, dot-relative, escaped, symlinked, directory-member and absolute `--to` |
+| 9.14 | A missing or undriveable `--url`, on every verb where the pinned binary registers one: `migrate apply`, `migrate set`, `migrate status`, `schema apply`, `schema clean` and `schema inspect` | Exit 1, empty stdout, and one of four strings depending on the verb and on whether the flag was absent or empty — see the table below | Exit 1 with four different Ptah wordings that did not track the verb: `database URL is required`, `database URL is required; pass --url`, `--url is required`, and a 184-byte desired-state scheme message | byte-identical on all 18 measured cells |
 
 **6.2 is not SQLite-specific, though the register is.** It reproduces on
 PostgreSQL 17: a plain `email text UNIQUE` column printed `users_email_key`
@@ -1617,6 +1618,86 @@ Both exit 1. The register's own probe for that cell uses the default layout,
 where the two are already byte-identical; this spelling is a different refusal
 with a different predicate — Ptah refuses the same directory whatever it holds —
 and folding it into the layout comparison was out of scope for this change.
+
+### A missing `--url` is four strings, and which one is a property of the verb
+
+Cell 9.14 was recorded as six probes. Measured on 2026-08-13, each binary run in
+its own directory and every exit code read from an unpiped invocation, it is
+eighteen cells over the six verbs where the pinned binary registers `--url`.
+Every cell exits 1 and leaves standard output empty; the message is on standard
+error, and there is no single string that produces it:
+
+| `--url` on … | absent | `--url ""` | `--url notadriver://x` |
+| --- | --- | --- | --- |
+| `migrate apply` | `required flag "url" not set` (35 B) | the same | `sql/sqlclient: unknown driver "notadriver". See: https://atlasgo.io/url` (79 B) |
+| `migrate set` | `sql/sqlclient: missing driver. See: https://atlasgo.io/url` (66 B) | the same | the unknown-driver string |
+| `migrate status` | the missing-driver string | the same | the unknown-driver string |
+| `schema apply` | `required flag(s) "url" not set` (38 B) | the same | the unknown-driver string |
+| `schema clean` | the plural refusal | **the missing-driver string** | the unknown-driver string |
+| `schema inspect` | the plural refusal | **`missing scheme. See: https://atlasgo.io/url`** (51 B) | the unknown-driver string |
+
+Byte counts include the `Error: ` prefix and the trailing line feed. Three
+separate facts are in that table, and matching one of them does not match the
+others:
+
+- **Singular against plural.** `migrate apply` answers `required flag "url" not
+  set`; the three schema verbs answer `required flag(s) "url" not set`. Adopting
+  the plural everywhere matches three of those four rows and quietly un-matches
+  the fourth, so the spelling is carried to the refusal as per-verb data rather
+  than decided at it.
+- **Absent against empty.** `schema clean` and `schema inspect` refuse only a
+  flag that was never given; an explicitly empty value passes their check and is
+  answered further in. `migrate apply` and `schema apply` answer the value, so
+  for them empty and absent read alike.
+- **No check at all.** `migrate set` and `migrate status` have no required-flag
+  check. Their absent `--url` is opened as the empty string and the client layer
+  answers it, which is why the adaptation is a gate immediately in front of the
+  open rather than an early refusal: an adapter that rejected an empty value up
+  front could not produce those two rows. A bare word with no scheme reaches the
+  same answer as an empty one, measured on both verbs.
+
+Placement is measured as well as wording. On `migrate set` and `migrate
+status` the directory integrity gate outranks the URL: against an unhashed
+directory with no `--url` at all, both binaries print `checksum file not found`
+on standard error and the same 143-byte guidance block on standard output. On
+`schema apply` an absent `--url` outranks the missing desired state, while an
+undriveable one loses to it. Those orderings are pinned alongside the wordings,
+because a correct string emitted at the wrong point is still a divergence.
+
+**Native Ptah keeps the clearer message, deliberately.** `ptah migrations
+status` with no database URL still reports `database URL is required`, which
+names the flag the caller forgot; `sql/sqlclient: missing driver` reports a
+driver problem for what is actually a missing flag. Matching is this surface's
+contract, not an improvement to be propagated (AGENTS.md compatibility rule
+(b)). Measured before and after this change, native `ptah schema inspect`,
+`migrations status`, `migrations up`, `migrations set`, `schema apply` and
+`schema diff` are byte-identical on the same inputs.
+
+**Two verbs register `--url` with nothing to match.** `migrate down` and
+`schema test` accept one here; the pinned binary answers
+`unknown flag: --url` on both, and reports `migrate down` itself as unavailable
+in the community version. There is no wording to copy, so their own diagnostics
+are unchanged — inventing an oracle would be worse than having none, and
+dropping the flags would remove a capability (rule (c)). A guard walks the built
+command tree and requires every verb registering `--url` to be either pinned by
+a row or named here, so a seventh cannot appear carrying the old wording.
+
+**Two retained divergences, both measured.** `schema inspect --url <bare path>`
+answers `missing scheme` on the pinned binary; Ptah resolves a bare path as a
+local schema file, and refusing it would delete a capability, so that value is
+still accepted. And `schema apply --plan` has no row at all: the pinned binary
+answers every `--url` spelling under it with
+`Abort: 'atlas schema apply --plan' is not supported by the community version.`
+The plan path carries the same plural spelling as the plan-free path so one verb
+does not answer the same mistake two ways, but that is an internal-consistency
+choice and is not claimed as a match.
+
+**The `--dev-url` family is the same string and is not closed here.** Measured
+on the pinned binary, `migrate lint --dev-url notadriver://x` answers with the
+identical `sql/sqlclient: unknown driver "notadriver"` text. `--dev-url`,
+`--to` and `--from` are opened as database URLs on verbs that mostly forward to
+native commands, so covering them is a different change against a different set
+of call sites, and it is reported here rather than claimed.
 
 ## Reports
 
