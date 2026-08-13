@@ -566,6 +566,11 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			// selection.
 			c.Assert(got.Saturated && got.VersionSpecific, qt.IsFalse, comment)
 
+			// Recognized carries the same obligation from the other end, over
+			// every row this table already covers: a string the resolver never
+			// read cannot have selected a measured release line.
+			c.Assert(got.Recognized || !got.VersionSpecific, qt.IsTrue, comment)
+
 			// The two older entry points answer from the same resolution, so
 			// the boolean ForServerVersionResult hands an existing caller is
 			// the one asserted above.
@@ -629,4 +634,87 @@ func TestDoc(t *testing.T) {
 		c.Assert(capability.Doc(key), qt.Not(qt.Equals), "", qt.Commentf("registry entry %q must carry documentation", key))
 	}
 	c.Assert(capability.Doc("nope"), qt.Equals, "")
+}
+
+// TestResolveServerVersionRecognizesUsableStrings pins Recognized, the field
+// that separates "this string named no server at all" from every other reason
+// a resolution is not version-specific.
+//
+// The pairing is the point. Measured on 47e04645, an unreadable string on a
+// laddered dialect and a perfectly good version on a dialect with no ladder
+// answered VersionSpecific=false, Saturated=false and NewestMeasured="" alike
+// — identical in all three published fields while being opposite answers to
+// the only question an operator's input raises. That is why `ptah sql lint
+// --dialect postgres --version not-a-version` exited 0 and reported
+// "not-a-version" as the version it had applied: no field could say the
+// string had been ignored.
+func TestResolveServerVersionRecognizesUsableStrings(t *testing.T) {
+	tests := []struct {
+		name           string
+		dialect        string
+		version        string
+		wantRecognized bool
+	}{
+		// The collision, one row per side.
+		{"postgres unreadable string", "postgres", "not-a-version", false},
+		{"sqlite good version with no ladder", "sqlite", "3.45.0", true},
+		{"sqlserver good version with no ladder", "sqlserver", "16.0.4115.5", true},
+		{"clickhouse good version with no ladder", "clickhouse", "25.3.1.100", true},
+
+		// Other shapes that name no server.
+		{"postgres empty string", "postgres", "", false},
+		{"postgres bare word", "postgres", "latest", false},
+		{"postgres dotted letters", "postgres", "v.x.y", false},
+		{"mysql unreadable string", "mysql", "who knows", false},
+		{"mariadb banner carrying no version", "mariadb", "MariaDB something", false},
+		{"cockroachdb banner carrying no version", "postgres", "cockroachdb", false},
+
+		// Recognized outcomes that are still not version-specific: the field
+		// must not degenerate into a second spelling of VersionSpecific.
+		{"postgres saturated above the ladder", "postgres", "PostgreSQL 99.0", true},
+		{"mysql between measured lines", "mysql", "8.0.42-log", true},
+		{"cockroachdb between measured lines", "postgres", "CockroachDB CCL v25.5.1", true},
+
+		// Version-specific outcomes, including the two dialects answered from
+		// the banner without a version ever being parsed.
+		{"postgres measured line", "postgres", "PostgreSQL 16.3 (Debian)", true},
+		{"mysql measured line", "mysql", "8.4.11", true},
+		{"mariadb measured line", "mariadb", "10.11.6-MariaDB", true},
+		{"cockroachdb measured line", "postgres", "CockroachDB CCL v25.4.5", true},
+		{"yugabytedb answers from the banner alone", "postgres", "PostgreSQL 15.2-YB-2026.1.0.0-b0", true},
+		{"spanner answers from the banner alone", "postgres", "Cloud Spanner PostgreSQL interface", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := capability.ResolveServerVersion(tt.dialect, tt.version)
+
+			comment := qt.Commentf("dialect=%s version=%q", tt.dialect, tt.version)
+			c.Assert(got.Recognized, qt.Equals, tt.wantRecognized, comment)
+
+			// A string that was never read cannot have selected a measured
+			// release line, so a caller may read Recognized on its own.
+			c.Assert(got.Recognized || !got.VersionSpecific, qt.IsTrue, comment)
+		})
+	}
+}
+
+// TestResolveServerVersionSeparatesTheThreeFieldCollision executes the
+// collision TestResolveServerVersionRecognizesUsableStrings describes, as one
+// claim rather than two rows: two inputs that agree in every field published
+// before Recognized existed, and disagree in the answer a caller holding
+// operator input needs.
+func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
+	c := qt.New(t)
+
+	unreadable := capability.ResolveServerVersion("postgres", "not-a-version")
+	unladdered := capability.ResolveServerVersion("sqlite", "3.53.0")
+
+	c.Assert(unreadable.VersionSpecific, qt.Equals, unladdered.VersionSpecific)
+	c.Assert(unreadable.Saturated, qt.Equals, unladdered.Saturated)
+	c.Assert(unreadable.NewestMeasured, qt.Equals, unladdered.NewestMeasured)
+
+	c.Assert(unreadable.Recognized, qt.IsFalse)
+	c.Assert(unladdered.Recognized, qt.IsTrue)
 }

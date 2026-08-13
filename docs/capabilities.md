@@ -222,6 +222,7 @@ resolution := capability.ResolveServerVersion("mysql", "99.0")
 // resolution.VersionSpecific == false   (the dialect default was used)
 // resolution.Saturated       == true    (99.x is past the newest measured line)
 // resolution.NewestMeasured  == "26.7"
+// resolution.Recognized      == true    (99.0 is a version, just an unmeasured one)
 ```
 
 `Saturated` and `VersionSpecific` are never both true.
@@ -252,19 +253,46 @@ resolved from the banner without consulting a version; those five report
 `Saturated=false` and an empty `NewestMeasured`. Refining those dialects is the
 remaining scope of issue #916.
 
-`dbschema.ConnectToDatabase` is the one production caller of the version-aware
-selector. It records a saturated resolution at `DEBUG`, naming the dialect, the
-server version, and the line it was planned as; an unparseable version is
-recorded at `DEBUG` too. Neither reaches a default run's stderr, and that is
-deliberate: the CLI's default logger keeps `WARN` and above so that a clean run
-emits nothing, and connecting to a supported server is a clean run. The
-first connection after a vendor publishes an unmeasured major can saturate, so
-a warning would be noise on every command against that server rather than a
+`dbschema.ConnectToDatabase` records a saturated resolution at `DEBUG`, naming
+the dialect, the server version, and the line it was planned as; an unparseable
+version is recorded at `DEBUG` too. Neither reaches a default run's stderr, and
+that is deliberate: the CLI's default logger keeps `WARN` and above so that a
+clean run emits nothing, and connecting to a supported server is a clean run.
+The first connection after a vendor publishes an unmeasured major can saturate,
+so a warning would be noise on every command against that server rather than a
 diagnostic. Use `--log-level debug` to see it, or read `Saturated` and
 `NewestMeasured` from `ResolveServerVersion` directly.
 
-Surfacing an unrefined version to the user on a channel of its own is
-criterion 6 of issue #916 and belongs with the CLI work that owns that channel.
+### Recognized: a string that named no server
+
+Silent degradation is correct for a banner read from a live `SELECT version()`
+— a server does not typo its own name — and wrong for a string a person typed.
+`Recognized` is the field that tells the two apart, and it exists because the
+other three cannot:
+
+```go
+capability.ResolveServerVersion("postgres", "not-a-version")
+// VersionSpecific == false, Saturated == false, NewestMeasured == ""
+capability.ResolveServerVersion("sqlite", "3.53.0")
+// VersionSpecific == false, Saturated == false, NewestMeasured == ""
+```
+
+Those two agree in every field published before `Recognized`, and they are
+opposite answers to the only question an operator's input raises: the first
+string was ignored, the second is a perfectly good version for a dialect that
+has no ladder to spend it on. `Recognized` is `false` only for the first.
+
+`Recognized == false` implies `VersionSpecific == false`, so a caller holding
+operator input reads this field alone and refuses. A caller holding a live
+banner should keep ignoring it.
+
+`ptah sql lint --version` is that caller. It refuses an unrecognized value with
+exit code `2` and never reports it as the version it linted against; a
+recognized value that did not select an exact measured release line is applied
+and announced, on stderr as a `warning:` line and in `--format json` as
+`version_note`. Silence is reserved for an exact measured-line match. This is
+criterion 6 of issue #916 for that command; the other `--version`-free surfaces
+still degrade silently by design.
 
 ### Composition
 
@@ -290,6 +318,11 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   (aliases like `pgx`/`postgresql`, `crdb`/`cockroachdb`,
   `ysql`/`yugabytedb`, and `cloudspanner`/`spanner` normalize first). Used by
   `GetPlanner` and the renderers.
+- `capability.ResolveServerVersion("mysql", version)` — the full answer:
+  the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`, and
+  `Recognized`. Callers acting on a version string a person supplied must use
+  this and refuse `Recognized == false`; `ForServerVersion` throws that signal
+  away and cannot report it.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix

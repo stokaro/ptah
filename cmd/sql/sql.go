@@ -69,7 +69,9 @@ migration directory specific.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner")
-	flags.StringVar(&version, "version", "", "Server version string used to refine target capabilities")
+	flags.StringVar(&version, "version", "",
+		"Server version string used to refine target capabilities, for example 17 or 10.11.6-MariaDB "+
+			"(requires --dialect; a value that names no server is refused)")
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
 	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
@@ -87,13 +89,21 @@ type sqlLintOptions struct {
 }
 
 type sqlLintReport struct {
-	Failed   bool              `json:"failed"`
-	Dialect  string            `json:"dialect,omitempty"`
-	Version  string            `json:"version,omitempty"`
-	Sources  []string          `json:"sources,omitempty"`
-	Disabled []string          `json:"disabled_rules,omitempty"`
-	Findings []sqllint.Finding `json:"findings"`
-	Error    string            `json:"error,omitempty"`
+	Failed bool `json:"failed"`
+	// Dialect and Version describe the target the findings below were
+	// produced against. Version is present only when it resolved: a value the
+	// capability resolver could not identify never reaches this struct,
+	// because a machine that reads a version here must be able to treat it as
+	// the version that was applied.
+	Dialect string `json:"dialect,omitempty"`
+	Version string `json:"version,omitempty"`
+	// VersionNote is set when Version resolved to something other than an
+	// exact measured release line, and says what was planned instead.
+	VersionNote string            `json:"version_note,omitempty"`
+	Sources     []string          `json:"sources,omitempty"`
+	Disabled    []string          `json:"disabled_rules,omitempty"`
+	Findings    []sqllint.Finding `json:"findings"`
+	Error       string            `json:"error,omitempty"`
 }
 
 func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
@@ -101,17 +111,27 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
+	// Resolved before the SQL is read so an unusable --version is reported as
+	// the usage error it is, rather than behind whatever the first file has
+	// to say for itself.
+	normalizedDialect := platform.NormalizeDialect(opts.dialect)
+	target, err := sqllint.ResolveTargetVersion(normalizedDialect, opts.version)
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format,
+			fmt.Sprintf("invalid --version value %q: expected %s", opts.version, sqllint.RecognizedVersionShapes))
+	}
+
 	sources, err := readSQLLintSources(cmd.InOrStdin(), opts)
 	if err != nil {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	normalizedDialect := platform.NormalizeDialect(opts.dialect)
 	var findings []sqllint.Finding
 	for _, source := range sources {
 		sourceFindings, err := sqllint.LintSource(source, sqllint.Options{
 			Dialect:       normalizedDialect,
 			Version:       opts.version,
+			Capabilities:  target.Capabilities,
 			DisabledRules: opts.disabled,
 		})
 		if err != nil {
@@ -124,12 +144,22 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 	}
 
 	report := sqlLintReport{
-		Failed:   hasErrorFinding(findings),
-		Dialect:  normalizedDialect,
-		Version:  opts.version,
-		Sources:  sourceNames(sources),
-		Disabled: opts.disabled,
-		Findings: findings,
+		Failed:      hasErrorFinding(findings),
+		Dialect:     normalizedDialect,
+		Version:     opts.version,
+		VersionNote: target.Note,
+		Sources:     sourceNames(sources),
+		Disabled:    opts.disabled,
+		Findings:    findings,
+	}
+	// The note goes to stderr in text mode whatever the outcome: it describes
+	// the target rather than the SQL, so it must not be mistaken for a finding
+	// on stdout, and it must still be visible on a clean run — a clean run
+	// against an unmodeled server is exactly the case it exists to announce.
+	if opts.format == formatText && report.VersionNote != "" {
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", report.VersionNote); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	writer := cmd.OutOrStdout()
 	if report.Failed {
