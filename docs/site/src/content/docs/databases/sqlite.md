@@ -72,10 +72,19 @@ CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 
 On the compatibility surface the SQL format has to be asked for —
 `ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'`.
-Without it, `schema inspect` returns HCL, as the community CLI does, and HCL
-has no virtual-table block: the table renders as
+Without it, `schema inspect` returns HCL, as the community CLI does, and
+neither HCL nor JSON has a virtual-table construct: the table renders as
 `table "docs" { schema = schema.main }` with no columns, which is what the
 pinned community binary emits for the same object and which does not replay.
+
+The document is not changed — matching the community binary is what the surface
+is for — but the loss is reported rather than left silent:
+
+- ordinarily, a note on standard error names each virtual table the rendering
+  dropped and points at `--format '{{ sql . }}'`, leaving standard output and
+  the exit code untouched;
+- under `PTAH_ATLAS_STRICT_COMPAT=1` the same condition is refused, because
+  strict mode owns the process output contract. The SQL format is unaffected.
 
 The module name and the text between its parentheses are carried verbatim, so
 tokenizer options, quoted values and commas inside quoted arguments survive.

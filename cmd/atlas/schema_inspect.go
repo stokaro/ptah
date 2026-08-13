@@ -220,10 +220,14 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateLiveObject:        atlasLiveSchemaObjectValidator(opts.policy),
 		ValidateMigrationSource:   opts.policy.MigrationSourceValidator(opts.devURL),
 		ValidateLocalSchemaSource: opts.policy.ValidateLocalSchemaSource,
-		OmitAtlasRefusedBlocks:    omitRefusedBlocks,
-		CompatibilityHCLFraming:   true,
-		DevURLDiagnostic:          atlasDevURLDriverDiagnostic,
-		Vars:                      schemaVars,
+		// Strict mode refuses a rendering that drops a SQLite virtual table's
+		// module declaration; outside it the same condition is a diagnostic.
+		// See stokaro/ptah#1028.
+		ValidateRenderedVirtualTables: opts.policy.ValidateRenderedVirtualTables,
+		OmitAtlasRefusedBlocks:        omitRefusedBlocks,
+		CompatibilityHCLFraming:       true,
+		DevURLDiagnostic:              atlasDevURLDriverDiagnostic,
+		Vars:                          schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

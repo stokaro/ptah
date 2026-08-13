@@ -326,6 +326,16 @@ func verb(count int) string {
 	return "are"
 }
 
+// Names renders a table list as the quoted names a diagnostic prints, in the
+// order Tables produced them.
+func Names(tables []Table) []string {
+	rendered := make([]string, 0, len(tables))
+	for _, table := range tables {
+		rendered = append(rendered, table.String())
+	}
+	return rendered
+}
+
 // Tables lists the virtual tables a database schema holds, in a stable order.
 func Tables(database *types.DBSchema) []Table {
 	if database == nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
@@ -17,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -58,6 +60,11 @@ type InspectOptions struct {
 	// ValidateSchema applies a caller-selected policy to the fully introspected
 	// schema before any template renders or file export is published.
 	ValidateSchema func(*goschema.Database) error
+	// ValidateRenderedVirtualTables applies a caller-selected policy to the
+	// SQLite virtual tables whose module declaration the chosen rendering
+	// dropped. It is asked only when something was actually dropped, so a
+	// format that carries the declaration never reaches it.
+	ValidateRenderedVirtualTables func(names []string) error
 	// ValidateLiveObject applies a caller-selected policy to supplemental
 	// catalog objects before any template renders or file export is published.
 	// Nil avoids the additional catalog query and preserves full-mode
@@ -183,10 +190,69 @@ func renderInspectSchema(
 	if err != nil {
 		return "", err
 	}
+	if err := reportOmittedVirtualTables(schema, output.Text, opts); err != nil {
+		return "", err
+	}
 	if err := applyInspectFileExports(output.Files); err != nil {
 		return "", err
 	}
 	return output.Text, nil
+}
+
+// reportOmittedVirtualTables answers for a SQLite virtual table the rendering
+// could not carry.
+//
+// Only the SQL rendering has a construct for one. HCL and JSON do not, so a
+// virtual table becomes `table "docs" { schema = schema.main }` -- an empty
+// block naming an ordinary table that, replayed, is not a full-text index. The
+// pinned community binary emits the same lossy block, and Ptah matches it
+// rather than changing the document; what it will not do is hand a pipeline
+// that captures inspection output a document that looks complete and is not.
+// Documentation cannot reach that pipeline. See stokaro/ptah#1028.
+//
+// Whether the declaration survived is read off the rendered text rather than
+// classified from the template, because --format takes an arbitrary Go
+// template: one that calls `sql` carries the declarations whatever else it
+// does, and one that does not, does not. The output either contains a
+// CREATE VIRTUAL TABLE or it does not.
+func reportOmittedVirtualTables(
+	schema *dbschematypes.DBSchema,
+	rendered string,
+	opts InspectOptions,
+) error {
+	virtual := sqlitevirtual.Tables(schema)
+	if len(virtual) == 0 {
+		return nil
+	}
+	if strings.Contains(strings.ToUpper(rendered), "CREATE VIRTUAL TABLE") {
+		return nil
+	}
+
+	names := sqlitevirtual.Names(virtual)
+	if opts.ValidateRenderedVirtualTables != nil {
+		if err := opts.ValidateRenderedVirtualTables(names); err != nil {
+			return err
+		}
+	}
+	if opts.Diagnostics == nil {
+		return nil
+	}
+	fmt.Fprintf(
+		opts.Diagnostics,
+		"note: this format cannot carry a SQLite virtual table's module declaration,"+
+			" so %s %s rendered as an empty table block that does not replay;"+
+			" use --format '{{ sql . }}' to keep the CREATE VIRTUAL TABLE statement\n",
+		strings.Join(names, ", "),
+		omittedVerb(len(names)),
+	)
+	return nil
+}
+
+func omittedVerb(count int) string {
+	if count == 1 {
+		return "was"
+	}
+	return "were"
 }
 
 // scopeInspectSchema applies the inspection selection to the introspected

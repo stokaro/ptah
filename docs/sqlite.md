@@ -78,10 +78,24 @@ CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 ```
 
 The `--format` is not optional on the compatibility surface: `schema inspect`
-defaults to HCL there, as the community CLI does, and HCL has no virtual-table
-block. A virtual table renders as `table "docs" { schema = schema.main }` with
-no columns — which is what the pinned community binary emits for the same
-object, and which does not replay.
+defaults to HCL there, as the community CLI does, and neither HCL nor JSON has
+a virtual-table construct. A virtual table renders as
+`table "docs" { schema = schema.main }` with no columns — which is what the
+pinned community binary emits for the same object, and which does not replay.
+
+Ptah does not change that document, because matching the community binary is
+what the surface is for. It says so instead:
+
+- **Ordinarily**, a note on standard error names each virtual table whose
+  module declaration the rendering dropped and points at
+  `--format '{{ sql . }}'`. Standard output and the exit code are untouched, so
+  a pipeline that captures the document keeps working and its operator learns
+  what is missing.
+- **Under `PTAH_ATLAS_STRICT_COMPAT=1`**, the same condition is refused. Strict
+  mode owns the process output contract and will not hand a pipeline a document
+  that looks complete and is not. `--format '{{ sql . }}'` is unaffected, since
+  the refusal only fires when the declaration is actually absent from the
+  rendered text.
 
 The module name and everything between its parentheses are carried verbatim, so
 tokenizer options, quoted values, and commas inside quoted arguments survive.
