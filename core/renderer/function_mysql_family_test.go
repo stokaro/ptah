@@ -42,7 +42,7 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 		want       string
 	}{
 		{name: "immutable is the only deterministic one", volatility: "IMMUTABLE", want: "DETERMINISTIC"},
-		{name: "stable reads", volatility: "STABLE", want: "READS SQL DATA"},
+		{name: "stable takes the remaining accepted cell", volatility: "STABLE", want: "NOT DETERMINISTIC NO SQL"},
 		{name: "volatile reads rather than modifies", volatility: "VOLATILE", want: "READS SQL DATA"},
 		{name: "unset reads", volatility: "", want: "READS SQL DATA"},
 	}
@@ -58,21 +58,100 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 				c.Assert(err, qt.IsNil)
 				joined := strings.Join(sql, "\n")
 				c.Check(joined, qt.Contains, "CREATE FUNCTION `func_probe`() RETURNS integer "+test.want)
-				// The refused spellings must never appear.
+				// MODIFIES SQL DATA is refused with the same Error 1418 whether
+				// it stands alone or follows NOT DETERMINISTIC, so no volatility
+				// may render it. Measured across all fifteen combinations on
+				// MySQL 26.7.0; see mysqlroutine.Characteristic for the grid.
 				c.Check(joined, qt.Not(qt.Contains), "MODIFIES SQL DATA")
-				c.Check(joined, qt.Not(qt.Contains), "NOT DETERMINISTIC")
 			})
 		}
 	}
 }
 
-// TestRender_MySQLFamilyReplacesWithDropThenCreate pins the replace shape.
+// TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames pins that two
+// declarations the target cannot tell apart are refused rather than silently
+// reduced to one.
 //
-// `CREATE OR REPLACE FUNCTION f() RETURNS integer DETERMINISTIC RETURN 2` is
-// Error 1064 on MySQL 26.7.0. MariaDB 10.11.18 accepts it, but the
-// drop-then-create pair is accepted by both, so the family shares one shape and
-// a schema that converges on one engine converges on the other.
-func TestRender_MySQLFamilyReplacesWithDropThenCreate(t *testing.T) {
+// The duplicate-definition check in core/goschema keys functions by their exact
+// name, which is right for PostgreSQL, where `Foo` and `foo` really are two
+// functions. On MySQL and MariaDB they are one routine and the comparator folds
+// them, so the two keyings disagreed -- and the disagreement lost a declaration
+// instead of reporting it. Measured on MySQL 26.7.0 and MariaDB 12.3.2, two
+// declared functions produced `FunctionsAdded = [ptah_dup_fn]`, one planned
+// statement, and one row in information_schema.ROUTINES after an apply that
+// exited 0.
+//
+// The PostgreSQL rows are the control and they are the reason this is not in
+// the dialect-blind validator: folding there would refuse a schema PostgreSQL
+// hosts perfectly well.
+func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
+	c := qt.New(t)
+
+	colliding := &goschema.Database{Functions: []goschema.Function{
+		{
+			Name: "Ptah_Dup_Fn", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
+		},
+		{
+			Name: "ptah_dup_fn", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 2",
+		},
+	}}
+	distinct := &goschema.Database{Functions: []goschema.Function{
+		{
+			Name: "ptah_dup_one", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
+		},
+		{
+			Name: "ptah_dup_two", Returns: "int", Language: "sql",
+			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 2",
+		},
+	}}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		c.Run(dialect+"/colliding is refused", func(c *qt.C) {
+			_, err := renderer.GetOrderedCreateStatements(colliding, dialect)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Check(err.Error(), qt.Contains, "Ptah_Dup_Fn")
+			c.Check(err.Error(), qt.Contains, "ptah_dup_fn")
+			c.Check(err.Error(), qt.Contains, "case")
+		})
+		c.Run(dialect+"/two distinct names are fine", func(c *qt.C) {
+			statements, err := renderer.GetOrderedCreateStatements(distinct, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Check(statements, qt.HasLen, 2)
+		})
+	}
+
+	// Control: PostgreSQL routine names are case-sensitive, so the same schema
+	// is legitimate there and must still render both functions.
+	c.Run("postgres hosts both spellings", func(c *qt.C) {
+		statements, err := renderer.GetOrderedCreateStatements(colliding, platform.Postgres)
+
+		c.Assert(err, qt.IsNil)
+		c.Check(statements, qt.HasLen, 2)
+	})
+}
+
+// TestRender_MySQLFamilyRendersOneStatementPerElement pins the invariant that
+// makes this list executable statement by statement.
+//
+// A whole-schema render targets a database that does not have these objects
+// yet, so no function needs a drop here. The visitor used to emit
+// `DROP FUNCTION IF EXISTS` in front of every CREATE anyway, which put two
+// statements in one element -- and an element is what the compatibility
+// dev-database path hands to ExecuteSQL unchanged. go-sql-driver refuses a
+// two-statement string unless multiStatements is on, and convertMySQLURL does
+// not turn it on, so materializing any desired schema containing a function
+// failed with Error 1064 on both engines.
+//
+// The replace shape a MODIFIED function needs did not go away; it moved to the
+// planner, which now emits the drop as its own node. `CREATE OR REPLACE
+// FUNCTION` is still never rendered -- it is Error 1064 on MySQL 26.7.0 -- so
+// the family still shares one shape.
+func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
 	c := qt.New(t)
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
@@ -82,9 +161,11 @@ func TestRender_MySQLFamilyReplacesWithDropThenCreate(t *testing.T) {
 			}), dialect)
 
 			c.Assert(err, qt.IsNil)
-			joined := strings.Join(sql, "\n")
-			c.Check(joined, qt.Contains, "DROP FUNCTION IF EXISTS `func_probe`;")
-			c.Check(joined, qt.Not(qt.Contains), "CREATE OR REPLACE FUNCTION")
+			c.Assert(sql, qt.HasLen, 1)
+			c.Check(strings.Count(sql[0], ";"), qt.Equals, 1)
+			c.Check(sql[0], qt.Contains, "CREATE FUNCTION `func_probe`")
+			c.Check(sql[0], qt.Not(qt.Contains), "DROP FUNCTION")
+			c.Check(sql[0], qt.Not(qt.Contains), "CREATE OR REPLACE FUNCTION")
 		})
 	}
 }

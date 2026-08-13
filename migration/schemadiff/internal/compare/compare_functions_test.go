@@ -221,3 +221,79 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 	c.Assert(diff.FunctionsModified[0].FunctionName, qt.Equals, "f")
 	c.Assert(diff.FunctionsModified[0].Changes["body"], qt.Not(qt.Equals), "")
 }
+
+// TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName pins the
+// SCOPE of routine case folding, which matters as much as the rule itself.
+//
+// Stored-routine names are case-insensitive on MySQL and MariaDB. Schema names
+// are not: they follow lower_case_table_names, which is 0 on both pinned
+// images, and the identifier semantics already describe them as exact. Folding
+// the whole `Sales.Foo` applied the routine rule to the database name too,
+// while the database side folded only DBFunction.Name and left Schema alone --
+// so the two identities disagreed about the schema component, an unchanged
+// function was reported as BOTH added and removed, and applying the plan tried
+// to create a function that was already there.
+//
+// The last row is the control: a genuinely different SCHEMA must still be a
+// different function, or the fix would have replaced one collision with
+// another.
+func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing.T) {
+	c := qt.New(t)
+
+	function := func(name string) goschema.Function {
+		return goschema.Function{
+			Name: name, Returns: "int", Language: "sql",
+			Security: "INVOKER", Volatility: "IMMUTABLE", Body: "RETURN 1",
+		}
+	}
+	dbFunction := func(schema, name string) dbtypes.DBFunction {
+		return dbtypes.DBFunction{
+			Schema: schema, Name: name, Returns: "int", Language: "sql",
+			Security: "INVOKER", Volatility: "IMMUTABLE", Body: "RETURN 1",
+		}
+	}
+
+	tests := []struct {
+		name string
+		// wantUnmatched is 0 when the two spellings are one routine, and 1 when
+		// they are two objects (one added, one removed).
+		wantUnmatched int
+		desired       string
+		dbSchema      string
+		dbName        string
+	}{
+		{
+			name: "routine case differs, schema matches", wantUnmatched: 0,
+			desired: "Sales.Foo", dbSchema: "Sales", dbName: "foo",
+		},
+		{
+			name: "routine case differs the other way", wantUnmatched: 0,
+			desired: "Sales.foo", dbSchema: "Sales", dbName: "Foo",
+		},
+		{
+			name: "both halves already agree", wantUnmatched: 0,
+			desired: "Sales.foo", dbSchema: "Sales", dbName: "foo",
+		},
+		{
+			// Control: the schema is NOT folded, so these are two objects.
+			name: "schema case differs", wantUnmatched: 1,
+			desired: "sales.foo", dbSchema: "Sales", dbName: "foo",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			gen := &goschema.Database{Functions: []goschema.Function{function(test.desired)}}
+			db := &dbtypes.DBSchema{
+				Functions: []dbtypes.DBFunction{dbFunction(test.dbSchema, test.dbName)},
+			}
+
+			diff := &difftypes.SchemaDiff{}
+			compare.FunctionsWithDialect(gen, db, diff, "mysql")
+
+			c.Check(diff.FunctionsAdded, qt.HasLen, test.wantUnmatched)
+			c.Check(diff.FunctionsRemoved, qt.HasLen, test.wantUnmatched)
+			c.Check(diff.FunctionsModified, qt.HasLen, 0)
+		})
+	}
+}
