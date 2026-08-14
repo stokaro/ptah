@@ -104,6 +104,15 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	merged.IdentifierSemantics = &semantics
 	diff, undecided := CompareReportingUndecidedAdditions(generated, database, merged)
+	if err := compare.ValidateMySQLFunctionDefinerReplacements(
+		generated,
+		database,
+		diff,
+		info.Dialect,
+		semantics,
+	); err != nil {
+		return nil, nil, err
+	}
 	return diff, undecided, nil
 }
 
