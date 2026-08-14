@@ -3,6 +3,9 @@ package root_test
 import (
 	"bytes"
 	"net"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -481,6 +484,103 @@ func TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 				qt.Commentf("output:\n%s", combined))
 		})
 	}
+}
+
+// ociSourceReferenceHeading names the section of the native command reference
+// that carries the census of commands resolving an `oci://` source.
+const ociSourceReferenceHeading = "## OCI transport behavior"
+
+// ociReferenceRow matches one row of that section's table: the native command
+// and the flag its `oci://` value arrives on.
+var ociReferenceRow = regexp.MustCompile("^\\| `ptah ([^`]+)` \\| `(--[a-z-]+)` \\|")
+
+// ociSourceReferencePath is the reference page, relative to this package.
+func ociSourceReferencePath() string {
+	return filepath.Join(
+		"..", "..", "docs", "site", "src", "content", "docs", "reference", "native-commands.md",
+	)
+}
+
+// ociSourceFlag returns the flag a row's `oci://` reference is passed on.
+//
+// It is derived from the invocation the row already builds rather than restated
+// beside it, so the census below cannot claim a pairing the driven probe does
+// not exercise.
+func ociSourceFlag(c *qt.C, row ociSourceVerb) string {
+	c.Helper()
+	const reference = "oci://registry.invalid/demo/artifact:v1"
+	args := row.args(reference)
+	index := slices.Index(args, reference)
+	c.Assert(index > 0, qt.IsTrue,
+		qt.Commentf("%q builds no invocation passing the reference as a flag value", row.verb))
+	return args[index-1]
+}
+
+// ociSourceCensus returns `<verb> <flag>` for every command the driven tables
+// above establish as resolving an `oci://` source, sorted.
+func ociSourceCensus(c *qt.C) []string {
+	c.Helper()
+	rows := slices.Concat(ociSchemaSourceVerbs(), ociMigrationDirVerbs())
+	census := make([]string, 0, len(rows))
+	for _, row := range rows {
+		census = append(census, row.verb+" "+ociSourceFlag(c, row))
+	}
+	slices.Sort(census)
+	return census
+}
+
+// ociReferenceCensus returns `<verb> <flag>` for every row of the reference
+// page's table, sorted.
+func ociReferenceCensus(c *qt.C) []string {
+	c.Helper()
+	path := ociSourceReferencePath()
+	raw, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	_, section, found := strings.Cut(string(raw), ociSourceReferenceHeading+"\n")
+	c.Assert(found, qt.IsTrue,
+		qt.Commentf("%q is gone from %s, so this gate would measure nothing", ociSourceReferenceHeading, path))
+	section, _, _ = strings.Cut(section, "\n## ")
+
+	census := make([]string, 0)
+	for line := range strings.SplitSeq(section, "\n") {
+		census = appendOCIReferenceRow(census, ociReferenceRow.FindStringSubmatch(line))
+	}
+	slices.Sort(census)
+	return census
+}
+
+// appendOCIReferenceRow appends one parsed table row and ignores a line that is
+// not one. The branch lives here rather than in the loop above because this
+// repository's test style keeps branching out of test bodies.
+func appendOCIReferenceRow(census []string, match []string) []string {
+	if match == nil {
+		return census
+	}
+	return append(census, match[1]+" "+match[2])
+}
+
+// TestOCISourceVerbs_MatchTheCommandReference is the same census, read from the
+// documentation instead of from the command tree.
+//
+// The reference page said `migrations validate` "takes a local --dir only, so
+// an artifact must be pulled before it can be validated on its own" for a full
+// release after the verb was wired to the puller, and the walk above went green
+// throughout: it gates what the binary does, and nothing gated what the page
+// says about it. A reader consulting the reference was told the workflow did not
+// exist (stokaro/ptah#1499).
+//
+// The comparison is set equality in both directions and it pairs each command
+// with its flag, so neither a verb that starts resolving the scheme nor one that
+// stops, nor a row that moves to a different flag, can leave the page behind.
+func TestOCISourceVerbs_MatchTheCommandReference(t *testing.T) {
+	c := qt.New(t)
+
+	census := ociSourceCensus(c)
+	c.Assert(len(census) > 0, qt.IsTrue,
+		qt.Commentf("the driven tables are empty, so this gate is measuring nothing"))
+
+	c.Assert(ociReferenceCensus(c), qt.DeepEquals, census)
 }
 
 // verifySumVerb is one command registering --verify-sum, with the reason.
