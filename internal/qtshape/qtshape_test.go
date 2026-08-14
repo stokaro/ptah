@@ -94,10 +94,53 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 			},
 		},
 		{
-			name:    "a renamed quicktest import is reported before it can silence R1 and R2",
+			// The gap a callback-shape rule leaves on the other side. Every
+			// subtest here is handed a func(*testing.T) that was bound to a name
+			// first, which is the same object graph as the inline spelling and
+			// the same parent-FailNow failure.
+			name:    "a subtest callback named elsewhere still borrows what it borrows",
+			fixture: "namedcallback.go.txt",
+			want: []wantFinding{
+				{line: 18, rule: qtshape.RuleBorrowedChecker},
+				{line: 24, rule: qtshape.RuleBorrowedChecker},
+				{line: 61, rule: qtshape.RuleBorrowedChecker},
+				{line: 70, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
+		{
+			// Both functions in this fixture declare `callback`. A file-wide
+			// index keyed on the name reports the unrelated one too, which fails
+			// a repository-wide gate on correct code.
+			name:    "a callback name is resolved where it is written, not file-wide",
+			fixture: "callbackscope.go.txt",
+			want: []wantFinding{
+				{line: 25, rule: qtshape.RuleCheckerSubtest},
+			},
+		},
+		{
+			// R1 keyed on the identifier text reported all four calls here, in a
+			// file that never imports quicktest.
+			name:    "a local qt that is not the quicktest import produces nothing",
+			fixture: "localqt.go.txt",
+			want:    nil,
+		},
+		{
+			// And the other half: quicktest is imported as qt, so the rule does
+			// apply, but only where that name still means the import. The one
+			// finding is the call written before the declaration that shadows it.
+			name:    "a shadowed qt is reported only where the import is still in scope",
+			fixture: "shadowedqt.go.txt",
+			want: []wantFinding{
+				{line: 35, rule: qtshape.RulePackageAssert},
+			},
+		},
+		{
+			name:    "a renamed quicktest import is reported, and no longer silences R1 and R2",
 			fixture: "aliasrenamed.go.txt",
 			want: []wantFinding{
 				{line: 6, rule: qtshape.RuleImportAlias},
+				{line: 16, rule: qtshape.RulePackageAssert},
+				{line: 17, rule: qtshape.RuleCheckerSubtest},
 			},
 		},
 		{

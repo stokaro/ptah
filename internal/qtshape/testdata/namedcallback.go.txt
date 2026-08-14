@@ -1,0 +1,73 @@
+// Every subtest here is handed a callback that was bound to a name first. The
+// closure is the same object graph as the inline spelling and fails the same
+// way -- the diagnostic is filed against the parent and the subtest reports
+// "subtest may have called FailNow on a parent test" -- and a rule that requires
+// the argument to be an inline function literal reports none of them.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestNamedSubtestCallback(t *testing.T) {
+	c := qt.New(t)
+
+	borrowsChecker := func(t *testing.T) {
+		c.Assert(1, qt.Equals, 1)
+	}
+	t.Run("named callback borrowing the parent checker", borrowsChecker)
+
+	borrowsTB := func(subT *testing.T) {
+		subT.Log("the parameter is not the TB this checker is built from")
+		inner := qt.New(t)
+		inner.Assert(2, qt.Equals, 2)
+	}
+	t.Run("named callback building a checker from the parent TB", borrowsTB)
+
+	// The target shape, written with a named callback. Nothing crosses the
+	// boundary, so nothing is reported.
+	ownsChecker := func(t *testing.T) {
+		own := qt.New(t)
+		own.Assert(3, qt.Equals, 3)
+	}
+	t.Run("named callback that owns its checker", ownsChecker)
+}
+
+// c is a package-level counter, and it is spelled c on purpose: the callback
+// below reads it, and a rule that read a file-scope callback's body against the
+// scope of whichever test called it would report it as the caller's checker.
+var c = 0
+
+var packaged = func(t *testing.T) {
+	own := qt.New(t)
+	own.Assert(c, qt.Equals, 0)
+}
+
+// A callback named at file scope cannot see any test function's locals, so
+// nothing here crosses a boundary even though the caller has its own c.
+func TestFileScopeCallback(t *testing.T) {
+	c := qt.New(t)
+	c.Check(5, qt.Equals, 5)
+
+	t.Run("callback named at file scope", packaged)
+}
+
+func BenchmarkNamedSubtestCallback(b *testing.B) {
+	c := qt.New(b)
+
+	borrows := func(b *testing.B) {
+		c.Assert(4, qt.Equals, 4)
+	}
+	b.Run("named subbenchmark callback", borrows)
+}
+
+func FuzzNamedTarget(f *testing.F) {
+	c := qt.New(f)
+
+	borrows := func(t *testing.T, input string) {
+		c.Assert(input, qt.Not(qt.Equals), "")
+	}
+	f.Fuzz(borrows)
+}

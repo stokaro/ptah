@@ -1,0 +1,34 @@
+// This file never imports quicktest. `qt` is an alias for an unrelated package
+// and, in the second test, a local value; every Assert and Check below is a
+// method on one of those and cannot reach the prohibited package-level
+// functions. R1 keyed on the identifier text alone reported all four, which
+// makes a repository-wide CI gate refuse correct code.
+package fixture
+
+import (
+	"testing"
+
+	qt "example.com/quantity/tolerance"
+)
+
+// asserter is a local type with the two method names the rule is about.
+type asserter struct{}
+
+func (asserter) Assert(got, want int) {}
+
+func (asserter) Check(got, want int) {}
+
+func TestPackageAliasedToQT(t *testing.T) {
+	qt.Assert(1, 1)
+	qt.Check(2, 2)
+
+	t.Log("tolerance is not quicktest")
+}
+
+func TestLocalValueNamedQT(t *testing.T) {
+	var qt asserter
+	qt.Assert(3, 3)
+	qt.Check(4, 4)
+
+	t.Log("neither call can reach quicktest")
+}

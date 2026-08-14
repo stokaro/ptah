@@ -6,8 +6,11 @@ import (
 	quicktest "github.com/frankban/quicktest"
 )
 
-// Under this alias the identifier `qt` never appears, so R1 and R2 would both go
-// quiet across the whole file. R0 exists so that silence is itself a finding.
+// Under this alias the identifier `qt` never appears. A rule keyed on that
+// spelling went quiet across the whole file; keyed on the import instead, R1 and
+// R2 follow the rename and still report both violations. R0 stays because the
+// alias is prohibited in its own right: every example in AGENTS.md is written in
+// `qt`, and importas refuses any other spelling.
 func TestRenamedAlias(t *testing.T) {
 	c := quicktest.New(t)
 	quicktest.Assert(t, 1, quicktest.Equals, 1)

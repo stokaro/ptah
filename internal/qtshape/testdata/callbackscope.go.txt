@@ -1,0 +1,36 @@
+// The R2 callback index used to be file-wide and keyed on the name alone, so a
+// single local `callback := func(c *qt.C)` classified every `Run(..., callback)`
+// in the file as a quicktest subtest. Both functions here declare `callback` and
+// only one of them is a violation; a name-set index fails the second one and
+// makes a repository-wide gate refuse correct code.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+// stepper has nothing to do with quicktest. Its Run takes a callback of its own.
+type stepper struct{}
+
+func (stepper) Run(name string, step func(int)) {}
+
+func TestCheckerCallback(t *testing.T) {
+	c := qt.New(t)
+
+	callback := func(c *qt.C) {
+		c.Assert(1, qt.Equals, 1)
+	}
+	c.Run("a checker callback is the prohibited shape", callback)
+}
+
+func TestUnrelatedCallbackOfTheSameName(t *testing.T) {
+	var steps stepper
+
+	callback := func(int) {}
+	steps.Run("an unrelated callback of the same name is not", callback)
+
+	c := qt.New(t)
+	c.Check(2, qt.Equals, 2)
+}

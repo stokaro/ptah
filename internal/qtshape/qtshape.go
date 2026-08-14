@@ -9,6 +9,12 @@
 // extra -tags invocation per build tag and an extra run per module, and a gate
 // that silently covers less than half of its own subject is the failure mode
 // this gate exists to avoid.
+//
+// Pure syntax is not the same as matching text. Every rule below asks resolve.go
+// which declaration an identifier names at the position it is written, so a
+// selector counts as quicktest's only when this file imports quicktest and
+// nothing nearer binds that name, and a callback counts whether it was written
+// inline or bound to a name first.
 package qtshape
 
 import (
@@ -26,15 +32,14 @@ import (
 // are about.
 const QuicktestImportPath = "github.com/frankban/quicktest"
 
-// RequiredImportAlias is the only name quicktest may be imported under. R1, R2
-// and R3 all key on this identifier, so an import under any other name would
-// make the gate quiet rather than wrong, which is worse.
+// RequiredImportAlias is the only name quicktest may be imported under. R0
+// reports every other spelling, and the rule messages name this one as the
+// shape to write.
 const RequiredImportAlias = "qt"
 
-// testingPackageName is the identifier the standard testing package binds. It is
-// never aliased in this tree, and an aliased import would only cost R3 a
-// finding, never invent one.
-const testingPackageName = "testing"
+// testingImportPath is the standard testing package, whose T, B, F and TB the
+// subtest rules recognize.
+const testingImportPath = "testing"
 
 // Rule identifies which prohibition a Finding reports.
 type Rule string
@@ -85,10 +90,12 @@ func ScanFile(path string, src []byte) ([]Finding, error) {
 		return nil, fmt.Errorf("qtshape: parsing %s: %w", path, err)
 	}
 
+	a := newAnalysis(fset, path, file)
+
 	var findings []Finding
-	findings = append(findings, importAliasFindings(fset, path, file)...)
-	findings = append(findings, packageAssertFindings(fset, path, file)...)
-	findings = append(findings, subtestFindings(fset, path, file)...)
+	findings = append(findings, a.importAliasFindings()...)
+	findings = append(findings, a.packageAssertFindings()...)
+	findings = append(findings, a.subtestFindings()...)
 
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Line != findings[j].Line {
@@ -135,7 +142,8 @@ func ScanFiles(paths []string) ([]Finding, int, error) {
 // Nested subtests are the reason it exists: a borrowed checker used inside two
 // levels of t.Run is a violation of the inner closure and of the outer one, and
 // both walks land on the same identifier. The finding is about the identifier,
-// so it is reported once.
+// so it is reported once. A callback bound to a name and handed to two Run calls
+// lands there too.
 func dedupe(findings []Finding) []Finding {
 	type key struct {
 		line, col int
@@ -156,17 +164,99 @@ func dedupe(findings []Finding) []Finding {
 	return out
 }
 
+// analysis is one parsed file plus the name table every rule needs to tell a
+// package selector from a local name that happens to be spelled the same.
+type analysis struct {
+	fset  *token.FileSet
+	path  string
+	file  *ast.File
+	names *bindings
+
+	// quicktest and testing are the import specs, nil when the file does not
+	// import that package, and qtName and tbName are the identifiers those
+	// imports bind. Every rule keyed on qt.X or testing.X asks these two rather
+	// than comparing against a fixed spelling.
+	quicktest *ast.ImportSpec
+	testing   *ast.ImportSpec
+	qtName    string
+	tbName    string
+
+	fileScope  scope
+	declScopes []declScope
+}
+
+// newAnalysis resolves the file's imports and builds its lexical name table.
+func newAnalysis(fset *token.FileSet, path string, file *ast.File) *analysis {
+	a := &analysis{fset: fset, path: path, file: file, names: newBindings(file)}
+	a.quicktest, a.qtName = importedAs(file, QuicktestImportPath)
+	a.testing, a.tbName = importedAs(file, testingImportPath)
+
+	return a
+}
+
+// importedAs finds the file's import of a path and the name it binds.
+func importedAs(file *ast.File, path string) (*ast.ImportSpec, string) {
+	for _, spec := range file.Imports {
+		imported, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || imported != path {
+			continue
+		}
+		name := importBindingName(spec)
+		if name == "" {
+			continue
+		}
+		return spec, name
+	}
+
+	return nil, ""
+}
+
+// isQuicktest reports whether expr is the selector qt.name, with qt resolving to
+// this file's quicktest import at the position it is written.
+//
+// The receiver is resolved rather than compared to the string "qt", because a
+// file that does not import quicktest and declares its own qt was reported for
+// calls that cannot reach the prohibited functions, and because a file that
+// imports quicktest under another name used to silence R1 and R2 outright.
+func (a *analysis) isQuicktest(expr ast.Expr, name string) bool {
+	return a.isImported(expr, a.quicktest, a.qtName, name)
+}
+
+// isTesting reports whether expr is the selector testing.name, with testing
+// resolving to this file's testing import.
+func (a *analysis) isTesting(expr ast.Expr, name string) bool {
+	return a.isImported(expr, a.testing, a.tbName, name)
+}
+
+// isImported reports whether expr is a selector on the given import.
+func (a *analysis) isImported(expr ast.Expr, spec *ast.ImportSpec, pkgName, name string) bool {
+	if spec == nil {
+		return false
+	}
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != name {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok || ident.Name != pkgName {
+		return false
+	}
+
+	return a.names.resolvesToImport(ident, spec)
+}
+
 // importAliasFindings reports quicktest imported under any name but qt.
 //
 // The package clause of github.com/frankban/quicktest is `package quicktest`, so
 // an unaliased import binds `quicktest` and is a violation too. importas in
 // .golangci.yml already requires the alias; duplicating it here is deliberate,
-// because without it a single renamed import would silently disable R1, R2 and
-// R3 for a whole file.
-func importAliasFindings(fset *token.FileSet, path string, file *ast.File) []Finding {
+// because the alias is what every example in AGENTS.md is written in and a file
+// that renames it is unreadable against the house style even though R1, R2 and
+// R3 now follow the import rather than the spelling.
+func (a *analysis) importAliasFindings() []Finding {
 	var findings []Finding
 
-	for _, spec := range file.Imports {
+	for _, spec := range a.file.Imports {
 		importPath, err := strconv.Unquote(spec.Path.Value)
 		if err != nil || importPath != QuicktestImportPath {
 			continue
@@ -178,8 +268,8 @@ func importAliasFindings(fset *token.FileSet, path string, file *ast.File) []Fin
 		if spec.Name != nil {
 			spelled = fmt.Sprintf("alias %q", spec.Name.Name)
 		}
-		findings = append(findings, finding(fset, path, spec.Pos(), RuleImportAlias, fmt.Sprintf(
-			"import %q with %s; it must be imported as %q, because the assertion and subtest rules key on that identifier",
+		findings = append(findings, a.finding(spec.Pos(), RuleImportAlias, fmt.Sprintf(
+			"import %q with %s; it must be imported as %q, because the assertion and subtest rules and every example in AGENTS.md are written in that identifier",
 			QuicktestImportPath, spelled, RequiredImportAlias,
 		)))
 	}
@@ -190,28 +280,31 @@ func importAliasFindings(fset *token.FileSet, path string, file *ast.File) []Fin
 // packageAssertFindings reports qt.Assert and qt.Check.
 //
 // It matches the selector rather than the call, so `assert := qt.Assert` cannot
-// launder the prohibition through a variable. The receiver check is on the
-// identifier alone, never on the argument list: qt.Assert(subT, ...) and
-// qt.Assert(c.TB, ...) are the same violation as qt.Assert(t, ...), and a rule
-// keyed on a first argument named `t` would miss both.
-func packageAssertFindings(fset *token.FileSet, path string, file *ast.File) []Finding {
+// launder the prohibition through a variable. It never looks at the argument
+// list: qt.Assert(subT, ...) and qt.Assert(c.TB, ...) are the same violation as
+// qt.Assert(t, ...), and a rule keyed on a first argument named `t` would miss
+// both.
+func (a *analysis) packageAssertFindings() []Finding {
+	if a.quicktest == nil {
+		return nil
+	}
+
 	var findings []Finding
 
-	ast.Inspect(file, func(node ast.Node) bool {
+	ast.Inspect(a.file, func(node ast.Node) bool {
 		sel, ok := node.(*ast.SelectorExpr)
 		if !ok {
-			return true
-		}
-		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != RequiredImportAlias {
 			return true
 		}
 		if sel.Sel.Name != "Assert" && sel.Sel.Name != "Check" {
 			return true
 		}
-		findings = append(findings, finding(fset, path, sel.Pos(), RulePackageAssert, fmt.Sprintf(
-			"qt.%s is forbidden; create a checker from the testing.TB that owns this scope (c := qt.New(t)) and call c.%s(...) without the TB argument",
-			sel.Sel.Name, sel.Sel.Name,
+		if !a.isQuicktest(sel, sel.Sel.Name) {
+			return true
+		}
+		findings = append(findings, a.finding(sel.Pos(), RulePackageAssert, fmt.Sprintf(
+			"%s.%s is forbidden; create a checker from the testing.TB that owns this scope (c := qt.New(t)) and call c.%s(...) without the TB argument",
+			a.qtName, sel.Sel.Name, sel.Sel.Name,
 		)))
 		return true
 	})
@@ -228,12 +321,17 @@ type binding struct {
 }
 
 // scope is what one top-level declaration can see: the checker and TB names
-// bound anywhere inside it plus at file level, and the file-wide index of
-// callbacks that consume a *qt.C.
+// bound anywhere inside it, plus the ones bound at file level.
 type scope struct {
-	checkers  []binding
-	tbs       []binding
-	callbacks map[string]bool
+	checkers []binding
+	tbs      []binding
+}
+
+// declScope pairs a top-level declaration with the bindings visible inside it.
+type declScope struct {
+	decl   ast.Decl
+	extent span
+	sc     scope
 }
 
 // subtestFindings reports R2 and R3.
@@ -242,65 +340,94 @@ type scope struct {
 // that is a checker in one test function cannot make an unrelated `c` in another
 // function look like one. testdata/decoys.go.txt pins that: its `var c runner`
 // has a Run method of its own.
-func subtestFindings(fset *token.FileSet, path string, file *ast.File) []Finding {
-	callbacks := checkerCallbackNames(file)
-
-	fileScope := scope{callbacks: callbacks}
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		checkers, tbs := collectBindings(gen)
-		fileScope.checkers = append(fileScope.checkers, checkers...)
-		fileScope.tbs = append(fileScope.tbs, tbs...)
-	}
+func (a *analysis) subtestFindings() []Finding {
+	a.buildScopes()
 
 	var findings []Finding
-	for _, decl := range file.Decls {
-		findings = append(findings, declarationFindings(fset, path, decl, declarationScope(decl, fileScope))...)
+	for _, ds := range a.declScopes {
+		findings = append(findings, a.declarationFindings(ds)...)
 	}
 
 	return findings
 }
 
-// declarationScope adds a function declaration's own bindings to the file's.
-func declarationScope(decl ast.Decl, fileScope scope) scope {
-	fn, ok := decl.(*ast.FuncDecl)
-	if !ok {
-		return fileScope
+// buildScopes computes the file's bindings and then each top-level
+// declaration's.
+func (a *analysis) buildScopes() {
+	a.fileScope = scope{}
+	for _, decl := range a.file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		checkers, tbs := a.collectBindings(gen)
+		a.fileScope.checkers = append(a.fileScope.checkers, checkers...)
+		a.fileScope.tbs = append(a.fileScope.tbs, tbs...)
 	}
 
-	checkers, tbs := collectBindings(fn)
-	return scope{
-		checkers:  concatBindings(fileScope.checkers, checkers),
-		tbs:       concatBindings(fileScope.tbs, tbs),
-		callbacks: fileScope.callbacks,
+	a.declScopes = make([]declScope, 0, len(a.file.Decls))
+	for _, decl := range a.file.Decls {
+		a.declScopes = append(a.declScopes, declScope{
+			decl:   decl,
+			extent: span{start: decl.Pos(), end: decl.End()},
+			sc:     a.declarationScope(decl),
+		})
 	}
 }
 
+// declarationScope adds a function declaration's own bindings to the file's.
+func (a *analysis) declarationScope(decl ast.Decl) scope {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok {
+		return a.fileScope
+	}
+
+	checkers, tbs := a.collectBindings(fn)
+	return scope{
+		checkers: concatBindings(a.fileScope.checkers, checkers),
+		tbs:      concatBindings(a.fileScope.tbs, tbs),
+	}
+}
+
+// scopeAt returns the bindings visible at a position: those of the top-level
+// declaration containing it, or the file's when it belongs to none.
+//
+// R3 needs this because a callback may be named in one declaration and called
+// from another. Analyzing a file-scope callback's body against the caller's
+// bindings would report the caller's local `c` as a checker borrowed by a
+// closure that cannot see it.
+func (a *analysis) scopeAt(pos token.Pos) scope {
+	for _, ds := range a.declScopes {
+		if ds.extent.contains(pos) {
+			return ds.sc
+		}
+	}
+
+	return a.fileScope
+}
+
 // concatBindings joins two binding lists without aliasing either backing array.
-func concatBindings(a, b []binding) []binding {
-	out := make([]binding, 0, len(a)+len(b))
-	out = append(out, a...)
-	out = append(out, b...)
+func concatBindings(x, y []binding) []binding {
+	out := make([]binding, 0, len(x)+len(y))
+	out = append(out, x...)
+	out = append(out, y...)
 	return out
 }
 
 // declarationFindings walks one declaration and reports every subtest violation
 // in it.
-func declarationFindings(fset *token.FileSet, path string, decl ast.Decl, sc scope) []Finding {
+func (a *analysis) declarationFindings(ds declScope) []Finding {
 	var findings []Finding
 
-	ast.Inspect(decl, func(node ast.Node) bool {
+	ast.Inspect(ds.decl, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		if f, ok := checkerSubtestFinding(fset, path, call, sc); ok {
+		if f, ok := a.checkerSubtestFinding(call, ds.sc); ok {
 			findings = append(findings, f)
 		}
-		findings = append(findings, borrowedCheckerFindings(fset, path, call, sc)...)
+		findings = append(findings, a.borrowedCheckerFindings(call)...)
 		return true
 	})
 
@@ -319,17 +446,17 @@ func declarationFindings(fset *token.FileSet, path string, decl ast.Decl, sc sco
 // followed by `c.Run(name, callback)` is the same object graph as the inline
 // form and used to pass. Keying on the receiver alone would miss a checker held
 // in a struct field, so both are asked and either one is enough.
-func checkerSubtestFinding(fset *token.FileSet, path string, call *ast.CallExpr, sc scope) (Finding, bool) {
+func (a *analysis) checkerSubtestFinding(call *ast.CallExpr, sc scope) (Finding, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Run" || len(call.Args) < 2 {
 		return Finding{}, false
 	}
-	reason, ok := checkerSubtestReason(call.Args[1], sel.X, sc)
+	reason, ok := a.checkerSubtestReason(call.Args[1], sel.X, sc)
 	if !ok {
 		return Finding{}, false
 	}
 
-	return finding(fset, path, call.Pos(), RuleCheckerSubtest, fmt.Sprintf(
+	return a.finding(call.Pos(), RuleCheckerSubtest, fmt.Sprintf(
 		"%s.Run %s; write t.Run(name, func(t *testing.T) { c := qt.New(t); ... }) so the subtest checker is a visible declaration instead of a shadowing parameter",
 		receiverName(sel.X), reason,
 	)), true
@@ -337,18 +464,30 @@ func checkerSubtestFinding(fset *token.FileSet, path string, call *ast.CallExpr,
 
 // checkerSubtestReason names which of the three spellings matched, so the
 // message tells the reader what the gate saw rather than only that it objected.
-func checkerSubtestReason(callback, receiver ast.Expr, sc scope) (string, bool) {
-	if lit, ok := callback.(*ast.FuncLit); ok && hasCheckerParam(lit) {
+func (a *analysis) checkerSubtestReason(callback, receiver ast.Expr, sc scope) (string, bool) {
+	if lit, ok := callback.(*ast.FuncLit); ok && a.signatureTakesChecker(lit.Type) {
 		return "with a func(*qt.C) closure is forbidden", true
 	}
-	if ident, ok := callback.(*ast.Ident); ok && sc.callbacks[ident.Name] {
+	if ident, ok := callback.(*ast.Ident); ok && a.namesCheckerCallback(ident) {
 		return fmt.Sprintf("with the func(*qt.C) callback %s is forbidden", ident.Name), true
 	}
-	if isCheckerExpr(receiver, sc.checkers) {
+	if a.isCheckerExpr(receiver, sc.checkers) {
 		return "is a (*qt.C).Run subtest and is forbidden", true
 	}
 
 	return "", false
+}
+
+// namesCheckerCallback reports whether an identifier names a function taking a
+// *qt.C, resolved where it is written.
+//
+// The lookup is lexical rather than a file-wide set of names, because one local
+// `callback := func(c *qt.C) { ... }` must not classify an unrelated
+// `callback := func(int) { ... }` in another function as a quicktest subtest and
+// fail the whole repository's gate on correct code.
+func (a *analysis) namesCheckerCallback(ident *ast.Ident) bool {
+	decl, ok := a.names.lookup(ident.Name, ident.Pos())
+	return ok && a.signatureTakesChecker(decl.sig)
 }
 
 // borrowedCheckerFindings reports a subtest closure that asserts through a
@@ -364,12 +503,13 @@ func checkerSubtestReason(callback, receiver ast.Expr, sc scope) (string, bool) 
 // A name the closure declares itself is never reported, whatever it is declared
 // as, so an intentional shadow costs nothing. Only names bound outside the
 // closure and never rebound inside it are.
-func borrowedCheckerFindings(fset *token.FileSet, path string, call *ast.CallExpr, sc scope) []Finding {
-	lit, ok := subtestClosure(call)
+func (a *analysis) borrowedCheckerFindings(call *ast.CallExpr) []Finding {
+	lit, ok := a.subtestClosure(call)
 	if !ok {
 		return nil
 	}
 
+	sc := a.scopeAt(lit.Pos())
 	shadowed := declaredNames(lit)
 	inherited := map[string]string{}
 	for name := range outerNames(sc.checkers, lit, shadowed) {
@@ -387,7 +527,7 @@ func borrowedCheckerFindings(fset *token.FileSet, path string, call *ast.CallExp
 
 	var findings []Finding
 	for _, use := range firstUses(lit, inherited) {
-		findings = append(findings, finding(fset, path, use.Pos(), RuleBorrowedChecker, inherited[use.Name]))
+		findings = append(findings, a.finding(use.Pos(), RuleBorrowedChecker, inherited[use.Name]))
 	}
 
 	return findings
@@ -400,7 +540,7 @@ func borrowedCheckerFindings(fset *token.FileSet, path string, call *ast.CallExp
 // this repository enters a child test. R2 covers the (*qt.C).Run spelling; this
 // is deliberately not a check on the receiver, because a receiver named `sub` or
 // reached through a field is the same subtest.
-func subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
+func (a *analysis) subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return nil, false
@@ -416,12 +556,36 @@ func subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
 		return nil, false
 	}
 
-	lit, ok := call.Args[index].(*ast.FuncLit)
-	if !ok || !hasTBParam(lit) {
+	lit, ok := a.callbackLiteral(call.Args[index])
+	if !ok || !a.signatureTakesTB(lit.Type) {
 		return nil, false
 	}
 
 	return lit, true
+}
+
+// callbackLiteral resolves a callback argument to the function literal it
+// denotes: the literal itself when it is written inline, or the literal a name
+// in scope was bound to.
+//
+// A callback bound to a name is the same object graph as an inline one.
+// `callback := func(t *testing.T) { c.Assert(...) }` followed by
+// `t.Run(name, callback)` produces exactly the parent-FailNow failure R3 exists
+// to prevent, and reading only the inline spelling let it through.
+func (a *analysis) callbackLiteral(expr ast.Expr) (*ast.FuncLit, bool) {
+	if lit, ok := expr.(*ast.FuncLit); ok {
+		return lit, true
+	}
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	decl, ok := a.names.lookup(ident.Name, ident.Pos())
+	if !ok || decl.lit == nil {
+		return nil, false
+	}
+
+	return decl.lit, true
 }
 
 // outerNames reduces bindings to the names declared outside lit and not rebound
@@ -576,13 +740,13 @@ func recordFields(sig *ast.FuncType, record func([]*ast.Ident)) {
 
 // collectBindings gathers every *qt.C and testing.TB name bound anywhere under
 // node, with the position of the declaration.
-func collectBindings(node ast.Node) (checkers, tbs []binding) {
+func (a *analysis) collectBindings(node ast.Node) (checkers, tbs []binding) {
 	appendField := func(field *ast.Field) {
 		for _, name := range field.Names {
-			if isCheckerType(field.Type) {
+			if a.isCheckerType(field.Type) {
 				checkers = append(checkers, binding{name: name.Name, pos: name.Pos()})
 			}
-			if isTBType(field.Type) {
+			if a.isTBType(field.Type) {
 				tbs = append(tbs, binding{name: name.Name, pos: name.Pos()})
 			}
 		}
@@ -604,10 +768,10 @@ func collectBindings(node ast.Node) (checkers, tbs []binding) {
 		case *ast.FuncLit:
 			appendSignature(typed.Type)
 		case *ast.AssignStmt:
-			checkers = append(checkers, constructedCheckers(typed)...)
+			checkers = append(checkers, a.constructedCheckers(typed)...)
 		case *ast.ValueSpec:
-			checkers = append(checkers, specCheckers(typed)...)
-			tbs = append(tbs, specTBs(typed)...)
+			checkers = append(checkers, a.specCheckers(typed)...)
+			tbs = append(tbs, a.specTBs(typed)...)
 		}
 		return true
 	})
@@ -616,7 +780,7 @@ func collectBindings(node ast.Node) (checkers, tbs []binding) {
 }
 
 // constructedCheckers reports the names a `c := qt.New(t)` statement binds.
-func constructedCheckers(assign *ast.AssignStmt) []binding {
+func (a *analysis) constructedCheckers(assign *ast.AssignStmt) []binding {
 	if assign.Tok != token.DEFINE || len(assign.Lhs) != len(assign.Rhs) {
 		return nil
 	}
@@ -624,7 +788,7 @@ func constructedCheckers(assign *ast.AssignStmt) []binding {
 	var out []binding
 	for i, lhs := range assign.Lhs {
 		ident, ok := lhs.(*ast.Ident)
-		if !ok || !isCheckerConstructor(assign.Rhs[i]) {
+		if !ok || !a.isCheckerConstructor(assign.Rhs[i]) {
 			continue
 		}
 		out = append(out, binding{name: ident.Name, pos: ident.Pos()})
@@ -635,11 +799,11 @@ func constructedCheckers(assign *ast.AssignStmt) []binding {
 
 // specCheckers reports the names a var declaration binds to a *qt.C, whether the
 // type is written out or inferred from qt.New.
-func specCheckers(spec *ast.ValueSpec) []binding {
+func (a *analysis) specCheckers(spec *ast.ValueSpec) []binding {
 	var out []binding
 	for i, name := range spec.Names {
-		typed := isCheckerType(spec.Type)
-		constructed := i < len(spec.Values) && isCheckerConstructor(spec.Values[i])
+		typed := a.isCheckerType(spec.Type)
+		constructed := i < len(spec.Values) && a.isCheckerConstructor(spec.Values[i])
 		if !typed && !constructed {
 			continue
 		}
@@ -650,10 +814,10 @@ func specCheckers(spec *ast.ValueSpec) []binding {
 }
 
 // specTBs reports the names a var declaration binds to a testing.TB.
-func specTBs(spec *ast.ValueSpec) []binding {
+func (a *analysis) specTBs(spec *ast.ValueSpec) []binding {
 	var out []binding
 	for _, name := range spec.Names {
-		if !isTBType(spec.Type) {
+		if !a.isTBType(spec.Type) {
 			continue
 		}
 		out = append(out, binding{name: name.Name, pos: name.Pos()})
@@ -662,86 +826,16 @@ func specTBs(spec *ast.ValueSpec) []binding {
 	return out
 }
 
-// checkerCallbackNames indexes every name in the file that denotes a function
-// taking a *qt.C: a declared function, or a variable initialized with such a
-// closure. `.Run(name, thatName)` is then the inline form under another
-// spelling.
-func checkerCallbackNames(file *ast.File) map[string]bool {
-	names := map[string]bool{}
-
-	ast.Inspect(file, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.FuncDecl:
-			if signatureTakesChecker(typed.Type) {
-				names[typed.Name.Name] = true
-			}
-		case *ast.AssignStmt:
-			recordCheckerCallbackAssign(typed, names)
-		case *ast.ValueSpec:
-			recordCheckerCallbackSpec(typed, names)
-		}
-		return true
-	})
-
-	return names
-}
-
-// recordCheckerCallbackAssign indexes `callback := func(c *qt.C) { ... }`.
-func recordCheckerCallbackAssign(assign *ast.AssignStmt, names map[string]bool) {
-	if len(assign.Lhs) != len(assign.Rhs) {
-		return
-	}
-	for i, lhs := range assign.Lhs {
-		ident, ok := lhs.(*ast.Ident)
-		if !ok || !valueTakesChecker(assign.Rhs[i]) {
-			continue
-		}
-		names[ident.Name] = true
-	}
-}
-
-// recordCheckerCallbackSpec indexes `var callback = func(c *qt.C) { ... }` and
-// its written-out-type form.
-func recordCheckerCallbackSpec(spec *ast.ValueSpec, names map[string]bool) {
-	for i, name := range spec.Names {
-		declared := signatureTakesChecker(asFuncType(spec.Type))
-		assigned := i < len(spec.Values) && valueTakesChecker(spec.Values[i])
-		if !declared && !assigned {
-			continue
-		}
-		names[name.Name] = true
-	}
-}
-
-// valueTakesChecker reports whether an expression is a closure taking a *qt.C.
-func valueTakesChecker(expr ast.Expr) bool {
-	lit, ok := expr.(*ast.FuncLit)
-	return ok && signatureTakesChecker(lit.Type)
-}
-
-// asFuncType narrows an expression to a function type, or nil.
-func asFuncType(expr ast.Expr) *ast.FuncType {
-	sig, ok := expr.(*ast.FuncType)
-	if !ok {
-		return nil
-	}
-	return sig
-}
-
-// hasCheckerParam reports whether the literal takes a *qt.C in any position.
-func hasCheckerParam(lit *ast.FuncLit) bool {
-	return signatureTakesChecker(lit.Type)
-}
-
-// hasTBParam reports whether the literal takes a testing.TB in any position.
-func hasTBParam(lit *ast.FuncLit) bool {
-	return signatureTakes(lit.Type, isTBType)
-}
-
 // signatureTakesChecker reports whether a signature takes a *qt.C in any
 // position.
-func signatureTakesChecker(sig *ast.FuncType) bool {
-	return signatureTakes(sig, isCheckerType)
+func (a *analysis) signatureTakesChecker(sig *ast.FuncType) bool {
+	return signatureTakes(sig, a.isCheckerType)
+}
+
+// signatureTakesTB reports whether a signature takes a testing.TB in any
+// position.
+func (a *analysis) signatureTakesTB(sig *ast.FuncType) bool {
+	return signatureTakes(sig, a.isTBType)
 }
 
 // signatureTakes reports whether any parameter of sig satisfies match.
@@ -758,19 +852,21 @@ func signatureTakes(sig *ast.FuncType, match func(ast.Expr) bool) bool {
 	return false
 }
 
-// isCheckerType reports whether expr is written *qt.C.
-func isCheckerType(expr ast.Expr) bool {
+// isCheckerType reports whether expr is written *qt.C, with qt resolving to this
+// file's quicktest import.
+func (a *analysis) isCheckerType(expr ast.Expr) bool {
 	star, ok := expr.(*ast.StarExpr)
 	if !ok {
 		return false
 	}
-	return isQualified(star.X, RequiredImportAlias, "C")
+
+	return a.isQuicktest(star.X, "C")
 }
 
 // isTBType reports whether expr is written *testing.T, *testing.B, *testing.F or
-// testing.TB.
-func isTBType(expr ast.Expr) bool {
-	if isQualified(expr, testingPackageName, "TB") {
+// testing.TB, with testing resolving to this file's import of it.
+func (a *analysis) isTBType(expr ast.Expr) bool {
+	if a.isTesting(expr, "TB") {
 		return true
 	}
 	star, ok := expr.(*ast.StarExpr)
@@ -778,7 +874,7 @@ func isTBType(expr ast.Expr) bool {
 		return false
 	}
 	for _, name := range []string{"T", "B", "F"} {
-		if isQualified(star.X, testingPackageName, name) {
+		if a.isTesting(star.X, name) {
 			return true
 		}
 	}
@@ -787,18 +883,19 @@ func isTBType(expr ast.Expr) bool {
 }
 
 // isCheckerConstructor reports whether expr is a qt.New(...) call.
-func isCheckerConstructor(expr ast.Expr) bool {
+func (a *analysis) isCheckerConstructor(expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
-	return isQualified(call.Fun, RequiredImportAlias, "New")
+
+	return a.isQuicktest(call.Fun, "New")
 }
 
 // isCheckerExpr reports whether expr denotes a *qt.C: a qt.New call, or a name
 // bound to one.
-func isCheckerExpr(expr ast.Expr, checkers []binding) bool {
-	if isCheckerConstructor(expr) {
+func (a *analysis) isCheckerExpr(expr ast.Expr, checkers []binding) bool {
+	if a.isCheckerConstructor(expr) {
 		return true
 	}
 	ident, ok := expr.(*ast.Ident)
@@ -814,16 +911,6 @@ func isCheckerExpr(expr ast.Expr, checkers []binding) bool {
 	return false
 }
 
-// isQualified reports whether expr is the selector pkg.name.
-func isQualified(expr ast.Expr, pkg, name string) bool {
-	sel, ok := expr.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != name {
-		return false
-	}
-	ident, ok := sel.X.(*ast.Ident)
-	return ok && ident.Name == pkg
-}
-
 // receiverName names the receiver in a message so the reader can find the call,
 // falling back to a placeholder when the receiver is not a bare identifier.
 func receiverName(expr ast.Expr) string {
@@ -835,10 +922,10 @@ func receiverName(expr ast.Expr) string {
 }
 
 // finding resolves a token position into a reportable line and column.
-func finding(fset *token.FileSet, path string, pos token.Pos, rule Rule, message string) Finding {
-	position := fset.Position(pos)
+func (a *analysis) finding(pos token.Pos, rule Rule, message string) Finding {
+	position := a.fset.Position(pos)
 	return Finding{
-		Path:    path,
+		Path:    a.path,
 		Line:    position.Line,
 		Col:     position.Column,
 		Rule:    rule,

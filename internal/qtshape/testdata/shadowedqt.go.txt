@@ -1,0 +1,41 @@
+// quicktest is imported as qt here, so the rules do apply -- but only where that
+// name still means the import. This is the other half of binding R1 to the
+// import: a nearer declaration takes the name over, and a rule that reduced the
+// question to "is the receiver spelled qt" reports the two shadowed calls, while
+// a rule that reduced it to "does this block declare qt anywhere" loses the one
+// real violation, which is written before the declaration that shadows it.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+type asserter struct{}
+
+func (asserter) Assert(got, want int) {}
+
+func (asserter) Check(got, want int) {}
+
+func TestTargetShape(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(1, qt.Equals, 1)
+}
+
+func TestShadowedThroughout(t *testing.T) {
+	var qt asserter
+	qt.Assert(2, 2)
+	qt.Check(3, 3)
+
+	t.Log("the package-level functions are not reachable in this scope")
+}
+
+func TestShadowedOnlyAfterTheDeclaration(t *testing.T) {
+	qt.Assert(t, 4, qt.Equals, 4)
+
+	qt := asserter{}
+	qt.Assert(5, 5)
+
+	t.Log("the first call is quicktest's and the second is not")
+}
