@@ -209,8 +209,9 @@ func atlasTolerantLeafStructure(attributes ...string) atlasBodyStructure {
 // control that also answered 0 -- which is what keeps those silences meaningful.
 //
 // The keys are the scope strings the tolerance-path callers already pass:
-// atlasTopLevelScope for the project body, "env" for an env body, and the bare
-// block names for the container parsers.
+// atlasTopLevelScope for the project body, "env" for an env body, the bare
+// block names for the container parsers, and the dotted path of the containing
+// block for a body reached through evaluateIgnoredBody.
 //
 // The bare keys are deliberate. `diff` and `lint` are the two blocks that may
 // sit at the top level as well as inside `env`, and parseDiff/parseLint serve
