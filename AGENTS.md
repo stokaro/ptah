@@ -957,7 +957,7 @@ The `qt.New` inside the closure is the rule, not decoration. A subtest that
 keeps asserting through the enclosing `c` has the right signature and the wrong
 checker, and the difference is visible the moment an assertion fails:
 
-```
+```text
 === NAME  TestBorrowedParentChecker
     borrow_test.go:13:
         error:
