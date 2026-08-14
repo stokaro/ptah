@@ -78,6 +78,9 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 	for _, name := range diff.RolesAdded {
 		result = append(result, ast.NewCreateRole(name))
 	}
+	for _, role := range diff.RolesModified {
+		result = append(result, ast.NewAlterRole(role.RoleName))
+	}
 	for _, name := range diff.RolesRemoved {
 		result = append(result, ast.NewDropRole(name))
 	}
