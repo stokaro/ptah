@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -81,6 +82,16 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	toSet := prepared.to
 	dialect := prepared.dialect
 
+	// The first thing after the dialect is known, and deliberately ahead of
+	// source resolution. Everything below can return before the comparison is
+	// reached -- a source that will not load, a selection matching neither
+	// side -- and resolution is not free: a migration-directory source replays
+	// into the dev database. A malformed drop toggle must not survive any of
+	// that unreported, nor let that work start. See stokaro/ptah#1028.
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
+
 	// Both sides are desired states here, so --dev-url is the only URL that can
 	// limit the run to one schema.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, "", "")
@@ -141,6 +152,15 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
 	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport))
+
+	// Same refusal the native comparison seam makes, applied here because this
+	// surface reaches the comparator through the variant that returns no error.
+	// A SQLite virtual table on the --from side is an object --to cannot
+	// declare, so comparing them plans a DROP nobody asked for
+	// (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
 
 	// The comparison reports what the --from document's coverage record made
 	// undecidable alongside what it decided. The list is empty for every --from

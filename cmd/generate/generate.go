@@ -34,6 +34,7 @@ type options struct {
 	schemaCmd    string
 	schemaFormat string
 	dialect      string
+	plainHTTP    bool
 	configPath   string
 	envName      string
 }
@@ -71,6 +72,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage)
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.StringVar(&opts.configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
@@ -101,6 +103,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     opts.dialect,
+		PlainHTTP:   opts.plainHTTP,
 		Logf:        func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 	})
 	if err != nil {

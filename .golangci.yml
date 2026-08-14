@@ -2,7 +2,10 @@ version: "2"
 
 run:
   concurrency: 8
-  go: "1.26.6"
+  # No `go:` key on purpose. Its documented default is the go directive from
+  # go.mod, so restating it here creates a second Go version to maintain — and
+  # that copy is exactly what drifted: a dependency bump moved this file alone
+  # to 1.26.6 while every other declaration stayed at 1.26.5.
 
 linters:
   default: none

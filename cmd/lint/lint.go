@@ -110,7 +110,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
 	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")
-	cmd.Flags().BoolVar(&plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local registry")
+	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &plainHTTP)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd

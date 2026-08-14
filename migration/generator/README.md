@@ -193,6 +193,10 @@ if errors.As(err, &shadowErr) {
 }
 ```
 
+For SQLite, `VerifyBaselineShadow` and `GenerateCheckpointFromShadow` validate
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before connecting to or mutating a
+shadow database. Non-SQLite shadow operations do not consult the variable.
+
 Operational failures also unwrap to the underlying database or migration
 error. Structural schema mismatches carry the complete, deterministically
 ordered mismatch list without an underlying error. Baseline verification keeps
