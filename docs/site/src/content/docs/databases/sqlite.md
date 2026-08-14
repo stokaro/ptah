@@ -183,6 +183,12 @@ answering, where the same run without the policy exited 2. The other rows are
 unaffected — `skip drop_table` filters removals, not modifications, and no
 policy makes one kind of object convertible into another.
 
+`drop_column` and `drop_index` are read the same way by the unregistered-module
+guard below: a removed column is what makes SQLite rebuild a table, and a
+removed index is a `DROP INDEX` against a table Ptah cannot classify, so a
+project that skips either one is not refused for it. `drop_enum` is not read at
+all, because SQLite has no enum type.
+
 ## Virtual table limitations
 
 - Shadow tables belonging to a module the reading build does not register
@@ -201,9 +207,11 @@ policy makes one kind of object convertible into another.
   plan could act on such a table** — when some live table in it is one the
   desired side does not name, or names and describes so differently that SQLite
   can only converge it by rebuilding, since a `DROP TABLE` and the rebuild
-  SQLite uses in place of an `ALTER` destroy the module's storage equally. A
-  table that merely **gains** a column is neither: `ALTER TABLE ... ADD COLUMN`
-  is a statement SQLite has, so that comparison runs at exit 0 with no opt-in.
+  SQLite uses in place of an `ALTER` destroy the module's storage equally, or
+  loses an index or trigger the plan drops or replaces on it. A table that
+  merely **gains** a column, an index or a trigger is none of those:
+  `ALTER TABLE ... ADD COLUMN` is a statement SQLite has and a `CREATE` removes
+  nothing, so that comparison runs at exit 0 with no opt-in.
   The refusal survives excluding the virtual table,
   because the tables at risk are not the one an operator would exclude; but a
   narrowing that leaves nothing the plan can touch, such as `--include users`,

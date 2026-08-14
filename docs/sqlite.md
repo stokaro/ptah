@@ -302,14 +302,20 @@ Two consequences worth knowing:
 `--exclude docs` is the opposite case and stays refused, because it leaves the
 module's storage tables in the comparison with nothing naming them.
 
-### A project that skips `drop_table`
+### A project that skips destructive changes
 
 Both refusals are claims about a statement, so a project that configures the
-drop away is not refused for it. With `diff.skip: [drop_table]` in `ptah.yaml`,
-or `diff { skip { drop_table = true } }` in an Atlas project file, every table
-drop — and the dependent index, constraint, trigger, RLS and grant removals a
-dropped table would carry — is deleted from the diff before any SQL is
-rendered, so nothing the guard is warning about can happen.
+statement away is not refused for it. With `diff.skip: [drop_table]` in
+`ptah.yaml`, or `diff { skip { drop_table = true } }` in an Atlas project file,
+every table drop — and the dependent index, constraint, trigger, RLS and grant
+removals a dropped table would carry — is deleted from the diff before any SQL
+is rendered, so nothing the guard is warning about can happen.
+
+`drop_column` and `drop_index` are read the same way. A removed column makes the
+SQLite planner rebuild the table, and a removed index is a `DROP INDEX` against
+a table Ptah cannot classify; a project that skips either one deletes that
+statement again, so neither is counted. `drop_enum` is not read at all, because
+SQLite has no enum type.
 
 Measured on an `fts4` database built by a system SQLite that has the module,
 with a desired state naming only the ordinary table:
@@ -340,7 +346,8 @@ The post-comparison refusal names the tables the plan would change:
 unsupported feature: the plan changes "docs_content" in a database that holds
 virtual table "docs" (module fts4) whose module this build of Ptah does not
 register; ... dropping or rebuilding one of them destroys the index it belongs
-to
+to, while dropping or replacing an index or trigger one of them carries removes
+machinery the module may be the one maintaining; ...
 ```
 
 It counts every table the SQLite planner drops or rebuilds, which is more than
@@ -348,9 +355,20 @@ the obvious ones: a table whose columns are unchanged and whose **constraint**
 changed is recorded only at schema level, and since SQLite has no `ALTER` for a
 constraint, that table is rebuilt too.
 
+It also counts a table an **index or trigger is removed from or replaced on**,
+even when the table itself is neither dropped nor rebuilt. `DROP INDEX` and
+`DROP TRIGGER` reach the plan on their own, and Ptah can no more tell a module's
+own index from an operator's than it can tell the module's storage from an
+ordinary table. Measured on an `fts4` database this build cannot load, with both
+sides naming the module's storage: `ptah schema diff` planned
+`DROP INDEX IF EXISTS "docs_content_title_idx";` at exit 0 before this was
+counted, and the trigger fixture planned
+`DROP TRIGGER IF EXISTS "docs_content_guard";` the same way.
+
 Additions are not counted. A table the plan CREATES cannot be one the module
 already owns, so adding a table — with or without a constraint — beside an index
-Ptah cannot classify stays ordinary work.
+Ptah cannot classify stays ordinary work, and a table that only GAINS an index
+or a trigger is not counted either: a `CREATE` removes nothing.
 
 **Adding a column is not counted either.** `ALTER TABLE t ADD COLUMN c` is a
 statement SQLite has, so the planner emits it in place and drops or rebuilds

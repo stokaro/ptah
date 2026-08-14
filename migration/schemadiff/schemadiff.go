@@ -99,7 +99,11 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// of that guard predict statements, and a caller that skips `drop_table`
 	// deletes the predicted DROP again before anything is rendered. See
 	// [config.CompareOptions.SkipTableDrops].
-	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: merged.SkipTableDrops}
+	virtualPolicy := sqlitevirtual.Policy{
+		SkipDropTable:  merged.SkipTableDrops,
+		SkipDropColumn: merged.SkipColumnDrops,
+		SkipDropIndex:  merged.SkipIndexDrops,
+	}
 	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database, virtualPolicy); err != nil {
 		return nil, nil, err
 	}

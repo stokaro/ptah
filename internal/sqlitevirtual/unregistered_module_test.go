@@ -3,6 +3,7 @@ package sqlitevirtual_test
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -12,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/migration/diffpolicy"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -847,6 +849,191 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			wantUnsupported: true,
 			wantContains:    []string{`the plan changes "docs_content"`},
 		},
+		{
+			// THE ROW THE INDEX-AND-TRIGGER FINDING ADDED. `removeIndexes`
+			// renders DROP INDEX for a table it is not rebuilding, so this
+			// reaches the plan with TablesModified and TablesRemoved both
+			// empty and the gate previously saw nothing.
+			//
+			// Reproduced on the command against an fts4 database this build
+			// cannot load, both sides naming the module's storage:
+			// `ptah schema diff --from sqlite://live.db --to sqlite://desired.db`
+			// planned `DROP INDEX IF EXISTS "docs_content_title_idx";` at
+			// exit 0.
+			name:     "an index removed from a table in an unclassifiable database is refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The same finding's trigger half. `removeTriggers` renders
+			// DROP TRIGGER unconditionally -- it does not even consult the
+			// rebuild set -- so a trigger removal is a statement against a
+			// table nothing else in the diff mentions. Measured the same way:
+			// `DROP TRIGGER IF EXISTS "docs_content_guard";` at exit 0.
+			name:     "a trigger removed from a table in an unclassifiable database is refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TriggersRemoved: []difftypes.TriggerRef{
+					{TriggerName: "docs_content_guard", TableName: "docs_content"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// And its replacement half. `modifyTriggers` emits the desired
+			// trigger with SetReplace, which puts the existing one out of the
+			// way first; the object the module may be maintaining is gone
+			// either way.
+			name:     "a replaced trigger in an unclassifiable database is refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TriggersModified: []difftypes.TriggerDiff{{
+					TriggerName: "docs_content_guard",
+					TableName:   "docs_content",
+					Changes:     map[string]string{"body": "old -> new"},
+				}},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// THE CONTROL that keeps the three rows above from becoming
+			// "any index or trigger change is refused". An addition removes
+			// nothing, so the harm this gate names cannot come from one, and a
+			// database holding an unloadable module must still be able to gain
+			// an index.
+			name:     "an index or trigger the plan only ADDS is not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				},
+				TriggersAdded: []difftypes.TriggerRef{
+					{TriggerName: "docs_content_guard", TableName: "docs_content"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// The policy row for the index half, and the reason SkipDropIndex
+			// exists at all: adding index removals to the counted set without
+			// it would have re-opened, on a new field, the over-refusal the
+			// drop_table round closed.
+			name:     "an index removal is not counted when the caller skips index drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				},
+			},
+			policy:  sqlitevirtual.Policy{SkipDropIndex: true},
+			wantErr: false,
+		},
+		{
+			// Its control. `skip drop_index` keeps a REPLACEMENT -- an index
+			// dropped and recreated under the same name -- because the plan
+			// needs the pair, so the table it is aimed at stays counted.
+			name:     "an index replacement is still counted when the caller skips index drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				},
+			},
+			policy:          sqlitevirtual.Policy{SkipDropIndex: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// THE ROW THE SKIPPED-COLUMN-DROP FINDING ADDED. A removed column
+			// is one of the shapes NeedsTableRebuild reports true for, so this
+			// diff was counted as a rebuild -- but `skip drop_column` empties
+			// ColumnsRemoved before anything is rendered, leaving a table diff
+			// that changes nothing.
+			//
+			// Reproduced on the command: `ptah migrations generate` with
+			// `diff.skip: [drop_table, drop_column]` against an fts4 database,
+			// dropping one column from an ordinary `users` table, exited 2 --
+			// while the same run with the opt-in set exited 0 and wrote no
+			// migration file at all.
+			name:     "a column drop is not counted when the caller skips column drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "users",
+				ColumnsRemoved: []string{"legacy"},
+			}}},
+			policy:  sqlitevirtual.Policy{SkipDropColumn: true},
+			wantErr: false,
+		},
+		{
+			// The control that keeps the row above from reading "a table diff
+			// is never counted under this policy". The skip empties
+			// ColumnsRemoved and nothing else, so a type change beside it still
+			// rebuilds the table -- drop, recreate, copy -- and is still
+			// refused. This is the row that fails if the policy is read as a
+			// short-circuit rather than as a filter over the diff.
+			name:     "a column drop beside a type change is still counted under the same policy",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"c1body"},
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName: "c0title",
+					Changes:    map[string]string{"type": "TEXT -> INTEGER"},
+				}},
+			}}},
+			policy:          sqlitevirtual.Policy{SkipDropColumn: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The second control: without the policy the same column drop is a
+			// rebuild the planner really performs, so it stays refused.
+			// Measured with `diff.skip: [drop_table]` alone on the fixture
+			// above -- exit 2.
+			name:     "a column drop with no policy is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"c1body"},
+			}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
 	}
 
 	for _, tt := range tests {
@@ -861,6 +1048,99 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			for _, fragment := range tt.wantContains {
 				c.Assert(errorText(err), qt.Contains, fragment)
 			}
+		})
+	}
+}
+
+// TestDiffPolicySkipKindsAreClassified is the census that keeps the next skip
+// kind from defaulting to "this gate does not read it".
+//
+// Three rounds of review on this guard were the same mistake in three places: a
+// refusal keyed on a statement the caller's diff policy deletes again before
+// anything is rendered. Each was found one field at a time -- drop_table, then
+// drop_column, then the index removals the drop_index policy filters -- because
+// nothing required the vocabulary to be enumerated. So it is enumerated here:
+// every member of [diffpolicy.AllChangeKinds] is either carried by a
+// [sqlitevirtual.Policy] field or listed as one this gate reads no field of,
+// and a fifth kind fails this test until somebody decides which it is.
+//
+// The second half is what makes the first half more than bookkeeping: for each
+// carried kind, the same diff is refused with the zero policy and admitted with
+// the field set, so a Policy field that is declared and never consulted cannot
+// pass the census.
+func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
+	// drop_enum is the deliberate omission: SQLite has no enum type, nothing in
+	// a SQLite comparison populates EnumsRemoved, and this gate reads no enum
+	// field at all.
+	unread := []diffpolicy.ChangeKind{diffpolicy.DropEnum}
+
+	tests := []struct {
+		name   string
+		kind   diffpolicy.ChangeKind
+		diff   *difftypes.SchemaDiff
+		policy sqlitevirtual.Policy
+	}{
+		{
+			name:   "drop_table",
+			kind:   diffpolicy.DropTable,
+			diff:   removing("docs_stat"),
+			policy: sqlitevirtual.Policy{SkipDropTable: true},
+		},
+		{
+			name: "drop_column",
+			kind: diffpolicy.DropColumn,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"c1body"},
+			}}},
+			policy: sqlitevirtual.Policy{SkipDropColumn: true},
+		},
+		{
+			name: "drop_index",
+			kind: diffpolicy.DropIndex,
+			diff: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
+				{Name: "docs_content_title_idx", TableName: "docs_content"},
+			}},
+			policy: sqlitevirtual.Policy{SkipDropIndex: true},
+		},
+	}
+
+	t.Run("every skip kind is classified", func(t *testing.T) {
+		c := qt.New(t)
+
+		classified := slices.Clone(unread)
+		for _, tt := range tests {
+			classified = append(classified, tt.kind)
+		}
+		slices.Sort(classified)
+		all := slices.Clone(diffpolicy.AllChangeKinds())
+		slices.Sort(all)
+
+		c.Assert(classified, qt.DeepEquals, all)
+	})
+
+	database := &types.DBSchema{
+		Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" is refused without the policy", func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar)(t)
+
+			err := sqlitevirtual.ValidatePlannedChanges("sqlite", database, tt.diff, sqlitevirtual.Policy{})
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		})
+
+		t.Run(tt.name+" is admitted with the policy", func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar)(t)
+
+			err := sqlitevirtual.ValidatePlannedChanges("sqlite", database, tt.diff, tt.policy)
+
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

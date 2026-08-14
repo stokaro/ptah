@@ -916,6 +916,15 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 // had already emptied (stokaro/ptah#1028). The caller's options are copied
 // rather than written through: GenerateMigrationOptions is a value the caller
 // may reuse for another run.
+//
+// Every skip kind the guard can read is forwarded, not only the table drop.
+// `drop_column` empties a table diff's ColumnsRemoved, which is one of the
+// fields the rebuild predicate reads, and `drop_index` empties the standalone
+// index removals the guard counts the owning table for; forwarding one of the
+// three left the other two refusing plans this function had already emptied.
+// diffpolicy.DropEnum is the one kind deliberately not forwarded: SQLite has no
+// enum type and the guard reads no enum field, and the census in
+// internal/sqlitevirtual fails if a new kind appears unclassified.
 func compareOptionsWithDiffPolicy(
 	opts *config.CompareOptions,
 	policy DiffPolicy,
@@ -926,6 +935,8 @@ func compareOptionsWithDiffPolicy(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropTable)
+	merged.SkipColumnDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropColumn)
+	merged.SkipIndexDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropIndex)
 	return merged
 }
 

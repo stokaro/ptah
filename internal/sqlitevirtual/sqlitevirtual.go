@@ -113,6 +113,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
+	"go.5x5.cz/ptah/migration/diffpolicy"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -265,6 +266,54 @@ type Policy struct {
 	// post-diff half of the guard keeps running under this policy and only its
 	// removal input is discounted.
 	SkipDropTable bool
+
+	// SkipDropColumn reports that the caller removes every column drop from the
+	// diff before planning it -- `diff.skip: [drop_column]` in ptah.yaml.
+	//
+	// A column removal is one of the shapes SQLite has no ALTER for, so
+	// [sqliterebuild.NeedsTableRebuild] reports a rebuild for any table diff
+	// carrying one, and a rebuild is what [ValidatePlannedChanges] refuses. A
+	// caller that deletes the column drop again leaves a table diff the planner
+	// converges without a rebuild, or with nothing at all.
+	//
+	// Measured: `ptah migrations generate` with
+	// `diff.skip: [drop_table, drop_column]` against an fts4 database, dropping
+	// one column from an ordinary `users` table, was refused at exit 2 -- while
+	// the same run with the opt-in set exited 0 and wrote no migration file at
+	// all, because the policy had emptied the plan.
+	SkipDropColumn bool
+
+	// SkipDropIndex reports that the caller removes every standalone index drop
+	// from the diff before planning it -- `diff.skip: [drop_index]` in
+	// ptah.yaml.
+	//
+	// It is standalone drops only. An index REPLACEMENT -- dropped and
+	// recreated under the same name -- is kept by both implementations of this
+	// policy, so it is kept here too, and the table it is aimed at stays
+	// counted.
+	SkipDropIndex bool
+}
+
+// skipSet is this policy in the vocabulary the callers filter with, so the
+// prediction and the filtering cannot disagree about what a skip removes.
+//
+// [diffpolicy.ChangeKind] has a fourth member, `drop_enum`, and it is
+// deliberately absent: SQLite has no enum type, nothing in a SQLite diff
+// populates EnumsRemoved, and this gate reads no enum field. The census in
+// TestDiffPolicySkipKindsAreClassified fails if a fifth kind appears without
+// being placed on one side of that line.
+func (p Policy) skipSet() diffpolicy.SkipSet {
+	var kinds []diffpolicy.ChangeKind
+	if p.SkipDropTable {
+		kinds = append(kinds, diffpolicy.DropTable)
+	}
+	if p.SkipDropColumn {
+		kinds = append(kinds, diffpolicy.DropColumn)
+	}
+	if p.SkipDropIndex {
+		kinds = append(kinds, diffpolicy.DropIndex)
+	}
+	return diffpolicy.NewSkipSet(kinds...)
 }
 
 // Table is one live virtual table and the module declaration that owns it.
@@ -587,11 +636,16 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // believes that storage to be, and a diff that drops or rebuilds something in a
 // database Ptah cannot classify might be destroying it.
 //
-// The set is drop-or-rebuild rather than "anything changed", and the difference
-// is a whole class of change: `ALTER TABLE ... ADD COLUMN` is a statement
-// SQLite has, so a table whose only change is added columns is neither dropped
-// nor rebuilt and is not counted. See [tablesTouchedBy], which asks the
-// planner's own rebuild predicate rather than a second spelling of it.
+// The set is destructive-change rather than "anything changed", and the
+// difference is a whole class of change: `ALTER TABLE ... ADD COLUMN` is a
+// statement SQLite has, so a table whose only change is added columns is
+// neither dropped nor rebuilt and is not counted, and neither is a table that
+// only GAINS an index or a trigger. What is counted beside a drop and a rebuild
+// is a removal from a table: an index dropped or replaced on it, a trigger
+// dropped or replaced on it. Those reach the plan without the table being
+// touched, and Ptah can no more tell whose index it is than whose table it is.
+// See [tablesTouchedBy], which asks the planner's own rebuild predicate rather
+// than a second spelling of it.
 //
 // Callers pass the same database description they passed to
 // [ValidateComparison], and the same [Policy]. The diff reaching this seam is
@@ -634,7 +688,9 @@ func ValidatePlannedChanges(
 		"%w: the plan changes %s in a database that holds virtual %s %s whose %s this build of Ptah"+
 			" does not register; SQLite marks a module's shadow tables as shadow only while the module"+
 			" is loaded, so Ptah cannot tell that module's private storage from ordinary tables, and"+
-			" dropping or rebuilding one of them destroys the index it belongs to;"+
+			" dropping or rebuilding one of them destroys the index it belongs to, while dropping or"+
+			" replacing an index or trigger one of them carries removes machinery the module may be"+
+			" the one maintaining;"+
 			" this build registers %s;"+
 			" apply this change with a build that registers %s, or set %s=1 to plan it against tables"+
 			" Ptah cannot vouch for",
@@ -649,8 +705,8 @@ func ValidatePlannedChanges(
 	)
 }
 
-// tablesTouchedBy lists the tables the diff would drop or rebuild, in a stable
-// order.
+// tablesTouchedBy lists the tables the diff would drop, rebuild, or strip an
+// object from, in a stable order.
 //
 // It has to be a SUPERSET of what the SQLite planner acts on, and the planner
 // derives its rebuild set from more than the obvious two fields. Beside
@@ -660,6 +716,27 @@ func ValidatePlannedChanges(
 // level, and SQLite has no ALTER for a constraint, so that table is rebuilt --
 // drop, recreate, copy -- exactly like any other. Reading the two table fields
 // alone let that through, which review caught.
+//
+// The planner also emits statements against a table that is neither dropped nor
+// rebuilt: `removeIndexes` renders `DROP INDEX` for every IndexesRemoved entry
+// whose table is not being rebuilt, `removeTriggers` renders `DROP TRIGGER` for
+// every TriggersRemoved entry, and `modifyTriggers` replaces a TriggersModified
+// one. Those are removals from a table this gate cannot classify, and Ptah can
+// no more tell a module's own index from an operator's than it can tell the
+// module's storage from an ordinary table -- that inability is the premise of
+// this whole guard. Reproduced before the fields were read here: against an
+// fts4 database this build cannot load, with both sides naming the module's
+// storage,
+//
+//	ptah schema diff --from sqlite://live.db --to sqlite://desired.db
+//
+// planned `DROP INDEX IF EXISTS "docs_content_title_idx";` at exit 0, and the
+// trigger fixture planned `DROP TRIGGER IF EXISTS "docs_content_guard";` at
+// exit 0, with this gate seeing an empty touched set both times.
+//
+// ADDITIONS are not counted, here as everywhere else in this function. A
+// `CREATE INDEX` or `CREATE TRIGGER` removes nothing, so the harm this gate
+// names cannot come from one.
 //
 // It is coarser than the planner's own derivation wherever being coarser is
 // free, because refusing a table the planner does not rebuild is safe while
@@ -671,10 +748,9 @@ func ValidatePlannedChanges(
 //     added table carries none of this risk, and counting it would refuse the
 //     ordinary case of adding a table with a constraint beside an index Ptah
 //     cannot classify;
-//   - a table the plan would DROP under a caller that skips `drop_table` is not
-//     dropped at all, and its dependent removals go with it, so it is not
-//     rebuilt either. Counting it refused a `schema apply` whose whole plan the
-//     policy had already emptied;
+//   - a change the caller's [Policy] deletes again before anything is rendered
+//     is not in the plan at all. Counting one refused a `schema apply` whose
+//     whole plan the policy had already emptied;
 //   - a table whose only change is COLUMNS ADDED is neither dropped nor
 //     rebuilt. SQLite expresses that with `ALTER TABLE ... ADD COLUMN`, which
 //     rewrites no row and touches no other object, so this gate's whole
@@ -686,8 +762,17 @@ func ValidatePlannedChanges(
 //
 // The second is keyed on the caller's [Policy] rather than on anything in the
 // diff, because the diff at this seam is the comparator's answer and not yet
-// the plan. The third is keyed on [sqliterebuild.NeedsTableRebuild], the same
-// predicate `planTableRebuilds` selects with, so the two cannot drift.
+// the plan -- and it is applied by handing the diff to the caller's own filter,
+// [diffpolicy.ApplyForDialect], rather than by reading the policy a second time
+// here. That matters beyond tidiness: `skip drop_column` empties
+// TablesModified[i].ColumnsRemoved, which is one of the fields
+// [sqliterebuild.NeedsTableRebuild] reads, so a second reading would have had
+// to reimplement the predicate's inputs as well as the filter. Measured before
+// the filter ran here: `ptah migrations generate` with
+// `diff.skip: [drop_table, drop_column]` against an fts4 database was refused
+// at exit 2 for a plan that, obtained with the opt-in, wrote no file at all.
+// The third is keyed on [sqliterebuild.NeedsTableRebuild], the same predicate
+// `planTableRebuilds` selects with, so the two cannot drift.
 //
 // The residue the third exclusion leaves is measured rather than assumed, and
 // it is not destruction. `ALTER TABLE docs_content ADD COLUMN spurious TEXT`
@@ -708,8 +793,14 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 	// planner asks the same question through the same helper.
 	semantics := diffSemantics(diff)
 
-	touched := slices.Clone(diff.TablesRemoved)
-	for _, table := range diff.TablesModified {
+	// The caller's own filter, applied to a copy, rather than a second reading
+	// of its policy. Everything below is asked of what will still be in the
+	// plan; the exclusions further down are still asked of the ORIGINAL diff,
+	// because a filtered-away field can no longer say what it excluded.
+	planned, _ := diffpolicy.ApplyForDialect(diff, policy.skipSet(), platform.SQLite)
+
+	touched := slices.Clone(planned.TablesRemoved)
+	for _, table := range planned.TablesModified {
 		// Asked through the planner's own predicate rather than a second
 		// spelling of it, so a change to what SQLite can express in place is
 		// made once and both readers see it.
@@ -718,11 +809,24 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 		}
 		touched = append(touched, table.TableName)
 	}
-	for _, constraint := range diff.ConstraintsAddedWithTables {
+	for _, constraint := range planned.ConstraintsAddedWithTables {
 		touched = append(touched, constraint.TableName)
 	}
-	for _, constraint := range diff.ConstraintsRemovedWithTables {
+	for _, constraint := range planned.ConstraintsRemovedWithTables {
 		touched = append(touched, constraint.TableName)
+	}
+	// The objects a table CARRIES, which the planner drops and replaces without
+	// dropping or rebuilding the table itself. The owning table is what is
+	// counted: it is the thing this gate can weigh against the module's
+	// storage, and the index or trigger name says nothing about whose it is.
+	for _, ref := range planned.IndexesRemoved {
+		touched = append(touched, ref.TableName)
+	}
+	for _, ref := range planned.TriggersRemoved {
+		touched = append(touched, ref.TableName)
+	}
+	for _, modified := range planned.TriggersModified {
+		touched = append(touched, modified.TableName)
 	}
 
 	kept := touched[:0]
