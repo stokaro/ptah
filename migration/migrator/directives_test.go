@@ -78,15 +78,43 @@ func TestParseFileDirectives(t *testing.T) {
 	}
 }
 
-// TestParseFileDirectivesForDialectTreatsMySQLHashCommentsAsHeaderComments
-// keeps the header boundary on the same dialect rules as execution.
-func TestParseFileDirectivesForDialectTreatsMySQLHashCommentsAsHeaderComments(t *testing.T) {
-	c := qt.New(t)
-	sql := "# ordinary MySQL comment\n-- +ptah no_transaction\nSELECT 1;\n"
+// TestParseFileDirectivesTreatsHashCommentsAsHeaderComments keeps the header
+// boundary on the same dialect rules as execution.
+//
+// Which dialects those are is not restated here, and that is the point: the
+// answer comes from the lexer options the file will be read with, so this table
+// is a reading of that one authority rather than a second list beside it. SQL
+// Server is the live negative control -- it is the one target whose options
+// disable hash comments, and its row is what keeps every other row from being
+// vacuously true.
+func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
+	sql := "# ordinary hash comment\n-- +ptah no_transaction\nSELECT 1;\n"
 
-	c.Check(parseFileDirectivesForDialect(sql, platform.MySQL),
-		qt.DeepEquals, map[string]string{"no_transaction": "true"})
-	c.Check(parseFileDirectivesForDialect(sql, platform.MariaDB),
-		qt.DeepEquals, map[string]string{"no_transaction": "true"})
-	c.Check(ParseFileDirectives(sql), qt.HasLen, 0)
+	tests := []struct {
+		name    string
+		dialect string
+		want    map[string]string
+	}{
+		{
+			// Load time has no connection yet, so it must not read a header
+			// SHORTER than the dialect that will execute the file would.
+			name:    "unresolved dialect",
+			dialect: "",
+			want:    map[string]string{"no_transaction": "true"},
+		},
+		{name: "mysql", dialect: platform.MySQL, want: map[string]string{"no_transaction": "true"}},
+		{name: "mariadb", dialect: platform.MariaDB, want: map[string]string{"no_transaction": "true"}},
+		{name: "clickhouse", dialect: platform.ClickHouse, want: map[string]string{"no_transaction": "true"}},
+		{name: "postgres", dialect: platform.Postgres, want: map[string]string{"no_transaction": "true"}},
+		{name: "sqlite", dialect: platform.SQLite, want: map[string]string{"no_transaction": "true"}},
+		{name: "sqlserver", dialect: platform.SQLServer, want: map[string]string{}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Check(parseFileDirectivesForDialect(sql, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
 }

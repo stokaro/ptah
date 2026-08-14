@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
@@ -82,21 +81,37 @@ func directiveHeaderLength(sql, dialect string) int {
 	return len(sql)
 }
 
-// directiveHeaderLine reports whether line is blank or an ordinary line
-// comment in dialect. MySQL and MariaDB accept # comments and require
-// whitespace after --; asking the shared lexer keeps this boundary identical
-// to the parser that will execute the file.
+// directiveHeaderLine reports whether line is blank or an ordinary line comment
+// in dialect.
+//
+// Which openers a comment may use is decided by exactly one authority --
+// [dialectlexer.Options], the options the lexer this file will be split with is
+// built from -- so the boundary a directive is judged against cannot drift from
+// the one the file is read with. A second, hand-written list of the dialects
+// that accept `#` had already drifted from it: naming MySQL and MariaDB left
+// out ClickHouse, whose options leave hash comments enabled, so a ClickHouse
+// file opening with `#` ended its header on line 1 and dropped the directive
+// underneath it.
+//
+// With no dialect resolved the answer has to be the PERMISSIVE one, and the
+// no-dialect options are exactly that: they accept `#`, and they accept `--`
+// with no space after it, so the unresolved header is never shorter than any
+// resolved dialect's. That direction is the safe one because load time runs
+// before a connection exists. A header cut short there reports a directive
+// sitting on line 2 of its own header as "below the first SQL statement",
+// refuses the file, and hands the operator a remedy -- move it up -- that the
+// line already satisfies; the execution dialect never gets to overturn it,
+// because the file never loads.
+//
+// Only LINE comments extend the header, and that test stays a prefix check
+// rather than a lexer question: a line-based scan cannot see where a block
+// comment ends, so a file opening with one keeps its zero-length header.
 func directiveHeaderLine(line, dialect string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return true
 	}
-	if strings.HasPrefix(trimmed, "#") {
-		normalized := platform.NormalizeDialect(dialect)
-		if normalized != platform.MySQL && normalized != platform.MariaDB {
-			return false
-		}
-	} else if !strings.HasPrefix(trimmed, "--") {
+	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return false
 	}
 	token := lexer.NewLexerWithOptions(trimmed, dialectlexer.Options(dialect)).NextToken()

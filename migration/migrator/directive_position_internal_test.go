@@ -320,20 +320,164 @@ func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 	}
 }
 
-func TestMySQLHashCommentKeepsFollowingDirectiveInHeader(t *testing.T) {
-	c := qt.New(t)
-	sql := "# generated migration\n-- +ptah no_transaction\nSELECT 1;\n"
+// headerScanDialects is every target [directiveHeaderLength] can be asked
+// about, in the same order [go.5x5.cz/ptah/internal/ptahdirective] enumerates
+// them for its conservative scan. A dialect missing from here would silently
+// drop out of the tables below.
+var headerScanDialects = []string{
+	platform.Postgres,
+	platform.MySQL,
+	platform.MariaDB,
+	platform.SQLite,
+	platform.ClickHouse,
+	platform.CockroachDB,
+	platform.YugabyteDB,
+	platform.SQLServer,
+	platform.Spanner,
+}
 
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		parsed := parseMigrationFileTxModeForDialect("1_x.sql", sql, dialect)
-		c.Check(parsed.err, qt.IsNil)
-		c.Check(parsed.mode, qt.Equals, MigrationFileTxModeNone)
-		c.Check(misplacedDirectives(sql, dialect), qt.HasLen, 0)
+// TestHashCommentHeaderFollowsTheLexerRatherThanAList is the header half of the
+// dialect rule.
+//
+// A `#` line is a comment for every target except SQL Server, and the migrator
+// learns that from [go.5x5.cz/ptah/internal/dialectlexer.Options] -- the same
+// options the file will be tokenized with. Naming the dialects here instead
+// produced exactly one wrong row per dialect the list forgot: ClickHouse leaves
+// hash comments enabled and was left out, so a ClickHouse file opening with `#`
+// ended its header on line 1 and ran without the `no_transaction` its author
+// wrote. SQL Server is the negative control and the reason no row here is
+// vacuous.
+func TestHashCommentHeaderFollowsTheLexerRatherThanAList(t *testing.T) {
+	sql := "# generated migration\n-- +ptah no_transaction\n\n" + directiveStatement
+
+	tests := []struct {
+		name          string
+		dialect       string
+		wantMode      MigrationFileTxMode
+		wantMisplaced []int
+	}{
+		{
+			// The dialect is unresolved until a connection exists, and a
+			// migration file is loaded before one does. Reading a SHORTER
+			// header here refuses a correctly placed directive as misplaced,
+			// and no later dialect resolution can take that back.
+			name:     "unresolved dialect",
+			dialect:  "",
+			wantMode: MigrationFileTxModeNone,
+		},
+		{name: "postgres", dialect: platform.Postgres, wantMode: MigrationFileTxModeNone},
+		{name: "mysql", dialect: platform.MySQL, wantMode: MigrationFileTxModeNone},
+		{name: "mariadb", dialect: platform.MariaDB, wantMode: MigrationFileTxModeNone},
+		{name: "sqlite", dialect: platform.SQLite, wantMode: MigrationFileTxModeNone},
+		{name: "clickhouse", dialect: platform.ClickHouse, wantMode: MigrationFileTxModeNone},
+		{name: "cockroachdb", dialect: platform.CockroachDB, wantMode: MigrationFileTxModeNone},
+		{name: "yugabytedb", dialect: platform.YugabyteDB, wantMode: MigrationFileTxModeNone},
+		{name: "spanner", dialect: platform.Spanner, wantMode: MigrationFileTxModeNone},
+		{
+			// The one target whose options disable hash comments. `# ...` is
+			// not a comment there, so the directive really does sit below the
+			// first non-comment line and the report is the correct answer.
+			name:          "sqlserver",
+			dialect:       platform.SQLServer,
+			wantMode:      MigrationFileTxModeUnspecified,
+			wantMisplaced: []int{2},
+		},
 	}
 
-	parsed := parseMigrationFileTxModeForDialect("1_x.sql", sql, platform.Postgres)
-	c.Check(parsed.err, qt.IsNil)
-	c.Check(parsed.mode, qt.Equals, MigrationFileTxModeUnspecified)
+	c := qt.New(t)
+	c.Assert(tests, qt.HasLen, len(headerScanDialects)+1, qt.Commentf(
+		"every target plus the unresolved dialect needs a row; a missing one reads as agreement"))
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed := parseMigrationFileTxModeForDialect("1_x.sql", sql, test.dialect)
+
+			c.Check(parsed.err, qt.IsNil)
+			c.Check(parsed.mode, qt.Equals, test.wantMode)
+			c.Check(misplacedLines(misplacedDirectives(sql, test.dialect)), qt.DeepEquals, test.wantMisplaced)
+		})
+	}
+}
+
+// TestUnresolvedDirectiveHeaderIsTheLongestAnyTargetWouldRead states the
+// property the row above only samples.
+//
+// Load time reads the header with no dialect, and its verdict is final: a
+// directive it places outside the header is refused before a connection exists,
+// so the unresolved scan must never cut the header shorter than the dialect
+// that will execute the file would. Equality with the longest, rather than
+// merely "not shorter", is what keeps the no-dialect options from quietly
+// becoming a tenth set of comment rules of their own.
+func TestUnresolvedDirectiveHeaderIsTheLongestAnyTargetWouldRead(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "hash comment above the directive", sql: "# c\n-- +ptah no_transaction\n\n" + directiveStatement},
+		{name: "hash comment is the whole header", sql: "# c\n" + directiveStatement},
+		{name: "dash dash with no space after it", sql: "--+ptah no_transaction\n\n" + directiveStatement},
+		{name: "an ordinary header", sql: "-- c\n-- +ptah no_transaction\n\n" + directiveStatement},
+		{name: "a statement first", sql: directiveStatement + "-- +ptah no_transaction\n"},
+		{name: "a block comment first", sql: "/* c */\n-- +ptah no_transaction\n\n" + directiveStatement},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			longest := 0
+			for _, dialect := range headerScanDialects {
+				longest = max(longest, directiveHeaderLength(test.sql, dialect))
+			}
+
+			c.Check(directiveHeaderLength(test.sql, ""), qt.Equals, longest, qt.Commentf("source:\n%s", test.sql))
+		})
+	}
+}
+
+// TestMalformedValueUnderAHashHeaderIsRefusedByItsOwnParser is the load-time
+// consequence, measured through the function that loads a file.
+//
+// A cut-short header does not merely drop a directive: it makes the value check
+// answer as the POSITION check, so the operator is told the line sits below the
+// first SQL statement and to move it up -- while it is already the second line
+// of the file. The refusal itself is right, because the duration really is
+// unreadable; the diagnosis and the remedy were not.
+func TestMalformedValueUnderAHashHeaderIsRefusedByItsOwnParser(t *testing.T) {
+	c := qt.New(t)
+	sql := "# generated migration\n-- +ptah lock_timeout=soon\n\n" + directiveStatement
+
+	_, err := migrationFuncFromSQLStringWithMetadata("1_x.sql", sql, statementExecutionHooks{})
+
+	c.Assert(err, qt.ErrorMatches, `invalid \+ptah lock_timeout value: .*`)
+	c.Check(err.Error(), qt.Not(qt.Contains), "below the first SQL statement",
+		qt.Commentf("the line is the second of the file; the remedy would be inapplicable"))
+}
+
+// TestHashCommentDoesNotWidenTheAtlasHeader keeps the two families apart where
+// widening one of them could have merged them.
+//
+// Atlas reads its file directive from the unbroken run of `--` comments that
+// starts at byte 0, which a `#` line is not. Extending the `+ptah` header past
+// one must therefore leave `-- atlas:txmode` exactly where it was, or ptah would
+// honor a directive the pinned community binary drops.
+func TestHashCommentDoesNotWidenTheAtlasHeader(t *testing.T) {
+	sql := "# generated migration\n-- atlas:txmode none\n\n" + directiveStatement
+
+	for _, dialect := range []string{"", platform.MySQL, platform.ClickHouse} {
+		t.Run("dialect "+dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			mode, has, err := parseAtlasFileTxMode("1_x.sql", sql)
+
+			c.Assert(err, qt.IsNil)
+			c.Check(has, qt.IsFalse)
+			c.Check(mode, qt.Equals, MigrationFileTxModeUnspecified)
+			c.Check(misplacedLines(misplacedDirectives(sql, dialect)), qt.DeepEquals, []int{2})
+		})
+	}
 }
 
 // refusedWith and notRefused are the two verdicts a row can carry, so the table

@@ -199,10 +199,22 @@ people and pipelines share a directory:
   so does Ptah — with the same warning. `-- +ptah` directives accept the whole
   region, blank lines and indentation included.
 
-  The region uses the target database's comment grammar. In MySQL and MariaDB,
-  a leading `#` comment remains part of the header and does not hide following
-  `lock_timeout` or `statement_timeout` directives; Ptah resolves those timeout
-  values with the execution dialect before it validates or runs the migration.
+  The region uses the target database's comment grammar, read from the same
+  lexer options Ptah splits the file's statements with — never from a separate
+  list of dialects, which is how the two would drift apart. A leading `#`
+  comment therefore stays part of the header wherever that reader treats it as
+  a comment, which is every supported target except SQL Server, and does not
+  hide the `no_transaction`, `lock_timeout` or `statement_timeout` directives
+  that follow it. On SQL Server `#` is not a comment, so a directive below one
+  really does sit below the first non-comment line and Ptah reports it.
+
+  Before a connection exists the dialect is unresolved, and there Ptah reads
+  the header the widest way any target would. That direction is deliberate:
+  loading a file happens first and its verdict is final, so a header cut short
+  there would refuse a correctly placed directive as being below the first SQL
+  statement and offer a remedy — move it up — that the line already satisfies.
+  Ptah then resolves the effective timeouts and transaction mode with the
+  execution dialect before it validates or runs the migration.
 
   Position and value are separate facts, and a bad value is not demoted to a
   position warning. A `-- +ptah` directive whose key Ptah recognizes but whose

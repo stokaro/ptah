@@ -706,10 +706,15 @@ Override those defaults in a specific migration file with top-of-file directives
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 
-The header follows the target database's line-comment grammar. A leading `#`
-comment in a MySQL or MariaDB migration remains in the header, so it does not
-hide timeout directives that follow it. The migrator resolves the effective
-timeouts with the execution dialect before validation and execution.
+The header follows the target database's line-comment grammar, read from the
+same lexer options the file's statements are split with rather than from a
+separate list of dialects. A leading `#` comment therefore stays in the header
+wherever that reader treats it as a comment — every supported target except SQL
+Server, whose options disable hash comments — so it does not hide the timeout
+directives that follow it. Until a connection exists the dialect is unresolved,
+and the header is read the widest way any target would, so loading a file never
+refuses a correctly placed directive as misplaced. The migrator resolves the
+effective timeouts with the execution dialect before validation and execution.
 
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
