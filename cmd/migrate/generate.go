@@ -127,6 +127,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	replay, err := cmd.Flags().GetBool(generateReplayFlag)
+	if err != nil {
+		return err
+	}
+	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
+	if err != nil {
+		return err
+	}
 	migrationsDir, err := cmd.Flags().GetString(generateMigrationsDirFlag)
 	if err != nil {
 		return err
@@ -141,6 +149,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
+		return err
+	}
+	explicitTargetURL := dbURL
+	if replay {
+		explicitTargetURL = devURL
+	}
+	if err := sqlitevirtual.ValidateExplicitURLToggle(explicitTargetURL); err != nil {
 		return err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
@@ -171,14 +186,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	connectTimeoutValue, err := cmd.Flags().GetString(dbcli.ConnectTimeoutFlagName)
-	if err != nil {
-		return err
-	}
-	replay, err := cmd.Flags().GetBool(generateReplayFlag)
-	if err != nil {
-		return err
-	}
-	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
 	if err != nil {
 		return err
 	}

@@ -70,6 +70,38 @@ func TestSchemaPlanRejectsMalformedSQLiteVirtualDropToggleBeforeSourceWork(t *te
 	c.Assert(err.Error(), qt.Not(qt.Contains), "desired schema source")
 }
 
+func TestSchemaPlanRejectsMalformedSQLiteToggleBeforeProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(configPath, []byte("unknown: true\n"), 0o600), qt.IsNil)
+
+	out, err := runSchema("", "plan",
+		"--db-url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+		"--config", configPath,
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unknown ptah.yaml key")
+}
+
+func TestSchemaPlanDoesNotApplySQLiteToggleBeforePostgresProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(configPath, []byte("unknown: true\n"), 0o600), qt.IsNil)
+
+	out, err := runSchema("", "plan",
+		"--db-url", "postgres://localhost/database",
+		"--config", configPath,
+	)
+
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config .*unknown ptah.yaml key "unknown".*`, qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Not(qt.Contains), "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP")
+}
+
 func TestSchemaPlanDryRunPrintsDocumentWithoutSaving(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

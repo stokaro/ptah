@@ -227,6 +227,14 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 			catalog.tableNames = append(catalog.tableNames, name)
 			catalog.tableDDLByName[name] = ddl.String
 		case "index":
+			if kinds[tableName] == tableKindShadow && ddl.Valid {
+				return sqliteSchemaCatalog{}, fmt.Errorf(
+					"sqlite: index %q targets virtual-table shadow table %q; "+
+						"Ptah omits module-owned shadow tables and cannot replay the index without misrepresenting its owner",
+					name,
+					tableName,
+				)
+			}
 			catalog.indexDDLByName[name] = ddl.String
 		case "view":
 			catalog.viewObjects = append(catalog.viewObjects, sqliteSchemaObject{

@@ -85,6 +85,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 func compareCommand(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
 
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return err
+	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
 		return err
