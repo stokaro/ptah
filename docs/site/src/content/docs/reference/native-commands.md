@@ -99,27 +99,47 @@ directory.
 
 ## OCI transport behavior
 
-Native `migrations up`, `status`, and `down` accept `oci://` through
-`--migrations-dir`. `migrations lint` accepts an OCI `--dir` and can attach its
-canonical report with `--attach`. Native `schema render`, `export`, `inspect`,
-`compare`, `drift`, `plan`, `apply` and `push`, and `migrations plan` and
-`generate`, accept an OCI desired-schema artifact through `--schema-file`; a
-plan with exactly one OCI schema source can attach its canonical safety report.
-Use digest pins for reproducible runs and reserve `--plain-http` for an
-explicitly trusted local registry. See [OCI registry
+These native commands resolve an `oci://` reference, each through the flag
+named beside it:
+
+| Native command | OCI source flag | Artifact |
+| --- | --- | --- |
+| `ptah migrations up` | `--migrations-dir` | migration directory |
+| `ptah migrations status` | `--migrations-dir` | migration directory |
+| `ptah migrations down` | `--migrations-dir` | migration directory |
+| `ptah migrations lint` | `--dir` | migration directory |
+| `ptah migrations validate` | `--dir` | migration directory |
+| `ptah schema render` | `--schema-file` | desired schema |
+| `ptah schema export` | `--schema-file` | desired schema |
+| `ptah schema inspect` | `--schema-file` | desired schema |
+| `ptah schema compare` | `--schema-file` | desired schema |
+| `ptah schema drift` | `--schema-file` | desired schema |
+| `ptah schema plan` | `--schema-file` | desired schema |
+| `ptah schema apply` | `--schema-file` | desired schema |
+| `ptah schema push` | `--schema-file` | desired schema |
+| `ptah migrations plan` | `--schema-file` | desired schema |
+| `ptah migrations generate` | `--schema-file` | desired schema |
+
+`migrations lint` can attach its canonical report with `--attach`, and a plan
+with exactly one OCI schema source can attach its canonical safety report. Use
+digest pins for reproducible runs and reserve `--plain-http` for an explicitly
+trusted local registry. See [OCI registry
 artifacts](../../operate/oci-registry/).
 
 Every command that resolves an `oci://` source registers `--plain-http`, and
-that pairing is not maintained by hand: a test walks the built command tree and
-requires each command whose `--schema-file` reaches the OCI loader to register
-the flag, then drives it at a registry to prove the value reaches the client
-rather than merely parsing.
+neither that pairing nor the table above is maintained by hand: a test walks the
+built command tree for `--schema-file`, `--dir` and `--migrations-dir`, requires
+every command whose value reaches the OCI loader to register the flag, drives it
+at a registry to prove the value reaches the client rather than merely parsing,
+and then requires the rows here to be exactly that set. A verb that starts or
+stops resolving the scheme fails that test until this table says so.
 
-`migrations validate` is the exception, and deliberately so for now: it takes a
-local `--dir` only, so an artifact must be pulled before it can be validated on
-its own. `migrations hash` refuses `oci://` by design, because it writes the
-integrity file back into the directory it hashed and a registry artifact is
-immutable.
+`migrations validate --dir oci://...` answers the integrity question on the
+artifact itself, with no database and nothing executed. Over a tag a successful
+run adds the movable-tag qualifier on standard error, naming the digest the tag
+resolved to; a digest-pinned reference prints nothing extra. `migrations hash`
+refuses `oci://` by design, because it writes the integrity file back into the
+directory it hashed and a registry artifact is immutable.
 
 `ptah oci referrers <oci-reference>` lists direct attachment descriptors.
 `--type` accepts `all`, `lint`, `plan`, or `deployment`; `--format` accepts

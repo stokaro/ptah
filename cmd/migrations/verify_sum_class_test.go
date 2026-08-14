@@ -24,12 +24,16 @@ import (
 // NO sum passes, because there is no recorded intent to compare against —
 // refusing it would remove a capability from every project that never adopted
 // `ptah migrations hash`. --verify-sum asks the different question: "is this
-// directory covered by a sum at all". Nothing else on the native surface asks
-// it for a registry source. `ptah migrations validate` asks it for a local
-// path, and measured against a published artifact it cannot even resolve the
-// reference — `migrations validate --dir oci://…` answers `stat oci://…: no
-// such file or directory` — so for an oci:// directory the flag is the only
-// spelling there is.
+// directory covered by a sum at all".
+//
+// `ptah migrations validate` asks that question too, and since
+// stokaro/ptah#1499 it asks it of an `oci://` reference as well as of a local
+// path — it used to answer `stat oci://…: no such file or directory`. That does
+// NOT make the flag redundant, and the reason is timing rather than coverage:
+// validate resolves the reference in one process and the executing verb
+// resolves it again in another, so a movable tag can select different bytes
+// between the two calls. The flag verifies the artifact the same invocation is
+// about to run.
 //
 // The rows below are therefore stated as a table over the verbs that offer the
 // flag, with BOTH directions on the same fixture: the unhashed directory each

@@ -19,6 +19,25 @@ const (
 	// Atlas is the table the Atlas-compatible revision layout records
 	// migrations in.
 	Atlas = "atlas_schema_revisions"
+
+	// PtahOperatorVersion is the generic operator marker for migrations without
+	// a mapped source identity. Current mapped writes use the source-identity
+	// marker instead, so a Flyway row with this generic value is eligible for
+	// older ordering-key recovery.
+	PtahOperatorVersion = "Ptah"
+
+	// SourceBaselineOperatorVersion marks a baseline boundary that selected a
+	// source migration whose provider identified it as an executed baseline.
+	// The row remains Atlas's ordinary baseline type; this durable marker only
+	// distinguishes it from a versioned migration baselined before a same-token
+	// baseline file was introduced.
+	SourceBaselineOperatorVersion = "Ptah/source-baseline"
+
+	// SourceIdentityOperatorVersion marks a row whose version is the exact,
+	// opaque source identity supplied through Atlas revision-version mapping.
+	// The marker lets compatibility recovery distinguish those identities from
+	// numeric ordering keys written by older Ptah builds.
+	SourceIdentityOperatorVersion = "Ptah/source-identity"
 )
 
 // DefaultNames returns the table a migrator writes revisions to for every

@@ -24,8 +24,6 @@ type atlasMigrateApplyRefusalOperands struct {
 	dirFormat atlasmigrateimport.Format
 	linearity flywayLinearity
 	execOrder migrator.ExecOrder
-	// revisionsSchema is the run's --revisions-schema.
-	revisionsSchema string
 	// allowDirty and baselineVersion are the two opt-outs of the not-clean
 	// gate below.
 	allowDirty      bool
@@ -75,7 +73,7 @@ func inspectThenPrepareApply(
 // runAtlasMigrateApplyRefusals runs every check that can stop a prepared apply
 // before it executes, in the order their measurements require.
 func runAtlasMigrateApplyRefusals(ctx context.Context, operands atlasMigrateApplyRefusalOperands) error {
-	// The adoption gate comes first. The three Flyway refusals below all
+	// The adoption gate comes first. The Flyway refusals below all
 	// reason about revision rows somebody else wrote, and this one fires only
 	// when there are none, so the order between them is not observable — but
 	// stating it keeps the more fundamental precondition at the top.
@@ -83,23 +81,17 @@ func runAtlasMigrateApplyRefusals(ctx context.Context, operands atlasMigrateAppl
 		return err
 	}
 
-	// #982 changed the Atlas version a Flyway file converts to, which is the
-	// key `atlas_schema_revisions` stores. A database migrated by an older Ptah
-	// build therefore reads as entirely pending here. Refuse before executing
-	// anything rather than re-running migrations that already ran.
+	// Ptah builds before #1206 recorded a converted Flyway migration under an
+	// internal ordering key; builds before #982 used an even older numeric key.
+	// Either row reads as pending after the exact source token becomes the
+	// revision identity. Refuse before executing anything rather than re-running
+	// migrations that already ran.
 	if err := checkLegacyFlywayRevisions(
-		operands.captured, operands.dirFormat, operands.plan, operands.revisionsSchema,
+		operands.captured,
+		operands.dirFormat,
+		operands.plan,
+		operands.conn.Info().Dialect,
 	); err != nil {
-		return err
-	}
-
-	// The same question one implementation over: Atlas CE records a converted
-	// Flyway migration under its SOURCE version token, so a revision table it
-	// wrote also matches no file here and reads as entirely pending
-	// (stokaro/ptah#1100). The Ptah-encoding check above runs first because it
-	// is the more specific claim about who wrote the row, and its repair is a
-	// different one.
-	if err := checkForeignFlywayRevisions(operands.captured, operands.dirFormat, operands.plan); err != nil {
 		return err
 	}
 

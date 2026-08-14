@@ -31,7 +31,20 @@ type ApplyOptions struct {
 	// version token, so the linear guard can ask "was this added out of order"
 	// on the operand that tool decides it with. Only the Flyway converted path
 	// sets it; see atlasmigrateimport.FlywaySourceVersions.
-	SourceVersions       map[int64]string
+	SourceVersions map[int64]string
+	// RevisionVersions maps converted numeric order keys to exact source
+	// identities. It includes squashed baseline inputs so existing revision rows
+	// can still be interpreted and preserve their high-water mark. Only entries
+	// that survive in FS become provider migrations and own revision rows.
+	RevisionVersions map[int64]string
+	// RevisionTypes carries source-format revision metadata aligned with the
+	// converted execution keys. A surviving Flyway baseline uses the baseline
+	// type so a later run can distinguish it from a versioned migration sharing
+	// the same exact token.
+	RevisionTypes map[int64]migrator.AtlasRevisionType
+	// RepeatableVersions marks converted order keys whose source files are
+	// repeatables even though their converted Atlas filenames are numeric.
+	RepeatableVersions   []int64
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
@@ -67,17 +80,24 @@ type ApplyOptions struct {
 // migration directory and current revision state.
 type ApplyPlan struct {
 	Status           *migrator.MigrationStatus
+	Revisions        []migrator.MigrationRevision
 	Migrations       []*migrator.Migration
 	SelectedVersions []int64
 	SelectedKeys     []string
 	CurrentVersion   int64
 	CurrentKey       string
-	DryRun           bool
-	StartedAt        time.Time
+	CurrentKeySet    bool
+	// RevisionsTableIdentifier is the dialect-quoted metadata table identifier
+	// prepared by the migrator. Diagnostics that print executable SQL use this
+	// value instead of reconstructing quoting from request fields.
+	RevisionsTableIdentifier string
+	DryRun                   bool
+	StartedAt                time.Time
 
 	mig                    *migrator.Migrator
 	opts                   ApplyOptions
 	assumedAppliedVersions []int64
+	assumedAppliedKeys     []string
 }
 
 // ApplyResult contains execution metadata needed by CLI output and Atlas
@@ -90,6 +110,7 @@ type ApplyResult struct {
 	SelectedKeys     []string
 	CurrentVersion   int64
 	CurrentKey       string
+	CurrentKeySet    bool
 	Applied          bool
 	DryRun           bool
 	StartedAt        time.Time
@@ -100,6 +121,9 @@ type ApplyResult struct {
 	// statically validated but not evaluated, because a dry run cannot produce
 	// the state they assert on. Empty outside a dry run.
 	ChecksDeferred []int64
+	// ChecksDeferredKeys are exact revision identities aligned with
+	// ChecksDeferred. A present empty key is the migration identity.
+	ChecksDeferredKeys []string
 }
 
 // PrepareApply builds the Atlas-format migrator, applies real baseline
@@ -115,6 +139,9 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		execOrder:            opts.ExecOrder,
 		outOfOrderExempt:     opts.OutOfOrderExempt,
 		sourceVersions:       opts.SourceVersions,
+		revisionVersions:     opts.RevisionVersions,
+		revisionTypes:        opts.RevisionTypes,
+		repeatableVersions:   opts.RepeatableVersions,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
 		migrationLockTimeout: opts.MigrationLockTimeout,
@@ -127,9 +154,10 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	}
 
 	var assumedAppliedVersions []int64
+	var assumedAppliedKeys []string
 	if opts.BaselineVersion > 0 {
 		if opts.DryRun {
-			assumedAppliedVersions, err = applyBaselineVersions(mig, opts.BaselineVersion)
+			assumedAppliedVersions, assumedAppliedKeys, err = applyBaselineVersions(mig, opts.BaselineVersion)
 			if err != nil {
 				return ApplyPlan{}, err
 			}
@@ -138,12 +166,20 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		}
 	}
 
-	status, err := mig.GetMigrationStatus(ctx)
+	snapshot, err := mig.GetMigrationStatusSnapshot(ctx)
 	if err != nil {
 		return ApplyPlan{}, fmt.Errorf("error getting migration status: %w", err)
 	}
+	status := snapshot.Status
 	plannedCurrentVersion := statusCurrentAfterAssumedApplied(status.CurrentVersion, assumedAppliedVersions)
-	plannedCurrentKey := statusCurrentKeyAfterAssumedApplied(status.CurrentVersionKey, status.CurrentVersion, plannedCurrentVersion)
+	plannedCurrentKey, plannedCurrentKeySet := statusCurrentKeyAfterAssumedApplied(
+		status.CurrentVersionKey,
+		status.CurrentVersionKeySet,
+		status.CurrentVersion,
+		plannedCurrentVersion,
+		assumedAppliedVersions,
+		assumedAppliedKeys,
+	)
 	pending := status.PendingMigrations
 	pendingKeys := status.PendingMigrationKeys
 	if len(assumedAppliedVersions) > 0 {
@@ -155,17 +191,21 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	}
 
 	return ApplyPlan{
-		Status:                 status,
-		Migrations:             mig.MigrationProvider().Migrations(),
-		SelectedVersions:       selectedApplyVersions(pending, opts.Amount, opts.ToVersion),
-		SelectedKeys:           selectedApplyVersionKeys(pending, pendingKeys, opts.Amount, opts.ToVersion),
-		CurrentVersion:         plannedCurrentVersion,
-		CurrentKey:             plannedCurrentKey,
-		DryRun:                 opts.DryRun,
-		StartedAt:              startedAt,
-		mig:                    mig,
-		opts:                   opts,
-		assumedAppliedVersions: assumedAppliedVersions,
+		Status:                   status,
+		Revisions:                snapshot.Revisions,
+		Migrations:               mig.MigrationProvider().Migrations(),
+		SelectedVersions:         selectedApplyVersions(pending, opts.Amount, opts.ToVersion),
+		SelectedKeys:             selectedApplyVersionKeys(pending, pendingKeys, opts.Amount, opts.ToVersion),
+		CurrentVersion:           plannedCurrentVersion,
+		CurrentKey:               plannedCurrentKey,
+		CurrentKeySet:            plannedCurrentKeySet,
+		RevisionsTableIdentifier: mig.MigrationsTableIdentifier(),
+		DryRun:                   opts.DryRun,
+		StartedAt:                startedAt,
+		mig:                      mig,
+		opts:                     opts,
+		assumedAppliedVersions:   assumedAppliedVersions,
+		assumedAppliedKeys:       assumedAppliedKeys,
 	}, nil
 }
 
@@ -247,23 +287,26 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		SelectedKeys:     p.SelectedKeys,
 		CurrentVersion:   p.CurrentVersion,
 		CurrentKey:       p.CurrentKey,
+		CurrentKeySet:    p.CurrentKeySet,
 		DryRun:           p.DryRun,
 		StartedAt:        p.StartedAt,
 	}
 	executionStarted := false
 	lockedPlanObserved := false
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		Amount:                   p.opts.Amount,
-		TargetVersion:            p.opts.ToVersion,
-		AllowDirty:               p.opts.AllowDirty,
-		DiscardRolledBackFailure: p.opts.DiscardRolledBackFailure,
-		AssumedAppliedVersions:   p.assumedAppliedVersions,
+		Amount:                    p.opts.Amount,
+		TargetVersion:             p.opts.ToVersion,
+		AllowDirty:                p.opts.AllowDirty,
+		DiscardRolledBackFailure:  p.opts.DiscardRolledBackFailure,
+		AssumedAppliedVersions:    p.assumedAppliedVersions,
+		AssumedAppliedVersionKeys: p.assumedAppliedKeys,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			lockedPlanObserved = true
 			result.SelectedVersions = slices.Clone(plan.Versions)
 			result.SelectedKeys = slices.Clone(plan.VersionKeys)
 			result.CurrentVersion = plan.CurrentVersion
 			result.CurrentKey = plan.CurrentVersionKey
+			result.CurrentKeySet = plan.CurrentVersionKeySet
 		},
 		Preflight: func(ctx context.Context, plan migrator.MigrationPlan) error {
 			if err := runApplyPreflight(ctx, hook, plan); err != nil {
@@ -274,6 +317,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		},
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			result.ChecksDeferred = versions
+			result.ChecksDeferredKeys = revisionKeysForVersions(p.Migrations, versions)
 		},
 	})
 	result.EndedAt = time.Now()
@@ -296,6 +340,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		result.FinalStatus = finalStatus
 		result.CurrentVersion = finalStatus.CurrentVersion
 		result.CurrentKey = finalStatus.CurrentVersionKey
+		result.CurrentKeySet = finalStatus.CurrentVersionKeySet
 		if !lockedPlanObserved {
 			result.SelectedVersions = nil
 			result.SelectedKeys = nil
@@ -403,6 +448,9 @@ type applyMigratorOptions struct {
 	execOrder            migrator.ExecOrder
 	outOfOrderExempt     []int64
 	sourceVersions       map[int64]string
+	revisionVersions     map[int64]string
+	revisionTypes        map[int64]migrator.AtlasRevisionType
+	repeatableVersions   []int64
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
 	migrationLockTimeout time.Duration
@@ -420,6 +468,9 @@ func newApplyMigrator(
 		conn,
 		fsys,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(opts.revisionVersions),
+		migrator.WithAtlasRevisionTypes(opts.revisionTypes),
+		migrator.WithAtlasRepeatableVersions(opts.repeatableVersions),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error registering migrations: %w", err)
@@ -440,21 +491,23 @@ func newApplyMigrator(
 	return mig, nil
 }
 
-func applyBaselineVersions(mig *migrator.Migrator, baselineVersion int64) ([]int64, error) {
+func applyBaselineVersions(mig *migrator.Migrator, baselineVersion int64) ([]int64, []string, error) {
 	versions := make([]int64, 0)
+	keys := make([]string, 0)
 	found := false
 	for _, migration := range mig.MigrationProvider().Migrations() {
 		if migration.Version <= baselineVersion {
 			versions = append(versions, migration.Version)
+			keys = append(keys, migration.RevisionVersion())
 		}
 		if migration.Version == baselineVersion {
 			found = true
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("baseline version %q not found", strconv.FormatInt(baselineVersion, 10))
+		return nil, nil, fmt.Errorf("baseline version %q not found", strconv.FormatInt(baselineVersion, 10))
 	}
-	return versions, nil
+	return versions, keys, nil
 }
 
 func pendingAfterAssumedApplied(pending []int64, keys []string, assumedApplied []int64) ([]int64, []string) {
@@ -510,7 +563,7 @@ func selectedApplyVersionKeys(pending []int64, keys []string, amount uint64, toV
 }
 
 func applyVersionKeyAt(keys []string, versions []int64, index int) string {
-	if index < len(keys) && keys[index] != "" {
+	if index < len(keys) {
 		return keys[index]
 	}
 	return strconv.FormatInt(versions[index], 10)
@@ -525,9 +578,41 @@ func statusCurrentAfterAssumedApplied(current int64, assumedApplied []int64) int
 	return current
 }
 
-func statusCurrentKeyAfterAssumedApplied(currentKey string, current int64, assumedCurrent int64) string {
+func statusCurrentKeyAfterAssumedApplied(
+	currentKey string,
+	currentKeySet bool,
+	current int64,
+	assumedCurrent int64,
+	assumedVersions []int64,
+	assumedKeys []string,
+) (string, bool) {
 	if assumedCurrent > current {
-		return strconv.FormatInt(assumedCurrent, 10)
+		return revisionKeyForVersion(assumedVersions, assumedKeys, assumedCurrent), true
 	}
-	return currentKey
+	return currentKey, currentKeySet
+}
+
+func revisionKeysForVersions(migrations []*migrator.Migration, versions []int64) []string {
+	keysByVersion := make(map[int64]string, len(migrations))
+	for _, migration := range migrations {
+		keysByVersion[migration.Version] = migration.RevisionVersion()
+	}
+	keys := make([]string, len(versions))
+	for index, version := range versions {
+		key, ok := keysByVersion[version]
+		if !ok {
+			key = strconv.FormatInt(version, 10)
+		}
+		keys[index] = key
+	}
+	return keys
+}
+
+func revisionKeyForVersion(versions []int64, keys []string, target int64) string {
+	for index, version := range versions {
+		if version == target {
+			return applyVersionKeyAt(keys, versions, index)
+		}
+	}
+	return strconv.FormatInt(target, 10)
 }

@@ -194,14 +194,27 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 func TestSimulateOnDev_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("docker dev URL rejected", func(c *qt.C) {
+	// The rehearsal used to refuse every docker:// dev URL here. It now
+	// provisions one (stokaro/ptah#844), so the row asserts that the value
+	// reached the provisioning layer.
+	//
+	// Reaching it at all is the substance of this row. The two alias checks in
+	// front -- is the dev database the target, is it the desired state -- answer
+	// a docker URL `unsupported database URL dialect`, so before they learned to
+	// skip a URL naming a container that does not exist yet, every docker dev
+	// database on this verb was refused with a sentence about a dialect the
+	// operator never chose.
+	//
+	// `docker://sqlite/3/dev` starts nothing: measured, the pinned community
+	// binary v1.3.0 answers `unsupported docker image "sqlite"` and exits 1.
+	c.Run("docker dev URL reaches the provisioner", func(c *qt.C) {
 		dir := c.TB.TempDir()
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 
 		err := plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 			DevURL: "docker://sqlite/3/dev",
 		})
-		c.Assert(err, qt.ErrorMatches, `docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema apply simulation`)
+		c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	})
 
 	c.Run("dev URL dialect mismatch rejected before connecting", func(c *qt.C) {

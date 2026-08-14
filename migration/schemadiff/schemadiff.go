@@ -136,6 +136,15 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	); err != nil {
 		return nil, nil, err
 	}
+	if err := compare.ValidateMySQLFunctionDefinerReplacements(
+		generated,
+		database,
+		diff,
+		info.Dialect,
+		semantics,
+	); err != nil {
+		return nil, nil, err
+	}
 	return diff, undecided, nil
 }
 

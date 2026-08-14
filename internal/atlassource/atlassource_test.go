@@ -430,6 +430,37 @@ func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// TestSetEnsureDevIsolation_SkipsADockerDevURL pins that a dev database this
+// build will provision is not asked whether it aliases the desired state.
+//
+// A `docker://` URL names a container that does not exist yet, so it cannot BE
+// the `--to` database. Asking anyway is not merely pointless: measured on
+// 2026-08-13, `ptah-compat migrate diff --to postgres://... --dev-url
+// docker://postgres/16/dev` exited 1 with `compare --to database identity with
+// --dev-url: unsupported database URL dialect` and never reached the
+// provisioner, where the pinned community binary v1.3.0 exits 0 on the same
+// argv.
+//
+// Teaching [atlasurl.MayAddressSameDatabase] to parse docker URLs instead would
+// be worse than the bug. It fails CLOSED — see
+// TestSetEnsureDevIsolation_RejectsPotentialHostAlias, where two different
+// hosts naming the same database are refused — so a docker URL carrying no
+// readable database identity would come back "may be the same" and refuse every
+// legitimate run.
+func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(set.EnsureDevIsolation("docker://postgres/16/dev"), qt.IsNil)
+
+	// The skip is scoped to the scheme, not to "anything unparseable": a dev URL
+	// whose database name cannot be read is still refused, because that is the
+	// fail-closed case the check exists for.
+	c.Assert(set.EnsureDevIsolation("postgres://localhost/desired"), qt.ErrorMatches,
+		`--to database must differ from --dev-url because the dev database is reset during planning`)
+}
+
 func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "schema.sql")

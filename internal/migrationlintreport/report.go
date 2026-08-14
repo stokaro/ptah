@@ -88,7 +88,10 @@ type Options struct {
 	FailOn     string
 	Latest     uint
 	Positional []string
-	Changed    ChangedOptions
+	// RevisionVersions maps converted execution-order keys to exact Atlas
+	// identities for replay diagnostics. Native callers leave it nil.
+	RevisionVersions map[int64]string
+	Changed          ChangedOptions
 	// Compatibility selects native or command-surface-specific lint semantics.
 	Compatibility lint.CompatibilityProfile
 	// CaptureSchema asks the replay to also read the dev database before the
@@ -435,6 +438,7 @@ func lintDirectory(
 		DevURL:            opts.DevURL,
 		FS:                analysis.SnapshotFS(),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		RevisionVersions:  opts.RevisionVersions,
 		ObserveVersion:    replayVersionObserver(baseline, capture),
 		ObserveReplayed:   capture.replayedObserver(ctx),
 	}); err != nil {

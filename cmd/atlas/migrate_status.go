@@ -190,6 +190,14 @@ func runAtlasMigrateStatus(
 	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	tokens, err := captured.versionTokens()
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
+	sourceVersions, err := captured.sourceVersions()
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
+	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
@@ -199,13 +207,14 @@ func runAtlasMigrateStatus(
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.Status(cmd.Context(), conn, atlasmigrate.StatusOptions{
-		Dir:             dir,
-		FS:              migrationFS,
-		AtlasEnv:        opts.atlasEnv,
-		RevisionsSchema: opts.revisionsSchema,
+		Dir:              dir,
+		FS:               migrationFS,
+		AtlasEnv:         opts.atlasEnv,
+		RevisionsSchema:  opts.revisionsSchema,
+		RevisionVersions: sourceVersions,
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
+		return cmdutil.Fail(cmd, remapAtlasExactIdentityError(err, sourceVersions))
 	}
 	reportOpts := atlasreport.MigrateStatusOptions{
 		Driver:           conn.Info().Dialect,
@@ -214,6 +223,7 @@ func runAtlasMigrateStatus(
 		FS:               migrationFS,
 		Status:           result.Status,
 		AppliedRevisions: result.AppliedRevisions,
+		RevisionVersions: tokens.revisionVersions(),
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, reportOpts); err != nil {

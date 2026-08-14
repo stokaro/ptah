@@ -43,13 +43,48 @@ only the latest checkpoint plus post-checkpoint migrations, and a database
 that already applied pre-checkpoint history silently skips the checkpoint,
 matching measured Atlas behavior.
 
-**Fails before the target database is opened:** unknown formats, Flyway
-repeatable (`R__`) migrations, goose/dbmate files missing their up directive,
-colliding versions, an Atlas directory that fails `atlas.sum` verification, and
+**Fails before the target database is opened:** unknown formats, two Flyway
+files with the same exact revision identity, goose/dbmate files missing their
+up directive, colliding versions, an Atlas directory that fails `atlas.sum` verification, and
 an Atlas directory that carries no `atlas.sum` at all while holding at least one
 top-level `.sql` file — both checksum refusals are byte-identical to
 `ptah-compat migrate validate` and nothing is applied. A directory with no
 top-level `.sql` file reports `No migration files to execute` and exits `0`.
+
+Direct Flyway apply records each source version token byte for byte, including
+dotted, dot-prefixed, padded, nonnumeric, baseline, token-ending-`R`, and empty
+repeatable tokens. `--baseline` and the extended `--to-version` address those
+exact tokens; the numeric projection controls execution order only. One
+repeatable migration can own the empty token and remains settled after its body
+is edited and rehashed. Two repeatables collide and are refused before the
+target opens. Applied opaque history remains readable after its source file is
+removed, without recreating pending work; its exact token still protects
+source order. The known `.atlas_cloud_identifier` bookkeeping row remains
+metadata rather than becoming a migration.
+
+In `--format '{{ json . }}'` output, an exact empty current or target identity
+is emitted as an explicit empty `Current` or `Target` member. Pending and
+applied file records likewise keep an explicit empty `Version`. A genuinely
+absent current or target state omits that member.
+
+The revision table must distinguish every exact source token under its
+configured version collation. Ptah-created MySQL and MariaDB tables use
+`utf8mb4_bin`, and SQL Server tables use `Latin1_General_100_BIN2`. An existing
+table whose collation aliases two covered tokens, such as `A` and `a`, is
+refused before migration SQL runs rather than applying one body and failing on
+the second primary-key write.
+
+Atlas CE accepts a Ptah-written exact-token history. Ptah refuses a CE-written
+row when its different per-revision checksum encoding cannot be verified. A
+same-token `V2`/`B2` row is also refused when CE's ordinary applied type cannot
+prove which byte-identical source ran; Ptah's own executed-baseline marker still
+renders as `applied` and does not create `--baseline` boundary semantics. A
+successful explicit `--baseline 2` that selects `B2` writes the ordinary
+baseline type plus a durable source-baseline marker, settling that exact
+identity on this and later runs. Baselining `V2` does not authorize a `B2`
+introduced later with the same token. A Ptah `migrate set` of an executed
+baseline renders as `manually set` while retaining a separate settled-baseline
+marker; CE can still read the row.
 
 The scan is top-level-only, matching what `atlas.sum` covers and what Atlas CE
 reads. A `.sql` file in a subdirectory, or a top-level `.SQL`, is not a
@@ -127,6 +162,14 @@ Atlas-format migration directories by default. Supports `--dir-format atlas`,
 `--revisions-schema`, and Atlas Go-template `--format` output over `.Env`,
 `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, `.Status`, and — on
 a half-applied migration — `.Count`, `.Total`, `.SQL`, and `.Error`.
+
+For a direct Flyway directory, available, applied, pending, current, and next
+versions use the exact source tokens. Numeric keys remain internal ordering
+values and never replace those identities in the report. Current follows the
+pinned binary's textual maximum over applied source tokens; numeric high-water
+continues to govern execution internally. In JSON templates, a present empty
+current identity and each empty file or revision identity remain explicit
+empty members rather than disappearing through `omitempty`.
 
 The default (no `--format`) report mirrors the Atlas shape, because this is the
 verb pipelines parse:
@@ -287,6 +330,12 @@ Atlas one: on a `golang-migrate` directory, editing the covered `*.up.sql`
 fails the lint and editing the uncovered `*.down.sql` does not, and a Flyway
 `sub/V2__nested.sql` is covered.
 
+Flyway lint reports exact source tokens in its migration detail lines. A single
+repeatable uses a blank version detail and the generic analysis header, matching
+the pinned community binary. If replay of an exact empty identity fails, the
+error names it as `""` rather than leaving an anonymous gap in the diagnostic;
+numeric and nonempty identities retain their ordinary spelling.
+
 | Flag | Behavior |
 | --- | --- |
 | `--latest N` | Positive N selects the latest revision keys and remains exclusive with `--git-base`. Zero disables latest selection and configured `lint.latest`; explicit or configured Git may still select. With neither, the command returns `--latest or --git-base is required`. |
@@ -301,7 +350,8 @@ selector may come from the selected `atlas.hcl` env instead of the command line.
 `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` runs the analysis with no dev database, which
 Ptah can do and that binary cannot.
 
-Docker dev databases and web reports remain explicit gaps.
+A `docker://` dev database is provisioned: the container is started, used and
+removed by the command. Atlas web reports remain an explicit gap.
 Native twin: [`ptah migrations lint`](../native-commands/).
 
 ### `ptah-compat migrate new`
@@ -369,7 +419,27 @@ Moves Atlas revision history to the positional version without executing
 migration SQL, with Atlas revision-table metadata and Atlas-format migration
 directories by default. With `--env`, reads `env.url`, `migration.dir`, and
 `migration.revisions_schema` from `atlas.hcl`; explicit `--dir`, `--url`, and
-`--revisions-schema` flags keep CLI precedence. Native twin:
+`--revisions-schema` flags keep CLI precedence. Flyway operands match exact
+source tokens byte for byte, so `01` and `1` name different migrations. An
+explicit empty positional operand selects a single repeatable's empty token.
+The success summary renders that identity as `""`, both on the current-version
+line and beside the changed revision, so the present token is not an anonymous
+gap in operator output.
+
+When the directory no longer owns an applied identity, metadata moves only if
+the stored row preserves enough Flyway role information to order it against the
+target. A known retired baseline stays before versioned migrations regardless
+of its token. A known retired versioned row uses numeric component order
+against a versioned target, but uses Flyway's raw-token squash cut against a
+surviving baseline target: for example, B2 keeps retired V10 because `"10"`
+sorts before `"2"`. A single repeatable target follows retired versioned
+history even though its exact identity is empty. This is deliberately safer
+than Atlas CE v1.3.0: CE exits `0` but deletes the retired versioned row,
+while Ptah exits `0` and keeps both revision identities. Rows that do not
+distinguish those roles, including ordinary Atlas CE applied rows, refuse
+before any revision row changes instead of guessing from token bytes.
+
+Native twin:
 [`ptah migrations set`](../native-commands/).
 
 ### `ptah-compat migrate down`
@@ -488,7 +558,8 @@ Invalid values, unsupported dialects, multi-schema plans, and statement kinds
 Ptah cannot re-qualify yet (for example enum types) fail explicitly before any
 file or checksum is written.
 
-Docker dev databases remain an explicit gap.
+A `docker://` dev database is provisioned: the container is started, used and
+removed by the command.
 Native twin: [`ptah migrations generate`](../native-commands/).
 
 ### `ptah-compat migrate import`
