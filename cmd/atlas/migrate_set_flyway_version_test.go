@@ -462,6 +462,74 @@ func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
 	}
 }
 
+// TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken proves that baseline
+// rotation uses the same raw-token order as Flyway's baseline selection. A
+// retired B2 remains when B3 is selected, while a retired B20 is removed when
+// B10 is selected. Set changes metadata only and executes neither baseline.
+func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		retiredFile string
+		targetFile  string
+		target      string
+		wantStdout  string
+		wantRows    []setFlywayRow
+	}{
+		{
+			name:        "retired B2 remains below target B3",
+			retiredFile: "B2__two.sql",
+			targetFile:  "B3__three.sql",
+			target:      "3",
+			wantStdout:  "Current version is 3 (1 set):\n\n  + 3 (three)\n\n",
+			wantRows: []setFlywayRow{
+				{Version: "2", Description: "two"},
+				{Version: "3", Description: "three"},
+			},
+		},
+		{
+			name:        "retired B20 is removed above target B10",
+			retiredFile: "B20__twenty.sql",
+			targetFile:  "B10__ten.sql",
+			target:      "10",
+			wantStdout: "Current version is 10 (1 set, 1 removed):\n\n" +
+				"  + 10 (ten)\n  - 20 (twenty)\n\n",
+			wantRows: []setFlywayRow{{Version: "10", Description: "ten"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+				name: test.retiredFile,
+				body: "CREATE TABLE retired_baseline (id INTEGER PRIMARY KEY);\n",
+			}})
+			dbPath := filepath.Join(filepath.Dir(dir), "retired-baseline-order.db")
+			_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
+			writeAtlasApplyProjectMigration(c, dir, test.targetFile,
+				"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
+			hashConvertedApplyDir(c, dir, "flyway")
+
+			stdout, stderr, err := runCompatExit(
+				"migrate", "set", test.target,
+				"--dir", "file://"+dir+"?format=flyway",
+				"--url", "sqlite://"+dbPath,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+			c.Assert(stdout, qt.Equals, test.wantStdout)
+			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
+			c.Assert(sqliteTableExists(c, dbPath, "retired_baseline"), qt.IsTrue)
+			c.Assert(sqliteTableExists(c, dbPath, "target_baseline"), qt.IsFalse)
+		})
+	}
+}
+
 // TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes
 // proves that metadata movement uses the same raw-token cut as Flyway baseline
 // selection. Although numeric output order puts V10 after V2, a B2 baseline
