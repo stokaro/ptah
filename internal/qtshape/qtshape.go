@@ -635,7 +635,7 @@ func (a *analysis) foreignCheckerFindings(lit *ast.FuncLit, closure span) []Find
 // only to a declaration already in scope where it is read.
 func (a *analysis) ownedTB(expr ast.Expr, closure span) bool {
 	for {
-		ident, ok := ast.Unparen(expr).(*ast.Ident)
+		ident, ok := ast.Unparen(a.tbConversion(expr)).(*ast.Ident)
 		if !ok {
 			return false
 		}
@@ -650,6 +650,28 @@ func (a *analysis) ownedTB(expr ast.Expr, closure span) bool {
 			return false
 		}
 		expr = decl.value
+	}
+}
+
+// tbConversion sees through a conversion to a testing.TB type, returning the
+// value being converted.
+//
+// `tb := testing.TB(t)` changes the static type of a value without changing
+// which test it belongs to, so the chain above must not stop at it: the
+// converted `t` is still the parameter the closure was handed, and refusing
+// that spelling would refuse conforming code. It is not an escape hatch either,
+// because the walk continues from the operand: `testing.TB(held.tb)` reaches
+// the same field it always did.
+//
+// Only a conversion is unwrapped, never a call. `newTB(t)` returns whatever its
+// body chose to return, which this package cannot see and will not guess at.
+func (a *analysis) tbConversion(expr ast.Expr) ast.Expr {
+	for {
+		call, ok := ast.Unparen(expr).(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 || !a.isTBType(call.Fun) {
+			return expr
+		}
+		expr = call.Args[0]
 	}
 }
 

@@ -17,6 +17,8 @@ type fixtureTB struct {
 	tb testing.TB
 }
 
+func newTB(tb testing.TB) testing.TB { return tb }
+
 func TestCheckerFromALocalCopyOfAFieldTB(t *testing.T) {
 	held := fixtureTB{tb: t}
 
@@ -38,9 +40,10 @@ func TestCheckerFromALocalCopyTwoStepsOn(t *testing.T) {
 	})
 }
 
-// The four local spellings that are the TB this closure was handed, and must
+// The five local spellings that are the TB this closure was handed, and must
 // stay silent: the parameter itself, a copy of it, a var with the type written
-// out, and the parameter of a helper closure written inside the subtest.
+// out, a conversion of it, and the parameter of a helper closure written inside
+// the subtest.
 func TestConformingLocalTBSources(t *testing.T) {
 	t.Run("the closure's own parameter", func(t *testing.T) {
 		c := qt.New(t)
@@ -59,11 +62,41 @@ func TestConformingLocalTBSources(t *testing.T) {
 		c.Assert(5, qt.Equals, 5)
 	})
 
+	t.Run("a conversion of the closure's own parameter", func(t *testing.T) {
+		tb := testing.TB(t)
+		c := qt.New(tb)
+		c.Assert(6, qt.Equals, 6)
+	})
+
 	t.Run("a helper closure builds from the TB it was handed", func(t *testing.T) {
 		nested := func(tb testing.TB) {
 			inner := qt.New(tb)
-			inner.Assert(6, qt.Equals, 6)
+			inner.Assert(7, qt.Equals, 7)
 		}
 		nested(t)
+	})
+}
+
+// A conversion changes the static type of a value, never which test it belongs
+// to, so seeing through it must not become a way out of the rule either.
+func TestCheckerFromAConvertedFieldTB(t *testing.T) {
+	held := fixtureTB{tb: t}
+
+	t.Run("the conversion does not change whose TB it is", func(t *testing.T) {
+		tb := testing.TB(held.tb)
+		c := qt.New(tb)
+		c.Assert(8, qt.Equals, 8)
+	})
+}
+
+// A call is not a conversion. What newTB returns is decided by a body this
+// package does not read, so the argument is reported rather than guessed at,
+// and the message says which line to write instead. No call site in this
+// repository builds a subtest checker this way.
+func TestCheckerFromACallResult(t *testing.T) {
+	t.Run("a TB a call returned is not evidently the handed one", func(t *testing.T) {
+		tb := newTB(t)
+		c := qt.New(tb)
+		c.Assert(9, qt.Equals, 9)
 	})
 }

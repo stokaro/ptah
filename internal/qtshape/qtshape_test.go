@@ -232,8 +232,10 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 			name:    "a TB copied into a local name is still not the one the closure was handed",
 			fixture: "localaliasedtb.go.txt",
 			want: []wantFinding{
-				{line: 25, rule: qtshape.RuleBorrowedChecker},
-				{line: 36, rule: qtshape.RuleBorrowedChecker},
+				{line: 27, rule: qtshape.RuleBorrowedChecker},
+				{line: 38, rule: qtshape.RuleBorrowedChecker},
+				{line: 87, rule: qtshape.RuleBorrowedChecker},
+				{line: 99, rule: qtshape.RuleBorrowedChecker},
 			},
 		},
 	}
@@ -433,10 +435,15 @@ func TestScanFileNamesTheLocalTBItRejected(t *testing.T) {
 
 	got, err := qtshape.ScanFile(path, src)
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.HasLen, 2, qt.Commentf("findings: %v", got))
+	c.Assert(got, qt.HasLen, 4, qt.Commentf("findings: %v", got))
 
 	c.Check(got[0].Message, qt.Contains, "builds its checker from parent")
 	c.Check(got[1].Message, qt.Contains, "builds its checker from second")
+	// Seeing through testing.TB(x), so that a conversion of the closure's own
+	// parameter is accepted, must not also accept a conversion of the parent's.
+	c.Check(got[2].Message, qt.Contains, "builds its checker from tb")
+	// And a call is not a conversion.
+	c.Check(got[3].Message, qt.Contains, "builds its checker from tb")
 }
 
 func TestScanFilesRefusesAnEmptySelection(t *testing.T) {
