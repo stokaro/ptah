@@ -597,8 +597,17 @@ func TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication(t *te
 // pathname later resolves to -- that is the row above. It cannot decide that the
 // object should never have been opened. Here `nest` is a symlink out of the
 // allowed root before the plan binds anything, so the migration directory
-// genuinely lives outside the boundary the caller configured, and the only step
-// that can say so is the rooted open.
+// genuinely lives outside the boundary the caller configured, and the bind has
+// to refuse it.
+//
+// Which step refuses depends on the toolchain, so the assertion below pins the
+// refusal rather than its wording. Through Go 1.26.5 os.Root.MkdirAll answered
+// fs.ErrExist for an existing escaping component, rootMkdirAll tolerated that,
+// and the rooted open was left to say "outside allowed root". Go 1.26.6 makes
+// MkdirAll stat the component it found, so the escape surfaces at the create as
+// "path escapes from parent" instead. Both are the same fail-closed answer, and
+// the invariant that matters -- nothing was written outside -- is asserted
+// separately and is unchanged.
 //
 // //go:build unix because the escape is a symlink.
 func TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoot(t *testing.T) {
@@ -620,7 +629,7 @@ func TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoo
 		}},
 	)
 
-	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.ErrorMatches, `.*(outside allowed root|path escapes from parent).*`)
 	c.Assert(plan, qt.IsNil)
 	c.Assert(generatorDirNames(c, filepath.Join(outside, "migrations")), qt.HasLen, 0)
 }
