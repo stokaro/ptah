@@ -334,13 +334,42 @@ func (k atlasLeafValueKind) accepts(value cty.Value) bool {
 // An object is refused even when empty -- `include = {}` is exit 1 on that
 // binary -- which is why the type test is written as an allow-list rather than
 // as [cty.Value.CanIterateElements], which an object also satisfies.
+//
+// A null ELEMENT is refused. It has to be tested for separately, because a null
+// carries the type it was declared with: the element of a `list(string)`
+// variable holding ["public.t1", null] answers cty.String to Type() and so
+// walked through the gate below, while the same list written literally as
+// `["public.t1", null]` carries cty.DynamicPseudoType and did not. Measured on
+// the pinned binary, `schema inspect --env local`, exit codes read directly
+// from unpiped invocations, with `variable "tables" { type = list(string),
+// default = ["public.t1", null] }`:
+//
+//	env { include = var.tables }                    -> 1
+//	env { migration { exclude = var.tables } }      -> 1
+//	env { include = toset(["public.t1", var.s]) }   -> 1
+//
+// each with `cannot read attribute … as string list: null value is not
+// allowed`, where var.s is a null of string type.
+//
+// All three were exit 0 on Ptah before this test, which is a rule (a) hole: the
+// set spelling reaches the same place, so the test is on the element rather
+// than on the collection kind.
+//
+// The null test on the collection itself is unreachable from
+// [checkAtlasDecodedLeafAttribute], which returns on a null before asking --
+// null IS accepted for every kind in the table. It is here because
+// [cty.Value.ElementIterator] panics on a null collection and this function
+// must not depend on its caller to stay safe.
 func atlasStringListValue(value cty.Value) bool {
 	valueType := value.Type()
 	if !valueType.IsTupleType() && !valueType.IsListType() && !valueType.IsSetType() {
 		return false
 	}
+	if value.IsNull() {
+		return false
+	}
 	for it := value.ElementIterator(); it.Next(); {
-		if _, item := it.Element(); item.Type() != cty.String {
+		if _, item := it.Element(); item.IsNull() || item.Type() != cty.String {
 			return false
 		}
 	}

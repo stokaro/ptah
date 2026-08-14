@@ -415,6 +415,23 @@ error: atlas.hcl "path" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hc
 An attribute the data source does not have keeps the construct wording:
 `unsupported atlas.hcl construct "vars"`.
 
+A `null` reaching a name Ptah acts on is refused, and the refusal names the type
+the setting wants:
+
+```text
+# variable "s" { type = string, default = null }, then dev = var.s
+error: atlas.hcl "dev" at atlas.hcl:8 must be a string
+```
+
+The declared type of the variable makes no difference: `dev = null` and
+`dev = var.s` for a null `string` variable produce the same message, as do the
+`bool`, `number` and `list(string)` spellings for the settings that take those.
+This is stricter than the community binary, which reads a null as an unset field
+and exits 0; it is the same standing divergence as the label-arity and duplicate
+refusals, and it can only reject a file that binary reads, never accept one it
+rejects. Names Ptah merely reports as ignored are the other case and do accept
+`null` — see [Structural contract and ignored names](#structural-contract-and-ignored-names).
+
 ### The file() and fileset() sandbox
 
 Both functions are confined to the directory holding `atlas.hcl`. An absolute
@@ -766,10 +783,14 @@ the community binary does not decode inside `skip`, so any value is accepted for
 them.
 
 A list-valued name takes a tuple, a list or a set of strings, so
-`include = toset(["a", "b"])` is accepted. One bare string is not a one-element
-list here, and an object is refused even when it is empty — `include = {}` is
-an error where `repo = {}` is not, which is the shape that separates a
-list-valued name from a struct-valued one.
+`include = toset(["a", "b"])` is accepted. A null *element* inside one is not,
+which is the one place `null` stops being accepted here — the community binary
+answers `null value is not allowed` for `["public.t1", null]`, and it makes no
+difference whether the list was written literally or came from a
+`variable "tables" { type = list(string) }`. One bare string is not a
+one-element list here, and an object is refused even when it is empty —
+`include = {}` is an error where `repo = {}` is not, which is the shape that
+separates a list-valued name from a struct-valued one.
 
 The top-level `env` row is the same distinction taken one step further. Atlas CE
 fills that field from `env` blocks and decodes no value spelling for it at all,

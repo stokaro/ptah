@@ -2284,10 +2284,54 @@ func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
 	return false
 }
 
-func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+// decodedAttrValue evaluates attr for a name Ptah DECODES and refuses the two
+// shapes no such name takes: an expression that fails to evaluate, and a null.
+//
+// Null is refused here rather than in each type gate because a cty type does
+// not separate a value from the absence of one. `cty.NullVal(cty.String)` --
+// which is what a typed variable produces, as in
+// `variable "s" { type = string, default = null }` followed by `dev = var.s` --
+// answers cty.String to Type(), so it walks straight through a
+// `value.Type() != cty.String` gate and panics in AsString(). A bare `null`
+// literal carries cty.DynamicPseudoType instead and the same gate refuses it.
+// The two spellings of one value therefore took two different paths: a bare
+// `null` a location-aware refusal at exit 1, a typed null an internal error at
+// exit 2. `want` is the same phrase the type gate would have used, so the
+// message does not depend on which spelling arrived.
+//
+// Refusing is what the eight decoded names measured for this all already do for
+// a bare `null` -- `dev`, `env.migration.dir`, `env.migration.tx_mode`,
+// `env.migration.repo.name`, `env.schema.repo.name`, `env.schema.mode.tables`,
+// `env.exclude` and `lint.latest` are each exit 1 with "must be a <type>" -- so
+// on every string-valued and number-valued name this replaces an exit-2 crash
+// with the exit 1 the bare spelling already produced. The BOOL-valued names
+// move from 0 to 1, because a typed null never crashed there: cty.Value.True()
+// answers false for one, so `mode { tables = var.b }` and
+// `lint { destructive { error = var.b } }` used to read a null as "off" and
+// disable table inspection, or destructive-change linting, in silence.
+//
+// Names Ptah only TOLERATES are unaffected: they are answered by
+// [checkAtlasDecodedLeafAttribute], which returns before its type gate on a
+// null because the pinned community binary accepts null for every one of them.
+func (p atlasParser) decodedAttrValue(
+	name string,
+	attr *hclsyntax.Attribute,
+	want string,
+) (cty.Value, error) {
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return "", p.evaluationFailed(name, attr, diags)
+		return cty.NilVal, p.evaluationFailed(name, attr, diags)
+	}
+	if value.IsNull() {
+		return cty.NilVal, wrongValueType(name, attr, want)
+	}
+	return value, nil
+}
+
+func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+	value, err := p.decodedAttrValue(name, attr, "a string")
+	if err != nil {
+		return "", err
 	}
 	if value.Type() != cty.String {
 		return "", wrongValueType(name, attr, "a string")
@@ -2334,7 +2378,12 @@ func (p atlasParser) sensitiveModeAttr(name string, attr *hclsyntax.Attribute) (
 
 func (p atlasParser) identifierOrStringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if !diags.HasErrors() && value.Type() == cty.String {
+	// !value.IsNull() for the reason given on [atlasParser.decodedAttrValue]:
+	// a typed null answers cty.String to Type() and panics in AsString(). This
+	// arm cannot use that helper, because an evaluation failure is not fatal
+	// here -- a bare identifier such as `sensitive = ALLOW` is an unresolvable
+	// traversal that the fallback below reads as a word.
+	if !diags.HasErrors() && !value.IsNull() && value.Type() == cty.String {
 		return value.AsString(), nil
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
@@ -2354,7 +2403,9 @@ func (p atlasParser) scopedEnumOrStringAttr(
 	allowed ...string,
 ) (string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if !diags.HasErrors() && value.Type() == cty.String {
+	// !value.IsNull() for the same reason as in
+	// [atlasParser.identifierOrStringAttr].
+	if !diags.HasErrors() && !value.IsNull() && value.Type() == cty.String {
 		return value.AsString(), nil
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
@@ -2377,9 +2428,13 @@ func (p atlasParser) configBoolAttr(name string, attr *hclsyntax.Attribute) (Con
 }
 
 func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
-	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() {
-		return false, p.evaluationFailed(name, attr, diags)
+	// A null is refused rather than reaching cty.Value.True(), which does not
+	// panic on one -- it answers false. That is the quiet half of the same
+	// defect: `mode { tables = var.b }` with a null bool used to disable table
+	// inspection instead of saying anything.
+	value, err := p.decodedAttrValue(name, attr, "a bool")
+	if err != nil {
+		return false, err
 	}
 	if value.Type() != cty.Bool {
 		return false, wrongValueType(name, attr, "a bool")
@@ -2392,16 +2447,19 @@ func (p atlasParser) stringOrStringListAttr(name string, attr *hclsyntax.Attribu
 	if diags.HasErrors() {
 		return nil, p.evaluationFailed(name, attr, diags)
 	}
-	if value.Type() == cty.String {
+	// A null reaches [stringListValue], which refuses it as "a list of strings"
+	// -- the phrase a bare `null` already produced here, since the string arm
+	// never took it either.
+	if !value.IsNull() && value.Type() == cty.String {
 		return []string{value.AsString()}, nil
 	}
 	return stringListValue(name, attr, value)
 }
 
 func (p atlasParser) intAttr(name string, attr *hclsyntax.Attribute) (int, error) {
-	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() {
-		return 0, p.evaluationFailed(name, attr, diags)
+	value, err := p.decodedAttrValue(name, attr, "a number")
+	if err != nil {
+		return 0, err
 	}
 	if value.Type() != cty.Number {
 		return 0, wrongValueType(name, attr, "a number")
@@ -2421,16 +2479,31 @@ func (p atlasParser) stringListAttr(name string, attr *hclsyntax.Attribute) ([]s
 	return stringListValue(name, attr, value)
 }
 
+// stringListValue reads a decoded list-of-strings attribute.
+//
+// The two null tests are the collection counterpart of the rule on
+// [atlasParser.decodedAttrValue], and both are load-bearing:
+//
+//   - A null LIST answers true to CanIterateElements, because that answer comes
+//     from the type. LengthInt() on it then panics. A bare `exclude = null`
+//     never got that far, because cty.DynamicPseudoType is neither a tuple nor
+//     a list; `list(string)` holding null does.
+//   - A null ELEMENT answers cty.String to Type(), so it passed the element
+//     gate and panicked in AsString(). The pinned community binary refuses one:
+//     `exclude`, `schemas` and `src` fed a `list(string)` variable holding
+//     ["public.t1", null] each answer exit 1 there,
+//     `cannot read attribute … as string list: null value is not allowed`.
 func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([]string, error) {
 	valueType := value.Type()
-	if !value.CanIterateElements() || (!valueType.IsTupleType() && !valueType.IsListType()) {
+	if value.IsNull() || !value.CanIterateElements() ||
+		(!valueType.IsTupleType() && !valueType.IsListType()) {
 		return nil, wrongValueType(name, attr, "a list of strings")
 	}
 	values := make([]string, 0, value.LengthInt())
 	it := value.ElementIterator()
 	for it.Next() {
 		_, item := it.Element()
-		if item.Type() != cty.String {
+		if item.IsNull() || item.Type() != cty.String {
 			return nil, wrongValueType(name, attr, "a list of strings")
 		}
 		values = append(values, item.AsString())

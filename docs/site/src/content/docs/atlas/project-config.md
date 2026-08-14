@@ -319,6 +319,18 @@ names its own rule rather than blaming the `path` key, which is supported:
 does not have — Atlas's `vars`, for one — is a different failure and keeps the
 construct wording: `unsupported atlas.hcl construct "vars"`.
 
+A `null` reaching a name Ptah acts on is refused, and the refusal names the type
+the setting wants. With `variable "s" { type = string, default = null }`, both
+`dev = null` and `dev = var.s` produce
+`atlas.hcl "dev" at atlas.hcl:8 must be a string`; the declared type of the
+variable makes no difference, and the `bool`, `number` and `list(string)`
+settings behave the same way. This is stricter than the community binary, which
+reads a null as an unset field and exits 0. It is the same standing divergence
+as the label-arity and duplicate refusals, and it can only reject a file that
+binary reads, never accept one it rejects. Names Ptah merely reports as ignored
+are the other case and do accept `null` — see
+[Settings Ptah does not act on are still type-checked](#settings-ptah-does-not-act-on-are-still-type-checked).
+
 ## External schema data source
 
 `data "external_schema"` declares a program whose standard output is the
@@ -603,9 +615,13 @@ This is a value rule too, with the same selection boundary and the same reading
 order as the block rule above, so `drop_column = var.flag` resolves normally.
 
 A list-valued name takes a tuple, a list or a set of strings, so
-`include = toset(["a", "b"])` is accepted. One bare string is not a one-element
-list, and an object is refused even when it is empty — `include = {}` fails
-where `repo = {}` succeeds. That empty object is the shape that separates a
+`include = toset(["a", "b"])` is accepted. A null *element* inside one is not,
+which is the one place `null` stops being accepted here — the community binary
+answers `null value is not allowed` for `["public.t1", null]`, and it makes no
+difference whether the list was written literally or came from a
+`variable "tables" { type = list(string) }`. One bare string is not a
+one-element list, and an object is refused even when it is empty —
+`include = {}` fails where `repo = {}` succeeds. That empty object is the shape that separates a
 list-valued name from a struct-valued one, and the top-level `env` row takes it
 one step further: Atlas CE fills that field from `env` blocks and decodes no
 value spelling for it at all, so `env = {}` is refused as well. The `env` block

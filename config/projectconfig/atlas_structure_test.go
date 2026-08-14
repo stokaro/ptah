@@ -1427,3 +1427,472 @@ env "local" {
 		})
 	}
 }
+
+// TestParseAtlasProjectConfigRefusesTypedNullDecodedValues pins the value shape
+// that used to walk through every type gate in the parser: a null that carries
+// a TYPE.
+//
+// `cty.NullVal(cty.String).Type()` IS cty.String, so a null produced by a typed
+// variable satisfied `value.Type() == cty.String` and then panicked in
+// AsString(); the CLI turned that into `internal error: value is null` at exit
+// 2. A bare `null` literal carries cty.DynamicPseudoType and was refused by the
+// same gate at exit 1, so one value had two outcomes depending on how it was
+// spelled. Every row below is exit 2 before this rule, except the two bool rows
+// -- cty.Value.True() does not panic on a null, it answers false, so those two
+// were exit 0 with the setting silently switched off.
+//
+// The list rows are the other half. A null ELEMENT also carries cty.String, and
+// a null LIST answers true to CanIterateElements because that answer comes from
+// the type. The pinned community binary v1.3.0 refuses a null element --
+// `cannot read attribute … as string list: null value is not allowed`, exit 1
+// -- so `env.include`, `env.migration.exclude`, `env.exclude`, `env.schemas`
+// and `env.src` fed a list holding one were a rule (a) hole or a crash.
+func TestParseAtlasProjectConfigRefusesTypedNullDecodedValues(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name: "env migration repo name given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    repo {
+      name = var.s
+    }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "name" at atlas\.hcl:10 must be a string`,
+		},
+		{
+			name: "env schema repo name given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  schema {
+    repo {
+      name = var.s
+    }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "name" at atlas\.hcl:10 must be a string`,
+		},
+		{
+			name: "env url given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = var.s
+}
+`,
+			wantErr: `atlas\.hcl "url" at atlas\.hcl:7 must be a string`,
+		},
+		{
+			name: "env dev given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  dev = var.s
+}
+`,
+			wantErr: `atlas\.hcl "dev" at atlas\.hcl:8 must be a string`,
+		},
+		{
+			name: "env migration dir given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir = var.s
+  }
+}
+`,
+			wantErr: `atlas\.hcl "dir" at atlas\.hcl:9 must be a string`,
+		},
+		{
+			name: "env migration tx mode given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    tx_mode = var.s
+  }
+}
+`,
+			wantErr: `atlas\.hcl "tx_mode" at atlas\.hcl:9 must be a string`,
+		},
+		{
+			// scopedEnumOrStringAttr keeps its own arm: an evaluation failure is
+			// not fatal there, because a bare identifier is read as a word.
+			name: "env migration format given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    format = var.s
+  }
+}
+`,
+			wantErr: `atlas\.hcl "format" at atlas\.hcl:9 must be one of ` +
+				`atlas, golang-migrate, goose, flyway, liquibase, dbmate`,
+		},
+		{
+			// identifierOrStringAttr, the other arm that tolerates an
+			// evaluation failure.
+			name: "env schema mode sensitive given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  schema {
+    mode {
+      sensitive = var.s
+    }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "sensitive" at atlas\.hcl:10 must be a string or a bare identifier`,
+		},
+		{
+			// Exit 0 before this rule, with table inspection silently off.
+			name: "env schema mode tables given a typed null bool",
+			raw: `variable "b" {
+  type    = bool
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  schema {
+    mode {
+      tables = var.b
+    }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "tables" at atlas\.hcl:10 must be a bool`,
+		},
+		{
+			// Exit 0 before this rule, with destructive-change linting silently
+			// off. It is the second bool arm, and the reason the row above is
+			// not the whole of that half.
+			name: "lint destructive error given a typed null bool",
+			raw: `variable "b" {
+  type    = bool
+  default = null
+}
+
+lint {
+  destructive {
+    error = var.b
+  }
+}
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "error" at atlas\.hcl:8 must be a bool`,
+		},
+		{
+			name: "lint latest given a typed null number",
+			raw: `variable "n" {
+  type    = number
+  default = null
+}
+
+lint {
+  latest = var.n
+}
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "latest" at atlas\.hcl:7 must be a number`,
+		},
+		{
+			// A null LIST, not a null element: CanIterateElements answers true
+			// from the type and LengthInt() then panicked.
+			name: "env exclude given a typed null list",
+			raw: `variable "l" {
+  type    = list(string)
+  default = null
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  exclude = var.l
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			name: "env exclude given a list holding null",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["public.t1", null]
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  exclude = var.tables
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			name: "env schemas given a list holding null",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["main", null]
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  schemas = var.tables
+}
+`,
+			wantErr: `atlas\.hcl "schemas" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			// stringOrStringListAttr has a string arm of its own, which a null
+			// of string type entered before falling through to the list check.
+			name: "env src given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  src = var.s
+}
+`,
+			wantErr: `atlas\.hcl "src" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			// src reaches the list check through stringOrStringListAttr, whose
+			// string arm has to skip a null of its own.
+			name: "env src given a list holding null",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["file://s.hcl", null]
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  src = var.tables
+}
+`,
+			wantErr: `atlas\.hcl "src" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			// The tolerance path, which has its own list check. Exit 0 before
+			// this rule where the pinned binary is exit 1.
+			name: "env include given a list holding null",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["public.t1", null]
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  include = var.tables
+}
+`,
+			wantErr: `atlas\.hcl "include" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			// The same hole reached as a SET rather than a list, which is why
+			// the test is on the element and not on the collection kind.
+			name: "env include given a set holding null",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  include = toset(["public.t1", var.s])
+}
+`,
+			wantErr: `atlas\.hcl "include" at atlas\.hcl:8 must be a list of strings`,
+		},
+		{
+			// The second key of the same kind in the leaf table. A check keyed
+			// on `env.include` alone would leave this one open.
+			name: "env migration exclude given a list holding null",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["public.t1", null]
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    exclude = var.tables
+  }
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:9 must be a list of strings`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestParseAtlasProjectConfigAcceptsTypedNonNullDecodedValues is what keeps the
+// rule above from being "refuse anything that came from a typed variable".
+//
+// The last row is the one that separates a decoded name from a tolerated one:
+// null is accepted for every name in atlasDecodedLeafAttributes, on the pinned
+// community binary v1.3.0 and here, so `env.migration.baseline` given the same
+// typed null that the rows above refuse still parses and is still reported as
+// having no effect.
+func TestParseAtlasProjectConfigAcceptsTypedNonNullDecodedValues(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		raw    string
+		assert func(c *qt.C, cfg projectconfig.Config)
+	}{
+		{
+			name: "env dev given a typed string",
+			raw: `variable "s" {
+  type    = string
+  default = "sqlite://d.db"
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  dev = var.s
+}
+`,
+			assert: func(c *qt.C, cfg projectconfig.Config) {
+				c.Assert(cfg.DevURL, qt.Equals, "sqlite://d.db")
+			},
+		},
+		{
+			name: "env exclude given a typed list of strings",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["public.t1", "public.t2"]
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  exclude = var.tables
+}
+`,
+			assert: func(c *qt.C, cfg projectconfig.Config) {
+				c.Assert(cfg.Exclude, qt.DeepEquals, []string{"public.t1", "public.t2"})
+			},
+		},
+		{
+			name: "env schema mode tables given a typed bool",
+			raw: `variable "b" {
+  type    = bool
+  default = false
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  schema {
+    mode {
+      tables = var.b
+    }
+  }
+}
+`,
+			assert: func(c *qt.C, cfg projectconfig.Config) {
+				c.Assert(cfg.Schema.Mode.Tables.Set, qt.IsTrue)
+				c.Assert(cfg.Schema.Mode.Tables.Value, qt.IsFalse)
+			},
+		},
+		{
+			name: "env include given a typed list of strings",
+			raw: `variable "tables" {
+  type    = list(string)
+  default = ["public.t1", "public.t2"]
+}
+
+env "local" {
+  url     = "sqlite://s.db"
+  include = var.tables
+}
+`,
+			assert: func(c *qt.C, cfg projectconfig.Config) {
+				c.Assert(ignoredAtlasNames(cfg), qt.Contains, "include")
+			},
+		},
+		{
+			name: "env migration baseline given a typed null string",
+			raw: `variable "s" {
+  type    = string
+  default = null
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  migration {
+    baseline = var.s
+  }
+}
+`,
+			assert: func(c *qt.C, cfg projectconfig.Config) {
+				c.Assert(ignoredAtlasNames(cfg), qt.Contains, "baseline")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
+			c.Assert(err, qt.IsNil)
+			test.assert(c, cfg)
+		})
+	}
+}
