@@ -86,6 +86,15 @@ it when copying a finalized `Database` that will be finalized or merged again;
 discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
+MySQL-family readers populate the JSON-hidden
+`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
+a modified `SQL SECURITY DEFINER` routine when recreating it would change the
+executing account. Custom readers that supply a modified definer routine must
+preserve both fields; missing facts fail closed with
+`ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
+and is not the safety boundary for applying such a replacement.
+
 The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
 module (`go.5x5.cz/ptah/testkit`) is an opt-in helper for tests that
 need real databases. It keeps `testcontainers-go` out of Ptah's main module

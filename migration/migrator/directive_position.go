@@ -62,7 +62,15 @@ const directivesAnywhereEnvVar = "PTAH_DIRECTIVES_ANYWHERE"
 
 // directivesAnywhere is the declaration of the variable, made once, in the
 // package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var directivesAnywhere = envbool.New(directivesAnywhereEnvVar, false)
+//
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]. `-- +ptah` is a Ptah-only
+// directive family the pinned community binary has no reading of at all, so
+// widening where one is significant selects behavior that binary does not have.
+// Strict mode already refuses a migration carrying a `+ptah` directive
+// wherever it sits, and refusing the variable too is what makes the refusal
+// legible: the operator learns the setting is out of scope for the run instead
+// of finding out from a migration that happens to contain one.
+var directivesAnywhere = envbool.New(directivesAnywhereEnvVar, false, envbool.Gated)
 
 // directiveScope selects the region of a migration file in which a `-- +ptah`
 // directive is significant.

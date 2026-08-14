@@ -37,9 +37,9 @@ func TestAtlasRevisionType_String(t *testing.T) {
 			want:         "applied",
 		},
 		{
-			name:         "unknown baseline and applied combination",
+			name:         "baseline applied by a compatibility adapter",
 			revisionType: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
-			want:         "unknown (0011)",
+			want:         "applied",
 		},
 		{
 			name:         "manually set",
@@ -59,11 +59,11 @@ func TestAtlasRevisionType_String(t *testing.T) {
 			want: "applied + manually set",
 		},
 		{
-			name: "unknown baseline applied and manually set combination",
+			name: "manually set converted baseline marker",
 			revisionType: migrator.AtlasRevisionTypeBaseline |
 				migrator.AtlasRevisionTypeApplied |
 				migrator.AtlasRevisionTypeManuallySet,
-			want: "unknown (0111)",
+			want: "manually set",
 		},
 		{
 			name:         "unknown higher bit",
@@ -77,6 +77,73 @@ func TestAtlasRevisionType_String(t *testing.T) {
 			c.Assert(tt.revisionType.String(), qt.Equals, tt.want)
 		})
 	}
+}
+
+func TestWithAtlasRevisionTypes_PreservesConvertedBaselineMarker(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		"sqlite://"+filepath.Join(c.TempDir(), "atlas-baseline-type.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"10_base.sql": {Data: []byte("CREATE TABLE baseline_marker (id INTEGER PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "2"}),
+		migrator.WithAtlasRevisionTypes(map[int64]migrator.AtlasRevisionType{
+			10: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
+		}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+
+	var revisionType int
+	c.Assert(conn.QueryRowContext(
+		c.Context(),
+		"SELECT type FROM atlas_schema_revisions WHERE version = '2'",
+	).Scan(&revisionType), qt.IsNil)
+	c.Assert(revisionType, qt.Equals, int(migrator.AtlasRevisionTypeBaseline|migrator.AtlasRevisionTypeApplied))
+}
+
+func TestAtlasExecutedBaselineMarkerDoesNotCreateImplicitHistoryBoundary(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		"sqlite://"+filepath.Join(c.TempDir(), "atlas-executed-baseline-boundary.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"5_lower.sql": {Data: []byte("CREATE TABLE lower_pending (id INTEGER PRIMARY KEY);\n")},
+			"10_base.sql": {Data: []byte("CREATE TABLE executed_baseline (id INTEGER PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{5: "1", 10: "2"}),
+		migrator.WithAtlasRevisionTypes(map[int64]migrator.AtlasRevisionType{
+			10: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
+		}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.Initialize(c.Context()), qt.IsNil)
+	_, err = conn.ExecContext(c.Context(), `INSERT INTO atlas_schema_revisions
+(version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
+VALUES ('2', 'base', 3, 0, 0, '2026-08-13T00:00:00Z', 0, '', '', '', NULL, 'Ptah')`)
+	c.Assert(err, qt.IsNil)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.AppliedMigrationKeys, qt.DeepEquals, []string{"2"})
+	c.Assert(status.PendingMigrationKeys, qt.DeepEquals, []string{"1"})
 }
 
 func TestMigrationRevision_DirtyFlagInPublicSnapshots(t *testing.T) {

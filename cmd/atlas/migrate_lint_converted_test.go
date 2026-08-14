@@ -88,6 +88,69 @@ func runLint(c *qt.C, dir string, extra []string, latest string) (stdout, stderr
 	return runCompatExit(args...)
 }
 
+func TestCompatMigrateLint_FlywayReportUsesExactSourceTokens(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V1__a.sql", body: "CREATE TABLE a (id INTEGER PRIMARY KEY);\n"},
+		{name: "V1.5__b.sql", body: "CREATE TABLE b (id INTEGER PRIMARY KEY);\n"},
+		{name: "V2__c.sql", body: "CREATE TABLE c (id INTEGER PRIMARY KEY);\n"},
+	})
+
+	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
+	c.Assert(stdout, qt.Contains, "Analyzing changes from version 1.5 to 2 (1 migration in total):")
+	c.Assert(stdout, qt.Contains, "-- analyzing version 2")
+}
+
+func TestCompatMigrateLint_FlywayReplayFailureUsesExactSourceToken(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V1.5__broken.sql", body: "INSERT INTO missing_lint_table VALUES (1);\n"},
+	})
+
+	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stdout+stderr+errorText(err), qt.Contains, "replay migration 1.5")
+	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "4611686018427471935")
+	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "461168")
+
+	stdout, stderr, err = runLint(c, dir, []string{
+		"--dir-format", "flyway",
+		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
+	}, "1")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stdout, qt.Contains, "replay migration 1.5")
+	c.Assert(stdout, qt.Not(qt.Contains), "4611686018427471935")
+	c.Assert(stdout, qt.Not(qt.Contains), "461168")
+	c.Assert(stderr, qt.Equals, "")
+}
+
+func TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+		name: "V.sql",
+		body: "INSERT INTO missing_empty_lint_table VALUES (1);\n",
+	}})
+
+	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stdout+stderr+errorText(err), qt.Contains, `replay migration "" on dev database`)
+	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "replay migration  on dev database")
+
+	stdout, stderr, err = runLint(c, dir, []string{
+		"--dir-format", "flyway",
+		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
+	}, "1")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stdout, qt.Contains, `replay migration "" on dev database`)
+	c.Assert(stdout, qt.Not(qt.Contains), "replay migration  on dev database")
+	c.Assert(stderr, qt.Equals, "")
+}
+
 // TestCompatMigrateLint_ConvertedDirIsRead is the discriminator for #1013
 // section 1: both spellings that select a foreign layout make lint analyze the
 // converted directory, and the no-selection control shows the outcome genuinely

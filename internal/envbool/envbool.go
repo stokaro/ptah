@@ -32,10 +32,24 @@
 // surface.
 //
 // Variables are DECLARED, not read ad hoc: a package-level [New] call names the
-// variable and its default once, and [Registered] is the derived list a guard
-// test measures the tree against. A hand-maintained list is what goes stale the
-// next time a variable is added, which is the failure mode this package is
-// shaped to prevent.
+// variable, its default and its strict-compatibility [Class] once, and
+// [Registered] is the derived list a guard test measures the tree against. A
+// hand-maintained list is what goes stale the next time a variable is added,
+// which is the failure mode this package is shaped to prevent.
+//
+// The [Class] is here, rather than in the package that owns the strict Atlas
+// Community Edition policy, for the same reason the default is: a central list
+// sorting variables into buckets can forget one, and the forgetting is silent.
+// A declaration that states the classification alongside the name cannot drift
+// from it, because there is only one of them.
+//
+// A registration is also a statement about the LINK GRAPH, and that is what
+// makes deriving the policy from [Registered] sound. Every variable in this tree
+// is declared in the package that implements the behavior it governs, so a
+// binary that does not link the package does not reach the behavior either and
+// has nothing to gate. cmd/internal/envboolguard measures the other direction:
+// every `PTAH_*` name the tree mentions is either declared here or written down
+// as a non-boolean.
 package envbool
 
 import (
@@ -69,6 +83,62 @@ func Parse(name, value string) (bool, error) {
 	return parsed, nil
 }
 
+// Class states what the strict Atlas Community Edition compatibility policy
+// owes a declared variable. It is stated at the registration site because the
+// package declaring a variable is the only one that knows whether the behavior
+// behind it is a capability the pinned community binary already has.
+type Class uint8
+
+const (
+	// Unclassified is the zero Class: a variable registered without stating
+	// one. It is representable on purpose, so that the guard over [Registered]
+	// has something to fail on and is not merely decorative; it is not a
+	// classification anything should ship with.
+	//
+	// Strict mode treats it as [Gated]. That is the fail-closed direction: a
+	// retained variable wrongly left unclassified is refused loudly, on the
+	// first run that sets it, naming itself. A gated variable wrongly left
+	// unclassified under the other default would be silently honored, which is
+	// the failure this whole contract exists to prevent.
+	Unclassified Class = iota
+
+	// Gated marks a variable that adds behavior the pinned community binary
+	// does not have. Strict mode parses a present value and refuses a true one,
+	// because honoring it would move ptah-compat off the surface strict mode
+	// exists to measure. A false spelling selects the same state as an absent
+	// variable and stays valid.
+	Gated
+
+	// Retained marks a correctness or safety control that adds no Atlas
+	// capability -- it restores or tightens something the pinned binary already
+	// does. Strict mode keeps it available and honors a true value, but still
+	// parses every present value at the process boundary so a malformed one is
+	// refused before any external work rather than lying dormant until the run
+	// that would have used it.
+	Retained
+
+	// Selector marks the variable that selects the compatibility policy itself.
+	// It is parsed by the same rule as everything else and never refused:
+	// gating it would make strict mode reject the variable that turned strict
+	// mode on.
+	Selector
+)
+
+// String renders the classification for a diagnostic.
+func (c Class) String() string {
+	names := map[Class]string{
+		Unclassified: "unclassified",
+		Gated:        "gated",
+		Retained:     "retained",
+		Selector:     "selector",
+	}
+	name, known := names[c]
+	if !known {
+		return fmt.Sprintf("Class(%d)", uint8(c))
+	}
+	return name
+}
+
 // Var is one declared boolean `PTAH_*` environment variable.
 //
 // The zero Var is not usable; construct one with [New] at package level so the
@@ -77,6 +147,7 @@ func Parse(name, value string) (bool, error) {
 type Var struct {
 	name         string
 	defaultValue bool
+	class        Class
 }
 
 var (
@@ -87,11 +158,13 @@ var (
 // New declares a boolean `PTAH_*` environment variable and records it in the
 // registry [Registered] reports.
 //
-// defaultValue is what an ABSENT variable selects. It is stated here rather
-// than at the call site so the default and the name travel together and a guard
-// test can read both.
-func New(name string, defaultValue bool) Var {
-	variable := Var{name: name, defaultValue: defaultValue}
+// defaultValue is what an ABSENT variable selects. class is what strict Atlas
+// Community Edition compatibility owes it. Both are stated here rather than at
+// the call site so they travel with the name, and so a guard test can read all
+// three off one declaration instead of off a list somebody has to remember to
+// edit.
+func New(name string, defaultValue bool, class Class) Var {
+	variable := Var{name: name, defaultValue: defaultValue, class: class}
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registry = append(registry, variable)
@@ -106,6 +179,12 @@ func (v Var) Name() string {
 // Default returns the value an absent variable selects.
 func (v Var) Default() bool {
 	return v.defaultValue
+}
+
+// Class returns the strict-compatibility classification declared for the
+// variable.
+func (v Var) Class() Class {
+	return v.class
 }
 
 // Resolve reads the variable and reports what it selects.

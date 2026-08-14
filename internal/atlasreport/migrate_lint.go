@@ -23,6 +23,9 @@ type MigrateLintOptions struct {
 	Analysis  *migrationlint.Analysis
 	Integrity MigrateLintIntegrity
 	Error     string
+	// RevisionVersions maps converted execution-order keys to exact source
+	// identities for the version labels in the text report.
+	RevisionVersions map[int64]string
 	// Schema carries the dev-database state the analyzed versions start from
 	// and end at, rendered as HCL. The zero value renders as two empty strings,
 	// which is what a run that never reached a dev database has to report.
@@ -221,7 +224,10 @@ func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile,
 	return files, total, changes
 }
 
-func migrateLintVersionKey(file migrationlint.File) string {
+func migrateLintVersionKey(file migrationlint.File, revisionVersions map[int64]string) string {
+	if mapped, ok := revisionVersions[file.Version]; ok {
+		return mapped
+	}
 	if file.RevisionVersion != "" {
 		return file.RevisionVersion
 	}

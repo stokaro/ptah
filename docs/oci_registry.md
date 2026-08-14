@@ -18,6 +18,7 @@ boundary of the `ptah-compat` binary.
 | Apply directly from OCI | `ptah migrations up --migrations-dir <oci-reference>` |
 | Inspect or roll back against OCI migrations | `ptah migrations status` / `down --migrations-dir <oci-reference>` |
 | Lint and optionally attach the report | `ptah migrations lint --dir <oci-reference> [--attach]` |
+| Verify artifact integrity without a database | `ptah migrations validate --dir <oci-reference>` |
 | Publish a desired-schema artifact | `ptah schema push <oci-reference>` |
 | Write a canonical schema file | `ptah schema pull <oci-reference> --out schema.hcl` |
 | Compare or check drift from OCI | `ptah schema compare` / `drift --schema-file <oci-reference>` |

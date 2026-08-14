@@ -8,6 +8,23 @@ grounds.
 Nothing here is closed, declined, or lower-quality work. Every entry keeps its
 own issue and its own acceptance criteria.
 
+## Evidence snapshot
+
+This status was last verified on August 14, 2026, against repository commit
+`37eda0642dbb35e410af6ad30c913ef551216619` and the open GitHub issue state on
+that date. To reproduce the issue inventory, run:
+
+```bash
+gh issue list --repo stokaro/ptah --state open --label post-ga \
+  --limit 1000 --json number,title,url,labels
+```
+
+Then follow each issue link below and compare its acceptance criteria and
+evidence comments with the named repository commit. Refresh this page whenever
+an entry's issue state or label changes, or when code or documentation changes a
+support claim used by its rationale. The list is a dated classification, not a
+live projection of the issue tracker.
+
 ## The test each entry had to fail
 
 The README states what Ptah claims to be:
@@ -64,10 +81,11 @@ while a table's data-lifecycle policy differs. That argument becomes concrete
 once TTL round-trip appears in any support claim.
 
 **[#1029 — PostgreSQL transaction-pooling proxies](https://github.com/stokaro/ptah/issues/1029).**
-PgBouncer appears in the tree only as a reserved role name. No documentation
-describes a supported pooling topology, so there is no contract to break. It
-becomes required when a page states that Ptah is safe through a transaction
-pooler, or when an operator reports silent lock loss behind one.
+PgBouncer appears in the tree only as an ordinary role identifier; it is not a
+reserved role and does not constitute support for the proxy topology. No
+documentation describes a supported pooling topology, so there is no contract
+to break. It becomes required when a page states that Ptah is safe through a
+transaction pooler, or when an operator reports silent lock loss behind one.
 
 **[#1030 — SQL Server synonyms](https://github.com/stokaro/ptah/issues/1030).**
 Synonyms are absent from the schema model. The dev-database cleanup guard
@@ -97,13 +115,6 @@ Export selects whole tables; once a table is in, every exportable column enters
 the contract. Three separate pages say so in those words, and one carries a
 caution block titled "Table selection is not field-level access control". The
 absence is documented at the point of use rather than discovered in production.
-
-**[#905 — API identities decoupled from database names](https://github.com/stokaro/ptah/issues/905).**
-A column rename currently exits 0 with no diagnostic while retiring one Protobuf
-field number and allocating another. That is a real defect, and the Protobuf
-export page names it in the same words, tracks it to this issue, and lists the
-three neighboring edits that do refuse. The alias and type-override layer around
-it is new capability.
 
 ## Atlas surface beyond the community binary
 

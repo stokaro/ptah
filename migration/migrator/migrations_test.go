@@ -28,6 +28,15 @@ func TestMigration_Basic(t *testing.T) {
 	c.Assert(migration.Down, qt.IsNotNil)
 }
 
+func TestAtlasRevisionTypeSQLArgRemainsNumeric(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+
+	value := (AtlasRevisionTypeBaseline | AtlasRevisionTypeApplied).sqlArg()
+
+	c.Assert(value, qt.Equals, uint64(3))
+}
+
 func TestNoopMigrationFunc(t *testing.T) {
 	c := qt.New(t)
 

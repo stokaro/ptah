@@ -41,7 +41,10 @@ const DescribeAllEnvVar = "PTAH_POSTGRES_INSPECT_ALL_ROLES"
 
 // describeAll is the declaration of the variable, made once, in the package
 // that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var describeAll = envbool.New(DescribeAllEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: describing every managed role
+// on the server widens the description beyond anything the pinned community
+// binary emits, which does not model roles.
+var describeAll = envbool.New(DescribeAllEnvVar, false, envbool.Gated)
 
 // DescribeAll reports whether the opt-in restores the full cluster read.
 //
