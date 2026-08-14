@@ -684,7 +684,11 @@ func atlasApplySkipChecksFromEnv() (bool, error) {
 // `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
 // enforced" without a word. Absence still selects the default; a present value
 // has to parse.
-var applySkipChecks = envbool.New(applySkipChecksEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: bypassing `-- +ptah check`
+// directives is a Ptah-only capability the pinned community binary has no
+// spelling for, so strict compatibility must refuse an enabled value rather
+// than run a migration set the oracle would have enforced.
+var applySkipChecks = envbool.New(applySkipChecksEnvVar, false, envbool.Gated)
 
 // resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
 //

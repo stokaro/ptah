@@ -1248,7 +1248,9 @@ func ensureAtlasSchemaApplyDevURL(
 
 // atlasApplyWithoutDevURL is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: applying with no dev database
+// is behavior the pinned binary does not offer on this verb.
+var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false, envbool.Gated)
 
 // atlasApplyWithoutDevURLAllowed reports whether a non-database desired state
 // may be applied with no dev database. Unset keeps the refusal and a valid false
