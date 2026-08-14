@@ -81,43 +81,64 @@ is_action_manifest() {
 	printf '%s\n' "$action_manifests" | grep -qxF -- "$1"
 }
 
-# The exact forwarding shape: a whole-value expression built ONLY out of the
-# action's own inputs, the empty string, and the operators that choose between
-# them. `${{ env.GO_VERSION }}` and `${{ vars.GO_VERSION }}` are not it -- they
-# name a literal declared somewhere else in the same repository, which is this
-# gate's own failure mode wearing a different hat.
+# The forwarding shapes are ENUMERATED, not characterized.
 #
-# Nor is `${{ inputs.go-version || '1.25.0' }}`. Merely MENTIONING an input is
-# not forwarding: that expression pins 1.25.0 whenever the input is empty, which
-# is its default, so a substring test for `inputs.` would accept a hard-coded
-# version wearing a forward's clothes. The permitted vocabulary is enumerated
-# instead, and anything left over after removing it is a value this gate cannot
-# see through and therefore refuses.
-is_forwarded_input() {
-	case "$1" in
-	'${{'*'}}') ;;
-	*) return 1 ;;
-	esac
+# Every earlier attempt described the permitted expression instead of listing
+# it -- "contains inputs.", then "is built only out of inputs, the empty string
+# and the operators that choose between them" -- and each description admitted
+# an expression nobody intended:
+#
+#   ${{ inputs.go-version || '1.25.0' }}
+#       mentions an input and pins 1.25.0 whenever it is empty, its default.
+#   ${{ inputs.go-version-file == '' && inputs.go-version-file || inputs.go-version }}
+#       is built entirely from the permitted vocabulary and mentions the root
+#       input, and still evaluates to the EMPTY go-version input, so setup-go
+#       reads no module at all.
+#
+# The second one is the lesson: no rule stated over the SET of inputs an
+# expression mentions can decide what the expression returns. Only the shape
+# can. Two shapes are needed, so two shapes are accepted and everything else is
+# refused:
+#
+#   go-version:       ${{ inputs.<V> }}
+#   go-version-file:  ${{ inputs.<V> == '' && inputs.<F> || '' }}
+#
+# Whitespace is normalized away first, so the manifest may lay either out
+# however it likes; nothing else about them is negotiable.
 
-	local inner="$1"
-	inner="${inner#'${{'}"
-	inner="${inner%'}}'}"
+# forwarded_version_input prints the input name a `go-version:` value forwards,
+# or nothing if the value is not the accepted shape.
+forwarded_version_input() {
+	local compact
+	compact="$(printf '%s' "$1" | tr -d '[:space:]')"
+	printf '%s' "$compact" | grep -qE '^\$\{\{inputs\.[A-Za-z0-9_-]+\}\}$' || return 0
+	printf '%s' "$compact" | sed -e 's/^\${{inputs\.//' -e 's/}}$//'
+}
 
-	# Remove the whole permitted vocabulary; a forwarding expression is empty
-	# once it is gone. A quoted literal, a digit, or any other context --
-	# env., vars., github., secrets., matrix., steps. -- survives and is refused.
-	local residue
-	residue="$(printf '%s' "$inner" | sed \
-		-e 's/inputs\.[A-Za-z0-9_-]\{1,\}/ /g' \
-		-e "s/''/ /g" \
-		-e 's/""/ /g' \
-		-e 's/==/ /g' \
-		-e 's/!=/ /g' \
-		-e 's/&&/ /g' \
-		-e 's/||/ /g' \
-		-e 's/[[:space:]()]//g')"
+# forwarded_file_inputs prints "<V> <F>" for a `go-version-file:` value in one of
+# the two accepted shapes, or nothing. <F> is the input that names the module.
+# <V> is the input the condition tests, empty for the bare forward.
+#
+#   ${{ inputs.<F> }}                              a plain forward
+#   ${{ inputs.<V> == '' && inputs.<F> || '' }}    blanked when <V> is set
+#
+# The second exists because setup-go prefers a non-empty go-version and ignores
+# go-version-file entirely; an action offering both has to clear one of them. An
+# action offering only the module file has no such problem and writes the first.
+forwarded_file_inputs() {
+	local compact
+	compact="$(printf '%s' "$1" | tr -d '[:space:]')"
 
-	[[ -z $residue ]]
+	if printf '%s' "$compact" | grep -qE '^\$\{\{inputs\.[A-Za-z0-9_-]+\}\}$'; then
+		printf ' %s\n' "$(printf '%s' "$compact" | sed -e 's/^\${{inputs\.//' -e 's/}}$//')"
+		return 0
+	fi
+
+	printf '%s' "$compact" |
+		grep -qE "^\\\$\{\{inputs\.[A-Za-z0-9_-]+==''&&inputs\.[A-Za-z0-9_-]+\|\|''\}\}$" || return 0
+	printf '%s %s\n' \
+		"$(printf '%s' "$compact" | sed -e 's/^\${{inputs\.//' -e "s/==''.*//")" \
+		"$(printf '%s' "$compact" | sed -e 's/.*&&inputs\.//' -e "s/||''}}$//")"
 }
 
 # Strip surrounding whitespace and quotes so 'go.mod', "go.mod" and go.mod are
@@ -139,6 +160,29 @@ strip_value() {
 # value the gate cannot see through is not a value it may pass.
 is_block_scalar() {
 	printf '%s' "$1" | grep -qE '^[|>][0-9+-]*$'
+}
+
+# input_default prints "line:value" for a named composite-action input's default,
+# or nothing when it declares none. The input name is unquoted before it is
+# compared, because YAML lets a mapping key be quoted and an unmatched key would
+# otherwise carry the previous input's name across the block.
+input_default() {
+	awk -v want="$2" '
+		/^inputs:/ { in_inputs = 1; next }
+		/^[^[:space:]#]/ { in_inputs = 0 }
+		in_inputs && /^  ["'"'"']?[A-Za-z0-9_-]+["'"'"']?:[[:space:]]*$/ {
+			input = $1
+			sub(/:$/, "", input)
+			gsub(/^["'"'"']|["'"'"']$/, "", input)
+			next
+		}
+		in_inputs && input == want && /^[[:space:]]+default:/ {
+			value = $0
+			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
+			print NR ":" value
+			exit
+		}
+	' "$1"
 }
 
 # D1: every setup-go step derives its version, and derives it from THE source.
@@ -233,15 +277,20 @@ while IFS=: read -r file line _; do
 	step_ok=1
 	step_forwards=0
 
+	gv_input=""
+	gvf_cond_input=""
+	gvf_file_input=""
+
 	if ((gv_seen == 1)) && [[ -n $gv_value ]]; then
 		case "$gv_value" in
 		'${{'*'}}')
-			if is_forwarded_input "$gv_value" && is_action_manifest "$file"; then
+			gv_input="$(forwarded_version_input "$gv_value")"
+			if [[ -n $gv_input ]] && is_action_manifest "$file"; then
 				step_forwards=1
 			else
 				step_ok=0
 				fail "$file" "$gv_line" \
-					"setup-go step takes its Go version from the expression '$gv_value'. An expression shows only that a value is derived, never from what, so it is accepted in one place: a composite action manifest forwarding one of its own inputs. Write 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
+					"setup-go step takes its Go version from the expression '$gv_value'. An expression shows only that a value is derived, never from what, so exactly one shape is accepted, and only in a composite action manifest: \${{ inputs.<name> }}. Write 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
 			fi
 			;;
 		*)
@@ -256,12 +305,15 @@ while IFS=: read -r file line _; do
 		case "$gvf_value" in
 		go.mod | ./go.mod) ;;
 		'${{'*'}}')
-			if is_forwarded_input "$gvf_value" && is_action_manifest "$file"; then
+			gvf_pair="$(forwarded_file_inputs "$gvf_value")"
+			if [[ -n $gvf_pair ]] && is_action_manifest "$file"; then
 				step_forwards=1
+				gvf_cond_input="${gvf_pair%% *}"
+				gvf_file_input="${gvf_pair##* }"
 			else
 				step_ok=0
 				fail "$file" "$gvf_line" \
-					"setup-go step takes its module file from the expression '$gvf_value'. An expression shows only that a value is derived, never from what, so it is accepted in one place: a composite action manifest forwarding one of its own inputs. Elsewhere, name the module: 'go-version-file: go.mod'."
+					"setup-go step takes its module file from the expression '$gvf_value'. An expression shows only that a value is derived, never from what, so exactly one shape is accepted, and only in a composite action manifest: \${{ inputs.<V> == '' && inputs.<F> || '' }}. Elsewhere, name the module: 'go-version-file: go.mod'."
 			fi
 			;;
 		*)
@@ -270,6 +322,15 @@ while IFS=: read -r file line _; do
 				"setup-go step reads '$gvf_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
 			;;
 		esac
+	fi
+
+	# The condition has to test the very input go-version forwards. Testing a
+	# different one decides the fallback on a value that has nothing to do with
+	# what setup-go was handed.
+	if [[ -n $gvf_cond_input && -n $gv_input && $gvf_cond_input != "$gv_input" ]]; then
+		step_ok=0
+		fail "$file" "$gvf_line" \
+			"the go-version-file fallback tests 'inputs.$gvf_cond_input' while go-version forwards 'inputs.$gv_input'. The condition has to test the input the step actually received, or it decides the fallback on an unrelated value."
 	fi
 
 	if ((gvf_seen == 0)) && [[ -z $gv_value ]]; then
@@ -292,19 +353,13 @@ while IFS=: read -r file line _; do
 	fi
 	if ((step_forwards == 1)); then
 		forwarding_steps=$((forwarding_steps + 1))
-		# Record which inputs this step forwards, so D1c can judge their
-		# defaults. The step is what earns the exemption, so the step is what
-		# selects the defaults to look at.
-		# The KEY each input feeds is recorded with it. A forwarded input
-		# reaching `go-version-file` has to name the root go.mod, while one
-		# reaching `go-version` has to name no version at all -- two different
-		# questions, and asking only the second lets a module path through.
-		forwarded_inputs="${forwarded_inputs}$(printf '%s\n' "$gv_value" |
-			grep -oE 'inputs\.[A-Za-z0-9_-]+' |
-			sed -e "s|^inputs\.|${file}:version:|" || true)"$'\n'
-		forwarded_inputs="${forwarded_inputs}$(printf '%s\n' "$gvf_value" |
-			grep -oE 'inputs\.[A-Za-z0-9_-]+' |
-			sed -e "s|^inputs\.|${file}:file:|" || true)"$'\n'
+		# Record the ROLE each input plays, which the accepted shape makes
+		# unambiguous: one input is handed to setup-go as the version, one names
+		# the module. Recording only the set of inputs mentioned cannot say which
+		# is which, and a rule stated over that set cannot decide what the
+		# expression returns.
+		[[ -z $gv_input ]] || forwarded_inputs="${forwarded_inputs}${file}:version:${gv_input}"$'\n'
+		[[ -z $gvf_file_input ]] || forwarded_inputs="${forwarded_inputs}${file}:file:${gvf_file_input}"$'\n'
 	fi
 	# The reference is matched with optional YAML quoting. `uses:` accepts
 	# actions/setup-go@v7, "actions/setup-go@v7" and 'actions/setup-go@v7'
@@ -334,96 +389,64 @@ if ((setup_go_mentions != setup_go_steps)); then
 	exit 1
 fi
 
-# D1c: an input a step forwards carries no version of its own.
+# D1c: each forwarded input's default is judged by the ROLE the shape gives it.
 #
 # D2 selects the defaults it judges BY NAME -- inputs whose name mentions go or
-# toolchain -- and a forwarded input can be called anything. Renaming
-# `go-version` to `runtime`, defaulting it to 1.25.0 and forwarding
-# `inputs.runtime` therefore pinned setup-go with every detector green: the
-# expression is a genuine forward, and the default sat outside D2's reach purely
-# because of what it was called.
+# toolchain -- and a forwarded input can be called anything, so a rename put its
+# default outside D2's reach while the forward stayed genuine. What earns the
+# exemption is that a setup-go step forwards this input, so that is what selects
+# the default to judge, and the accepted shape says which of the two roles it
+# plays:
 #
-# What earns the exemption is that a setup-go step forwards this input, so that
-# is what selects the default to judge. The name it was given decides nothing.
-# An input with no default at all is fine and is not a finding: GitHub hands an
-# unset input to the step as the empty string, which is the intended value here.
-# D2b separately requires the go-version-file input to declare one.
-forwarded_file_manifests=""
-forwarded_file_roots=""
-
+#   the input handed to setup-go as the version -> must default to EMPTY
+#   the input that names the module             -> must default to the root go.mod
+#
+# "Empty", not "not a version". `stable`, `oldstable` and `1.x` are all valid
+# setup-go selectors and none of them looks numeric; any of them, non-empty,
+# makes setup-go prefer go-version and ignore go-version-file entirely. The
+# forwarded version input exists to be overridden by a caller, so its own default
+# has to select nothing at all.
+#
+# The module input's default must also EXIST. An absent default arrives as the
+# empty string, and an empty go-version-file names no module -- which is the
+# whole failure this exemption has to rule out.
 while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
 	[[ -n $forwarding_manifest && -n $forwarded_key && -n $forwarded_input ]] || continue
-	if [[ $forwarded_key == file ]]; then
-		forwarded_file_manifests="${forwarded_file_manifests}${forwarding_manifest}"$'\n'
+	default_row="$(input_default "$forwarding_manifest" "$forwarded_input")"
+
+	if [[ -z $default_row ]]; then
+		if [[ $forwarded_key == file ]]; then
+			fail "$forwarding_manifest" "1" \
+				"input '$forwarded_input' names the module setup-go reads, but declares no default. An absent default arrives as the empty string, and an empty go-version-file names no module; default it to 'go.mod'."
+		fi
+		continue
 	fi
-	default_row="$(awk -v want="$forwarded_input" '
-		/^inputs:/ { in_inputs = 1; next }
-		/^[^[:space:]#]/ { in_inputs = 0 }
-		in_inputs && /^  ["'"'"']?[A-Za-z0-9_-]+["'"'"']?:[[:space:]]*$/ {
-			input = $1
-			sub(/:$/, "", input)
-			gsub(/^["'"'"']|["'"'"']$/, "", input)
-			next
-		}
-		in_inputs && input == want && /^[[:space:]]+default:/ {
-			value = $0
-			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
-			print NR ":" value
-			exit
-		}
-	' "$forwarding_manifest")"
-	[[ -n $default_row ]] || continue
+
+	default_line="${default_row%%:*}"
 	default_clean="$(strip_value "${default_row#*:}")"
+
 	if is_block_scalar "$default_clean"; then
-		fail "$forwarding_manifest" "${default_row%%:*}" \
+		fail "$forwarding_manifest" "$default_line" \
 			"input '$forwarded_input' is forwarded to setup-go and declares its default as the block scalar '$default_clean', whose value is on the following lines and cannot be read here. Write a plain single-line default."
 		continue
 	fi
+
 	if [[ $forwarded_key == file ]]; then
-		# Reaches go-version-file: it names the module setup-go reads, so it
-		# must name the one that carries the toolchain. Empty is fine -- the
-		# step then selects nothing through this key.
 		case "$default_clean" in
-		"") ;;
-		go.mod | ./go.mod)
-			forwarded_file_roots="${forwarded_file_roots}${forwarding_manifest}"$'\n'
-			;;
+		go.mod | ./go.mod) ;;
 		*)
-			fail "$forwarding_manifest" "${default_row%%:*}" \
-				"input '$forwarded_input' is forwarded to setup-go's go-version-file and defaults to '$default_clean', which is not the module that declares the toolchain. Default it to 'go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+			fail "$forwarding_manifest" "$default_line" \
+				"input '$forwarded_input' names the module setup-go reads and defaults to '$default_clean', which is not the module that declares the toolchain. Default it to 'go.mod'; only the root go.mod carries 'toolchain $toolchain'."
 			;;
 		esac
-	else
-		case "$default_clean" in
-		[0-9]*.[0-9]*)
-			fail "$forwarding_manifest" "${default_row%%:*}" \
-				"input '$forwarded_input' is forwarded to setup-go and defaults to the Go version literal '$default_clean'. A forwarded input must carry no version of its own; leave it empty and let the go-version-file input name the module."
-			;;
-		esac
+		continue
+	fi
+
+	if [[ -n $default_clean ]]; then
+		fail "$forwarding_manifest" "$default_line" \
+			"input '$forwarded_input' is handed to setup-go as the Go version and defaults to '$default_clean'. Any non-empty value here -- 'stable' and '1.x' as much as '1.25.0' -- makes setup-go prefer it and ignore go-version-file, so the toolchain stops being read from go.mod. Default it to the empty string."
 	fi
 done < <(printf '%s' "$forwarded_inputs" | sort -u)
-
-# D1d: something a forwarded go-version-file reaches actually names the module.
-#
-# The rule above judges each referenced input on its own, and "empty is fine" is
-# right for each of them individually: the manifest's real expression reads
-# `inputs.go-version == '' && inputs.go-version-file || ''`, so go-version is
-# referenced from the file key as a CONDITION and defaults to empty. But a rule
-# that only ever says "not wrong" can be satisfied by a set in which NOTHING is
-# right -- forward `${{ inputs.modfile }}` and declare that input with no default
-# at all, and every referenced default is acceptably empty while the step selects
-# no module whatsoever.
-#
-# Telling a condition operand from a value operand needs a real expression
-# parser, so the requirement is stated over the whole set instead: at least one
-# input a step forwards to go-version-file must default to the root go.mod.
-while IFS= read -r forwarding_manifest; do
-	[[ -n $forwarding_manifest ]] || continue
-	if ! printf '%s' "$forwarded_file_roots" | grep -qxF -- "$forwarding_manifest"; then
-		fail "$forwarding_manifest" "1" \
-			"this action forwards its go-version-file from inputs, but no forwarded input defaults to 'go.mod'. The forwarded value is opaque, so a default naming the root module is the only thing left that makes the step read the module carrying the toolchain."
-	fi
-done < <(printf '%s' "$forwarded_file_manifests" | sort -u)
 
 # D2: no version-shaped default in a composite action.
 #
