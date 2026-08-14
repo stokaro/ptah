@@ -102,10 +102,24 @@ tokenizer options, quoted values, and commas inside quoted arguments survive.
 Applying that output to an empty database recreates the same object.
 
 The reader never names a module. It asks `PRAGMA table_list`, which classifies
-every table as `table`, `virtual`, or `shadow`, so `fts3`, `fts4`, `fts5`,
-`rtree`, `rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build
-registers are all handled the same way. The SQLite build Ptah links reports its
-own registered modules through `PRAGMA module_list`.
+every table as `table`, `virtual`, or `shadow`, so `fts5`, `rtree`,
+`rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build registers
+are all handled the same way.
+
+Which modules a build registers is not assumed. The reader asks
+`PRAGMA module_list` on the same connection, and the SQLite build Ptah links
+answers with exactly seven:
+
+```text
+dbstat  fts5  fts5vocab  geopoly  rtree  rtree_i32  sqlite_dbpage
+```
+
+`fts3` and `fts4` are not among them, and that gap has consequences the next
+two sections describe. Ask this build yourself with any SQLite client that can
+reach it — `PRAGMA module_list` is the same query — but note that
+`SELECT name FROM pragma_module_list` answers differently: the table-valued
+form registers itself as a module and reports itself, and keeps doing so for
+the rest of that connection.
 
 The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
 and the rest — are not reported. They are the module's bookkeeping, and an
@@ -121,12 +135,40 @@ object, and omitting the index would claim a complete schema that cannot be
 replayed. SQLite's own autoindexes have no stored `CREATE INDEX` statement and
 do not trigger this refusal.
 
-One limit is worth knowing about the read: only the module can say which
-suffixes are its own, so shadow tables belonging to a module the reading build
-does not register — an `fts4` index in a database written elsewhere, for
-example — cannot be identified, and SQLite reports them as ordinary tables.
-The virtual table itself is still recognized as virtual and still round-trips,
-because that classification does not need the module.
+### A Module This Build Does Not Register
+
+Only the module can say which suffixes are its own, so the shadow tables of a
+module the reading build does not register cannot be identified. SQLite reports
+them as ordinary tables. The virtual table itself is still recognized as
+virtual and still round-trips, because that classification does not need the
+module — SQLite records it while parsing the schema, before anything is
+resolved.
+
+Measured on an `fts4` database written by a build that has the module, read
+through the driver Ptah links:
+
+| table           | with `fts4` registered | without it |
+| --------------- | ---------------------- | ---------- |
+| `docs`          | `virtual`              | `virtual`  |
+| `docs_content`  | `shadow`               | `table`    |
+| `docs_docsize`  | `shadow`               | `table`    |
+| `docs_segdir`   | `shadow`               | `table`    |
+| `docs_segments` | `shadow`               | `table`    |
+| `docs_stat`     | `shadow`               | `table`    |
+
+Those five rows are an FTS4 index. Ptah cannot tell them from user tables, so
+the description it produces is wrong in a way it can name but not repair, and
+the read says so on standard error:
+
+```text
+note: virtual table "docs" (module fts4) uses a module this build does not
+register, so SQLite could not mark the tables that fts4 owns and this
+description reports them as ordinary tables.
+```
+
+The exit code and standard output are untouched, so a pipeline that captures
+the document keeps working. What a comparison does with such a database is the
+subject of the next section, and it is not a note.
 
 ## Virtual Tables in a Comparison
 
@@ -168,7 +210,8 @@ nothing.
 To proceed, say which one you meant:
 
 - **To keep the table**, exclude it from the comparison with `--exclude docs`.
-  Both sides then ignore it and the rest of the schema converges normally.
+  Both sides then ignore it and the rest of the schema converges normally. This
+  is only offered when the module is registered; see the next section for why.
 - **To drop it**, set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1`. The removal is
   planned exactly as before, including the `DROP TABLE` that destroys the index
   contents and the module's shadow tables. The opt-in covers only that first
@@ -186,6 +229,61 @@ validates before resolving filesystem paths.
 `migrations checkpoint --dialect sqlite` validates before requiring the shadow
 URL, then validates the URL-derived dialect again when the URL exists.
 Non-SQLite operations do not consult the variable.
+
+### Comparing a Database Ptah Cannot Classify
+
+Everything above assumes the description is right about which tables are
+tables. Where the module is not registered it is not, and `--exclude` makes it
+worse rather than better.
+
+This was measured end to end on `fts3` and `fts4` databases. Ptah refused the
+comparison and advised excluding the virtual table; that exact command then
+planned and executed a `DROP TABLE` for each of the module's storage tables at
+exit 0, after which `MATCH` returned `SQL logic error` instead of a row. The
+`fts5` control, run identically, reported `Schema is synced, no changes to be
+made.` and left the index untouched. The exclusion removed `docs` from the
+comparison and left `docs_content`, `docs_segdir` and their siblings in it,
+where a desired state that does not name them reads as a request to drop them.
+
+So a comparison whose database side holds a virtual table this build cannot
+load is refused outright, and the refusal survives excluding that table:
+
+```text
+unsupported feature: the database holds virtual table "docs" (module fts4)
+whose module this build of Ptah does not register; ... excluding "docs" does
+not protect the index, because the tables at risk are the module's own storage
+rather than it, and Ptah cannot list them without the module; this build
+registers dbstat, fts5, fts5vocab, geopoly, rtree, rtree_i32, sqlite_dbpage
+```
+
+There is no safe exclusion to suggest, because naming the tables to exclude
+requires the module that is missing. Ptah says what it cannot determine instead
+of advising something that destroys data.
+
+Two ways forward:
+
+- **Read the database with a build that registers the module.** Every
+  classification then comes from SQLite and the ordinary rules above apply.
+- **Set `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`** to compare the
+  module's storage as the ordinary tables it appears to be, accepting the drops
+  that follow. This restores what Ptah did before the refusal existed. It is a
+  separate variable from `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` because the two
+  answer different questions — that one permits dropping a virtual table Ptah
+  can see, this one permits planning against tables Ptah has said it cannot
+  vouch for — and neither implies the other.
+
+The **desired** side of the same condition is refused with no opt-in at all. A
+plan carrying `CREATE VIRTUAL TABLE ... USING fts4` fails on this build with
+`no such module: fts4`, which on master happened after the plan had been
+printed, approved, and started. No value of an environment variable makes a
+module exist, so the refusal comes before the plan:
+
+```text
+unsupported feature: the desired schema declares virtual table "docs"
+(module fts4) whose module this build of Ptah does not register; the CREATE
+VIRTUAL TABLE statement a plan would carry fails on this build with
+`no such module: fts4` ...
+```
 
 ## ALTER TABLE Limits
 

@@ -61,6 +61,8 @@ package sqlitevirtual
 
 import (
 	"fmt"
+	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -71,6 +73,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/sqlitemodule"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state
@@ -83,6 +86,46 @@ import (
 const AllowDropEnvVar = "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP"
 
 var allowDrop = envbool.New(AllowDropEnvVar, false)
+
+// AllowUnregisteredModuleEnvVar compares a database holding a virtual table
+// whose module this build does not register, treating that module's private
+// storage as the ordinary tables it appears to be.
+//
+// It exists because the refusal it lifts removes a capability, and AGENTS.md
+// ("Compatibility never removes a capability. Constitute it, do not discard
+// it.") does not allow that to be the end of the story. Comparing such a
+// database is something Ptah did before, and an operator who knows their
+// database -- who knows the module keeps no shadow tables, or has already
+// excluded every one of them by name -- can still ask for it.
+//
+// Setting it does not make Ptah able to classify anything. It grants exactly
+// one thing: permission to plan from a description Ptah has said it cannot
+// vouch for. The measured consequence of doing that on an fts4 database was
+// five `DROP TABLE` statements at exit 0 and an index that stopped answering
+// `MATCH`, so the default is the refusal and the opt-in is deliberate.
+//
+// It is separate from [AllowDropEnvVar] because the two answer different
+// questions. That one says "yes, drop the virtual table I can see"; this one
+// says "yes, plan against tables I have been told may not be tables". Folding
+// them together would let an operator who wanted the first silently accept the
+// second.
+//
+// It is an environment variable rather than a flag for the reason
+// [go.5x5.cz/ptah/internal/reservedrole.AllowEnvVar] gives: the conformance
+// cli-surface tier asserts that ptah-compat registers exactly the flags the
+// pinned Atlas community binary registers.
+const AllowUnregisteredModuleEnvVar = "PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE"
+
+var allowUnregisteredModule = envbool.New(AllowUnregisteredModuleEnvVar, false)
+
+// UnregisteredModuleAllowed reports whether the opt-in lifts the refusal to
+// compare a database Ptah could not fully classify.
+//
+// Unset keeps the refusal and a valid false spelling keeps it too; an empty or
+// unparsable value is a configuration error rather than a silent refusal.
+func UnregisteredModuleAllowed() (bool, error) {
+	return allowUnregisteredModule.Resolve()
+}
 
 // DropAllowed reports whether the opt-in lifts the removal refusal.
 //
@@ -106,7 +149,15 @@ func ValidateToggle(dialect string) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite {
 		return nil
 	}
-	_, err := DropAllowed()
+	if _, err := DropAllowed(); err != nil {
+		return err
+	}
+	// Both toggles this package owns are resolved here, for the same reason
+	// either is resolved early: a typo in one of them must be reported on every
+	// SQLite comparison, not only on the runs that reach the condition it
+	// governs. An operator who misspells the unregistered-module opt-in and is
+	// told nothing believes the refusal is unconditional.
+	_, err := UnregisteredModuleAllowed()
 	return err
 }
 
@@ -168,6 +219,14 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 	// after the dialect gate and before the roles are scanned.
 	dropAllowed, err := DropAllowed()
 	if err != nil {
+		return err
+	}
+	// Asked before anything is classified, because it decides whether the
+	// classification means anything. Every branch below reads `this table is
+	// ordinary` off the description; where a module is missing that answer was
+	// never SQLite's, and the tables it is wrong about are not the ones an
+	// operator can see or exclude.
+	if err := validateModulesAreRegistered(desired, database); err != nil {
 		return err
 	}
 
@@ -242,6 +301,192 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 		pronoun(len(removals)),
 		AllowDropEnvVar,
 	)
+}
+
+// validateModulesAreRegistered refuses a comparison whose answer depends on a
+// module this build cannot load.
+//
+// The two sides fail for different reasons and get different treatment.
+//
+// On the DATABASE side the failure is silent and destructive. SQLite marks a
+// module's shadow tables as `shadow` only while the module is loaded, so with
+// it absent the module's private storage is described as ordinary user tables
+// -- and a desired state that does not name them is read as a request to drop
+// them. Measured on stokaro/ptah#1028 against an fts4 database: five
+// `DROP TABLE` statements planned and executed at exit 0, after which `MATCH`
+// reported `SQL logic error`. Refused, waivable by
+// [AllowUnregisteredModuleEnvVar], because comparing such a database is
+// something an operator could do before.
+//
+// On the DESIRED side the failure is loud and certain. The plan contains
+// `CREATE VIRTUAL TABLE ... USING <module>`, and this build answers that with
+// `no such module: <module>` -- measured mid-apply, after the plan had been
+// printed and approved. There is no opt-in, for the same reason a kind
+// collision has none: no value of an environment variable makes a module exist.
+func validateModulesAreRegistered(desired *goschema.Database, database *types.DBSchema) error {
+	registered, err := sqlitemodule.Registered()
+	if err != nil {
+		return err
+	}
+	// Resolved before either side is scanned, so a malformed opt-in is reported
+	// on every SQLite comparison rather than only the ones holding an
+	// unregistered module. [ValidateToggle] already resolved it at the seam;
+	// doing it again is free and keeps this function honest on its own.
+	unregisteredAllowed, err := UnregisteredModuleAllowed()
+	if err != nil {
+		return err
+	}
+
+	if !unregisteredAllowed {
+		if err := refuseUnclassifiableDatabase(database, registered); err != nil {
+			return err
+		}
+	}
+	return refuseUncreatableDesiredState(desired, registered)
+}
+
+// refuseUnclassifiableDatabase refuses a database side whose modules this build
+// cannot load. See [validateModulesAreRegistered] for the measurement.
+func refuseUnclassifiableDatabase(database *types.DBSchema, registered sqlitemodule.Set) error {
+	unclassified := liveUnregistered(database, registered)
+	if len(unclassified) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the database holds virtual %s %s whose %s this build of Ptah does not register;"+
+			" SQLite marks a module's shadow tables as shadow only while the module is loaded, so Ptah"+
+			" cannot tell that module's private storage from ordinary tables, and comparing this"+
+			" description would plan DROP TABLE for whichever of those tables the desired schema does"+
+			" not name; excluding %s does not protect the index, because the tables at risk are the"+
+			" module's own storage rather than %s, and Ptah cannot list them without the module;"+
+			" this build registers %s;"+
+			" read this database with a build that registers %s, or set %s=1 to compare them as"+
+			" ordinary tables and accept those drops",
+		ptaherr.ErrUnsupportedFeature,
+		noun(len(unclassified)),
+		names(unclassified),
+		moduleNoun(len(unclassified)),
+		quotedNames(unclassified),
+		pronoun(len(unclassified)),
+		registered.String(),
+		modulesOf(unclassified),
+		AllowUnregisteredModuleEnvVar,
+	)
+}
+
+// refuseUncreatableDesiredState refuses a desired side declaring a virtual
+// table this build cannot create. It has no opt-in: no value of an environment
+// variable makes a module exist.
+func refuseUncreatableDesiredState(desired *goschema.Database, registered sqlitemodule.Set) error {
+	wanted := desiredUnregistered(desired, registered)
+	if len(wanted) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the desired schema declares virtual %s %s whose %s this build of Ptah does not register;"+
+			" the CREATE VIRTUAL TABLE statement a plan would carry fails on this build with"+
+			" `no such module: %s`, so the comparison can only produce a plan that stops part of the way"+
+			" through applying it;"+
+			" this build registers %s;"+
+			" apply this schema with a build that registers %s",
+		ptaherr.ErrUnsupportedFeature,
+		noun(len(wanted)),
+		names(wanted),
+		moduleNoun(len(wanted)),
+		wanted[0].Module,
+		registered.String(),
+		modulesOf(wanted),
+	)
+}
+
+// liveUnregistered lists the database side's unclassifiable virtual tables.
+//
+// It reads two sources and unions them, because they answer at different times
+// and only one of them survives narrowing:
+//
+//   - [types.DBSchema.UnregisteredVirtualTables] is the reader's own statement,
+//     recorded before any selection ran. It is the source that still speaks
+//     after `--exclude docs` has removed the virtual table, which is exactly
+//     the run that plans the drops.
+//   - the tables still in the description are checked directly, so a DBSchema
+//     built by something other than the SQLite reader -- a test, a future
+//     producer -- cannot walk past this by leaving the field empty. A zero
+//     value must not read as "every module is present".
+func liveUnregistered(database *types.DBSchema, registered sqlitemodule.Set) []Table {
+	if database == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var unclassified []Table
+	add := func(schema, name, module string) {
+		if module == "" || registered.Registers(module) {
+			return
+		}
+		if _, ok := seen[schema+"\x00"+name]; ok {
+			return
+		}
+		seen[schema+"\x00"+name] = struct{}{}
+		unclassified = append(unclassified, Table{Schema: schema, Name: name, Module: module})
+	}
+	for _, table := range database.UnregisteredVirtualTables {
+		add(table.Schema, table.Name, table.Module)
+	}
+	for _, table := range database.Tables {
+		add(table.Schema, table.Name, table.VirtualModule)
+	}
+	sortTables(unclassified)
+	return unclassified
+}
+
+// desiredUnregistered lists the desired side's virtual tables this build cannot
+// create.
+func desiredUnregistered(desired *goschema.Database, registered sqlitemodule.Set) []Table {
+	if desired == nil {
+		return nil
+	}
+	var wanted []Table
+	for _, table := range desired.Tables {
+		if table.VirtualModule == "" || registered.Registers(table.VirtualModule) {
+			continue
+		}
+		wanted = append(wanted, Table{
+			Schema: table.Schema,
+			Name:   table.Name,
+			Module: table.VirtualModule,
+		})
+	}
+	sortTables(wanted)
+	return wanted
+}
+
+// modulesOf renders the distinct modules of a table list, in a stable order.
+// The tables are what an operator recognizes; the modules are what a different
+// build would have to register.
+func modulesOf(tables []Table) string {
+	var modules []string
+	for _, table := range tables {
+		if !slices.Contains(modules, table.Module) {
+			modules = append(modules, table.Module)
+		}
+	}
+	sort.Strings(modules)
+	return strings.Join(modules, ", ")
+}
+
+func moduleNoun(count int) string {
+	if count == 1 {
+		return "module"
+	}
+	return "modules"
+}
+
+func sortTables(tables []Table) {
+	sort.Slice(tables, func(i, j int) bool {
+		if tables[i].Schema != tables[j].Schema {
+			return tables[i].Schema < tables[j].Schema
+		}
+		return tables[i].Name < tables[j].Name
+	})
 }
 
 // declaration is one side's view of a table name.
@@ -372,6 +617,61 @@ func Names(tables []Table) []string {
 		rendered = append(rendered, table.String())
 	}
 	return rendered
+}
+
+// ReportUnclassified writes a note naming the virtual tables whose module the
+// reading build could not load, and nothing at all when there are none.
+//
+// It belongs on the read surfaces, which refuse nothing: `ptah db read` and
+// `schema inspect` produce a description, and for these databases that
+// description is wrong in a way the reader can name and the operator cannot
+// see. Measured on an fts4 database, `ptah db read` emits the virtual table
+// correctly and then five `CREATE TABLE` statements for the module's own
+// storage; replayed, those five collide with the index the first statement
+// creates. A reader shown that output with nothing said has no way to know
+// which half is real.
+//
+// It reports the tables and the module rather than a count, the opposite of
+// [go.5x5.cz/ptah/internal/rolescope.ReportUndescribed]. That note withholds
+// names because they come from outside the inspected scope and can belong to
+// another tenant; these names are in the document the operator is already
+// looking at, and the note is useless without saying which of the statements
+// below it are the suspect ones.
+//
+// w may be nil, which is how the inspect surfaces spell "no diagnostics
+// stream"; the note is then dropped rather than panicking. Write errors are
+// dropped too: a diagnostic that fails to print must not fail a read that
+// succeeded.
+func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
+	if w == nil || schema == nil || len(schema.UnregisteredVirtualTables) == 0 {
+		return
+	}
+	unclassified := make([]Table, 0, len(schema.UnregisteredVirtualTables))
+	for _, table := range schema.UnregisteredVirtualTables {
+		unclassified = append(unclassified, Table{
+			Schema: table.Schema,
+			Name:   table.Name,
+			Module: table.Module,
+		})
+	}
+	fmt.Fprintf(w,
+		"note: virtual %s %s %s a module this build does not register, so SQLite could not mark the"+
+			" tables that %s owns and this description reports them as ordinary tables. Applying it"+
+			" creates tables the module creates itself, and comparing it can plan their removal. Set"+
+			" %s=1 to compare anyway.\n",
+		noun(len(unclassified)),
+		names(unclassified),
+		useVerb(len(unclassified)),
+		modulesOf(unclassified),
+		AllowUnregisteredModuleEnvVar,
+	)
+}
+
+func useVerb(count int) string {
+	if count == 1 {
+		return "uses"
+	}
+	return "use"
 }
 
 // Tables lists the virtual tables a database schema holds, in a stable order.

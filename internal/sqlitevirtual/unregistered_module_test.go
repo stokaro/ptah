@@ -1,0 +1,389 @@
+package sqlitevirtual_test
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
+)
+
+// TestValidateComparisonRefusesAnUnregisteredModule is the guard on the second
+// data-loss path of stokaro/ptah#1028, the one #1469 left open and whose remedy
+// was the weapon.
+//
+// Measured end to end against master ebd2ba2e, on fts3 and fts4 databases built
+// by a system SQLite that has those modules, with an fts5 control:
+//
+//	module  registered  guard says            --exclude docs then does   MATCH after
+//	fts3    no          exclude "docs"        3 DROP TABLE, exit 0       SQL logic error
+//	fts4    no          exclude "docs"        5 DROP TABLE, exit 0       SQL logic error
+//	fts5    yes         exclude "docs"        Schema is synced, exit 0   1 row
+//
+// Ptah refused, printed a remedy, and following that remedy destroyed the
+// index. The fts5 control is what proves the difference is module registration
+// and not the flag.
+//
+// The cause is one signal. SQLite marks a table `shadow` only while the module
+// that owns it is loaded, so on fts3 and fts4 the module's five storage tables
+// arrive as ordinary user tables. `--exclude docs` removes the virtual table
+// and leaves every one of them in the comparison, where a desired state that
+// does not name them reads as a request to drop them.
+//
+// So the rows below are mostly about what survives exclusion. The refusal is
+// keyed on a list the reader records BEFORE any selection runs, which is the
+// only thing that still speaks on the run that does the damage.
+func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
+	// fts4 is genuinely absent from the module set this build registers, which
+	// PRAGMA module_list reports as exactly: dbstat, fts5, fts5vocab, geopoly,
+	// rtree, rtree_i32, sqlite_dbpage. Nothing here hard-codes that name as
+	// special; it is unregistered the same way an invented module is.
+	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
+
+	tests := []struct {
+		name            string
+		dialect         string
+		env             func(testing.TB)
+		desired         *goschema.Database
+		database        *types.DBSchema
+		wantErr         bool
+		wantUnsupported bool
+		wantContains    []string
+		wantAbsent      []string
+	}{
+		{
+			name:    "a database holding a module this build cannot load is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}, {Name: "users"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`virtual table "docs" (module fts4)`,
+				"does not register",
+				"this build registers dbstat, fts5, fts5vocab, geopoly, rtree, rtree_i32, sqlite_dbpage",
+				sqlitevirtual.AllowUnregisteredModuleEnvVar,
+			},
+		},
+		{
+			// THE ROW THIS CHANGE EXISTS FOR. The virtual table is gone from
+			// Tables, exactly as `--exclude docs` leaves it, and the module's
+			// storage is still here under names nothing marked. On master this
+			// comparison returned nil and the planner dropped all five.
+			name:    "the refusal survives excluding the virtual table",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "docs_content"},
+					{Name: "docs_docsize"},
+					{Name: "docs_segdir"},
+					{Name: "docs_segments"},
+					{Name: "docs_stat"},
+					{Name: "users"},
+				},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`virtual table "docs" (module fts4)`, "does not register"},
+		},
+		{
+			// The diagnostic must not repeat the advice that destroyed the
+			// index. Naming the exclusion as a remedy here is the exact defect.
+			name:    "the refusal does not advise excluding the table",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`excluding "docs" does not protect the index`,
+				"Ptah cannot list them without the module",
+			},
+			wantAbsent: []string{
+				"exclude \"docs\" from the comparison to leave it in place",
+				sqlitevirtual.AllowDropEnvVar,
+			},
+		},
+		{
+			// A DBSchema built by something other than the SQLite reader
+			// carries no list. The virtual table in front of the validator is
+			// still checked directly, so a zero value cannot read as "every
+			// module is present".
+			name:    "a virtual table is checked even with no list recorded",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`virtual table "docs" (module fts4)`},
+		},
+		{
+			name:    "the opt-in lifts the refusal",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs_content"}, {Name: "users"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr: false,
+		},
+		{
+			// The difference between "set to off" and "unset".
+			name:    "an explicit false keeps the refusal",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "false"),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "users"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"does not register"},
+		},
+		{
+			// The other opt-in governs a different question and must not answer
+			// this one. Setting it says "drop the virtual table I can see",
+			// which is not permission to plan against tables Ptah has said it
+			// cannot classify.
+			name:    "the drop opt-in does not lift this refusal",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"does not register"},
+		},
+		{
+			// THE fts5 CONTROL, and the reason this is not a rule about names.
+			// fts5 is registered, so SQLite marked its shadow tables, nothing
+			// went unclassified, and the #1469 refusal is the one that speaks.
+			name:            "a registered module keeps the refusal #1469 landed",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:         declaring("users"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				"the desired schema does not name",
+				sqlitevirtual.AllowDropEnvVar,
+			},
+			wantAbsent: []string{"does not register"},
+		},
+		{
+			// SQLite resolves a module name case-insensitively over ASCII, and
+			// records the spelling the statement used. A byte comparison
+			// against the lowercase name module_list reports would refuse this
+			// perfectly ordinary FTS5 database.
+			name:            "a registered module spelled in upper case is not refused as unregistered",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:         declaringVirtual("docs", "FTS5", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "FTS5", VirtualArguments: "title, body"}}},
+			wantErr:         false,
+			wantUnsupported: false,
+		},
+		{
+			// The desired side fails differently and certainly. This build
+			// answers the CREATE VIRTUAL TABLE a plan would carry with
+			// `no such module: fts4` -- measured mid-apply on master, after the
+			// plan had been printed and auto-approved.
+			name:            "a desired virtual table this build cannot create is refused",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:         declaringVirtual("docs", "fts4", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				"the desired schema declares",
+				"no such module: fts4",
+				"apply this schema with a build that registers fts4",
+			},
+		},
+		{
+			// No value of an environment variable makes a module exist, so the
+			// desired-side refusal has no escape -- the same rule the kind
+			// collision and the changed declaration follow.
+			name:            "no opt-in lifts the desired-side refusal",
+			dialect:         "sqlite",
+			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			desired:         declaringVirtual("docs", "fts4", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"no such module: fts4"},
+		},
+		{
+			// The dialect gate. A MySQL comparison must not be failed by a
+			// SQLite subsystem, however the list got there.
+			name:    "a non SQLite dialect is not touched",
+			dialect: "mysql",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tt.env(t)
+
+			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, tt.database)
+
+			c.Assert(err != nil, qt.Equals, tt.wantErr)
+			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
+			for _, fragment := range tt.wantContains {
+				c.Assert(errorText(err), qt.Contains, fragment)
+			}
+			for _, fragment := range tt.wantAbsent {
+				c.Assert(errorText(err), qt.Not(qt.Contains), fragment)
+			}
+		})
+	}
+}
+
+// TestValidateToggleResolvesBothOwnedVariables keeps a typo in the newer opt-in
+// from staying dormant.
+//
+// Both toggles this package owns are resolved as soon as the dialect is known,
+// for the reason stokaro/ptah#1334 gives: an operator who misspells one and is
+// told nothing believes the refusal is unconditional, and finds out on the day
+// the condition fires.
+func TestValidateToggleResolvesBothOwnedVariables(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     func(testing.TB)
+		dialect string
+		wantErr string
+	}{
+		{
+			name:    "a malformed unregistered-module opt-in is a configuration error",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"),
+			dialect: "sqlite",
+			wantErr: `invalid boolean value "maybe" for ` + sqlitevirtual.AllowUnregisteredModuleEnvVar,
+		},
+		{
+			name:    "a malformed drop opt-in is still a configuration error",
+			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "yes"),
+			dialect: "sqlite",
+			wantErr: `invalid boolean value "yes" for ` + sqlitevirtual.AllowDropEnvVar,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tt.env(t)
+
+			c.Assert(sqlitevirtual.ValidateToggle(tt.dialect), qt.ErrorMatches, tt.wantErr)
+			// The same variable on a dialect this subsystem does not own is not
+			// this subsystem's business, and failing a MySQL plan over it would
+			// be the mistake stokaro/ptah#1334 names.
+			c.Assert(sqlitevirtual.ValidateToggle("mysql"), qt.IsNil)
+		})
+	}
+}
+
+// TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor covers the read
+// surfaces, which refuse nothing and so must say something.
+//
+// `ptah db read` against an fts4 database emits the virtual table correctly and
+// then a CREATE TABLE for each of the module's five storage tables. Replayed,
+// those five collide with the index the first statement creates. A reader shown
+// that with nothing said cannot tell which half is real.
+func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
+	tests := []struct {
+		name         string
+		schema       *types.DBSchema
+		wantContains []string
+		wantSilent   bool
+	}{
+		{
+			name:       "a nil schema says nothing",
+			schema:     nil,
+			wantSilent: true,
+		},
+		{
+			name:       "a fully classified database says nothing",
+			schema:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			wantSilent: true,
+		},
+		{
+			name: "an unclassified table is named with its module",
+			schema: &types.DBSchema{
+				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			},
+			wantContains: []string{
+				`virtual table "docs" (module fts4)`,
+				"does not register",
+				"reports them as ordinary tables",
+				sqlitevirtual.AllowUnregisteredModuleEnvVar,
+			},
+		},
+		{
+			name: "every unclassified table is named, not just the first",
+			schema: &types.DBSchema{
+				UnregisteredVirtualTables: []types.DBVirtualTable{
+					{Name: "docs", Module: "fts4"},
+					{Name: "legacy", Module: "fts3"},
+				},
+			},
+			wantContains: []string{`"docs" (module fts4)`, `"legacy" (module fts3)`, "fts3, fts4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			sqlitevirtual.ReportUnclassified(&out, tt.schema)
+
+			c.Assert(out.String() == "", qt.Equals, tt.wantSilent)
+			for _, fragment := range tt.wantContains {
+				c.Assert(out.String(), qt.Contains, fragment)
+			}
+		})
+	}
+}
+
+// TestReportUnclassifiedToleratesNoDiagnosticsStream matches how the inspect
+// surfaces spell "no diagnostics stream". A note that panicked would fail a
+// read that succeeded.
+func TestReportUnclassifiedToleratesNoDiagnosticsStream(t *testing.T) {
+	sqlitevirtual.ReportUnclassified(nil, &types.DBSchema{
+		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	})
+}

@@ -127,6 +127,12 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if !opts.SuppressRoleCoverageNote {
 		rolescope.ReportUndescribed(opts.Diagnostics, schema)
 	}
+	// Reported on the same surface and for the same reason as the role note:
+	// the rendered document is all the operator sees, and where a module is
+	// missing part of that document describes tables SQLite creates itself.
+	// Unconditional, because unlike the role note it is not about scoping
+	// choices a caller can make. See stokaro/ptah#1028.
+	sqlitevirtual.ReportUnclassified(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil

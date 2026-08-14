@@ -92,9 +92,15 @@ Applying that output to an empty database recreates the same object — a
 full-text index that answers `MATCH`, not a plain table of the same name.
 
 Nothing in the reader names a module. `PRAGMA table_list` classifies every
-table as `table`, `virtual` or `shadow`, so `fts3`, `fts4`, `fts5`, `rtree`,
-`rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build registers
-are all read the same way.
+table as `table`, `virtual` or `shadow`, so `fts5`, `rtree`, `rtree_i32`,
+`geopoly`, `fts5vocab`, `dbstat` and any module a build registers are all read
+the same way.
+
+Which modules this build registers is asked rather than assumed. It answers
+`PRAGMA module_list` with exactly seven — `dbstat`, `fts5`, `fts5vocab`,
+`geopoly`, `rtree`, `rtree_i32`, `sqlite_dbpage` — and `fts3` and `fts4` are
+not among them. See [Virtual table limitations](#virtual-table-limitations) for
+what follows from that.
 
 The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
 and their siblings — are not reported at all. They are the module's own
@@ -170,9 +176,23 @@ refused however it is set.
 - Shadow tables belonging to a module the reading build does not register
   cannot be identified, because only that module knows which suffixes are its
   own. SQLite reports them as ordinary tables and so does Ptah. The virtual
-  table itself is still recognized and still round-trips. This is permanent
-  because it is SQLite's own answer: no catalog field distinguishes a shadow
-  table without the module.
+  table itself is still recognized and still round-trips. This part is
+  permanent because it is SQLite's own answer: no catalog field distinguishes a
+  shadow table without the module.
+
+  What is **not** permanent is planning against that description. Measured on
+  `fts3` and `fts4`, excluding the virtual table left the module's storage in
+  the comparison and `ptah schema apply` dropped every one of those tables at
+  exit 0, after which `MATCH` answered `SQL logic error`; the `fts5` control
+  reported a synced schema and changed nothing. A comparison whose database
+  side holds a virtual table this build cannot load is now refused, and the
+  refusal survives excluding that table, because the tables at risk are not the
+  one an operator would exclude. A read still succeeds and prints a note naming
+  the table and module. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
+  restores the old comparison for an operator who wants it, and the desired-side
+  form of the same condition — a plan carrying
+  `CREATE VIRTUAL TABLE ... USING fts4`, which this build answers with
+  `no such module: fts4` — is refused with no opt-in.
 - A user-created index on a recognized shadow table is refused rather than
   omitted. Ptah cannot replay that index without exposing the module-owned
   table as an ordinary schema object.
