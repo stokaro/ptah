@@ -2,6 +2,8 @@ module go.5x5.cz/ptah
 
 go 1.26.5
 
+toolchain go1.26.6
+
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
 	github.com/bufbuild/protocompile v0.14.1
