@@ -355,6 +355,9 @@ capabilities.`
 }
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	mode := ignoreMissingEnvSelection
