@@ -77,7 +77,10 @@ func RequireInteractive(in io.Reader) error {
 // package that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly
 // empty value is refused here too, which is stokaro/ptah#1334's one change to
 // this reader.
-var allowNonInteractive = envbool.New(AllowNonInteractiveEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained]: permitting a scripted
+// editor in a non-interactive process adds no editor or migration capability
+// the pinned binary lacks, so strict compatibility keeps it reachable.
+var allowNonInteractive = envbool.New(AllowNonInteractiveEnvVar, false, envbool.Retained)
 
 // nonInteractiveAllowed reads the opt-out. An unparsable value is an error
 // rather than a silent false: an operator who believes the gate is lifted must

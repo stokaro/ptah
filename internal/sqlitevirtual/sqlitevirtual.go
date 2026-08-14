@@ -119,7 +119,11 @@ import (
 // contents. It only decides whether Ptah is willing to plan it unasked.
 const AllowDropEnvVar = "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP"
 
-var allowDrop = envbool.New(AllowDropEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained]: a true value restores the
+// `DROP TABLE` the pinned community binary plans for a SQLite virtual table
+// anyway, so refusing it in strict mode would move Ptah further from the
+// oracle rather than closer.
+var allowDrop = envbool.New(AllowDropEnvVar, false, envbool.Retained)
 
 // AllowUnregisteredModuleEnvVar compares a database holding a virtual table
 // whose module this build does not register, treating that module's private
@@ -150,7 +154,16 @@ var allowDrop = envbool.New(AllowDropEnvVar, false)
 // pinned Atlas community binary registers.
 const AllowUnregisteredModuleEnvVar = "PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE"
 
-var allowUnregisteredModule = envbool.New(AllowUnregisteredModuleEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained], and the argument is if
+// anything stronger than its sibling's. The refusal it lifts is Ptah's own: the
+// pinned community binary has no notion of a module this build cannot classify
+// and plans the drops regardless. A true value therefore restores oracle
+// behavior rather than adding a capability beyond it, so gating it would make
+// strict mode the one place Ptah is stricter than the binary it exists to
+// match. The parse is still owed: a malformed value would otherwise stay
+// dormant until a comparison happens to meet an unregistered module, which is
+// precisely the run an operator is already debugging. See stokaro/ptah#1028.
+var allowUnregisteredModule = envbool.New(AllowUnregisteredModuleEnvVar, false, envbool.Retained)
 
 // UnregisteredModuleAllowed reports whether the opt-in lifts the refusal to
 // compare a database Ptah could not fully classify.
@@ -200,11 +213,11 @@ func ValidateToggle(dialect string) error {
 // command's normal URL validation so this preflight changes only the ordering
 // of a known SQLite configuration error.
 //
-// Native commands call this before loading project configuration. An explicit
-// target URL, such as --db-url or replay --dev-url, already selects the SQLite
+// Command adapters call this before loading project configuration. An explicit
+// target URL, such as --db-url or --dev-url, already selects the SQLite
 // subsystem, so malformed project config must not mask the malformed boolean
 // value that subsystem owns. They still call [ValidateToggle] after merging
-// project defaults, which covers a URL selected by ptah.yaml.
+// project defaults, which covers a URL selected by project configuration.
 func ValidateExplicitURLToggle(databaseURL string) error {
 	dialect, err := atlasurl.DialectFromURL(databaseURL)
 	if err != nil {

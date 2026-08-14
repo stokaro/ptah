@@ -23,6 +23,7 @@ import (
 	// direction that fails loudly instead of passing quietly.
 	_ "go.5x5.cz/ptah/cmd/atlas"
 	_ "go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	_ "go.5x5.cz/ptah/internal/atlasfilter"
 	_ "go.5x5.cz/ptah/internal/atlashclrender"
 	_ "go.5x5.cz/ptah/internal/atlassource"
@@ -289,6 +290,62 @@ func TestEveryDeclaredVariableIsNamedAndDefaultedSafely(t *testing.T) {
 					" into an open gate; see the reasoning in internal/envbool"))
 		})
 	}
+}
+
+// TestEveryDeclaredVariableStatesAClassification is the classification guard.
+//
+// Strict Atlas Community Edition compatibility derives its refusals from
+// [envbool.Registered], so a declaration that states no class is a variable
+// nobody decided about -- and the runtime answer for it, refusal, is a guess
+// made on the operator's behalf rather than a decision somebody wrote down.
+// Refusal is the right guess, which is why it is the default; it is not a
+// substitute for the sentence in the declaration saying which side the variable
+// is on and why.
+//
+// It reads the class off the registry rather than off a list, for the reason
+// this whole package exists: a list is what goes stale the next time a variable
+// is added.
+func TestEveryDeclaredVariableStatesAClassification(t *testing.T) {
+	c := qt.New(t)
+
+	registered := envbool.Registered()
+
+	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
+		"the registry is empty, so every assertion over it is vacuous"))
+	for _, variable := range registered {
+		c.Run(variable.Name(), func(c *qt.C) {
+			c.Assert(variable.Class(), qt.Not(qt.Equals), envbool.Unclassified, qt.Commentf(
+				"state envbool.Gated or envbool.Retained at the envbool.New call for %s,"+
+					" and say in a comment which capability the pinned community binary"+
+					" does or does not have", variable.Name()))
+		})
+	}
+}
+
+// TestExactlyOneVariableSelectsThePolicy keeps [envbool.Selector] from becoming
+// a second retained bucket.
+//
+// Selector is the one class strict mode never refuses regardless of value, so a
+// second variable wearing it would be an unrefusable extension. There is one
+// policy selector, and this is what says so.
+func TestExactlyOneVariableSelectsThePolicy(t *testing.T) {
+	c := qt.New(t)
+
+	var selectors []string
+	for _, variable := range envbool.Registered() {
+		selectors = append(selectors, namesWithClass(variable, envbool.Selector)...)
+	}
+
+	c.Assert(selectors, qt.DeepEquals, []string{atlascompatpolicy.StrictCompatEnvVar})
+}
+
+// namesWithClass returns the variable's name when it carries class, and nothing
+// otherwise, so the caller collects without a branch in a test body.
+func namesWithClass(variable envbool.Var, class envbool.Class) []string {
+	if variable.Class() != class {
+		return nil
+	}
+	return []string{variable.Name()}
 }
 
 // TestNoVariableIsDeclaredTwice keeps one name from being declared with two

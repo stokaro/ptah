@@ -24,7 +24,10 @@ const AllowUnmatchedExcludeEnvVar = "PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE"
 
 // allowUnmatchedExclude is the declaration of the variable, made once, in the
 // package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var allowUnmatchedExclude = envbool.New(AllowUnmatchedExcludeEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained]: it relaxes a Ptah-added
+// refusal back to what the pinned binary already accepts, so it adds no Atlas
+// capability for strict compatibility to withhold.
+var allowUnmatchedExclude = envbool.New(AllowUnmatchedExcludeEnvVar, false, envbool.Retained)
 
 // AllowUnmatchedExclude reports whether the opt-in restores the permissive
 // treatment of an --exclude selector that named no object.

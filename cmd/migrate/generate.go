@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,8 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -256,18 +259,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
-	if err != nil {
-		return err
-	}
-
-	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:    rootDirs,
-		SchemaFiles: schemaFiles,
-		Commands:    commands,
-		Dialect:     dialect,
-		PlainHTTP:   plainHTTP,
-	})
+	generated, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
 	if err != nil {
 		return err
 	}
@@ -344,7 +336,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	out := cmd.OutOrStdout()
+	writeGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
+	return nil
+}
+
+func writeGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
@@ -353,5 +349,30 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
-	return nil
+}
+
+// loadGenerateSchema reads the desired schema for `migrations generate`.
+//
+// It lives outside migrateGenerateCommand because that function is a linear
+// sequence of flag reads and grew past the length limit when `--plain-http`
+// was added for oci:// sources (stokaro/ptah#928 item 1). The flag is read
+// here rather than beside its siblings so the value and its only consumer
+// stay in one place.
+func loadGenerateSchema(
+	cmd *cobra.Command,
+	rootDirs, schemaFiles []string,
+	commands []schemasource.Command,
+	dialect string,
+) (*goschema.Database, error) {
+	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
+	if err != nil {
+		return nil, err
+	}
+	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+		Commands:    commands,
+		Dialect:     dialect,
+		PlainHTTP:   plainHTTP,
+	})
 }

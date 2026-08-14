@@ -115,19 +115,29 @@ convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
 and SQL templates; checksum-only reads preserve those bytes. All inputs remain
 available in the default, complete compatibility profile.
 
-Six opt-in correctness controls remain available because they do not add an
-Atlas capability: `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
-`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`,
-`PTAH_ALLOW_NONINTERACTIVE_EDIT`, `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, and
-`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`.
-`PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a
-non-interactive process; it does not add an editor or migration capability. The
-two SQLite controls lift refusals that are Ptah's own — the pinned community
-binary plans those drops regardless — so gating them would make strict mode the
-one place Ptah is stricter than the binary it matches. Every one of the six is
-still parsed at the process boundary, so a malformed value is refused before
-command construction rather than lying dormant until the condition it governs
-comes up. Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
+Which variables strict mode gates is derived from Ptah's boolean-variable
+registry, not from a list kept beside it. Each variable states at its single
+declaration site whether strict mode gates it or retains it, so a variable
+added without stating anything is refused rather than ignored, and there is no
+second list to forget.
+
+These opt-in correctness controls remain available because they do not add an
+Atlas capability: `PTAH_ALLOW_NONINTERACTIVE_EDIT`,
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_HCL_STRICT_REDECLARATIONS`,
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
+
+`PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
+process; it does not add an editor or migration capability.
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned
+community binary plans for a SQLite virtual table anyway, and
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE` lifts a refusal that is Ptah's
+own, since the binary has no notion of a module this build cannot classify and
+plans the drops regardless. Gating either would make strict mode the one place
+Ptah is stricter than the binary it matches. Every other declared
+boolean is gated, and a malformed value for any of them fails the process
+whatever its classification. Native `ptah` does not read
+`PTAH_ATLAS_STRICT_COMPAT`.
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

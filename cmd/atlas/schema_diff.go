@@ -87,6 +87,9 @@ which Ptah does not evaluate.`
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	// The refusal lands before any config or database work: a flag Ptah does
 	// not implement must not be answered with a diff that ignored it.
 	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaExportFlag()); err != nil {
