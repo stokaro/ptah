@@ -167,7 +167,7 @@ lint: lint-qtlint
 
 lint-qtlint:
 	@echo "Running qtlint..."
-	go tool qtlint -require-qt-c-receiver ./...
+	scripts/check-qtlint.sh
 
 lint-fix:
 	@echo "Running auto-fixable linters..."

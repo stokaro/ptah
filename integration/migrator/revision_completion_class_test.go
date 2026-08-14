@@ -358,12 +358,13 @@ func sqliteRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.Transactional,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			conn, err := dbschema.ConnectToDatabase(
 				t.Context(),
 				"sqlite://"+filepath.Join(t.TempDir(), "revision-completion.db"),
 			)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -415,9 +416,10 @@ func postgresRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.Transactional,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			conn, err := dbschema.ConnectToDatabase(t.Context(), postgresTestURL(t))
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -488,10 +490,11 @@ func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompl
 		class:     ddltx.ImplicitCommit,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEnv, "ptah_rev999")
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -556,13 +559,14 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.NoTransaction,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			dbURL := os.Getenv("CLICKHOUSE_URL")
 			if dbURL == "" {
 				t.Skip("CLICKHOUSE_URL not set")
 			}
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {

@@ -110,13 +110,14 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 }
 
 func openNoTransactionClickHouse(t *testing.T) *dbschema.DatabaseConnection {
+	c := qt.New(t)
 	t.Helper()
 	dbURL := os.Getenv("CLICKHOUSE_URL")
 	if dbURL == "" {
 		t.Skip("CLICKHOUSE_URL not set")
 	}
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return conn
 }
 

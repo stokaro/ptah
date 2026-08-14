@@ -316,21 +316,22 @@ func assertIssue124State(
 	wantMigrations int,
 	wantLogRows int,
 ) {
+	c := qt.New(t)
 	t.Helper()
 
 	var migrationRows int
 	err := conn.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", names.migrationsTable)).
 		Scan(&migrationRows)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, migrationRows, qt.Equals, wantMigrations)
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationRows, qt.Equals, wantMigrations)
 
 	var logRows int
 	if wantLogRows > 0 {
 		err = conn.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", names.logTable)).
 			Scan(&logRows)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 	}
-	qt.Assert(t, logRows, qt.Equals, wantLogRows)
+	c.Assert(logRows, qt.Equals, wantLogRows)
 }
 
 func cleanupIssue124(t *testing.T, conn *dbschema.DatabaseConnection, names issue124TestNames) {

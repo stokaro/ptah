@@ -24,7 +24,7 @@ func TestInitializePostgresCreatesMetadata(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() {
 		_, cleanupErr := conn.Exec("DROP TABLE IF EXISTS " + migrationsTable)
-		qt.Check(t, cleanupErr, qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
 	}()
 
 	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider()).

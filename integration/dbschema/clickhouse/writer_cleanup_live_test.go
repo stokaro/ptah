@@ -186,6 +186,7 @@ func TestWriterDropDatabaseRealm_RejectsLegacyServerLive(t *testing.T) {
 }
 
 func openLiveClickHouseRealmDatabase(t *testing.T, environmentVariable string) (*sql.DB, string) {
+	c := qt.New(t)
 	t.Helper()
 	adminURL, configured := os.LookupEnv(environmentVariable)
 	if !configured {
@@ -193,32 +194,32 @@ func openLiveClickHouseRealmDatabase(t *testing.T, environmentVariable string) (
 	}
 
 	admin, err := sql.Open("clickhouse", adminURL)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, admin.PingContext(t.Context()), qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(admin.PingContext(t.Context()), qt.IsNil)
 
 	database := fmt.Sprintf("ptah_realm_%d", time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(platform.ClickHouse, database)
 	_, err = admin.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	parsedURL, err := url.Parse(adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	parsedURL.Path = "/" + database
 	parsedURL.RawPath = ""
 	db, err := sql.Open("clickhouse", parsedURL.String())
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, db.PingContext(t.Context()), qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.PingContext(t.Context()), qt.IsNil)
 
 	t.Cleanup(func() {
-		qt.Check(t, db.Close(), qt.IsNil)
+		c.Check(db.Close(), qt.IsNil)
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_, cleanupErr := admin.ExecContext(
 			cleanupCtx,
 			"DROP DATABASE IF EXISTS "+quotedDatabase+" SYNC",
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, admin.Close(), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
 	})
 	return db, database
 }

@@ -62,25 +62,27 @@ func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, code := runAtlasBinary(
 				compat,
 				[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 				test.args...,
 			)
 
-			qt.Assert(t, code, qt.Equals, test.wantCode)
-			qt.Assert(t, stdout, qt.Equals, test.wantStdout)
-			qt.Assert(t, stderr, qt.Equals, test.wantStderr)
+			c.Assert(code, qt.Equals, test.wantCode)
+			c.Assert(stdout, qt.Equals, test.wantStdout)
+			c.Assert(stderr, qt.Equals, test.wantStderr)
 		})
 	}
 
 	t.Run("migrate diff desired snapshot uses target dialect", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newStrictMigrationPreflightFixture(t)
-		qt.Assert(t, os.WriteFile(filepath.Join(fixture.desired, "1_init.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(fixture.desired, "1_init.sql"), []byte(
 			"SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\n;\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(fixture.desired, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -91,9 +93,9 @@ func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 			"--dev-url", "sqlite://"+fixture.dev,
 		)
 
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			"Error: load --to schema: Atlas Community Edition strict compatibility does not support "+
 				"Ptah migration directives in 1_init.sql\n")
 		assertPathsDoNotExist(t,
@@ -116,12 +118,13 @@ func TestFullCompatProcessRetainsExtensionsByDefault(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, code := runAtlasBinary(compat, test.env, "schema", "plan", "--help")
 
-			qt.Assert(t, code, qt.Equals, 0)
-			qt.Assert(t, stdout, qt.Contains, "Atlas OSS `atlas schema plan` command path.")
-			qt.Assert(t, stdout, qt.Not(qt.Contains), "not supported by the community version")
-			qt.Assert(t, stderr, qt.Equals, "")
+			c.Assert(code, qt.Equals, 0)
+			c.Assert(stdout, qt.Contains, "Atlas OSS `atlas schema plan` command path.")
+			c.Assert(stdout, qt.Not(qt.Contains), "not supported by the community version")
+			c.Assert(stderr, qt.Equals, "")
 		})
 	}
 }
@@ -133,15 +136,16 @@ func TestStrictCompatProcessRejectsInvalidPolicyBeforeDispatch(t *testing.T) {
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, code := runAtlasBinary(
 				compat,
 				[]string{"PTAH_ATLAS_STRICT_COMPAT="},
 				args...,
 			)
 
-			qt.Assert(t, code, qt.Equals, 1)
-			qt.Assert(t, stdout, qt.Equals, "")
-			qt.Assert(t, stderr, qt.Equals,
+			c.Assert(code, qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals,
 				`Error: invalid boolean value "" for PTAH_ATLAS_STRICT_COMPAT`+"\n")
 		})
 	}
@@ -156,6 +160,7 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 		"PTAH_URL=sqlite://must-not-be-ignored",
 	} {
 		t.Run(strings.SplitN(assignment, "=", 2)[0], func(t *testing.T) {
+			c := qt.New(t)
 			name := strings.SplitN(assignment, "=", 2)[0]
 			stdout, stderr, code := runAtlasBinary(
 				compat,
@@ -166,9 +171,9 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 				"version",
 			)
 
-			qt.Assert(t, code, qt.Equals, 1)
-			qt.Assert(t, stdout, qt.Equals, "")
-			qt.Assert(t, stderr, qt.Equals,
+			c.Assert(code, qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals,
 				"Error: PTAH_ATLAS_STRICT_COMPAT does not allow "+name+"\n")
 		})
 	}
@@ -187,9 +192,9 @@ func TestStrictCompatProcessValidatesRetainedEnvironmentBeforeDispatch(t *testin
 		"version",
 	)
 
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		`Error: invalid boolean value "maybe" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`+"\n")
 }
 
@@ -203,9 +208,9 @@ func TestNativeProcessIgnoresStrictCompatEnvironment(t *testing.T) {
 		"version",
 	)
 
-	qt.Assert(t, code, qt.Equals, 0)
-	qt.Assert(t, stdout, qt.Contains, "Version:")
-	qt.Assert(t, stderr, qt.Equals, "")
+	c.Assert(code, qt.Equals, 0)
+	c.Assert(stdout, qt.Contains, "Version:")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 func TestStrictCompatRefusesProDesiredObjectsWhileFullModeRetainsThem(t *testing.T) {
@@ -228,18 +233,18 @@ func TestStrictCompatRefusesProDesiredObjectsWhileFullModeRetainsThem(t *testing
 	}
 
 	stdout, stderr, code := runAtlasBinary(compat, nil, args...)
-	qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-	qt.Assert(t, stdout, qt.Contains, "CREATE VIEW")
-	qt.Assert(t, stderr, qt.Equals, "")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "CREATE VIEW")
+	c.Assert(stderr, qt.Equals, "")
 
 	stdout, stderr, code = runAtlasBinary(
 		compat,
 		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 		args...,
 	)
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		"Error: load --to schema: Atlas Community Edition strict compatibility does not support desired schema views\n")
 }
 
@@ -248,6 +253,7 @@ func TestStrictCompatRefusesProInspectTemplateFunctionsBeforeSourceWork(t *testi
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	for _, function := range []string{"hcl", "split", "write"} {
 		t.Run(function, func(t *testing.T) {
+			c := qt.New(t)
 			format := `{{ sql . | ` + function + ` }}`
 			stdout, stderr, code := runAtlasBinary(
 				compat,
@@ -257,9 +263,9 @@ func TestStrictCompatRefusesProInspectTemplateFunctionsBeforeSourceWork(t *testi
 				"--format", format,
 			)
 
-			qt.Assert(t, code, qt.Equals, 1)
-			qt.Assert(t, stdout, qt.Equals, "")
-			qt.Assert(t, stderr, qt.Equals,
+			c.Assert(code, qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals,
 				`Error: Atlas Community Edition strict compatibility does not support schema inspect template function "`+
 					function+"\"\n")
 		})
@@ -285,12 +291,12 @@ func TestStrictCompatRefusesAuthoredInspectExtensionsBeforeDevReset(t *testing.T
 		"--dev-url", "sqlite://"+devPath,
 	)
 
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		"Error: Atlas Community Edition strict compatibility does not support desired schema views\n")
 	_, statErr := os.Stat(devPath)
-	qt.Assert(t, statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestStrictCompatRefusesUnknownAuthoredInspectHCL(t *testing.T) {
@@ -309,11 +315,11 @@ func TestStrictCompatRefusesUnknownAuthoredInspectHCL(t *testing.T) {
 		"--dev-url", "sqlite://"+devPath,
 	)
 
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Contains, `unsupported top-level block "wibble"`)
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, `unsupported top-level block "wibble"`)
 	_, statErr := os.Stat(devPath)
-	qt.Assert(t, statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestStrictCompatRefusesYAMLSchemaWhileFullModeRetainsIt(t *testing.T) {
@@ -339,18 +345,18 @@ func TestStrictCompatRefusesYAMLSchemaWhileFullModeRetainsIt(t *testing.T) {
 		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 		args...,
 	)
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		`Error: Atlas Community Edition strict compatibility does not support YAML schema source "schema.yaml"`+"\n")
 	_, statErr := os.Stat(devPath)
-	qt.Assert(t, statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 
 	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
-	qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-	qt.Assert(t, stdout, qt.Contains, "CREATE TABLE")
-	qt.Assert(t, stdout, qt.Contains, "users")
-	qt.Assert(t, stderr, qt.Equals, "")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "CREATE TABLE")
+	c.Assert(stdout, qt.Contains, "users")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 func TestStrictCompatRefusesIgnoredProjectConfigConstructs(t *testing.T) {
@@ -371,9 +377,9 @@ func TestStrictCompatRefusesIgnoredProjectConfigConstructs(t *testing.T) {
 		"--env", "local",
 	)
 
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Contains,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains,
 		`Atlas Community Edition strict compatibility refuses ignored atlas.hcl attribute "pro_option"`)
 }
 
@@ -405,17 +411,17 @@ env {
 		[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 		args...,
 	)
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		"Error: schemahcl: for_each does not support list of string type\n")
 	_, statErr := os.Stat(databasePath)
-	qt.Assert(t, statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 
 	stdout, stderr, code = runAtlasBinary(compat, nil, args...)
-	qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-	qt.Assert(t, stdout, qt.Equals, "schema \"main\" {\n}\n")
-	qt.Assert(t, stderr, qt.Equals, "")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Equals, "schema \"main\" {\n}\n")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
@@ -452,9 +458,9 @@ func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
 		"--env", "local",
 	)
 
-	qt.Assert(t, code, qt.Equals, 1)
-	qt.Assert(t, stdout, qt.Equals, "")
-	qt.Assert(t, stderr, qt.Equals,
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals,
 		`Error: Atlas Community Edition strict compatibility does not support YAML schema source "schema.yaml"`+"\n")
 }
 
@@ -589,6 +595,7 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 	strictEnv := []string{"PTAH_ATLAS_STRICT_COMPAT=1"}
 
 	t.Run("schema apply YAML before target connection", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		targetPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -602,14 +609,15 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 			"--auto-approve",
 		)
 
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
 		assertPathsDoNotExist(t, targetPath, devPath)
 	})
 
 	t.Run("schema diff YAML before database-backed from", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		fromPath := filepath.Join(dir, "from.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -622,22 +630,23 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 			"--dev-url", "sqlite://"+devPath,
 		)
 
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
 		assertPathsDoNotExist(t, fromPath, devPath)
 	})
 
 	t.Run("migrate diff desired YAML before dev connection and directory lock", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		migrationsDir := filepath.Join(dir, "migrations")
-		qt.Assert(t, os.Mkdir(migrationsDir, 0o700), qt.IsNil)
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
+		c.Assert(os.Mkdir(migrationsDir, 0o700), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
 			"CREATE TABLE users (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		devPath := filepath.Join(dir, "dev.db")
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -648,9 +657,9 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 			"--dev-url", "sqlite://"+devPath,
 		)
 
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			`Error: load --to schema: Atlas Community Edition strict compatibility does not support YAML schema source "missing.yaml"`+"\n")
 		assertPathsDoNotExist(t,
 			devPath,
@@ -659,16 +668,17 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 	})
 
 	t.Run("migrate diff current directory before dev connection and directory lock", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		migrationsDir := filepath.Join(dir, "migrations")
-		qt.Assert(t, os.Mkdir(migrationsDir, 0o700), qt.IsNil)
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
+		c.Assert(os.Mkdir(migrationsDir, 0o700), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
 			"-- +ptah no_transaction\nCREATE TABLE users (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		desiredPath := filepath.Join(dir, "desired.sql")
-		qt.Assert(t, os.WriteFile(desiredPath, []byte(
+		c.Assert(os.WriteFile(desiredPath, []byte(
 			"CREATE TABLE users (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		devPath := filepath.Join(dir, "dev.db")
@@ -681,9 +691,9 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 			"--dev-url", "sqlite://"+devPath,
 		)
 
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			"Error: validate current migration directory: Atlas Community Edition strict compatibility does not support "+
 				"Ptah migration directives in 1_init.sql\n")
 		assertPathsDoNotExist(t,
@@ -742,6 +752,7 @@ func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fixture := newStrictMigrationPreflightFixture(t)
 			stdout, stderr, code := runAtlasBinary(
 				compat,
@@ -749,9 +760,9 @@ func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
 				test.args(fixture)...,
 			)
 
-			qt.Assert(t, code, qt.Equals, 1)
-			qt.Assert(t, stdout, qt.Equals, "")
-			qt.Assert(t, stderr, qt.Equals,
+			c.Assert(code, qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals,
 				"Error: load --to schema: Atlas Community Edition strict compatibility does not support "+
 					"Ptah migration directives in 1_init.sql\n")
 			assertPathsDoNotExist(t, test.gone(fixture)...)
@@ -792,22 +803,23 @@ type strictMigrationPreflightFixture struct {
 }
 
 func newStrictMigrationPreflightFixture(t *testing.T) strictMigrationPreflightFixture {
+	c := qt.New(t)
 	t.Helper()
 	root := t.TempDir()
 	desired := filepath.Join(root, "desired")
 	current := filepath.Join(root, "current")
-	qt.Assert(t, os.Mkdir(desired, 0o700), qt.IsNil)
-	qt.Assert(t, os.Mkdir(current, 0o700), qt.IsNil)
-	qt.Assert(t, os.WriteFile(filepath.Join(desired, "1_init.sql"), []byte(
+	c.Assert(os.Mkdir(desired, 0o700), qt.IsNil)
+	c.Assert(os.Mkdir(current, 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(desired, "1_init.sql"), []byte(
 		"-- +ptah\nCREATE TABLE users (id integer PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	qt.Assert(t, os.WriteFile(filepath.Join(current, "1_init.sql"), []byte(
+	c.Assert(os.WriteFile(filepath.Join(current, "1_init.sql"), []byte(
 		"CREATE TABLE users (id integer PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(desired, migrator.MigrationDirFormatAtlas)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	_, err = migratesum.WriteWithFormat(current, migrator.MigrationDirFormatAtlas)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return strictMigrationPreflightFixture{
 		root: root, current: current, desired: desired,
 		dev: filepath.Join(root, "dev.db"), from: filepath.Join(root, "from.db"),
@@ -816,10 +828,11 @@ func newStrictMigrationPreflightFixture(t *testing.T) strictMigrationPreflightFi
 }
 
 func assertPathsDoNotExist(t *testing.T, paths ...string) {
+	c := qt.New(t)
 	t.Helper()
 	for _, path := range paths {
 		_, err := os.Stat(path)
-		qt.Assert(t, err, qt.ErrorIs, os.ErrNotExist, qt.Commentf("path %s", path))
+		c.Assert(err, qt.ErrorIs, os.ErrNotExist, qt.Commentf("path %s", path))
 	}
 }
 
@@ -1248,11 +1261,12 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 }
 
 func waitForFileContains(t *testing.T, path, needle string) {
+	c := qt.New(t)
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		contents, err := os.ReadFile(path)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		if bytes.Contains(contents, []byte(needle)) {
 			return
 		}
@@ -1295,13 +1309,14 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	wantPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
 
 	t.Run("apply target before desired replay", func(t *testing.T) {
+		c := qt.New(t)
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE TABLE replayed_before_target_validation (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1312,22 +1327,23 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--dev-url", replayDevURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
-		qt.Assert(t, postgresTableExists(t, replayDevURL, "replayed_before_target_validation"), qt.IsFalse)
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		c.Assert(postgresTableExists(t, replayDevURL, "replayed_before_target_validation"), qt.IsFalse)
 	})
 
 	t.Run("apply target realm before desired schema replay", func(t *testing.T) {
+		c := qt.New(t)
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
 		tableName := prefix + "_replayed_scope"
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE SCHEMA IF NOT EXISTS "+procedureSchema+";\n"+
 				"CREATE TABLE "+procedureSchema+"."+tableName+" (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1338,20 +1354,21 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--dev-url", replayDevURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
-		qt.Assert(t, postgresSchemaTableExists(t, replayDevURL, procedureSchema, tableName), qt.IsFalse)
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		c.Assert(postgresSchemaTableExists(t, replayDevURL, procedureSchema, tableName), qt.IsFalse)
 	})
 
 	t.Run("apply target before lock acquisition", func(t *testing.T) {
+		c := qt.New(t)
 		lockConn, err := dbschema.ConnectToDatabase(t.Context(), procedureURL)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer dbschema.CloseAndWarn(lockConn)
 		lock, err := atlasschema.AcquireApplyLock(t.Context(), lockConn, "", time.Second)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer func() {
-			qt.Assert(t, lock.Release(), qt.IsNil)
+			c.Assert(lock.Release(), qt.IsNil)
 		}()
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1363,32 +1380,33 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--lock-timeout", "100ms",
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
 	})
 
 	t.Run("full apply classifies migration directory under lock", func(t *testing.T) {
+		c := qt.New(t)
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
 		devAdmin, err := dbschema.ConnectToDatabase(t.Context(), replayDevURL)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer dbschema.CloseAndWarn(devAdmin)
 		_, err = devAdmin.ExecContext(t.Context(), "CREATE SCHEMA "+emptySchema)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer func() {
 			_, _ = devAdmin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+emptySchema+" CASCADE")
 		}()
 		replayDevURL = postgresURLWithSearchPath(t, replayDevURL, emptySchema)
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_late.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_late.sql"), []byte(
 			"CREATE TABLE classified_under_lock (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 
 		lockConn, err := dbschema.ConnectToDatabase(t.Context(), emptyURL)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer dbschema.CloseAndWarn(lockConn)
 		lock, err := atlasschema.AcquireApplyLock(t.Context(), lockConn, "", time.Second)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		defer func() { _ = lock.Release() }()
 
 		var stdoutBuffer, stderrBuffer bytes.Buffer
@@ -1403,19 +1421,20 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		command.Env = environmentWithoutPtahVariables()
 		command.Stdout = &stdoutBuffer
 		command.Stderr = &stderrBuffer
-		qt.Assert(t, command.Start(), qt.IsNil)
+		c.Assert(command.Start(), qt.IsNil)
 
 		waitForPostgresAdvisoryLockPoller(t, lockConn)
 		_, err = migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
-		qt.Assert(t, lock.Release(), qt.IsNil)
-		qt.Assert(t, command.Wait(), qt.IsNil,
+		c.Assert(err, qt.IsNil)
+		c.Assert(lock.Release(), qt.IsNil)
+		c.Assert(command.Wait(), qt.IsNil,
 			qt.Commentf("stdout=%q stderr=%q", stdoutBuffer.String(), stderrBuffer.String()))
-		qt.Assert(t, stdoutBuffer.String(), qt.Contains, "CREATE TABLE")
-		qt.Assert(t, stderrBuffer.String(), qt.Equals, "")
+		c.Assert(stdoutBuffer.String(), qt.Contains, "CREATE TABLE")
+		c.Assert(stderrBuffer.String(), qt.Equals, "")
 	})
 
 	t.Run("apply target", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, code := runAtlasBinary(
 			compat,
 			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
@@ -1424,10 +1443,10 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--to", emptyURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
-		qt.Assert(t, postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: "+wantPolicyError+"\n")
+		c.Assert(postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
 
 		stdout, stderr, code = runAtlasBinary(
 			compat,
@@ -1437,11 +1456,12 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--to", emptyURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-		qt.Assert(t, postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
+		c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+		c.Assert(postgresStrictCleanObjectCount(t, procedureURL), qt.Equals, 1)
 	})
 
 	t.Run("diff database from", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, code := runAtlasBinary(
 			compat,
 			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
@@ -1449,12 +1469,13 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--from", procedureURL,
 			"--to", emptyURL,
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: load --from schema: "+wantPolicyError+"\n")
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: load --from schema: "+wantPolicyError+"\n")
 	})
 
 	t.Run("diff database to", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, code := runAtlasBinary(
 			compat,
 			[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
@@ -1462,20 +1483,21 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--from", emptyURL,
 			"--to", procedureURL,
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
 	})
 
 	t.Run("diff live to before from replay", func(t *testing.T) {
+		c := qt.New(t)
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
 		const tableName = "replayed_before_live_to_validation"
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE TABLE "+tableName+" (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1485,21 +1507,22 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--to", procedureURL,
 			"--dev-url", replayDevURL,
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
-		qt.Assert(t, postgresTableExists(t, replayDevURL, tableName), qt.IsFalse)
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(postgresTableExists(t, replayDevURL, tableName), qt.IsFalse)
 	})
 
 	t.Run("diff replayed migration directory", func(t *testing.T) {
+		c := qt.New(t)
 		migrationDir := t.TempDir()
 		replayDevURL := strictCompatPostgresDevURL(t)
 		collationName := prefix + "_replayed"
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationDir, "1_collation.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_collation.sql"), []byte(
 			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1509,9 +1532,9 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--to", emptyURL,
 			"--dev-url", replayDevURL,
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			`Error: load --from schema: --from "file://`+migrationDir+`": `+
 				`Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
 				collationName+`"`+"\n")
@@ -1524,11 +1547,12 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--to", emptyURL,
 			"--dev-url", replayDevURL,
 		)
-		qt.Assert(t, code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-		qt.Assert(t, stderr, qt.Equals, "")
+		c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+		c.Assert(stderr, qt.Equals, "")
 	})
 
 	t.Run("migrate diff live desired source", func(t *testing.T) {
+		c := qt.New(t)
 		currentDir := t.TempDir()
 		migrateDevURL := strictCompatPostgresDevURL(t)
 		stdout, stderr, code := runAtlasBinary(
@@ -1540,23 +1564,24 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--dev-url", migrateDevURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
 		entries, err := os.ReadDir(currentDir)
-		qt.Assert(t, err, qt.IsNil)
-		qt.Assert(t, entries, qt.HasLen, 0)
+		c.Assert(err, qt.IsNil)
+		c.Assert(entries, qt.HasLen, 0)
 	})
 
 	t.Run("migrate diff replayed current source", func(t *testing.T) {
+		c := qt.New(t)
 		currentDir := t.TempDir()
 		migrateDevURL := strictCompatPostgresDevURL(t)
 		collationName := prefix + "_current"
-		qt.Assert(t, os.WriteFile(filepath.Join(currentDir, "1_collation.sql"), []byte(
+		c.Assert(os.WriteFile(filepath.Join(currentDir, "1_collation.sql"), []byte(
 			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
 		_, err := migratesum.WriteWithFormat(currentDir, migrator.MigrationDirFormatAtlas)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
 			compat,
@@ -1567,21 +1592,22 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--dev-url", migrateDevURL,
 			"--dry-run",
 		)
-		qt.Assert(t, code, qt.Equals, 1)
-		qt.Assert(t, stdout, qt.Equals, "")
-		qt.Assert(t, stderr, qt.Equals,
+		c.Assert(code, qt.Equals, 1)
+		c.Assert(stdout, qt.Equals, "")
+		c.Assert(stderr, qt.Equals,
 			`Error: Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
 				collationName+`"`+"\n")
 		entries, err := os.ReadDir(currentDir)
-		qt.Assert(t, err, qt.IsNil)
-		qt.Assert(t, entries, qt.HasLen, 2)
+		c.Assert(err, qt.IsNil)
+		c.Assert(entries, qt.HasLen, 2)
 	})
 }
 
 func postgresTableExists(t *testing.T, dbURL, table string) bool {
+	c := qt.New(t)
 	t.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	var exists bool
 	err = conn.QueryRowContext(t.Context(), `
@@ -1590,14 +1616,15 @@ func postgresTableExists(t *testing.T, dbURL, table string) bool {
 			FROM information_schema.tables
 			WHERE table_schema = current_schema() AND table_name = $1
 		)`, table).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists
 }
 
 func postgresSchemaTableExists(t *testing.T, dbURL, schema, table string) bool {
+	c := qt.New(t)
 	t.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	var exists bool
 	err = conn.QueryRowContext(t.Context(), `
@@ -1606,11 +1633,12 @@ func postgresSchemaTableExists(t *testing.T, dbURL, schema, table string) bool {
 			FROM information_schema.tables
 			WHERE table_schema = $1 AND table_name = $2
 		)`, schema, table).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists
 }
 
 func waitForPostgresAdvisoryLockPoller(t *testing.T, conn *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -1622,7 +1650,7 @@ func waitForPostgresAdvisoryLockPoller(t *testing.T, conn *dbschema.DatabaseConn
 				  AND pid <> pg_backend_pid()
 				  AND query LIKE '%pg_try_advisory_lock%'
 			)`).Scan(&polling)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		if polling {
 			return
 		}
@@ -1659,9 +1687,10 @@ func strictCompatPostgresDevURL(t *testing.T) string {
 }
 
 func postgresURLWithSearchPath(t *testing.T, rawURL, schema string) string {
+	c := qt.New(t)
 	t.Helper()
 	parsed, err := url.Parse(rawURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	query := parsed.Query()
 	query.Set("search_path", schema)
 	parsed.RawQuery = query.Encode()

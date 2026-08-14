@@ -83,6 +83,7 @@ func cleanupSQLServerMigratorSchema(t *testing.T, conn *dbschema.DatabaseConnect
 }
 
 func sqlServerTableExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName, tableName string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
@@ -92,7 +93,7 @@ FROM sys.tables AS t
 JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 WHERE s.name = ? AND t.name = ?`)
 	err := conn.QueryRowContext(context.Background(), query, schemaName, tableName).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 

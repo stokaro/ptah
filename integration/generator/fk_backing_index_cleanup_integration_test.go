@@ -88,7 +88,7 @@ func assertSameNamedNonCoveringIndexRefusesForeignKey(
 	c.Assert(err, qt.IsNil)
 	_, err = conn.Exec("ALTER TABLE " + childTable + " ADD CONSTRAINT " + foreignKey +
 		" FOREIGN KEY (parent_id) REFERENCES " + parentTable + " (id)")
-	c.Assert(err, qt.Not(qt.IsNil))
+	c.Assert(err, qt.IsNotNil)
 
 	after, readErr := conn.Reader().ReadSchema()
 	c.Assert(readErr, qt.IsNil)
