@@ -618,7 +618,8 @@ func TestCompatMigrateApply_FlywayOnlyRepeatableNeverLeaksOrderKey(t *testing.T)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "Migrating to version  from 1 pending migrations.\n")
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: \n")
+	c.Assert(stdout, qt.Contains, "Migration complete. Current version: \"\"\n")
+	c.Assert(stdout, qt.Not(qt.Contains), "Migration complete. Current version: \n")
 	c.Assert(stdout, qt.Not(qt.Contains), repeatableOrderKey)
 
 	stdout, stderr, err = runCompatExit(
