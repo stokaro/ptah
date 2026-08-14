@@ -339,10 +339,16 @@ The output file must not already exist.
 
 ## Consume a desired schema
 
-Every native command that takes a desired schema resolves `oci://` through
-`--schema-file`: `schema render`, `export`, `inspect`, `compare`, `drift`,
-`plan`, `apply` and `push`, plus `migrations plan` and `generate`. All of them
-expose `--plain-http` for a trusted local registry.
+Every native command that has a `--schema-file` resolves `oci://` through it:
+`schema render`, `export`, `inspect`, `compare`, `drift`, `plan`, `apply` and
+`push`, plus `migrations plan` and `generate`. All ten expose `--plain-http`
+for a trusted local registry.
+
+The scheme belongs to that flag rather than to desired state in general.
+`schema diff` takes its sources through `--from`/`--to` and `schema test`
+through `--root-dir`; neither resolves `oci://`, and neither registers
+`--plain-http`. Pull the artifact with `ptah schema pull` and pass the file if
+you need one of those two.
 
 `schema inspect` is the one that materializes rather than parses: the artifact
 is pulled to a canonical HCL file, that file is materialized on the
