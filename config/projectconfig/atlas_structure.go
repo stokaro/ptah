@@ -254,43 +254,87 @@ var atlasStructAttributes = map[string][]string{
 	"env.schema":       {"repo"},
 }
 
-// atlasLeafValueKind is the cty type a name in [atlasDecodedLeafAttributes]
+// atlasLeafValueKind is the value shape a name in [atlasDecodedLeafAttributes]
 // requires.
 type atlasLeafValueKind uint8
 
 const (
 	atlasLeafBool atlasLeafValueKind = iota
 	atlasLeafString
+	atlasLeafStringList
+	// atlasLeafBlockOnly is the kind for a name CE decodes from BLOCKS only.
+	// It differs from [atlasStructAttributes] in the one shape that separates
+	// them: an empty object satisfies a struct-valued name and does not satisfy
+	// this one, because CE never runs an object decoder for it at all.
+	atlasLeafBlockOnly
 )
-
-func (k atlasLeafValueKind) ctyType() cty.Type {
-	if k == atlasLeafString {
-		return cty.String
-	}
-	return cty.Bool
-}
 
 // want is the phrasing [wrongValueType] appends, kept identical to the wording
 // the acted-on siblings already produce -- `drop_schema` answers "must be a
-// bool" and `log` answers "must be a string", so a tolerated name in the same
-// block reads the same way.
+// bool", `log` answers "must be a string" and `env.exclude` answers "must be a
+// list of strings", so a tolerated name in the same file reads the same way.
 func (k atlasLeafValueKind) want() string {
-	if k == atlasLeafString {
+	switch k {
+	case atlasLeafString:
 		return "a string"
+	case atlasLeafStringList:
+		return "a list of strings"
+	case atlasLeafBlockOnly:
+		return "a block"
+	default:
+		return "a bool"
 	}
-	return "a bool"
+}
+
+// accepts reports whether value is one the pinned community binary v1.3.0 takes
+// for this kind. A null value never reaches here: the caller returns first,
+// because null is accepted for every kind in the table.
+func (k atlasLeafValueKind) accepts(value cty.Value) bool {
+	switch k {
+	case atlasLeafString:
+		return value.Type() == cty.String
+	case atlasLeafStringList:
+		return atlasStringListValue(value)
+	case atlasLeafBlockOnly:
+		return false
+	default:
+		return value.Type() == cty.Bool
+	}
+}
+
+// atlasStringListValue reports whether value is a collection of strings.
+//
+// A SET is accepted alongside a tuple and a list because the pinned binary
+// accepts one: `include = toset(["a", "b"])` and
+// `migration { exclude = toset(["a", "b"]) }` both exit 0 there, and both exit 0
+// on Ptah today. Refusing a set here would trade one divergence for another.
+// An object is refused even when empty -- `include = {}` is exit 1 on that
+// binary -- which is why the type test is written as an allow-list rather than
+// as [cty.Value.CanIterateElements], which an object also satisfies.
+func atlasStringListValue(value cty.Value) bool {
+	valueType := value.Type()
+	if !valueType.IsTupleType() && !valueType.IsListType() && !valueType.IsSetType() {
+		return false
+	}
+	for it := value.ElementIterator(); it.Next(); {
+		if _, item := it.Element(); item.Type() != cty.String {
+			return false
+		}
+	}
+	return true
 }
 
 // atlasDecodedLeafAttributes maps a tolerance-path scope to the names Atlas CE
-// decodes into a SCALAR field of its project type -- names Ptah does not act
-// on, so they reach the tolerance path, but whose value the pinned community
-// binary v1.3.0 still type-checks before any command runs. Tolerating the name
-// is right; tolerating any value for it is a rule (a) violation, and that is
-// what this table closes.
+// decodes into a NON-STRUCT field of its project type -- a bool, a string, a
+// list of strings, or a field it fills from blocks only. These are names Ptah
+// does not act on, so they reach the tolerance path, but whose value the pinned
+// community binary v1.3.0 still type-checks before any command runs. Tolerating
+// the name is right; tolerating any value for it is a rule (a) violation, and
+// that is what this table closes.
 //
-// It is the scalar counterpart of [atlasStructAttributes] and is consulted from
-// the same place, so a name is answered once for every scope that reaches it
-// rather than once per parser arm.
+// It is the non-struct counterpart of [atlasStructAttributes] and is consulted
+// from the same place -- [checkAtlasToleratedValue] -- so a name is answered
+// once for every scope that reaches it rather than once per parser arm.
 //
 // Measured on the pinned binary with `schema inspect --env local`, exit codes
 // read directly from unpiped invocations:
@@ -309,8 +353,10 @@ func (k atlasLeafValueKind) want() string {
 //	                                                  cannot be read as string
 //	lint { frobnicate9 = { k = "v" } }          -> 0  (control, same block)
 //
-// null is accepted for both kinds, which is why the check below returns before
-// comparing types on a null value.
+// null is accepted for every kind, which is why the check below returns before
+// comparing shapes on a null value. That includes the block-only kind:
+// `env = null` at the top level is exit 0 on the pinned binary while `env = {}`
+// is exit 1.
 //
 // The `diff.skip` membership is exactly {add,modify,drop} x {schema, table,
 // column, index, foreign_key}. That is measured name by name and is NOT "every
@@ -331,6 +377,52 @@ func (k atlasLeafValueKind) want() string {
 // `env.migration` below is env-prefixed for the opposite measured reason, the
 // same one that keeps `env.schema` out of [atlasStructAttributes]' bare keys.
 var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
+	// `env` written as an ATTRIBUTE at the top level. CE fills that field from
+	// env BLOCKS and decodes no value spelling for it at all, so null is the
+	// only value it takes -- an empty object is refused, which is what keeps
+	// this out of [atlasStructAttributes] rather than being one more row there:
+	//
+	//	env = null            -> 0
+	//	env = {}              -> 1  }
+	//	env = { q = "v" }     -> 1  }
+	//	env = "x"             -> 1  } schemahcl: failed reading spec as
+	//	env = 17              -> 1  } *cmdapi.Project
+	//	env = true            -> 1  }
+	//	env = []              -> 1  }
+	//	env = ["a"]           -> 1  }
+	//	env = [{}]            -> 1  }
+	//	env = [{ name = "x" }] -> 1 }
+	//	frobnicate9 = { q = "v" }  (top level)  -> 0  (control, same body)
+	//
+	// The env BLOCK spelling is unaffected: every fixture above carries a real
+	// `env "local"` block and the binary reads it.
+	atlasTopLevelScope: {
+		"env": atlasLeafBlockOnly,
+	},
+	// `include` is the env-level counterpart of `exclude`, decoded into the same
+	// kind of []string field. Ptah does not implement it, so it reaches the
+	// tolerance path and the name stays reported as having no effect; only the
+	// value is checked.
+	//
+	//	env { include = null }               -> 0
+	//	env { include = [] }                 -> 0
+	//	env { include = ["a", "b"] }         -> 0
+	//	env { include = toset(["a", "b"]) }  -> 0
+	//	env { include = {} }                 -> 1  }
+	//	env { include = { q = "v" } }        -> 1  } schemahcl: field is of type
+	//	env { include = "public.t1" }        -> 1  } slice but attr "include" is
+	//	env { include = 17 }                 -> 1  } type: <that type>
+	//	env { include = true }               -> 1  }
+	//	env { include = [1, 2] }             -> 1  }
+	//	env { include = [1, "a"] }           -> 1  }
+	//	env { frobnicate9 = { q = "v" } }    -> 0  (control, same block)
+	//
+	// Scope controls, all 0 on that binary: `include` at the top level, inside
+	// `migration`, inside `schema` and inside `lint`. `env` is the one scope
+	// that decodes it.
+	"env": {
+		"include": atlasLeafStringList,
+	},
 	"diff.skip": {
 		"add_column":         atlasLeafBool,
 		"add_foreign_key":    atlasLeafBool,
@@ -369,8 +461,31 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	// The three scope controls are why the key is `env.migration` and not
 	// `migration` or a bare name: `baseline` is a real name in other scopes of
 	// this file and the binary decodes none of them.
+	//
+	// `exclude` sits in the same block and is a list rather than a string. It is
+	// the sibling of `env.exclude`, which Ptah does implement; the `migration`
+	// spelling has no Ptah behavior, so it is type-checked and left reported as
+	// having no effect:
+	//
+	//	migration { exclude = null }              (env)        -> 0
+	//	migration { exclude = [] }                (env)        -> 0
+	//	migration { exclude = ["a", "b"] }        (env)        -> 0
+	//	migration { exclude = toset(["a","b"]) }  (env)        -> 0
+	//	migration { exclude = {} }                (env)        -> 1  }
+	//	migration { exclude = { k = "v" } }       (env)        -> 1  } schemahcl:
+	//	migration { exclude = "public.t1" }       (env)        -> 1  } field is of
+	//	migration { exclude = 17 }                (env)        -> 1  } type slice
+	//	migration { exclude = true }              (env)        -> 1  } but attr
+	//	migration { exclude = [1, 2] }            (env)        -> 1  } "exclude"
+	//	migration { exclude = ["a", null] }       (env)        -> 1  } is type: …
+	//	migration { frobnicate9 = { k = "v" } }   (env)        -> 0  (control)
+	//	migration { exclude = { k = "v" } }       (top level)  -> 0  }
+	//	schema    { exclude = { k = "v" } }       (env)        -> 0  } scope
+	//	lint      { exclude = { k = "v" } }       (env)        -> 0  } controls
+	//	repo      { exclude = { k = "v" } }       (env.migration) -> 0  }
 	"env.migration": {
 		"baseline": atlasLeafString,
+		"exclude":  atlasLeafStringList,
 	},
 }
 
@@ -388,10 +503,31 @@ func checkAtlasDecodedLeafAttribute(
 	if !decoded || value.IsNull() {
 		return nil
 	}
-	if value.Type() == kind.ctyType() {
+	if kind.accepts(value) {
 		return nil
 	}
 	return wrongValueType(name, attr, kind.want())
+}
+
+// checkAtlasToleratedValue is the single place both value rules are asked, so a
+// scope that reaches the tolerance path gets both answers or neither.
+//
+// It exists because the top-level body does not run through
+// [atlasParser.tolerateUnknownAttr] -- it evaluates its own attributes so that
+// an evaluation failure is reported before any block is collected -- and asking
+// one rule there and both rules everywhere else is how the top-level `env`
+// attribute stayed unchecked while its siblings were closed.
+func checkAtlasToleratedValue(
+	scope, name string,
+	attr *hclsyntax.Attribute,
+	value cty.Value,
+) error {
+	if atlasStructAttribute(scope, name) {
+		if err := checkAtlasStructAttribute(name, attr, value); err != nil {
+			return err
+		}
+	}
+	return checkAtlasDecodedLeafAttribute(scope, name, attr, value)
 }
 
 // atlasTopLevelScope is the scope of the project file's own body. It is not ""

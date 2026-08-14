@@ -566,13 +566,13 @@ command run with `--env dev`, because Atlas CE does not decode an unselected
 environment either. The value is read after `var`, `local` and `data` are
 available, so `lint = local.nothing` resolves normally.
 
-### Scalar settings Ptah does not act on are still type-checked
+### Settings Ptah does not act on are still type-checked
 
-A handful of names are decoded by Atlas CE into a plain string or bool field
-that Ptah has no equivalent for. Ptah accepts the name and reports it as having
-no effect, but the **value** still has to be the kind the community binary
-requires, because that binary refuses a wrong-typed value before any command
-runs:
+A handful of names are decoded by Atlas CE into a plain string, bool or
+string-list field that Ptah has no equivalent for. Ptah accepts the name and
+reports it as having no effect, but the **value** still has to be the kind the
+community binary requires, because that binary refuses a wrong-typed value
+before any command runs:
 
 ```text
 Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
@@ -583,6 +583,9 @@ Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
 | `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
 | `lint` and `env.lint` | `review` | a string |
 | `env.migration` | `baseline` | a string |
+| `env` | `include` | a list of strings |
+| `env.migration` | `exclude` | a list of strings |
+| top level | `env` written as an attribute | a block; only `null` is accepted as a value |
 
 `null` is accepted for every one of them, as it is on the community binary.
 `drop_schema` and `drop_table` are absent from the table because Ptah acts on
@@ -591,11 +594,26 @@ them, so they are ordinary supported names rather than ignored ones.
 This is a value rule too, with the same selection boundary and the same reading
 order as the block rule above, so `drop_column = var.flag` resolves normally.
 
+A list-valued name takes a tuple, a list or a set of strings, so
+`include = toset(["a", "b"])` is accepted. One bare string is not a one-element
+list, and an object is refused even when it is empty — `include = {}` fails
+where `repo = {}` succeeds. That empty object is the shape that separates a
+list-valued name from a struct-valued one, and the top-level `env` row takes it
+one step further: Atlas CE fills that field from `env` blocks and decodes no
+value spelling for it at all, so `env = {}` is refused as well. The `env` block
+spelling is untouched.
+
 `env.migration.baseline` is type-checked and still not acted on: `migrate apply`
 reads `--baseline` before project config is merged, so the `atlas.hcl` spelling
-has no effect yet and is reported as having none. The scope matters — a
-`baseline` written at `env` level, inside `lint`, or in a top-level `migration`
-block is not decoded by the community binary, so any value is accepted there.
+has no effect yet and is reported as having none. `env.include` and
+`env.migration.exclude` are type-checked and not acted on for the same reason —
+neither has a Ptah setting behind it, and `env.exclude` is the separate,
+supported name.
+
+The scope matters throughout — a `baseline` written at `env` level, inside
+`lint`, or in a top-level `migration` block is not decoded by the community
+binary, and neither is an `include` outside `env` or an `exclude` outside
+`env.migration`, so any value is accepted in those places.
 
 The membership is measured name by name and is not "every change kind":
 `add_view`, `drop_func`, `modify_trigger`, `add_type`, `drop_sequence`,

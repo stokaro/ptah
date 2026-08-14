@@ -115,6 +115,7 @@ The supported attributes map to Ptah settings as follows:
 | `diff.skip.drop_schema` | Accepted and type-checked; Ptah's planner emits no schema drop for it to suppress |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 | `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
+| `env.migration.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 | `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 
 `format.schema.inspect` follows the Atlas-compatible command's template
@@ -197,9 +198,15 @@ one numeric Atlas file per changeset; direct apply retains its numbered-file
 requirement and source-file boundary. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
-`env.exclude` accepts either one string or a list of strings. `ptah-compat schema
-apply --env <name>` uses it as the default resource exclusion filter unless an
-explicit `--exclude` flag is provided.
+`env.exclude` accepts a list of strings. One bare string is refused with
+`atlas.hcl "exclude" at atlas.hcl:3 must be a list of strings`, which is what the
+community binary does with it too. `ptah-compat schema apply --env <name>` uses
+it as the default resource exclusion filter unless an explicit `--exclude` flag
+is provided.
+
+`env.include` is the sibling name the community binary decodes into the same
+kind of list field. Ptah has no include filter behind it, so the name is reported
+as having no effect and only its value is checked.
 
 `env.schema.mode` accepts `funcs`, `objects`, `permissions`, `roles`, `tables`,
 `triggers`, `types`, and `views` booleans. Ptah maps disabled values to the
@@ -217,11 +224,22 @@ and `schema apply --auto-approve` output is byte-identical with and without the
 block. Registry access itself stays refused on both: an `atlas://` URL fails,
 and `ptah-compat schema plan --repo` reports that Ptah plans are local files.
 
+`env.migration.repo` is the same construct in the other scope and behaves the
+same way. Its `name` is accepted and type-checked as a string and nothing reads
+it afterwards, so `migration { repo { name = 1 } }` fails with
+`atlas.hcl "name" at atlas.hcl:5 must be a string` while a well-formed name
+produces the ignored-construct warning and exit 0.
+
 `format` blocks configure the same Atlas Go-template output strings accepted by
 the matching commands. Ptah supports `schema.inspect`, `schema.apply`,
 `schema.diff`, `migrate.apply`, `migrate.diff`, `migrate.lint`, and
 `migrate.status` for the command-specific output contracts documented in the
-Atlas-compatible command reference.
+Atlas-compatible command reference. Any other name inside `env.format.migrate`
+or `env.format.schema`, including a nested block, is accepted and reported as
+having no effect, because the community binary decodes only those template
+names and ignores the rest. The names Ptah does support are still type-checked
+there: `format { migrate { apply = { k = "v" } } }` fails with
+`atlas.hcl "apply" at atlas.hcl:5 must be a string`.
 
 `diff.skip.drop_table = true` removes table drops from supported local
 declarative diff/apply plans and also removes index or constraint drops owned by
@@ -638,13 +656,21 @@ Ptah classifies every `atlas.hcl` name into one of three outcomes:
 | Structurally unsupported | Ptah rejects the file with a location-aware error, even when the construct is in an unselected environment. |
 | Ignored by Atlas CE | Ptah accepts the name for compatibility, records it in `Config.IgnoredConstructs`, and the CLI warns that it has no effect. |
 
-Structurally unsupported attributes, data sources, lint policy shapes, format
-fields, diff policy fields, labels, and duplicate supported blocks fail with a
-location-aware error:
+Structurally unsupported data-source fields, labels on a block that takes none,
+nested blocks inside a body that takes none, and duplicate supported blocks fail
+with a location-aware error. A second `schema` block in one `env` reports the
+duplicate at its own line:
 
 ```text
-unsupported atlas.hcl construct "src" at atlas.hcl:2
+unsupported atlas.hcl construct "schema" at atlas.hcl:6
 ```
+
+Unknown attribute names are not in that category. `diff`, `env.diff`, `lint`,
+`env.lint`, `env.format.migrate` and `env.format.schema` each accept a name they
+do not implement and report it as having no effect, because the community binary
+reads those files at exit 0. What those bodies still refuse is a nested block:
+`lint { destructive { anything { } } }` and `diff { skip { anything { } } }` both
+fail with `unsupported atlas.hcl construct "anything"`.
 
 Ptah does not turn a construct that Atlas CE decodes or enforces into a no-op.
 The ignored category is limited to names that Atlas CE itself accepts without
@@ -671,23 +697,77 @@ An empty object and `null` are accepted, because they carry no configuration.
 The affected names are `diff`, `lint` and `test` at the top level; `diff`,
 `format`, `lint`, `migration`, `schema` and `test` under `env`; `skip` under
 either spelling of `diff`; `git` under either spelling of `lint`; and
-`format.migrate`, `format.schema` and `schema.repo` under `env`. Each was
-measured against the pinned community binary individually — the set is not
-"every block name", and it is not the same at every scope.
+`format.migrate`, `format.schema`, `migration.repo` and `schema.repo` under
+`env`. Each was measured against the pinned community binary individually — the
+set is not "every block name", and it is not the same at every scope.
 
 `diff` and `lint` are the two blocks that may sit at the top level as well as
 inside `env`, and Ptah routes both spellings through the same parser, so
 top-level `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are
-refused exactly as their `env` spellings are. `format` and `schema` are not
-decoded into their structures at the top level by either binary — a top-level
-`format { schema = { k = "v" } }` exits 0 on the community binary, and Ptah drops
-the whole block with an ignored-block warning at exit 0 — so those names are
-`env`-scoped only.
+refused exactly as their `env` spellings are. `format`, `migration` and `schema`
+are not decoded into their structures at the top level by either binary — a
+top-level `format { schema = { k = "v" } }`, `migration { repo = { k = "v" } }`
+and `schema { repo = { k = "v" } }` all exit 0 on the community binary, and Ptah
+drops the whole block with an ignored-block warning at exit 0 — so those names
+are `env`-scoped only.
 
 Because this is a value rule rather than a structural one, it applies to the
 selected environment only, and it reads the value after `var`, `local` and `data`
 are available. An unselected `env` carrying the attribute spelling does not fail
 the command, which is what Atlas CE does as well.
+
+A second value rule covers the names Atlas CE decodes into something other than
+a structure — a bool, a string, or a list of strings — that Ptah has no
+equivalent for. Ptah accepts the name and reports it as having no effect, but the
+value still has to be the kind the community binary requires, because that binary
+refuses a wrong-typed value before any command runs:
+
+```text
+atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
+```
+
+| Scope | Name | Required value |
+| --- | --- | --- |
+| `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
+| `lint` and `env.lint` | `review` | a string |
+| `env.migration` | `baseline` | a string |
+| `env` | `include` | a list of strings |
+| `env.migration` | `exclude` | a list of strings |
+| top level | `env` written as an attribute | a block; only `null` is accepted as a value |
+
+`null` is accepted for every one of them, as it is on the community binary.
+`drop_schema` and `drop_table` are absent from the table because Ptah acts on
+them, so they are supported settings rather than ignored names. The membership
+was measured name by name and is not "every change kind": `add_view`,
+`drop_func`, `modify_trigger`, `add_type`, `drop_sequence`, `add_check`,
+`drop_role`, `add_policy`, `add_extension` and `drop_domain` are among the names
+the community binary does not decode inside `skip`, so any value is accepted for
+them.
+
+A list-valued name takes a tuple, a list or a set of strings, so
+`include = toset(["a", "b"])` is accepted. One bare string is not a one-element
+list here, and an object is refused even when it is empty — `include = {}` is
+an error where `repo = {}` is not, which is the shape that separates a
+list-valued name from a struct-valued one.
+
+The top-level `env` row is the same distinction taken one step further. Atlas CE
+fills that field from `env` blocks and decodes no value spelling for it at all,
+so `env = {}` is refused where an empty object satisfies every name in the block
+rule above. The `env` block spelling is untouched.
+
+`env.migration.baseline` is type-checked and still not acted on: `migrate apply`
+reads `--baseline` into its run options before project config is merged, so the
+`atlas.hcl` spelling has no effect yet and is reported as having none.
+`env.include` and `env.migration.exclude` are type-checked and not acted on for
+the same reason — neither has a Ptah setting behind it, and `env.exclude` is the
+separate, supported name.
+
+The scope matters throughout. A `baseline` written at `env` level, inside `lint`,
+or in a top-level `migration` block is not decoded by the community binary, and
+neither is an `include` outside `env` or an `exclude` outside `env.migration`, so
+any value is accepted in those places. This rule has the same selection boundary
+and the same reading order as the block rule above, so `drop_column = var.flag`
+resolves normally.
 
 `PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
 runs. The strict policy refuses an ignored construct before command work, and

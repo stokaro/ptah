@@ -394,6 +394,117 @@ env "local" {
 			wantErr: `atlas\.hcl "baseline" at atlas\.hcl:5 must be a string`,
 		},
 		{
+			name: "env migration exclude given an object",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = { k = "v" }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:5 must be a list of strings`,
+		},
+		{
+			// An empty object is the shape that separates a list-valued name
+			// from a struct-valued one: `repo = {}` is accepted and
+			// `exclude = {}` is not, on the pinned binary and here.
+			name: "env migration exclude given an empty object",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = {}
+  }
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:5 must be a list of strings`,
+		},
+		{
+			// One string is not a one-element list here, unlike `env.src`.
+			name: "env migration exclude given a string",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = "public.t1"
+  }
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:5 must be a list of strings`,
+		},
+		{
+			name: "env migration exclude given a list carrying null",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = ["public.t1", null]
+  }
+}
+`,
+			wantErr: `atlas\.hcl "exclude" at atlas\.hcl:5 must be a list of strings`,
+		},
+		{
+			name: "env include given an object",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = { k = "v" }
+}
+`,
+			wantErr: `atlas\.hcl "include" at atlas\.hcl:3 must be a list of strings`,
+		},
+		{
+			name: "env include given a string",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = "public.t1"
+}
+`,
+			wantErr: `atlas\.hcl "include" at atlas\.hcl:3 must be a list of strings`,
+		},
+		{
+			name: "env include given a list of numbers",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = [1, 2]
+}
+`,
+			wantErr: `atlas\.hcl "include" at atlas\.hcl:3 must be a list of strings`,
+		},
+		{
+			name: "top level env written as an object",
+			raw: `env = { k = "v" }
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "env" at atlas\.hcl:1 must be a block`,
+		},
+		{
+			// The row that keeps `env` out of atlasStructAttributes: a
+			// struct-valued name takes an empty object and this one does not.
+			name: "top level env written as an empty object",
+			raw: `env = {}
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "env" at atlas\.hcl:1 must be a block`,
+		},
+		{
+			name: "top level env written as a list of objects",
+			raw: `env = [{ name = "local" }]
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "env" at atlas\.hcl:1 must be a block`,
+		},
+		{
 			// The control for the format tolerance widened alongside these
 			// rules: the four template names each format block decodes are
 			// still decoded, so a non-string value for one is still refused.
@@ -664,6 +775,101 @@ env "local" {
 }
 `,
 			ignored: "baseline",
+		},
+		{
+			name: "env include given a list of strings",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = ["public.t1", "public.t2"]
+}
+`,
+			ignored: "include",
+		},
+		{
+			name: "env include given an empty list",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = []
+}
+`,
+			ignored: "include",
+		},
+		{
+			name: "env include given null",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = null
+}
+`,
+			ignored: "include",
+		},
+		{
+			// A set is what `toset` produces, and the pinned binary reads it.
+			// Refusing it here would trade one divergence for another.
+			name: "env include given a set of strings",
+			raw: `env "local" {
+  url     = "sqlite://s.db"
+  include = toset(["public.t1", "public.t2"])
+}
+`,
+			ignored: "include",
+		},
+		{
+			name: "include outside the env scope",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    include = { k = "v" }
+  }
+}
+`,
+			ignored: "include",
+		},
+		{
+			name: "env migration exclude given a list of strings",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = ["public.t1"]
+  }
+}
+`,
+			ignored: "exclude",
+		},
+		{
+			name: "env migration exclude given null",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  migration {
+    dir     = "file://m"
+    exclude = null
+  }
+}
+`,
+			ignored: "exclude",
+		},
+		{
+			name: "exclude outside the migration scope",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  schema {
+    exclude = { k = "v" }
+  }
+}
+`,
+			ignored: "exclude",
+		},
+		{
+			name: "top level env written as null",
+			raw: `env = null
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			ignored: "env",
 		},
 	}
 
