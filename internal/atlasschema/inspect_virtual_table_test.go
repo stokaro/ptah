@@ -292,12 +292,19 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 			// `USING "fts-5"`, so a check spelling the module bare looked for
 			// text the document never contains and called a lossless SQL
 			// rendering lossy -- which strict compatibility then refused.
+			// The stream is not silent, and the note on it is a different one:
+			// `fts-5` is not a module this build registers, so the read reports
+			// that it could not classify the table. That note is about the
+			// DESCRIPTION; the absent one is about the RENDERING, which carried
+			// the declaration exactly as this row claims. See
+			// stokaro/ptah#1028.
 			name: "a module name needing quotes is carried by SQL",
 			setup: []string{
 				forgedVirtualTable("docs", `CREATE VIRTUAL TABLE docs USING "fts-5"(a, b)`),
 			},
-			format:     "sql",
-			wantSilent: true,
+			format:         "sql",
+			wantDiagnostic: []string{"does not register"},
+			wantAbsent:     []string{"this format cannot carry"},
 		},
 		{
 			// The control: the same table in a format that really cannot carry
@@ -312,12 +319,16 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 		{
 			// A keyword module is quoted by the renderer. The inspection check
 			// must search for that same spelling or it falsely reports loss.
+			// Same split as the quoted-module row above: the rendering carried
+			// the declaration, and the note that remains says the reading build
+			// does not register `select` as a module.
 			name: "a module name that is a SQLite keyword is carried by SQL",
 			setup: []string{
 				forgedVirtualTable("docs", `CREATE VIRTUAL TABLE docs USING "select"(body)`),
 			},
-			format:     "sql",
-			wantSilent: true,
+			format:         "sql",
+			wantDiagnostic: []string{"does not register"},
+			wantAbsent:     []string{"this format cannot carry"},
 		},
 		{
 			// Quoted whitespace belongs to the table identity. The SQL renderer

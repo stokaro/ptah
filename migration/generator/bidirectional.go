@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -202,6 +203,25 @@ func planBidirectionalSchemaDiffWithRefs(
 			indexRefSet(forwardCreateRefs),
 		)
 	}
+	// The rollback half of the SQLite virtual-table guard, asked here because
+	// this is where the reverse diff exists and is final. The forward direction
+	// was gated by sqlitevirtual.ValidatePlannedChanges inside the comparison,
+	// and that gate deliberately exempts a table whose only change is added
+	// columns -- SQLite performs those in place. Reversal is what breaks the
+	// exemption: an added column comes back as a removed one, which SQLite
+	// converges by rebuilding the table, and on a database holding a module this
+	// build cannot load that rebuild is aimed at storage Ptah cannot tell from
+	// an ordinary table (stokaro/ptah#1028).
+	//
+	// It is asked of both production callers at once. `ptah migrations generate`
+	// and ptah-compat `migrate diff` both reach a reverse plan only through this
+	// function, and both hand it a diff their diff policy has already filtered.
+	if err := sqlitevirtual.ValidatePlannedRollback(
+		dialect, opts.CurrentSchema, opts.Diff, reverseDiff,
+	); err != nil {
+		return nil, err
+	}
+
 	reverseOpts := planner.Options{
 		Capabilities:            caps,
 		ConcurrentIndexRefs:     reverseCreate,

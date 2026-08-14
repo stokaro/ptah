@@ -56,6 +56,7 @@ func TestValidateComparison(t *testing.T) {
 		env             func(testing.TB)
 		desired         *goschema.Database
 		database        []types.DBTable
+		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
 		wantContains    []string
@@ -346,6 +347,52 @@ func TestValidateComparison(t *testing.T) {
 				`virtual table "docs" (module fts5)`,
 			},
 		},
+		{
+			// THE ROW THE DROP-POLICY FINDING ADDED. The refusal above says
+			// "planning the removal would delete the index and everything in
+			// it". A caller that skips drop_table deletes that DROP TABLE from
+			// the diff before anything is rendered, so the sentence is false and
+			// the refusal sends an operator to an opt-in for a plan that drops
+			// nothing. Measured on the command with `diff.skip: [drop_table]` in
+			// ptah.yaml: `ptah schema apply` against an fts5 database exited 2,
+			// and with both opt-ins set the same run reported `Schema is synced,
+			// no changes to be made.` at exit 0.
+			name:     "the removal refusal stands down when the caller skips table drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  declaring("users"),
+			database: []types.DBTable{fts5, users},
+			policy:   sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:  false,
+		},
+		{
+			// The control that keeps the row above from being "never refuse".
+			// `skip drop_table` filters removals, not the other two answers a
+			// plan cannot express, and no policy makes one kind of object
+			// convertible into another.
+			name:            "skipping table drops does not lift the kind collision",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         declaring("docs"),
+			database:        []types.DBTable{fts5, users},
+			policy:          sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"cannot convert one kind into the other"},
+		},
+		{
+			// And the malformed value is still a configuration error under the
+			// policy: the parse happens before any of this is classified, so an
+			// operator carrying a typo hears about it on every SQLite run.
+			name:         "a malformed value is refused under the policy too",
+			dialect:      "sqlite",
+			env:          envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
+			desired:      declaring("users"),
+			database:     []types.DBTable{fts5, users},
+			policy:       sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:      true,
+			wantContains: []string{sqlitevirtual.AllowDropEnvVar, "maybe"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -355,7 +402,7 @@ func TestValidateComparison(t *testing.T) {
 
 			database := &types.DBSchema{Tables: tt.database}
 
-			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, database)
+			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, database, tt.policy)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)

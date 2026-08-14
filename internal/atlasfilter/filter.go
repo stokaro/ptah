@@ -92,6 +92,7 @@ func ExcludeDatabaseReport(
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.Grants = state.filterGrants(filtered.Grants)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
+	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
 }
 
@@ -801,6 +802,27 @@ func (s *exclusionState) noteRolesOutOfScope(roles []dbschematypes.DBRole) {
 	}
 }
 
+// noteUnregisteredVirtualTables asks the patterns about the virtual tables the
+// reading build could not classify.
+//
+// They are cloned but never filtered, for the reason
+// [noteRolesOutOfScope] gives about its own list and one more besides. This
+// list is what the comparison refusal reads, and narrowing it would delete the
+// refusal on exactly the run that needs it: `--exclude docs` removes the
+// virtual table from Tables while every one of the module's shadow tables stays
+// in the comparison. See stokaro/ptah#1028.
+//
+// The selector is still ASKED, so `--exclude docs` against such a database is
+// not reported as having protected nothing. It names the virtual table that is
+// still in this list even after the same name left Tables, and telling an
+// operator their selector matched nothing while refusing the run because of the
+// object it named would be two contradictory statements about one name.
+func (s *exclusionState) noteUnregisteredVirtualTables(tables []dbschematypes.DBVirtualTable) {
+	for _, table := range tables {
+		s.matches("table", s.nameCandidates(table.Schema, table.Name)...)
+	}
+}
+
 // filterIndexes asks the patterns whether they name the index BEFORE the
 // parent short-circuits decide, so a selector that names an index inside an
 // already-excluded table still counts as having matched something. The keep
@@ -1452,6 +1474,14 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		// silence, so the carry is asserted by
 		// TestScopeDatabaseKeepsCoverage (stokaro/ptah#1276).
 		NotDescribed: schema.NotDescribed,
+		// Which virtual tables the reading build could not classify is a fact
+		// about the read, and narrowing cannot make it untrue. Dropping it here
+		// would defeat the refusal it feeds precisely on the run that needs it:
+		// the tables at risk are the module's shadow tables, not the virtual
+		// table an operator excludes, so an exclusion that removed this signal
+		// would leave every dangerous row in the comparison and take away the
+		// only thing that knew. See stokaro/ptah#1028.
+		UnregisteredVirtualTables: slices.Clone(schema.UnregisteredVirtualTables),
 	}
 }
 
