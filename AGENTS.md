@@ -250,6 +250,24 @@ raise the `go` directive to clear a standard-library advisory — that is a
 consumer contract break for a reason that has nothing to do with the language.
 Raise `toolchain` instead.
 
+A `${{ }}` expression is not an escape from that rule. It shows only that a
+value is derived, never from what, so `go-version: ${{ env.GO_VERSION }}` in a
+workflow is a literal declared a few lines higher. The single exemption is
+`.github/actions/ptah/action.yml`, which forwards its own `inputs.go-version`
+and `inputs.go-version-file` because a composite action runs in the **caller's**
+workspace and must not be pinned to this repository's `go.mod`. What that
+forwarding resolves to is pinned by the `go-version-file` input's default, which
+has to exist and to name `go.mod`: the forwarded value is opaque, so that
+default is the only place left where the module is named.
+
+If you raise the `go` directive, raise `testkit/go.mod`'s in the same change.
+`testkit` both requires and replaces the root module, so under `testkit/` it is
+the **main** module and the root module is its dependency; Go requires a main
+module's `go` directive to be at least every dependency's, and a root floor
+above testkit's fails the testkit build outright with `go: module .. requires go
+>= <root floor>`. The reverse — testkit deliberately ahead — is legal and is
+testkit's own decision.
+
 ```bash
 # Fail when the toolchain grows a second declaration
 scripts/check-go-toolchain-single-source.sh
