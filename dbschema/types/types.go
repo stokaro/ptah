@@ -100,6 +100,18 @@ type DBTable struct {
 	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
 	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
 	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+	// VirtualModule is the SQLite module that owns this table, from the USING
+	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
+	// `rtree`, `geopoly`, or any other module a build registers. It is empty
+	// for an ordinary table, and a non-empty value means the table cannot be
+	// described by CREATE TABLE at all: it has no column list of its own, and
+	// a plain table of the same name is a different object. See
+	// stokaro/ptah#1028.
+	VirtualModule string `json:"virtual_module,omitempty"`
+	// VirtualArguments is the text between the module's parentheses, verbatim.
+	// Module arguments are not SQL -- only the module interprets them -- so
+	// they are carried unparsed and reproduced byte for byte.
+	VirtualArguments string `json:"virtual_arguments,omitempty"`
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.

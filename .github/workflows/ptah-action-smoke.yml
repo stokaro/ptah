@@ -39,7 +39,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26.5"
+          go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
 
@@ -69,6 +69,28 @@ jobs:
           setup-go: "false"
           dir: ${{ runner.temp }}/ptah-action-models
           db-url: sqlite:///${{ runner.temp }}/ptah-action.db
+          dialect: sqlite
+          migration-dir: cmd/lint/testdata/clean
+          comment: "false"
+          lint: "true"
+
+      # The action's own setup-go step was unreachable from CI while every smoke
+      # invocation passed setup-go: "false", so its Go version default rotted
+      # with a green board. This second invocation leaves setup-go at its default
+      # so the step actually runs and has to resolve a toolchain from the calling
+      # repository's go.mod.
+      #
+      # What this proves: the step's inputs resolve and setup-go succeeds with an
+      # empty go-version. What it does NOT prove: which toolchain ended up on
+      # PATH — the job-level setup-go above already installed the same one, so an
+      # assertion on `go env GOVERSION` here would pass either way and would be
+      # decoration.
+      - name: Run local Ptah action with its own Go setup
+        uses: ./.github/actions/ptah
+        with:
+          binary-path: ${{ runner.temp }}/ptah
+          dir: ${{ runner.temp }}/ptah-action-models
+          db-url: sqlite:///${{ runner.temp }}/ptah-action-setup-go.db
           dialect: sqlite
           migration-dir: cmd/lint/testdata/clean
           comment: "false"

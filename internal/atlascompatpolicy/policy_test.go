@@ -123,6 +123,10 @@ func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 	t.Setenv("PTAH_HCL_STRICT_REDECLARATIONS", "1")
 	t.Setenv("PTAH_STRICT_DIR_QUERY", "1")
 	t.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
+	// Retained rather than gated: a true spelling restores the DROP TABLE the
+	// pinned community binary plans for a SQLite virtual table anyway, so it
+	// adds no Atlas capability for strict mode to refuse.
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "1")
 
 	policy, err := atlascompatpolicy.Resolve()
 
@@ -135,6 +139,7 @@ func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
 		"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 		"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 		"PTAH_HCL_STRICT_REDECLARATIONS",
+		"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 		"PTAH_STRICT_DIR_QUERY",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -641,4 +646,70 @@ func TestStrictCEMigrationContentValidationUsesTargetDialect(t *testing.T) {
 		qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
 	)
+}
+
+// TestValidateRenderedVirtualTables pins which mode refuses a rendering that
+// dropped a SQLite virtual table's module declaration.
+//
+// Strict compatibility owns the process output contract, so it refuses. Full
+// mode matches the pinned community binary, which emits the same lossy empty
+// table block and exits 0, and says so on the diagnostics stream instead.
+func TestValidateRenderedVirtualTables(t *testing.T) {
+	tests := []struct {
+		name         string
+		policy       atlascompatpolicy.Policy
+		names        []string
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name:         "strict refuses and names the table",
+			policy:       atlascompatpolicy.StrictCE(),
+			names:        []string{`"docs" (module fts5)`},
+			wantErr:      true,
+			wantContains: `"docs" (module fts5)`,
+		},
+		{
+			name:         "strict names every dropped table",
+			policy:       atlascompatpolicy.StrictCE(),
+			names:        []string{`"docs" (module fts5)`, `"geo" (module rtree)`},
+			wantErr:      true,
+			wantContains: `"geo" (module rtree)`,
+		},
+		{
+			name:         "strict points at the format that carries it",
+			policy:       atlascompatpolicy.StrictCE(),
+			names:        []string{`"docs" (module fts5)`},
+			wantErr:      true,
+			wantContains: "--format '{{ sql . }}'",
+		},
+		{
+			name:    "strict with nothing dropped is not a refusal",
+			policy:  atlascompatpolicy.StrictCE(),
+			names:   nil,
+			wantErr: false,
+		},
+		{
+			name:    "full mode matches the pinned binary and does not refuse",
+			policy:  atlascompatpolicy.Policy{},
+			names:   []string{`"docs" (module fts5)`},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.policy.ValidateRenderedVirtualTables(tt.names)
+
+			qt.Assert(t, err != nil, qt.Equals, tt.wantErr)
+			qt.Assert(t, policyErrorText(err), qt.Contains, tt.wantContains)
+		})
+	}
+}
+
+func policyErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

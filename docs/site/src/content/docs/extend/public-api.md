@@ -281,6 +281,16 @@ migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
 rejects changed history with `generator.ErrMigrationDirectoryChanged` under
 the shared cross-process publication lock.
 
+When its URL or connection selects SQLite, `PlanMigration` validates
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before resolving `OutputDir`. A malformed
+value therefore fails before filesystem work; non-SQLite plans do not consult
+the variable.
+
+`GenerateCheckpointFromShadow` and `VerifyBaselineShadow` apply the same
+SQLite-only validation before connecting to or mutating a shadow database.
+The checkpoint path therefore cannot drop and replay a shadow database before
+reporting a malformed value.
+
 Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with
 `generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only

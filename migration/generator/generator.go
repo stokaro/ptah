@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -34,6 +35,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -880,6 +882,15 @@ func escapingMigrationEntries(writer *atlasmigrate.MigrationWriter) []string {
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
 	if opts.MigrationName == "" {
 		opts.MigrationName = "migration"
+	}
+	dialect := ""
+	if opts.DBConn != nil {
+		dialect = opts.DBConn.Info().Dialect
+	} else if resolvedDialect, dialectErr := atlasurl.DialectFromURL(opts.DatabaseURL); dialectErr == nil {
+		dialect = resolvedDialect
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return opts, err
 	}
 	outputDir, err := pathguard.ResolveWithinRoot(opts.OutputDir, opts.AllowedOutputRoot)
 	if err != nil {

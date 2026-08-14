@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,12 +11,15 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -74,6 +78,7 @@ repository alone.`,
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
+	dbcli.RegisterPlainHTTPFlagValue(flags)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	dbcli.RegisterProjectEnvFlag(flags)
@@ -126,6 +131,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	replay, err := cmd.Flags().GetBool(generateReplayFlag)
+	if err != nil {
+		return err
+	}
+	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
+	if err != nil {
+		return err
+	}
 	migrationsDir, err := cmd.Flags().GetString(generateMigrationsDirFlag)
 	if err != nil {
 		return err
@@ -140,6 +153,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
+		return err
+	}
+	explicitTargetURL := dbURL
+	if replay {
+		explicitTargetURL = devURL
+	}
+	if err := sqlitevirtual.ValidateExplicitURLToggle(explicitTargetURL); err != nil {
 		return err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
@@ -170,14 +190,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	connectTimeoutValue, err := cmd.Flags().GetString(dbcli.ConnectTimeoutFlagName)
-	if err != nil {
-		return err
-	}
-	replay, err := cmd.Flags().GetBool(generateReplayFlag)
-	if err != nil {
-		return err
-	}
-	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
 	if err != nil {
 		return err
 	}
@@ -228,6 +240,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("database URL is required")
 		}
 	}
+	dialect, err := atlasurl.DialectFromURL(targetURL)
+	if err != nil {
+		return err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return err
+	}
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
@@ -235,21 +254,12 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
-	dialect, err := atlasurl.DialectFromURL(targetURL)
-	if err != nil {
-		return err
-	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {
 		return err
 	}
 
-	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:    rootDirs,
-		SchemaFiles: schemaFiles,
-		Commands:    commands,
-		Dialect:     dialect,
-	})
+	generated, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
 	if err != nil {
 		return err
 	}
@@ -326,7 +336,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	out := cmd.OutOrStdout()
+	writeGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
+	return nil
+}
+
+func writeGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
@@ -335,5 +349,30 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
-	return nil
+}
+
+// loadGenerateSchema reads the desired schema for `migrations generate`.
+//
+// It lives outside migrateGenerateCommand because that function is a linear
+// sequence of flag reads and grew past the length limit when `--plain-http`
+// was added for oci:// sources (stokaro/ptah#928 item 1). The flag is read
+// here rather than beside its siblings so the value and its only consumer
+// stay in one place.
+func loadGenerateSchema(
+	cmd *cobra.Command,
+	rootDirs, schemaFiles []string,
+	commands []schemasource.Command,
+	dialect string,
+) (*goschema.Database, error) {
+	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
+	if err != nil {
+		return nil, err
+	}
+	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+		Commands:    commands,
+		Dialect:     dialect,
+		PlainHTTP:   plainHTTP,
+	})
 }
