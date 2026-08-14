@@ -189,10 +189,12 @@ refused however it is set.
   refusal survives excluding that table, because the tables at risk are not the
   one an operator would exclude. A read still succeeds and prints a note naming
   the table and module. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
-  restores the old comparison for an operator who wants it, and the desired-side
-  form of the same condition — a plan carrying
-  `CREATE VIRTUAL TABLE ... USING fts4`, which this build answers with
-  `no such module: fts4` — is refused with no opt-in.
+  restores the old comparison for an operator who wants it — two databases that
+  both already hold the same `fts4` index then compare normally and report a
+  synced schema. Separately, **adding** such a table has no opt-in: a plan
+  carrying `CREATE VIRTUAL TABLE ... USING fts4` is answered with
+  `no such module: fts4`, so that one is refused before the plan, and only where
+  the statement would actually be planned.
 - A user-created index on a recognized shadow table is refused rather than
   omitted. Ptah cannot replay that index without exposing the module-owned
   table as an ordinary schema object.

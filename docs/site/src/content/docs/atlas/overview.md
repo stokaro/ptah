@@ -286,9 +286,12 @@ reported a synced schema and changed nothing.
   would name, and Ptah cannot list them without the module.
 - It is separate from `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, which permits
   dropping a virtual table Ptah can see. Neither implies the other.
-- The desired side of the same condition has no opt-in. A plan carrying
+- Adding such a table has no opt-in. A plan carrying
   `CREATE VIRTUAL TABLE ... USING fts4` fails on this build with
-  `no such module: fts4`, and no value of a variable makes a module exist.
+  `no such module: fts4`, and no value of a variable makes a module exist. This
+  fires only where that statement would actually be planned — virtual on the
+  desired side, absent from the database — so two databases that both already
+  hold the same `fts4` index compare normally under the opt-in.
 - A read is never refused. `ptah db read` and `schema inspect` print a note
   naming the table and module, and leave standard output and the exit code
   alone.

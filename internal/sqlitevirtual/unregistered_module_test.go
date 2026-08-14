@@ -264,10 +264,11 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantUnsupported: false,
 		},
 		{
-			// The desired side fails differently and certainly. This build
-			// answers the CREATE VIRTUAL TABLE a plan would carry with
-			// `no such module: fts4` -- measured mid-apply on master, after the
-			// plan had been printed and auto-approved.
+			// An ADDITION fails differently and certainly. `docs` is virtual on
+			// the desired side and absent from the database, so the plan
+			// carries CREATE VIRTUAL TABLE, which this build answers with
+			// `no such module: fts4` -- measured mid-apply, after the plan had
+			// been printed and auto-approved.
 			name:            "a desired virtual table this build cannot create is refused",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
@@ -276,10 +277,54 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
-				"the desired schema declares",
+				"the desired schema adds",
 				"no such module: fts4",
 				"apply this schema with a build that registers fts4",
 			},
+		},
+		{
+			// THE ROW THE THIRD REVIEW FINDING ADDED. Two databases that both
+			// already hold the same fts4 index, compared with the opt-in set.
+			// No CREATE VIRTUAL TABLE is planned -- the pairing recognizes the
+			// matching live declaration -- so the addition refusal must not
+			// fire, and the database-side refusal is exactly what the opt-in
+			// waives. Refusing here claimed a mid-apply failure that cannot
+			// happen and left the opt-in unable to restore the comparison it
+			// promises. Measured on the command before the fix:
+			// `schema diff` between two identical fts4 databases exited 2.
+			name:     "an unregistered module present on both sides is comparable with the opt-in",
+			dialect:  "sqlite",
+			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			desired:  declaringVirtual("docs", "fts4", "title, body"),
+			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			wantErr:  false,
+		},
+		{
+			// The control for the row above, and the reason it is not simply a
+			// hole: without the opt-in the same pair is still refused, by the
+			// database-side check rather than the addition check.
+			name:            "the same pair without the opt-in is still refused for the database side",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:         declaringVirtual("docs", "fts4", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"the database holds virtual table", "does not register"},
+			wantAbsent:      []string{"the desired schema adds"},
+		},
+		{
+			// The opt-in waives the database side and nothing else. An addition
+			// this build cannot execute stays refused however it is set,
+			// because no value of a variable makes a module exist.
+			name:            "the opt-in does not lift the addition refusal",
+			dialect:         "sqlite",
+			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			desired:         declaringVirtual("docs", "fts4", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"the desired schema adds", "no such module: fts4"},
 		},
 		{
 			// No value of an environment variable makes a module exist, so the

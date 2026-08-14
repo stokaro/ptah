@@ -221,18 +221,22 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 	if err != nil {
 		return err
 	}
+	registered, err := sqlitemodule.Registered()
+	if err != nil {
+		return err
+	}
 	// Asked before anything is classified, because it decides whether the
 	// classification means anything. Every branch below reads `this table is
 	// ordinary` off the description; where a module is missing that answer was
 	// never SQLite's, and the tables it is wrong about are not the ones an
 	// operator can see or exclude.
-	if err := validateModulesAreRegistered(desired, database); err != nil {
+	if err := validateDatabaseIsClassifiable(database, registered); err != nil {
 		return err
 	}
 
 	semantics := identifier.ForDialect(dialect)
 	sides := pairSides(desired, database, semantics)
-	var collisions, transitions, removals []Table
+	var collisions, transitions, removals, uncreatable []Table
 	for _, side := range sides {
 		switch {
 		case side.live.virtual && !side.declared:
@@ -241,8 +245,23 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 			// intent: this is the data-loss path.
 			removals = append(removals, side.table())
 		case side.wanted.virtual && !side.present:
-			// An addition. The module declaration reaches the renderer and
-			// CREATE VIRTUAL TABLE is planned, so there is nothing to refuse.
+			// An addition: the module declaration reaches the renderer and
+			// CREATE VIRTUAL TABLE is planned. That statement is the only thing
+			// a missing module makes impossible, so this is the ONE branch the
+			// desired-side check belongs in.
+			//
+			// Checking every desired virtual table instead refused a diff of two
+			// databases that both already hold the same fts4 index, where no
+			// CREATE is planned at all and the diagnostic's claimed mid-apply
+			// failure cannot happen -- and it did so even with
+			// [AllowUnregisteredModuleEnvVar] set, so the opt-in did not restore
+			// the comparison it promises. That is the same conflation of "the
+			// desired state names this" with "the desired state adds this" that
+			// this package's doc comment records from stokaro/ptah#1028, one
+			// level along.
+			if !registered.Registers(side.wanted.module) {
+				uncreatable = append(uncreatable, side.table())
+			}
 		case side.live.virtual != side.wanted.virtual:
 			// Both sides hold the name, and it is a virtual table on one and an
 			// ordinary table on the other. Two kinds of object, one name, and
@@ -257,6 +276,9 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 		}
 	}
 
+	if len(uncreatable) > 0 {
+		return refuseUncreatableAdditions(uncreatable, registered)
+	}
 	if len(collisions) > 0 {
 		return fmt.Errorf(
 			"%w: %s is a virtual table on one side of the comparison and an ordinary table on the other: %s;"+
@@ -303,51 +325,35 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 	)
 }
 
-// validateModulesAreRegistered refuses a comparison whose answer depends on a
-// module this build cannot load.
+// validateDatabaseIsClassifiable refuses a comparison whose DATABASE side holds
+// a virtual table this build cannot load the module for.
 //
-// The two sides fail for different reasons and get different treatment.
+// The failure it prevents is silent and destructive. SQLite marks a module's
+// shadow tables as `shadow` only while the module is loaded, so with it absent
+// the module's private storage is described as ordinary user tables -- and a
+// desired state that does not name them is read as a request to drop them.
+// Measured on stokaro/ptah#1028 against an fts4 database: five `DROP TABLE`
+// statements planned and executed at exit 0, after which `MATCH` reported
+// `SQL logic error`. Refused, waivable by [AllowUnregisteredModuleEnvVar],
+// because comparing such a database is something an operator could do before.
 //
-// On the DATABASE side the failure is silent and destructive. SQLite marks a
-// module's shadow tables as `shadow` only while the module is loaded, so with
-// it absent the module's private storage is described as ordinary user tables
-// -- and a desired state that does not name them is read as a request to drop
-// them. Measured on stokaro/ptah#1028 against an fts4 database: five
-// `DROP TABLE` statements planned and executed at exit 0, after which `MATCH`
-// reported `SQL logic error`. Refused, waivable by
-// [AllowUnregisteredModuleEnvVar], because comparing such a database is
-// something an operator could do before.
-//
-// On the DESIRED side the failure is loud and certain. The plan contains
-// `CREATE VIRTUAL TABLE ... USING <module>`, and this build answers that with
-// `no such module: <module>` -- measured mid-apply, after the plan had been
-// printed and approved. There is no opt-in, for the same reason a kind
-// collision has none: no value of an environment variable makes a module exist.
-func validateModulesAreRegistered(desired *goschema.Database, database *types.DBSchema) error {
-	registered, err := sqlitemodule.Registered()
-	if err != nil {
-		return err
-	}
-	// Resolved before either side is scanned, so a malformed opt-in is reported
-	// on every SQLite comparison rather than only the ones holding an
-	// unregistered module. [ValidateToggle] already resolved it at the seam;
-	// doing it again is free and keeps this function honest on its own.
+// The desired side is NOT checked here. Its only impossible statement is the
+// `CREATE VIRTUAL TABLE` an addition plans, which is a question about one
+// paired name rather than about the description as a whole, so it is asked
+// where the pairing already decides that a name is an addition. See the
+// `side.wanted.virtual && !side.present` branch in [ValidateComparison].
+func validateDatabaseIsClassifiable(database *types.DBSchema, registered sqlitemodule.Set) error {
+	// Resolved before the side is scanned, so a malformed opt-in is reported on
+	// every SQLite comparison rather than only the ones holding an unregistered
+	// module. [ValidateToggle] already resolved it at the seam; doing it again
+	// is free and keeps this function honest on its own.
 	unregisteredAllowed, err := UnregisteredModuleAllowed()
 	if err != nil {
 		return err
 	}
-
-	if !unregisteredAllowed {
-		if err := refuseUnclassifiableDatabase(database, registered); err != nil {
-			return err
-		}
+	if unregisteredAllowed {
+		return nil
 	}
-	return refuseUncreatableDesiredState(desired, registered)
-}
-
-// refuseUnclassifiableDatabase refuses a database side whose modules this build
-// cannot load. See [validateModulesAreRegistered] for the measurement.
-func refuseUnclassifiableDatabase(database *types.DBSchema, registered sqlitemodule.Set) error {
 	unclassified := liveUnregistered(database, registered)
 	if len(unclassified) == 0 {
 		return nil
@@ -374,25 +380,36 @@ func refuseUnclassifiableDatabase(database *types.DBSchema, registered sqlitemod
 	)
 }
 
-// refuseUncreatableDesiredState refuses a desired side declaring a virtual
-// table this build cannot create. It has no opt-in: no value of an environment
-// variable makes a module exist.
-func refuseUncreatableDesiredState(desired *goschema.Database, registered sqlitemodule.Set) error {
-	wanted := desiredUnregistered(desired, registered)
-	if len(wanted) == 0 {
-		return nil
-	}
+// refuseUncreatableAdditions refuses the virtual tables a plan would CREATE and
+// this build cannot.
+//
+// It fires only for a name the desired side adds -- virtual there, absent from
+// the database -- because that is the only shape whose plan carries
+// `CREATE VIRTUAL TABLE ... USING <module>`, which this build answers with
+// `no such module: <module>`. Measured mid-apply on stokaro/ptah#1028, after
+// the plan had been printed and auto-approved, with the target left half
+// converged.
+//
+// There is no opt-in, for the same reason a kind collision has none: no value
+// of an environment variable makes a module exist. That is also why the check
+// must not fire for a name both sides already hold -- there the statement never
+// appears, so an unwaivable refusal would take away a comparison an operator
+// can legitimately run and that [AllowUnregisteredModuleEnvVar] is supposed to
+// restore.
+func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) error {
 	return fmt.Errorf(
-		"%w: the desired schema declares virtual %s %s whose %s this build of Ptah does not register;"+
-			" the CREATE VIRTUAL TABLE statement a plan would carry fails on this build with"+
-			" `no such module: %s`, so the comparison can only produce a plan that stops part of the way"+
-			" through applying it;"+
+		"%w: the desired schema adds virtual %s %s whose %s this build of Ptah does not register;"+
+			" creating %s means the statement `CREATE VIRTUAL TABLE ... USING %s`, which this build"+
+			" answers with `no such module: %s`, so the comparison can only produce a plan that stops"+
+			" part of the way through applying it;"+
 			" this build registers %s;"+
 			" apply this schema with a build that registers %s",
 		ptaherr.ErrUnsupportedFeature,
 		noun(len(wanted)),
 		names(wanted),
 		moduleNoun(len(distinctModules(wanted))),
+		pronoun(len(wanted)),
+		wanted[0].Module,
 		wanted[0].Module,
 		registered.String(),
 		modulesOf(wanted),
@@ -436,27 +453,6 @@ func liveUnregistered(database *types.DBSchema, registered sqlitemodule.Set) []T
 	}
 	sortTables(unclassified)
 	return unclassified
-}
-
-// desiredUnregistered lists the desired side's virtual tables this build cannot
-// create.
-func desiredUnregistered(desired *goschema.Database, registered sqlitemodule.Set) []Table {
-	if desired == nil {
-		return nil
-	}
-	var wanted []Table
-	for _, table := range desired.Tables {
-		if table.VirtualModule == "" || registered.Registers(table.VirtualModule) {
-			continue
-		}
-		wanted = append(wanted, Table{
-			Schema: table.Schema,
-			Name:   table.Name,
-			Module: table.VirtualModule,
-		})
-	}
-	sortTables(wanted)
-	return wanted
 }
 
 // distinctModules lists the modules of a table list once each, in a stable

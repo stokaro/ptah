@@ -272,18 +272,26 @@ Two ways forward:
   can see, this one permits planning against tables Ptah has said it cannot
   vouch for — and neither implies the other.
 
-The **desired** side of the same condition is refused with no opt-in at all. A
-plan carrying `CREATE VIRTUAL TABLE ... USING fts4` fails on this build with
-`no such module: fts4`, which on master happened after the plan had been
+**Adding** such a table is refused with no opt-in at all. A plan carrying
+`CREATE VIRTUAL TABLE ... USING fts4` fails on this build with
+`no such module: fts4`, which previously happened after the plan had been
 printed, approved, and started. No value of an environment variable makes a
 module exist, so the refusal comes before the plan:
 
 ```text
-unsupported feature: the desired schema declares virtual table "docs"
-(module fts4) whose module this build of Ptah does not register; the CREATE
-VIRTUAL TABLE statement a plan would carry fails on this build with
+unsupported feature: the desired schema adds virtual table "docs" (module fts4)
+whose module this build of Ptah does not register; creating it means the
+statement `CREATE VIRTUAL TABLE ... USING fts4`, which this build answers with
 `no such module: fts4` ...
 ```
+
+This fires only where a `CREATE VIRTUAL TABLE` would actually be planned — the
+name is virtual on the desired side and absent from the database. Two databases
+that both already hold the same `fts4` index plan no such statement, so with
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1` they compare normally and
+report `Schemas are synced, no changes to be made.` Refusing them would have
+claimed a mid-apply failure that cannot happen and left the opt-in unable to
+restore the comparison it promises.
 
 ## ALTER TABLE Limits
 
