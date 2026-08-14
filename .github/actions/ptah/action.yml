@@ -14,9 +14,17 @@ inputs:
     required: false
     default: "true"
   go-version:
-    description: Go version passed to actions/setup-go.
+    description: >-
+      Go version passed to actions/setup-go. Empty by default so the toolchain
+      is read from go-version-file instead; set it only to override.
     required: false
-    default: "1.26.5"
+    default: ""
+  go-version-file:
+    description: >-
+      Go module file the toolchain is read from, relative to the calling
+      repository. Used when go-version is empty.
+    required: false
+    default: go.mod
   dir:
     description: Root directory to scan for Go schema entities.
     required: false
@@ -83,6 +91,7 @@ runs:
       uses: actions/setup-go@v7
       with:
         go-version: ${{ inputs.go-version }}
+        go-version-file: ${{ inputs.go-version == '' && inputs.go-version-file || '' }}
         cache: false
 
     - name: Install Ptah
