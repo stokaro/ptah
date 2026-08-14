@@ -8,6 +8,7 @@ package workflowimagepins
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -290,6 +291,158 @@ jobs:
 
 	c.Assert(err, qt.IsNil)
 	c.Check(images, qt.DeepEquals, []string{"after/comment:1"})
+}
+
+func TestFileRejectsContinuationEndedByCommentLine(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          set +e
+          docker run \
+          # keep the old flags around
+          example/database:1.2.3 || true
+`)
+
+	_, err := File(path)
+
+	c.Check(err, qt.ErrorMatches, `.*:5: docker run command has no image operand`)
+}
+
+func TestFileRejectsContinuationEndedByBlankLine(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          docker run \
+
+          example/database:1.2.3 || true
+`)
+
+	_, err := File(path)
+
+	c.Check(err, qt.ErrorMatches, `.*:5: docker run command has no image operand`)
+}
+
+func TestFileInventoriesCommandsAroundSkippedLines(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          # start the database
+
+          docker run --detach --name database \
+            skipped/around:1
+
+          # and prove it answers
+          docker run --rm skipped/probe:2
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"skipped/around:1", "skipped/probe:2"})
+}
+
+func TestFileIgnoresMultilineQuotedText(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          payload='
+          docker run quoted/single:1
+          '
+          printf '%s' "$payload" >note.txt
+          docker run after/quoted-payload:2
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/quoted-payload:2"})
+}
+
+func TestFileRejectsUnclosedShellQuote(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          payload='
+          docker run never/closed:1
+`)
+
+	_, err := File(path)
+
+	c.Check(err, qt.ErrorMatches, `.*:5: shell command is never closed: .*`)
+}
+
+func TestFileRequiresAnExactHeredocTerminator(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          cat >start.sh <<EOF
+           EOF
+          docker run heredoc/indented-terminator:1
+          EOF
+          docker run after/indented-terminator:2
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/indented-terminator:2"})
+}
+
+func TestFileStripsTabsFromDashedHeredocTerminator(t *testing.T) {
+	c := qt.New(t)
+	// The terminator is written with a placeholder because the tab `<<-` strips
+	// is the whole point of the row and an invisible one would not survive an
+	// editor.
+	path := writeWorkflow(c, strings.ReplaceAll(`
+jobs:
+  test:
+    steps:
+      - run: |
+          cat >start.sh <<-EOF
+          docker run heredoc/dashed-payload:1
+          <TAB>EOF
+          docker run after/dashed-terminator:2
+`, "<TAB>", "\t"))
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/dashed-terminator:2"})
+}
+
+func TestFileIgnoresArithmeticLeftShifts(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          attempts=$(( (1 << 2) + (3 << 1) ))
+          docker run --rm arithmetic/shift:1 retry "$attempts"
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"arithmetic/shift:1"})
 }
 
 func TestFileRejectsDuplicateRunKey(t *testing.T) {

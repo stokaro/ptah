@@ -110,12 +110,52 @@ write_repo 'jobs:
           echo wrote start-database.sh'
 assert_rejected 'a heredoc payload is not an executable pin'
 
+write_repo "jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: \${{ false && 'example/database:1.2.3' || 'alpine:3' }}"
+assert_rejected 'a quoted branch of an image expression is not the image'
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          payload='"'"'
+          docker run example/database:1.2.3
+          '"'"'
+          printf %s "$payload" >note.txt'
+assert_rejected 'a multiline quoted string is not an invocation'
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat >start-database.sh <<EOF
+           EOF
+          docker run example/database:1.2.3
+          EOF
+          echo wrote start-database.sh'
+assert_rejected 'a space-indented terminator does not end a heredoc payload'
+
 write_repo 'jobs:
   test:
     runs-on: ubuntu-latest
     services:
       database:
         image: example/database:1.2.3'
+assert_accepted
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          attempts=$(( (1 << 2) + (3 << 1) ))
+          docker run example/database:1.2.3 retry "$attempts"'
 assert_accepted
 
 write_repo 'jobs:
@@ -193,6 +233,17 @@ write_repo 'jobs:
     steps:
       - run: docker run --definitely-invalid=value example/database:1.2.3 || true'
 assert_guard_error 'an unknown attached docker option fails closed' 'unsupported docker run option'
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set +e
+          docker run \
+          # keep the old flags around
+          example/database:1.2.3 || true'
+assert_guard_error 'a continuation does not cross a comment line' 'docker run command has no image operand'
 
 write_repo 'jobs:
   test:
