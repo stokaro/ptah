@@ -32,6 +32,7 @@ const (
 	jsonFlag       = "json"
 	exitCodeFlag   = "exit-code"
 	plainHTTPFlag  = "plain-http"
+	verifySumFlag  = "verify-sum"
 )
 
 type options struct {
@@ -43,6 +44,7 @@ type options struct {
 	jsonOutput          bool
 	exitOnPending       bool
 	plainHTTP           bool
+	verifySum           bool
 	connectTimeout      string
 	configPath          string
 	envName             string
@@ -87,7 +89,17 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output with detailed migration information")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Output status in JSON format")
 	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false, "Exit with 1 when pending migrations are available")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
+	flags.BoolVar(
+		&opts.verifySum,
+		verifySumFlag,
+		false,
+		migrationsource.VerifySumUsage(
+			"Verify the migration directory against its ptah.sum or atlas.sum before reporting, "+
+				"and fail when it carries neither. status reads the directory and executes none "+
+				"of its SQL, so it runs no gate without this flag",
+		),
+	)
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -200,6 +212,35 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	}
 	migrationsFS := source.FileSystem
 	dirFormat = source.DirFormat
+
+	// The gate runs ONLY when the operator asked for it.
+	//
+	// status is deliberately outside the always-on integrity class that
+	// stokaro/ptah#1450 gave every verb which EXECUTES SQL from the directory.
+	// status executes none of it, and it is the verb an operator reaches for
+	// while diagnosing a directory that has drifted — a default gate here would
+	// refuse to describe the very thing being investigated, and would turn a
+	// long-standing exit 0 into an exit 2 for every project whose directory has
+	// drifted for a reason they already know about.
+	//
+	// --verify-sum is the opt-in that makes the report itself an integrity
+	// claim, which is what stokaro/ptah#928 item 4 asked for. A CI job reading
+	// status to decide whether to deploy wants the directory checked, and wants
+	// a directory carrying no sum at all to fail rather than report cleanly.
+	// The provenance qualifier rides along, so status cannot claim more for a
+	// movable OCI tag than `up` does.
+	//
+	// The warning goes to standard error under --json, because a `Warning:`
+	// line on standard output would corrupt the document a caller is parsing.
+	if opts.verifySum {
+		if err := migrationsource.Verify(
+			cmd.ErrOrStderr(), integrityEmitter(cmd, runtime, opts), runtime, source, dirFormat,
+			migrationsource.VerifyOptions{RequireSum: true, Verbose: opts.verbose},
+		); err != nil {
+			return err
+		}
+	}
+
 	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
@@ -250,6 +291,23 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		return pendingMigrationsExitCode(status)
 	}
 	return nil
+}
+
+// integrityEmitter selects where the integrity gate's operator-facing output
+// goes.
+//
+// Everything else this verb prints for a human is suppressed under --json by
+// the output branch at the end of the run, but the gate speaks BEFORE that
+// branch is reached and cannot be routed the same way. Writing its provenance
+// warning to standard output under --json would put a `Warning:` line in front
+// of the document a caller is parsing, which is a worse failure than the
+// warning is a help: the caller sees a JSON parse error rather than the
+// unpinned tag the warning is about.
+func integrityEmitter(cmd *cobra.Command, runtime *cliobs.Runtime, opts *options) cliobs.Emitter {
+	if opts.jsonOutput {
+		return cliobs.NewEmitter(cmd.ErrOrStderr(), runtime)
+	}
+	return cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
 }
 
 func shutdownObservability(runtime *cliobs.Runtime) {

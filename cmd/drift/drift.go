@@ -91,7 +91,7 @@ func NewDriftCommand() *cobra.Command {
 	)
 	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterProjectEnvFlag(cmd.Flags())
-	cmd.Flags().BoolVar(&plainHTTP, "plain-http", false, "Use plain HTTP for OCI registry access")
+	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &plainHTTP)
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
 
 	cmdutil.ConfigureCommand(cmd)
