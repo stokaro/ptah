@@ -295,9 +295,16 @@ while IFS=: read -r file line _; do
 		# Record which inputs this step forwards, so D1c can judge their
 		# defaults. The step is what earns the exemption, so the step is what
 		# selects the defaults to look at.
-		forwarded_inputs="${forwarded_inputs}$(printf '%s\n%s\n' "$gv_value" "$gvf_value" |
+		# The KEY each input feeds is recorded with it. A forwarded input
+		# reaching `go-version-file` has to name the root go.mod, while one
+		# reaching `go-version` has to name no version at all -- two different
+		# questions, and asking only the second lets a module path through.
+		forwarded_inputs="${forwarded_inputs}$(printf '%s\n' "$gv_value" |
 			grep -oE 'inputs\.[A-Za-z0-9_-]+' |
-			sed -e "s|^inputs\.|${file}:|" || true)"$'\n'
+			sed -e "s|^inputs\.|${file}:version:|" || true)"$'\n'
+		forwarded_inputs="${forwarded_inputs}$(printf '%s\n' "$gvf_value" |
+			grep -oE 'inputs\.[A-Za-z0-9_-]+' |
+			sed -e "s|^inputs\.|${file}:file:|" || true)"$'\n'
 	fi
 	# The reference is matched with optional YAML quoting. `uses:` accepts
 	# actions/setup-go@v7, "actions/setup-go@v7" and 'actions/setup-go@v7'
@@ -341,8 +348,8 @@ fi
 # An input with no default at all is fine and is not a finding: GitHub hands an
 # unset input to the step as the empty string, which is the intended value here.
 # D2b separately requires the go-version-file input to declare one.
-while IFS=: read -r forwarding_manifest forwarded_input; do
-	[[ -n $forwarding_manifest && -n $forwarded_input ]] || continue
+while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
+	[[ -n $forwarding_manifest && -n $forwarded_key && -n $forwarded_input ]] || continue
 	default_row="$(awk -v want="$forwarded_input" '
 		/^inputs:/ { in_inputs = 1; next }
 		/^[^[:space:]#]/ { in_inputs = 0 }
@@ -365,12 +372,25 @@ while IFS=: read -r forwarding_manifest forwarded_input; do
 			"input '$forwarded_input' is forwarded to setup-go and declares its default as the block scalar '$default_clean', whose value is on the following lines and cannot be read here. Write a plain single-line default."
 		continue
 	fi
-	case "$default_clean" in
-	[0-9]*.[0-9]*)
-		fail "$forwarding_manifest" "${default_row%%:*}" \
-			"input '$forwarded_input' is forwarded to setup-go and defaults to the Go version literal '$default_clean'. A forwarded input must carry no version of its own; leave it empty and let the go-version-file input name the module."
-		;;
-	esac
+	if [[ $forwarded_key == file ]]; then
+		# Reaches go-version-file: it names the module setup-go reads, so it
+		# must name the one that carries the toolchain. Empty is fine -- the
+		# step then selects nothing through this key.
+		case "$default_clean" in
+		"" | go.mod | ./go.mod) ;;
+		*)
+			fail "$forwarding_manifest" "${default_row%%:*}" \
+				"input '$forwarded_input' is forwarded to setup-go's go-version-file and defaults to '$default_clean', which is not the module that declares the toolchain. Default it to 'go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+			;;
+		esac
+	else
+		case "$default_clean" in
+		[0-9]*.[0-9]*)
+			fail "$forwarding_manifest" "${default_row%%:*}" \
+				"input '$forwarded_input' is forwarded to setup-go and defaults to the Go version literal '$default_clean'. A forwarded input must carry no version of its own; leave it empty and let the go-version-file input name the module."
+			;;
+		esac
+	fi
 done < <(printf '%s' "$forwarded_inputs" | sort -u)
 
 # D2: no version-shaped default in a composite action.
