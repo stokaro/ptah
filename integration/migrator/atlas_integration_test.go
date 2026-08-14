@@ -7,8 +7,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +30,30 @@ func TestAtlasFormat_PostgresIntegration(t *testing.T) {
 
 func TestAtlasFormat_MySQLIntegration(t *testing.T) {
 	runAtlasFormatIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasExactRevisionIdentityCollation_MySQLIntegration(t *testing.T) {
+	runAtlasExactRevisionIdentityCollationIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasExactRevisionIdentityCollation_MariaDBIntegration(t *testing.T) {
+	runAtlasExactRevisionIdentityCollationIntegration(t, mariaDBAtlasTestURL(t))
+}
+
+func TestAtlasExactRevisionIdentityCollation_ExistingMySQLTableRefusesAliasesIntegration(t *testing.T) {
+	runAtlasRevisionIdentityCollationRefusalIntegration(t, mysqlAtlasTestURL(t), "utf8mb4_0900_ai_ci")
+}
+
+func TestAtlasExactRevisionIdentityCollation_ExistingMariaDBTableRefusesAliasesIntegration(t *testing.T) {
+	runAtlasRevisionIdentityCollationRefusalIntegration(t, mariaDBAtlasTestURL(t), "utf8mb4_general_ci")
+}
+
+func TestAtlasExactRevisionIdentityCollation_SQLServerIntegration(t *testing.T) {
+	runAtlasExactRevisionIdentityCollationIntegration(t, sqlServerAtlasTestURL(t))
+}
+
+func TestAtlasExactRevisionIdentityCollation_ExistingSQLServerTableRefusesAliasesIntegration(t *testing.T) {
+	runAtlasRevisionIdentityCollationSQLServerRefusalIntegration(t, sqlServerAtlasTestURL(t))
 }
 
 func TestAtlasTxtarDown_PostgresIntegration(t *testing.T) {
@@ -530,7 +556,7 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 		{
 			Version:           "1",
 			Description:       "create_accounts",
-			RevisionType:      4,
+			RevisionType:      6,
 			ExecutedAtNonZero: true,
 			Error:             sql.NullString{Valid: true},
 			ErrorStatement:    sql.NullString{Valid: true},
@@ -695,6 +721,165 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 	var noDown *migrator.AtlasDownNotImplementedError
 	c.Assert(err, qt.ErrorAs, &noDown)
 	c.Assert(noDown.Version, qt.Equals, int64(20220318104616))
+}
+
+func runAtlasExactRevisionIdentityCollationIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanup := func() {
+		for _, statement := range []string{
+			"DROP TABLE IF EXISTS ptah_issue_1206_lower",
+			"DROP TABLE IF EXISTS ptah_issue_1206_upper",
+			"DROP TABLE IF EXISTS atlas_schema_revisions",
+		} {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
+	}
+	cleanup()
+	defer cleanup()
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
+			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
+
+	rows, err := conn.QueryContext(t.Context(), "SELECT version FROM atlas_schema_revisions")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var versions []string
+	for rows.Next() {
+		var version string
+		c.Assert(rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	slices.Sort(versions)
+	c.Assert(versions, qt.DeepEquals, []string{"A", "a"})
+}
+
+func runAtlasRevisionIdentityCollationRefusalIntegration(t *testing.T, dbURL, collation string) {
+	t.Helper()
+
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanup := func() {
+		for _, statement := range []string{
+			"DROP TABLE IF EXISTS ptah_issue_1206_lower",
+			"DROP TABLE IF EXISTS ptah_issue_1206_upper",
+			"DROP TABLE IF EXISTS atlas_schema_revisions",
+		} {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
+	}
+	cleanup()
+	defer cleanup()
+
+	_, err = conn.ExecContext(t.Context(), fmt.Sprintf(`CREATE TABLE atlas_schema_revisions (
+    version VARCHAR(255) COLLATE %s PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes JSON NULL,
+    operator_version VARCHAR(255) NOT NULL
+) ENGINE=InnoDB`, collation))
+	c.Assert(err, qt.IsNil)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
+			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(t.Context()), qt.ErrorMatches,
+		`failed to initialize migrations table: revision table cannot distinguish every exact Atlas identity under its configured version collation: 2 identities collapse to 1`)
+
+	var bodyTables int
+	c.Assert(conn.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM information_schema.tables
+WHERE table_schema = DATABASE() AND table_name IN ('ptah_issue_1206_upper', 'ptah_issue_1206_lower')`).Scan(&bodyTables), qt.IsNil)
+	c.Assert(bodyTables, qt.Equals, 0)
+}
+
+func runAtlasRevisionIdentityCollationSQLServerRefusalIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanup := func() {
+		for _, statement := range []string{
+			"DROP TABLE IF EXISTS ptah_issue_1206_lower",
+			"DROP TABLE IF EXISTS ptah_issue_1206_upper",
+			"DROP TABLE IF EXISTS atlas_schema_revisions",
+		} {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
+	}
+	cleanup()
+	defer cleanup()
+
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE atlas_schema_revisions (
+    version NVARCHAR(255) COLLATE SQL_Latin1_General_CP1_CI_AS PRIMARY KEY,
+    description NVARCHAR(MAX) NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at DATETIME2 NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error NVARCHAR(MAX) NULL,
+    error_stmt NVARCHAR(MAX) NULL,
+    hash NVARCHAR(255) NOT NULL,
+    partial_hashes NVARCHAR(MAX) NULL,
+    operator_version NVARCHAR(255) NOT NULL
+)`)
+	c.Assert(err, qt.IsNil)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
+			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(t.Context()), qt.ErrorMatches,
+		`failed to initialize migrations table: revision table cannot distinguish every exact Atlas identity under its configured version collation: 2 identities collapse to 1`)
+
+	var bodyTables int
+	c.Assert(conn.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME IN ('ptah_issue_1206_upper', 'ptah_issue_1206_lower')`).Scan(&bodyTables), qt.IsNil)
+	c.Assert(bodyTables, qt.Equals, 0)
 }
 
 func runAtlasTxtarDownIntegration(t *testing.T, dbURL string) {
@@ -938,7 +1123,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 		{
 			Version:           "2",
 			Description:       "create_users",
-			RevisionType:      4,
+			RevisionType:      6,
 			ExecutedAtNonZero: true,
 			Error:             sql.NullString{Valid: true},
 			ErrorStatement:    sql.NullString{Valid: true},
@@ -949,7 +1134,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 		{
 			Version:           "3",
 			Description:       "add_audit",
-			RevisionType:      4,
+			RevisionType:      6,
 			ExecutedAtNonZero: true,
 			Error:             sql.NullString{Valid: true},
 			ErrorStatement:    sql.NullString{Valid: true},
@@ -981,7 +1166,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 		{
 			Version:           "2",
 			Description:       "create_users",
-			RevisionType:      4,
+			RevisionType:      6,
 			ExecutedAtNonZero: true,
 			Error:             sql.NullString{Valid: true},
 			ErrorStatement:    sql.NullString{Valid: true},

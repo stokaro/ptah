@@ -132,6 +132,7 @@ func TestPrepareApplyExecute_SQLiteMainRevisionsSchema(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.SelectedVersions, qt.DeepEquals, []int64{1})
+	c.Assert(plan.RevisionsTableIdentifier, qt.Equals, `"main"."atlas_schema_revisions"`)
 
 	result, err := plan.Execute(ctx)
 
@@ -174,6 +175,38 @@ func TestPrepareApplyExecute_DryRunBaselinePlansRemaining(t *testing.T) {
 	c.Assert(sqliteTableExists(c, conn, "dry_baseline_one"), qt.IsFalse)
 	c.Assert(sqliteTableExists(c, conn, "dry_baseline_two"), qt.IsFalse)
 	c.Assert(sqliteTableExists(c, conn, "dry_baseline_three"), qt.IsFalse)
+}
+
+func TestPrepareApplyExecute_DryRunBaselineKeepsExactRevisionIdentity(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "10_half.sql", "CREATE TABLE dry_exact_half (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "20_two.sql", "CREATE TABLE dry_exact_two (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "dry-exact-baseline.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasmigrate.PrepareApply(c.Context(), conn, atlasmigrate.ApplyOptions{
+		Dir:              migrationsDir,
+		FS:               os.DirFS(migrationsDir),
+		DryRun:           true,
+		ExecOrder:        migrator.ExecOrderLinear,
+		TxMode:           migrator.MigrationTxModeFile,
+		BaselineVersion:  10,
+		RevisionVersions: map[int64]string{10: "1.5", 20: "2"},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.CurrentVersion, qt.Equals, int64(10))
+	c.Assert(plan.CurrentKey, qt.Equals, "1.5")
+	c.Assert(plan.CurrentKeySet, qt.IsTrue)
+	c.Assert(plan.SelectedVersions, qt.DeepEquals, []int64{20})
+	c.Assert(plan.SelectedKeys, qt.DeepEquals, []string{"2"})
+
+	result, err := plan.Execute(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.CurrentKey, qt.Equals, "1.5")
+	c.Assert(result.CurrentKeySet, qt.IsTrue)
+	c.Assert(result.SelectedKeys, qt.DeepEquals, []string{"2"})
 }
 
 func TestPrepareApplyExecute_DryRunUsesStoredRevisionState(t *testing.T) {

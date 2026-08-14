@@ -3365,13 +3365,19 @@ func TestCompatCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
 		"migrate", "diff",
 		"-s", "public",
 		"--to", "file://schema.sql",
-		"--dev-url", "docker://postgres/15/dev",
+		// A docker URL this build will not start, so the shorthand is measured
+		// without provisioning anything. The old fixture named
+		// `docker://postgres/15/dev`, which since stokaro/ptah#844 starts a
+		// container -- this test would pull an image to assert a flag parse.
+		"--dev-url", "docker://sqlite/3/dev",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
-	c.Assert(out.String(), qt.Contains, `Error: atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
+	// The point of the row is that `-s` parsed at all, so the refusal that
+	// follows it merely has to be the one that proves the run got past flags.
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
+	c.Assert(out.String(), qt.Contains, `Error: unsupported docker image "sqlite"`)
 }
 
 func TestCompatCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {

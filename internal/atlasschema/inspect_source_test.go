@@ -315,7 +315,16 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	t.Run("docker dev url", func(t *testing.T) {
+	// Inspection used to refuse every docker:// dev URL here. It now provisions
+	// one (stokaro/ptah#844), so the row asserts that the value reached the
+	// provisioning layer instead.
+	//
+	// `docker://sqlite` is a docker URL this build will not start, so nothing is
+	// provisioned and the assertion needs no container runtime. That is the
+	// measured behavior and not a shortcut: the pinned community binary v1.3.0
+	// answers `unsupported docker image "sqlite"` and exits 1 for it, so
+	// starting anything would be exiting 0 where that binary exits 1.
+	t.Run("docker dev url reaches the provisioner", func(t *testing.T) {
 		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
@@ -325,7 +334,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			DevURL: "docker://sqlite",
 		})
 
-		c.Assert(err, qt.ErrorMatches, `docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for schema inspection`)
+		c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	})
 
 	t.Run("unsupported source scheme", func(t *testing.T) {

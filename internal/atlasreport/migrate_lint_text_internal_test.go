@@ -779,6 +779,34 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 			"  -- 1 diagnostic\n")
 }
 
+func TestWriteMigrateLintText_RendersMappedEmptyFlywayRepeatableVersion(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;\n")},
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		Dialect:       "sqlite",
+		Selection: migrationlint.VersionSelection{
+			Versions:   []int64{2},
+			Restricted: true,
+		},
+	})
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = writeMigrateLintText(&out, MigrateLintOptions{
+		Analysis:         &analysis,
+		RevisionVersions: map[int64]string{2: ""},
+	}, fixedZeroClock())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Analyzing changes (1 migration in total):\n")
+	c.Assert(out.String(), qt.Contains, "  -- analyzing version \n")
+	c.Assert(out.String(), qt.Not(qt.Contains), "from version 1 to ")
+}
+
 // TestMigrateLintProseIsAtlasCompatible pins the ptah-compat boundary rather
 // than only one snapshot. Native `ptah migrations lint` owns Ptah's richer
 // prose; this renderer must remain suitable for drop-in Atlas scripts.

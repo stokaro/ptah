@@ -85,6 +85,29 @@ func dirtyRetryTableExists(c *qt.C, conn *dbschema.DatabaseConnection, table str
 	return count == 1
 }
 
+func newAtlasMappedPtahDirtyMigrator(
+	c *qt.C,
+	dbPath, migrationFile string,
+	version int64,
+	identity, body string,
+) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			migrationFile: {Data: []byte(body)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{version: identity}),
+	)
+	c.Assert(err, qt.IsNil)
+	return conn, mig.WithRevisionTableFormat(migrator.RevisionTableFormatPtah).
+		WithTransactionMode(migrator.MigrationTxModeNone)
+}
+
 // TestMigrateUp_AllowDirtyRetryReusesTheDirtyRevisionRow is the core #966
 // contract on the native surface under the default per-file transaction mode.
 //
@@ -415,6 +438,82 @@ func TestMigrateUp_AtlasFormatAllowDirtyRetryReusesTheDirtyRevisionRow(t *testin
 	c.Assert(after[1].Dirty, qt.IsFalse)
 	c.Assert(after[1].Applied, qt.Equals, 2)
 	c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+}
+
+func TestMigrateUp_AllowDirtyNativeRevisionTableUsesNumericOwnershipWithAtlasMapping(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "native-mapped-retry.db")
+	_, initial := newAtlasMappedPtahDirtyMigrator(
+		c,
+		dbPath,
+		"10_release.sql",
+		10,
+		"release-A",
+		`CREATE TABLE native_mapped_partial (id INTEGER PRIMARY KEY);
+THIS IS A FAILING STATEMENT;
+`,
+	)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	_, retried := newAtlasMappedPtahDirtyMigrator(
+		c,
+		dbPath,
+		"10_release.sql",
+		10,
+		"release-A",
+		`CREATE TABLE native_mapped_partial (id INTEGER PRIMARY KEY);
+CREATE TABLE native_mapped_retry (id INTEGER PRIMARY KEY);
+`,
+	)
+	c.Assert(retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{
+		AllowDirty: true,
+	}), qt.IsNil)
+
+	revisions, err := retried.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(10))
+	c.Assert(revisions[0].RevisionVersion(), qt.Equals, "10")
+	c.Assert(revisions[0].Dirty, qt.IsFalse)
+}
+
+func TestMigrateUp_AllowDirtyNativeRevisionTableRefusesUnownedMappedRevision(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "native-unowned-mapped.db")
+	conn, initial := newAtlasMappedPtahDirtyMigrator(
+		c,
+		dbPath,
+		"10_retired.sql",
+		10,
+		"release-A",
+		`CREATE TABLE native_unowned_partial (id INTEGER PRIMARY KEY);
+THIS IS A FAILING STATEMENT;
+`,
+	)
+	c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
+
+	_, retried := newAtlasMappedPtahDirtyMigrator(
+		c,
+		dbPath,
+		"20_later.sql",
+		20,
+		"release-B",
+		"CREATE TABLE native_unowned_must_not_run (id INTEGER PRIMARY KEY);\n",
+	)
+	err := retried.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{
+		AllowDirty: true,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `migration 10 is dirty:.*`)
+	c.Assert(dirtyRetryTableExists(c, conn, "native_unowned_partial"), qt.IsTrue)
+	c.Assert(dirtyRetryTableExists(c, conn, "native_unowned_must_not_run"), qt.IsFalse)
+	revisions, revisionErr := retried.GetRevisions(c.Context())
+	c.Assert(revisionErr, qt.IsNil)
+	c.Assert(revisions, qt.HasLen, 1)
+	c.Assert(revisions[0].Version, qt.Equals, int64(10))
+	c.Assert(revisions[0].Dirty, qt.IsTrue)
+	c.Assert(revisions[0].Applied, qt.Equals, 1)
+	c.Assert(revisions[0].Total, qt.Equals, 2)
 }
 
 // TestMigrateUp_AllowDirtyRefusesToResumeIntoARestructuredFile pins the one

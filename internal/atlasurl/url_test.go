@@ -27,6 +27,17 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "sqlite3 opaque drive path alias", rawURL: "sqlite3:C:/work/app.db", want: "sqlite"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
 		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
+		{name: "docker mariadb", rawURL: "docker://mariadb/11/dev", want: "mariadb"},
+		{
+			// The alias the pinned binary accepts and this resolver did not.
+			// devdocker starts a MariaDB container for it, but the dialect
+			// preflight runs first and refused `unsupported docker --dev-url
+			// engine "maria"`, so no consumer ever reached the provisioner.
+			name:   "docker maria alias",
+			rawURL: "docker://maria/11/dev",
+			want:   "mariadb",
+		},
+		{name: "docker maria alias with a tag", rawURL: "docker://maria:11/dev", want: "mariadb"},
 	}
 
 	for _, test := range tests {

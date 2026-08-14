@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -37,11 +38,13 @@ import (
 //
 // It fires only where the baseline cannot be read as a forward migration:
 //
-//   - this run would actually execute the baseline. That is asked of the
-//     selected plan rather than of the recorded set, so every way a version
-//     stops being pending answers it at once — already recorded, or covered by
-//     a --baseline revision, whose assumed-applied set a dry run and the apply
-//     it predicts must agree on;
+//   - this run would execute the baseline, or the exact source token makes it
+//     look applied under a different migration. The first is asked of the
+//     selected plan. For the second, the converted provider records a surviving
+//     B file with the Atlas baseline revision type. CE records both V and B as
+//     applied, so this is a deliberate Ptah marker: it preserves exact token
+//     interoperability while retaining the one bit needed to distinguish a
+//     settled B2 from an unsafe V2 -> B2 transition;
 //   - and either an already-applied migration is still covered by this
 //     directory (so the baseline did not squash the history away), or a
 //     migration carrying the baseline's own version has already been applied.
@@ -71,16 +74,22 @@ func checkFlywayBaselineHistory(
 	if baseline == nil || plan.Status == nil || execOrder != migrator.ExecOrderLinear {
 		return nil
 	}
-	if !slices.Contains(plan.SelectedVersions, baseline.AtlasVersion) {
-		return nil
-	}
 	applied := plan.Status.AppliedMigrations
 	conflict := flywayBaselineConflict{
 		covered:     appliedFlywayMigrations(baseline.Covered, applied),
 		sameVersion: appliedFlywayMigrations(baseline.SameVersion, applied),
 	}
+	selected := slices.Contains(plan.SelectedVersions, baseline.AtlasVersion)
+	if !selected {
+		conflict.sameVersion = appliedFlywaySameVersionConflict(baseline, plan)
+		conflict.exactIdentity = len(conflict.sameVersion) > 0
+		conflict.covered = nil
+	}
 	if len(conflict.covered) == 0 && len(conflict.sameVersion) == 0 {
 		return nil
+	}
+	if !selected {
+		return errors.New(flywayBaselineRefusal(baseline, conflict))
 	}
 	for _, version := range plan.Status.OutOfOrderMigrations {
 		if version != baseline.AtlasVersion {
@@ -100,8 +109,43 @@ func checkFlywayBaselineHistory(
 // `2` and `02`; a message asserting that "version 4611686018427510315 is already
 // applied" names a number that appears in no file name and in no Atlas output.
 type flywayBaselineConflict struct {
-	covered     []atlasmigrateimport.FlywayMigrationVersion
-	sameVersion []atlasmigrateimport.FlywayMigrationVersion
+	covered       []atlasmigrateimport.FlywayMigrationVersion
+	sameVersion   []atlasmigrateimport.FlywayMigrationVersion
+	exactIdentity bool
+}
+
+// appliedFlywaySameVersionConflict recognizes the transition from a versioned
+// migration to a baseline carrying the same exact Flyway token. Exact Atlas
+// revision identity makes the baseline look applied before checksum validation.
+// The revision row contains the token, normalized description, and body
+// checksum, but not the V/B prefix or source filename. Even a matching checksum
+// cannot distinguish V2 from B2 when their SQL is byte-identical. The provider
+// therefore marks a surviving B migration with the combined baseline/applied
+// type on first execution so a later run is provable without changing its exact
+// token. An explicit --baseline keeps Atlas's pure baseline type and carries a
+// durable source-baseline marker only when the selected source was B. A V2
+// baselined before B2 appeared remains indistinguishable and fails closed, as
+// does an ordinary applied row.
+func appliedFlywaySameVersionConflict(
+	baseline *atlasmigrateimport.FlywayBaseline,
+	plan atlasmigrate.ApplyPlan,
+) []atlasmigrateimport.FlywayMigrationVersion {
+	if len(baseline.SameVersion) == 0 || !slices.Contains(plan.Status.AppliedMigrationKeys, baseline.Version) {
+		return nil
+	}
+	for _, revision := range plan.Revisions {
+		if revision.RevisionVersion() != baseline.Version {
+			continue
+		}
+		sourceBaseline := revision.AtlasType == migrator.AtlasRevisionTypeBaseline &&
+			revision.OperatorVersion == revisiontable.SourceBaselineOperatorVersion
+		executedBaseline := revision.AtlasType&(migrator.AtlasRevisionTypeBaseline|migrator.AtlasRevisionTypeApplied) ==
+			migrator.AtlasRevisionTypeBaseline|migrator.AtlasRevisionTypeApplied
+		if sourceBaseline || executedBaseline {
+			return nil
+		}
+	}
+	return baseline.SameVersion
 }
 
 // appliedFlywayMigrations keeps the migrations a database has already recorded.
@@ -134,8 +178,13 @@ func flywayBaselineRefusal(baseline *atlasmigrateimport.FlywayBaseline, conflict
 	fmt.Fprintf(&b, "%s is a Flyway baseline and this database already has migration history, "+
 		"so it will not be treated as a fresh install; nothing has been applied", baseline.Source)
 
-	fmt.Fprintf(&b, "\n\nthe baseline carries version %q and no revision here records it, "+
-		"but this database has already applied:\n", baseline.Version)
+	if conflict.exactIdentity {
+		fmt.Fprintf(&b, "\n\nthe baseline carries exact revision identity %q, which this database already records "+
+			"for another migration:\n", baseline.Version)
+	} else {
+		fmt.Fprintf(&b, "\n\nthe baseline carries version %q and no revision here records it, "+
+			"but this database has already applied:\n", baseline.Version)
+	}
 	for _, migration := range conflict.sameVersion {
 		fmt.Fprintf(&b, "  %s — a migration carrying the same version %q\n", migration.Source, baseline.Version)
 	}
@@ -148,11 +197,18 @@ func flywayBaselineRefusal(baseline *atlasmigrateimport.FlywayBaseline, conflict
 		"Neither is Ptah's decision to make silently.\n")
 
 	b.WriteString("\nways forward:\n")
-	fmt.Fprintf(&b, "  - execute %s against this database now: re-run with --exec-order=non-linear\n", baseline.Source)
+	if conflict.exactIdentity {
+		fmt.Fprintf(&b, "  - if %s must run here, review and execute its SQL manually; the migration runner cannot record "+
+			"two different migrations under exact revision identity %q\n", baseline.Source, baseline.Version)
+	} else {
+		fmt.Fprintf(&b, "  - execute %s against this database now: re-run with --exec-order=non-linear\n", baseline.Source)
+	}
 	b.WriteString("  - keep the baseline for new environments: apply this directory to databases with no recorded " +
 		"history, and let this one continue from the migrations it already has\n")
-	b.WriteString("\nrecording it as applied without executing it has no safe route here: `migrate set` moves the " +
-		"database to exactly the version given and removes the revisions above it, and this baseline sorts below " +
-		"every migration this database has already run.\n")
+	if !conflict.exactIdentity {
+		b.WriteString("\nrecording it as applied without executing it has no safe route here: `migrate set` moves the " +
+			"database to exactly the version given and removes the revisions above it, and this baseline sorts below " +
+			"every migration this database has already run.\n")
+	}
 	return b.String()
 }

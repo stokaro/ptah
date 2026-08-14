@@ -394,27 +394,34 @@ func TestCompatDevURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	}
 }
 
-// TestCompatDevURLDiagnostics_PreserveTheDockerRefusal is the non-interference
-// control for the gate.
+// TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner is the
+// non-interference control for the gate.
 //
-// A `docker://` dev database is a value Ptah refuses with a sentence naming what
-// the operator has to supply instead. The gate added here answers unknown
-// schemes, and `docker` is one, so without its explicit exemption this refusal
-// would silently become `unknown driver "docker"` — the exact trade the
-// compatibility policy forbids, a clear diagnostic replaced by a vague one.
-func TestCompatDevURLDiagnostics_PreserveTheDockerRefusal(t *testing.T) {
+// The gate in this file answers a `--dev-url` whose scheme names no driver, and
+// `docker` is such a scheme. Without its explicit exemption every docker dev
+// database would be answered `unknown driver "docker"` — the exact trade the
+// compatibility policy forbids, a specific diagnostic replaced by a vague one,
+// and since stokaro/ptah#844 it would also refuse a URL this build can
+// provision.
+//
+// What the exemption protects changed with that work but the control did not:
+// the value must still reach the layer that owns it and be answered in that
+// layer's words. `docker://sqlite/3/dev` is used because it is answered without
+// starting anything — measured, the pinned community binary v1.3.0 refuses it
+// `unsupported docker image "sqlite"` and exits 1 — so this control cannot
+// become an image pull.
+func TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := qt.New(t)
 	fx := newCompatDevURLFixture(c)
 
 	_, stderr, err := runCompat(
 		"migrate", "lint", "--dir", "file://"+fx.dir, "--latest", "1",
-		"--dev-url", "docker://postgres/16/dev",
+		"--dev-url", "docker://sqlite/3/dev",
 	)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(stderr, qt.Contains,
-		"docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL")
+	c.Assert(stderr, qt.Contains, `unsupported docker image "sqlite"`)
 	c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
 }
 

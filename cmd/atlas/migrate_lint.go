@@ -311,12 +311,20 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
+	tokens, err := captured.versionTokens()
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
+	revisionVersions := tokens.revisionVersions()
 	lintOptions.Dir = dir
 	lintOptions.FS = snapshot
+	lintOptions.RevisionVersions = revisionVersions
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
 		if formatOutput {
-			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, report, integrity, err); err != nil {
+			if err := writeAtlasMigrateLintReplayError(
+				cmd, opts, dir, report, integrity, revisionVersions, err,
+			); err != nil {
 				return cmdutil.Fail(cmd, err)
 			}
 			return exitcode.New(1, err)
@@ -325,12 +333,13 @@ func runAtlasMigrateLint(
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
-			Driver:    report.Dialect,
-			URL:       opts.devURL,
-			Dir:       dir,
-			Analysis:  &report.Analysis,
-			Integrity: integrity,
-			Error:     report.Error,
+			Driver:           report.Dialect,
+			URL:              opts.devURL,
+			Dir:              dir,
+			Analysis:         &report.Analysis,
+			Integrity:        integrity,
+			Error:            report.Error,
+			RevisionVersions: revisionVersions,
 			Schema: atlasreport.MigrateLintSchema{
 				Current: report.SchemaCurrent,
 				Desired: report.SchemaDesired,
@@ -339,7 +348,8 @@ func runAtlasMigrateLint(
 			return cmdutil.Fail(cmd, err)
 		}
 	} else if err := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
-		Analysis: &report.Analysis,
+		Analysis:         &report.Analysis,
+		RevisionVersions: revisionVersions,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -355,6 +365,7 @@ func writeAtlasMigrateLintReplayError(
 	dir string,
 	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
+	revisionVersions map[int64]string,
 	replayErr error,
 ) error {
 	driver, err := atlasurl.DialectFromURL(opts.devURL)
@@ -362,12 +373,13 @@ func writeAtlasMigrateLintReplayError(
 		return err
 	}
 	return atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
-		Driver:    driver,
-		URL:       opts.devURL,
-		Dir:       dir,
-		Analysis:  &report.Analysis,
-		Integrity: integrity,
-		Error:     replayErr.Error(),
+		Driver:           driver,
+		URL:              opts.devURL,
+		Dir:              dir,
+		Analysis:         &report.Analysis,
+		Integrity:        integrity,
+		Error:            replayErr.Error(),
+		RevisionVersions: revisionVersions,
 		Schema: atlasreport.MigrateLintSchema{
 			Current: report.SchemaCurrent,
 			Desired: report.SchemaDesired,

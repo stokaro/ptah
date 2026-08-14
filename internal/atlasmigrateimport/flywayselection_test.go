@@ -12,6 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/revisiontable"
+	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // flywaySource builds a Flyway directory in which every migration announces its
@@ -37,6 +39,169 @@ func flywayConsumed(c *qt.C, fsys fs.FS) []string {
 		names = append(names, body)
 	}
 	return names
+}
+
+func flywayVersionedOrderIdentity(version string) migrator.AtlasRevisionOrderIdentity {
+	return migrator.AtlasRevisionOrderIdentity{
+		RevisionVersion: version,
+		AtlasType:       migrator.AtlasRevisionTypeApplied,
+		OperatorVersion: revisiontable.SourceIdentityOperatorVersion,
+	}
+}
+
+func flywayBaselineOrderIdentity(version string) migrator.AtlasRevisionOrderIdentity {
+	return migrator.AtlasRevisionOrderIdentity{
+		RevisionVersion: version,
+		AtlasType:       migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
+		OperatorVersion: revisiontable.SourceIdentityOperatorVersion,
+	}
+}
+
+func TestCompareFlywayRevisionOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		left      migrator.AtlasRevisionOrderIdentity
+		right     migrator.AtlasRevisionOrderIdentity
+		wantOrder int
+		wantOK    bool
+	}{
+		{
+			name:      "single to multiple digits",
+			left:      flywayVersionedOrderIdentity("9"),
+			right:     flywayVersionedOrderIdentity("10"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "higher numeric token",
+			left:      flywayVersionedOrderIdentity("2"),
+			right:     flywayVersionedOrderIdentity("1"),
+			wantOrder: 1,
+			wantOK:    true,
+		},
+		{
+			name:      "dotted component order",
+			left:      flywayVersionedOrderIdentity("1.5"),
+			right:     flywayVersionedOrderIdentity("2"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "identical spelling",
+			left:      flywayVersionedOrderIdentity("01"),
+			right:     flywayVersionedOrderIdentity("01"),
+			wantOrder: 0,
+			wantOK:    true,
+		},
+		{
+			name:  "leading zero tie needs walk position",
+			left:  flywayVersionedOrderIdentity("01"),
+			right: flywayVersionedOrderIdentity("1"),
+		},
+		{
+			name:  "opaque tie needs walk position",
+			left:  flywayVersionedOrderIdentity("x"),
+			right: flywayVersionedOrderIdentity("y"),
+		},
+		{
+			name:  "empty versioned token lacks component order",
+			left:  flywayVersionedOrderIdentity(""),
+			right: flywayVersionedOrderIdentity("1"),
+		},
+		{
+			name:  "negative token is not representable",
+			left:  flywayVersionedOrderIdentity("-1"),
+			right: flywayVersionedOrderIdentity("1"),
+		},
+		{
+			name:  "too many components are not representable",
+			left:  flywayVersionedOrderIdentity("1.2.3.4"),
+			right: flywayVersionedOrderIdentity("2"),
+		},
+		{
+			name:      "baseline precedes a lower-token versioned migration",
+			left:      flywayBaselineOrderIdentity("20"),
+			right:     flywayVersionedOrderIdentity("10"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "versioned migration squashed by target baseline remains before it",
+			left:      flywayVersionedOrderIdentity("1.5"),
+			right:     flywayBaselineOrderIdentity("2"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "target baseline uses the raw token squash cut",
+			left:      flywayVersionedOrderIdentity("10"),
+			right:     flywayBaselineOrderIdentity("2"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "target baseline raw cut does not become numeric order",
+			left:      flywayVersionedOrderIdentity("2"),
+			right:     flywayBaselineOrderIdentity("10"),
+			wantOrder: 1,
+			wantOK:    true,
+		},
+		{
+			name:      "versioned migration above target baseline follows it",
+			left:      flywayVersionedOrderIdentity("20"),
+			right:     flywayBaselineOrderIdentity("10"),
+			wantOrder: 1,
+			wantOK:    true,
+		},
+		{
+			name: "repeatable follows a versioned migration",
+			left: migrator.AtlasRevisionOrderIdentity{
+				RevisionVersion: "",
+				AtlasType:       migrator.AtlasRevisionTypeApplied,
+				OperatorVersion: revisiontable.SourceIdentityOperatorVersion,
+				Repeatable:      true,
+			},
+			right:     flywayVersionedOrderIdentity("20"),
+			wantOrder: 1,
+			wantOK:    true,
+		},
+		{
+			name: "explicit source baseline marker preserves the role",
+			left: migrator.AtlasRevisionOrderIdentity{
+				RevisionVersion: "20",
+				AtlasType:       migrator.AtlasRevisionTypeBaseline,
+				OperatorVersion: revisiontable.SourceBaselineOperatorVersion,
+			},
+			right:     flywayVersionedOrderIdentity("10"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name: "Atlas CE applied row does not preserve versioned versus baseline role",
+			left: migrator.AtlasRevisionOrderIdentity{
+				RevisionVersion: "20",
+				AtlasType:       migrator.AtlasRevisionTypeApplied,
+				OperatorVersion: "Atlas CLI v1.3.0",
+			},
+			right: flywayVersionedOrderIdentity("10"),
+		},
+		{
+			name:  "two distinct baselines lack a stable pairwise order",
+			left:  flywayBaselineOrderIdentity("20"),
+			right: flywayBaselineOrderIdentity("10"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			order, ok := atlasmigrateimport.CompareFlywayRevisionOrder(tt.left, tt.right)
+
+			c.Assert(order, qt.Equals, tt.wantOrder)
+			c.Assert(ok, qt.Equals, tt.wantOK)
+		})
+	}
 }
 
 // flywayCovered returns the source files the directory's atlas.sum covers, in
@@ -169,6 +334,24 @@ func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
 			c.Assert(consumed, qt.DeepEquals, flywayCovered(c, source))
 		})
 	}
+}
+
+func TestFlywayCoveredRepeatableVersionsDistinguishesEmptyOrdinaryToken(t *testing.T) {
+	c := qt.New(t)
+
+	ordinary, err := atlasmigrateimport.FlywayCoveredRepeatableVersions(
+		flywaySource("V.sql"),
+		atlasmigrateimport.FormatFlyway,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ordinary, qt.HasLen, 0)
+
+	repeatable, err := atlasmigrateimport.FlywayCoveredRepeatableVersions(
+		flywaySource("R__repeat.sql"),
+		atlasmigrateimport.FormatFlyway,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(repeatable, qt.DeepEquals, []int64{9223372036854775807})
 }
 
 // TestLoadFSFlywayCoveredSetIsNotEmptyForTheseShapes guards the test above from

@@ -132,17 +132,22 @@ tagged Go integration contour instead uses local services matching the
 authoritative GitHub Actions workflow and also requires the pinned Atlas CE
 oracle and Graphviz.
 
-Pull requests also run the focused migration-directory query contract and
-migrate-apply interoperability controls as part of the Atlas CE oracle
-workflow. They exercise both binaries as external processes, while the full
-tagged contour remains the required integration gate. The query package covers
-every CE verb that accepts a `--dir` URL query:
+Pull requests also run the focused migration-directory query contract,
+migrate-apply interoperability, and Flyway revision-identity controls as part
+of the Atlas CE oracle workflow. They exercise both binaries as external
+processes, while the full tagged contour remains the required integration gate.
+The Flyway package compares exact revision rows and report tokens across plain,
+dotted, zero-padded, nonnumeric, baseline, and repeatable inputs. It also proves
+that two empty repeatable identities fail before mutation. The query package
+covers every CE verb that accepts a `--dir` URL query:
 
 ```bash
 PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
   go test -tags=integration ./integration/atlasoracle/migratedirquery -count=1
 PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
   go test -tags=integration ./integration/atlasoracle/migrateapply -count=1
+PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
+  go test -tags=integration ./integration/atlasoracle/flywayrevision -count=1
 ```
 
 ### Basic Usage

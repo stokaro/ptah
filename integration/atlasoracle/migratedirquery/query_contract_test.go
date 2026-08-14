@@ -133,14 +133,35 @@ func TestWithoutPtahEnvironment(t *testing.T) {
 
 func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 	c.Helper()
-	dir := writeNativeDir(c, oracle)
-	before := directoryEntries(c, dir)
-	result := runCommand(c, binary, row.args(c, dir, "?nonsense=1")...)
+	queriedDir := writeNativeDir(c, oracle)
+	before := directoryEntries(c, queriedDir)
+	queried := runCommand(c, binary, row.args(c, queriedDir, "?nonsense=1")...)
 
-	c.Assert(result.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
-	assertWriterChangedDirectory(c, row.writesDirectory, before, directoryEntries(c, dir))
-	row.assertNative(c, dir)
-	assertIgnoredKeyReport(c, binary, result.stderr)
+	c.Assert(queried.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", queried.stdout, queried.stderr))
+	assertWriterChangedDirectory(c, row, before, directoryEntries(c, queriedDir))
+	row.assertNative(c, queriedDir)
+	assertIgnoredKeyReport(c, binary, queried.stderr)
+
+	controlDir := writeNativeDir(c, oracle)
+	control := runCommand(c, binary, row.args(c, controlDir, "")...)
+	c.Assert(control.code, qt.Equals, 0,
+		qt.Commentf("control stdout: %s\ncontrol stderr: %s", control.stdout, control.stderr))
+	row.assertNative(c, controlDir)
+	c.Assert(
+		normalizeQueryRunOutput(queried.stdout, filepath.Dir(queriedDir)),
+		qt.Equals,
+		normalizeQueryRunOutput(control.stdout, filepath.Dir(controlDir)),
+	)
+	c.Assert(
+		stderrWithoutIgnoredKeyReport(c, binary, row.name, queried.stderr),
+		qt.Equals,
+		control.stderr,
+	)
+	c.Assert(
+		queryRunState(c, filepath.Dir(queriedDir)),
+		qt.DeepEquals,
+		queryRunState(c, filepath.Dir(controlDir)),
+	)
 }
 
 func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
@@ -150,7 +171,7 @@ func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
 	selected := runCommand(c, binary, row.args(c, dir, "?format=golang-migrate&nonsense=1")...)
 
 	c.Assert(selected.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", selected.stdout, selected.stderr))
-	assertWriterChangedDirectory(c, row.writesDirectory, before, directoryEntries(c, dir))
+	assertWriterChangedDirectory(c, row, before, directoryEntries(c, dir))
 	row.assertSelected(c, dir)
 	assertIgnoredKeyReport(c, binary, selected.stderr)
 
@@ -204,9 +225,9 @@ func verbRows() []verbRow {
 	return []verbRow{
 		{
 			name: "apply",
-			args: func(c *qt.C, dir, query string) []string {
+			args: func(_ *qt.C, dir, query string) []string {
 				return []string{"migrate", "apply", "--dir", fileURL(dir, query),
-					"--url", sqliteURL(c, "apply.db")}
+					"--url", sqliteURL(dir, "apply.db")}
 			},
 			assertSelected: noAssertion,
 			assertNative:   noAssertion,
@@ -235,9 +256,9 @@ func verbRows() []verbRow {
 		},
 		{
 			name: "lint",
-			args: func(c *qt.C, dir, query string) []string {
+			args: func(_ *qt.C, dir, query string) []string {
 				return []string{"migrate", "lint", "--dir", fileURL(dir, query),
-					"--dev-url", sqliteURL(c, "lint.db"), "--latest", "1"}
+					"--dev-url", sqliteURL(dir, "lint.db"), "--latest", "1"}
 			},
 			assertSelected: noAssertion,
 			assertNative:   noAssertion,
@@ -246,9 +267,9 @@ func verbRows() []verbRow {
 		},
 		{
 			name: "status",
-			args: func(c *qt.C, dir, query string) []string {
+			args: func(_ *qt.C, dir, query string) []string {
 				return []string{"migrate", "status", "--dir", fileURL(dir, query),
-					"--url", sqliteURL(c, "status.db")}
+					"--url", sqliteURL(dir, "status.db")}
 			},
 			assertSelected: noAssertion,
 			assertNative:   noAssertion,
@@ -257,9 +278,9 @@ func verbRows() []verbRow {
 		},
 		{
 			name: "set",
-			args: func(c *qt.C, dir, query string) []string {
+			args: func(_ *qt.C, dir, query string) []string {
 				return []string{"migrate", "set", "1", "--dir", fileURL(dir, query),
-					"--url", sqliteURL(c, "set.db")}
+					"--url", sqliteURL(dir, "set.db")}
 			},
 			assertSelected: noAssertion,
 			assertNative:   noAssertion,
@@ -281,7 +302,7 @@ func verbRows() []verbRow {
 			name: "diff",
 			args: func(c *qt.C, dir, query string) []string {
 				return []string{"migrate", "diff", "query_contract", "--dir", fileURL(dir, query),
-					"--dev-url", sqliteURL(c, "diff.db"), "--to", "file://" + writeTarget(c)}
+					"--dev-url", sqliteURL(dir, "diff.db"), "--to", "file://" + writeTarget(c, dir)}
 			},
 			writesDirectory: true,
 			assertSelected:  noAssertion,
@@ -307,8 +328,8 @@ func extensionOnlyVerbRows() []extensionVerbRow {
 		{name: "checkpoint", args: func(_ *qt.C, dir, query string) []string {
 			return []string{"migrate", "checkpoint", "query_contract", "--dir", fileURL(dir, query)}
 		}},
-		{name: "down", args: func(c *qt.C, dir, query string) []string {
-			return []string{"migrate", "down", "--dir", fileURL(dir, query), "--url", sqliteURL(c, "down.db")}
+		{name: "down", args: func(_ *qt.C, dir, query string) []string {
+			return []string{"migrate", "down", "--dir", fileURL(dir, query), "--url", sqliteURL(dir, "down.db")}
 		}},
 		{name: "edit", args: func(_ *qt.C, dir, query string) []string {
 			return []string{"migrate", "edit", "1", "--dir", fileURL(dir, query)}
@@ -319,15 +340,16 @@ func extensionOnlyVerbRows() []extensionVerbRow {
 		{name: "rm", args: func(_ *qt.C, dir, query string) []string {
 			return []string{"migrate", "rm", "1", "--dir", fileURL(dir, query)}
 		}},
-		{name: "test", args: func(c *qt.C, dir, query string) []string {
-			return []string{"migrate", "test", "--dir", fileURL(dir, query), "--dev-url", sqliteURL(c, "test.db")}
+		{name: "test", args: func(_ *qt.C, dir, query string) []string {
+			return []string{"migrate", "test", "--dir", fileURL(dir, query), "--dev-url", sqliteURL(dir, "test.db")}
 		}},
 	}
 }
 
 func writeNativeDir(c *qt.C, binary string) string {
 	c.Helper()
-	dir := c.TempDir()
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.Mkdir(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	result := runCommand(c, binary, "migrate", "hash", "--dir", "file://"+dir)
@@ -337,7 +359,8 @@ func writeNativeDir(c *qt.C, binary string) string {
 
 func writeGolangMigrateDir(c *qt.C, binary string) string {
 	c.Helper()
-	dir := c.TempDir()
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.Mkdir(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.up.sql"),
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.down.sql"),
@@ -347,9 +370,9 @@ func writeGolangMigrateDir(c *qt.C, binary string) string {
 	return dir
 }
 
-func writeTarget(c *qt.C) string {
+func writeTarget(c *qt.C, dir string) string {
 	c.Helper()
-	path := filepath.Join(c.TempDir(), "target.sql")
+	path := filepath.Join(filepath.Dir(dir), "target.sql")
 	c.Assert(os.WriteFile(path, []byte(
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"+
 			"CREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
@@ -360,9 +383,8 @@ func fileURL(dir, query string) string {
 	return "file://" + dir + query
 }
 
-func sqliteURL(c *qt.C, name string) string {
-	c.Helper()
-	return "sqlite://" + filepath.Join(c.TempDir(), name)
+func sqliteURL(dir, name string) string {
+	return "sqlite://" + filepath.Join(filepath.Dir(dir), name)
 }
 
 func directoryEntries(c *qt.C, dir string) []string {
@@ -379,18 +401,21 @@ func directoryEntries(c *qt.C, dir string) []string {
 func directoryContents(c *qt.C, dir string) map[string]string {
 	c.Helper()
 	contents := make(map[string]string)
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+	root, err := os.OpenRoot(dir)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(root.Close(), qt.IsNil) })
+	err = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		relative, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(dir, path)
+		data, err := root.ReadFile(relative)
 		if err != nil {
 			return err
 		}
@@ -401,9 +426,9 @@ func directoryContents(c *qt.C, dir string) map[string]string {
 	return contents
 }
 
-func assertWriterChangedDirectory(c *qt.C, writer bool, before, after []string) {
+func assertWriterChangedDirectory(c *qt.C, row verbRow, before, after []string) {
 	c.Helper()
-	if writer {
+	if row.writesDirectory {
 		c.Assert(len(after) > len(before), qt.IsTrue,
 			qt.Commentf("writer left entries unchanged: %v", after))
 	}
@@ -414,6 +439,24 @@ func assertIgnoredKeyReport(c *qt.C, binary, stderr string) {
 	if strings.HasSuffix(binary, "ptah-compat") {
 		c.Assert(stderr, qt.Contains, ignoredKey)
 	}
+}
+
+// stderrWithoutIgnoredKeyReport removes exactly the one intentional Ptah
+// diagnostic that differs from the pinned community binary. Everything else
+// remains byte-for-byte comparable with the no-query control, so an ignored
+// key cannot smuggle an additional warning or error through this oracle.
+func stderrWithoutIgnoredKeyReport(c *qt.C, binary, verb, stderr string) string {
+	c.Helper()
+	if !strings.HasSuffix(binary, "ptah-compat") {
+		c.Assert(stderr, qt.Not(qt.Contains), ignoredKey)
+		return stderr
+	}
+	report := "note: atlas migrate " + verb +
+		` --dir: ignoring migration directory URL query key "nonsense".` +
+		` Only ?format= selects the directory layout. Set PTAH_STRICT_DIR_QUERY=1` +
+		" to refuse an unrecognized key instead.\n"
+	c.Assert(strings.Count(stderr, report), qt.Equals, 1)
+	return strings.Replace(stderr, report, "", 1)
 }
 
 func assertGolangMigrateSum(c *qt.C, dir string) {
@@ -443,7 +486,7 @@ func runCommand(c *qt.C, binary string, args ...string) commandResult {
 	c.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := exec.Command(binary, args...) //nolint:gosec // binary is the built compat executable or the operator-provided pinned oracle
+	cmd := exec.Command(binary, args...)
 	cmd.Env = cleanEnvironment()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
