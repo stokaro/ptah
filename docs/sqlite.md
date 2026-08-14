@@ -277,15 +277,21 @@ There is no safe exclusion to suggest, because naming the tables to exclude
 requires the module that is missing. Ptah says what it cannot determine instead
 of advising something that destroys data.
 
-The refusal fires only when the comparison can actually act on such a table —
-when some live table in it is one the desired side does not name, **or names
-with a different column list**. That is decidable without knowing which tables
-belong to the module, which is the whole difficulty: the planner only touches a
-live table that is missing from the desired state or described differently
-there, so where no live table is in either position, nothing is planned against
-any of them. Both halves matter — a `DROP TABLE` and the rebuild SQLite uses in
-place of an `ALTER` destroy a module's storage equally thoroughly. Two
-consequences worth knowing:
+The refusal fires only when the plan can actually act on such a table, and that
+question is asked in two places because only one half of it is answerable before
+the comparison runs:
+
+- **Before comparing**, when some live table is one the desired side does not
+  name. That is exactly the comparator's removal set, so no second copy of its
+  rules is needed to know it.
+- **After comparing**, when the diff removes or rebuilds any table. A table both
+  sides name can still differ in a column's type, nullability, default,
+  generated expression, or a table constraint, and every one of those makes the
+  SQLite planner rebuild it — drop, recreate, copy — which destroys a module's
+  storage as surely as a drop. Whether that will happen is the comparator's
+  answer, so it is read from the diff rather than guessed at beforehand.
+
+Two consequences worth knowing:
 
 - `--include users` narrows the comparison to one table the desired side names.
   Nothing is droppable, so the comparison runs — measured as
@@ -296,14 +302,18 @@ consequences worth knowing:
 `--exclude docs` is the opposite case and stays refused, because it leaves the
 module's storage tables in the comparison with nothing naming them.
 
-Column **names** are compared, and their order, not their types. A false alarm
-costs an operator a refusal they did not need — the defect this gate was added
-to fix — and type spellings are where two models legitimately differ
-(`INTEGER` against `integer`); normalizing them here would be a second, drifting
-copy of the comparator's rules. A type-only change to a table that is really
-module storage is the residue, and it is narrow: both sides of such a
-comparison are read by the same reader, which gives the same type text for the
-same column.
+The post-comparison refusal names the tables the plan would change:
+
+```text
+unsupported feature: the plan changes "docs_content" in a database that holds
+virtual table "docs" (module fts4) whose module this build of Ptah does not
+register; ... dropping or rebuilding one of them destroys the index it belongs
+to
+```
+
+Additions are not counted by it. A table the plan CREATES cannot be one the
+module already owns, so adding a table beside an index Ptah cannot classify
+stays ordinary work.
 
 Two ways forward:
 

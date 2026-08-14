@@ -167,6 +167,16 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// that is a database, because only a document declares limits about itself.
 	compared, undecided := schemadiff.CompareReportingUndecidedAdditions(to, fromSide.database, compareOpts)
 	ReportUndecidedAdditions(opts.Diagnostics, undecided, "--from", "--to")
+	// Same second half the native seam applies, applied here for the same
+	// reason the refusal above is: this surface reaches the comparator through
+	// the variant that returns no error. A table both sides name and describe
+	// differently is rebuilt by the SQLite planner, which destroys a module's
+	// storage as surely as a drop (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidatePlannedChanges(
+		dialect, fromSide.database, compared,
+	); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
 
 	diff := applyDiffPolicy(compared, opts.Policy)
 	var statements []string

@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestValidateComparisonRefusesAnUnregisteredModule is the guard on the second
@@ -339,42 +340,17 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			// THE ALTER ROW. Both sides name every table, so nothing is
-			// dropped -- but they describe `docs_content` differently, and the
-			// comparator plans the change. On SQLite that means a table
-			// rebuild, which destroys the module's storage exactly as
-			// thoroughly as dropping it. Raised in review as the residue of
-			// gating on removal alone.
-			name:    "a declared table described differently is still refused",
+			// A table both sides name and describe differently is NOT refused
+			// here, and deliberately so: whether the comparator will change it
+			// is the comparator's answer, and computing it at this seam means a
+			// second copy of its rules. That case is refused after the diff, by
+			// TestValidatePlannedChangesRefusesAChangeItCannotVouchFor.
+			name:    "a declared table is left to the post-diff gate",
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaringVirtualWithTable(
 				"docs", "fts4", "title, body",
 				"docs_content", []string{"docid", "c0title"},
-			),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
-					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
-					{Name: "docs_content", Columns: []types.DBColumn{
-						{Name: "docid"}, {Name: "c0title"}, {Name: "c1body"},
-					}},
-				},
-				UnregisteredVirtualTables: unclassified,
-			},
-			wantErr:         true,
-			wantUnsupported: true,
-			wantContains:    []string{"does not register"},
-		},
-		{
-			// Its control: the same pair with the column lists agreeing plans
-			// nothing and is not refused. Without this row the row above would
-			// pass for a validator that refuses every fts4 database again.
-			name:    "a declared table described identically is not refused",
-			dialect: "sqlite",
-			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			desired: declaringVirtualWithTable(
-				"docs", "fts4", "title, body",
-				"docs_content", []string{"docid", "c0title", "c1body"},
 			),
 			database: &types.DBSchema{
 				Tables: []types.DBTable{
@@ -462,6 +438,136 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestValidatePlannedChangesRefusesAChangeItCannotVouchFor is the half of the
+// guard that only the comparator can answer.
+//
+// [sqlitevirtual.ValidateComparison] runs before anything is compared, so it can
+// ask "is this live table missing from the desired state" -- which is exactly
+// the comparator's removal set -- but not "would this table be CHANGED". Two
+// database-backed states can name the same table and differ in a column's type,
+// nullability, default, generated expression, or a table constraint, and every
+// one of those makes the SQLite planner rebuild the table: drop, recreate,
+// copy. On a table that is really a module's storage that destroys the index as
+// surely as dropping it. Raised in review against a name-only equality check
+// that concluded nothing could change.
+//
+// So the question is asked afterwards, of the diff itself, which cannot drift
+// from the rules that produced it.
+func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
+	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Name: "docs", VirtualModule: "fts4"},
+			{Name: "docs_content"},
+		},
+		UnregisteredVirtualTables: unclassified,
+	}
+
+	tests := []struct {
+		name            string
+		dialect         string
+		env             func(testing.TB)
+		database        *types.DBSchema
+		diff            *difftypes.SchemaDiff
+		wantErr         bool
+		wantUnsupported bool
+		wantContains    []string
+	}{
+		{
+			// THE ROW THIS GATE EXISTS FOR. Nothing is dropped; a table both
+			// sides name is rebuilt, and it may be the module's.
+			name:            "a modified table in an unclassifiable database is refused",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database:        holdingFTS4,
+			diff:            modifying("docs_content"),
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the plan changes "docs_content"`,
+				`virtual table "docs" (module fts4)`,
+				"dropping or rebuilding one of them destroys the index",
+				sqlitevirtual.AllowUnregisteredModuleEnvVar,
+			},
+		},
+		{
+			name:            "a removed table in an unclassifiable database is refused",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database:        holdingFTS4,
+			diff:            removing("docs_stat"),
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_stat"`},
+		},
+		{
+			// THE CONTROL that keeps the gate from being "refuse every fts4
+			// database again". A diff that changes nothing cannot touch the
+			// module's storage, whatever Ptah believes that storage to be, so
+			// the comparison the earlier rounds unblocked stays unblocked.
+			name:     "a diff that changes nothing is not refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			wantErr:  false,
+		},
+		{
+			// The other control: the same change against a database whose
+			// modules are all present is ordinary work.
+			name:     "a modified table in a classifiable database is not refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			diff:     modifying("docs"),
+			wantErr:  false,
+		},
+		{
+			name:     "the opt-in lifts it",
+			dialect:  "sqlite",
+			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			database: holdingFTS4,
+			diff:     modifying("docs_content"),
+			wantErr:  false,
+		},
+		{
+			// The dialect gate. A MySQL plan must not be failed by a SQLite
+			// subsystem, however the list got onto the description.
+			name:     "a non SQLite dialect is not touched",
+			dialect:  "mysql",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff:     modifying("docs_content"),
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tt.env(t)
+
+			err := sqlitevirtual.ValidatePlannedChanges(tt.dialect, tt.database, tt.diff)
+
+			c.Assert(err != nil, qt.Equals, tt.wantErr)
+			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
+			for _, fragment := range tt.wantContains {
+				c.Assert(errorText(err), qt.Contains, fragment)
+			}
+		})
+	}
+}
+
+// modifying and removing build the one-change diffs this gate reads. The gate
+// asks the comparator's answer rather than recomputing it, so a test supplies
+// that answer directly.
+func modifying(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: table}}}
+}
+
+func removing(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{TablesRemoved: []string{table}}
 }
 
 // declaringVirtualWithTable builds a desired state holding a virtual table and

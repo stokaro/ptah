@@ -119,6 +119,17 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	merged.IdentifierSemantics = &semantics
 	diff, undecided := CompareReportingUndecidedAdditions(generated, database, merged)
+	// The half of the SQLite virtual-table guard that only the comparator can
+	// answer. A table both sides name and describe differently is rebuilt by
+	// the SQLite planner -- drop, recreate, copy -- which destroys a module's
+	// storage as surely as a drop, and whether that will happen is this diff's
+	// answer rather than anything the pre-comparison check could compute
+	// without a second copy of these rules (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidatePlannedChanges(
+		info.Dialect, database, diff,
+	); err != nil {
+		return nil, nil, err
+	}
 	return diff, undecided, nil
 }
 

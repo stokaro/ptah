@@ -75,12 +75,15 @@
 // them without the module. It is waivable by
 // [AllowUnregisteredModuleEnvVar], which restores what Ptah did before.
 //
-// It fires only when the plan could act on such a table -- when some live table
-// is one the desired side does not name, or names with a different column list.
-// That is decidable without identifying the module's tables, which is the whole
-// difficulty, and it is what keeps a narrowed comparison such as
-// `--include users` running: nothing in it is droppable or alterable, so
-// nothing can be destroyed however badly Ptah has misclassified it.
+// It fires only when the plan can act on such a table, and that question is
+// asked in two places because only half of it is answerable before the
+// comparison runs. Here: some live table is one the desired side does not name,
+// which is exactly the comparator's removal set. Afterwards, in
+// [ValidatePlannedChanges]: the diff removes or rebuilds something. Neither
+// needs to identify the module's tables, which is the whole difficulty, and
+// together they keep a narrowed comparison such as `--include users` running --
+// nothing in it is dropped or rebuilt, so nothing can be destroyed however
+// badly Ptah has misclassified it.
 //
 // Adding a virtual table whose module is absent is refused separately and with
 // no opt-in, because the `CREATE VIRTUAL TABLE` a plan would carry fails with
@@ -103,6 +106,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state
@@ -413,7 +417,7 @@ func validateDatabaseIsClassifiable(
 	if len(unclassified) == 0 {
 		return nil
 	}
-	if !someLiveTableCouldChange(desired, database, semantics) {
+	if !someLiveTableIsUndeclared(desired, database, semantics) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -474,26 +478,110 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 	)
 }
 
-// someLiveTableCouldChange reports whether the comparison holds a live table
-// the plan could act on -- one the desired side does not name, or names with a
-// different column list.
+// ValidatePlannedChanges refuses a plan that would change a table in a database
+// whose modules this build cannot load.
 //
-// Both halves matter and they were found one after the other. The first is the
-// `DROP TABLE` measured on stokaro/ptah#1028. The second was raised in review:
-// two database-backed states can name the same storage table and describe it
-// differently, and the comparator then plans `ALTER TABLE` -- or on SQLite the
-// rebuild that stands in for one -- against module-owned storage, which
-// corrupts the index exactly as thoroughly as dropping it.
+// It is the second half of the same guard, and it exists because the first half
+// cannot be completed where it stands. [ValidateComparison] runs before
+// anything is compared, so it can only ask questions it can answer without the
+// comparator: "is this live table missing from the desired state" is one of
+// those, and it is exactly the comparator's removal set. "Would this table be
+// CHANGED" is not. Two database-backed states can name the same table and
+// differ in a column's type, nullability, default, generated expression, or a
+// table constraint, and every one of those makes the SQLite planner rebuild the
+// table -- drop, recreate, copy -- which destroys a module's storage as
+// thoroughly as dropping it outright. Answering that here means a second copy
+// of the comparator's rules, free to drift from the rules that actually decide.
 //
-// Column NAMES are compared, and their order, not their types. That is
-// deliberate. The question this answers is "could the plan touch this table",
-// and a false yes costs an operator a refusal they did not need -- which is the
-// defect the reachability gate was added to fix. Type spellings are where two
-// models legitimately differ (`INTEGER` against `integer`), and normalizing
-// them here would be a second, drifting copy of the comparator's own rules. A
-// type-only change to a table that is really module storage is the residue, and
-// it is a narrow one: both sides of such a comparison are read by the same
-// reader, which gives the same type text for the same column.
+// So it is asked afterwards, of the comparator's own answer. A diff that
+// removes or modifies nothing cannot touch the module's storage, whatever Ptah
+// believes that storage to be, and a diff that removes or modifies something in
+// a database Ptah cannot classify might be touching it.
+//
+// Callers pass the same database description they passed to
+// [ValidateComparison]. A database with no unclassifiable module returns nil
+// whatever the diff says, so this is inert for every other SQLite comparison
+// and for every other dialect.
+func ValidatePlannedChanges(
+	dialect string,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+) error {
+	if platform.NormalizeDialect(dialect) != platform.SQLite || diff == nil {
+		return nil
+	}
+	touched := tablesTouchedBy(diff)
+	if len(touched) == 0 {
+		return nil
+	}
+	allowed, err := UnregisteredModuleAllowed()
+	if err != nil {
+		return err
+	}
+	if allowed {
+		return nil
+	}
+	registered, err := sqlitemodule.Registered()
+	if err != nil {
+		return err
+	}
+	unclassified := liveUnregistered(database, registered)
+	if len(unclassified) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: the plan changes %s in a database that holds virtual %s %s whose %s this build of Ptah"+
+			" does not register; SQLite marks a module's shadow tables as shadow only while the module"+
+			" is loaded, so Ptah cannot tell that module's private storage from ordinary tables, and"+
+			" dropping or rebuilding one of them destroys the index it belongs to;"+
+			" this build registers %s;"+
+			" apply this change with a build that registers %s, or set %s=1 to plan it against tables"+
+			" Ptah cannot vouch for",
+		ptaherr.ErrUnsupportedFeature,
+		quotedStrings(touched),
+		noun(len(unclassified)),
+		names(unclassified),
+		moduleNoun(len(distinctModules(unclassified))),
+		registered.String(),
+		modulesOf(unclassified),
+		AllowUnregisteredModuleEnvVar,
+	)
+}
+
+// tablesTouchedBy lists the tables the diff would drop or rebuild, in a stable
+// order.
+//
+// Additions are deliberately not counted. A table the plan CREATES cannot be
+// one the module already owns, so it carries none of the risk this gate is
+// about, and counting it would refuse the ordinary case of adding a table
+// beside an index Ptah cannot classify.
+func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
+	touched := slices.Clone(diff.TablesRemoved)
+	for _, table := range diff.TablesModified {
+		touched = append(touched, table.TableName)
+	}
+	slices.Sort(touched)
+	return slices.Compact(touched)
+}
+
+func quotedStrings(values []string) string {
+	rendered := make([]string, 0, len(values))
+	for _, value := range values {
+		rendered = append(rendered, fmt.Sprintf("%q", value))
+	}
+	return strings.Join(rendered, ", ")
+}
+
+// someLiveTableIsUndeclared reports whether the comparison holds a live table
+// the desired side does not name -- the shape that plans a `DROP TABLE`.
+//
+// This is the half of the harm that is decidable BEFORE the comparison runs,
+// and it is decidable exactly: the comparator's removal set is the live tables
+// the desired state leaves out, so this predicate and `TablesRemoved` answer the
+// same question. The other half -- a table both sides name and describe
+// differently, which SQLite converges by rebuilding it -- is not decidable here
+// without a second copy of the comparator's rules, so it is asked afterwards
+// against the comparator's own answer. See [ValidatePlannedChanges].
 //
 // It joins on the comparator's own table identity rather than on a second
 // spelling of the rule, for the reason [identity] gives: SQLite folds ASCII
@@ -504,7 +592,7 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // answer is true for any non-empty database. That is the same reading
 // [pairSides] gives it, and it keeps a nil desired state from being mistaken
 // for one that declared everything.
-func someLiveTableCouldChange(
+func someLiveTableIsUndeclared(
 	desired *goschema.Database,
 	database *types.DBSchema,
 	semantics identifier.Semantics,
@@ -512,50 +600,18 @@ func someLiveTableCouldChange(
 	if database == nil {
 		return false
 	}
-	declared := desiredColumnsByTable(desired, semantics)
-	for _, table := range database.Tables {
-		wanted, ok := declared[identity(table.Schema, table.Name, semantics)]
-		if !ok {
-			return true
+	declared := make(map[string]struct{})
+	if desired != nil {
+		for _, table := range desired.Tables {
+			declared[identity(table.Schema, table.Name, semantics)] = struct{}{}
 		}
-		if !slices.Equal(wanted, liveColumnNames(table, semantics)) {
+	}
+	for _, table := range database.Tables {
+		if _, ok := declared[identity(table.Schema, table.Name, semantics)]; !ok {
 			return true
 		}
 	}
 	return false
-}
-
-// desiredColumnsByTable indexes the desired side's column names by table
-// identity. A declared table with no fields maps to an empty list, which is
-// what a virtual table looks like on both sides and must compare equal.
-func desiredColumnsByTable(
-	desired *goschema.Database,
-	semantics identifier.Semantics,
-) map[string][]string {
-	declared := make(map[string][]string)
-	if desired == nil {
-		return declared
-	}
-	columnsByStruct := make(map[string][]string)
-	for _, field := range desired.Fields {
-		columnsByStruct[field.StructName] = append(
-			columnsByStruct[field.StructName],
-			semantics.TableIdentityKey(field.Name),
-		)
-	}
-	for _, table := range desired.Tables {
-		key := identity(table.Schema, table.Name, semantics)
-		declared[key] = columnsByStruct[table.StructName]
-	}
-	return declared
-}
-
-func liveColumnNames(table types.DBTable, semantics identifier.Semantics) []string {
-	names := make([]string, 0, len(table.Columns))
-	for _, column := range table.Columns {
-		names = append(names, semantics.TableIdentityKey(column.Name))
-	}
-	return names
 }
 
 // liveUnregistered lists the database side's unclassifiable virtual tables.
