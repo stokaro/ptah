@@ -153,13 +153,14 @@ func analyzeMigrationsWithBaseline(
 	latest int,
 	baseline []migrationlint.BaselineColumn,
 ) migrationlint.Analysis {
+	c := qt.New(t)
 	t.Helper()
 	fsys := fstest.MapFS{}
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
 	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	seen := map[int64]struct{}{}
 	for _, file := range discovery.Files() {
 		if file.Direction == "up" && !file.Repeatable && file.Version > 0 {
@@ -183,7 +184,7 @@ func analyzeMigrationsWithBaseline(
 		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
 		Baseline:      baseline,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return analysis
 }
 

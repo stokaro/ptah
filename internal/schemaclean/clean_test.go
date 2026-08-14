@@ -34,6 +34,7 @@ func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
 }
 
 func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
+	c := qt.New(t)
 	schema := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
 		{Name: "plpgsql", Schema: "pg_catalog"},
 		{Name: "pgcrypto", Schema: "app"},
@@ -41,10 +42,10 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 
 	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
 
-	qt.Assert(t, got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
 		{Name: "pgcrypto", Schema: "app"},
 	})
-	qt.Assert(t, schema.Extensions, qt.HasLen, 2)
+	c.Assert(schema.Extensions, qt.HasLen, 2)
 }
 
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's

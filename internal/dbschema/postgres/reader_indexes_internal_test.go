@@ -1147,6 +1147,7 @@ func TestPostgresIndexStorageParams(t *testing.T) {
 // through the fake server, so the tests below reason about the real query
 // rather than about a copy of it that can drift away from the reader.
 func indexQueryForFake(t *testing.T) string {
+	c := qt.New(t)
 	t.Helper()
 	captured := ""
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -1154,7 +1155,7 @@ func indexQueryForFake(t *testing.T) string {
 		return serveIndexQuery(plainCatalog(), query)
 	})
 	_, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema("public")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return captured
 }
 

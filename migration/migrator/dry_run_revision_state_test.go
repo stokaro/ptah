@@ -12,12 +12,13 @@ import (
 )
 
 func openDryRunRevisionSQLite(t *testing.T) *dbschema.DatabaseConnection {
+	c := qt.New(t)
 	t.Helper()
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
 		"sqlite://"+filepath.Join(t.TempDir(), "revision-state.db"),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }

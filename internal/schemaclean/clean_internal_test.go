@@ -155,7 +155,8 @@ func TestPostgresFamilyClassificationKeepsScopedExecutionAtomic(t *testing.T) {
 		{dialect: "mysql", want: false},
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
-			qt.Assert(t, isPostgresFamily(test.dialect), qt.Equals, test.want)
+			c := qt.New(t)
+			c.Assert(isPostgresFamily(test.dialect), qt.Equals, test.want)
 		})
 	}
 }
@@ -439,6 +440,6 @@ func TestPostgresRuntimeObjectTypeCoversEveryWriterOnlyKind(t *testing.T) {
 
 	_, ok := postgresRuntimeObjectType("extension")
 	c.Assert(ok, qt.IsFalse)
-	qt.Assert(t, coverageFor("postgres").postgresRuntimeObjects, qt.IsTrue)
-	qt.Assert(t, coverageFor("cockroachdb").postgresRuntimeObjects, qt.IsFalse)
+	c.Assert(coverageFor("postgres").postgresRuntimeObjects, qt.IsTrue)
+	c.Assert(coverageFor("cockroachdb").postgresRuntimeObjects, qt.IsFalse)
 }

@@ -831,7 +831,7 @@ guideline. Keep loop bodies simple and do not use loops to encode branching
 logic.
 
 Go 1.22 and newer makes range variables per-iteration, so the historical
-`test := test` workaround is not needed when using `c.Run()` closures in
+`test := test` workaround is not needed when using `t.Run()` closures in
 table-driven tests unless intentionally taking the address of a loop variable.
 
 Run the test-style baseline before finishing test changes:
@@ -869,8 +869,6 @@ Bad:
 
 ```go
 func TestDialectFromURL(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -882,7 +880,8 @@ func TestDialectFromURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			if test.wantErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -899,8 +898,6 @@ Good:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -910,7 +907,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -919,9 +917,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unsupported", func(c *qt.C) {
+	t.Run("unsupported", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 		c.Assert(got, qt.Equals, "")
@@ -956,13 +953,15 @@ func checkError(c *qt.C, err error, wantIs error, wantLike string) {
 Good:
 
 ```go
-c.Run("unsupported dev url dialect", func(c *qt.C) {
+t.Run("unsupported dev url dialect", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 	c.Assert(got, qt.Equals, "")
 })
 
-c.Run("postgres dev url", func(c *qt.C) {
+t.Run("postgres dev url", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "postgres")
@@ -974,7 +973,7 @@ c.Run("postgres dev url", func(c *qt.C) {
 Do not mix success and error cases in the same table. Prefer either:
 
 - `TestXxx_HappyPath` and `TestXxx_FailurePath`.
-- Separate `c.Run("happy ...")` and `c.Run("failure ...")` groups with distinct
+- Separate `t.Run("happy ...")` and `t.Run("failure ...")` groups with distinct
   tables.
 
 Bad:
@@ -991,7 +990,8 @@ tests := []struct {
 }
 
 for _, test := range tests {
-	c.Run(test.name, func(c *qt.C) {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL(test.rawURL)
 		if test.wantErr != "" {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -1005,12 +1005,10 @@ for _, test := range tests {
 
 Good:
 
-Use table-driven tests with `c.Run()` for multiple test cases:
+Use table-driven tests with `t.Run()` for multiple test cases:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -1020,7 +1018,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -1029,8 +1028,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -1044,7 +1041,8 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, "")

@@ -58,7 +58,7 @@ jobs:
           git diff --exit-code -- schemas/ptah-annotations.schema.json
 
       - name: qtlint
-        run: go tool qtlint ./...
+        run: go tool qtlint -require-qt-c-receiver ./...
 
       - name: Check test style baseline
         run: scripts/check-test-style.sh

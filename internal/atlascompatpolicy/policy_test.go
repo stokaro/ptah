@@ -15,109 +15,120 @@ import (
 )
 
 func TestResolveDefaultsToFullCompatibility(t *testing.T) {
+	c := qt.New(t)
 	envbooltest.Unset(atlascompatpolicy.StrictCompatEnvVar)(t)
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsFalse)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsFalse)
 }
 
 func TestResolveSelectsStrictCECompatibility(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "true")
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
 }
 
 func TestResolveRejectsMalformedStrictSelector(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "")
 
 	_, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`invalid boolean value "" for PTAH_ATLAS_STRICT_COMPAT`)
 }
 
 func TestResolveStrictCERejectsEnabledExtensionEnvironment(t *testing.T) {
 	for _, name := range []string{"PTAH_ATLAS_INSPECT_ALL_BLOCKS", "PTAH_SKIP_CHECKS"} {
 		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 			t.Setenv(name, "true")
 
 			_, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`PTAH_ATLAS_STRICT_COMPAT does not allow `+name)
 		})
 	}
 }
 
 func TestResolveStrictCEAllowsExplicitlyDisabledExtensionEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "false")
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
 }
 
 func TestResolveStrictCERejectsMalformedExtensionEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "yes")
 
 	_, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`invalid boolean value "yes" for PTAH_ATLAS_INSPECT_ALL_BLOCKS`)
 }
 
 func TestResolveStrictCERejectsPtahLogEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_LOG_FORMAT", "")
 
 	_, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_LOG_FORMAT`)
 }
 
 func TestResolveFullCompatibilityDoesNotInspectExtensionEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")
 	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "yes")
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsFalse)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsFalse)
 }
 
 func TestResolveStrictCEAllowsAtlasProjectInputEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_ATLAS_PROJECT_CONFIG_E2E_URL", "sqlite://project.db")
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
 }
 
 func TestStrictCEValidatesBoundFlagEnvironment(t *testing.T) {
+	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
 
-	qt.Assert(t, policy.ValidateFlagEnvironment("PTAH_URL", "sqlite://db", "string"),
+	c.Assert(policy.ValidateFlagEnvironment("PTAH_URL", "sqlite://db", "string"),
 		qt.ErrorMatches, `PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_URL`)
-	qt.Assert(t, policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "true", "bool"),
+	c.Assert(policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "true", "bool"),
 		qt.ErrorMatches, `PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_DRY_RUN`)
-	qt.Assert(t, policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "false", "bool"), qt.IsNil)
-	qt.Assert(t, policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "", "bool"),
+	c.Assert(policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "false", "bool"), qt.IsNil)
+	c.Assert(policy.ValidateFlagEnvironment("PTAH_DRY_RUN", "", "bool"),
 		qt.ErrorMatches, `invalid boolean value "" for PTAH_DRY_RUN`)
 }
 
 func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 	t.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "1")
 	t.Setenv("PTAH_HCL_STRICT_REDECLARATIONS", "1")
@@ -130,8 +141,8 @@ func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 
 	policy, err := atlascompatpolicy.Resolve()
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
 }
 
 func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
@@ -143,12 +154,13 @@ func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
 		"PTAH_STRICT_DIR_QUERY",
 	} {
 		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 			t.Setenv(name, "maybe")
 
 			_, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`invalid boolean value "maybe" for `+name)
 		})
 	}
@@ -181,52 +193,55 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlascompatpolicy.StrictCE().ValidateDesiredSchema(test.database)
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support desired schema `+test.name)
 		})
 	}
 }
 
 func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
+	c := qt.New(t)
 	err := atlascompatpolicy.StrictCE().ValidateInspectedSchema(&goschema.Database{
 		Views: []goschema.View{{Name: "active_users"}},
 	})
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspected schema views`)
-	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateInspectedSchema(&goschema.Database{
-			Views: []goschema.View{{Name: "active_users"}},
-		}),
+	c.Assert(atlascompatpolicy.Full().ValidateInspectedSchema(&goschema.Database{
+		Views: []goschema.View{{Name: "active_users"}},
+	}),
 		qt.IsNil,
 	)
 }
 
 func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
+	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
-	qt.Assert(t, policy.ValidateInspectedSchema(&goschema.Database{
+	c.Assert(policy.ValidateInspectedSchema(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}},
 	}), qt.IsNil)
-	qt.Assert(t, policy.ValidateSchemaCleanSnapshot(&goschema.Database{
+	c.Assert(policy.ValidateSchemaCleanSnapshot(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}},
 	}), qt.IsNil)
 
 	err := policy.ValidateInspectedSchema(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}, {Name: "citext"}},
 	})
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspected schema extensions`)
 
 	err = policy.ValidateDesiredSchema(&goschema.Database{
 		Extensions: []goschema.Extension{{Name: "plpgsql"}},
 	})
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
 }
 
 func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
+	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
 	baseline := goschema.Grant{
 		Role:       "PUBLIC",
@@ -234,10 +249,10 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 		OnSchema:   "public",
 		GrantedBy:  "database_owner",
 	}
-	qt.Assert(t, policy.ValidateInspectedSchema(&goschema.Database{
+	c.Assert(policy.ValidateInspectedSchema(&goschema.Database{
 		Grants: []goschema.Grant{baseline},
 	}), qt.IsNil)
-	qt.Assert(t, policy.ValidateSchemaCleanSnapshot(&goschema.Database{
+	c.Assert(policy.ValidateSchemaCleanSnapshot(&goschema.Database{
 		Grants: []goschema.Grant{baseline},
 	}), qt.IsNil)
 
@@ -250,23 +265,24 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 		err := policy.ValidateInspectedSchema(&goschema.Database{
 			Grants: []goschema.Grant{grant},
 		})
-		qt.Assert(t, err, qt.ErrorMatches,
+		c.Assert(err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support inspected schema grants`)
 		err = policy.ValidateSchemaCleanSnapshot(&goschema.Database{
 			Grants: []goschema.Grant{grant},
 		})
-		qt.Assert(t, err, qt.ErrorMatches,
+		c.Assert(err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support cleaning live schema grants`)
 	}
 
 	err := policy.ValidateDesiredSchema(&goschema.Database{
 		Grants: []goschema.Grant{baseline},
 	})
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema grants`)
 }
 
 func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) {
+	c := qt.New(t)
 	baseline := &dbschematypes.DBSchema{
 		Extensions: []dbschematypes.DBExtension{{Name: "plpgsql"}},
 		Grants: []dbschematypes.DBGrant{{
@@ -279,21 +295,22 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	}
 
 	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(baseline)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, prepared, qt.Not(qt.Equals), baseline)
-	qt.Assert(t, prepared.Extensions, qt.HasLen, 0)
-	qt.Assert(t, prepared.Grants, qt.HasLen, 0)
-	qt.Assert(t, baseline.Extensions, qt.HasLen, 1)
-	qt.Assert(t, baseline.Grants, qt.HasLen, 1)
+	c.Assert(err, qt.IsNil)
+	c.Assert(prepared, qt.Not(qt.Equals), baseline)
+	c.Assert(prepared.Extensions, qt.HasLen, 0)
+	c.Assert(prepared.Grants, qt.HasLen, 0)
+	c.Assert(baseline.Extensions, qt.HasLen, 1)
+	c.Assert(baseline.Grants, qt.HasLen, 1)
 
 	full, err := atlascompatpolicy.Full().PrepareInspectedSchema(baseline)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, full, qt.Equals, baseline)
-	qt.Assert(t, full.Extensions, qt.HasLen, 1)
-	qt.Assert(t, full.Grants, qt.HasLen, 1)
+	c.Assert(err, qt.IsNil)
+	c.Assert(full, qt.Equals, baseline)
+	c.Assert(full.Extensions, qt.HasLen, 1)
+	c.Assert(full.Grants, qt.HasLen, 1)
 }
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
+	c := qt.New(t)
 	database := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "citext"}},
 		Tables: []goschema.Table{{
@@ -306,14 +323,16 @@ func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
 
 	err := atlascompatpolicy.Full().ValidateDesiredSchema(database)
 
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
+	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
 	for _, kind := range []string{"table", "foreign_key", "enum"} {
 		t.Run("accepts "+kind, func(t *testing.T) {
-			qt.Assert(t, policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
+			c := qt.New(t)
+			c.Assert(policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 				Kind: kind,
 				Name: "kept",
 			}), qt.IsNil)
@@ -335,40 +354,41 @@ func TestStrictCEValidatesLiveSchemaCleanObjects(t *testing.T) {
 		"view",
 	} {
 		t.Run("refuses "+kind, func(t *testing.T) {
+			c := qt.New(t)
 			err := policy.ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
 				Kind: kind,
 				Name: "pro_object",
 			})
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support cleaning live schema `+
 					kind+` "pro_object"`)
 		})
 	}
-	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
-			Kind: "view",
-			Name: "retained_by_full_mode",
-		}),
+	c.Assert(atlascompatpolicy.Full().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
+		Kind: "view",
+		Name: "retained_by_full_mode",
+	}),
 		qt.IsNil,
 	)
 }
 
 func TestStrictCEAcceptsImplicitSchemaCleanSequence(t *testing.T) {
-	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
-			Kind:             "sequence",
-			Name:             "users_id_seq",
-			ImplicitSequence: true,
-		}),
+	c := qt.New(t)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateSchemaCleanObject(atlascompatpolicy.LiveSchemaObject{
+		Kind:             "sequence",
+		Name:             "users_id_seq",
+		ImplicitSequence: true,
+	}),
 		qt.IsNil,
 	)
 }
 
 func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
+	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
 
-	qt.Assert(t, policy.ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
+	c.Assert(policy.ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
 		Kind:             "sequence",
 		Name:             "users_id_seq",
 		ImplicitSequence: true,
@@ -378,57 +398,59 @@ func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
 		Name: "refresh_users()",
 	})
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users\(\)"`)
-	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
-			Kind: "procedure",
-			Name: "retained_by_full_mode()",
-		}),
+	c.Assert(atlascompatpolicy.Full().ValidateLiveSchemaObject(atlascompatpolicy.LiveSchemaObject{
+		Kind: "procedure",
+		Name: "retained_by_full_mode()",
+	}),
 		qt.IsNil,
 	)
 }
 
 func TestStrictCEValidatesUnlistedLiveSchemaCleanObjects(t *testing.T) {
+	c := qt.New(t)
 	database := &goschema.Database{Triggers: []goschema.Trigger{{Name: "users_audit"}}}
 
 	err := atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(database)
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support cleaning live schema triggers`)
-	qt.Assert(t, atlascompatpolicy.Full().ValidateSchemaCleanSnapshot(database), qt.IsNil)
+	c.Assert(atlascompatpolicy.Full().ValidateSchemaCleanSnapshot(database), qt.IsNil)
 }
 
 func TestStrictCEUnknownHCLPolicy(t *testing.T) {
-	qt.Assert(t, atlascompatpolicy.StrictCE().IgnoreUnknownHCLNames(), qt.IsFalse)
-	qt.Assert(t, atlascompatpolicy.Full().IgnoreUnknownHCLNames(), qt.IsTrue)
+	c := qt.New(t)
+	c.Assert(atlascompatpolicy.StrictCE().IgnoreUnknownHCLNames(), qt.IsFalse)
+	c.Assert(atlascompatpolicy.Full().IgnoreUnknownHCLNames(), qt.IsTrue)
 }
 
 func TestStrictCERejectsProSchemaInspectTemplateFunctions(t *testing.T) {
 	for _, name := range []string{"hcl", "split", "write"} {
 		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlascompatpolicy.StrictCE().ValidateSchemaInspectFormat(
 				`{{ sql . | ` + name + ` }}`,
 			)
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support schema inspect template function "`+name+`"`)
 		})
 	}
 }
 
 func TestSchemaInspectTemplatePolicyPreservesLiteralsAndFullHelpers(t *testing.T) {
-	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateSchemaInspectFormat(`{{ "hcl split write" }}`),
+	c := qt.New(t)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateSchemaInspectFormat(`{{ "hcl split write" }}`),
 		qt.IsNil,
 	)
-	qt.Assert(t,
-		atlascompatpolicy.Full().ValidateSchemaInspectFormat(`{{ hcl . | split | write "out" }}`),
+	c.Assert(atlascompatpolicy.Full().ValidateSchemaInspectFormat(`{{ hcl . | split | write "out" }}`),
 		qt.IsNil,
 	)
 }
 
 func TestStrictCERefusesIgnoredProjectConfigConstructs(t *testing.T) {
+	c := qt.New(t)
 	config := projectconfig.Config{IgnoredConstructs: []projectconfig.IgnoredAtlasConstruct{{
 		Name:     "pro_option",
 		Kind:     "attribute",
@@ -438,12 +460,13 @@ func TestStrictCERefusesIgnoredProjectConfigConstructs(t *testing.T) {
 
 	err := atlascompatpolicy.StrictCE().ValidateProjectConfig(config)
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility refuses ignored atlas.hcl attribute "pro_option" at atlas.hcl:7`)
-	qt.Assert(t, atlascompatpolicy.Full().ValidateProjectConfig(config), qt.IsNil)
+	c.Assert(atlascompatpolicy.Full().ValidateProjectConfig(config), qt.IsNil)
 }
 
 func TestStrictCERefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
+	c := qt.New(t)
 	config := projectconfig.Config{Lint: projectconfig.LintConfig{
 		RuleConfigs: map[string]projectconfig.LintRuleConfig{
 			"DS": {Severity: "error"},
@@ -452,11 +475,10 @@ func TestStrictCERefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
 
 	err := atlascompatpolicy.StrictCE().ValidateSchemaApplyConfig(config)
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility cannot enforce atlas.hcl lint policy during schema apply`)
-	qt.Assert(t, atlascompatpolicy.Full().ValidateSchemaApplyConfig(config), qt.IsNil)
-	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateSchemaApplyConfig(projectconfig.Config{}),
+	c.Assert(atlascompatpolicy.Full().ValidateSchemaApplyConfig(config), qt.IsNil)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateSchemaApplyConfig(projectconfig.Config{}),
 		qt.IsNil,
 	)
 }
@@ -470,11 +492,12 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 		"spanner://localhost/app",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlascompatpolicy.StrictCE().ValidateURL(rawURL)
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support database dialect ".+"`)
-			qt.Assert(t, atlascompatpolicy.Full().ValidateURL(rawURL), qt.IsNil)
+			c.Assert(atlascompatpolicy.Full().ValidateURL(rawURL), qt.IsNil)
 		})
 	}
 
@@ -487,17 +510,19 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 		"env://schema.src",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
-			qt.Assert(t, atlascompatpolicy.StrictCE().ValidateURL(rawURL), qt.IsNil)
+			c := qt.New(t)
+			c.Assert(atlascompatpolicy.StrictCE().ValidateURL(rawURL), qt.IsNil)
 		})
 	}
 }
 
 func TestStrictCEValidatesProjectConfigDatabaseURLs(t *testing.T) {
+	c := qt.New(t)
 	err := atlascompatpolicy.StrictCE().ValidateProjectConfig(projectconfig.Config{
 		DevURL: "clickhouse://localhost/dev",
 	})
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support database dialect "clickhouse"`)
 }
 
@@ -510,11 +535,12 @@ func TestStrictCEValidatesLocalSchemaSourceFormats(t *testing.T) {
 		"file:///tmp/schema.yml?mode=inspect",
 	} {
 		t.Run(source, func(t *testing.T) {
+			c := qt.New(t)
 			err := policy.ValidateLocalSchemaSource(source)
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`Atlas Community Edition strict compatibility does not support YAML schema source ".+"`)
-			qt.Assert(t, atlascompatpolicy.Full().ValidateLocalSchemaSource(source), qt.IsNil)
+			c.Assert(atlascompatpolicy.Full().ValidateLocalSchemaSource(source), qt.IsNil)
 		})
 	}
 
@@ -525,17 +551,19 @@ func TestStrictCEValidatesLocalSchemaSourceFormats(t *testing.T) {
 		"sqlite://schema.yaml",
 	} {
 		t.Run("accepts "+source, func(t *testing.T) {
-			qt.Assert(t, policy.ValidateLocalSchemaSource(source), qt.IsNil)
+			c := qt.New(t)
+			c.Assert(policy.ValidateLocalSchemaSource(source), qt.IsNil)
 		})
 	}
 }
 
 func TestStrictCEValidatesProjectConfigSchemaSourceFormats(t *testing.T) {
+	c := qt.New(t)
 	err := atlascompatpolicy.StrictCE().ValidateProjectConfig(projectconfig.Config{
 		SchemaSources: []string{"file://schema.yaml"},
 	})
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support YAML schema source "schema.yaml"`)
 }
 
@@ -579,12 +607,13 @@ func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := fstest.MapFS{"1_users.sql": {Data: []byte(test.content)}}
 
 			err := atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys)
 
-			qt.Assert(t, err, qt.ErrorMatches, test.wantErr)
-			qt.Assert(t, atlascompatpolicy.Full().ValidateMigrationSource(fsys), qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(atlascompatpolicy.Full().ValidateMigrationSource(fsys), qt.IsNil)
 		})
 	}
 }
@@ -612,37 +641,37 @@ func TestStrictCEMigrationContentValidationIgnoresDirectiveLookalikes(t *testing
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := fstest.MapFS{"1_users.sql": {Data: []byte(test.content)}}
 
 			err := atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys)
 
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }
 
 func TestStrictCEMigrationContentValidationUsesTargetDialect(t *testing.T) {
+	c := qt.New(t)
 	mysqlString := "SELECT 'prefix \\'\n-- +ptah check name=\"fake\"\nsuffix';\n"
 	fsys := fstest.MapFS{"1_users.sql": {Data: []byte(mysqlString)}}
 
 	strictValidator := atlascompatpolicy.StrictCE().MigrationSourceValidator("mysql://localhost/app")
-	qt.Assert(t, strictValidator, qt.IsNotNil)
-	qt.Assert(t, atlascompatpolicy.Full().MigrationSourceValidator("mysql://localhost/app"), qt.IsNil)
-	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(fsys, platform.MySQL), qt.IsNil)
-	qt.Assert(t, strictValidator(fsys), qt.IsNil)
-	qt.Assert(t, atlascompatpolicy.Full().ValidateMigrationSourceForURL(fsys, "mysql://localhost/app"), qt.IsNil)
-	qt.Assert(t, atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys), qt.IsNil)
+	c.Assert(strictValidator, qt.IsNotNil)
+	c.Assert(atlascompatpolicy.Full().MigrationSourceValidator("mysql://localhost/app"), qt.IsNil)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(fsys, platform.MySQL), qt.IsNil)
+	c.Assert(strictValidator(fsys), qt.IsNil)
+	c.Assert(atlascompatpolicy.Full().ValidateMigrationSourceForURL(fsys, "mysql://localhost/app"), qt.IsNil)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateMigrationSource(fsys), qt.IsNil)
 
 	actualDirective := fstest.MapFS{"1_users.sql": {Data: []byte(
 		"SELECT 'prefix \\'suffix';\n-- +ptah no_transaction\nSELECT 1;\n",
 	)}}
-	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(actualDirective, platform.MySQL),
+	c.Assert(atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(actualDirective, platform.MySQL),
 		qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
 	)
-	qt.Assert(t,
-		atlascompatpolicy.StrictCE().ValidateMigrationSourceForURL(actualDirective, "mysql://localhost/app"),
+	c.Assert(atlascompatpolicy.StrictCE().ValidateMigrationSourceForURL(actualDirective, "mysql://localhost/app"),
 		qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
 	)
@@ -699,10 +728,11 @@ func TestValidateRenderedVirtualTables(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := tt.policy.ValidateRenderedVirtualTables(tt.names)
 
-			qt.Assert(t, err != nil, qt.Equals, tt.wantErr)
-			qt.Assert(t, policyErrorText(err), qt.Contains, tt.wantContains)
+			c.Assert(err != nil, qt.Equals, tt.wantErr)
+			c.Assert(policyErrorText(err), qt.Contains, tt.wantContains)
 		})
 	}
 }
