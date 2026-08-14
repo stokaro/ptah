@@ -801,6 +801,99 @@ func TestFSMigrationProvider_FilesystemError(t *testing.T) {
 	c.Assert(provider, qt.IsNil)
 }
 
+// TestNewFSMigrationProvider_AtlasRevisionVersionsSeparateIdentityFromOrder
+// pins the dual-key contract used by a converted Flyway directory. The numeric
+// version remains the execution-order key, while the exact source token is the
+// revision-table identity. In particular, an exact empty identity is real
+// rather than a request to fall back to the numeric key; repeatability is a
+// separate source role carried by WithAtlasRepeatableVersions.
+func TestNewFSMigrationProvider_AtlasRevisionVersionsSeparateIdentityFromOrder(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	const (
+		firstOrderKey      = int64(10)
+		dottedOrderKey     = int64(20)
+		nonnumericOrderKey = int64(30)
+		repeatableOrderKey = int64(40)
+		plainOrderKey      = int64(50)
+	)
+	provider, err := migrator.NewFSMigrationProvider(
+		fstest.MapFS{
+			"10_first.sql":      &fstest.MapFile{Data: []byte("SELECT 10;\n")},
+			"20_dotted.sql":     &fstest.MapFile{Data: []byte("SELECT 20;\n")},
+			"30_nonnumeric.sql": &fstest.MapFile{Data: []byte("SELECT 30;\n")},
+			"40_repeatable.sql": &fstest.MapFile{Data: []byte("SELECT 40;\n")},
+			"50_plain.sql":      &fstest.MapFile{Data: []byte("SELECT 50;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{
+			firstOrderKey:      "01",
+			dottedOrderKey:     "1.5",
+			nonnumericOrderKey: "x",
+			repeatableOrderKey: "",
+		}),
+	)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 5)
+	c.Assert([]int64{
+		migrations[0].Version,
+		migrations[1].Version,
+		migrations[2].Version,
+		migrations[3].Version,
+		migrations[4].Version,
+	}, qt.DeepEquals, []int64{
+		firstOrderKey,
+		dottedOrderKey,
+		nonnumericOrderKey,
+		repeatableOrderKey,
+		plainOrderKey,
+	})
+	c.Assert([]string{
+		migrations[0].RevisionVersion(),
+		migrations[1].RevisionVersion(),
+		migrations[2].RevisionVersion(),
+		migrations[3].RevisionVersion(),
+		migrations[4].RevisionVersion(),
+	}, qt.DeepEquals, []string{"01", "1.5", "x", "", "50"})
+}
+
+func TestNewFSMigrationProvider_AtlasRevisionVersionsRejectDuplicateOwnedIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	provider, err := migrator.NewFSMigrationProvider(
+		fstest.MapFS{
+			"1_first.sql":  &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+			"2_second.sql": &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{
+			1: "same",
+			2: "same",
+		}),
+	)
+
+	c.Assert(err, qt.ErrorMatches, `atlas revision identity "same" maps migration order keys 1 and 2`)
+	c.Assert(provider, qt.IsNil)
+}
+
+func TestNewFSMigrationProvider_AtlasRevisionVersionsOwnDotPrefixedIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	provider, err := migrator.NewFSMigrationProvider(
+		fstest.MapFS{
+			"1_reserved.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{1: ".foo"}),
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(provider.Migrations(), qt.HasLen, 1)
+	c.Assert(provider.Migrations()[0].RevisionVersion(), qt.Equals, ".foo")
+}
+
 // errorFS is a test filesystem that always returns an error
 type errorFS struct{}
 

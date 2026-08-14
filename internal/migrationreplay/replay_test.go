@@ -104,6 +104,22 @@ CREATE TABLE wrong_template_branch (id INTEGER PRIMARY KEY);
 	assertSQLiteRealmObjectCount(c, conn, 0)
 }
 
+func TestReplayFailureNamesExactEmptyRevision(t *testing.T) {
+	c := qt.New(t)
+	devDBPath := filepath.Join(t.TempDir(), "empty-revision.db")
+
+	err := migrationreplay.Replay(t.Context(), migrationreplay.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		DevURL:    "sqlite://" + devDBPath,
+		FS: fstest.MapFS{
+			"10_broken.sql": {Data: []byte("INSERT INTO missing_replay_table VALUES (1);\n")},
+		},
+		RevisionVersions: map[int64]string{10: ""},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)replay migration "" on dev database: .*`)
+}
+
 func TestReplayProviderFailurePreservesDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()

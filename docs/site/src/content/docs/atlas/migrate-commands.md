@@ -275,6 +275,13 @@ failure cannot lower `applied` below that committed prefix even when the
 transaction mode changed. Atlas needs no flag here; `--allow-dirty` stays
 required so a half-applied migration is never resumed by accident.
 
+The dirty source file must still be present. If an exact Flyway identity remains
+dirty after its file is removed, `--allow-dirty` refuses before pre-migration
+checks, apply preflight, or another migration body and names that exact identity.
+Restore the reviewed source file or repair the recorded history explicitly; a
+different pending file cannot supply the missing body or committed-prefix
+contract.
+
 Automatic resume refuses and names `ptah migrations repair --version <v>` when
 a run was interrupted mid-statement, the statement count changed, the committed
 source prefix changed, or `partial_hashes` is malformed or disagrees with
@@ -657,14 +664,66 @@ ptah-compat migrate apply --url "$DATABASE_URL" \
 ```
 
 Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
-before `V2`, `V1.10` after `V1.9`) and are encoded to a stable Atlas version that
-depends only on the version — never on the other files in the directory — so
-inserting a mid-sequence migration (a hotfix, an out-of-order merge) never
-renumbers the others and existing revision checksums stay valid. Each version
-maps to a fixed-width `major.minor.patch` int64 (minor and patch `0`–`99`); this
-covers semantic and `yyyyMMddHHmmss` timestamp schemes. A version with more than
-three components, or a minor/patch of `100` or more, cannot be represented in an
-int64 and is rejected before the database is opened.
+before `V2`, `V1.10` after `V1.9`). Ptah gives each file two deliberately
+separate values:
+
+- The exact Flyway token is the revision identity. Apply records `1.5`, `01`,
+  `.foo`, `1R`, or another opaque token byte for byte; set addresses that token;
+  `--baseline` and the extended `--to-version` address that same token; and
+  status and lint print it. An ordinary version token ending in `R` remains
+  versioned rather than inheriting native Atlas repeatable behavior.
+- A numeric key governs execution order and linearity. Uniquely scored ordinary
+  versions keep a stable key when another file is inserted. Equal-order tokens
+  such as `1` and `01`, or two nonnumeric tokens in the same score band, use a
+  walk-position tie slot; a surviving baseline also occupies its own lower band.
+
+The ordering key uses a fixed-width `major.minor.patch` projection when the
+token has that shape (minor and patch `0`–`99`) and also covers timestamp and
+nonnumeric forms. It is an implementation detail, not a version an operator
+must copy from output or a revision table.
+
+Exact identity lets Atlas CE consume a history Ptah wrote. Reusing a history in
+the other direction can still stop at Ptah's per-revision checksum validation:
+CE and Ptah encode those checksums differently, so Ptah refuses rather than
+silently adopting a body it cannot verify.
+
+A same-token `V2` to `B2` transition has one extra ambiguity when both files
+carry identical SQL. CE records both as ordinary applied rows and retains
+neither source prefix; Ptah therefore refuses that CE row by name. A baseline
+executed by Ptah carries an internal combined applied/baseline marker, still
+displayed as `applied`, so its later runs are
+provable without treating it as a `--baseline` history boundary. `migrate set`
+adds the manual bit to that marker and displays `manually set`; Atlas CE can
+still read the row, while Ptah retains enough information for a later apply.
+
+A successful explicit `--baseline` that selects the surviving `B2` is different:
+its pure baseline row carries a durable source-baseline marker and settles that
+exact identity plus every migration below its boundary. Baselining `V2` before
+introducing `B2` does not carry that marker, so the later ambiguous replacement
+still fails closed instead of silently skipping the baseline body.
+
+Persisted exact tokens remain visible after the Flyway source mapping no longer
+owns them. This keeps CE's `V.foo` revision `.foo` readable after a baseline
+squashes it or its source file is removed, without materializing a pending
+migration. The exact retired token still participates in Flyway source-order
+checks. Atlas's measured `.atlas_cloud_identifier` bookkeeping row remains
+excluded. Status reports Current using CE's textual maximum over applied source
+tokens while numeric high-water remains internal to execution.
+
+`migrate set` answers a different question from status and linearity: whether a
+retired row lies above the selected target in Flyway's numeric component order.
+It therefore keeps retired `V9` history when setting `V10`, but removes retired
+`V2` history when setting `V1`. When two source tokens need missing file-role or
+walk-position context to break a tie, such as `01` versus `1` or `x` versus
+`y`, Ptah refuses before changing revision metadata instead of guessing from
+their byte order.
+
+Ptah-written mapped rows carry `operator_version='Ptah/source-identity'`. The
+marker does not change the exact version or Atlas-visible status; it proves that
+a numeric revision value is a source token rather than an older Ptah ordering
+key. If a retired numeric token collides with a current migration's historical
+ordering-key candidate, apply refuses without repair SQL instead of rewriting
+the valid history row.
 
 That numeric order governs `atlas.sum` and execution, and it is **not** the
 comparison that decides whether a migration was added out of order. Flyway
@@ -674,25 +733,28 @@ rather than executed:
 
 ```text
 Error: error applying migrations: out-of-order pending migrations for current
-version 4611686018427510315 (source version "2"): 4611686018427836747
-(source version "10") (use --exec-order=non-linear to apply or
+version "2": "10" (use --exec-order=non-linear to apply or
 --exec-order=linear-skip to ignore)
 ```
 
-The refusal names the **source version** because the int64 beside it appears in
-no file name. `--exec-order=non-linear` runs the migration, `--exec-order=linear-skip`
+The refusal names only the exact **source version**; normal direct-operation
+output does not expose the internal numeric order key as the active migration
+identity. `--exec-order=non-linear` runs the migration, `--exec-order=linear-skip`
 leaves it pending, and a directory with no recorded history is unaffected —
 applying `V2__x.sql` and `V10__y.sql` together for the first time runs both, in
 that order. A repeatable (`R__`) is version `""` to Atlas, which sorts below
 every token, so one added to a database that already has history is refused by
-the same rule.
+the same rule. Once its empty revision is settled, editing and rehashing the
+single repeatable remains a no-op, matching the pinned community binary.
 
 Several inputs still fail before Ptah opens the target database rather than guess
 at semantics: unknown formats; goose files whose directives are out of order;
 dbmate files missing their up directive; and two source files that resolve to the
-same version. Flyway repeatable migrations are **not** in that list — they are
-converted and executed, on a reserved version slot above every versioned
-migration, which is where Atlas emits them. See
+same identity. A single Flyway repeatable migration is converted and executed
+with Atlas CE's exact empty revision identity; its reserved numeric slot is only
+its ordering key. Two repeatables would share that empty identity, so Ptah
+refuses them before mutation instead of reproducing Atlas CE's partial apply and
+panic. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742) and
 [`stokaro/ptah#1098`](https://github.com/stokaro/ptah/issues/1098).
 

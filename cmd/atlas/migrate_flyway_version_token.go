@@ -1,23 +1,23 @@
 package atlas
 
 import (
+	"maps"
 	"strconv"
 
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 )
 
-// flywayVersionTokens is the two-way dictionary between the version an operator
-// can see and the version this build executes, for a directory read through
+// flywayVersionTokens is the two-way dictionary between the exact revision
+// identity an operator sees and the numeric key this build orders by, for a
+// directory read through
 // `?format=flyway` / `--dir-format flyway`.
 //
 // WHY IT EXISTS. Atlas CE identifies a Flyway migration by the opaque version
-// STRING between the prefix letter and the `__` separator; Ptah's migrator
-// identifies a migration by an int64, so conversion projects that token onto
-// the band-and-slot ordering key documented above
-// atlasmigrateimport.flywayComponentSlot. The projection is correct at ordering,
-// which is its job. It is wrong as an ADDRESS: `V1.sql` is called `1` by Flyway,
-// `1` by the pinned community binary v1.3.0, and `4611686018427469511` here — a
-// number that appears in no file the operator wrote (stokaro/ptah#1206).
+// STRING between the prefix letter and the `__` separator. Conversion also
+// projects that token onto the band-and-slot ordering key documented above
+// atlasmigrateimport.flywayComponentSlot. That projection is correct for
+// ordering and linearity; it must not become the revision identity or an
+// address the operator has to type (stokaro/ptah#1206).
 //
 // Measured on the pinned community binary v1.3.0, the token is matched BYTE FOR
 // BYTE, not numerically. On a directory holding `V01__a.sql` and `V2__b.sql`:
@@ -38,10 +38,9 @@ import (
 // identity function anyway, and two independent gates for one rule is a rule no
 // test can hold.
 type flywayVersionTokens struct {
-	// byToken resolves an operator's version token to the version this build
-	// executes and records it under.
+	// byToken resolves an operator's revision identity to its numeric order key.
 	byToken map[string]int64
-	// byVersion renders an executed version back as the operator's token.
+	// byVersion renders a numeric order key as the exact revision identity.
 	byVersion map[int64]string
 }
 
@@ -56,9 +55,8 @@ type flywayVersionTokens struct {
 // silent choice between two files.
 //
 // A repeatable's token is the empty string — Atlas CE gives `R__a.sql`,
-// `R1__a.sql` and `Rfoo.sql` all the version "" — and an empty key is skipped in
-// byToken so no operand can resolve to it. It is still carried in byVersion,
-// because "" is genuinely what that migration is called.
+// `R1__a.sql` and `Rfoo.sql` all the version "". It is retained in both maps:
+// an explicit empty positional operand addresses one repeatable byte for byte.
 func newFlywayVersionTokens(covered []atlasmigrateimport.FlywayCoveredSourceVersion) flywayVersionTokens {
 	if len(covered) == 0 {
 		return flywayVersionTokens{}
@@ -69,9 +67,6 @@ func newFlywayVersionTokens(covered []atlasmigrateimport.FlywayCoveredSourceVers
 	}
 	for _, migration := range covered {
 		tokens.byVersion[migration.Version] = migration.Token
-		if migration.Token == "" {
-			continue
-		}
 		tokens.byToken[migration.Token] = migration.Version
 	}
 	return tokens
@@ -103,4 +98,30 @@ func (t flywayVersionTokens) render(version int64) string {
 		return token
 	}
 	return strconv.FormatInt(version, 10)
+}
+
+// withHistory adds exact identities for rows a surviving baseline has squashed
+// from the current directory. It expands rendering only: byToken remains the
+// covered-migration index, so `migrate set` cannot address retired work.
+func (t flywayVersionTokens) withHistory(versions map[int64]string) flywayVersionTokens {
+	if len(versions) == 0 {
+		return t
+	}
+	result := flywayVersionTokens{
+		byToken:   t.byToken,
+		byVersion: maps.Clone(t.byVersion),
+	}
+	if result.byVersion == nil {
+		result.byVersion = make(map[int64]string, len(versions))
+	}
+	maps.Copy(result.byVersion, versions)
+	return result
+}
+
+// revisionVersions returns the exact source identities keyed by the numeric
+// order values the converted Atlas filesystem uses. The clone lets each
+// adapter pass the dictionary to the shared migrator without sharing mutable
+// command-local state with it.
+func (t flywayVersionTokens) revisionVersions() map[int64]string {
+	return maps.Clone(t.byVersion)
 }

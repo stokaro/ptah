@@ -25,6 +25,21 @@ type SetOptions struct {
 	// RevisionFormat selects the revision table layout. Empty keeps the Atlas
 	// layout, preserving the Atlas-compatible caller's behavior.
 	RevisionFormat migrator.RevisionTableFormat
+	// RevisionVersions maps converted execution-order keys to exact revision
+	// identities. The map may include squashed history so existing rows remain
+	// readable; only migrations present in FS own pending work.
+	RevisionVersions map[int64]string
+	// RevisionTypes preserves source-format metadata for converted migrations.
+	// A manually set row combines the supplied type with the manually-set bit.
+	RevisionTypes map[int64]migrator.AtlasRevisionType
+	// RepeatableVersions marks converted execution-order keys whose source
+	// migrations are repeatable. The role remains separate from exact identity:
+	// an empty exact identity can also belong to an ordinary Flyway V.sql file.
+	RepeatableVersions []int64
+	// RevisionVersionComparator orders retired exact identities according to
+	// the source format. Nil or an ambiguous result makes metadata movement fail
+	// closed instead of guessing from opaque identity bytes.
+	RevisionVersionComparator migrator.AtlasRevisionVersionComparator
 }
 
 // Set moves revision metadata to version without executing migration SQL.
@@ -57,12 +72,16 @@ func Set(
 		opts.FS,
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
+		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
+		migrator.WithAtlasRevisionTypes(opts.RevisionTypes),
+		migrator.WithAtlasRepeatableVersions(opts.RepeatableVersions),
 	)
 	if err != nil {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, opts.RevisionsTable).
-		WithRevisionTableFormat(revisionFormat)
+		WithRevisionTableFormat(revisionFormat).
+		WithAtlasRevisionVersionComparator(opts.RevisionVersionComparator)
 
 	result, err := mig.SetRevision(ctx, version)
 	if err != nil {
