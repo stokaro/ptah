@@ -11,13 +11,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// These tests cover the refusal that stops a database migrated by a pre-#982
+// These tests cover the refusal that stops a database migrated by an older
 // Ptah build from re-running migrations it has already applied.
 //
-// #982 converged the Flyway importer on Atlas CE's file selection, and doing so
-// forced a different projection onto the int64 Atlas version — which is the key
-// `atlas_schema_revisions` stores. To this build, a row written by Ptah v0.1.0
-// through v0.1.2 matches no file, so every migration reads as pending.
+// Before #1206 Ptah persisted the numeric ordering key as revision identity;
+// before #982 it used an even older numeric projection. This build persists the
+// exact Flyway source token, so either retired key matches no current file and
+// would make the migration pending.
 //
 // A legacy database is simulated by applying with THIS build and then rewriting
 // the recorded versions back to the old encoding, which is exactly the inverse
@@ -29,13 +29,14 @@ const (
 	legacyFlywayV2 = "20000"
 )
 
-// rewriteRevisionVersion moves one recorded revision to another version.
+// rewriteRevisionVersion moves one recorded revision to another version and
+// restores the generic operator marker an older Ptah build wrote.
 func rewriteRevisionVersion(c *qt.C, dbPath, from, to string) {
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	result, err := db.Exec(`UPDATE atlas_schema_revisions SET version = ? WHERE version = ?`, to, from)
+	result, err := db.Exec(`UPDATE atlas_schema_revisions SET version = ?, operator_version = 'Ptah' WHERE version = ?`, to, from)
 	c.Assert(err, qt.IsNil)
 	affected, err := result.RowsAffected()
 	c.Assert(err, qt.IsNil)
@@ -73,7 +74,7 @@ func countRows(c *qt.C, dbPath, table string) int {
 }
 
 // legacyFlywayFixture builds a hashed Flyway directory, applies it, and then
-// rewrites both revisions back to the pre-#982 encoding.
+// rewrites both exact tokens back to the pre-#982 encoding.
 func legacyFlywayFixture(c *qt.C) (dir, dbPath string) {
 	c.Helper()
 	root := c.TempDir()
@@ -90,8 +91,8 @@ func legacyFlywayFixture(c *qt.C) (dir, dbPath string) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 1)
 
-	rewriteRevisionVersion(c, dbPath, "4611686018427469511", legacyFlywayV1)
-	rewriteRevisionVersion(c, dbPath, "4611686018427510315", legacyFlywayV2)
+	rewriteRevisionVersion(c, dbPath, "1", legacyFlywayV1)
+	rewriteRevisionVersion(c, dbPath, "2", legacyFlywayV2)
 	return dir, dbPath
 }
 
@@ -103,17 +104,45 @@ func TestCompatMigrateApply_LegacyFlywayRevisionsRefused(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	message := errorText(err) + stderr
-	c.Assert(message, qt.Contains, "stokaro/ptah#982")
+	c.Assert(message, qt.Contains, "internal ordering key")
 	// The mapping is printed per file, so the operator can see which migration
 	// each row belongs to rather than only that something is wrong.
 	c.Assert(message, qt.Contains, "10000")
-	c.Assert(message, qt.Contains, "4611686018427469511")
+	c.Assert(message, qt.Contains, `"1"`)
 	c.Assert(message, qt.Contains, "V1__init.sql")
 	c.Assert(message, qt.Contains, "V2__seed.sql")
 	// Nothing ran: the seed did not insert a second row, and the recorded
 	// versions are untouched, so there is no dirty revision to clear either.
 	c.Assert(countRows(c, dbPath, "seeded"), qt.Equals, 1)
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{legacyFlywayV1, legacyFlywayV2})
+}
+
+func TestCompatMigrateApply_DirtyLegacyFlywayRevisionRefusedBeforeRetry(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := filepath.Join(root, "migrations")
+	dbPath := filepath.Join(root, "dirty-legacy.db")
+	writeAtlasApplyProjectMigration(c, dir, "V1__seed.sql", `
+CREATE TABLE IF NOT EXISTS dirty_legacy_seed (id INTEGER PRIMARY KEY);
+INSERT INTO dirty_legacy_seed (id) VALUES (1);
+`)
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompat(
+		"migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	rewriteRevisionVersion(c, dbPath, "1", legacyFlywayV1)
+	markAtlasRevisionDirty(c, dbPath, legacyFlywayV1, 2)
+
+	_, stderr, err = runCompat(
+		"migrate", "apply", "--allow-dirty", "--url", "sqlite://"+dbPath,
+		"--dir", "file://"+dir+"?format=flyway")
+
+	c.Assert(err, qt.IsNotNil)
+	message := errorText(err) + stderr
+	c.Assert(message, qt.Contains, "internal ordering key")
+	c.Assert(countRows(c, dbPath, "dirty_legacy_seed"), qt.Equals, 1)
+	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{legacyFlywayV1})
 }
 
 // TestCompatMigrateApply_LegacyFlywayRefusalPrintsWorkingRecovery runs the SQL
@@ -189,16 +218,18 @@ func execRecoverySQL(c *qt.C, dbPath string, statements []string) {
 func TestCompatMigrateApply_LegacyFlywayBothVersionsRecorded(t *testing.T) {
 	c := qt.New(t)
 	dir, dbPath := legacyFlywayFixture(c)
-	copyRevisionRow(c, dbPath, legacyFlywayV1, "4611686018427469511")
+	copyRevisionRow(c, dbPath, legacyFlywayV1, "1")
 
 	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	c.Assert(err, qt.IsNotNil)
 	message := errorText(err) + stderr
-	// Only V2 is outstanding; V1 already has its new row.
-	c.Assert(message, qt.Contains, "1 already-applied migration(s)")
+	// V1 already has its exact row, so its obsolete duplicate is deleted; V2's
+	// obsolete row is updated to its exact token.
+	c.Assert(message, qt.Contains, "2 obsolete revision row(s)")
 	c.Assert(message, qt.Contains, "V2__seed.sql")
-	c.Assert(message, qt.Not(qt.Contains), "V1__init.sql")
+	c.Assert(message, qt.Contains, "V1__init.sql")
+	c.Assert(message, qt.Contains, `DELETE FROM "atlas_schema_revisions" WHERE version = '10000';`)
 	c.Assert(extractUpdateStatements(message), qt.HasLen, 1)
 }
 
@@ -246,13 +277,13 @@ func TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles(t *testing.T) {
 
 	// A stale row at the version the nested file WOULD have had under the old
 	// encoding, if the old build had been able to see it.
-	rewriteRevisionVersion(c, dbPath, "4611686018427551119", legacyFlywayV2)
+	rewriteRevisionVersion(c, dbPath, "3", legacyFlywayV2)
 
 	_, stderr, err = runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	// The nested file contributes no pairing, so nothing claims this database
 	// was written by an older build.
-	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "stokaro/ptah#982")
+	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "internal ordering key")
 }
 
 // TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse covers the
@@ -298,6 +329,88 @@ func TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse(t *testing.T) 
 	})
 }
 
+func TestCompatMigrateApply_AmbiguousLegacyFlywayIdentityRefusesBeforeExecution(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("an older V1 ordering key is not mistaken for exact V10000", func(c *qt.C) {
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "legacy.db")
+		writeAtlasApplyProjectMigration(c, dir, "V1__first.sql",
+			"CREATE TABLE ambiguous_v1 (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+		rewriteRevisionVersion(c, dbPath, "1", legacyFlywayV1)
+
+		writeAtlasApplyProjectMigration(c, dir, "V10000__collision.sql",
+			"CREATE TABLE ambiguous_v10000 (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNotNil)
+		message := errorText(err) + stderr
+		c.Assert(message, qt.Contains, "ambiguous between an exact source token and an older Ptah ordering key")
+		c.Assert(message, qt.Contains, "V1__first.sql")
+		c.Assert(message, qt.Contains, "V10000__collision.sql")
+		c.Assert(message, qt.Contains, "no repair SQL has been generated")
+		c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{legacyFlywayV1})
+		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ambiguous_v1"})
+	})
+
+	c.Run("an exact V10000 row is not rewritten as V1 history", func(c *qt.C) {
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "exact.db")
+		writeAtlasApplyProjectMigration(c, dir, "V10000__collision.sql",
+			"CREATE TABLE exact_v10000 (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+
+		writeAtlasApplyProjectMigration(c, dir, "V1__first.sql",
+			"CREATE TABLE exact_v1 (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(errorText(err)+stderr, qt.Contains,
+			"ambiguous between an exact source token and an older Ptah ordering key")
+		c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"10000"})
+		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"exact_v10000"})
+	})
+
+	c.Run("a retired exact V10000 row is not rewritten as V1 history", func(c *qt.C) {
+		root := c.TempDir()
+		dir := filepath.Join(root, "migrations")
+		dbPath := filepath.Join(root, "retired-exact.db")
+		writeAtlasApplyProjectMigration(c, dir, "V10000__collision.sql",
+			"CREATE TABLE retired_exact_v10000 (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+		c.Assert(err, qt.IsNil)
+		c.Assert(os.Remove(filepath.Join(dir, "V10000__collision.sql")), qt.IsNil)
+
+		writeAtlasApplyProjectMigration(c, dir, "V1__first.sql",
+			"CREATE TABLE retired_exact_v1_must_not_run (id INTEGER PRIMARY KEY);")
+		hashConvertedApplyDir(c, dir, "flyway")
+		_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir+"?format=flyway")
+
+		c.Assert(err, qt.IsNotNil)
+		message := errorText(err) + stderr
+		c.Assert(message, qt.Contains, "automatic recovery cannot determine")
+		c.Assert(message, qt.Not(qt.Contains), "UPDATE atlas_schema_revisions SET version = '1'")
+		c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"10000"})
+		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"retired_exact_v10000"})
+	})
+}
+
 // TestCompatMigrateApply_LegacyFlywayRefusalPrecedesExecutionOnDDL is the loud
 // half of the same bug: a CREATE TABLE that re-runs fails and leaves a dirty
 // revision behind, which then blocks every subsequent apply. The refusal has to
@@ -311,12 +424,12 @@ func TestCompatMigrateApply_LegacyFlywayRefusalPrecedesExecutionOnDDL(t *testing
 	hashConvertedApplyDir(c, dir, "flyway")
 	_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 	c.Assert(err, qt.IsNil)
-	rewriteRevisionVersion(c, dbPath, "4611686018427469511", legacyFlywayV1)
+	rewriteRevisionVersion(c, dbPath, "1", legacyFlywayV1)
 
 	_, stderr, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(errorText(err)+stderr, qt.Contains, "stokaro/ptah#982")
+	c.Assert(errorText(err)+stderr, qt.Contains, "internal ordering key")
 	// No dirty revision was recorded, so the operator is not left needing
 	// --allow-dirty on top of the version rewrite.
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{legacyFlywayV1})
@@ -387,7 +500,8 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 		// 4611686018427510315 appears in no file name and in no Atlas output,
 		// so on its own it does not say which file to move (#1098).
 		c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations for current version")
-		c.Assert(errorText(err)+stderr, qt.Contains, `(source version "2")`)
+		c.Assert(errorText(err)+stderr, qt.Contains, `"2"`)
+		c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "461168")
 		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"oa", "oc"})
 	})
 
@@ -413,7 +527,8 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 		// Atlas CE gives every repeatable the empty version string, so the
 		// current mark here has an empty source version and V2 is refused
 		// against it. Printing the reserved int64 alone would say nothing.
-		c.Assert(errorText(err)+stderr, qt.Contains, `(source version "")`)
+		c.Assert(errorText(err)+stderr, qt.Contains, `version ""`)
+		c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "922337")
 	})
 }
 
@@ -444,7 +559,8 @@ func TestCompatMigrateApply_FlywayExemptionIsOneVersion(t *testing.T) {
 	// V2 is still out of order; exempting it as well would apply it silently.
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations for current version")
-	c.Assert(errorText(err)+stderr, qt.Contains, `(source version "2")`)
+	c.Assert(errorText(err)+stderr, qt.Contains, `"2"`)
+	c.Assert(errorText(err)+stderr, qt.Not(qt.Contains), "461168")
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"ea", "ec"})
 }
 
@@ -527,6 +643,59 @@ func seedFlyway(files ...flywayMigration) func(c *qt.C, dir, dbPath string) {
 	}
 }
 
+// seedSameTokenFlywayBaseline records the indistinguishable settled side of
+// the V2/B2 collision. Both files stay in the directory, the surviving B2 body
+// runs on the first invocation, and the second invocation exercises the
+// baseline-type discriminator documented by checkFlywayBaselineHistory.
+func seedSameTokenFlywayBaseline(c *qt.C, dir, dbPath string) {
+	c.Helper()
+	writeFlywayMigrations(c, dir, []flywayMigration{
+		{"V2__base.sql", "CREATE TABLE settled_base (id INTEGER PRIMARY KEY);"},
+		{"B2__base.sql", "CREATE TABLE settled_base (id INTEGER PRIMARY KEY);"},
+	})
+	hashConvertedApplyDir(c, dir, "flyway")
+	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"settled_base"})
+	c.Assert(revisionType(c, dbPath, "2"), qt.Equals, 3)
+}
+
+func seedAtlasCESameTokenFlywayBaseline(c *qt.C, dir, dbPath string) {
+	c.Helper()
+	seedSameTokenFlywayBaseline(c, dir, dbPath)
+	data, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	checksum := ""
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+		name, value, ok := strings.Cut(strings.TrimRight(line, "\r"), " ")
+		if ok && name == "B2__base.sql" {
+			checksum = strings.TrimPrefix(value, "h1:")
+		}
+	}
+	c.Assert(checksum, qt.Not(qt.Equals), "")
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	_, err = db.Exec(
+		"UPDATE atlas_schema_revisions SET type = 2, hash = ?, operator_version = 'Atlas CLI v1.3.0' WHERE version = '2'",
+		checksum,
+	)
+	c.Assert(err, qt.IsNil)
+}
+
+func revisionType(c *qt.C, dbPath, version string) int {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	var revisionType int
+	c.Assert(db.QueryRow(
+		"SELECT type FROM atlas_schema_revisions WHERE version = ?",
+		version,
+	).Scan(&revisionType), qt.IsNil)
+	return revisionType
+}
+
 // TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory replaces
 // TestCompatMigrateApply_FlywayBaselineBelowHighWaterMark_KnownDivergence,
 // which pinned the divergence this decides (stokaro/ptah#1003).
@@ -590,6 +759,20 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s2"})
 		},
 	}, {
+		// Atlas CE records an executed B2 as ordinary applied type 2. A revision
+		// row does not retain the B prefix, and the checksum cannot distinguish a
+		// B2 body from a byte-identical V2 body. Ptah therefore fails closed even
+		// for a CE-applied baseline; only Ptah's type-3 execution marker proves a
+		// settled B2 without weakening the unsafe V2 -> B2 transition.
+		name: "an Atlas CE applied same-token baseline remains ambiguous",
+		seed: seedAtlasCESameTokenFlywayBaseline,
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "B2__base.sql")
+			c.Assert(run.message(), qt.Contains, "V2__base.sql")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"settled_base"})
+		},
+	}, {
 		// The same relation with the numbers reversed: "2" outranks "10" as a
 		// string, so B2 squashes V10 and CE executes it, exit 0. Without this
 		// row a rule keyed on the numeric high-water mark would pass.
@@ -613,6 +796,21 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 		assert: func(c *qt.C, run flywayBaselineRun) {
 			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "s2"})
+		},
+	}, {
+		// Exact token identity also makes an already-applied baseline disappear
+		// from the pending plan. Its stored checksum proves the row belongs to the
+		// baseline itself, so the new same-token transition refusal must not turn
+		// an ordinary second run into a permanent error.
+		name:  "an applied exact-identity baseline remains settled",
+		seed:  seedNothing,
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			stdout, stderr, err := compatApplyConverted(run.dir, "flyway", run.dbPath)
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "No migration files to execute")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base"})
 		},
 	}, {
 		// Half (a): CE exits 1 here, `migration file B2.5__base.sql was added
@@ -686,6 +884,33 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"base", "p", "q"})
 		},
 	}, {
+		// Neither description nor SQL can distinguish the exact-token
+		// transition: both files record "base" and carry the same body. The
+		// converted directory has no per-file atlas.sum checksum, and the revision
+		// row carries no V/B prefix or source filename, so it cannot prove which
+		// one ran. The only safe answer is the named fail-closed refusal.
+		name:  "a same-token baseline sharing the recorded description",
+		seed:  seedFlyway(flywayMigration{"V2__base.sql", "CREATE TABLE old_base (id INTEGER PRIMARY KEY);"}),
+		added: []flywayMigration{{"B2__base.sql", "CREATE TABLE old_base (id INTEGER PRIMARY KEY);"}},
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
+			c.Assert(run.message(), qt.Contains, "B2__base.sql")
+			c.Assert(run.message(), qt.Contains, "V2__base.sql")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"old_base"})
+		},
+	}, {
+		// This is the other side of the otherwise-indistinguishable state. A
+		// fresh directory applied the B2 body on the first run and Ptah recorded
+		// its baseline type, so a later run can prove this is the settled B2 rather
+		// than the unsafe V2 -> B2 transition above.
+		name: "a settled same-token baseline remains a no-op on a later run",
+		seed: seedSameTokenFlywayBaseline,
+		assert: func(c *qt.C, run flywayBaselineRun) {
+			c.Assert(run.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.stdout, run.stderr))
+			c.Assert(run.stdout, qt.Contains, "No migration files to execute")
+			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"settled_base"})
+		},
+	}, {
 		// The padding on the BASELINE's own token, against versions padded one
 		// digit further, so neither side of the comparison is the bare number.
 		// CE: `Migrating to version 02 from 002`, exit 0. Reverting the fix
@@ -756,8 +981,9 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 			// alone does not say which file to move. Reverting #1098's message
 			// change prints "below current version" and no source version here.
 			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations for current version")
-			c.Assert(run.message(), qt.Contains, `(source version "2")`)
-			c.Assert(run.message(), qt.Contains, `(source version "1")`)
+			c.Assert(run.message(), qt.Contains, `version "2"`)
+			c.Assert(run.message(), qt.Contains, `: "1"`)
+			c.Assert(run.message(), qt.Not(qt.Contains), "461168")
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"s2"})
 		},
 	}, {
@@ -776,8 +1002,9 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 		assert: func(c *qt.C, run flywayBaselineRun) {
 			c.Assert(run.err, qt.IsNotNil, qt.Commentf("stdout:\n%s", run.stdout))
 			c.Assert(run.message(), qt.Contains, "out-of-order pending migrations for current version")
-			c.Assert(run.message(), qt.Contains, `(source version "3")`)
-			c.Assert(run.message(), qt.Contains, `(source version "2")`)
+			c.Assert(run.message(), qt.Contains, `version "3"`)
+			c.Assert(run.message(), qt.Contains, `"2"`)
+			c.Assert(run.message(), qt.Not(qt.Contains), "461168")
 			c.Assert(run.message(), qt.Not(qt.Contains), "Flyway baseline")
 			c.Assert(userTables(c, run.dbPath), qt.DeepEquals, []string{"ea", "ec"})
 		},

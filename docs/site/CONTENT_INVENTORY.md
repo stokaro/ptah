@@ -218,6 +218,7 @@ list in the same PR.
 | `github_action.md` (627) | contributor | GitHub Action detail | `testing/ci` | keep as backing reference for `testing/ci` |
 | `project_config.md` (1,088) | contributor | `ptah.yaml` full reference | `reference/configuration` | keep as backing reference |
 | `conformance.md` (522) | contributor | Conformance process detail | `operate/conformance` | keep as backing reference |
+| `roadmap-post-ga.md` (1,829) | maintainer/evaluator | Evidence-dated classification of open work deferred beyond GA | none; this is the issue-roadmap status source | keep; refresh the evidence snapshot when issue labels, states, or supporting claims change |
 | `online-ddl.md` (881) | contributor | Online-DDL behavior (gh-ost / pt-osc routing — MySQL/MariaDB material, not PostgreSQL as the design assumed) | `databases/support-matrix` MySQL/MariaDB section | done: reader summary lives on `databases/support-matrix`; keep as engineering depth |
 | `postgresql_extension_ignore.md` (687) | contributor | Extension-ignore behavior | `databases/postgresql` | done: reader summary in the extensions section of `databases/postgresql`; keep |
 | `POSTGRESQL_ROLES.md` (1,453) | contributor | Roles/RLS annotations | `databases/postgresql` | done: reader summary on `databases/postgresql`; directive syntax on `reference/go-annotations`; keep |

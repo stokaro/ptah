@@ -154,6 +154,15 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 		"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1",
 		"PTAH_MIGRATIONS_DIR=/must-not-be-read",
 		"PTAH_URL=sqlite://must-not-be-ignored",
+		// Two of the three the hand-written lists had lost, measured at the
+		// process rather than at Resolve: each was declared through envbool and
+		// so satisfied cmd/internal/envboolguard, while strict mode exited 0
+		// for both an enabled and a malformed value. See stokaro/ptah#1476.
+		// The third, PTAH_DIRECTIVES_ANYWHERE, no longer exists: the pre-v1
+		// fallback it opened was removed, so there is no declaration left to
+		// classify or to probe here.
+		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS=1",
+		"PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1",
 	} {
 		t.Run(strings.SplitN(assignment, "=", 2)[0], func(t *testing.T) {
 			name := strings.SplitN(assignment, "=", 2)[0]
@@ -191,6 +200,41 @@ func TestStrictCompatProcessValidatesRetainedEnvironmentBeforeDispatch(t *testin
 	qt.Assert(t, stdout, qt.Equals, "")
 	qt.Assert(t, stderr, qt.Equals,
 		`Error: invalid boolean value "maybe" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`+"\n")
+}
+
+// TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch is
+// the issue's own probe, run against the process.
+//
+// Each name here was declared through envbool and absent from the strict-compat
+// lists, so `PTAH_ATLAS_STRICT_COMPAT=1` with a malformed value exited 0 while
+// the same probe on PTAH_STRICT_DIR_QUERY exited 1. The control row is that
+// variable, so a run where the whole strict boundary stopped refusing would
+// redden here rather than pass. See stokaro/ptah#1476.
+func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+
+	for _, name := range []string{
+		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS",
+		"PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR",
+		"PTAH_STRICT_DIR_QUERY",
+	} {
+		t.Run(name, func(t *testing.T) {
+			stdout, stderr, code := runAtlasBinary(
+				compat,
+				[]string{
+					"PTAH_ATLAS_STRICT_COMPAT=1",
+					name + "=maybe",
+				},
+				"version",
+			)
+
+			qt.Assert(t, code, qt.Equals, 1)
+			qt.Assert(t, stdout, qt.Equals, "")
+			qt.Assert(t, stderr, qt.Equals,
+				`Error: invalid boolean value "maybe" for `+name+"\n")
+		})
+	}
 }
 
 func TestNativeProcessIgnoresStrictCompatEnvironment(t *testing.T) {

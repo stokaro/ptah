@@ -311,12 +311,20 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
+	tokens, err := captured.versionTokens()
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
+	revisionVersions := tokens.revisionVersions()
 	lintOptions.Dir = dir
 	lintOptions.FS = snapshot
+	lintOptions.RevisionVersions = revisionVersions
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
 	if err != nil {
 		if formatOutput {
-			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, report, integrity, err); err != nil {
+			if err := writeAtlasMigrateLintReplayError(
+				cmd, opts, dir, report, integrity, revisionVersions, err,
+			); err != nil {
 				return cmdutil.Fail(cmd, err)
 			}
 			return exitcode.New(1, err)
@@ -325,12 +333,13 @@ func runAtlasMigrateLint(
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
-			Driver:    report.Dialect,
-			URL:       opts.devURL,
-			Dir:       dir,
-			Analysis:  &report.Analysis,
-			Integrity: integrity,
-			Error:     report.Error,
+			Driver:           report.Dialect,
+			URL:              opts.devURL,
+			Dir:              dir,
+			Analysis:         &report.Analysis,
+			Integrity:        integrity,
+			Error:            report.Error,
+			RevisionVersions: revisionVersions,
 			Schema: atlasreport.MigrateLintSchema{
 				Current: report.SchemaCurrent,
 				Desired: report.SchemaDesired,
@@ -339,7 +348,8 @@ func runAtlasMigrateLint(
 			return cmdutil.Fail(cmd, err)
 		}
 	} else if err := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
-		Analysis: &report.Analysis,
+		Analysis:         &report.Analysis,
+		RevisionVersions: revisionVersions,
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -355,6 +365,7 @@ func writeAtlasMigrateLintReplayError(
 	dir string,
 	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
+	revisionVersions map[int64]string,
 	replayErr error,
 ) error {
 	driver, err := atlasurl.DialectFromURL(opts.devURL)
@@ -362,12 +373,13 @@ func writeAtlasMigrateLintReplayError(
 		return err
 	}
 	return atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
-		Driver:    driver,
-		URL:       opts.devURL,
-		Dir:       dir,
-		Analysis:  &report.Analysis,
-		Integrity: integrity,
-		Error:     replayErr.Error(),
+		Driver:           driver,
+		URL:              opts.devURL,
+		Dir:              dir,
+		Analysis:         &report.Analysis,
+		Integrity:        integrity,
+		Error:            replayErr.Error(),
+		RevisionVersions: revisionVersions,
 		Schema: atlasreport.MigrateLintSchema{
 			Current: report.SchemaCurrent,
 			Desired: report.SchemaDesired,
@@ -398,7 +410,9 @@ const atlasMigrateLintAllVersionsEnvVar = "PTAH_ATLAS_LINT_ALL_VERSIONS"
 
 // atlasLintAllVersions is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: linting a directory the pinned
+// binary refuses to lint at all is behavior that binary does not have.
+var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false, envbool.Gated)
 
 // atlasMigrateLintAllVersions reports whether the opt-in lints the whole
 // directory. Unset keeps the default and a valid false spelling keeps it too; an
@@ -509,7 +523,10 @@ func requireAtlasMigrateLintDevURL(cmd *cobra.Command, devURL string) error {
 
 // atlasLintWithoutDevURL is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: the pinned binary marks
+// `--dev-url` required and exits 1 without it, so running anyway is a
+// capability it does not have.
+var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false, envbool.Gated)
 
 // lintWithoutDevURL reports whether the opt-in asks for Ptah's database-free
 // analysis. Unset keeps the requirement and a valid false spelling keeps it too;

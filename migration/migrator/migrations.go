@@ -689,25 +689,29 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version                int64
-	Description            string
-	Checksum               string
-	atlasRevisionVersion   string
-	atlasOrderKey          string
-	atlasSumContributions  []atlasSumContribution
-	revisionDescription    string
-	hasRevisionDescription bool
-	Up                     MigrationFunc
-	Down                   MigrationFunc
-	UpSQL                  string
-	DownSQL                string
-	UpTimeouts             MigrationTimeouts
-	DownTimeouts           MigrationTimeouts
-	upParsedTimeouts       MigrationTimeouts
-	downParsedTimeouts     MigrationTimeouts
-	upTimeoutsFromSQL      bool
-	downTimeoutsFromSQL    bool
-	downUnavailable        bool
+	Version                    int64
+	Description                string
+	Checksum                   string
+	atlasRevisionVersion       string
+	hasAtlasRevisionVersion    bool
+	atlasRevisionVersionMapped bool
+	atlasRevisionType          AtlasRevisionType
+	atlasRepeatable            bool
+	atlasOrderKey              string
+	atlasSumContributions      []atlasSumContribution
+	revisionDescription        string
+	hasRevisionDescription     bool
+	Up                         MigrationFunc
+	Down                       MigrationFunc
+	UpSQL                      string
+	DownSQL                    string
+	UpTimeouts                 MigrationTimeouts
+	DownTimeouts               MigrationTimeouts
+	upParsedTimeouts           MigrationTimeouts
+	downParsedTimeouts         MigrationTimeouts
+	upTimeoutsFromSQL          bool
+	downTimeoutsFromSQL        bool
+	downUnavailable            bool
 	// UpTxMode is the up file's explicit transaction mode. The zero value uses
 	// the migrator's global mode. File and none override global file or none;
 	// any explicit file mode conflicts with global all.
@@ -759,14 +763,28 @@ type atlasSumContribution struct {
 // numeric version. Atlas repeatable migrations use Atlas's opaque token, such
 // as "R" or "2R".
 func (m *Migration) RevisionVersion() string {
-	if m.atlasRevisionVersion != "" {
+	if m.hasAtlasRevisionVersion {
 		return m.atlasRevisionVersion
 	}
 	return strconv.FormatInt(m.Version, 10)
 }
 
+func (m *Migration) revisionType() AtlasRevisionType {
+	if m.atlasRevisionType != AtlasRevisionTypeUnknown {
+		return m.atlasRevisionType
+	}
+	return AtlasRevisionTypeApplied
+}
+
+func (m *Migration) manuallySetRevisionType() AtlasRevisionType {
+	if m.atlasRevisionType == AtlasRevisionTypeBaseline|AtlasRevisionTypeApplied {
+		return m.atlasRevisionType | AtlasRevisionTypeManuallySet
+	}
+	return AtlasRevisionTypeApplied | AtlasRevisionTypeManuallySet
+}
+
 func (m *Migration) isAtlasRepeatable() bool {
-	return m.atlasRevisionVersion == "R" || strings.HasSuffix(m.atlasRevisionVersion, "R")
+	return m.atlasRepeatable
 }
 
 // atlasFilenameDescription preserves Atlas's raw filename description in

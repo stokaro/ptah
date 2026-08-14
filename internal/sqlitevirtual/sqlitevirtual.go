@@ -82,7 +82,11 @@ import (
 // contents. It only decides whether Ptah is willing to plan it unasked.
 const AllowDropEnvVar = "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP"
 
-var allowDrop = envbool.New(AllowDropEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained]: a true value restores the
+// `DROP TABLE` the pinned community binary plans for a SQLite virtual table
+// anyway, so refusing it in strict mode would move Ptah further from the
+// oracle rather than closer.
+var allowDrop = envbool.New(AllowDropEnvVar, false, envbool.Retained)
 
 // DropAllowed reports whether the opt-in lifts the removal refusal.
 //

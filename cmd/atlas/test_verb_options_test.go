@@ -291,6 +291,55 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			check: assertDockerDevURLRefused,
 		},
 		{
+			// url.Parse lowercases a scheme, so this is the SAME dev URL, and
+			// the pinned community binary v1.3.0 reads it as one: measured on
+			// `schema inspect --dev-url DOCKER://postgres/16/dev` it answers
+			// `failed to connect to the docker API`, byte for byte what the
+			// lowercase spelling answers, where `notascheme://` answers
+			// `unknown driver`. A case-sensitive prefix match here let the
+			// value past this refusal and into the connector, which answered
+			// `connect to test database: unsupported database dialect: docker`
+			// -- the internal classification this refusal exists to replace.
+			name:    "migrate test --dev-url with an uppercase scheme",
+			preface: migrateSeedPreamble,
+			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
+				return append(migrateTestArgs(workspace), "--dev-url", "DOCKER://postgres/16/dev")
+			},
+			check: assertDockerDevURLRefused,
+		},
+		{
+			// Both verbs share the mapper, so both had the gap; the second row
+			// is here because this repository has repeatedly fixed the verb an
+			// issue named and left its twin.
+			name:    "schema test --dev-url with a mixed-case scheme",
+			preface: "",
+			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
+				return append(schemaTestArgs(workspace), "--dev-url", "DoCkEr://postgres/16/dev")
+			},
+			check: assertDockerDevURLRefused,
+		},
+		{
+			// The other direction of the same prefix match, and the reason it
+			// is not simply lowercased here. A LEADING space is not the same
+			// URL with whitespace on it: url.Parse reads the whole value as a
+			// relative path whose first segment is `docker:`, so there is no
+			// docker URL to refuse, and the trimmed prefix match invented one.
+			// The value now reaches the connector, which names the parse
+			// failure -- the verdict `migrate diff` already gives it.
+			name:    "a leading space is not a docker dev URL",
+			preface: migrateSeedPreamble,
+			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
+				return append(migrateTestArgs(workspace), "--dev-url", " docker://postgres/16/dev")
+			},
+			check: func(c *qt.C, out string, err error) {
+				c.Helper()
+				c.Assert(err, qt.ErrorMatches,
+					`connect to test database: invalid database URL: parse " docker://postgres/16/dev":`+
+						` first path segment in URL cannot contain colon`,
+					qt.Commentf("%s", out))
+			},
+		},
+		{
 			name:    "migrate test PTAH_DEV_URL twin",
 			preface: migrateSeedPreamble,
 			argv: func(_ *qt.C, t *testing.T, workspace testVerbWorkspace) []string {

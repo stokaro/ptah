@@ -68,12 +68,15 @@ func (p *RegisteredMigrationProvider) maybeSortLocked() {
 // It scans the filesystem for migration files following the naming convention and
 // automatically creates Migration instances from the SQL files.
 type FSMigrationProvider struct {
-	mu                sync.Mutex
-	fsys              fs.FS
-	migrations        []*Migration
-	hooks             statementExecutionHooks
-	format            MigrationDirFormat
-	atlasTemplateData any
+	mu                    sync.Mutex
+	fsys                  fs.FS
+	migrations            []*Migration
+	hooks                 statementExecutionHooks
+	format                MigrationDirFormat
+	atlasTemplateData     any
+	atlasRevisionVersions map[int64]string
+	atlasRevisionTypes    map[int64]AtlasRevisionType
+	atlasRepeatable       map[int64]bool
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -127,6 +130,45 @@ func WithAtlasTemplateData(data any) FSProviderOption {
 	}
 }
 
+// WithAtlasRevisionVersions supplies exact Atlas revision-table identities for
+// migrations whose numeric [Migration.Version] is only an execution-order key.
+// Keys absent from versions keep the revision identity parsed from the file
+// name. A present empty value is an exact empty identity, not a fallback.
+// A non-nil map also marks recorded identities that no current or historical
+// mapping owns as retired source history: they remain readable and contribute
+// their exact identity to source ordering without becoming pending migrations.
+//
+// Most callers do not need this option. It exists for adapters that convert a
+// source migration layout into order-preserving numeric Atlas file names while
+// retaining that source layout's opaque revision tokens.
+func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasRevisionVersions = maps.Clone(versions)
+	}
+}
+
+// WithAtlasRevisionTypes supplies Atlas revision-row types for migrations whose
+// source format carries semantics lost by filename conversion. Keys absent from
+// types retain the ordinary applied type.
+func WithAtlasRevisionTypes(types map[int64]AtlasRevisionType) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasRevisionTypes = maps.Clone(types)
+	}
+}
+
+// WithAtlasRepeatableVersions marks converted execution-order keys whose
+// source migrations are Atlas repeatables. A compatibility adapter uses this
+// when conversion preserves the SQL body and numeric order but loses the
+// source file-name shape that carries repeatability.
+func WithAtlasRepeatableVersions(versions []int64) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasRepeatable = make(map[int64]bool, len(versions))
+		for _, version := range versions {
+			p.atlasRepeatable[version] = true
+		}
+	}
+}
+
 // NewFSMigrationProvider creates a new filesystem-based migration provider.
 // It scans the provided filesystem for migration files and validates that all migrations
 // have both up and down files. Returns an error if the filesystem cannot be scanned
@@ -148,6 +190,19 @@ func (p *FSMigrationProvider) Migrations() []*Migration {
 	defer p.mu.Unlock()
 
 	return slices.Clone(p.migrations)
+}
+
+// atlasRevisionVersionMap returns every source identity mapping supplied by a
+// compatibility adapter, including identities for files a surviving baseline
+// has squashed out of the current provider. The migrator needs those extra
+// entries to interpret existing history and compute its high-water mark; only
+// migrations actually loaded above receive an owned revision identity.
+func (p *FSMigrationProvider) atlasRevisionVersionMap() map[int64]string {
+	return maps.Clone(p.atlasRevisionVersions)
+}
+
+func (p *FSMigrationProvider) hasAtlasRevisionVersionMap() bool {
+	return p.atlasRevisionVersions != nil
 }
 
 func (p *FSMigrationProvider) load() error {
@@ -237,17 +292,36 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 	partsByRevision := make(map[string]*atlasParts)
 	for i := range files {
 		migrationFile := files[i]
+		runtimeVersion := atlasRuntimeVersion(migrationFile, maxVersion)
 		revisionVersion := migrationFile.RevisionVersion()
+		repeatable := revisionVersion == "R" || strings.HasSuffix(revisionVersion, "R") ||
+			p.atlasRepeatable[migrationFile.Version]
+		mappedRevisionVersion, mapped := p.atlasRevisionVersions[migrationFile.Version]
+		if mapped {
+			revisionVersion = mappedRevisionVersion
+		}
 		parts := partsByRevision[revisionVersion]
+		if parts != nil && parts.migration.Version != runtimeVersion &&
+			(mapped || parts.migration.atlasRevisionVersionMapped) {
+			return fmt.Errorf(
+				"atlas revision identity %q maps migration order keys %d and %d",
+				revisionVersion, parts.migration.Version, runtimeVersion,
+			)
+		}
 		if parts == nil {
+			revisionType := p.atlasRevisionTypes[migrationFile.Version]
 			parts = &atlasParts{
 				migration: &Migration{
-					Version:                atlasRuntimeVersion(migrationFile, maxVersion),
-					Description:            migrationFile.Name,
-					atlasRevisionVersion:   revisionVersion,
-					atlasOrderKey:          migrationFile.Path,
-					revisionDescription:    migrationFile.revisionDescription,
-					hasRevisionDescription: true,
+					Version:                    runtimeVersion,
+					Description:                migrationFile.Name,
+					atlasRevisionVersion:       revisionVersion,
+					hasAtlasRevisionVersion:    true,
+					atlasRevisionVersionMapped: mapped,
+					atlasOrderKey:              migrationFile.Path,
+					revisionDescription:        migrationFile.revisionDescription,
+					hasRevisionDescription:     true,
+					atlasRevisionType:          revisionType,
+					atlasRepeatable:            repeatable,
 				},
 			}
 			partsByRevision[revisionVersion] = parts

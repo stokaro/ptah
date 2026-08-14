@@ -43,7 +43,7 @@ func TestResolveAcceptsEveryParseBoolSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			test.env(t)
-			variable := envbool.New(probeEnvVar, false)
+			variable := envbool.New(probeEnvVar, false, envbool.Gated)
 
 			got, err := variable.Resolve()
 
@@ -101,7 +101,7 @@ func TestResolveDistinguishesAbsentFromEmpty(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			test.env(t)
-			variable := envbool.New(probeEnvVar, test.defaultVal)
+			variable := envbool.New(probeEnvVar, test.defaultVal, envbool.Gated)
 
 			got, err := variable.Resolve()
 
@@ -139,7 +139,7 @@ func TestResolveRefusesEveryInvalidValue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(probeEnvVar, test.value)
-			variable := envbool.New(probeEnvVar, false)
+			variable := envbool.New(probeEnvVar, false, envbool.Gated)
 
 			got, err := variable.Resolve()
 
@@ -165,6 +165,52 @@ func TestErrorNamesBothTheVariableAndTheRawValue(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "PTAH_POSTGRES_INSPECT_ALL_ROLES")
 	c.Assert(err.Error(), qt.Contains, `"maybe"`)
 	c.Assert(err.Error(), qt.Equals, `invalid boolean value "maybe" for PTAH_POSTGRES_INSPECT_ALL_ROLES`)
+}
+
+// TestNewCarriesTheDeclaredClassification pins the third half of a declaration.
+//
+// The classification is what strict Atlas Community Edition compatibility
+// derives its refusals from, so a Var that answered the wrong class would be a
+// variable validated as something it is not. The rows read it straight back off
+// the declaration, which is the only place it is ever written.
+func TestNewCarriesTheDeclaredClassification(t *testing.T) {
+	tests := []struct {
+		name  string
+		class envbool.Class
+		want  string
+	}{
+		{name: "unclassified", class: envbool.Unclassified, want: "unclassified"},
+		{name: "gated", class: envbool.Gated, want: "gated"},
+		{name: "retained", class: envbool.Retained, want: "retained"},
+		{name: "selector", class: envbool.Selector, want: "selector"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			variable := envbool.New(probeEnvVar, false, test.class)
+
+			c.Assert(variable.Class(), qt.Equals, test.class)
+			c.Assert(variable.Class().String(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestTheZeroClassIsUnclassified pins the fail-closed default.
+//
+// A declaration that states nothing gets Go's zero value, and strict mode
+// refuses an enabled value for it. If the zero value were [envbool.Retained]
+// instead, the variable nobody classified would be the one strict mode honored
+// in silence -- the exact shape of the defect the classification exists to
+// close.
+func TestTheZeroClassIsUnclassified(t *testing.T) {
+	c := qt.New(t)
+
+	var zero envbool.Class
+
+	c.Assert(zero, qt.Equals, envbool.Unclassified)
+	c.Assert(envbool.New(probeEnvVar, false, zero).Class(), qt.Equals, envbool.Unclassified)
 }
 
 // errMessage renders an error for comparison against a table row without a

@@ -131,3 +131,61 @@ func TestCompatSchemaDiffExplicitPostgresURLKeepsExportRefusal(t *testing.T) {
 	qt.Assert(t, err.Error(), qt.Not(qt.Contains), "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP")
 	qt.Assert(t, out, qt.Contains, "--export")
 }
+
+func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforePreRunRefusal(t *testing.T) {
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	out, err := runCompatCommand(t,
+		"schema", "apply",
+		"--url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
+		"--dry-run", "--auto-approve",
+	)
+
+	qt.Assert(t, err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	qt.Assert(t, out, qt.Not(qt.Contains), "dry-run auto-approve")
+}
+
+func TestCompatSchemaApplyExplicitPostgresURLKeepsPreRunRefusal(t *testing.T) {
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	out, err := runCompatCommand(t,
+		"schema", "apply",
+		"--url", "postgres://localhost/database",
+		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
+		"--dry-run", "--auto-approve",
+	)
+
+	qt.Assert(t, err, qt.IsNotNil)
+	qt.Assert(t, err.Error(), qt.Not(qt.Contains), "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP")
+	qt.Assert(t, err.Error(), qt.Contains, "dry-run auto-approve")
+	qt.Assert(t, out, qt.Equals, "")
+}
+
+func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforeArgsRefusal(t *testing.T) {
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	out, err := runCompatCommand(t,
+		"schema", "apply", "unexpected",
+		"--url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
+	)
+
+	qt.Assert(t, err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	qt.Assert(t, out, qt.Not(qt.Contains), "unexpected positional arguments")
+}
+
+func TestCompatSchemaApplyExplicitPostgresURLKeepsArgsRefusal(t *testing.T) {
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	out, err := runCompatCommand(t,
+		"schema", "apply", "unexpected",
+		"--url", "postgres://localhost/database",
+		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
+	)
+
+	qt.Assert(t, err, qt.IsNotNil)
+	qt.Assert(t, err.Error(), qt.Not(qt.Contains), "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP")
+	qt.Assert(t, err.Error(), qt.Contains, "unexpected positional arguments")
+	qt.Assert(t, out, qt.Contains, "unexpected positional arguments")
+}

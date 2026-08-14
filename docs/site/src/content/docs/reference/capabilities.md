@@ -124,7 +124,7 @@ framework is outside Atlas's open-source core. See
 OCI registry distribution is not a dialect capability key. It is a native Ptah
 workflow that applies across supported database targets:
 
-- **Migration artifacts** — push, pull, and direct `up`/`status`/`down` consumption through `oci://`.
+- **Migration artifacts** — push, pull, and direct `up`/`status`/`down` consumption through `oci://`; `migrations lint --dir` and `migrations validate --dir` read the artifact too, and `validate` needs no database.
 - **Desired-schema artifacts** — push/pull canonical `schema.hcl`; render, export, inspect, compare, drift, plan, apply, push and `migrations plan`/`generate` all resolve `--schema-file oci://...`, and all of them expose `--plain-http`.
 - **Pinning** — unqualified references resolve to `latest`; tags are movable; digest pins are immutable.
 - **Authentication** — Docker configuration, `DOCKER_CONFIG`, `credsStore`, and `credHelpers`.

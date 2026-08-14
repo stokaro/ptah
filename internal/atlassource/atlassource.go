@@ -37,6 +37,7 @@ import (
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
@@ -291,8 +292,25 @@ func (s Set) EnsureDevDatabase(devURL string) error {
 // the same database as devURL. Destructive dev workflows must snapshot the
 // desired state before resetting the dev database, and an aliased source would
 // still destroy the user's desired state after that snapshot.
+//
+// A `docker://` devURL names a container that does not exist yet, so it cannot
+// be the source, and the question is not asked of it. Skipping is not a
+// convenience: [atlasurl.MayAddressSameDatabase] cannot parse a docker URL and
+// returns an error, so before this guard existed a database `--to` with a
+// docker dev database failed `compare --to database identity with --dev-url:
+// unsupported database URL dialect` and never reached the provisioner at all --
+// measured, where the pinned community binary v1.3.0 exits 0 on the same argv.
+//
+// Teaching that comparison to parse docker URLs instead would be the wrong fix
+// and a dangerous one. It fails CLOSED -- an identity whose database name it
+// cannot read returns "may be the same" -- so a docker URL carrying no
+// recognizable database name would come back true and refuse every legitimate
+// run with a sentence about an alias that does not exist.
 func (s Set) EnsureDevIsolation(devURL string) error {
 	if s.Kind != KindDatabase || len(s.Sources) == 0 || strings.TrimSpace(devURL) == "" {
+		return nil
+	}
+	if devdocker.IsURL(devURL) {
 		return nil
 	}
 	same, err := atlasurl.MayAddressSameDatabase(s.Sources[0].Raw, devURL)
@@ -497,7 +515,11 @@ func errExternalSchemaDisabled() error {
 // flag's environment twin, which cmd/internal/cmdflags already parses under the
 // same grammar and the same error, so one name means one thing on both
 // binaries.
-var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: evaluating
+// `data "external_schema"` runs a repository-controlled program, which the
+// pinned community binary reaches only behind its own opt-in flag that the
+// strict command tree does not register.
+var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false, envbool.Gated)
 
 // externalSchemaAllowed reports whether executing an atlas.hcl
 // data.external_schema program is allowed.

@@ -7,14 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/devclean"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -30,6 +31,10 @@ type Options struct {
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
 	AtlasTemplateData any
+	// RevisionVersions maps numeric execution-order keys in FS to exact Atlas
+	// revision identities used in replay diagnostics. Compatibility adapters
+	// set it for converted directories; native callers leave it nil.
+	RevisionVersions map[int64]string
 	// ObserveVersion, when set, runs before each migration is replayed, with the
 	// connection bound to the schema state that migration starts from. It is how
 	// a caller reads the before-state of one migration without replaying the
@@ -49,9 +54,19 @@ func Replay(ctx context.Context, opts Options) error {
 	if devURL == "" {
 		return nil
 	}
-	if isDockerURL(devURL) {
-		return fmt.Errorf("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
+	// A docker:// value is provisioned into a real database here rather than
+	// refused. The release runs on every exit path below, including the panic
+	// path, which is why it is deferred immediately and not at the end.
+	//
+	// The operator's spelling is what decides, not the trimmed copy above:
+	// see [devdocker.Parse] for why a leading space is a different value and
+	// not the same one with whitespace on it.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	if err != nil {
+		return err
 	}
+	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 
 	sourceFS := opts.FS
 	if sourceFS == nil {
@@ -73,6 +88,7 @@ func Replay(ctx context.Context, opts Options) error {
 		snapshot,
 		opts.DirFormat,
 		opts.AtlasTemplateData,
+		opts.RevisionVersions,
 		replayHooks{observeVersion: opts.ObserveVersion, consume: opts.ObserveReplayed},
 	)
 }
@@ -121,7 +137,7 @@ func ReplaySnapshotOnConnection(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{})
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{})
 }
 
 // WithReplayedSnapshot replays one immutable migration filesystem, invokes
@@ -141,7 +157,7 @@ func WithReplayedSnapshot(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
 }
 
 // WithReplayedSnapshotLocked performs the same replay as
@@ -161,7 +177,7 @@ func WithReplayedSnapshotLocked(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, replayHooks{consume: consume})
+	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
 }
 
 // replayHooks are the optional callbacks a replay runs alongside the
@@ -180,6 +196,7 @@ func replayOnConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
+	revisionVersions map[int64]string,
 	hooks replayHooks,
 ) (resultErr error) {
 	if conn == nil {
@@ -192,7 +209,7 @@ func replayOnConnection(
 	defer func() {
 		resultErr = errors.Join(resultErr, lock.Release())
 	}()
-	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, hooks)
+	return replayOnLockedConnection(ctx, conn, fsys, dirFormat, atlasTemplateData, revisionVersions, hooks)
 }
 
 func replayOnLockedConnection(
@@ -201,6 +218,7 @@ func replayOnLockedConnection(
 	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
 	atlasTemplateData any,
+	revisionVersions map[int64]string,
 	hooks replayHooks,
 ) error {
 	if conn == nil {
@@ -210,6 +228,7 @@ func replayOnLockedConnection(
 		fsys,
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(atlasTemplateData),
+		migrator.WithAtlasRevisionVersions(revisionVersions),
 		migrator.WithStatementValidator(devclean.NewReplayGuard(conn.Info())),
 	)
 	if err != nil {
@@ -260,13 +279,14 @@ func replayMigrations(
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	for _, migration := range migrations {
+		versionLabel := replayMigrationVersionLabel(migration.RevisionVersion())
 		if hooks.observeVersion != nil {
 			if err := hooks.observeVersion(ctx, migration, conn); err != nil {
-				return fmt.Errorf("observe dev database before migration %s: %w", migration.RevisionVersion(), err)
+				return fmt.Errorf("observe dev database before migration %s: %w", versionLabel, err)
 			}
 		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
-			return fmt.Errorf("replay migration %s on dev database: %w", migration.RevisionVersion(), err)
+			return fmt.Errorf("replay migration %s on dev database: %w", versionLabel, err)
 		}
 	}
 	if hooks.consume != nil {
@@ -276,6 +296,13 @@ func replayMigrations(
 	}
 	replaySucceeded = true
 	return nil
+}
+
+func replayMigrationVersionLabel(version string) string {
+	if version == "" {
+		return strconv.Quote(version)
+	}
+	return version
 }
 
 func captureReplaySessionState(
@@ -300,9 +327,4 @@ func captureReplaySessionState(
 		}
 		return nil
 	}, nil
-}
-
-func isDockerURL(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	return err == nil && parsed.Scheme == "docker"
 }

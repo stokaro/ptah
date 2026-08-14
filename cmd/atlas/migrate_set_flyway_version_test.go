@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -98,6 +99,30 @@ func revisionTableExists(c *qt.C, db *sql.DB) bool {
 	return count == 1
 }
 
+func flywayRevisionType(c *qt.C, dbPath, version string) int {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	var revisionType int
+	c.Assert(db.QueryRow(
+		`SELECT type FROM atlas_schema_revisions WHERE version = ?`, version,
+	).Scan(&revisionType), qt.IsNil)
+	return revisionType
+}
+
+func sqliteTableExists(c *qt.C, dbPath, table string) bool {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	var count int
+	c.Assert(db.QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
+	).Scan(&count), qt.IsNil)
+	return count == 1
+}
+
 // Fixtures. Each is one of the three token shapes stokaro/ptah#1206 measures,
 // because the projection collapses each of them differently: a plain token is
 // the only one that even looks like an int64, a dotted token cannot be parsed
@@ -141,28 +166,28 @@ func TestCompatMigrateSet_ConvertedFlywayTakesTheSourceToken(t *testing.T) {
 			migrations: setFlywayPlain,
 			operand:    "1",
 			wantStdout: "Current version is 1 (1 set):\n\n  + 1\n\n",
-			wantRows:   []setFlywayRow{{Description: ""}},
+			wantRows:   []setFlywayRow{{Version: "1", Description: ""}},
 		},
 		{
 			name:       "plain token reaches the last migration and sets both",
 			migrations: setFlywayPlain,
 			operand:    "2",
 			wantStdout: "Current version is 2 (2 set):\n\n  + 1\n  + 2 (ok)\n\n",
-			wantRows:   []setFlywayRow{{Description: ""}, {Description: "ok"}},
+			wantRows:   []setFlywayRow{{Version: "1", Description: ""}, {Version: "2", Description: "ok"}},
 		},
 		{
 			name:       "dotted token is addressable at all",
 			migrations: setFlywayDotted,
 			operand:    "1.5",
 			wantStdout: "Current version is 1.5 (2 set):\n\n  + 1 (a)\n  + 1.5 (b)\n\n",
-			wantRows:   []setFlywayRow{{Description: "a"}, {Description: "b"}},
+			wantRows:   []setFlywayRow{{Version: "1", Description: "a"}, {Version: "1.5", Description: "b"}},
 		},
 		{
 			name:       "zero-padded token is matched byte for byte",
 			migrations: setFlywayZeroPadded,
 			operand:    "01",
 			wantStdout: "Current version is 01 (1 set):\n\n  + 01 (a)\n\n",
-			wantRows:   []setFlywayRow{{Description: "a"}},
+			wantRows:   []setFlywayRow{{Version: "01", Description: "a"}},
 		},
 		{
 			name:       "a zero-padded token is not reachable by its numeric value",
@@ -225,12 +250,7 @@ func TestCompatMigrateSet_ConvertedFlywayTakesTheSourceToken(t *testing.T) {
 			c.Assert(errorText(err), qt.Equals, test.wantErr)
 			c.Assert(stdout, qt.Equals, test.wantStdout)
 			c.Assert(stderr, qt.Equals, errorLine(test.wantErr))
-			// The descriptions are asserted here rather than the versions: the
-			// version column still holds the ordering key, which is the half of
-			// stokaro/ptah#1206 this change does not settle. Row COUNT and
-			// description are what say which migrations were recorded.
-			c.Assert(revisionDescriptions(revisionRows(c, dbPath)), qt.DeepEquals,
-				revisionDescriptions(test.wantRows))
+			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
 		})
 	}
 }
@@ -270,6 +290,458 @@ func TestCompatMigrateSet_PlainPrefixLayoutsAreUnchanged(t *testing.T) {
 		[]setFlywayRow{{Version: "1", Description: "init"}})
 }
 
+// TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory pins the full
+// identity map used while revision rows are scanned. The operand index remains
+// the surviving directory only: retired V1.5 is readable and renderable, but
+// cannot become pending work or an addressable set target.
+func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V1.5__old.sql", body: "CREATE TABLE old_history (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(initialDir), "baseline.db")
+	_, stderr, err := runCompatExit(
+		"migrate", "apply",
+		"--dir", "file://"+initialDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V1.5__old.sql", body: "CREATE TABLE old_history (id INTEGER PRIMARY KEY);\n"},
+		{name: "B2__base.sql", body: "CREATE TABLE baseline_state (id INTEGER PRIMARY KEY);\n"},
+	})
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "2",
+		"--dir", "file://"+baselineDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+		{Version: "1.5", Description: "old"},
+		{Version: "2", Description: "base"},
+	})
+
+	_, stderr, err = runCompatExit(
+		"migrate", "set", "1.5",
+		"--dir", "file://"+baselineDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(errorText(err), qt.Equals, `migration with version "1.5" not found`)
+	c.Assert(stderr, qt.Equals, "Error: migration with version \"1.5\" not found\n")
+}
+
+// TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget pins the source
+// identity ordering used when the current directory no longer contains a
+// recorded migration. Measured on Atlas CE v1.3.0: after V2 is applied and
+// replaced on disk by V1, `migrate set 1` records V1 and removes V2. Mapping
+// the retired row to runtime zero used to leave V2 silently applied.
+func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__two.sql", body: "CREATE TABLE retired_v2 (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-above-target.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	c.Assert(os.Remove(filepath.Join(dir, "V2__two.sql")), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, "V1__one.sql",
+		"CREATE TABLE current_v1 (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "1",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals,
+		"Current version is 1 (1 set, 1 removed):\n\n  + 1 (one)\n  - 2 (two)\n\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+		[]setFlywayRow{{Version: "1", Description: "one"}})
+}
+
+// TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget proves
+// that metadata movement uses Flyway's numeric component order rather than the
+// byte order of the persisted source tokens. In byte order "9" sorts after
+// "10", which used to delete the already-applied V9 row while setting V10.
+func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V9__nine.sql", body: "CREATE TABLE retired_v9 (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-below-multidigit-target.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	c.Assert(os.Remove(filepath.Join(dir, "V9__nine.sql")), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "10",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals,
+		"Current version is 10 (1 set):\n\n  + 10 (ten)\n\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+		{Version: "9", Description: "nine"},
+		{Version: "10", Description: "ten"},
+	})
+}
+
+// TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole proves that a
+// source token does not erase the file role that established its execution
+// position. A retired baseline ran before every versioned migration even when
+// its numeric token is larger; a retired versioned migration keeps ordinary
+// numeric component order.
+func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		retiredFile string
+		wantStdout  string
+		wantRows    []setFlywayRow
+	}{
+		{
+			name:        "baseline 20 remains below versioned 10",
+			retiredFile: "B20__twenty.sql",
+			wantStdout:  "Current version is 10 (1 set):\n\n  + 10 (ten)\n\n",
+			wantRows: []setFlywayRow{
+				{Version: "20", Description: "twenty"},
+				{Version: "10", Description: "ten"},
+			},
+		},
+		{
+			name:        "versioned 20 remains above versioned 10",
+			retiredFile: "V20__twenty.sql",
+			wantStdout: "Current version is 10 (1 set, 1 removed):\n\n" +
+				"  + 10 (ten)\n  - 20 (twenty)\n\n",
+			wantRows: []setFlywayRow{{Version: "10", Description: "ten"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+				name: test.retiredFile,
+				body: "CREATE TABLE retired_twenty (id INTEGER PRIMARY KEY);\n",
+			}})
+			dbPath := filepath.Join(filepath.Dir(dir), "retired-role.db")
+			_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
+			writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+				"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
+			hashConvertedApplyDir(c, dir, "flyway")
+
+			stdout, stderr, err := runCompatExit(
+				"migrate", "set", "10",
+				"--dir", "file://"+dir+"?format=flyway",
+				"--url", "sqlite://"+dbPath,
+			)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+			c.Assert(stdout, qt.Equals, test.wantStdout)
+			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
+		})
+	}
+}
+
+// TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes
+// proves that metadata movement uses the same raw-token cut as Flyway baseline
+// selection. Although numeric output order puts V10 after V2, a B2 baseline
+// squashes V10 because "10" sorts before "2" as a source token. The retired
+// row therefore remains applied when B2 becomes the selected metadata target.
+func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+		name: "V10__ten.sql",
+		body: "CREATE TABLE retired_v10 (id INTEGER PRIMARY KEY);\n",
+	}})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-version-below-baseline.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	c.Assert(os.Remove(filepath.Join(dir, "V10__ten.sql")), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, "B2__base.sql",
+		"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "2",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+		{Version: "10", Description: "ten"},
+		{Version: "2", Description: "base"},
+	})
+	c.Assert(sqliteTableExists(c, dbPath, "retired_v10"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "target_baseline"), qt.IsFalse)
+}
+
+// TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory proves
+// that set preserves the source role of a converted empty-identity target. A
+// repeatable follows every versioned migration, so retired V1 remains applied
+// when the single R__ migration becomes the metadata target. Neither body is
+// re-executed by the set operation.
+func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+		name: "V1__one.sql",
+		body: "CREATE TABLE retired_v1 (id INTEGER PRIMARY KEY);\n",
+	}})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-version-before-repeatable.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	c.Assert(os.Remove(filepath.Join(dir, "V1__one.sql")), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, "R__only.sql",
+		"CREATE TABLE target_repeatable (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "Current version is \"\" (1 set):\n\n  + \"\" (only)\n\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+		{Version: "1", Description: "one"},
+		{Version: "", Description: "only"},
+	})
+	c.Assert(sqliteTableExists(c, dbPath, "retired_v1"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "target_repeatable"), qt.IsFalse)
+}
+
+// TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole covers rows
+// written by Atlas CE, whose ordinary applied type does not distinguish B20
+// from V20. The token alone is insufficient: treating every "20" as V20 would
+// corrupt a retired B20, while treating every one as B20 would preserve a
+// retired V20 above the selected target. The metadata operation must refuse
+// without changing either row.
+func TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+		name: "B20__twenty.sql",
+		body: "CREATE TABLE retired_ce_twenty (id INTEGER PRIMARY KEY);\n",
+	}})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-ce-role.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	_, err = db.Exec(
+		"UPDATE atlas_schema_revisions SET type = 2, operator_version = 'Atlas CLI v1.3.0' WHERE version = '20'",
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Close(), qt.IsNil)
+	c.Assert(os.Remove(filepath.Join(dir, "B20__twenty.sql")), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "10",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	want := "cannot set Atlas revision: source order between retired exact identity \"20\" and target \"10\" is ambiguous"
+	c.Assert(errorText(err), qt.Equals, want)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+		[]setFlywayRow{{Version: "20", Description: "twenty"}})
+}
+
+func TestCompatMigrateSet_RefusesAmbiguousRetiredSourceOrder(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+
+	assertCompatMigrateSetRetiredSourceOrderAmbiguous(
+		c,
+		"V01__old.sql",
+		"01",
+		"V1__target.sql",
+		"1",
+	)
+	assertCompatMigrateSetRetiredSourceOrderAmbiguous(
+		c,
+		"Vx__old.sql",
+		"x",
+		"Vy__target.sql",
+		"y",
+	)
+}
+
+func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
+	c *qt.C,
+	retiredFile, retiredToken, targetFile, targetToken string,
+) {
+	c.Helper()
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: retiredFile, body: "CREATE TABLE retired_ambiguous (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(dir), "retired-ambiguous.db")
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	c.Assert(os.Remove(filepath.Join(dir, retiredFile)), qt.IsNil)
+	writeAtlasApplyProjectMigration(c, dir, targetFile,
+		"CREATE TABLE current_ambiguous (id INTEGER PRIMARY KEY);\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", targetToken,
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	want := fmt.Sprintf(
+		"cannot set Atlas revision: source order between retired exact identity %q and target %q is ambiguous",
+		retiredToken,
+		targetToken,
+	)
+	c.Assert(errorText(err), qt.Equals, want)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+		[]setFlywayRow{{Version: retiredToken, Description: "old"}})
+}
+
+// TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity prevents a
+// surviving baseline from inserting a duplicate row when its lower runtime
+// key shares the exact token of previously applied versioned history.
+func TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__old.sql", body: "CREATE TABLE old_v2 (id INTEGER PRIMARY KEY);\n"},
+		{name: "V3__tail.sql", body: "CREATE TABLE tail_v3 (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(initialDir), "same-token.db")
+	_, stderr, err := runCompatExit(
+		"migrate", "apply",
+		"--dir", "file://"+initialDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__old.sql", body: "CREATE TABLE old_v2 (id INTEGER PRIMARY KEY);\n"},
+		{name: "B2__old.sql", body: "CREATE TABLE baseline_v2 (id INTEGER PRIMARY KEY);\n"},
+		{name: "V3__tail.sql", body: "CREATE TABLE tail_v3 (id INTEGER PRIMARY KEY);\n"},
+	})
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "3",
+		"--dir", "file://"+baselineDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+		{Version: "2", Description: "old"},
+		{Version: "3", Description: "tail"},
+	})
+
+	stdout, stderr, err = runCompatExit(
+		"migrate", "status",
+		"--dir", "file://"+baselineDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("status stderr: %s", stderr))
+	c.Assert(stdout, qt.Contains, "  -- Executed Files:  2\n")
+	c.Assert(stdout, qt.Contains, "  -- Pending Files:   0\n")
+}
+
+func TestCompatMigrateSet_FlywayBaselineTargetKeepsExistingExactIdentity(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__old.sql", body: "CREATE TABLE target_old_v2 (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(initialDir), "target-same-token.db")
+	_, stderr, err := runCompatExit(
+		"migrate", "apply",
+		"--dir", "file://"+initialDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
+
+	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__old.sql", body: "CREATE TABLE target_old_v2 (id INTEGER PRIMARY KEY);\n"},
+		{name: "B2__old.sql", body: "CREATE TABLE target_baseline_v2 (id INTEGER PRIMARY KEY);\n"},
+	})
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "2",
+		"--dir", "file://"+baselineDir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+		[]setFlywayRow{{Version: "2", Description: "old"}})
+}
+
+func TestCompatMigrateSet_FlywayBaselineMarkerSettlesLaterApply(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V2__base.sql", body: "CREATE TABLE set_baseline_marker (id INTEGER PRIMARY KEY);\n"},
+		{name: "B2__base.sql", body: "CREATE TABLE set_baseline_marker (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(filepath.Dir(dir), "set-baseline-marker.db")
+
+	stdout, stderr, err := runCompatExit(
+		"migrate", "set", "2",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
+	c.Assert(flywayRevisionType(c, dbPath, "2"), qt.Equals, 7)
+
+	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Contains, "No migration files to execute")
+
+	stdout, stderr, err = runCompatExit(
+		"migrate", "status",
+		"--dir", "file://"+dir+"?format=flyway",
+		"--url", "sqlite://"+dbPath,
+		"--format", `{{ (index .Applied 0).Type }}`,
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("status stderr: %s", stderr))
+	c.Assert(stdout, qt.Equals, "manually set")
+}
+
 // errorLine renders the stderr a refusal writes, so the expectation is derived
 // from the message rather than repeated beside it.
 func errorLine(message string) string {
@@ -277,13 +749,4 @@ func errorLine(message string) string {
 		return ""
 	}
 	return "Error: " + message + "\n"
-}
-
-// revisionDescriptions projects rows onto the column this change settles.
-func revisionDescriptions(rows []setFlywayRow) []string {
-	out := make([]string, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row.Description)
-	}
-	return out
 }

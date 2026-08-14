@@ -16,9 +16,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationvalidate"
+	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -33,14 +36,50 @@ var (
 )
 
 // NewMigrateValidateCommand returns the migration validation command.
+//
+// The native verb resolves an `oci://` --dir through the same puller
+// `migrations up`, `down`, `status` and `lint` use, and registers --plain-http
+// so a local registry is reachable. Before stokaro/ptah#1499 it was the one
+// verb in that neighborhood that stat'ed the reference as a path, which left
+// the read-only integrity question — "do these artifact bytes match the sum
+// they carry" — with no spelling that did not also execute or roll back
+// migrations.
 func NewMigrateValidateCommand() *cobra.Command {
-	return newMigrateValidateCommand(runNativeValidate)
+	src := &source{registryBacked: true}
+	cmd := newMigrateValidateCommand(
+		src,
+		runNativeValidate,
+		"Local directory or oci:// reference containing migration files",
+	)
+	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &src.plainHTTP)
+	return cmd
 }
 
 // NewAtlasMigrateValidateCommand returns migration validation with Atlas CE
 // checksum-mismatch output semantics.
+//
+// It deliberately does NOT resolve `oci://` and does not register
+// --plain-http. The compatibility surface's floor is the pinned community
+// binary, which reads --dir as a filesystem path: a build that pulled an
+// artifact here would exit 0 where that binary exits 1, and --plain-http would
+// be a flag the conformance cli-surface tier finds on one side only. The
+// capability is reachable on the native verb, which is where this repository
+// puts behavior the compatibility surface may not carry.
 func NewAtlasMigrateValidateCommand() *cobra.Command {
-	return newMigrateValidateCommand(runAtlasValidate)
+	return newMigrateValidateCommand(&source{}, runAtlasValidate, "Directory containing migration files")
+}
+
+// source is one --dir together with the flags that decide how it is read.
+type source struct {
+	dir       string
+	dirFormat string
+	devURL    string
+	plainHTTP bool
+	// registryBacked reports whether an `oci://` dir is pulled from a registry
+	// rather than handed to the filesystem. It is a field rather than a check
+	// on the scheme alone because the two constructors above disagree about it,
+	// and the disagreement is the compatibility policy rather than an accident.
+	registryBacked bool
 }
 
 // FailAtlasChecksumMismatch writes the Atlas CE checksum-mismatch guidance for
@@ -79,13 +118,9 @@ func FailAtlasChecksumFileNotFound(cmd *cobra.Command) error {
 	return failAtlasChecksum(cmd, nil, errAtlasChecksumFileNotFound)
 }
 
-type validateRunner func(*cobra.Command, string, string, string) error
+type validateRunner func(*cobra.Command, *source) error
 
-func newMigrateValidateCommand(run validateRunner) *cobra.Command {
-	var dir string
-	var dirFormatValue string
-	var devURL string
-
+func newMigrateValidateCommand(src *source, run validateRunner, dirUsage string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Verify a migrations directory against its committed ptah.sum",
@@ -101,37 +136,38 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd, dir, dirFormatValue, devURL)
+			return run(cmd, src)
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
-	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
-	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations for SQL validation")
+	cmd.Flags().StringVar(&src.dir, "dir", "./migrations", dirUsage)
+	cmd.Flags().StringVar(&src.dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&src.devURL, "dev-url", "", "Dev database URL used to clean and replay migrations for SQL validation")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
 
-func runNativeValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) error {
-	result, err := validate(cmd.Context(), dir, dirFormatValue, devURL)
+func runNativeValidate(cmd *cobra.Command, src *source) error {
+	checked, err := validate(cmd.Context(), src)
 	if err != nil {
 		// Native validation treats missing, unreadable, and malformed sum files
 		// as usage failures distinct from content drift.
 		return cmdutil.Fail(cmd, err)
 	}
 
-	if !result.Integrity.OK() {
-		fmt.Fprintln(cmd.ErrOrStderr(), result.Integrity.Describe())
+	if !checked.result.Integrity.OK() {
+		fmt.Fprintln(cmd.ErrOrStderr(), checked.result.Integrity.Describe())
 		return exitcode.New(1, errors.New("migration directory integrity check failed"))
 	}
 
-	return writeNativeValidationSuccess(cmd, result)
+	return writeNativeValidationSuccess(cmd, checked)
 }
 
-func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) error {
-	result, err := validate(cmd.Context(), dir, dirFormatValue, devURL)
+func runAtlasValidate(cmd *cobra.Command, src *source) error {
+	checked, err := validate(cmd.Context(), src)
+	result := checked.result
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
-		empty, emptyErr := DirectoryHoldsNoSQLFiles(dir)
+		empty, emptyErr := DirectoryHoldsNoSQLFiles(src.dir)
 		if emptyErr != nil {
 			return cmdutil.Fail(cmd, emptyErr)
 		}
@@ -157,7 +193,7 @@ func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) er
 		// and not a usage failure.
 		return FailAtlasChecksumUnreadableEntry(cmd, err)
 	case err != nil:
-		return cmdutil.Fail(cmd, AtlasDirectoryError(dir, err))
+		return cmdutil.Fail(cmd, AtlasDirectoryError(src.dir, err))
 	}
 
 	if !result.Integrity.OK() {
@@ -225,34 +261,113 @@ func DirectoryHoldsNoSQLFiles(dir string) (bool, error) {
 	return true, nil
 }
 
-func validate(
-	ctx context.Context,
-	dir, dirFormatValue, devURL string,
-) (migrationvalidate.Result, error) {
-	if err := cmdutil.StatDir(dir); err != nil {
-		return migrationvalidate.Result{}, err
-	}
-
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
-	if err != nil {
-		return migrationvalidate.Result{}, err
-	}
-
-	return migrationvalidate.Validate(ctx, migrationvalidate.Options{
-		Dir:       dir,
-		DirFormat: dirFormat,
-		DevURL:    devURL,
-	})
+// checkedSource is one completed validation together with the registry
+// artifact it ran over, when there was one.
+//
+// The provenance of the bytes is carried alongside the verdict rather than
+// folded into it because a sum verification and what that verification is
+// worth are two different statements: the sum says the directory matches the
+// sum stored beside it, and only the reference's own shape says whether those
+// bytes are the reviewed ones.
+type checkedSource struct {
+	result migrationvalidate.Result
+	// resolved is the registry artifact the reference selected, or nil for a
+	// local directory.
+	resolved *migrationsource.Source
 }
 
-func writeNativeValidationSuccess(cmd *cobra.Command, result migrationvalidate.Result) error {
+func validate(ctx context.Context, src *source) (checkedSource, error) {
+	if src.registryBacked && strings.HasPrefix(src.dir, ociartifact.Scheme) {
+		return validateArtifact(ctx, src)
+	}
+
+	if err := cmdutil.StatDir(src.dir); err != nil {
+		return checkedSource{}, err
+	}
+
+	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
+	if err != nil {
+		return checkedSource{}, err
+	}
+
+	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
+		Dir:       src.dir,
+		DirFormat: dirFormat,
+		DevURL:    src.devURL,
+	})
+	return checkedSource{result: result}, err
+}
+
+// validateArtifact pulls the registry artifact and validates the bytes that
+// came back.
+//
+// The pulled filesystem is handed to [migrationvalidate.Validate] directly
+// rather than written to a temporary directory first. That is the point of the
+// verb: what it reports on must be the bytes the pull produced, and a
+// materialize-then-read round trip inserts a second read the answer would be
+// about instead. It is also why the resolved DirFormat is used rather than the
+// requested one — an artifact records the format it was published with, and
+// `--dir-format auto` against a registry has no directory to sniff.
+func validateArtifact(ctx context.Context, src *source) (checkedSource, error) {
+	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
+	if err != nil {
+		return checkedSource{}, err
+	}
+
+	resolved, err := migrationsource.Resolve(ctx, src.dir, migrationsource.Options{
+		DirFormat: dirFormat,
+		PlainHTTP: src.plainHTTP,
+	})
+	if err != nil {
+		return checkedSource{}, err
+	}
+
+	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
+		Dir:       resolved.Display,
+		FS:        resolved.FileSystem,
+		DirFormat: resolved.DirFormat,
+		DevURL:    src.devURL,
+	})
+	return checkedSource{result: result, resolved: &resolved}, err
+}
+
+func writeNativeValidationSuccess(cmd *cobra.Command, checked checkedSource) error {
 	var message strings.Builder
-	fmt.Fprintf(&message, "OK: migrations directory matches %s\n", result.Integrity.SumFileName)
-	if result.DevSQLValidated {
+	fmt.Fprintf(&message, "OK: migrations directory matches %s\n", checked.result.Integrity.SumFileName)
+	if checked.result.DevSQLValidated {
 		message.WriteString("OK: migration SQL validated on dev database\n")
 	}
 	if _, err := io.WriteString(cmd.OutOrStdout(), message.String()); err != nil {
 		return fmt.Errorf("write validation success: %w", err)
+	}
+	return writeMutableTagQualifier(cmd, checked)
+}
+
+// writeMutableTagQualifier states what an OK over a movable tag is worth.
+//
+// A bare "OK: migrations directory matches ptah.sum" over an `oci://` tag
+// over-claims in exactly the direction stokaro/ptah#928 item 5 is about: for an
+// artifact the sum travels INSIDE the artifact, so anyone who can push to the
+// repository can rewrite the migrations, rehash them, repoint the tag, and
+// watch this verb print OK over bytes nobody reviewed. `migrations up`, `down`
+// and `status` already qualify that claim, through the same shared sentence
+// used here — the reason it is shared is that a verb which forgets it is
+// indistinguishable, in its output, from one that checked something stronger.
+//
+// It goes to standard error so the success line on standard output stays what
+// a caller parses, and it is unreachable for a local directory and for a
+// digest-pinned reference: [migrationsource.MutableTagSumWarning] returns the
+// empty string for both.
+func writeMutableTagQualifier(cmd *cobra.Command, checked checkedSource) error {
+	if checked.resolved == nil {
+		return nil
+	}
+	warning := migrationsource.MutableTagSumWarning(*checked.resolved, checked.result.Integrity.SumFileName)
+	if warning == "" {
+		return nil
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+		return fmt.Errorf("write provenance qualifier: %w", err)
 	}
 	return nil
 }

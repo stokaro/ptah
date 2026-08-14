@@ -76,7 +76,7 @@ func TestMigrateSet_RecordsManuallySetAtlasRevisionMetadata(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
 		Description:     "create_users",
-		Type:            4,
+		Type:            6,
 		Applied:         0,
 		Total:           0,
 		Hash:            fixture.hash,
@@ -87,7 +87,7 @@ func TestMigrateSet_RecordsManuallySetAtlasRevisionMetadata(t *testing.T) {
 		"20260719000000",
 		fixture.version,
 	})
-	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "manually set|0")
+	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "applied + manually set|0")
 }
 
 func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
@@ -117,7 +117,7 @@ func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 		OperatorVersion: "Ptah",
 	})
 	second := readAtlasRevision(c, fixture.dbPath, fixture.version)
-	c.Assert(second.Type, qt.Equals, 4)
+	c.Assert(second.Type, qt.Equals, 6)
 	c.Assert(second.Applied, qt.Equals, 0)
 	c.Assert(second.Total, qt.Equals, 0)
 }

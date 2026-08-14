@@ -23,6 +23,7 @@ import (
 type MigrationStatus struct {
 	CurrentVersion          int64              `json:"current_version"`
 	CurrentVersionKey       string             `json:"current_version_key,omitempty"`
+	CurrentVersionKeySet    bool               `json:"-"`
 	AppliedMigrations       []int64            `json:"applied_migrations"`
 	AppliedMigrationKeys    []string           `json:"applied_migration_keys,omitempty"`
 	PendingMigrations       []int64            `json:"pending_migrations"`
@@ -54,13 +55,14 @@ const (
 // MigrationPlan describes the migration work selected while holding the
 // migration lock.
 type MigrationPlan struct {
-	Direction         MigrationDirection
-	CurrentVersion    int64
-	CurrentVersionKey string
-	TargetVersion     int64
-	TargetVersionKey  string
-	Versions          []int64
-	VersionKeys       []string
+	Direction            MigrationDirection
+	CurrentVersion       int64
+	CurrentVersionKey    string
+	CurrentVersionKeySet bool
+	TargetVersion        int64
+	TargetVersionKey     string
+	Versions             []int64
+	VersionKeys          []string
 }
 
 // PreMigrationHook runs after the migrator has acquired its migration lock and
@@ -83,7 +85,9 @@ type MigrateUpOptions struct {
 	Amount uint64
 	// AllowDirty skips the default dirty revision guard and requests recovery of
 	// a pending dirty migration. It does not bypass committed-prefix verification;
-	// callers should expose it only as an explicit recovery action.
+	// in exact Atlas identity mode, retired rows the current provider no longer
+	// owns remain blocking. Callers should expose it only as an explicit recovery
+	// action.
 	AllowDirty bool
 	// DiscardRolledBackFailure removes the Atlas revision row written for a
 	// failed up migration only when this invocation observed a successful
@@ -94,6 +98,10 @@ type MigrateUpOptions struct {
 	// reading or writing revision metadata. This is intended for dry-run paths
 	// that need to model metadata-only operations such as baseline.
 	AssumedAppliedVersions []int64
+	// AssumedAppliedVersionKeys carries the exact revision identities aligned
+	// with AssumedAppliedVersions. A present empty key is exact, not a numeric
+	// fallback. An omitted entry keeps the numeric identity.
+	AssumedAppliedVersionKeys []string
 	// Preflight runs after the migration lock is acquired and the final plan is
 	// selected, but before any schema or revision changes.
 	Preflight PreMigrationHook
@@ -127,6 +135,7 @@ type Migrator struct {
 	execOrder            ExecOrder
 	outOfOrderExempt     []int64
 	sourceVersions       map[int64]string
+	atlasRevisionCompare AtlasRevisionVersionComparator
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
@@ -410,6 +419,24 @@ func (m *Migrator) WithSourceVersions(sourceVersions map[int64]string) *Migrator
 	return &tmp
 }
 
+// WithAtlasRevisionVersionComparator supplies the source format's ordering
+// rule for exact revision identities that no migration in the current provider
+// owns. SetRevision uses it only to decide whether retired exact history lies
+// above the selected target. Each [AtlasRevisionOrderIdentity] carries the row
+// type and operator marker needed to preserve a source role when one was
+// recorded. The comparator returns a negative value when left precedes right
+// and a positive value when it follows right. Its bool result must be false
+// when the pair cannot be ordered without missing source context; SetRevision
+// then refuses before changing metadata rather than guessing from the identity
+// bytes.
+func (m *Migrator) WithAtlasRevisionVersionComparator(
+	compare AtlasRevisionVersionComparator,
+) *Migrator {
+	tmp := *m
+	tmp.atlasRevisionCompare = compare
+	return &tmp
+}
+
 // WithTransactionMode sets how pending up migrations are wrapped in
 // transactions.
 func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
@@ -589,7 +616,7 @@ func (m *Migrator) getAppliedMigrationsSQL() string {
 			"SELECT version FROM %s WHERE %s AND %s ORDER BY %s, version",
 			m.qualifiedMigrationsTable(),
 			atlasAppliedRevisionPredicate,
-			atlasMetadataRowPredicate,
+			m.atlasRevisionRowPredicate(),
 			m.atlasVersionNumberExpression(),
 		)
 	}
@@ -639,6 +666,11 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// that Ptah has already decided is unsafe to use as a transaction witness.
 	if err := m.requireTransactionalMetadataEngine(ctx); err != nil {
 		return err
+	}
+	if m.revisionTableFormat.isAtlas() {
+		if err := m.validateAtlasRevisionIdentityCollation(ctx); err != nil {
+			return err
+		}
 	}
 	if !m.revisionTableFormat.isAtlas() {
 		if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
@@ -692,6 +724,9 @@ func (m *Migrator) inspectDryRunMetadata(ctx context.Context) (available, legacy
 		return false, false, err
 	}
 	if m.revisionTableFormat.isAtlas() {
+		if err := m.validateAtlasRevisionIdentityCollation(ctx); err != nil {
+			return false, false, err
+		}
 		return true, false, nil
 	}
 
@@ -1182,7 +1217,8 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	effectiveAppliedMigrations := m.effectiveAppliedVersionsFromRevisions(appliedMigrations, revisions)
 	effectiveAppliedIdentities := m.effectiveAppliedIdentitySetFromRevisions(effectiveAppliedMigrations, revisions)
 	currentVersion := maxAppliedVersion(appliedMigrations)
-	currentVersionKey := currentRevisionVersionKey(revisions)
+	exactRevisionOrder := m.hasExactAtlasRevisionOrder()
+	currentVersionKey, currentVersionKeySet := m.currentRevisionVersionKey(revisions)
 	if m.revisionTableFormat.isAtlas() {
 		currentVersion = maxRevisionVersion(revisions)
 	}
@@ -1197,13 +1233,20 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	dirtyRevision := firstDirtyRevision(revisions)
 	if dirtyRevision != nil {
 		currentVersionKey = dirtyRevision.RevisionVersion()
-	} else {
-		currentVersionKey = currentMigrationVersionKey(providerMigrations, effectiveAppliedIdentities, currentVersionKey)
+		currentVersionKeySet = true
+	} else if !exactRevisionOrder {
+		currentVersionKey, currentVersionKeySet = currentMigrationVersionKey(
+			providerMigrations,
+			effectiveAppliedIdentities,
+			currentVersionKey,
+			currentVersionKeySet,
+		)
 	}
 
 	status := &MigrationStatus{
 		CurrentVersion:          currentVersion,
 		CurrentVersionKey:       currentVersionKey,
+		CurrentVersionKeySet:    currentVersionKeySet,
 		AppliedMigrations:       appliedMigrations,
 		AppliedMigrationKeys:    appliedMigrationKeys,
 		PendingMigrations:       pendingMigrations,
@@ -1243,24 +1286,69 @@ func appliedRevisionVersionKeys(revisions []MigrationRevision) []string {
 	return keys
 }
 
-func currentRevisionVersionKey(revisions []MigrationRevision) string {
-	current := ""
-	for _, revision := range revisions {
-		if revision.State == migrationStateApplied {
-			current = revision.RevisionVersion()
-		}
+func (m *Migrator) currentRevisionVersionKey(revisions []MigrationRevision) (string, bool) {
+	if m.hasExactAtlasRevisionOrder() {
+		return currentExactRevisionVersionKey(revisions)
 	}
-	return current
+	return currentRuntimeRevisionVersionKey(revisions)
 }
 
-func currentMigrationVersionKey(migrations []*Migration, applied migrationIdentitySet, fallback string) string {
-	current := fallback
-	for _, migration := range migrations {
-		if applied.containsMigration(migration) {
-			current = migration.RevisionVersion()
+func (m *Migrator) hasExactAtlasRevisionOrder() bool {
+	return m.revisionTableFormat.isAtlas() && m.hasAtlasRevisionVersionMap()
+}
+
+func currentRuntimeRevisionVersionKey(revisions []MigrationRevision) (string, bool) {
+	current := ""
+	var currentVersion int64
+	found := false
+	for _, revision := range revisions {
+		if revision.State != migrationStateApplied {
+			continue
+		}
+		if !found || revision.Version > currentVersion {
+			current = revision.RevisionVersion()
+			currentVersion = revision.Version
+			found = true
 		}
 	}
-	return current
+	return current, found
+}
+
+func currentExactRevisionVersionKey(revisions []MigrationRevision) (string, bool) {
+	current := ""
+	found := false
+	for _, revision := range revisions {
+		if revision.State == migrationStateApplied &&
+			(!found || revision.RevisionVersion() > current) {
+			current = revision.RevisionVersion()
+			found = true
+		}
+	}
+	return current, found
+}
+
+func currentMigrationVersionKey(
+	migrations []*Migration,
+	applied migrationIdentitySet,
+	fallback string,
+	fallbackSet bool,
+) (string, bool) {
+	current := fallback
+	var currentVersion int64
+	found := false
+	for _, migration := range migrations {
+		if applied.containsMigration(migration) &&
+			migration.RevisionVersion() != "" &&
+			(!found || migration.Version > currentVersion) {
+			current = migration.RevisionVersion()
+			currentVersion = migration.Version
+			found = true
+		}
+	}
+	if found {
+		return current, true
+	}
+	return current, fallbackSet
 }
 
 func maxRevisionVersion(revisions []MigrationRevision) int64 {
@@ -1274,21 +1362,18 @@ func maxRevisionVersion(revisions []MigrationRevision) int64 {
 }
 
 type migrationIdentitySet struct {
-	versions map[int64]struct{}
-	keys     map[string]struct{}
+	versions  map[int64]struct{}
+	exactKeys map[string]struct{}
 }
 
 func newMigrationIdentitySet(versions []int64, revisions []MigrationRevision) migrationIdentitySet {
 	set := migrationIdentitySet{
-		versions: versionSet(versions),
-		keys:     make(map[string]struct{}, len(revisions)+len(versions)),
-	}
-	for _, version := range versions {
-		set.keys[strconv.FormatInt(version, 10)] = struct{}{}
+		versions:  versionSet(versions),
+		exactKeys: make(map[string]struct{}, len(revisions)),
 	}
 	for _, revision := range revisions {
 		if revision.State == migrationStateApplied {
-			set.keys[revision.RevisionVersion()] = struct{}{}
+			set.exactKeys[revision.RevisionVersion()] = struct{}{}
 		}
 	}
 	return set
@@ -1296,22 +1381,46 @@ func newMigrationIdentitySet(versions []int64, revisions []MigrationRevision) mi
 
 func (s migrationIdentitySet) addMigration(migration *Migration) {
 	s.versions[migration.Version] = struct{}{}
-	s.keys[migration.RevisionVersion()] = struct{}{}
+	s.exactKeys[migration.RevisionVersion()] = struct{}{}
 }
 
-func (s migrationIdentitySet) addVersions(versions []int64) {
-	for _, version := range versions {
+func (s migrationIdentitySet) addVersionsWithKeys(versions []int64, keys []string) {
+	for index, version := range versions {
 		s.versions[version] = struct{}{}
-		s.keys[strconv.FormatInt(version, 10)] = struct{}{}
+		key := strconv.FormatInt(version, 10)
+		if index < len(keys) {
+			key = keys[index]
+		}
+		s.exactKeys[key] = struct{}{}
 	}
+}
+
+func assumedAppliedVersionKey(versions []int64, keys []string, target int64) string {
+	for index, version := range versions {
+		if version != target {
+			continue
+		}
+		if index < len(keys) {
+			return keys[index]
+		}
+		break
+	}
+	return strconv.FormatInt(target, 10)
 }
 
 func (s migrationIdentitySet) containsMigration(migration *Migration) bool {
-	if _, ok := s.keys[migration.RevisionVersion()]; ok {
+	if _, ok := s.exactKeys[migration.RevisionVersion()]; ok {
 		return true
+	}
+	if migration.atlasRevisionVersionMapped {
+		return false
 	}
 	_, ok := s.versions[migration.Version]
 	return ok
+}
+
+func (s migrationIdentitySet) revisionKeys() []string {
+	return slices.Sorted(maps.Keys(s.exactKeys))
 }
 
 func firstDirtyRevision(revisions []MigrationRevision) *MigrationRevision {
@@ -1386,15 +1495,25 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	if err != nil {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	if opts.AllowDirty {
+		if err := m.failIfUnownedDirtyRevision(revisions, migrations); err != nil {
+			return err
+		}
+	}
 	appliedMigrations := appliedRevisionVersions(revisions)
 	appliedMigrations = m.effectiveAppliedVersionsFromRevisions(appliedMigrations, revisions)
 	appliedIdentities := m.effectiveAppliedIdentitySetFromRevisions(appliedMigrations, revisions)
 	appliedMigrations = mergeAppliedVersions(appliedMigrations, opts.AssumedAppliedVersions)
-	appliedIdentities.addVersions(opts.AssumedAppliedVersions)
+	appliedIdentities.addVersionsWithKeys(opts.AssumedAppliedVersions, opts.AssumedAppliedVersionKeys)
 	currentVersion := maxAppliedVersion(appliedMigrations)
-	currentVersionKey := currentRevisionVersionKey(revisions)
+	currentVersionKey, currentVersionKeySet := m.currentRevisionVersionKey(revisions)
 	if assumedCurrent := maxAppliedVersion(opts.AssumedAppliedVersions); assumedCurrent > 0 && assumedCurrent >= currentVersion {
-		currentVersionKey = strconv.FormatInt(assumedCurrent, 10)
+		currentVersionKey = assumedAppliedVersionKey(
+			opts.AssumedAppliedVersions,
+			opts.AssumedAppliedVersionKeys,
+			assumedCurrent,
+		)
+		currentVersionKeySet = true
 	}
 
 	reconcileChecksums, err := m.verifyAppliedMigrationChecksums(ctx, migrations)
@@ -1408,13 +1527,14 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	}
 	migrationsToApply = limitMigrationsToApply(migrationsToApply, opts.Amount)
 	plan := MigrationPlan{
-		Direction:         MigrationDirectionUp,
-		CurrentVersion:    currentVersion,
-		CurrentVersionKey: currentVersionKey,
-		TargetVersion:     upTargetVersion(currentVersion, migrationsToApply),
-		TargetVersionKey:  upTargetVersionKey(currentVersionKey, migrationsToApply),
-		Versions:          migrationVersions(migrationsToApply),
-		VersionKeys:       migrationVersionKeys(migrationsToApply),
+		Direction:            MigrationDirectionUp,
+		CurrentVersion:       currentVersion,
+		CurrentVersionKey:    currentVersionKey,
+		CurrentVersionKeySet: currentVersionKeySet,
+		TargetVersion:        upTargetVersion(currentVersion, migrationsToApply),
+		TargetVersionKey:     upTargetVersionKey(currentVersionKey, migrationsToApply),
+		Versions:             migrationVersions(migrationsToApply),
+		VersionKeys:          migrationVersionKeys(migrationsToApply),
 	}
 	notifyMigrationPlanObserver(ctx, opts.PlanObserver, plan)
 	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
@@ -2707,7 +2827,7 @@ func (m *Migrator) rollbackMigrationTransactionalOnSession(
 		)
 	}
 
-	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
 			ctx,
@@ -2790,7 +2910,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
-	if err := executeSQLOutsideTransaction(recordCtx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+	if err := executeSQLOutsideTransaction(recordCtx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
@@ -2902,14 +3022,30 @@ func (m *Migrator) migrationsToApply(
 	outOfOrderVersions := outOfOrderExempt(
 		mergeOutOfOrderVersions(
 			outOfOrderMigrationVersions(pendingVersions, currentVersion),
-			outOfOrderSourceVersions(pendingVersions, applied, m.sourceVersions),
+			outOfOrderSourceVersions(
+				pendingVersions,
+				applied,
+				appliedIdentities.revisionKeys(),
+				m.sourceVersions,
+			),
 		),
 		m.outOfOrderExempt,
 	)
 	execOrder := normalizeExecOrder(m.execOrder)
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
-		return nil, NewOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
+		err := NewOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
+		if _, mappedCurrent := m.sourceVersions[currentVersion]; !mappedCurrent {
+			if currentSource, ok := highestAppliedSourceVersion(
+				applied,
+				appliedIdentities.revisionKeys(),
+				m.sourceVersions,
+			); ok {
+				err.currentSourceVersion = currentSource
+				err.currentSourceVersionSet = true
+			}
+		}
+		return nil, err
 	}
 
 	migrationsToApply := make([]*Migration, 0, len(pendingMigrationList))
