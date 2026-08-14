@@ -126,16 +126,24 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			// carries no list. The virtual table in front of the validator is
 			// still checked directly, so a zero value cannot read as "every
 			// module is present".
+			//
+			// The desired state DECLARES the table, so the #1469 removal
+			// refusal cannot fire and answer for this row. Asserting only that
+			// some error came back would have been vacuous: with the list
+			// empty and the table undeclared, the removal refusal produces a
+			// message containing the same table and module.
 			name:    "a virtual table is checked even with no list recorded",
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			desired: declaring("users"),
+			desired: declaringVirtual("docs", "fts4", "title, body"),
 			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+				Tables: []types.DBTable{
+					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+				},
 			},
 			wantErr:         true,
 			wantUnsupported: true,
-			wantContains:    []string{`virtual table "docs" (module fts4)`},
+			wantContains:    []string{`virtual table "docs" (module fts4)`, "does not register"},
 		},
 		{
 			name:    "the opt-in lifts the refusal",
