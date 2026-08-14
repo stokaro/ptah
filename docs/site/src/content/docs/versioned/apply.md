@@ -209,10 +209,14 @@ people and pipelines share a directory:
   **value** it cannot read — `no_transaction=maybe`, `lock_timeout=soon` — fails
   the run wherever the line sits, and the refusal names the position too, so you
   are not told the value is nonsense, told nothing about the line being in the
-  wrong place, and left to discover that on the next run. A bare word Ptah does
-  not recognize as a directive
-  (`-- +ptah revisit this`) is an ordinary comment and is neither refused nor
-  reported.
+  wrong place, and left to discover that on the next run. A timeout key written
+  with no value at all — `-- +ptah lock_timeout` — fails the same way, and it
+  does so whatever else shares the line: a neighboring field Ptah can read says
+  nothing about whether the timeout has a value. A bare word Ptah does not
+  recognize as a directive (`-- +ptah revisit this`) is an ordinary comment and
+  is neither refused nor reported, and neither is a word inside an ordered
+  `-- +ptah check` line, whose quoted arguments are that directive's own grammar
+  rather than `key=value` fields.
 
   The `-- atlas:` spelling deliberately has no equivalent refusal. Measured on
   Atlas CE `v1.3.0`, `migrate apply` over a directory carrying

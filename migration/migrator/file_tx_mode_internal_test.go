@@ -324,9 +324,9 @@ func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
 //
 // The line can only sit below executable SQL -- a string literal is executable
 // SQL, and a marker inside one has to follow the statement that opens it. Under
-// the default header rule it is therefore inert on every dialect, which is the
-// stronger property and the one asserted first. The dialect still decides under
-// the scope opt-in, and for ordered checks, which are file-wide by design.
+// the header rule it is therefore inert on every dialect, which is the stronger
+// property and the one asserted first. The dialect still decides for ordered
+// checks, which are file-wide by design.
 func dialectAmbiguousMarker(body string) string {
 	return "SELECT 'prefix \\'\n-- +ptah " + body + "\nsuffix';\n"
 }

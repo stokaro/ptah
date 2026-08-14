@@ -36,10 +36,10 @@ type internalDirectiveCase struct {
 func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 	tests := []internalDirectiveCase{
 		{
-			// The timeout scanner keeps a stop condition of its own inside the
-			// region, which is what makes it header-scoped under the opt-in
-			// too. That is deliberate: the opt-in restores the scope the merged
-			// directive map had, and these keys never had it.
+			// The timeout scanner reads the same region [directiveRegion]
+			// hands every other `-- +ptah` parser, so these keys and the
+			// transaction mode answer to one boundary rather than to two that
+			// happened to agree.
 			name:      "ptah lock_timeout",
 			directive: "-- +ptah lock_timeout=5s",
 			honored:   directiveplacement.BeforeTheStatement(),
@@ -253,6 +253,32 @@ func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 			assert: refusedWith(`invalid \+ptah directive "statement-timeout" \(on line 2, .*\)`),
 		},
 		{
+			// A bare timeout does not stop being malformed because a field the
+			// merged parser CAN read shares its line. The same two fields in
+			// the header are refused by parseTimeoutDirectiveFields, which
+			// walks every field rather than giving up once one parsed.
+			name:   "bare lock timeout beside a recognized field below the statement",
+			sql:    directiveStatement + "-- +ptah no_transaction lock_timeout\n",
+			assert: refusedWith(`invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`),
+		},
+		{
+			// The neighbor here is a key nobody reads, which is the shape that
+			// makes the dependence on a SEPARATE field clearest: it changes
+			// nothing about whether `statement_timeout` has a value.
+			name:   "bare statement timeout beside an unknown key below the statement",
+			sql:    directiveStatement + "-- +ptah online_ddl_tool=ghost statement_timeout\n",
+			assert: refusedWith(`invalid \+ptah directive "statement_timeout" \(on line 2, .*\)`),
+		},
+		{
+			// An ordered check's arguments are ParseChecks' grammar, not
+			// field-split pairs, and the header parser skips the body whole.
+			// Field-splitting it here would refuse below the statement exactly
+			// what the header accepts.
+			name:   "a timeout word inside an ordered check below the statement is not an error",
+			sql:    directiveStatement + `-- +ptah check assert="SELECT 1" lock_timeout` + "\n",
+			assert: notRefused,
+		},
+		{
 			name:   "a well-formed directive below the statement is not an error",
 			sql:    directiveStatement + "-- +ptah no_transaction\n",
 			assert: notRefused,
@@ -332,6 +358,48 @@ func TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis(t *testing.T) {
 
 	c.Check(got.err, qt.ErrorMatches, `invalid \+ptah no_transaction value "maybe": expected true or false`)
 	c.Check(got.source, qt.Equals, migrationFileTxModeSourcePtah)
+}
+
+// TestBareTimeoutBesideAnotherFieldIsRefusedInTheHeaderToo is the other half of
+// the three rows above.
+//
+// "Refused wherever it sits" is a claim about two parsers, and asserting only
+// the below-the-statement half would leave the gap open in the direction it was
+// actually found: the misplaced scan gave up once ANY field on the line parsed,
+// while the header scan walks every field. Both verdicts are measured on the
+// same bytes so a change to either side reddens.
+func TestBareTimeoutBesideAnotherFieldIsRefusedInTheHeaderToo(t *testing.T) {
+	tests := []struct {
+		name   string
+		line   string
+		assert func(c *qt.C, err error)
+	}{
+		{
+			name:   "bare lock timeout beside a recognized field",
+			line:   "-- +ptah no_transaction lock_timeout",
+			assert: refusedWith(`invalid \+ptah directive "lock_timeout"`),
+		},
+		{
+			name:   "bare statement timeout beside an unknown key",
+			line:   "-- +ptah online_ddl_tool=ghost statement_timeout",
+			assert: refusedWith(`invalid \+ptah directive "statement_timeout"`),
+		},
+		{
+			name:   "a timeout word inside an ordered check",
+			line:   `-- +ptah check assert="SELECT 1" lock_timeout`,
+			assert: notRefused,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parseMigrationTimeoutDirectives(test.line + "\n\n" + directiveStatement)
+
+			test.assert(c, err)
+		})
+	}
 }
 
 func misplacedLines(found []misplacedDirective) []int {

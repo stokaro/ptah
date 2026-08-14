@@ -185,7 +185,8 @@ func validateRecognizedDirectives(directives map[string]string) error {
 // is that position and value are independent facts. Demoting a typo to a
 // position warning lets two failures mask each other: the operator is told the
 // line is in the wrong place, moves it into the header, and only then learns
-// the value was nonsense all along. Worse, the verdict would depend on
+// the value was nonsense all along.
+//
 // The `atlas:` family deliberately gets no equivalent. Measured on the pinned
 // community binary, `-- atlas:txmode bogus` in the header exits 1 and the same
 // line below the statement exits 0, so refusing it here would exit non-zero
@@ -241,12 +242,9 @@ func misplacedDirectives(sql, dialect string) []misplacedDirective {
 			continue
 		}
 		directives := parseFileDirectives(slices.Values([]string{marker.Body}))
-		err := validateRecognizedDirectives(directives)
-		if len(directives) == 0 {
-			err = validateMisplacedBareTimeout(marker.Body)
-			if err == nil {
-				continue // a marker every directive parser would have ignored
-			}
+		err := misplacedDirectiveValueError(directives, marker.Body)
+		if len(directives) == 0 && err == nil {
+			continue // a marker every directive parser would have ignored
 		}
 		found = append(found, misplacedDirective{
 			line:   lineNumberAt(sql, marker.Start),
@@ -275,7 +273,39 @@ func misplacedDirectives(sql, dialect string) []misplacedDirective {
 	return found
 }
 
+// misplacedDirectiveValueError reports the first value a misplaced `-- +ptah`
+// line carries that no parser could read.
+//
+// Both halves run on every line, and that is the point. The bare-timeout half
+// used to run only when the merged parser had extracted nothing at all, so
+// whether `-- +ptah no_transaction lock_timeout` was refused depended on a
+// SEPARATE field on the same line being parsable -- while the identical line
+// written in the header was refused by [parseTimeoutDirectiveFields] either
+// way. Position and value are independent facts, and so are the fields of one
+// directive line.
+func misplacedDirectiveValueError(directives map[string]string, body string) error {
+	if err := validateRecognizedDirectives(directives); err != nil {
+		return err
+	}
+	return validateMisplacedBareTimeout(body)
+}
+
+// validateMisplacedBareTimeout reports a timeout key written with no value.
+//
+// The header parser refuses one through [parseTimeoutDirectiveFields], where a
+// bare field that is not no_transaction has no reading at all. The merged
+// directive map is the looser of the two -- it drops such a token -- so a line
+// below the statement needs this scan to reach the same verdict.
+//
+// An ordered `-- +ptah check` body is exempt for the reason every other parser
+// in this package exempts it: its quoted arguments are ParseChecks' grammar,
+// not field-split key=value pairs, and the header parser skips it whole. Field-
+// splitting one here would refuse below the statement exactly what the header
+// accepts, which is the asymmetry this function exists to close.
 func validateMisplacedBareTimeout(body string) error {
+	if isCheckDirectiveBody(body) {
+		return nil
+	}
 	for field := range strings.FieldsSeq(body) {
 		switch field {
 		case "lock_timeout", "lock-timeout", "statement_timeout", "statement-timeout":
