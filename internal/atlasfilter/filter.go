@@ -1535,7 +1535,14 @@ func schemaNameCandidates(name string) []string {
 	if name == "" {
 		return nil
 	}
-	return []string{tableref.CanonicalExact("", name)}
+	quoted := tableref.CanonicalExact("", name)
+	if quoted == name {
+		return []string{name}
+	}
+	// Catalogs such as SQL Server preserve the spelling of an ordinary
+	// unquoted schema name. Keep that spelling addressable without losing the
+	// quoted candidate required for PostgreSQL case and whitespace identities.
+	return []string{name, quoted}
 }
 
 func generatedTableByStruct(tables []goschema.Table) map[string]goschema.Table {
