@@ -13,6 +13,9 @@
 //     incompatible with the PostgreSQL-shaped AST nodes Ptah produces; this
 //     renderer emits a -- CLICKHOUSE: not supported comment for them so they
 //     fall out of the migration cleanly instead of producing invalid SQL.
+//   - Materialized views exist and store their result, but they are dropped
+//     with DROP VIEW and they have no REFRESH statement, so the three
+//     materialized-view visitors do not share one spelling.
 //
 // Engine, ORDER BY, PARTITION BY, PRIMARY KEY, SAMPLE BY, SETTINGS and TTL
 // are sourced from the table's `platform.clickhouse.<key>` annotation
@@ -1018,16 +1021,107 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+// materializedViewEngineClause is the storage clause the renderer writes for a
+// materialized view whose declaration carries a name and a body and nothing
+// else.
+//
+// Measured live on clickhouse/clickhouse-server:26.7 (server 26.7.3.19), the
+// image docker-compose.yaml pins: CREATE MATERIALIZED VIEW mv AS SELECT ...
+// is accepted with no storage clause at all, and system.tables then reports
+// create_table_query as
+// "CREATE MATERIALIZED VIEW ptah_test.mv (...) ENGINE = MergeTree ORDER BY
+// tuple() ... AS SELECT ...". Writing that clause explicitly says what the
+// server would otherwise choose, so the statement carries its own storage
+// instead of depending on a server-side default.
+//
+// ORDER BY tuple() rather than a sorting key over the projection: the shared
+// CreateMaterializedViewNode carries no column list, so there is no declared
+// column the renderer could name without parsing the body.
+const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
+
+// VisitCreateMaterializedView renders ClickHouse's materialized view, which
+// stores its result in an inner table the server creates alongside it.
+//
+// The stored-versus-recomputed reading capability.MaterializedViews names was
+// measured on 26.7.3.19: with a plain view and a materialized view over the
+// same "SELECT count(*) AS c FROM users", an INSERT moved both to 1, and a
+// following TRUNCATE TABLE users left the materialized view at 1 while the
+// plain view fell back to 0. The materialized result survives the source rows,
+// so it is stored.
+//
+// POPULATE is deliberately never written. It backfills the rows that already
+// exist at creation time, and it is a one-shot argument to the statement
+// rather than a property of the object: two views created with and without it
+// report byte-identical as_select in system.tables, so nothing Ptah reads back
+// could tell them apart or diff them.
+//
+// RefreshStrategy is not read here, exactly as the PostgreSQL renderer does not
+// read it in its own create arm; it describes a REFRESH that ClickHouse has no
+// statement for, and VisitRefreshMaterializedView says so.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
-	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
+		return nil
+	}
+	if strings.TrimSpace(node.Body) == "" {
+		return fmt.Errorf(
+			"%w: clickhouse: CREATE MATERIALIZED VIEW %q requires a non-empty body",
+			ptaherr.ErrInvalidSchemaDiff,
+			node.Name,
+		)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef(
+		"CREATE MATERIALIZED VIEW %s %s AS",
+		escapeQualifiedIdentifier(node.Name),
+		materializedViewEngineClause,
+	)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	r.w.WriteLine(";")
 	return nil
 }
 
+// VisitDropMaterializedView renders the drop as DROP VIEW.
+//
+// ClickHouse has no DROP MATERIALIZED VIEW: on 26.7.3.19 that spelling is
+// "Syntax error: failed at position 6 (MATERIALIZED)" and the server's own
+// list of what DROP accepts contains VIEW and not MATERIALIZED VIEW.
+// DROP VIEW removes the materialized view and the inner table that stores its
+// result together, and DROP VIEW IF EXISTS is accepted twice in a row.
 func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
-	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
+	if !r.capabilities().Has(capability.MaterializedViews) {
+		r.notSupported("DROP MATERIALIZED VIEW", node.Name)
+		return nil
+	}
+	if node.Cascade {
+		return fmt.Errorf(
+			"%w: clickhouse: DROP MATERIALIZED VIEW CASCADE is not supported",
+			ptaherr.ErrUnsupportedFeature,
+		)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 
+// VisitRefreshMaterializedView stays a named diagnostic even where the create
+// and drop arms emit.
+//
+// ClickHouse keeps a materialized view current by consuming inserts into its
+// source table, so there is nothing for a manual refresh to do, and the
+// statement does not exist: on 26.7.3.19 "REFRESH MATERIALIZED VIEW mv" is
+// "Syntax error: failed at position 1 (REFRESH)". The server's refreshable
+// materialized views are driven by a REFRESH EVERY clause on CREATE and by
+// SYSTEM REFRESH VIEW, neither of which this node describes.
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
 	return nil

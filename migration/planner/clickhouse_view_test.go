@@ -228,7 +228,11 @@ func clickHouseDependentViews(dependentBody string) *goschema.Database {
 	}}
 }
 
-func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewRemainsDiagnostic(t *testing.T) {
+// TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBody
+// pins the whole plan surface, not the renderer alone: the statement the plan
+// hands to the executor has to be the executable one, qualified name and query
+// intact.
+func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBody(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
 		StructName: "UserCounts",
@@ -247,6 +251,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewRemainsDiagno
 	c.Assert(
 		statements[0],
 		qt.Contains,
-		`-- CLICKHOUSE: CREATE MATERIALIZED VIEW "analytics.user_counts" is not supported`,
+		"CREATE MATERIALIZED VIEW `analytics`.`user_counts` "+
+			"ENGINE = MergeTree ORDER BY tuple() AS\nSELECT count() FROM users",
 	)
 }

@@ -265,11 +265,16 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(spanner.Has(capability.Functions), qt.IsFalse)
 	c.Assert(spanner.Has(capability.Triggers), qt.IsFalse)
 
-	// Outside the PostgreSQL family the keys record the engine rather than
-	// gating an emission yet. MySQL accepts CREATE MATERIALIZED VIEW and then
-	// recomputes the result on every read, so the key that names a STORED
+	// Outside the PostgreSQL family most of these keys record the engine rather
+	// than gating an emission yet. MySQL accepts CREATE MATERIALIZED VIEW and
+	// then recomputes the result on every read, so the key that names a STORED
 	// result is off for it just as it is for MariaDB, which refuses the
 	// statement outright.
+	//
+	// ClickHouse is the exception: MaterializedViews is on there because a path
+	// emits, reads back and plans the object, not because the engine has the
+	// feature. See the ClickHouse24 preset's own comment for the live
+	// measurements, and stokaro/ptah#1462.
 	c.Assert(capability.MySQL84().Has(capability.Views), qt.IsTrue)
 	c.Assert(capability.MySQL84().Has(capability.MaterializedViews), qt.IsFalse)
 	c.Assert(capability.MariaDB1011().Has(capability.MaterializedViews), qt.IsFalse)
