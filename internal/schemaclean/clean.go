@@ -509,8 +509,11 @@ func changesFromObjects(objects []Object, dialect string) []Change {
 // views must stay out of the plan.
 //
 // ClickHouse — internal/dbschema/clickhouse/writer.go, DropAllTables selects
-// from system.tables filtered to persistent table engines with
-// `engine NOT LIKE '%View'`, so it drops base tables only.
+// from system.tables twice: once for `engine IN ('View', 'MaterializedView')`,
+// which it drops with DROP VIEW, and once for persistent table engines with
+// `engine NOT LIKE '%View'`, which it drops with DROP TABLE. So it drops
+// tables, views and materialized views. LiveView and WindowView stay out of
+// both the writer and this plan because the reader never reports them.
 //
 // The revisionTables field below is not about kinds but about names: the
 // PostgreSQL, MySQL and SQL Server readers exclude Ptah's own revision tables
@@ -561,9 +564,11 @@ func coverageFor(dialect string) dialectCoverage {
 		return dialectCoverage{views: true}
 	case "sqlserver", "mssql":
 		return dialectCoverage{foreignKeys: true, revisionTables: true}
+	case "clickhouse":
+		return dialectCoverage{views: true, materializedViews: true}
 	default:
-		// ClickHouse, and any dialect this package has not measured: report
-		// tables only, which every writer drops.
+		// Any dialect this package has not measured: report tables only, which
+		// every writer drops.
 		//
 		// Spanner lands here even though dbschema hands it the PostgreSQL
 		// writer, because Spanner's PostgreSQL interface does not accept the
@@ -1506,7 +1511,7 @@ func dropCommand(dialect string, object Object) string {
 	case ObjectTypeFunction:
 		return dropRoutineCommand(dialect, "FUNCTION", name, object.Parameters)
 	case ObjectTypeMaterializedView:
-		return "DROP MATERIALIZED VIEW IF EXISTS " + name + " RESTRICT"
+		return dropMaterializedViewCommand(dialect, name)
 	case ObjectTypeProcedure:
 		return dropRoutineCommand(dialect, "PROCEDURE", name, object.Parameters)
 	case ObjectTypeSequence:
@@ -1547,7 +1552,24 @@ func dropViewCommand(dialect, name string) string {
 	if isPostgresFamily(dialect) {
 		return "DROP VIEW IF EXISTS " + name + " RESTRICT"
 	}
+	if normalizeDialect(dialect) == "clickhouse" {
+		return "DROP VIEW IF EXISTS " + name + " SYNC"
+	}
 	return "DROP VIEW IF EXISTS " + name
+}
+
+// dropMaterializedViewCommand renders the drop a materialized view takes.
+//
+// ClickHouse has no DROP MATERIALIZED VIEW statement at all — that spelling is
+// a syntax error on the server, and DROP VIEW is what removes a materialized
+// view together with the storage table it owns. Rendering the portable
+// spelling here would put a statement in the plan that the scoped executor
+// cannot run.
+func dropMaterializedViewCommand(dialect, name string) string {
+	if normalizeDialect(dialect) == "clickhouse" {
+		return "DROP VIEW IF EXISTS " + name + " SYNC"
+	}
+	return "DROP MATERIALIZED VIEW IF EXISTS " + name + " RESTRICT"
 }
 
 func dropTableCommand(dialect, name string) string {

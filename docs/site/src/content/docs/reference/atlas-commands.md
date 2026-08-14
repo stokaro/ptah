@@ -1222,7 +1222,7 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 | MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
 | SQLite | Tables and views. |
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
-| ClickHouse | Base tables. Views are not dropped, so they are not reported. |
+| ClickHouse | Base tables, views, and materialized views. A materialized view is removed with `DROP VIEW`, which takes its inner storage table with it; live views and window views are neither read nor dropped. |
 
 Ptah's own migration revision table is included in that accounting. On
 PostgreSQL, MySQL, MariaDB and SQL Server the cleanup destroys it like any other
