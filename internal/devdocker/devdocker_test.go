@@ -3,6 +3,8 @@ package devdocker_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -778,4 +780,64 @@ func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
 			qt.Check(t, devdocker.IsURL(tc.rawURL), qt.Equals, tc.want)
 		})
 	}
+}
+
+// TestIsURLAndParseAgreeOnTheScheme pins the invariant [devdocker.IsURL]
+// documents but only one half of which was covered: the two functions answer
+// the same question about the scheme.
+//
+// They have to. [devdocker.Resolve] asks IsURL whether to provision, and Parse
+// is the first thing the provisioner does, so a value the two disagree about is
+// routed to a provisioner that then refuses it as not its own -- or passed
+// through to a connector that reports an unknown dialect for a URL that names a
+// container. Only IsURL was pinned on the case of the scheme; Parse taking a
+// case-sensitive prefix, or IsURL taking one, would leave the other's rows
+// green.
+//
+// The assertion is not "Parse succeeds": rows like `docker://sqlite/dev` are
+// docker URLs that Parse refuses for the image. What is asserted is the SCHEME
+// verdict alone -- whether Parse got past it.
+func TestIsURLAndParseAgreeOnTheScheme(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+	}{
+		{name: "lowercase scheme", rawURL: "docker://postgres/16/dev"},
+		// url.Parse lowercases a scheme, and so does the pinned community
+		// binary v1.3.0: measured, `--dev-url DOCKER://postgres/16/dev` makes
+		// it answer `failed to connect to the docker API`, byte for byte what
+		// the lowercase spelling answers on a host with no daemon, while
+		// `notascheme://` answers `unknown driver`.
+		{name: "uppercase scheme", rawURL: "DOCKER://postgres/16/dev"},
+		{name: "mixed-case scheme", rawURL: "DoCkEr://mariadb/11/dev"},
+		{name: "docker URL Parse refuses for the image", rawURL: "docker://sqlite/dev"},
+		{name: "docker URL with no engine", rawURL: "docker:///dev"},
+		{name: "leading space is not a docker URL", rawURL: " docker://postgres/16/dev"},
+		{name: "another scheme entirely", rawURL: "postgres://localhost/db"},
+		{name: "a scheme docker is a prefix of", rawURL: "dockerx://postgres/16/dev"},
+		{name: "empty", rawURL: ""},
+		{name: "docker in the path", rawURL: "sqlite://docker://x"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := devdocker.Parse(tc.rawURL)
+			qt.Check(t, devdocker.IsURL(tc.rawURL), qt.Equals,
+				!parseRefusedTheValueAsNotADockerURL(err, tc.rawURL))
+		})
+	}
+}
+
+// parseRefusedTheValueAsNotADockerURL reports whether err is one of the two
+// refusals [devdocker.Parse] produces for a value that is not a docker URL at
+// all: one url.Parse cannot read, and one whose scheme names something else.
+//
+// Every other refusal Parse can produce -- the image, the path, a connection
+// parameter -- is reached only after the value was accepted as a docker URL, so
+// folding them in would make `docker://sqlite/dev` look like a non-docker URL
+// and the invariant would stop discriminating.
+func parseRefusedTheValueAsNotADockerURL(err error, rawURL string) bool {
+	return err != nil &&
+		(strings.HasPrefix(err.Error(), "parse docker --dev-url: ") ||
+			err.Error() == fmt.Sprintf("not a docker --dev-url: %q", rawURL))
 }
