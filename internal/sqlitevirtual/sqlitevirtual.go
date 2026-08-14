@@ -115,11 +115,11 @@ func ValidateToggle(dialect string) error {
 // command's normal URL validation so this preflight changes only the ordering
 // of a known SQLite configuration error.
 //
-// Native commands call this before loading project configuration. An explicit
-// target URL, such as --db-url or replay --dev-url, already selects the SQLite
+// Command adapters call this before loading project configuration. An explicit
+// target URL, such as --db-url or --dev-url, already selects the SQLite
 // subsystem, so malformed project config must not mask the malformed boolean
 // value that subsystem owns. They still call [ValidateToggle] after merging
-// project defaults, which covers a URL selected by ptah.yaml.
+// project defaults, which covers a URL selected by project configuration.
 func ValidateExplicitURLToggle(databaseURL string) error {
 	dialect, err := atlasurl.DialectFromURL(databaseURL)
 	if err != nil {
