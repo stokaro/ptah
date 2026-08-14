@@ -3,7 +3,9 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -237,24 +239,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("database URL is required")
 		}
 	}
-	dialect, err := atlasurl.DialectFromURL(targetURL)
+	target, err := resolveGenerateTarget(targetURL, migrationsDir, connectTimeoutValue)
 	if err != nil {
 		return err
 	}
-	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-		return err
-	}
-	if migrationsDir == "" {
-		return fmt.Errorf("migrations directory is required")
-	}
-	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("invalid migrations directory: %w", err)
-	}
-	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
-	if err != nil {
-		return err
-	}
+	dialect, migrationsDir, connectTimeout := target.dialect, target.migrationsDir, target.connectTimeout
 
 	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
 	if err != nil {
@@ -344,7 +333,52 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	out := cmd.OutOrStdout()
+	reportGeneratedFiles(cmd.OutOrStdout(), targetURL, files)
+	return nil
+}
+
+// resolveGenerateTarget turns the raw target URL, migrations directory and
+// connect-timeout text into the values the generation run needs, refusing each
+// one at the point it is read rather than letting a later step fail on it.
+//
+// It is separate from migrateGenerateCommand because both halves of this
+// command grew: the OCI source surface added its own flags and the SQLite
+// virtual-table toggle added a validation, and the two together pushed the
+// caller past the length the linter enforces. Splitting on "resolve the target"
+// keeps the reads beside the checks that reject them.
+// generateTarget carries what resolveGenerateTarget established, so the caller
+// takes one value rather than four positional results nobody can read at a
+// glance.
+type generateTarget struct {
+	dialect        string
+	migrationsDir  string
+	connectTimeout time.Duration
+}
+
+func resolveGenerateTarget(targetURL, migrationsDir, connectTimeoutValue string) (generateTarget, error) {
+	dialect, err := atlasurl.DialectFromURL(targetURL)
+	if err != nil {
+		return generateTarget{}, err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return generateTarget{}, err
+	}
+	if migrationsDir == "" {
+		return generateTarget{}, fmt.Errorf("migrations directory is required")
+	}
+	resolvedDir, err := pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return generateTarget{}, fmt.Errorf("invalid migrations directory: %w", err)
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
+	if err != nil {
+		return generateTarget{}, err
+	}
+	return generateTarget{dialect: dialect, migrationsDir: resolvedDir, connectTimeout: connectTimeout}, nil
+}
+
+// reportGeneratedFiles prints what the run wrote, one line per artifact.
+func reportGeneratedFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
@@ -353,5 +387,4 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
-	return nil
 }
