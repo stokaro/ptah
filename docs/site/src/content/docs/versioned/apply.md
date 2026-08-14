@@ -110,8 +110,10 @@ must be hashed. `ptah-compat migrate apply` refuses a never-hashed Atlas
 directory outright, because Atlas does; see
 [Integrity and safety](../integrity-and-safety/).
 
-`--verify-sum` is registered on `migrations up`, `down`, `status` and `push`,
-and means the same thing on each.
+`--verify-sum` is registered on `migrations up`, `down`, `status` and `push`.
+The requirement is the same on each — carry a sum, and match it — but on the
+first three the subject is the directory the run pulled, while on `push` it is
+the local directory about to be published.
 
 Either check compares the directory against the sum stored beside it, so what
 it establishes depends on where the directory came from. See

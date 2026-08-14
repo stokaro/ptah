@@ -316,7 +316,7 @@ control — come from the registry, not from Ptah. The full workflow is on
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❌ | On migrations push, up, down and status. It checks a directory against the sum stored beside it, so an `oci://` tag source proves internal consistency only; pin a digest for authenticity. |
+| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❌ | On migrations push (local, pre-upload) and up/down/status (pulled). A sum checks a directory against the sum stored beside it, so an `oci://` tag source proves internal consistency only; pin a digest. |
 | Declarative reference data | ✅ | ❌ | ✅ | //ptah:schema:data rows diffed by key into a reversible data migration. Atlas lists declarative data management as a Pro feature. |
 | Digest pinning and write-once version tags | ✅ | ➖ | ❔ | Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
