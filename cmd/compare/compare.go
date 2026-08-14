@@ -74,7 +74,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for OCI registry access")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)

@@ -59,6 +59,7 @@ type schemaApplyOptions struct {
 	include        []string
 	exclude        []string
 	planPath       string
+	plainHTTP      bool
 	connectTimeout string
 	configPath     string
 	envName        string
@@ -112,6 +113,7 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -220,6 +222,7 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 			RootDirs:    opts.rootDirs,
 			SchemaFiles: opts.schemaFiles,
 			Dialect:     conn.Info().Dialect,
+			PlainHTTP:   opts.plainHTTP,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

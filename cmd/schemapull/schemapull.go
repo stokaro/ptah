@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/schemaartifact"
 )
 
@@ -32,7 +33,7 @@ Authentication comes from the Docker credential store.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&opts.output, "out", "", "Canonical HCL output file to create (required)")
-	flags.BoolVar(&opts.plainHTTP, "plain-http", false, "Use plain HTTP for an explicitly trusted local registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
 

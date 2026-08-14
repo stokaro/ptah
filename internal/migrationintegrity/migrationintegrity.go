@@ -48,11 +48,24 @@
 // protect one. The gate fires on drift from a sum the directory actually
 // carries.
 //
-// The stricter `migrations up --verify-sum` contract — where a MISSING sum file
-// is itself an error — stays with that flag and is deliberately not part of
-// this shared core. It is an explicit operator request for more than the
-// default, and [AllowUnverifiedEnvVar] does not relax it; see
-// cmd/migrateup/migrateup.go.
+// The stricter `--verify-sum` contract — where a MISSING sum file is itself an
+// error — is NOT the default and never becomes it. It is an explicit operator
+// request for more than the default, so it lives behind the flag, and
+// [AllowUnverifiedEnvVar] does not relax it. It is expressed here, as
+// [Options.RequireSum], rather than inside any one verb: `up` owning the
+// always-on rule privately is what let five other verbs drift, and the strict
+// rule is the same shape of thing.
+//
+// # Why --verify-sum is not redundant given the always-on gate
+//
+// They answer different questions, and the difference is measurable on an
+// UNHASHED directory. The always-on gate asks "does this directory match the
+// sum it carries" and a directory carrying no sum passes, because there is no
+// recorded intent to compare against. --verify-sum asks "is this directory
+// covered by a sum at all", which a published artifact can fail. Without the
+// flag an operator has no spelling that DEMANDS coverage, so an artifact
+// published with no integrity file is indistinguishable at the command line
+// from one whose sum verified.
 package migrationintegrity
 
 import (
@@ -94,8 +107,34 @@ const AllowUnverifiedEnvVar = "PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR"
 // strict default and fails closed.
 var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false)
 
-// Gate verifies fsys against the integrity file it carries and reports which
-// file verified, or the empty string when nothing was checked.
+// Options selects how strict one gate call is.
+type Options struct {
+	// RequireSum makes a MISSING integrity file an error instead of a pass.
+	//
+	// It is the `--verify-sum` contract. Set it only when the operator asked
+	// for it on the command line: a directory nobody ever hashed has no
+	// recorded intent to compare against, and refusing it by default would
+	// remove a capability rather than protect one.
+	//
+	// It also switches off [AllowUnverifiedEnvVar]. An explicit command-line
+	// request for a stricter contract is not overridden by an environment
+	// variable exported three shells ago — the flag is the more specific and
+	// more recent statement of intent, and a build where the variable won
+	// would let a CI environment file silently defeat the flag its own
+	// pipeline passes.
+	RequireSum bool
+}
+
+// Gate verifies fsys against the integrity file it carries under the default
+// contract: a hashed directory must match, an unhashed one passes.
+//
+// It is [GateWith] with zero Options; see there for the full contract.
+func Gate(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
+	return GateWith(notice, fsys, format, Options{})
+}
+
+// GateWith verifies fsys against the integrity file it carries and reports
+// which file verified, or the empty string when nothing was checked.
 //
 // Call it before the verb executes anything, and — where the verb connects to a
 // database — before it connects. A gate that fires after the connection has
@@ -104,8 +143,9 @@ var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false)
 // The returned name is what the CALLER may claim it verified. It is empty both
 // when the directory was never hashed and when [AllowUnverifiedEnvVar]
 // suppressed a real failure, so a run that skipped the check cannot go on to
-// report that a check passed. `migrations up` uses exactly that to decide
-// whether its movable-OCI-tag provenance warning has anything to qualify.
+// report that a check passed. `migrations up`, `down` and `status` use exactly
+// that to decide whether their movable-OCI-tag provenance warning has anything
+// to qualify.
 //
 // notice receives the override announcement, and receives it only when an
 // override actually suppressed a refusal: a clean directory skips nothing, so
@@ -116,11 +156,29 @@ var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false)
 // value that only fails the run on already-drifted directories would let
 // `PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=yes` sit unnoticed in a CI environment
 // file until the day it was load-bearing, which is the reverse of what the
-// envbool contract is for.
-func Gate(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
+// envbool contract is for. It is resolved even under [Options.RequireSum],
+// which does not honor it, so a typo is still refused rather than reaching a
+// branch that happens not to read it.
+func GateWith(
+	notice io.Writer,
+	fsys fs.FS,
+	format migrator.MigrationDirFormat,
+	opts Options,
+) (string, error) {
 	allow, err := allowUnverified.Resolve()
 	if err != nil {
 		return "", err
+	}
+
+	if opts.RequireSum {
+		result, err := migratesum.VerifyWithFormat(fsys, format)
+		if err != nil {
+			return "", fmt.Errorf("migration sum verification failed: %w", err)
+		}
+		if !result.OK() {
+			return "", fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
+		}
+		return result.SumFileName, nil
 	}
 
 	result, hashed, err := migratesum.VerifyHashed(fsys, format)

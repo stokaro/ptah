@@ -75,6 +75,7 @@ repository alone.`,
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
+	dbcli.RegisterPlainHTTPFlagValue(flags)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	dbcli.RegisterProjectEnvFlag(flags)
@@ -255,11 +256,17 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
+	if err != nil {
+		return err
+	}
+
 	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
 		SchemaFiles: schemaFiles,
 		Commands:    commands,
 		Dialect:     dialect,
+		PlainHTTP:   plainHTTP,
 	})
 	if err != nil {
 		return err
