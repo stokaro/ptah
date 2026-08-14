@@ -147,23 +147,24 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 }
 
 func runNativeValidate(cmd *cobra.Command, src *source) error {
-	result, err := validate(cmd.Context(), src)
+	checked, err := validate(cmd.Context(), src)
 	if err != nil {
 		// Native validation treats missing, unreadable, and malformed sum files
 		// as usage failures distinct from content drift.
 		return cmdutil.Fail(cmd, err)
 	}
 
-	if !result.Integrity.OK() {
-		fmt.Fprintln(cmd.ErrOrStderr(), result.Integrity.Describe())
+	if !checked.result.Integrity.OK() {
+		fmt.Fprintln(cmd.ErrOrStderr(), checked.result.Integrity.Describe())
 		return exitcode.New(1, errors.New("migration directory integrity check failed"))
 	}
 
-	return writeNativeValidationSuccess(cmd, result)
+	return writeNativeValidationSuccess(cmd, checked)
 }
 
 func runAtlasValidate(cmd *cobra.Command, src *source) error {
-	result, err := validate(cmd.Context(), src)
+	checked, err := validate(cmd.Context(), src)
+	result := checked.result
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
 		empty, emptyErr := DirectoryHoldsNoSQLFiles(src.dir)
@@ -260,25 +261,41 @@ func DirectoryHoldsNoSQLFiles(dir string) (bool, error) {
 	return true, nil
 }
 
-func validate(ctx context.Context, src *source) (migrationvalidate.Result, error) {
+// checkedSource is one completed validation together with the registry
+// artifact it ran over, when there was one.
+//
+// The provenance of the bytes is carried alongside the verdict rather than
+// folded into it because a sum verification and what that verification is
+// worth are two different statements: the sum says the directory matches the
+// sum stored beside it, and only the reference's own shape says whether those
+// bytes are the reviewed ones.
+type checkedSource struct {
+	result migrationvalidate.Result
+	// resolved is the registry artifact the reference selected, or nil for a
+	// local directory.
+	resolved *migrationsource.Source
+}
+
+func validate(ctx context.Context, src *source) (checkedSource, error) {
 	if src.registryBacked && strings.HasPrefix(src.dir, ociartifact.Scheme) {
 		return validateArtifact(ctx, src)
 	}
 
 	if err := cmdutil.StatDir(src.dir); err != nil {
-		return migrationvalidate.Result{}, err
+		return checkedSource{}, err
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
 	if err != nil {
-		return migrationvalidate.Result{}, err
+		return checkedSource{}, err
 	}
 
-	return migrationvalidate.Validate(ctx, migrationvalidate.Options{
+	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
 		Dir:       src.dir,
 		DirFormat: dirFormat,
 		DevURL:    src.devURL,
 	})
+	return checkedSource{result: result}, err
 }
 
 // validateArtifact pulls the registry artifact and validates the bytes that
@@ -291,10 +308,10 @@ func validate(ctx context.Context, src *source) (migrationvalidate.Result, error
 // about instead. It is also why the resolved DirFormat is used rather than the
 // requested one — an artifact records the format it was published with, and
 // `--dir-format auto` against a registry has no directory to sniff.
-func validateArtifact(ctx context.Context, src *source) (migrationvalidate.Result, error) {
+func validateArtifact(ctx context.Context, src *source) (checkedSource, error) {
 	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
 	if err != nil {
-		return migrationvalidate.Result{}, err
+		return checkedSource{}, err
 	}
 
 	resolved, err := migrationsource.Resolve(ctx, src.dir, migrationsource.Options{
@@ -302,25 +319,55 @@ func validateArtifact(ctx context.Context, src *source) (migrationvalidate.Resul
 		PlainHTTP: src.plainHTTP,
 	})
 	if err != nil {
-		return migrationvalidate.Result{}, err
+		return checkedSource{}, err
 	}
 
-	return migrationvalidate.Validate(ctx, migrationvalidate.Options{
+	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
 		Dir:       resolved.Display,
 		FS:        resolved.FileSystem,
 		DirFormat: resolved.DirFormat,
 		DevURL:    src.devURL,
 	})
+	return checkedSource{result: result, resolved: &resolved}, err
 }
 
-func writeNativeValidationSuccess(cmd *cobra.Command, result migrationvalidate.Result) error {
+func writeNativeValidationSuccess(cmd *cobra.Command, checked checkedSource) error {
 	var message strings.Builder
-	fmt.Fprintf(&message, "OK: migrations directory matches %s\n", result.Integrity.SumFileName)
-	if result.DevSQLValidated {
+	fmt.Fprintf(&message, "OK: migrations directory matches %s\n", checked.result.Integrity.SumFileName)
+	if checked.result.DevSQLValidated {
 		message.WriteString("OK: migration SQL validated on dev database\n")
 	}
 	if _, err := io.WriteString(cmd.OutOrStdout(), message.String()); err != nil {
 		return fmt.Errorf("write validation success: %w", err)
+	}
+	return writeMutableTagQualifier(cmd, checked)
+}
+
+// writeMutableTagQualifier states what an OK over a movable tag is worth.
+//
+// A bare "OK: migrations directory matches ptah.sum" over an `oci://` tag
+// over-claims in exactly the direction stokaro/ptah#928 item 5 is about: for an
+// artifact the sum travels INSIDE the artifact, so anyone who can push to the
+// repository can rewrite the migrations, rehash them, repoint the tag, and
+// watch this verb print OK over bytes nobody reviewed. `migrations up`, `down`
+// and `status` already qualify that claim, through the same shared sentence
+// used here — the reason it is shared is that a verb which forgets it is
+// indistinguishable, in its output, from one that checked something stronger.
+//
+// It goes to standard error so the success line on standard output stays what
+// a caller parses, and it is unreachable for a local directory and for a
+// digest-pinned reference: [migrationsource.MutableTagSumWarning] returns the
+// empty string for both.
+func writeMutableTagQualifier(cmd *cobra.Command, checked checkedSource) error {
+	if checked.resolved == nil {
+		return nil
+	}
+	warning := migrationsource.MutableTagSumWarning(*checked.resolved, checked.result.Integrity.SumFileName)
+	if warning == "" {
+		return nil
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+		return fmt.Errorf("write provenance qualifier: %w", err)
 	}
 	return nil
 }
