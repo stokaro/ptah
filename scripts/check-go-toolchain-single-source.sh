@@ -52,11 +52,19 @@ if ((toolchain_count != 1)); then
 fi
 toolchain="$(awk '/^toolchain /{print $2; exit}' go.mod)"
 
-# D1: every setup-go step derives its version.
+# D1: every setup-go step derives its version, and derives it from THE source.
 #
 # The version key is read from the lines following `uses: actions/setup-go@`
 # until the step ends, so a third or fourth setup-go step in one file is seen --
 # the old check read one per file and was blind to the rest.
+#
+# Naming the file is not enough on its own: `go-version-file: testkit/go.mod`
+# derives honestly and still selects the wrong toolchain, because testkit is a
+# separately released module that carries a compatibility floor and no
+# `toolchain` directive, so setup-go would fall back to its `go` line. The job
+# would quietly build a patch release behind, which is the exact drift this gate
+# exists to stop. Only the root go.mod carries the toolchain, so only the root
+# go.mod is accepted.
 setup_go_steps=0
 derived_steps=0
 
@@ -65,11 +73,13 @@ while IFS=: read -r file line _; do
 
 	version_key=""
 	version_line=""
+	version_value=""
 	while IFS=: read -r hit_line hit_text; do
 		case "$hit_text" in
 		*go-version-file:*)
 			version_key="file"
 			version_line="$hit_line"
+			version_value="${hit_text#*go-version-file:}"
 			break
 			;;
 		*go-version:*)
@@ -86,9 +96,28 @@ while IFS=: read -r file line _; do
 		esac
 	done < <(awk -v start="$line" 'NR > start && NR <= start + 8 {print NR ":" $0}' "$file")
 
+	# Strip surrounding whitespace and quotes so 'go.mod', "go.mod" and go.mod
+	# are judged the same way.
+	version_value="$(printf '%s' "$version_value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+
 	case "$version_key" in
-	file | expression)
+	expression)
 		derived_steps=$((derived_steps + 1))
+		;;
+	file)
+		case "$version_value" in
+		go.mod | ./go.mod)
+			derived_steps=$((derived_steps + 1))
+			;;
+		*'${{'*)
+			# A composite action forwarding its caller's input.
+			derived_steps=$((derived_steps + 1))
+			;;
+		*)
+			fail "$file" "$version_line" \
+				"setup-go step reads '$version_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+			;;
+		esac
 		;;
 	literal)
 		fail "$file" "$version_line" \
