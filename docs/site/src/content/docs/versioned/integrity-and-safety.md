@@ -217,8 +217,7 @@ and it takes an `oci://` reference too:
 
 ```bash
 ptah migrations validate \
-  --dir oci://registry.example.com/acme/app-migrations:v1 \
-  --plain-http
+  --dir oci://registry.example.com/acme/app-migrations:v1
 ```
 
 It exits 0 when the artifact matches the sum it carries, 1 when a migration was
@@ -226,6 +225,14 @@ added, removed or edited out of band, and 2 when the artifact carries no sum at
 all. Earlier releases answered `stat oci://...: no such file or directory`
 here, which left the read-only integrity question answerable only by a verb
 that writes.
+
+HTTPS is the default here as everywhere else. `--plain-http` is registered on
+this verb too, and like every other registration it is only for an explicitly
+trusted local registry — never for a reference that looks like the one above.
+
+Because the reference above is a tag, a successful run also prints the
+movable-tag qualifier described below, naming the digest the tag resolved to. A
+digest-pinned reference prints nothing extra.
 
 That does not retire `--verify-sum` on the consuming verbs, and the reason is
 timing rather than coverage. `validate` resolves the reference in its own
