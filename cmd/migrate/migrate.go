@@ -96,6 +96,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
 	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return err
+	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
 		return err

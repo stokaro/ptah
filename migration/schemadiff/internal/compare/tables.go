@@ -5,8 +5,10 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -104,12 +106,12 @@ func TablesAndColumnsWithSemantics(
 	// Create maps for quick lookup
 	genTables := make(map[tableIdentity]goschema.Table)
 	for _, table := range generated.Tables {
-		genTables[newTableIdentity(table.Schema, table.Name, semantics)] = table
+		genTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 
 	dbTables := make(map[tableIdentity]types.DBTable)
 	for _, table := range database.Tables {
-		dbTables[newTableIdentity(table.Schema, table.Name, semantics)] = table
+		dbTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 	objectOwnedUniqueColumns := collectGeneratedObjectOwnedUniqueColumns(
 		generated,
@@ -119,13 +121,13 @@ func TablesAndColumnsWithSemantics(
 	// Find added and removed tables
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
-			diff.TablesAdded = append(diff.TablesAdded, table.QualifiedName())
+			diff.TablesAdded = append(diff.TablesAdded, tableDiffName(table.Schema, table.Name, dialect))
 		}
 	}
 
 	for identity, table := range dbTables {
 		if _, exists := genTables[identity]; !exists {
-			diff.TablesRemoved = append(diff.TablesRemoved, table.QualifiedName())
+			diff.TablesRemoved = append(diff.TablesRemoved, tableDiffName(table.Schema, table.Name, dialect))
 		}
 	}
 
@@ -188,4 +190,33 @@ func TablesAndColumnsWithSemantics(
 	sort.Slice(diff.TablesModified, func(i, j int) bool {
 		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName
 	})
+}
+
+// tableMapIdentity preserves SQLite's exact catalog bytes at the table-map
+// boundary. This path decides whether a table is added, removed, or paired for
+// comparison; trimming here can pair a virtual table named " docs " with the
+// distinct ordinary table docs before the exact removal name reaches the
+// planner. Other dialects retain the established comparison behavior.
+func tableMapIdentity(schema, name, dialect string, semantics identifier.Semantics) tableIdentity {
+	if platform.NormalizeDialect(dialect) != platform.SQLite {
+		return newTableIdentity(schema, name, semantics)
+	}
+	if schema == "" {
+		schema = semantics.DefaultSchema
+	}
+	return tableIdentity{
+		schema: semantics.TableIdentityKey(schema),
+		table:  semantics.TableIdentityKey(name),
+	}
+}
+
+// tableDiffName preserves the exact catalog identifier on SQLite. Quoted
+// leading and trailing whitespace is part of a SQLite table name; normalizing
+// it here can redirect an authorized DROP from a virtual table to a distinct
+// ordinary near-twin. Other dialects retain the established canonical spelling.
+func tableDiffName(schema, name, dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.SQLite {
+		return tableref.CanonicalExact(schema, name)
+	}
+	return types.QualifyTableName(schema, name)
 }

@@ -13,6 +13,21 @@ import (
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
+func TestValidateExplicitURLToggleRejectsMalformedSQLiteValue(t *testing.T) {
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	err := sqlitevirtual.ValidateExplicitURLToggle("sqlite://target.db")
+
+	qt.Assert(t, err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
+}
+
+func TestValidateExplicitURLToggleIgnoresOtherAndInvalidURLs(t *testing.T) {
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	qt.Assert(t, sqlitevirtual.ValidateExplicitURLToggle("postgres://localhost/database"), qt.IsNil)
+	qt.Assert(t, sqlitevirtual.ValidateExplicitURLToggle("not-a-url"), qt.IsNil)
+}
+
 // TestValidateComparison is the guard on the data-loss path measured for
 // stokaro/ptah#1028.
 //

@@ -135,6 +135,9 @@ func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
 }
 
 func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
