@@ -137,9 +137,15 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	// An oci:// --schema-file is resolved here, into a real local file, before
 	// anything classifies the value. See materializeOCISchemaFile for why the
 	// shared classifier is deliberately left alone.
-	if materialized, cleanup, err := materializeOCISchemaFile(cmd, opts); err != nil {
+	materialized, cleanup, err := materializeOCISchemaFile(cmd, opts)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
-	} else if cleanup != nil {
+	}
+	if cleanup != nil {
+		// Deliberately function-scoped rather than block-scoped: the
+		// materialized file has to outlive this block and be removed on every
+		// exit path below, including the ones that fail. A nil cleanup means
+		// nothing was materialized, so there is nothing to remove.
 		defer cleanup()
 		opts.schemaFile = materialized
 	}
