@@ -62,6 +62,31 @@ func TestMigrateBaselineDoesNotApplySQLiteToggleToPostgres(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `migrations directory is required`)
 }
 
+// TestMigrateBaselineRefusesMissingMigrationsDirectory keeps the refusal a
+// misspelled --migrations-dir has to produce, and keeps it naming the path.
+//
+// baseline reads a history it never creates, so the snapshot it captures must
+// not answer an absent directory with an empty one: the version scan would then
+// report "no migrations at or below <version>" and send the operator looking for
+// a missing migration rather than a missing directory.
+func TestMigrateBaselineRefusesMissingMigrationsDirectory(t *testing.T) {
+	c := qt.New(t)
+	missingDir := filepath.Join(t.TempDir(), "migrations")
+
+	cmd := migratebaseline.NewMigrateBaselineCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
+		"--migrations-dir", missingDir,
+		"--version", "1",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "read migration directory "+missingDir)
+}
+
 func TestMigrateBaselineCommand_PreservesStructuredShadowFailure(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()

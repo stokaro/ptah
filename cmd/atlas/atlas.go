@@ -310,7 +310,7 @@ func newAtlasMigrateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 			"checkpoint", "down", "edit", "push", "rebase", "rm", "test",
 		})
 	} else {
-		cmd.AddCommand(newAtlasMigrateDownCommand())
+		cmd.AddCommand(newAtlasMigrateDownCommand(policy))
 		for _, verb := range atlasMigrateForwardVerbs() {
 			cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 		}

@@ -6497,6 +6497,11 @@ type Options struct {
     // MigrationsDir is the directory containing migration files. It is required
     // only when a case has a migrate_to step.
     MigrationsDir string
+    // MigrationsFS is the immutable migration history used by every migrate_to
+    // step. When nil, MigrationsDir is opened for compatibility with existing
+    // embedders. Command callers should capture once, authorize that snapshot,
+    // and pass it here so test steps cannot reopen different bytes.
+    MigrationsFS fs.FS
     // RootDir is a directory of Go entity annotations describing the desired
     // schema. It is required only when a case has an apply_schema step.
     RootDir string
@@ -6681,7 +6686,7 @@ func (c SkippedChange) Comment() string
 ## go.5x5.cz/ptah/migration/generator
 
 const AtlasCheckpointDirective = "-- atlas:checkpoint"
-var ErrMigrationDirectoryChanged = errors.New("migration directory changed after migration planning") ...
+var ErrMigrationDirectoryChanged = errors.New("migration directory changed before publication") ...
 func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string)
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
@@ -6691,7 +6696,9 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error)
+func WriteAtlasCheckpointFileWithOptions(outputDir string, version int64, description, upSQL string, ...) (path string, err error)
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
+func WriteCheckpointFilesWithOptions(outputDir string, version int64, description, upSQL, downSQL string, ...) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 type BaselineShadowVerifyOptions struct{ ... }
 type BidirectionalPlanPolicy struct{ ... }
@@ -6699,6 +6706,7 @@ type BidirectionalSchemaPlan struct{ ... }
     func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
 type BidirectionalSchemaPlanOptions struct{ ... }
 type CheckpointFromShadowOptions struct{ ... }
+type CheckpointWriteOptions struct{ ... }
 type ConcurrentIndexMode uint8
     const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
@@ -6724,13 +6732,16 @@ type BaselineShadowVerifyOptions struct {
     ShadowDatabaseURL string
     TargetConn        *dbschema.DatabaseConnection
     MigrationsDir     string
-    Version           int64
-    Dialect           string
-    Capabilities      capability.Capabilities
-    CompareOptions    *config.CompareOptions
-    Schemas           []string
-    ProviderOptions   []migrator.FSProviderOption
-    ConnectTimeout    time.Duration
+    // MigrationsFS is the immutable migration history to replay. When nil,
+    // MigrationsDir is opened for compatibility with existing embedders.
+    MigrationsFS    fs.FS
+    Version         int64
+    Dialect         string
+    Capabilities    capability.Capabilities
+    CompareOptions  *config.CompareOptions
+    Schemas         []string
+    ProviderOptions []migrator.FSProviderOption
+    ConnectTimeout  time.Duration
 }
     BaselineShadowVerifyOptions configures shadow verification before metadata
     baselining.
@@ -6799,6 +6810,9 @@ type CheckpointFromShadowOptions struct {
     ShadowDatabaseURL string
     // MigrationsDir is the directory whose entire history is replayed.
     MigrationsDir string
+    // MigrationsFS is the immutable migration history to replay. When nil,
+    // MigrationsDir is opened for compatibility with existing embedders.
+    MigrationsFS fs.FS
     // Dialect, when set, must match the shadow database dialect. When empty the
     // shadow database's dialect is used.
     Dialect string
@@ -6820,6 +6834,20 @@ type CheckpointFromShadowOptions struct {
     SchemaQualifier string
 }
     CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
+
+
+### go.5x5.cz/ptah/migration/generator.CheckpointWriteOptions
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type CheckpointWriteOptions struct {
+    // AuthorizedMigrationsFS is the immutable migration history that produced
+    // the checkpoint body. When non-nil, the writer refuses if the bound output
+    // directory no longer contains exactly that history before publication.
+    AuthorizedMigrationsFS fs.FS
+}
+    CheckpointWriteOptions supplies the state a checkpoint writer must preserve
+    while it adds the checkpoint and refreshes the directory integrity file.
 
 
 ### go.5x5.cz/ptah/migration/generator.ConcurrentIndexMode
@@ -6920,6 +6948,12 @@ type GenerateMigrationOptions struct {
     // migrations from OutputDir, applies the candidate migration, re-introspects
     // the result, and aborts if it differs from the Go schema.
     ShadowDatabaseURL string
+    // PriorMigrationsFS supplies the immutable, already-authorized migration
+    // history used by shadow verification or another replay-based caller. When
+    // set, publication also refuses if OutputDir no longer matches this snapshot,
+    // so generating a fresh checksum cannot legitimize history that changed
+    // after the caller's integrity decision.
+    PriorMigrationsFS fs.FS
     // DiffPolicy controls which changes the planner emits: destructive change
     // kinds to skip and whether to create new indexes concurrently. The zero
     // value applies no policy. Skipping a destructive change omits it from the

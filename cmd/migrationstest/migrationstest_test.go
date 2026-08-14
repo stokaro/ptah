@@ -159,6 +159,33 @@ func TestMigrationsTestCommand_NoCasesFound(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "no test cases found")
 }
 
+// TestMigrationsTestCommand_RefusesMissingMigrationsDirectory pins the failure
+// a typo in --migrations-dir has to produce.
+//
+// `migrations test` reads a directory it never creates, so an absent one is a
+// mistake, not an empty history. A snapshot that answered "no migrations" for a
+// path that is not there would report a green `migrate_to: latest` step having
+// executed nothing at all, and a suite whose only step is that one would pass
+// while testing a directory the operator misspelled.
+func TestMigrationsTestCommand_RefusesMissingMigrationsDirectory(t *testing.T) {
+	c := qt.New(t)
+	testsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "cases.yaml"), []byte(
+		"cases:\n"+
+			"  - name: migrations apply cleanly\n"+
+			"    steps:\n"+
+			"      - name: migrate\n"+
+			"        migrate_to: latest\n"), 0o600), qt.IsNil)
+	missingDir := filepath.Join(t.TempDir(), "migrations")
+
+	out, err := runTestCommand("--dir", testsDir, "--migrations-dir", missingDir, "--dir-format", "ptah")
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Contains, "read migration directory")
+	c.Assert(err.Error(), qt.Contains, missingDir)
+	c.Assert(out, qt.Not(qt.Contains), "1 passed")
+}
+
 func TestMigrationsTestCommand_RejectsUnsupportedReport(t *testing.T) {
 	c := qt.New(t)
 	_, err := runTestCommand("--dir", t.TempDir(), "--report", "xml")

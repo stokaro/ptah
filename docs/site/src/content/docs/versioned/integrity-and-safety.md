@@ -77,6 +77,17 @@ noticed:
 | `baseline` | the baselined history, against `--shadow-db` |
 | `lint` | the whole history, against `--dev-url` |
 | `repair --resume-from` | the remaining statements of the body that failed |
+| `generate --replay` | the current schema history, against `--dev-url` |
+| `generate --shadow-db` | prior history before candidate verification |
+
+Each replaying command captures the migration directory once, verifies that
+snapshot, and executes those same bytes. A generation or checkpoint writer
+also compares the directory it is about to update with the authorized snapshot
+before it adds files, and a checkpoint writer compares the expected
+snapshot-plus-checkpoint again before publishing the sum. The sum is computed
+from that authorized expected state rather than from a newly reopened path. A
+change during the run is refused; the new checksum cannot legitimize history
+the command did not verify and replay.
 
 `repair` is on that list only in its `--resume-from` spelling, and the
 distinction is deliberate. A plain `repair` rewrites revision metadata and
@@ -117,6 +128,12 @@ It is an environment variable rather than a flag because the Atlas-compatible
 surface asserts flag parity with the community binary, the same reason
 `PTAH_SKIP_CHECKS` is spelled that way.
 
+The command that owns a replay gate parses this variable at entry, before
+argument validation, directory access, or a database connection. A present
+empty value or another invalid boolean is therefore always an error; it cannot
+hide behind a dry run, a missing required flag, or a branch that happens not to
+reach the integrity check.
+
 Using it is never silent. A run that overrides a real refusal says so on stderr
 and names what it accepted:
 
@@ -147,6 +164,13 @@ inside a directory that verifies clean — the laundering shape recorded for
 `migrate import` in [#1095](https://github.com/stokaro/ptah/issues/1095). All
 six verbs refuse before anything is written, which is what the pinned Atlas
 community binary v1.3.0 does on the same directory.
+
+The fuller compatibility surface also gates formatted `migrate down`. Its
+default policy matches native Ptah: an unhashed directory is allowed, a stale
+sum is refused, and `PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1` permits an explicit
+recovery with the warning above. Strict CE mode rejects the extension variable
+and does not expose a successful `down` implementation, so the escape hatch
+cannot make the strict surface more permissive than Atlas CE.
 
 ### The sum file has to agree with itself, too
 

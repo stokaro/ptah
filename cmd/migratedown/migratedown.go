@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/generator"
@@ -192,6 +193,10 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 }
 
 func migrateDownCommand(cmd *cobra.Command, opts *options) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return err
@@ -267,8 +272,12 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// verification through a movable OCI tag actually established, which is the
 	// same sentence `up` prints — shared, not copied, so the destructive verb
 	// cannot end up saying less than the constructive one again.
+	//
+	// integrityPolicy was resolved at the command boundary, above, so the
+	// escape hatch is decided once for the whole invocation rather than read
+	// again here.
 	if err := migrationsource.Verify(
-		cmd.ErrOrStderr(), emit, runtime, source, dirFormat,
+		cmd.ErrOrStderr(), emit, runtime, source, dirFormat, integrityPolicy,
 		migrationsource.VerifyOptions{RequireSum: opts.verifySum, Verbose: opts.verbose},
 	); err != nil {
 		return err
