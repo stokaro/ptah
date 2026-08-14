@@ -185,13 +185,17 @@ refused however it is set.
   the comparison and `ptah schema apply` dropped every one of those tables at
   exit 0, after which `MATCH` answered `SQL logic error`; the `fts5` control
   reported a synced schema and changed nothing. A comparison whose database
-  side holds a virtual table this build cannot load is now refused **when it
-  could plan a drop** — that is, when some live table in it is one the desired
-  side does not name. The refusal survives excluding the virtual table, because
-  the tables at risk are not the one an operator would exclude; but a narrowing
-  that leaves nothing droppable, such as `--include users`, runs normally, and
-  so do two databases that both hold the same index. A read still succeeds and
-  prints a note naming the virtual tables the rendered document still contains. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
+  side holds a virtual table this build cannot load is now refused **when the
+  plan could act on such a table** — when some live table in it is one the
+  desired side does not name, or names with a different column list, since a
+  `DROP TABLE` and the rebuild SQLite uses in place of an `ALTER` destroy the
+  module's storage equally. The refusal survives excluding the virtual table,
+  because the tables at risk are not the one an operator would exclude; but a
+  narrowing that leaves nothing the plan can touch, such as `--include users`,
+  runs normally, and so do two databases that both hold the same index. A read
+  still succeeds and prints a note, naming the virtual tables the rendered
+  document still contains, or warning without a name where a projection dropped
+  them and left their storage behind. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
   restores the old comparison for an operator who wants it — two databases that
   both already hold the same `fts4` index then compare normally and report a
   synced schema. Separately, **adding** such a table has no opt-in: a plan

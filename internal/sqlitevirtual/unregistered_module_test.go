@@ -339,6 +339,55 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			// THE ALTER ROW. Both sides name every table, so nothing is
+			// dropped -- but they describe `docs_content` differently, and the
+			// comparator plans the change. On SQLite that means a table
+			// rebuild, which destroys the module's storage exactly as
+			// thoroughly as dropping it. Raised in review as the residue of
+			// gating on removal alone.
+			name:    "a declared table described differently is still refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaringVirtualWithTable(
+				"docs", "fts4", "title, body",
+				"docs_content", []string{"docid", "c0title"},
+			),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+					{Name: "docs_content", Columns: []types.DBColumn{
+						{Name: "docid"}, {Name: "c0title"}, {Name: "c1body"},
+					}},
+				},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"does not register"},
+		},
+		{
+			// Its control: the same pair with the column lists agreeing plans
+			// nothing and is not refused. Without this row the row above would
+			// pass for a validator that refuses every fts4 database again.
+			name:    "a declared table described identically is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaringVirtualWithTable(
+				"docs", "fts4", "title, body",
+				"docs_content", []string{"docid", "c0title", "c1body"},
+			),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+					{Name: "docs_content", Columns: []types.DBColumn{
+						{Name: "docid"}, {Name: "c0title"}, {Name: "c1body"},
+					}},
+				},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr: false,
+		},
+		{
 			// The control that keeps the row above from being a hole: add one
 			// live table the desired side does not name -- which is what
 			// `--exclude docs` leaves behind on a real fts4 database -- and the
@@ -415,6 +464,33 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 	}
 }
 
+// declaringVirtualWithTable builds a desired state holding a virtual table and
+// one ordinary table with the named columns, which is what a database URL on
+// the desired side produces for a database whose module this build cannot load:
+// the virtual table, and the module's storage described as an ordinary one.
+func declaringVirtualWithTable(
+	virtualName, module, arguments string,
+	tableName string,
+	columns []string,
+) *goschema.Database {
+	fields := make([]goschema.Field, 0, len(columns))
+	for _, column := range columns {
+		fields = append(fields, goschema.Field{StructName: tableName, Name: column})
+	}
+	return &goschema.Database{
+		Tables: []goschema.Table{
+			{
+				StructName:       virtualName,
+				Name:             virtualName,
+				VirtualModule:    module,
+				VirtualArguments: arguments,
+			},
+			{StructName: tableName, Name: tableName},
+		},
+		Fields: fields,
+	}
+}
+
 // TestValidateToggleResolvesBothOwnedVariables keeps a typo in the newer opt-in
 // from staying dormant.
 //
@@ -469,6 +545,7 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		name         string
 		schema       *types.DBSchema
 		wantContains []string
+		wantAbsent   []string
 		wantSilent   bool
 	}{
 		{
@@ -509,17 +586,24 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			wantContains: []string{`"docs" (module fts4)`, `"legacy" (module fts3)`, "fts3, fts4"},
 		},
 		{
-			// Selection runs before the note. A table the projection dropped is
-			// not in the document, so naming it would send a reader looking for
-			// a statement that is not there. Measured on the command:
-			// `schema inspect --include users` against an fts4 database renders
-			// only `users` and now says nothing.
-			name: "a table the projection dropped is not named",
+			// Selection runs before the note, and the two projections it can
+			// produce need opposite things said. Here the virtual table is gone
+			// from the document, so naming it would send a reader looking for a
+			// statement that is not there -- but staying silent is worse, since
+			// `--exclude docs` leaves the module's storage in the document as
+			// ordinary CREATE TABLEs with nothing said. The note keeps the
+			// warning and drops the name.
+			name: "a projection that dropped the virtual table still warns, without naming it",
 			schema: &types.DBSchema{
 				Tables:                    []types.DBTable{{Name: "users"}},
 				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
 			},
-			wantSilent: true,
+			wantContains: []string{
+				"this description was narrowed",
+				"module fts4",
+				"cannot tell whether any of the ordinary tables below are the module's private storage",
+			},
+			wantAbsent: []string{`virtual table "docs"`},
 		},
 		{
 			// A document with no tables in it has no statements to warn about.
@@ -544,6 +628,9 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			c.Assert(out.String() == "", qt.Equals, tt.wantSilent)
 			for _, fragment := range tt.wantContains {
 				c.Assert(out.String(), qt.Contains, fragment)
+			}
+			for _, fragment := range tt.wantAbsent {
+				c.Assert(out.String(), qt.Not(qt.Contains), fragment)
 			}
 		})
 	}

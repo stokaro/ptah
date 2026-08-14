@@ -337,12 +337,13 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 // `SQL logic error`. Refused, waivable by [AllowUnregisteredModuleEnvVar],
 // because comparing such a database is something an operator could do before.
 //
-// It fires only when the comparison can actually plan that removal -- when some
-// live table in it is one the desired side does not name. That condition is
-// decidable without knowing WHICH tables are the module's, which is the whole
-// difficulty: a `DROP TABLE` is only ever planned for a live table the desired
-// state leaves out, so if there is no such table there is no drop, and no
-// module storage can be destroyed however badly Ptah has misclassified it.
+// It fires only when the comparison can actually act on such a table -- when
+// some live table in it is one the desired side does not name, or names with a
+// different column list. That condition is decidable without knowing WHICH
+// tables are the module's, which is the whole difficulty: the planner only
+// touches a live table that is missing from the desired state or described
+// differently there, so if no live table is in either position, nothing is
+// planned against any of them however badly Ptah has misclassified them.
 //
 // Scoping is what makes the distinction matter. Measured: `--include users`
 // against an fts4 database narrows the comparison to `users` alone and plans
@@ -383,7 +384,7 @@ func validateDatabaseIsClassifiable(
 	if len(unclassified) == 0 {
 		return nil
 	}
-	if !someLiveTableIsUndeclared(desired, database, semantics) {
+	if !someLiveTableCouldChange(desired, database, semantics) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -444,9 +445,26 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 	)
 }
 
-// someLiveTableIsUndeclared reports whether the comparison still holds a live
-// table the desired side does not name -- the one shape that plans a
-// `DROP TABLE`, and therefore the one that can destroy a module's storage.
+// someLiveTableCouldChange reports whether the comparison holds a live table
+// the plan could act on -- one the desired side does not name, or names with a
+// different column list.
+//
+// Both halves matter and they were found one after the other. The first is the
+// `DROP TABLE` measured on stokaro/ptah#1028. The second was raised in review:
+// two database-backed states can name the same storage table and describe it
+// differently, and the comparator then plans `ALTER TABLE` -- or on SQLite the
+// rebuild that stands in for one -- against module-owned storage, which
+// corrupts the index exactly as thoroughly as dropping it.
+//
+// Column NAMES are compared, and their order, not their types. That is
+// deliberate. The question this answers is "could the plan touch this table",
+// and a false yes costs an operator a refusal they did not need -- which is the
+// defect the reachability gate was added to fix. Type spellings are where two
+// models legitimately differ (`INTEGER` against `integer`), and normalizing
+// them here would be a second, drifting copy of the comparator's own rules. A
+// type-only change to a table that is really module storage is the residue, and
+// it is a narrow one: both sides of such a comparison are read by the same
+// reader, which gives the same type text for the same column.
 //
 // It joins on the comparator's own table identity rather than on a second
 // spelling of the rule, for the reason [identity] gives: SQLite folds ASCII
@@ -457,7 +475,7 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // answer is true for any non-empty database. That is the same reading
 // [pairSides] gives it, and it keeps a nil desired state from being mistaken
 // for one that declared everything.
-func someLiveTableIsUndeclared(
+func someLiveTableCouldChange(
 	desired *goschema.Database,
 	database *types.DBSchema,
 	semantics identifier.Semantics,
@@ -465,18 +483,50 @@ func someLiveTableIsUndeclared(
 	if database == nil {
 		return false
 	}
-	declared := make(map[string]struct{})
-	if desired != nil {
-		for _, table := range desired.Tables {
-			declared[identity(table.Schema, table.Name, semantics)] = struct{}{}
-		}
-	}
+	declared := desiredColumnsByTable(desired, semantics)
 	for _, table := range database.Tables {
-		if _, ok := declared[identity(table.Schema, table.Name, semantics)]; !ok {
+		wanted, ok := declared[identity(table.Schema, table.Name, semantics)]
+		if !ok {
+			return true
+		}
+		if !slices.Equal(wanted, liveColumnNames(table, semantics)) {
 			return true
 		}
 	}
 	return false
+}
+
+// desiredColumnsByTable indexes the desired side's column names by table
+// identity. A declared table with no fields maps to an empty list, which is
+// what a virtual table looks like on both sides and must compare equal.
+func desiredColumnsByTable(
+	desired *goschema.Database,
+	semantics identifier.Semantics,
+) map[string][]string {
+	declared := make(map[string][]string)
+	if desired == nil {
+		return declared
+	}
+	columnsByStruct := make(map[string][]string)
+	for _, field := range desired.Fields {
+		columnsByStruct[field.StructName] = append(
+			columnsByStruct[field.StructName],
+			semantics.TableIdentityKey(field.Name),
+		)
+	}
+	for _, table := range desired.Tables {
+		key := identity(table.Schema, table.Name, semantics)
+		declared[key] = columnsByStruct[table.StructName]
+	}
+	return declared
+}
+
+func liveColumnNames(table types.DBTable, semantics identifier.Semantics) []string {
+	names := make([]string, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		names = append(names, semantics.TableIdentityKey(column.Name))
+	}
+	return names
 }
 
 // liveUnregistered lists the database side's unclassifiable virtual tables.
@@ -713,37 +763,52 @@ func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
 	if w == nil || schema == nil || len(schema.UnregisteredVirtualTables) == 0 {
 		return
 	}
-	// Only the tables the document still contains are named, because the note
-	// names them and a reader cannot look up a name that is not there.
-	// Selection runs before this: `--include users` renders a document with no
-	// virtual table in it at all, and a note saying `virtual table "docs" ...
-	// this description reports them as ordinary tables` then describes a
-	// rendering that does not exist. An empty document falls out of the same
-	// rule and says nothing.
+	// A document with no tables in it has no statements to warn about, and
+	// selection can produce one: `--include` naming something the database does
+	// not have renders nothing, and a note beside an empty rendering describes
+	// a document that does not exist.
+	if len(schema.Tables) == 0 {
+		return
+	}
+
+	// Which virtual tables the document still contains decides WHICH note, not
+	// whether there is one. Selection runs before this, and the two projections
+	// it can produce need opposite things said:
 	//
-	// The residue is a read-surface one and is smaller than the alternative. A
-	// projection that drops the virtual table while keeping its storage --
-	// `--exclude docs` -- goes unmentioned, so an operator who replays that
-	// document creates the module's tables as ordinary ones. They removed
-	// `docs` by name, so they know it is there; whereas naming a table the
-	// document does not contain sends every other reader looking for it.
+	//   - the virtual table survived: name it, because the reader can see it
+	//     and the tables around it are the module's;
+	//   - the virtual table was projected out -- `--exclude docs` -- but the
+	//     module's storage was not, because nothing marked it. Naming `docs`
+	//     here would send the reader looking for a statement that is not in the
+	//     document, so the note says what is true instead: this description was
+	//     narrowed, and Ptah cannot tell whether the module's tables are still
+	//     in it. Suppressing it entirely was worse, and was raised in review:
+	//     replaying that document creates module-private tables with nothing
+	//     said at all.
 	semantics := identifier.ForDialect(platform.SQLite)
 	present := make(map[string]struct{}, len(schema.Tables))
 	for _, table := range schema.Tables {
 		present[identity(table.Schema, table.Name, semantics)] = struct{}{}
 	}
-	unclassified := make([]Table, 0, len(schema.UnregisteredVirtualTables))
+	rendered := make([]Table, 0, len(schema.UnregisteredVirtualTables))
+	all := make([]Table, 0, len(schema.UnregisteredVirtualTables))
 	for _, table := range schema.UnregisteredVirtualTables {
-		if _, ok := present[identity(table.Schema, table.Name, semantics)]; !ok {
-			continue
+		named := Table{Schema: table.Schema, Name: table.Name, Module: table.Module}
+		all = append(all, named)
+		if _, ok := present[identity(table.Schema, table.Name, semantics)]; ok {
+			rendered = append(rendered, named)
 		}
-		unclassified = append(unclassified, Table{
-			Schema: table.Schema,
-			Name:   table.Name,
-			Module: table.Module,
-		})
 	}
-	if len(unclassified) == 0 {
+	if len(rendered) == 0 {
+		fmt.Fprintf(w,
+			"note: this description was narrowed, and the database it came from uses %s %s this build"+
+				" does not register. SQLite could not mark the tables %s owns, so Ptah cannot tell"+
+				" whether any of the ordinary tables below are the module's private storage. Applying"+
+				" them would create tables the module creates itself.\n",
+			moduleNoun(len(distinctModules(all))),
+			modulesOf(all),
+			pronounFor(len(distinctModules(all))),
+		)
 		return
 	}
 	fmt.Fprintf(w,
@@ -751,12 +816,21 @@ func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
 			" tables that %s owns and this description reports them as ordinary tables. Applying it"+
 			" creates tables the module creates itself, and comparing it can plan their removal. Set"+
 			" %s=1 to compare anyway.\n",
-		noun(len(unclassified)),
-		names(unclassified),
-		useVerb(len(unclassified)),
-		modulesOf(unclassified),
+		noun(len(rendered)),
+		names(rendered),
+		useVerb(len(rendered)),
+		modulesOf(rendered),
 		AllowUnregisteredModuleEnvVar,
 	)
+}
+
+// pronounFor agrees with a module count the way [pronoun] agrees with a table
+// count.
+func pronounFor(count int) string {
+	if count == 1 {
+		return "it"
+	}
+	return "they"
 }
 
 func useVerb(count int) string {

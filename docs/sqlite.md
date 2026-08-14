@@ -167,10 +167,25 @@ description reports them as ordinary tables.
 ```
 
 The exit code and standard output are untouched, so a pipeline that captures
-the document keeps working. The note names only the virtual tables the rendered
-document still contains, so a selection that dropped them — `--include users`,
-say — renders no note either. What a comparison does with such a database is the
-subject of the next section, and it is not a note.
+the document keeps working.
+
+The note describes the document that was rendered, so selection changes what it
+says. Where the virtual table survived the projection it is named, as above.
+Where a projection dropped it but the description is not empty — `--exclude
+docs` leaves the module's storage behind as ordinary `CREATE TABLE` statements —
+the note keeps the warning and drops the name, because naming a table the
+document does not contain sends the reader looking for a statement that is not
+there:
+
+```text
+note: this description was narrowed, and the database it came from uses module
+fts4 this build does not register. SQLite could not mark the tables it owns, so
+Ptah cannot tell whether any of the ordinary tables below are the module's
+private storage.
+```
+
+An empty description says nothing at all. What a comparison does with such a
+database is the subject of the next section, and it is not a note.
 
 ## Virtual Tables in a Comparison
 
@@ -262,12 +277,15 @@ There is no safe exclusion to suggest, because naming the tables to exclude
 requires the module that is missing. Ptah says what it cannot determine instead
 of advising something that destroys data.
 
-The refusal fires only when the comparison can actually plan that removal —
-when some live table in it is one the desired side does not name. That is
-decidable without knowing which tables belong to the module, which is the whole
-difficulty: a `DROP TABLE` is only ever planned for a live table the desired
-state leaves out, so where there is no such table there is no drop and no
-storage can be destroyed. Two consequences worth knowing:
+The refusal fires only when the comparison can actually act on such a table —
+when some live table in it is one the desired side does not name, **or names
+with a different column list**. That is decidable without knowing which tables
+belong to the module, which is the whole difficulty: the planner only touches a
+live table that is missing from the desired state or described differently
+there, so where no live table is in either position, nothing is planned against
+any of them. Both halves matter — a `DROP TABLE` and the rebuild SQLite uses in
+place of an `ALTER` destroy a module's storage equally thoroughly. Two
+consequences worth knowing:
 
 - `--include users` narrows the comparison to one table the desired side names.
   Nothing is droppable, so the comparison runs — measured as
@@ -278,10 +296,14 @@ storage can be destroyed. Two consequences worth knowing:
 `--exclude docs` is the opposite case and stays refused, because it leaves the
 module's storage tables in the comparison with nothing naming them.
 
-One residue is stated rather than hidden: a desired state that *does* name such
-a table, with a different shape, can still plan an `ALTER` against module
-storage. Bounding that would require knowing which tables are the module's, and
-nothing can. This check bounds the destruction that was measured.
+Column **names** are compared, and their order, not their types. A false alarm
+costs an operator a refusal they did not need — the defect this gate was added
+to fix — and type spellings are where two models legitimately differ
+(`INTEGER` against `integer`); normalizing them here would be a second, drifting
+copy of the comparator's rules. A type-only change to a table that is really
+module storage is the residue, and it is narrow: both sides of such a
+comparison are read by the same reader, which gives the same type text for the
+same column.
 
 Two ways forward:
 
