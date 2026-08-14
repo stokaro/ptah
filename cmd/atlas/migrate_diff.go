@@ -140,6 +140,9 @@ func runAtlasMigrateDiff(
 	name string,
 	run atlasMigrateDiffRunner,
 ) (runErr error) {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	// dirURLSpelled is --dir as the command line, its environment twin and the
 	// flag default left it, captured before the atlas.hcl merge below can
