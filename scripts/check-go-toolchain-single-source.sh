@@ -348,8 +348,14 @@ fi
 # An input with no default at all is fine and is not a finding: GitHub hands an
 # unset input to the step as the empty string, which is the intended value here.
 # D2b separately requires the go-version-file input to declare one.
+forwarded_file_manifests=""
+forwarded_file_roots=""
+
 while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
 	[[ -n $forwarding_manifest && -n $forwarded_key && -n $forwarded_input ]] || continue
+	if [[ $forwarded_key == file ]]; then
+		forwarded_file_manifests="${forwarded_file_manifests}${forwarding_manifest}"$'\n'
+	fi
 	default_row="$(awk -v want="$forwarded_input" '
 		/^inputs:/ { in_inputs = 1; next }
 		/^[^[:space:]#]/ { in_inputs = 0 }
@@ -377,7 +383,10 @@ while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
 		# must name the one that carries the toolchain. Empty is fine -- the
 		# step then selects nothing through this key.
 		case "$default_clean" in
-		"" | go.mod | ./go.mod) ;;
+		"") ;;
+		go.mod | ./go.mod)
+			forwarded_file_roots="${forwarded_file_roots}${forwarding_manifest}"$'\n'
+			;;
 		*)
 			fail "$forwarding_manifest" "${default_row%%:*}" \
 				"input '$forwarded_input' is forwarded to setup-go's go-version-file and defaults to '$default_clean', which is not the module that declares the toolchain. Default it to 'go.mod'; only the root go.mod carries 'toolchain $toolchain'."
@@ -392,6 +401,28 @@ while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
 		esac
 	fi
 done < <(printf '%s' "$forwarded_inputs" | sort -u)
+
+# D1d: something a forwarded go-version-file reaches actually names the module.
+#
+# The rule above judges each referenced input on its own, and "empty is fine" is
+# right for each of them individually: the manifest's real expression reads
+# `inputs.go-version == '' && inputs.go-version-file || ''`, so go-version is
+# referenced from the file key as a CONDITION and defaults to empty. But a rule
+# that only ever says "not wrong" can be satisfied by a set in which NOTHING is
+# right -- forward `${{ inputs.modfile }}` and declare that input with no default
+# at all, and every referenced default is acceptably empty while the step selects
+# no module whatsoever.
+#
+# Telling a condition operand from a value operand needs a real expression
+# parser, so the requirement is stated over the whole set instead: at least one
+# input a step forwards to go-version-file must default to the root go.mod.
+while IFS= read -r forwarding_manifest; do
+	[[ -n $forwarding_manifest ]] || continue
+	if ! printf '%s' "$forwarded_file_roots" | grep -qxF -- "$forwarding_manifest"; then
+		fail "$forwarding_manifest" "1" \
+			"this action forwards its go-version-file from inputs, but no forwarded input defaults to 'go.mod'. The forwarded value is opaque, so a default naming the root module is the only thing left that makes the step read the module carrying the toolchain."
+	fi
+done < <(printf '%s' "$forwarded_file_manifests" | sort -u)
 
 # D2: no version-shaped default in a composite action.
 #
