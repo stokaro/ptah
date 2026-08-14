@@ -57,6 +57,35 @@
 // declaration stay refused however it is set, because no value of an
 // environment variable makes the planner able to convert one object into
 // another.
+//
+// # When the module is not registered
+//
+// Everything above assumes the description is right about which tables are
+// tables, and where the module is missing it is not. SQLite marks a table
+// `shadow` only while the module that owns it is loaded, so a build without
+// `fts4` describes that module's five storage tables as ordinary user tables --
+// and a desired state that does not name them reads as a request to drop them.
+// Measured: `--exclude docs`, the remedy the removal refusal printed, planned
+// and executed five `DROP TABLE` statements at exit 0 and left `MATCH`
+// answering `SQL logic error`.
+//
+// So a comparison over such a database is refused BEFORE any of the cases above
+// are classified, and the refusal does not suggest an exclusion, because the
+// tables at risk are not the one an operator would exclude and Ptah cannot list
+// them without the module. It is waivable by
+// [AllowUnregisteredModuleEnvVar], which restores what Ptah did before.
+//
+// It fires only when the plan could act on such a table -- when some live table
+// is one the desired side does not name, or names with a different column list.
+// That is decidable without identifying the module's tables, which is the whole
+// difficulty, and it is what keeps a narrowed comparison such as
+// `--include users` running: nothing in it is droppable or alterable, so
+// nothing can be destroyed however badly Ptah has misclassified it.
+//
+// Adding a virtual table whose module is absent is refused separately and with
+// no opt-in, because the `CREATE VIRTUAL TABLE` a plan would carry fails with
+// `no such module`. That check belongs to the addition branch alone: two states
+// that both already hold the table plan no such statement.
 package sqlitevirtual
 
 import (
