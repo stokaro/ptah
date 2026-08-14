@@ -62,7 +62,7 @@ func LoadAtlasFileCollectionWithOptions(
 	// point makes would never run and a malformed [IgnoreEnvSchemasEnvVar] value
 	// would be honored as its default on exactly the projects that have no
 	// config file. Resolving here refuses it whatever the file system holds.
-	if _, err := ignoreEnvSchemas.Resolve(); err != nil {
+	if err := ValidateAtlasEnvironmentVariables(); err != nil {
 		return nil, err
 	}
 	absolute, err := filepath.Abs(path)
