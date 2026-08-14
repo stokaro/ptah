@@ -23,8 +23,6 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/deploymentreport"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
@@ -144,9 +142,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		&opts.verifySum,
 		verifySumFlag,
 		false,
-		"Require a sum file: a missing ptah.sum or atlas.sum is an error (hashed directories always "+
-			"verify before applying). A sum checks a directory against the sum stored beside it, so an "+
-			"oci:// tag source proves internal consistency only; pin a digest for authenticity",
+		migrationsource.VerifySumUsage(
+			"Require a sum file: a missing ptah.sum or atlas.sum is an error "+
+				"(hashed directories always verify before applying)",
+		),
 	)
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -168,7 +167,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before applying migrations; must return HTTP 200")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.BoolVar(&opts.skipReport, skipReportFlag, false, "Do not attach a deployment report after applying an OCI migration artifact")
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
@@ -568,10 +567,15 @@ func lintPathPrefixForSource(requested string, source migrationsource.Source) st
 }
 
 // runIntegrityGate verifies the resolved migration filesystem before anything
-// is applied and then qualifies what that verification established. Both the
-// --verify-sum branch and the always-on hashed branch check a directory
+// is applied and then qualifies what that verification established.
+//
+// Both contracts — the always-on hashed gate (#955) and the stricter
+// --verify-sum, where a MISSING sum file is itself an error — check a directory
 // against the sum stored beside it, so both get the same provenance qualifier
-// when the directory came from a movable OCI tag (#944).
+// when the directory came from a movable OCI tag (#944). They are one call
+// rather than two branches here because `up` holding a private copy of the
+// first is what let five other verbs execute directories `up` refused, and a
+// private copy of the second would have the same shape.
 func runIntegrityGate(
 	notice io.Writer,
 	emit cliobs.Emitter,
@@ -580,106 +584,10 @@ func runIntegrityGate(
 	format migrator.MigrationDirFormat,
 	opts *options,
 ) error {
-	var verifiedSumFile string
-	if opts.verifySum {
-		result, err := verifyMigrationIntegrity(source.FileSystem, format)
-		if err != nil {
-			return err
-		}
-		verifiedSumFile = result.SumFileName
-		if opts.verbose {
-			emit.Printf("%s verified: migrations directory is intact\n", verifiedSumFile)
-		}
-	} else {
-		// Integrity gate (#955): a hashed directory (ptah.sum or atlas.sum
-		// present) always verifies before anything is applied, so a tampered
-		// migration — including a tampered checkpoint — never executes. An
-		// unhashed directory keeps its ungated behavior; --verify-sum keeps
-		// its stricter contract that a missing sum file is itself an error.
-		hashedSumFile, err := verifyHashedMigrationIntegrity(notice, source.FileSystem, format)
-		if err != nil {
-			return err
-		}
-		verifiedSumFile = hashedSumFile
-	}
-	// Every error path returned above, so a run that refused to apply never
-	// reaches here and never qualifies a claim it did not make.
-	warning := mutableTagSumWarning(source, verifiedSumFile)
-	if warning == "" {
-		return nil
-	}
-	runtime.Logger().Warn(
-		"migration sum verified through a movable OCI tag",
-		"reference", source.OCI.Reference,
-		"digest", source.OCI.Descriptor.Digest.String(),
-		"sum_file", verifiedSumFile,
-	)
-	emit.Printf("Warning: %s\n", warning)
-	return nil
-}
-
-func verifyMigrationIntegrity(
-	fsys fs.FS,
-	format migrator.MigrationDirFormat,
-) (*migratesum.Result, error) {
-	result, err := migratesum.VerifyWithFormat(fsys, format)
-	if err != nil {
-		return nil, fmt.Errorf("migration sum verification failed: %w", err)
-	}
-	if !result.OK() {
-		return nil, fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
-	}
-	return result, nil
-}
-
-// verifyHashedMigrationIntegrity is the always-on apply gate for hashed
-// migration directories: when the filesystem carries the format's integrity
-// file (ptah.sum or atlas.sum), it must verify before anything is applied. An
-// unhashed directory passes without verification. Drift reporting matches
-// `ptah migrations validate` on the same directory. It returns the name of the
-// integrity file that verified, or the empty string when the directory was
-// never hashed and therefore nothing was checked.
-//
-// The rule itself now lives in [migrationintegrity.Gate] and is shared with
-// every other verb that executes migration SQL. It moved there rather than
-// being copied because `up` owning it privately is exactly what let
-// `migrations down`, `test`, `checkpoint` and `baseline` execute a directory
-// this branch refuses. The empty-string-means-nothing-verified contract is
-// unchanged, and it now also covers a run that used
-// [migrationintegrity.AllowUnverifiedEnvVar] to override a real failure — such
-// a run has verified nothing and must not go on to qualify a verification it
-// did not perform.
-func verifyHashedMigrationIntegrity(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
-	return migrationintegrity.Gate(notice, fsys, format)
-}
-
-// mutableTagSumWarning returns the provenance sentence a sum verification
-// cannot carry on its own, or the empty string when there is nothing to say.
-//
-// A sum file proves that a directory matches the sum recorded beside it. For a
-// local directory that sum was reviewed in version control next to the
-// migrations. For an OCI artifact the sum travels inside the artifact, so the
-// check is self-referential: anyone who can push to the repository can rewrite
-// the migrations, rehash them, and repoint a tag, and the verification still
-// passes over bytes nobody reviewed (#944). Only the reference's own shape
-// separates the two cases, so the warning fires exactly when a verification
-// actually ran and the reference was a tag rather than a digest.
-//
-// verifiedSumFile is the integrity file that verified; the empty string means
-// nothing was verified, so nothing was claimed and nothing needs qualifying.
-func mutableTagSumWarning(source migrationsource.Source, verifiedSumFile string) string {
-	if verifiedSumFile == "" || source.OCI == nil || source.OCI.PinnedByDigest {
-		return ""
-	}
-	return fmt.Sprintf(
-		"%s is a movable tag: %s travels inside the artifact, so verifying it proves the pulled "+
-			"files are internally consistent, not that they are the reviewed ones. "+
-			"This tag resolved to %s; pass %s to pin these exact bytes.",
-		source.OCI.Reference,
-		verifiedSumFile,
-		source.OCI.Descriptor.Digest.String(),
-		source.OCI.DigestReference,
-	)
+	return migrationsource.Verify(notice, emit, runtime, source, format, migrationsource.VerifyOptions{
+		RequireSum: opts.verifySum,
+		Verbose:    opts.verbose,
+	})
 }
 
 func publishDeploymentReportIfNeeded(

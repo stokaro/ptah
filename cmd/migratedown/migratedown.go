@@ -18,7 +18,6 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/generator"
@@ -44,6 +43,7 @@ const (
 	mySQLDumpToFlag          = "mysqldump-to"
 	webhookFlag              = "webhook"
 	plainHTTPFlag            = "plain-http"
+	verifySumFlag            = "verify-sum"
 )
 
 type options struct {
@@ -65,6 +65,7 @@ type options struct {
 	mySQLDumpTo          string
 	webhook              string
 	plainHTTP            bool
+	verifySum            bool
 	connectTimeout       string
 	configPath           string
 	envName              string
@@ -120,7 +121,16 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before rolling back migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before rolling back migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
+	flags.BoolVar(
+		&opts.verifySum,
+		verifySumFlag,
+		false,
+		migrationsource.VerifySumUsage(
+			"Require a sum file: a missing ptah.sum or atlas.sum is an error "+
+				"(hashed directories always verify before rolling back)",
+		),
+	)
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -249,7 +259,18 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// since stokaro/ptah#955; `down` did not, so a rewritten `_init.down.sql`
 	// under a stale ptah.sum executed at exit 0 while `up` on the same
 	// directory exited 2.
-	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), migrationsFS, dirFormat); err != nil {
+	//
+	// --verify-sum adds the half the always-on gate deliberately does not
+	// cover: a directory carrying NO sum passes the gate, because there is no
+	// recorded intent to compare it against, and until stokaro/ptah#928 item 4
+	// `down` had no spelling that could demand one. It also qualifies what a
+	// verification through a movable OCI tag actually established, which is the
+	// same sentence `up` prints — shared, not copied, so the destructive verb
+	// cannot end up saying less than the constructive one again.
+	if err := migrationsource.Verify(
+		cmd.ErrOrStderr(), emit, runtime, source, dirFormat,
+		migrationsource.VerifyOptions{RequireSum: opts.verifySum, Verbose: opts.verbose},
+	); err != nil {
 		return err
 	}
 
