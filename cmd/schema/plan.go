@@ -85,6 +85,9 @@ document without saving it.`,
 }
 
 func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

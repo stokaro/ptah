@@ -115,6 +115,12 @@ suppression asks SQLite rather than matching names: a table called `docs_data`
 that the operator created is reported as the user table it is, next to an FTS5
 index called `docs` whose own `docs_data` is not.
 
+An explicit user-created index on one of those shadow tables is refused during
+the read. Ptah cannot expose the module-owned table as an ordinary desired
+object, and omitting the index would claim a complete schema that cannot be
+replayed. SQLite's own autoindexes have no stored `CREATE INDEX` statement and
+do not trigger this refusal.
+
 One limit is worth knowing about the read: only the module can say which
 suffixes are its own, so shadow tables belonging to a module the reading build
 does not register — an `fts4` index in a database written elsewhere, for
@@ -150,6 +156,8 @@ Declarations are compared with the module name folded the way SQLite folds an
 identifier, and the module arguments compared verbatim: they are not SQL, only
 the module interprets them, and normalizing whitespace would equate
 `tokenize = 'a  b'` with `tokenize = 'a b'`, which are two different tokenizers.
+Catalog identifier bytes are preserved too. A quoted table named `" docs "`
+remains distinct from `docs`, and an authorized removal names only the former.
 
 Every refusal names the table and its module. Every verb that compares a live
 database is covered: `ptah schema apply`, `diff`, `compare`, `plan` and `drift`,
@@ -169,10 +177,15 @@ To proceed, say which one you meant:
   convert one object into another.
 
 An unset variable and an explicit false both keep the refusal. A value that is
-not a boolean is a configuration error. Every SQLite comparison, baseline, or
-checkpoint command and public migration-generator call reports it before
-resolving filesystem paths, loading a schema source, connecting to a database,
-or running SQL. Non-SQLite operations do not consult the variable.
+not a boolean is a configuration error. An explicit SQLite URL or dialect is
+validated before project configuration and command early returns. A SQLite URL
+selected by project configuration is validated immediately after the effective
+configuration merge and before source loading, path resolution, database, or
+SQL work. The public migration generator has no project-config merge and
+validates before resolving filesystem paths.
+`migrations checkpoint --dialect sqlite` validates before requiring the shadow
+URL, then validates the URL-derived dialect again when the URL exists.
+Non-SQLite operations do not consult the variable.
 
 ## ALTER TABLE Limits
 

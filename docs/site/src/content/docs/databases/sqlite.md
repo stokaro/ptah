@@ -103,6 +103,12 @@ would have created itself, which then collides when the virtual table is
 created. Suppression comes from SQLite's classification rather than from the
 names, so a `docs_data` an operator created is still reported as their table.
 
+An explicit user-created index on a shadow table is refused during the read.
+Ptah cannot expose the module-owned table as an ordinary desired object, and
+omitting the index would claim a complete schema that cannot be replayed.
+SQLite's own autoindexes have no stored `CREATE INDEX` statement and remain
+internal to the module.
+
 ## Virtual tables in a comparison
 
 No schema **document** can declare a virtual table. Go annotations, HCL, YAML
@@ -127,6 +133,8 @@ cannot express are refused:
 The module name is folded the way SQLite folds an identifier; the module
 arguments are compared verbatim, because only the module interprets them and
 normalizing whitespace would equate two different tokenizers.
+Catalog identifier bytes are preserved too: a quoted table named `" docs "`
+is distinct from `docs`, and an authorized removal targets only the former.
 
 Every verb that compares a live database is covered — `ptah schema apply`,
 `diff`, `compare`, `plan`, `drift`, and `ptah-compat schema diff`,
@@ -145,12 +153,17 @@ PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1 \
 ```
 
 An unset variable and an explicit false both keep the refusal. A value that is
-not a boolean is a configuration error. Every SQLite comparison, baseline, or
-checkpoint command and public migration-generator call reports it before
-resolving filesystem paths, loading a schema source, connecting to a database,
-or running SQL. Non-SQLite operations do not consult the variable. The opt-in
-covers only the first row of the table above — a kind collision and a changed
-declaration stay refused however it is set.
+not a boolean is a configuration error. An explicit SQLite URL or dialect is
+validated before project configuration and command early returns. A SQLite URL
+selected by project configuration is validated immediately after the effective
+configuration merge and before source loading, path resolution, database or SQL
+work. The public migration generator has no project-config merge and validates
+before resolving filesystem paths.
+`migrations checkpoint --dialect sqlite` validates before requiring the shadow
+URL, then validates the URL-derived dialect again when the URL exists.
+Non-SQLite operations do not consult the variable. The opt-in covers only the
+first row of the table above — a kind collision and a changed declaration stay
+refused however it is set.
 
 ## Virtual table limitations
 
@@ -160,6 +173,9 @@ declaration stay refused however it is set.
   table itself is still recognized and still round-trips. This is permanent
   because it is SQLite's own answer: no catalog field distinguishes a shadow
   table without the module.
+- A user-created index on a recognized shadow table is refused rather than
+  omitted. Ptah cannot replay that index without exposing the module-owned
+  table as an ordinary schema object.
 - A schema document cannot declare a virtual table, so a comparison whose
   desired side is a document can only refuse or be scoped past one. Two
   databases can be compared and found synced, but a changed declaration is

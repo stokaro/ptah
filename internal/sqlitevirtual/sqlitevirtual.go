@@ -69,6 +69,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
@@ -107,6 +108,24 @@ func ValidateToggle(dialect string) error {
 	}
 	_, err := DropAllowed()
 	return err
+}
+
+// ValidateExplicitURLToggle resolves [AllowDropEnvVar] when databaseURL
+// already identifies SQLite. Invalid and empty URLs are left to the owning
+// command's normal URL validation so this preflight changes only the ordering
+// of a known SQLite configuration error.
+//
+// Native commands call this before loading project configuration. An explicit
+// target URL, such as --db-url or replay --dev-url, already selects the SQLite
+// subsystem, so malformed project config must not mask the malformed boolean
+// value that subsystem owns. They still call [ValidateToggle] after merging
+// project defaults, which covers a URL selected by ptah.yaml.
+func ValidateExplicitURLToggle(databaseURL string) error {
+	dialect, err := atlasurl.DialectFromURL(databaseURL)
+	if err != nil {
+		return nil
+	}
+	return ValidateToggle(dialect)
 }
 
 // Table is one live virtual table and the module declaration that owns it.

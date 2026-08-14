@@ -106,6 +106,9 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
+	if err := sqlitevirtual.ValidateToggle(opts.dialect); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if opts.shadowDB == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("a shadow database URL is required (--%s)", shadowDBFlag))
 	}
