@@ -166,37 +166,57 @@ while IFS= read -r action_file; do
 		}
 	' "$action_file")
 
-	# D2b: a go-version-file input must default to the module that declares the
-	# toolchain.
+	# D2b: an action with a setup-go step must DECLARE a go-version-file input
+	# that defaults to the module carrying the toolchain.
 	#
-	# The step in the manifest reads this input through an expression, and an
-	# expression is opaque to D1 -- it can only see that the value is derived,
-	# never from what. So the default is the last place the module can still be
-	# named, and pointing it at a module without a `toolchain` directive would
-	# put the action back on the compatibility floor with every detector green.
-	while IFS=: read -r line value; do
-		clean="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
-		case "$clean" in
-		go.mod | ./go.mod) ;;
-		*)
-			fail "$action_file" "$line" \
-				"the go-version-file input defaults to '$clean', which is not the module that declares the toolchain. Default it to 'go.mod' so the caller's own root module is read."
-			;;
-		esac
-	done < <(awk '
-		/^inputs:/ { in_inputs = 1; next }
-		/^[^[:space:]#]/ { in_inputs = 0 }
-		in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
-			input = $1
-			sub(/:$/, "", input)
-			next
-		}
-		in_inputs && input == "go-version-file" && /^[[:space:]]+default:/ {
-			value = $0
-			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
-			print NR ":" value
-		}
-	' "$action_file")
+	# The step reads this input through an expression, and an expression is
+	# opaque to D1 -- it can only see that the value is derived, never from what.
+	# So the default is the last place the module can still be named.
+	#
+	# This asserts the declaration exists rather than only judging one that
+	# happens to be there. Validating what is present is precisely how a check
+	# passes on a deletion: with `go-version` also defaulting to empty, removing
+	# the default -- or the whole input -- leaves the step selecting nothing,
+	# and a detector that only inspects rows it found reports success because it
+	# found none.
+	if grep -q 'uses: actions/setup-go@' "$action_file"; then
+		# Collected with a read loop rather than `mapfile`, which is a bash 4
+		# builtin: macOS still ships bash 3.2, and a developer running this
+		# locally would otherwise get exit 127 instead of a verdict.
+		gvf_defaults=()
+		while IFS= read -r gvf_row; do
+			gvf_defaults+=("$gvf_row")
+		done < <(awk '
+			/^inputs:/ { in_inputs = 1; next }
+			/^[^[:space:]#]/ { in_inputs = 0 }
+			in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+				input = $1
+				sub(/:$/, "", input)
+				next
+			}
+			in_inputs && input == "go-version-file" && /^[[:space:]]+default:/ {
+				value = $0
+				sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
+				print NR ":" value
+			}
+		' "$action_file")
+
+		if ((${#gvf_defaults[@]} != 1)); then
+			fail "$action_file" "1" \
+				"an action with a setup-go step must declare exactly one go-version-file input with a default; found ${#gvf_defaults[@]}. Without it the step selects no module and the toolchain silently stops being read from go.mod."
+		else
+			line="${gvf_defaults[0]%%:*}"
+			value="${gvf_defaults[0]#*:}"
+			clean="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+			case "$clean" in
+			go.mod | ./go.mod) ;;
+			*)
+				fail "$action_file" "$line" \
+					"the go-version-file input defaults to '$clean', which is not the module that declares the toolchain. Default it to 'go.mod' so the caller's own root module is read."
+				;;
+			esac
+		fi
+	fi
 done < <(git ls-files '.github/actions/*/action.yml' '.github/actions/*/action.yaml')
 
 if ((action_files == 0)); then
