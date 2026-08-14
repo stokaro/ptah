@@ -222,15 +222,25 @@ other command with a `--schema-file` does. That is the flag the scheme belongs
 to, not desired state in general: `schema diff` takes its sources through
 `--from`/`--to` and `schema test` through `--root-dir`, and neither resolves
 `oci://` — both answer `unsupported desired-state URL scheme "oci"` or treat
-the value as a path, and neither registers `--plain-http`. The artifact is pulled to its
-canonical HCL, then materialized and introspected like any other schema file,
-so the output is byte-identical to inspecting the same artifact after
-`ptah schema pull`. Add `--plain-http` for a trusted local registry:
+the value as a path, and neither registers `--plain-http`. The artifact is
+pulled to its canonical HCL, then materialized and introspected like any other
+schema file, so the output is byte-identical to inspecting the same artifact
+after `ptah schema pull`. GHCR uses HTTPS by default, so this command needs no
+transport flag:
 
 ```bash
 ptah schema inspect \
   --schema-file oci://ghcr.io/acme/app-schema:v1 \
   --dev-url "postgres://localhost:5432/dev?sslmode=disable"
+```
+
+Use `--plain-http` only for an explicitly trusted local HTTP registry:
+
+```bash
+ptah schema inspect \
+  --schema-file oci://localhost:5000/acme/app-schema:v1 \
+  --dev-url "postgres://localhost:5432/dev?sslmode=disable" \
+  --plain-http
 ```
 
 The Atlas-compatible `ptah-compat schema inspect --url` does not accept
