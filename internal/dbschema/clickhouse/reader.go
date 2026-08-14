@@ -101,28 +101,35 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 //
 // succeeds in an Atomic database alongside the view "mv" whose storage is
 // ".inner_id.<uuid>". The union arm invented ".inner.mv" and filtered that
-// user table out of both the table read and the index read, and DropAllTables
-// left it standing so the next replay failed on a table that already existed.
+// user table out of both the table read and the index read.
 //
 // The set stays derived from the materialized views themselves rather than from
 // a leading-dot name pattern, so a declared table is never dropped from the read
 // merely for how it is spelled.
+//
+// One case this still cannot separate, and it is a derivation rather than an
+// answer: in an ORDINARY database a materialized view "mv" created with
+// TO <target> owns no storage, and ".inner.mv" is nevertheless exactly what a
+// storage-owning view of that name would be called. Measured on 26.7.3.19, both
+// statements are accepted and the target may even be that table:
+//
+//	CREATE TABLE wf9d_ord2.`.inner.mv` (c UInt64) ENGINE = MergeTree ORDER BY tuple()
+//	CREATE MATERIALIZED VIEW wf9d_ord2.mv TO wf9d_ord2.`.inner.mv` AS SELECT …
+//
+// so a real table spelled that way is subtracted from the table and index reads.
+// system.tables on 26.7.3.19 answers this exactly, with target_database and
+// target_table, and the read cannot use them: 24.10.4.191's system.tables has 34
+// columns and neither of those two, and naming a column a supported server does
+// not have turns a working read into an error. An Atomic database is unaffected
+// -- the derived name carries the view's own UUID.
+//
+// DropAllTables no longer derives anything: it takes its table inventory after
+// the views are dropped, so the guess above cannot make the reset leave a table
+// behind.
 const materializedViewInnerTablesSubquery = `
 		SELECT ` + innerTableNameExpression + `
 		FROM system.tables
 		WHERE database = ? AND engine = 'MaterializedView'
-`
-
-// currentDatabaseMaterializedViewInnerTablesSubquery is the same subtraction
-// for a statement scoped by currentDatabase() instead of a bound name, which is
-// how the writer's DropAllTables selects. It is spelled separately rather than
-// parameterized because the two callers bind different numbers of arguments,
-// and a shared string that silently needed one more would be the easier thing
-// to get wrong.
-const currentDatabaseMaterializedViewInnerTablesSubquery = `
-		SELECT ` + innerTableNameExpression + `
-		FROM system.tables
-		WHERE database = currentDatabase() AND engine = 'MaterializedView'
 `
 
 // innerTableNameExpression names the storage table of the materialized-view row

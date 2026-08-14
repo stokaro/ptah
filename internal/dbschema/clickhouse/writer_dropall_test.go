@@ -32,15 +32,6 @@ const cleanupTablesQuery = `
 	    OR engine = 'StripeLog'
 	  )
 	  AND engine NOT LIKE '%View'
-	  AND name NOT IN (
-		SELECT if(
-		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
-		         concat('.inner.', name),
-		         concat('.inner_id.', toString(uuid))
-		       )
-		FROM system.tables
-		WHERE database = currentDatabase() AND engine = 'MaterializedView'
-)
 	ORDER BY name
 `
 
@@ -53,9 +44,13 @@ const cleanupTablesQuery = `
 // view left standing makes the next CREATE fail with "already exists" rather
 // than being a merely smaller destructive scope.
 //
-// Both inventories are read before anything is dropped, because the table query
-// subtracts materialized-view storage by asking the materialized views
-// themselves, and those are gone once the view drops begin.
+// The table inventory is read AFTER the views are dropped. Deriving the storage
+// names first and subtracting them is a guess, and in an Ordinary database a
+// materialized view created with TO owns no storage while ".inner.<view name>"
+// is still what a storage-owning view of that name would be called -- so a real
+// table spelled that way, the view's own target included, was left standing by
+// the reset. Asking after the drops needs no guess: what is still there is a
+// table, and the query below subtracts nothing.
 func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 	c := qt.New(t)
 	queries := []sqlMockQuery{

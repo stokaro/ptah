@@ -214,9 +214,13 @@ const currentDatabaseCleanupViewsQuery = `
 `
 
 // currentDatabaseCleanupTablesQuery lists the base tables DropAllTables
-// destroys. The storage table a materialized view owns is subtracted here
-// because DROP VIEW takes it along with its view; dropping it separately would
-// leave the view pointing at nothing.
+// destroys.
+//
+// It subtracts nothing, and the ordering in DropAllTables is why: the views are
+// already gone when this runs, so a materialized view's storage table went with
+// its owner and whatever is still standing is a table in its own right. A
+// subtraction here could only guess at which storage belongs to which view, and
+// a guess is what left a real table behind -- see DropAllTables.
 const currentDatabaseCleanupTablesQuery = `
 	SELECT name FROM system.tables
 	WHERE database = currentDatabase()
@@ -229,7 +233,6 @@ const currentDatabaseCleanupTablesQuery = `
 	    OR engine = 'StripeLog'
 	  )
 	  AND engine NOT LIKE '%View'
-	  AND name NOT IN (` + currentDatabaseMaterializedViewInnerTablesSubquery + `)
 	ORDER BY name
 `
 
@@ -243,8 +246,25 @@ const currentDatabaseCleanupTablesQuery = `
 // succeeds at exit 0 while leaving the view itself in system.tables, so a
 // SELECT from the view then fails with
 // "Table ... does not exist. (UNKNOWN_TABLE)". DROP VIEW removes the view and
-// its storage together, so the storage is subtracted from the table list and
-// destroyed by its owner instead.
+// its storage together.
+//
+// The table inventory is therefore taken AFTER the views are dropped, not
+// before. Deriving the storage names first and subtracting them is a guess, and
+// the guess is wrong in a case ClickHouse allows: in an Ordinary database a
+// materialized view "mv" created with TO owns no storage at all, while
+// ".inner.mv" is what a storage-owning view of that name WOULD be called, so a
+// real table spelled that way -- including the view's own TO target -- was
+// subtracted from the reset and left standing. Measured on 26.7.3.19:
+//
+//	CREATE TABLE wf9d_ord2.`.inner.mv` (c UInt64) ENGINE = MergeTree ORDER BY tuple()
+//	CREATE MATERIALIZED VIEW wf9d_ord2.mv TO wf9d_ord2.`.inner.mv` AS SELECT …
+//	-> both accepted; system.tables reports ".inner.mv" MergeTree and "mv" MaterializedView
+//
+// Asking after the drops needs no guess: a name still present is a table.
+// system.tables gained target_database/target_table, which names the storage
+// exactly, but the read cannot use it -- 24.10.4.191's system.tables has 34
+// columns and neither of those two, and naming a column a supported server does
+// not have would turn a working read into an error.
 //
 // Leaving view-like objects standing is not a smaller destructive scope, it is
 // a reset that does not reset. Every caller of this method — the shadow replay
@@ -273,19 +293,17 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 		return fmt.Errorf("no database connection")
 	}
 
-	// Both inventories are taken before anything is dropped: the table query
-	// subtracts materialized-view storage by asking the materialized views
-	// themselves, and those are gone once the view drops begin.
 	views, err := w.listCleanupNames(ctx, currentDatabaseCleanupViewsQuery, "views")
 	if err != nil {
 		return err
 	}
-	tables, err := w.listCleanupNames(ctx, currentDatabaseCleanupTablesQuery, "tables")
-	if err != nil {
+	if err := w.dropCleanupObjects(ctx, "VIEW", views); err != nil {
 		return err
 	}
 
-	if err := w.dropCleanupObjects(ctx, "VIEW", views); err != nil {
+	// After the view drops, not before: see the ordering note above.
+	tables, err := w.listCleanupNames(ctx, currentDatabaseCleanupTablesQuery, "tables")
+	if err != nil {
 		return err
 	}
 	return w.dropCleanupObjects(ctx, "TABLE", tables)

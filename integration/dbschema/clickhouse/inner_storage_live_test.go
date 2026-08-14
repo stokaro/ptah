@@ -3,7 +3,13 @@
 package clickhouse_test
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
+	"net/url"
+	"os"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -77,6 +83,106 @@ func TestInnerTableSubtractionKeepsADeclaredDotNameLive(t *testing.T) {
 	).Scan(&remaining)
 	c.Assert(err, qt.IsNil)
 	c.Assert(remaining, qt.Equals, uint64(0))
+}
+
+// TestDropAllTablesRemovesATargetNamedLikeInnerStorageLive pins that the reset
+// does not decide what to destroy by deriving storage names.
+//
+// A materialized view created with `TO <target>` owns no storage of its own, and
+// in an Ordinary database ".inner.<view name>" is nevertheless exactly what a
+// storage-owning view of that name would be called -- the target may even be
+// that table. Measured on 26.7.3.19, both statements are accepted. So a reset
+// that subtracted a derived ".inner.mv" left a real table standing, and the
+// replay every caller of DropAllTables performs afterwards then failed on a
+// table that already existed.
+//
+// The reset now takes its table inventory after the views are dropped, where no
+// derivation is needed: what is still present is a table.
+//
+// This is the one shape the Atomic test above cannot reach, because an Atomic
+// database names storage after the view's own UUID and no target collides with
+// that. The database is therefore created as Ordinary, which needs the
+// deprecated-engine setting; a server that refuses it skips rather than passes.
+func TestDropAllTablesRemovesATargetNamedLikeInnerStorageLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseOrdinaryDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	targetTable := sqlident.Qualified(platform.ClickHouse, database, ".inner.mv")
+	routingView := sqlident.Qualified(platform.ClickHouse, database, "mv")
+	migration := []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+		"CREATE TABLE " + targetTable + " (c UInt64) ENGINE = MergeTree ORDER BY tuple()",
+		"CREATE MATERIALIZED VIEW " + routingView + " TO " + targetTable +
+			" AS SELECT count() AS c FROM " + sourceTable,
+	}
+	executeClickHouseViewPlan(t, db, migration)
+
+	err := clickhousedb.NewClickHouseWriter(db, database).DropAllTables(t.Context())
+	c.Assert(err, qt.IsNil)
+
+	var remaining uint64
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count() FROM system.tables WHERE database = ? AND is_temporary = 0",
+		database,
+	).Scan(&remaining)
+	c.Assert(err, qt.IsNil)
+	c.Assert(remaining, qt.Equals, uint64(0))
+
+	// The reset is only a reset if the same migration runs again on top of it.
+	executeClickHouseViewPlan(t, db, migration)
+}
+
+// openLiveClickHouseOrdinaryDatabase opens a throwaway database whose engine is
+// Ordinary, the engine under which ClickHouse names materialized-view storage
+// after the view rather than after a UUID. Ordinary is deprecated, so both the
+// creating connection and the working one carry
+// allow_deprecated_database_ordinary; a server that refuses the engine skips the
+// test rather than passing it.
+func openLiveClickHouseOrdinaryDatabase(t *testing.T, environmentVariable string) (*sql.DB, string) {
+	t.Helper()
+	adminURL, configured := os.LookupEnv(environmentVariable)
+	if !configured {
+		t.Skip(environmentVariable + " is not configured")
+	}
+
+	parsedAdmin, err := url.Parse(adminURL)
+	qt.Assert(t, err, qt.IsNil)
+	adminQuery := parsedAdmin.Query()
+	adminQuery.Set("allow_deprecated_database_ordinary", "1")
+	parsedAdmin.RawQuery = adminQuery.Encode()
+
+	admin, err := sql.Open("clickhouse", parsedAdmin.String())
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, admin.PingContext(t.Context()), qt.IsNil)
+
+	database := fmt.Sprintf("ptah_ordinary_%d", time.Now().UnixNano())
+	quotedDatabase := sqlident.Quote(platform.ClickHouse, database)
+	_, err = admin.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase+" ENGINE = Ordinary")
+	if err != nil {
+		qt.Check(t, admin.Close(), qt.IsNil)
+		t.Skip("server refuses the deprecated Ordinary database engine: " + err.Error())
+	}
+
+	working := *parsedAdmin
+	working.Path = "/" + database
+	working.RawPath = ""
+	db, err := sql.Open("clickhouse", working.String())
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, db.PingContext(t.Context()), qt.IsNil)
+
+	t.Cleanup(func() {
+		qt.Check(t, db.Close(), qt.IsNil)
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, cleanupErr := admin.ExecContext(
+			cleanupCtx,
+			"DROP DATABASE IF EXISTS "+quotedDatabase+" SYNC",
+		)
+		qt.Check(t, cleanupErr, qt.IsNil)
+		qt.Check(t, admin.Close(), qt.IsNil)
+	})
+	return db, database
 }
 
 // clickHouseTableNames returns the names of the tables a read reported, in the
