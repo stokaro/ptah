@@ -92,8 +92,18 @@ const passwordBytes = 24
 // than falling through to a connector that would report an unknown dialect.
 //
 // It reads the bytes AS WRITTEN and normalizes nothing; see [Parse].
+//
+// The scheme is taken from [url.Parse] rather than matched as a prefix, so this
+// and [Parse] answer the same question. A prefix match disagreed with it twice,
+// in opposite directions: `DOCKER://postgres/16/dev` is a docker URL to
+// url.Parse, which lowercases the scheme, and to the pinned binary, which
+// provisions it -- but not to a case-sensitive prefix, so Resolve passed it
+// through unprovisioned and the connector rejected the dialect. And
+// ` docker://postgres/16/dev` is NOT a docker URL to url.Parse, which reads it
+// as a relative path, but was one to a prefix match over a trimmed copy.
 func IsURL(rawURL string) bool {
-	return strings.HasPrefix(rawURL, Scheme+"://")
+	parsed, err := url.Parse(rawURL)
+	return err == nil && parsed.Scheme == Scheme
 }
 
 // engine describes one database this package can start.

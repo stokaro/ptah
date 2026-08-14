@@ -756,6 +756,18 @@ func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
 			rawURL: "  docker://postgres",
 			want:   false,
 		},
+		{
+			// url.Parse lowercases a scheme, so this IS a docker URL to
+			// Parse, to atlasurl.DialectFromURL, and to the pinned binary,
+			// which reaches the Docker daemon for it. A case-sensitive prefix
+			// match said otherwise, so Resolve passed the value through
+			// unprovisioned and the connector answered `unsupported database
+			// dialect: docker` -- a capability the pinned binary has, removed
+			// by a spelling.
+			name:   "uppercase scheme",
+			rawURL: "DOCKER://postgres/16/dev",
+			want:   true,
+		},
 		{name: "postgres", rawURL: "postgres://localhost/db", want: false},
 		{name: "empty", rawURL: "", want: false},
 		{name: "docker in the path", rawURL: "sqlite://docker://x", want: false},
