@@ -609,6 +609,15 @@ remaining resolver refinement work.
   reaches it. The predicate the renderer and the planner share lives in one
   place so the two cannot drift apart again.
 
+  **A foreign definer is not adopted silently.** MySQL and MariaDB execute a
+  `SQL SECURITY DEFINER` routine as its catalog `DEFINER`, not necessarily as
+  the account connected to Ptah. The reader captures both that owner and
+  `CURRENT_USER()`. If a modified routine would be dropped and recreated by a
+  different account, comparison refuses before any migration SQL is planned.
+  Connect as the existing definer, declare `SQL SECURITY INVOKER` explicitly,
+  or leave the foreign routine unchanged. Missing ownership facts also fail
+  closed for a modified definer routine.
+
   What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function
   declared `language="plpgsql"` is PostgreSQL procedural code that no envelope

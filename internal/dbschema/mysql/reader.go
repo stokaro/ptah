@@ -458,6 +458,8 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 			IS_DETERMINISTIC,
 			SQL_DATA_ACCESS,
 			SECURITY_TYPE,
+			DEFINER,
+			CURRENT_USER(),
 			ROUTINE_DEFINITION,
 			COALESCE(ROUTINE_COMMENT, '')
 		FROM information_schema.ROUTINES
@@ -481,7 +483,7 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 		)
 		if err := rows.Scan(
 			&fn.Name, &fn.Returns, &isDeterministic, &sqlDataAccess,
-			&fn.Security, &body, &fn.Comment,
+			&fn.Security, &fn.Definer, &fn.CurrentAccount, &body, &fn.Comment,
 		); err != nil {
 			return nil, err
 		}

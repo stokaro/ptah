@@ -98,6 +98,15 @@ report while resolving the connected catalog's identifier semantics and
 default comparison options. Command adapters use that report for warnings;
 embedders can choose their own diagnostic policy.
 
+MySQL-family readers populate the JSON-hidden
+`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
+a modified `SQL SECURITY DEFINER` routine when recreating it would change the
+executing account. Custom readers that supply a modified definer routine must
+preserve both fields; missing facts fail closed with
+`ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
+and is not the safety boundary for applying such a replacement.
+
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
 caller can mutate the source fields or embedded declarations and finalize the
