@@ -194,6 +194,16 @@ func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing
 			version: "PostgreSQL 15.2-YB-2026.1.0.0-b0",
 			names:   "yugabytedb",
 		},
+		{
+			// The PostgreSQL banner has no product substring of its own in
+			// the shapes the flag documents, so before it was detected this
+			// one parsed as the numeric MySQL version 16.3 and rendered
+			// against MySQL84.
+			name:    "a PostgreSQL banner on mysql",
+			dialect: "mysql",
+			version: "PostgreSQL 16.3 (Debian)",
+			names:   "postgres",
+		},
 	}
 
 	for _, test := range tests {
@@ -230,6 +240,7 @@ func TestGenerateCommand_ServerVersionAcceptsAMatchingBanner(t *testing.T) {
 		{name: "YugabyteDB banner on yugabytedb", dialect: "yugabytedb", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0"},
 		{name: "PostgreSQL banner on postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)"},
 		{name: "a plain dotted version on mysql", dialect: "mysql", version: "8.0.42"},
+		{name: "a plain dotted version on cockroachdb", dialect: "cockroachdb", version: "25.4.5"},
 	}
 
 	for _, test := range tests {

@@ -189,7 +189,11 @@ artifact expires.
 `CockroachDB25()` and `CockroachDB26()` are the measured CockroachDB release
 arms. The 25.x arm disables generic and guarded `DROP CONSTRAINT` plus
 `CREATE OR REPLACE TRIGGER`; the 26.x arm supports them. `CockroachDB23()`
-remains the conservative historical arm. `YugabyteDB25()` is the current
+remains the conservative historical arm. Both spellings of a CockroachDB
+version reach that ladder: the banner `CockroachDB CCL v25.4.5` and the dotted
+`25.4.5` resolve identically. The dotted form used to fall through to
+`ForDialect("cockroachdb")` — the 26.x arm — and report itself as a dialect with
+no measured ladder. `YugabyteDB25()` is the current
 YugabyteDB distributed-SQL preset; `SpannerPostgres()` is deliberately
 conservative because Spanner's PostgreSQL interface is not a drop-in
 PostgreSQL server.
@@ -311,6 +315,12 @@ exited `2`. `VersionResolution.ResolvedDialect` publishes the platform the
 preset came from, which is what makes the contradiction observable at all;
 `internal/servertarget` reads it and refuses. A banner naming the dialect it was
 given with still resolves.
+
+Four product banners are detected, and the PostgreSQL one is detected last
+because three of the others contain the word: CockroachDB speaks the PostgreSQL
+wire protocol, YugabyteDB reports `PostgreSQL 11.2-YB-…` and Spanner
+`Cloud Spanner PostgreSQL`. Checking PostgreSQL first would plan every one of
+those engines as PostgreSQL.
 
 The two spellings differ because `sql lint --version` predates the flag having
 a name. `cmd/internal/serverversion` registers both and marks them with one

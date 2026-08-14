@@ -1058,6 +1058,16 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 			Recognized:      true,
 			ResolvedDialect: platform.Spanner,
 		}
+	case strings.Contains(versionLower, "postgres"):
+		// Last of the four product banners, because three of them contain
+		// this word: CockroachDB speaks the PostgreSQL wire protocol,
+		// YugabyteDB reports "PostgreSQL 11.2-YB-…" and Spanner "Cloud Spanner
+		// PostgreSQL". Each is claimed above, so what reaches here is a real
+		// PostgreSQL banner — and it has to be claimed as one rather than
+		// falling through to the numeric ladder of whatever dialect was
+		// declared, which read "PostgreSQL 16.3 (Debian)" on --dialect mysql
+		// as MySQL 16.3 and answered MySQL84.
+		return resolvedAs(postgresBannerResolution(version, dialect), platform.Postgres)
 	}
 
 	// MariaDB announces itself in the version string even when connected via
@@ -1080,6 +1090,15 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
 	case platform.Postgres:
 		return resolvedAs(postgresResolution(v), platform.Postgres)
+	case platform.CockroachDB:
+		// The banner branch above is not the only way to reach this ladder.
+		// A dotted "25.4.5" is the documented shape on every other dialect, and
+		// before this arm existed it fell through to the default below and
+		// received ForDialect's CockroachDB26 — which differs from the measured
+		// CockroachDB25 preset on create_or_replace_trigger,
+		// drop_constraint_generic and drop_constraint_if_exists, and reported
+		// itself as a dialect with no ladder at all.
+		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
@@ -1161,6 +1180,20 @@ func measuredMinorLineResolution(
 		// Only reached with a parsed version in hand.
 		Recognized: true,
 	}
+}
+
+// postgresBannerResolution answers a string that named PostgreSQL.
+//
+// The dialect is still needed for the one case the banner cannot answer: a
+// banner carrying no readable version resolves nothing, so the preset falls
+// back to the declared dialect's default and Recognized stays false — the same
+// shape mariaDBResolution uses for "MariaDB something".
+func postgresBannerResolution(version, dialect string) VersionResolution {
+	v, ok := parseVersion(version)
+	if !ok {
+		return VersionResolution{Capabilities: ForDialect(dialect)}
+	}
+	return postgresResolution(v)
 }
 
 func postgresResolution(v serverVersion) VersionResolution {

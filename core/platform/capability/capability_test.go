@@ -737,6 +737,8 @@ func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
 		resolved string
 	}{
 		{name: "a MariaDB banner outranks mysql", dialect: "mysql", version: "10.11.6-MariaDB", resolved: "mariadb"},
+		{name: "a PostgreSQL banner outranks mysql", dialect: "mysql", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
+		{name: "a PostgreSQL banner outranks sqlite", dialect: "sqlite", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
 		{name: "the replication prefix outranks mysql", dialect: "mysql", version: "5.5.5-10.11.6-MariaDB", resolved: "mariadb"},
 		{name: "a CockroachDB banner outranks sqlite", dialect: "sqlite", version: "CockroachDB CCL v25.4.5", resolved: "cockroachdb"},
 		{name: "a YugabyteDB banner outranks postgres", dialect: "postgres", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", resolved: "yugabytedb"},
@@ -758,4 +760,114 @@ func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
 			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
 		})
 	}
+}
+
+// TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne is the
+// ordering control for the PostgreSQL branch.
+//
+// Three of the four product banners contain the word "postgres": CockroachDB
+// speaks the PostgreSQL wire protocol, YugabyteDB reports its engine version as
+// "PostgreSQL 11.2-YB-…" and Spanner as "Cloud Spanner PostgreSQL". If the
+// PostgreSQL branch were checked first, all three would resolve to a PostgreSQL
+// preset and every live connection to those engines would be planned as
+// PostgreSQL.
+func TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne(t *testing.T) {
+	tests := []struct {
+		name     string
+		version  string
+		resolved string
+		want     capability.Capabilities
+	}{
+		{
+			name:     "CockroachDB speaks the PostgreSQL wire protocol",
+			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
+			resolved: "cockroachdb",
+			want:     capability.CockroachDB25(),
+		},
+		{
+			name:     "YugabyteDB reports a PostgreSQL engine version",
+			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+			resolved: "yugabytedb",
+			want:     capability.YugabyteDB25(),
+		},
+		{
+			name:     "Spanner names PostgreSQL in its own banner",
+			version:  "Cloud Spanner PostgreSQL",
+			resolved: "spanner",
+			want:     capability.SpannerPostgres(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion("postgres", test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestResolveServerVersionCockroachDBLadderTakesADottedVersion closes the gap
+// between the two spellings of the same server.
+//
+// The CockroachDB ladder was reachable only through a string containing
+// "cockroachdb". A dotted "25.4.5" — the documented shape on every other
+// dialect — fell through to the unladdered default and received ForDialect's
+// CockroachDB26, which differs from the measured CockroachDB25 preset on
+// create_or_replace_trigger, drop_constraint_generic and
+// drop_constraint_if_exists. It also reported NewestMeasured "" and
+// VersionSpecific false, so a caller was told CockroachDB has no ladder while
+// one was sitting right there.
+func TestResolveServerVersionCockroachDBLadderTakesADottedVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		dotted   string
+		banner   string
+		specific bool
+	}{
+		{
+			name:     "a measured line",
+			dotted:   "25.4.5",
+			banner:   "CockroachDB CCL v25.4.5",
+			specific: true,
+		},
+		{
+			name:     "a line below the newest measurement",
+			dotted:   "23.1.0",
+			banner:   "CockroachDB CCL v23.1.0",
+			specific: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dotted := capability.ResolveServerVersion("cockroachdb", test.dotted)
+			banner := capability.ResolveServerVersion("cockroachdb", test.banner)
+
+			c.Assert(dotted.Capabilities, qt.DeepEquals, banner.Capabilities)
+			c.Assert(dotted.VersionSpecific, qt.Equals, test.specific)
+			c.Assert(dotted.VersionSpecific, qt.Equals, banner.VersionSpecific)
+			c.Assert(dotted.NewestMeasured, qt.Equals, banner.NewestMeasured)
+			c.Assert(dotted.NewestMeasured, qt.Not(qt.Equals), "")
+		})
+	}
+}
+
+// TestResolveServerVersionCockroachDB25IsNotTheDialectDefault is the
+// non-vacuity control for the test above.
+//
+// If the two presets were the same set, routing the dotted form through the
+// ladder would be unobservable and the test would be measuring nothing.
+func TestResolveServerVersionCockroachDB25IsNotTheDialectDefault(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.ForDialect("cockroachdb"), qt.DeepEquals, capability.CockroachDB26())
+	c.Assert(capability.CockroachDB25(), qt.Not(qt.DeepEquals), capability.CockroachDB26())
+	c.Assert(capability.ResolveServerVersion("cockroachdb", "25.4.5").Capabilities,
+		qt.DeepEquals, capability.CockroachDB25())
 }

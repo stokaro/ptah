@@ -92,6 +92,19 @@ func TestResolve(t *testing.T) {
 			},
 		},
 		{
+			// The note above is the one CockroachDB used to receive for a
+			// dotted version, and it was false: the ladder existed and the
+			// string simply never reached it.
+			name:    "a dotted CockroachDB version selects a measured line silently",
+			dialect: platform.CockroachDB,
+			version: "25.4.5",
+			assert: func(c *qt.C, target servertarget.Target, err error) {
+				c.Assert(err, qt.IsNil)
+				c.Assert(target.Capabilities, qt.DeepEquals, capability.CockroachDB25())
+				c.Assert(target.Note, qt.Equals, "")
+			},
+		},
+		{
 			name:    "a MariaDB banner carrying no version is refused",
 			dialect: platform.MariaDB,
 			version: "MariaDB something",
@@ -160,6 +173,18 @@ func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
 			dialect:  platform.Postgres,
 			version:  "Cloud Spanner PostgreSQL",
 			resolved: platform.Spanner,
+		},
+		{
+			name:     "PostgreSQL banner on mysql",
+			dialect:  platform.MySQL,
+			version:  "PostgreSQL 16.3 (Debian)",
+			resolved: platform.Postgres,
+		},
+		{
+			name:     "PostgreSQL banner on sqlite",
+			dialect:  platform.SQLite,
+			version:  "PostgreSQL 16.3 (Debian)",
+			resolved: platform.Postgres,
 		},
 	}
 
@@ -232,6 +257,12 @@ func TestResolve_AcceptsAMatchingBanner(t *testing.T) {
 			dialect: platform.MySQL,
 			version: "8.4.0",
 			want:    capability.MySQL84(),
+		},
+		{
+			name:    "a plain dotted version on cockroachdb reaches its ladder",
+			dialect: platform.CockroachDB,
+			version: "25.4.5",
+			want:    capability.CockroachDB25(),
 		},
 	}
 
