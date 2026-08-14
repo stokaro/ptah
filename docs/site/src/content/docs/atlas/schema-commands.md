@@ -275,6 +275,11 @@ it plans drops for `public` only, and removing the selector from that run adds
 exactly one line, `DROP SCHEMA "app" CASCADE;`. `--exclude app[type=schema]`
 names the same schema explicitly.
 
+Ptah offers both the exact catalog spelling and a selector-safe quoted spelling
+for a schema name. A case-preserving catalog schema named `Sales` therefore
+matches `--exclude Sales` and `--exclude 'Sales[type=schema]'`, while `sales`
+and quoted whitespace identities remain distinct.
+
 The two-part spelling keeps meaning what it always meant. `--exclude 'app.*'`
 removes the objects in `app` and **keeps** the schema itself, because `app` is
 not a match for the glob `app.*`. Use the one-part form to protect the schema,
