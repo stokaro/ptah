@@ -58,10 +58,10 @@ func LoadAtlasFileCollectionWithOptions(
 	opts AtlasLoadOptions,
 ) ([]Config, error) {
 	// A missing atlas.hcl returns an empty collection below without ever
-	// building a parser, so the resolve newAtlasParser does would never run and
-	// a malformed [IgnoreEnvSchemasEnvVar] value would be honored as its default
-	// on exactly the projects that have no config file. Resolving here refuses
-	// it whatever the file system holds.
+	// reaching ParseAtlasFSCollectionWithOptions, so the resolve that entry
+	// point makes would never run and a malformed [IgnoreEnvSchemasEnvVar] value
+	// would be honored as its default on exactly the projects that have no
+	// config file. Resolving here refuses it whatever the file system holds.
 	if _, err := ignoreEnvSchemas.Resolve(); err != nil {
 		return nil, err
 	}
@@ -176,6 +176,17 @@ func ParseAtlasFSCollectionWithOptions(
 	if filename == "" {
 		filename = AtlasFileName
 	}
+	// The opt-out is resolved before the document is parsed, not when the parser
+	// is built. hclsyntax.ParseConfig returns first on a document that does not
+	// parse, so resolving after it would hide a malformed
+	// [IgnoreEnvSchemasEnvVar] behind the syntax diagnostic: the operator would
+	// fix the file and only then meet the environment error, on the next run.
+	// This is the single entry point every ParseAtlas* API reaches, so one
+	// resolve here covers all of them.
+	ignoreSchemas, err := ignoreEnvSchemas.Resolve()
+	if err != nil {
+		return nil, err
+	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return nil, fmt.Errorf("parse atlas project config: %s", diags.Error())
@@ -185,7 +196,7 @@ func ParseAtlasFSCollectionWithOptions(
 		return nil, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach)
+	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -211,12 +222,11 @@ type atlasParser struct {
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
 	// ignoreEnvSchemas carries the resolved [IgnoreEnvSchemasEnvVar] value,
-	// read once when the parser is built rather than at the `schemas` arm. The
-	// arm is only reached by a config that spells the attribute in the selected
-	// environment, so resolving there made a malformed value depend on the file
-	// under parse: the same broken environment failed one project and was
-	// ignored by the next. Reading it at construction refuses it for every
-	// parse.
+	// read by the caller before the document is parsed rather than at the
+	// `schemas` arm. The arm is only reached by a config that spells the
+	// attribute in the selected environment, so resolving there made a malformed
+	// value depend on the file under parse: the same broken environment failed
+	// one project and was ignored by the next.
 	ignoreEnvSchemas bool
 	// baseDir is the directory that contains the parsed atlas.hcl file, as
 	// spelled by the caller. Relative data.external_schema working_dir values
@@ -276,11 +286,8 @@ func newAtlasParser(
 	rawVars []string,
 	filename string,
 	rejectListMapForEach bool,
+	ignoreSchemas bool,
 ) (atlasParser, error) {
-	ignoreSchemas, err := ignoreEnvSchemas.Resolve()
-	if err != nil {
-		return atlasParser{}, err
-	}
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err

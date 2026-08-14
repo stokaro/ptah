@@ -160,9 +160,13 @@ realm-wide description; the attribute is then reported as having no effect, as
 any other tolerated name is. The variable governs the selection only — a value
 the field cannot hold is refused with it set exactly as it is without it,
 because Atlas CE refuses that file and compatibility never exits 0 where the
-community binary exits 1. A present malformed value is refused on every Atlas
-project-config load or parse, even when the file is absent or the selected
-environment omits `schemas`.
+community binary exits 1.
+
+A present value the variable cannot hold is refused on every Atlas
+project-config load or parse, before the document is read: whether the file is
+absent, whether it parses at all, and whether the selected environment spells
+`schemas` make no difference to the diagnostic. The variable is a property of
+the environment, so the answer may not depend on the file under it.
 `PTAH_ATLAS_STRICT_COMPAT=1` rejects an enabled opt-out because restoring the
 realm-wide Ptah view is deliberately outside the CE-only profile.
 

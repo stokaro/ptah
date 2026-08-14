@@ -292,6 +292,27 @@ func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
 	}
 }
 
+// TestParseAtlasEnvSchemasOptOutValidatesBeforeTheDocumentParses pins the
+// resolve ahead of hclsyntax.ParseConfig.
+//
+// Measured on the branch that resolved when the parser was built: a document
+// with an unclosed block and PTAH_ATLAS_IGNORE_ENV_SCHEMAS exported empty
+// reported `parse atlas project config: atlas.hcl:1,13-14: Unclosed
+// configuration block` and said nothing about the variable. Both are fatal, so
+// the run failed either way — what the operator lost was the second diagnostic,
+// which arrives only on the next run, after the file is fixed. Refusing the
+// environment first spends one comparison and reports the configuration error
+// the same way on every document.
+func TestParseAtlasEnvSchemasOptOutValidatesBeforeTheDocumentParses(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(projectconfig.IgnoreEnvSchemasEnvVar, "")(t)
+
+	_, err := projectconfig.ParseAtlas([]byte("env \"local\" {\n"), "atlas.hcl", "local")
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "" for PTAH_ATLAS_IGNORE_ENV_SCHEMAS`)
+}
+
 // TestLoadAtlasEnvSchemasOptOutValidatesWithoutAConfigFile covers the load path
 // that never builds a parser at all.
 //
