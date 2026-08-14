@@ -146,6 +146,52 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantContains:    []string{`virtual table "docs" (module fts4)`, "does not register"},
 		},
 		{
+			// Two tables, one missing module. The noun agrees with the module
+			// count rather than the table count, because "whose modules ...
+			// registers fts4" names a set of one and reads as a second module
+			// the operator should go looking for.
+			name:    "two tables of one module name one module",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "users"}},
+				UnregisteredVirtualTables: []types.DBVirtualTable{
+					{Name: "docs", Module: "fts4"},
+					{Name: "notes_ix", Module: "fts4"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`virtual tables "docs" (module fts4), "notes_ix" (module fts4)`,
+				"whose module this build of Ptah does not register",
+				"a build that registers fts4,",
+			},
+			wantAbsent: []string{"whose modules this build"},
+		},
+		{
+			// The control for the row above: two DIFFERENT missing modules do
+			// take the plural, and both are named.
+			name:    "two tables of two modules name both modules",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "users"}},
+				UnregisteredVirtualTables: []types.DBVirtualTable{
+					{Name: "docs", Module: "fts4"},
+					{Name: "legacy", Module: "fts3"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				"whose modules this build of Ptah does not register",
+				"a build that registers fts3, fts4,",
+			},
+		},
+		{
 			name:    "the opt-in lifts the refusal",
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),

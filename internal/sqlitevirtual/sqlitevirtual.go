@@ -365,7 +365,7 @@ func refuseUnclassifiableDatabase(database *types.DBSchema, registered sqlitemod
 		ptaherr.ErrUnsupportedFeature,
 		noun(len(unclassified)),
 		names(unclassified),
-		moduleNoun(len(unclassified)),
+		moduleNoun(len(distinctModules(unclassified))),
 		quotedNames(unclassified),
 		pronoun(len(unclassified)),
 		registered.String(),
@@ -392,7 +392,7 @@ func refuseUncreatableDesiredState(desired *goschema.Database, registered sqlite
 		ptaherr.ErrUnsupportedFeature,
 		noun(len(wanted)),
 		names(wanted),
-		moduleNoun(len(wanted)),
+		moduleNoun(len(distinctModules(wanted))),
 		wanted[0].Module,
 		registered.String(),
 		modulesOf(wanted),
@@ -459,10 +459,10 @@ func desiredUnregistered(desired *goschema.Database, registered sqlitemodule.Set
 	return wanted
 }
 
-// modulesOf renders the distinct modules of a table list, in a stable order.
-// The tables are what an operator recognizes; the modules are what a different
-// build would have to register.
-func modulesOf(tables []Table) string {
+// distinctModules lists the modules of a table list once each, in a stable
+// order. The tables are what an operator recognizes; the modules are what a
+// different build would have to register, and two tables can share one.
+func distinctModules(tables []Table) []string {
 	var modules []string
 	for _, table := range tables {
 		if !slices.Contains(modules, table.Module) {
@@ -470,9 +470,17 @@ func modulesOf(tables []Table) string {
 		}
 	}
 	sort.Strings(modules)
-	return strings.Join(modules, ", ")
+	return modules
 }
 
+// modulesOf renders the distinct modules the way a diagnostic prints them.
+func modulesOf(tables []Table) string {
+	return strings.Join(distinctModules(tables), ", ")
+}
+
+// moduleNoun agrees with the number of DISTINCT modules rather than the number
+// of tables, because two tables of one module are still one missing module and
+// "whose modules" would then name a set of size one.
 func moduleNoun(count int) string {
 	if count == 1 {
 		return "module"
