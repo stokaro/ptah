@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -344,7 +345,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	out := cmd.OutOrStdout()
+	writeGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
+	return nil
+}
+
+func writeGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
@@ -353,5 +358,4 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
-	return nil
 }
