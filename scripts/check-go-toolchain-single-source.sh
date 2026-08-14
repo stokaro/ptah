@@ -61,19 +61,43 @@ is_action_manifest() {
 	printf '%s\n' "$action_manifests" | grep -qxF -- "$1"
 }
 
-# The exact forwarding shape: a whole-value expression naming one of the action's
-# OWN inputs. `${{ env.GO_VERSION }}` and `${{ vars.GO_VERSION }}` are not it --
-# they name a literal declared somewhere else in the same repository, which is
-# this gate's own failure mode wearing a different hat.
+# The exact forwarding shape: a whole-value expression built ONLY out of the
+# action's own inputs, the empty string, and the operators that choose between
+# them. `${{ env.GO_VERSION }}` and `${{ vars.GO_VERSION }}` are not it -- they
+# name a literal declared somewhere else in the same repository, which is this
+# gate's own failure mode wearing a different hat.
+#
+# Nor is `${{ inputs.go-version || '1.25.0' }}`. Merely MENTIONING an input is
+# not forwarding: that expression pins 1.25.0 whenever the input is empty, which
+# is its default, so a substring test for `inputs.` would accept a hard-coded
+# version wearing a forward's clothes. The permitted vocabulary is enumerated
+# instead, and anything left over after removing it is a value this gate cannot
+# see through and therefore refuses.
 is_forwarded_input() {
 	case "$1" in
-	'${{'*'}}')
-		case "$1" in
-		*inputs.*) return 0 ;;
-		esac
-		;;
+	'${{'*'}}') ;;
+	*) return 1 ;;
 	esac
-	return 1
+
+	local inner="$1"
+	inner="${inner#'${{'}"
+	inner="${inner%'}}'}"
+
+	# Remove the whole permitted vocabulary; a forwarding expression is empty
+	# once it is gone. A quoted literal, a digit, or any other context --
+	# env., vars., github., secrets., matrix., steps. -- survives and is refused.
+	local residue
+	residue="$(printf '%s' "$inner" | sed \
+		-e 's/inputs\.[A-Za-z0-9_-]\{1,\}/ /g' \
+		-e "s/''/ /g" \
+		-e 's/""/ /g' \
+		-e 's/==/ /g' \
+		-e 's/!=/ /g' \
+		-e 's/&&/ /g' \
+		-e 's/||/ /g' \
+		-e 's/[[:space:]()]//g')"
+
+	[[ -z $residue ]]
 }
 
 # Strip surrounding whitespace and quotes so 'go.mod', "go.mod" and go.mod are
@@ -84,7 +108,7 @@ strip_value() {
 
 # D1: every setup-go step derives its version, and derives it from THE source.
 #
-# The step is read from `uses: actions/setup-go@` down to the first later line
+# The step is read from its `uses:` line, quoted or not, down to the first later
 # that starts further left, so a third or fourth setup-go step in one file is
 # seen -- the old check read one per file and was blind to the rest.
 #
@@ -227,7 +251,13 @@ while IFS=: read -r file line _; do
 	if ((step_forwards == 1)); then
 		forwarding_steps=$((forwarding_steps + 1))
 	fi
-done < <(git grep -n 'uses: actions/setup-go@' -- .github)
+	# The reference is matched with optional YAML quoting. `uses:` accepts
+	# actions/setup-go@v7, "actions/setup-go@v7" and 'actions/setup-go@v7'
+	# identically, so a plain substring search enumerates only the spelling
+	# somebody happened to use -- and a step this scan never finds is a step
+	# whose version nothing judges, while the vacuity threshold stays satisfied
+	# by its neighbors.
+done < <(git grep -nE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' -- .github)
 
 # D2: no version-shaped default in a composite action.
 #
@@ -280,7 +310,7 @@ while IFS= read -r action_file; do
 	# the default -- or the whole input -- leaves the step selecting nothing,
 	# and a detector that only inspects rows it found reports success because it
 	# found none.
-	if grep -q 'uses: actions/setup-go@' "$action_file"; then
+	if grep -qE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' "$action_file"; then
 		# Collected with a read loop rather than `mapfile`, which is a bash 4
 		# builtin: macOS still ships bash 3.2, and a developer running this
 		# locally would otherwise get exit 127 instead of a verdict.
