@@ -142,6 +142,11 @@ SQL:
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.
+- A modified `SQL SECURITY DEFINER` routine is refused before migration SQL is
+  planned when its catalog `DEFINER` differs from the connected
+  `CURRENT_USER()`. Connect as that definer, change the desired routine to
+  `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
+  ownership facts fail closed too.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
