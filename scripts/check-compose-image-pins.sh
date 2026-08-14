@@ -34,6 +34,18 @@ fi
 
 status=0
 checked=0
+workflow_pins="$(mktemp)"
+trap 'rm -f "$workflow_pins"' EXIT
+
+# Only executable workflow image declarations count. Searching the workflow
+# text lets a comment, an echo, or an unused variable keep a stale Compose pin
+# green. The extractor reads job container and service image fields plus the
+# image operand of docker run commands; later command arguments do not count.
+if [[ -n ${PTAH_WORKFLOW_IMAGE_PINS:-} ]]; then
+	"$PTAH_WORKFLOW_IMAGE_PINS" "$workflow_dir" >"$workflow_pins"
+else
+	go run ./internal/cmd/workflowimagepins "$workflow_dir" >"$workflow_pins"
+fi
 
 while IFS= read -r image; do
 	[[ -z $image ]] && continue
@@ -50,7 +62,7 @@ while IFS= read -r image; do
 	# :26.7 -- which is precisely the drift this check exists to catch, so a
 	# grep -F here would pass green on the defect that motivated the file.
 	escaped="$(printf '%s' "$image" | sed 's/[][\.^$*+?(){}|\/]/\\&/g')"
-	if ! grep -rqE -- "${escaped}([[:space:]\"']|\$)" "$workflow_dir"; then
+	if ! grep -qE -- "(^|[[:space:]\"'])${escaped}([[:space:]\"']|\$)" "$workflow_pins"; then
 		printf 'compose image pin check: %s is pinned in %s but in no workflow under %s\n' \
 			"$image" "$compose_file" "$workflow_dir" >&2
 		status=1
