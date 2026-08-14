@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/ocireferrers"
 )
@@ -50,7 +51,7 @@ func newReferrersCommand() *cobra.Command {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.filter, typeFlag, ocireferrers.FilterAll, "Referrer type: all, lint, plan, or deployment")
 	flags.StringVar(&opts.format, formatFlag, ocireferrers.FormatText, "Output format: text or json")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Allow an unencrypted HTTP connection to a local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.ExactArgs(1))
 	return cmd
 }

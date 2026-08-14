@@ -16,7 +16,9 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/safety"
@@ -98,6 +100,11 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
+	}
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return err
+		}
 	}
 	if opts.migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")

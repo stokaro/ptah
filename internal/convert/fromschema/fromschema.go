@@ -66,6 +66,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -881,6 +882,15 @@ func fromTableWithFieldConverter(
 		if newTable.Strict {
 			createTable.SetOption("STRICT", "true")
 		}
+		// A virtual table is a different statement, not a trailing option, so
+		// the SQLite renderer branches on this key before it writes anything.
+		// The only producer of a non-empty VirtualModule is the SQLite reader,
+		// so a virtual table never reaches another dialect's renderer.
+		// See stokaro/ptah#1028.
+		if newTable.VirtualModule != "" {
+			createTable.SetOption(ast.SQLiteVirtualModuleOption, newTable.VirtualModule)
+			createTable.SetOption(ast.SQLiteVirtualArgumentsOption, newTable.VirtualArguments)
+		}
 	}
 	createTable.Partition = toASTPartition(newTable.Partition)
 
@@ -906,6 +916,12 @@ func fromTableWithFieldConverter(
 }
 
 func renderTableName(table goschema.Table, targetPlatform string) string {
+	// SQLite catalog identifiers are already parsed. Preserve their exact
+	// components for virtual tables: quoted leading or trailing whitespace is
+	// part of the identity, and normalizing it would recreate another object.
+	if isSQLiteTarget(targetPlatform) && table.VirtualModule != "" {
+		return tableref.CanonicalExact(table.Schema, table.Name)
+	}
 	if strings.Contains(table.Schema, ".") || strings.Contains(table.Name, ".") {
 		return sqlident.Qualified(targetPlatform, table.Schema, table.Name)
 	}

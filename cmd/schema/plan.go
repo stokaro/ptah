@@ -12,7 +12,9 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -37,6 +39,7 @@ type schemaPlanOptions struct {
 	output         string
 	save           bool
 	dryRun         bool
+	plainHTTP      bool
 	connectTimeout string
 	configPath     string
 	envName        string
@@ -73,6 +76,7 @@ document without saving it.`,
 	flags.StringVar(&opts.output, planOutputFlag, "", "Plan file output path (default <name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.save, planSaveFlag, false, "Save the plan to a local plan file")
 	flags.BoolVar(&opts.dryRun, planDryRunFlag, false, "Print the plan file document without saving it")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -83,6 +87,9 @@ document without saving it.`,
 }
 
 func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -103,6 +110,11 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+	}
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if len(opts.rootDirs) == 0 && len(opts.schemaFiles) == 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf(
@@ -140,6 +152,7 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Dialect:     conn.Info().Dialect,
+		PlainHTTP:   opts.plainHTTP,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
