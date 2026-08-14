@@ -494,11 +494,7 @@ func atlasSQLMigrationFileFromSQL(filename, sql string, hooks statementExecution
 }
 
 func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statementExecutionHooks) (sqlMigrationFile, error) {
-	scope, err := resolveDirectiveScope()
-	if err != nil {
-		return sqlMigrationFile{}, err
-	}
-	timeouts, err := parseMigrationTimeoutDirectives(sql, scope)
+	timeouts, err := parseMigrationTimeoutDirectives(sql)
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
@@ -707,6 +703,10 @@ type Migration struct {
 	DownSQL                string
 	UpTimeouts             MigrationTimeouts
 	DownTimeouts           MigrationTimeouts
+	upParsedTimeouts       MigrationTimeouts
+	downParsedTimeouts     MigrationTimeouts
+	upTimeoutsFromSQL      bool
+	downTimeoutsFromSQL    bool
 	downUnavailable        bool
 	// UpTxMode is the up file's explicit transaction mode. The zero value uses
 	// the migrator's global mode. File and none override global file or none;
@@ -819,6 +819,20 @@ func (m *Migration) parsedDownTxModeForDialect(dialect string) parsedMigrationFi
 		source: m.downTxModeSource,
 		err:    m.downTxModeErr,
 	}
+}
+
+func (m *Migration) upTimeoutsForDialect(dialect string) (MigrationTimeouts, error) {
+	if m.upTimeoutsFromSQL && m.UpTimeouts == m.upParsedTimeouts {
+		return parseMigrationTimeoutDirectivesForDialect(m.UpSQL, dialect)
+	}
+	return m.UpTimeouts, nil
+}
+
+func (m *Migration) downTimeoutsForDialect(dialect string) (MigrationTimeouts, error) {
+	if m.downTimeoutsFromSQL && m.DownTimeouts == m.downParsedTimeouts {
+		return parseMigrationTimeoutDirectivesForDialect(m.DownSQL, dialect)
+	}
+	return m.DownTimeouts, nil
 }
 
 // UpForReplay executes the up direction against a THROWAWAY dev database,
@@ -956,9 +970,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 // hooks that consume them, in the region where directives are significant.
 //
 // Nothing reads them when no hook is installed, so the parse is skipped
-// entirely rather than computed and thrown away. The scope resolution is here
-// and not inside the parser because a malformed PTAH_DIRECTIVES_ANYWHERE must
-// fail the migration rather than read as the default.
+// entirely rather than computed and thrown away.
 func observedFileDirectives(
 	conn *dbschema.DatabaseConnection,
 	sql string,
@@ -967,11 +979,7 @@ func observedFileDirectives(
 	if hooks.interceptor == nil && hooks.observer == nil {
 		return nil, nil
 	}
-	scope, err := resolveDirectiveScope()
-	if err != nil {
-		return nil, err
-	}
-	return parseFileDirectivesForDialectInScope(sql, databaseConnectionDialect(conn), scope), nil
+	return parseFileDirectivesForDialect(sql, databaseConnectionDialect(conn)), nil
 }
 
 func executeMigrationFileSQL(
@@ -1176,16 +1184,9 @@ func parseMigrationFileTxMode(filename, sql string) parsedMigrationFileTxMode {
 }
 
 func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMigrationFileTxMode {
-	// The scope opt-in is resolved here because this is the error-carrying seam
-	// every apply and rollback passes through: a typo in the variable must fail
-	// the run rather than read as "the default is still in force".
-	scope, err := resolveDirectiveScope()
-	if err != nil {
-		return parsedMigrationFileTxMode{source: migrationFileTxModeSourcePtah, err: err}
-	}
-	directives := parseFileDirectivesConservativelyInScope(sql, scope)
+	directives := parseFileDirectivesConservatively(sql)
 	if dialect != "" {
-		directives = parseFileDirectivesForDialectInScope(sql, dialect, scope)
+		directives = parseFileDirectivesForDialect(sql, dialect)
 	}
 	parsed := parseMigrationFileTxModeWithDirectives(filename, sql, directives)
 	if parsed.err != nil {
@@ -1195,7 +1196,7 @@ func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMig
 	// mode above came from the header; this is the separate question of whether
 	// a recognized directive elsewhere in the file carries a value nobody can
 	// read. See [misplacedDirectiveError].
-	if err := misplacedDirectiveError(sql, dialect, scope); err != nil {
+	if err := misplacedDirectiveError(sql, dialect); err != nil {
 		return parsedMigrationFileTxMode{source: migrationFileTxModeSourcePtah, err: err}
 	}
 	return parsed

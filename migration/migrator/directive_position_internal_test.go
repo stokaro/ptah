@@ -8,8 +8,7 @@ package migrator
 // through that surface would test the loader, not the rule, and would leave the
 // exported half of the class (directive_position_test.go) as the only measured
 // part -- which is how one directive got a different position rule from its
-// neighbor in the first place. The scope opt-in is here for the same reason:
-// the region it selects is an unexported decision.
+// neighbor in the first place.
 
 import (
 	"strings"
@@ -17,8 +16,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/directiveplacement"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 // directiveStatement is the placement table's statement, aliased so the
@@ -45,7 +44,7 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 			directive: "-- +ptah lock_timeout=5s",
 			honored:   directiveplacement.BeforeTheStatement(),
 			observe: func(c *qt.C, sql string) bool {
-				timeouts, err := parseMigrationTimeoutDirectives(sql, directiveScopeHeader)
+				timeouts, err := parseMigrationTimeoutDirectives(sql)
 				c.Assert(err, qt.IsNil)
 				return timeouts.HasLockTimeout
 			},
@@ -55,7 +54,7 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 			directive: "-- +ptah statement_timeout=1s",
 			honored:   directiveplacement.BeforeTheStatement(),
 			observe: func(c *qt.C, sql string) bool {
-				timeouts, err := parseMigrationTimeoutDirectives(sql, directiveScopeHeader)
+				timeouts, err := parseMigrationTimeoutDirectives(sql)
 				c.Assert(err, qt.IsNil)
 				return timeouts.HasStatementTimeout
 			},
@@ -202,7 +201,7 @@ func TestMisplacedDirectivesAreReportedNotDropped(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			found := misplacedDirectives(test.sql, "", directiveScopeHeader)
+			found := misplacedDirectives(test.sql, "")
 
 			c.Check(misplacedLines(found), qt.DeepEquals, test.wantLines, qt.Commentf("source:\n%s", test.sql))
 			c.Check(misplacedTexts(found), qt.DeepEquals, test.wantTexts, qt.Commentf("source:\n%s", test.sql))
@@ -215,9 +214,7 @@ func TestMisplacedDirectivesAreReportedNotDropped(t *testing.T) {
 //
 // Position and value are independent facts. A recognized `-- +ptah` key with a
 // value nobody can read is a typo the operator wants to hear about, and
-// demoting it to a position warning would let two failures mask each other --
-// and would make the verdict depend on PTAH_DIRECTIVES_ANYWHERE, so the same
-// file would be accepted in one mode and refused in the other.
+// demoting it to a position warning would let two failures mask each other.
 //
 // The `atlas:` spelling gets no equivalent, by measurement rather than by
 // preference: on the pinned community binary, `migrate apply` over a SQLite
@@ -244,6 +241,16 @@ func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 			name:   "malformed statement timeout below the statement",
 			sql:    directiveStatement + "-- +ptah statement_timeout=0s\n",
 			assert: refusedWith(`invalid \+ptah statement_timeout value: .* \(on line 2, .*\)`),
+		},
+		{
+			name:   "bare lock timeout below the statement",
+			sql:    directiveStatement + "-- +ptah lock_timeout\n",
+			assert: refusedWith(`invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`),
+		},
+		{
+			name:   "bare statement timeout below the statement",
+			sql:    directiveStatement + "-- +ptah statement-timeout\n",
+			assert: refusedWith(`invalid \+ptah directive "statement-timeout" \(on line 2, .*\)`),
 		},
 		{
 			name:   "a well-formed directive below the statement is not an error",
@@ -282,9 +289,25 @@ func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			test.assert(c, misplacedDirectiveError(test.sql, "", directiveScopeHeader))
+			test.assert(c, misplacedDirectiveError(test.sql, ""))
 		})
 	}
+}
+
+func TestMySQLHashCommentKeepsFollowingDirectiveInHeader(t *testing.T) {
+	c := qt.New(t)
+	sql := "# generated migration\n-- +ptah no_transaction\nSELECT 1;\n"
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		parsed := parseMigrationFileTxModeForDialect("1_x.sql", sql, dialect)
+		c.Check(parsed.err, qt.IsNil)
+		c.Check(parsed.mode, qt.Equals, MigrationFileTxModeNone)
+		c.Check(misplacedDirectives(sql, dialect), qt.HasLen, 0)
+	}
+
+	parsed := parseMigrationFileTxModeForDialect("1_x.sql", sql, platform.Postgres)
+	c.Check(parsed.err, qt.IsNil)
+	c.Check(parsed.mode, qt.Equals, MigrationFileTxModeUnspecified)
 }
 
 // refusedWith and notRefused are the two verdicts a row can carry, so the table
@@ -349,95 +372,6 @@ func TestAtlasHeaderBoundaryMatchesTheParserThatUsesIt(t *testing.T) {
 	}
 }
 
-// TestDirectiveScopeOptInRestoresTheFileWideRule proves the capability is kept
-// rather than removed, and that a typo in the variable fails rather than
-// silently reading as the default.
-func TestDirectiveScopeOptInRestoresTheFileWideRule(t *testing.T) {
-	tests := []struct {
-		name    string
-		environ func(testing.TB)
-		assert  func(c *qt.C)
-	}{
-		{
-			name:    "unset keeps the header rule",
-			environ: envbooltest.Unset(directivesAnywhereEnvVar),
-			assert: func(c *qt.C) {
-				scope, err := resolveDirectiveScope()
-				c.Assert(err, qt.IsNil)
-				c.Check(scope, qt.Equals, directiveScopeHeader)
-				c.Check(ParseFileDirectives(directiveStatement+"-- +ptah no_transaction\n"), qt.HasLen, 0)
-			},
-		},
-		{
-			name:    "a false spelling keeps the header rule",
-			environ: envbooltest.Set(directivesAnywhereEnvVar, "false"),
-			assert: func(c *qt.C) {
-				scope, err := resolveDirectiveScope()
-				c.Assert(err, qt.IsNil)
-				c.Check(scope, qt.Equals, directiveScopeHeader)
-			},
-		},
-		{
-			name:    "the opt-in honors a directive below the statement",
-			environ: envbooltest.Set(directivesAnywhereEnvVar, "1"),
-			assert: func(c *qt.C) {
-				sql := directiveStatement + "-- +ptah no_transaction\n"
-
-				scope, err := resolveDirectiveScope()
-				c.Assert(err, qt.IsNil)
-				c.Check(scope, qt.Equals, directiveScopeFile)
-				c.Check(ParseFileDirectives(sql), qt.DeepEquals, map[string]string{"no_transaction": "true"})
-				c.Check(parseMigrationFileTxMode("1_x.sql", sql).mode, qt.Equals, MigrationFileTxModeNone)
-				c.Check(misplacedDirectives(sql, "", directiveScopeFile), qt.HasLen, 0)
-
-				// The opt-in restores the merged map's scope and nothing else:
-				// the timeout keys were header-scoped before it and stay so.
-				timeouts, err := parseMigrationTimeoutDirectives(
-					directiveStatement+"-- +ptah lock_timeout=5s\n", directiveScopeFile)
-				c.Assert(err, qt.IsNil)
-				c.Check(timeouts.HasLockTimeout, qt.IsFalse)
-			},
-		},
-		{
-			name:    "the opt-in leaves the atlas spelling on the community rule",
-			environ: envbooltest.Set(directivesAnywhereEnvVar, "1"),
-			assert: func(c *qt.C) {
-				sql := directiveStatement + "-- atlas:txmode none\n"
-
-				c.Check(parseMigrationFileTxMode("1_x.sql", sql).mode, qt.Equals, MigrationFileTxModeUnspecified)
-				c.Check(misplacedDirectives(sql, "", directiveScopeFile), qt.HasLen, 1)
-			},
-		},
-		{
-			name:    "a typo is a configuration error, not the default",
-			environ: envbooltest.Set(directivesAnywhereEnvVar, "yes"),
-			assert: func(c *qt.C) {
-				_, err := resolveDirectiveScope()
-
-				c.Check(err, qt.ErrorMatches, `invalid boolean value "yes" for PTAH_DIRECTIVES_ANYWHERE`)
-			},
-		},
-		{
-			name:    "an empty value is a configuration error too",
-			environ: envbooltest.Set(directivesAnywhereEnvVar, ""),
-			assert: func(c *qt.C) {
-				_, err := resolveDirectiveScope()
-
-				c.Check(err, qt.ErrorMatches, `invalid boolean value "" for PTAH_DIRECTIVES_ANYWHERE`)
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			test.environ(t)
-
-			test.assert(c)
-		})
-	}
-}
-
 // TestDirectiveHeaderLengthStopsAtTheFirstExecutableLine pins the region every
 // `+ptah` parser now shares.
 func TestDirectiveHeaderLengthStopsAtTheFirstExecutableLine(t *testing.T) {
@@ -460,7 +394,7 @@ func TestDirectiveHeaderLengthStopsAtTheFirstExecutableLine(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Check(directiveHeaderLength(test.sql), qt.Equals, test.want)
+			c.Check(directiveHeaderLength(test.sql, ""), qt.Equals, test.want)
 		})
 	}
 }

@@ -6,8 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
 )
 
@@ -45,62 +46,10 @@ import (
 // [atlasDirectiveHeaderLength] describes -- because compatibility pins it there
 // and because a directive Atlas would not honor must not be honored here.
 
-// directivesAnywhereEnvVar restores the scope the merged `-- +ptah` directive
-// map had before the position rule was unified: significant anywhere in the
-// file, including below the statements it governs.
-//
-// It exists because that scope is behavior this tree shipped, and narrowing it
-// silently would break a directory that works today. It restores exactly what
-// was there and nothing more, so the timeout keys stay header-scoped under it:
-// they were never file-wide, and widening them here would be adding a
-// capability behind a variable whose job is to keep an old one.
-//
-// The variable does NOT touch the `atlas:` spelling, which stays exactly what
-// the pinned community binary does in every mode -- an operator restoring their
-// own directive convention must not also move ptah-compat off Atlas parity.
-const directivesAnywhereEnvVar = "PTAH_DIRECTIVES_ANYWHERE"
-
-// directivesAnywhere is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var directivesAnywhere = envbool.New(directivesAnywhereEnvVar, false)
-
-// directiveScope selects the region of a migration file in which a `-- +ptah`
-// directive is significant.
-type directiveScope uint8
-
-const (
-	// directiveScopeHeader honors directives only before the first executable
-	// SQL statement. It is the default and the rule both families share.
-	directiveScopeHeader directiveScope = iota
-	// directiveScopeFile honors directives anywhere in the file. It is reached
-	// only through directivesAnywhereEnvVar.
-	directiveScopeFile
-)
-
-// resolveDirectiveScope reads the opt-in.
-//
-// Unset keeps the header rule and a valid false spelling keeps it too; an empty
-// or unparsable value is a configuration error rather than a silent fall back
-// to the default, because an operator who wrote the variable to keep their
-// files working must not be told nothing when the value is a typo.
-func resolveDirectiveScope() (directiveScope, error) {
-	anywhere, err := directivesAnywhere.Resolve()
-	if err != nil {
-		return directiveScopeHeader, err
-	}
-	if anywhere {
-		return directiveScopeFile, nil
-	}
-	return directiveScopeHeader, nil
-}
-
 // directiveRegion returns the part of sql in which a directive is significant
-// under scope.
-func directiveRegion(sql string, scope directiveScope) string {
-	if scope == directiveScopeFile {
-		return sql
-	}
-	return sql[:directiveHeaderLength(sql)]
+// for dialect.
+func directiveRegion(sql, dialect string) string {
+	return sql[:directiveHeaderLength(sql, dialect)]
 }
 
 // directiveHeaderLength returns the byte length of sql's directive header: the
@@ -117,12 +66,11 @@ func directiveRegion(sql string, scope directiveScope) string {
 // lines and line comments cannot open a string literal, so truncating to it can
 // never split a token. A file that opens with a block comment has a zero-length
 // header, which is the conservative answer.
-func directiveHeaderLength(sql string) int {
+func directiveHeaderLength(sql, dialect string) int {
 	offset := 0
 	for rest := sql; rest != ""; {
 		line, tail, hasNewline := strings.Cut(rest, "\n")
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+		if !directiveHeaderLine(line, dialect) {
 			return offset
 		}
 		offset += len(line)
@@ -132,6 +80,27 @@ func directiveHeaderLength(sql string) int {
 		rest = tail
 	}
 	return len(sql)
+}
+
+// directiveHeaderLine reports whether line is blank or an ordinary line
+// comment in dialect. MySQL and MariaDB accept # comments and require
+// whitespace after --; asking the shared lexer keeps this boundary identical
+// to the parser that will execute the file.
+func directiveHeaderLine(line, dialect string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		normalized := platform.NormalizeDialect(dialect)
+		if normalized != platform.MySQL && normalized != platform.MariaDB {
+			return false
+		}
+	} else if !strings.HasPrefix(trimmed, "--") {
+		return false
+	}
+	token := lexer.NewLexerWithOptions(trimmed, dialectlexer.Options(dialect)).NextToken()
+	return token.Type == lexer.TokenComment
 }
 
 // atlasDirectiveHeaderLength returns the byte length of the block Atlas reads a
@@ -217,17 +186,14 @@ func validateRecognizedDirectives(directives map[string]string) error {
 // position warning lets two failures mask each other: the operator is told the
 // line is in the wrong place, moves it into the header, and only then learns
 // the value was nonsense all along. Worse, the verdict would depend on
-// PTAH_DIRECTIVES_ANYWHERE -- the same file accepted in one mode and refused in
-// the other -- when whether `maybe` is a boolean is a property of the file.
-//
 // The `atlas:` family deliberately gets no equivalent. Measured on the pinned
 // community binary, `-- atlas:txmode bogus` in the header exits 1 and the same
 // line below the statement exits 0, so refusing it here would exit non-zero
 // where the binary accepts, which the compatibility policy forbids by default.
 // That divergence in SEVERITY between the families is real, measured, and loud
 // on both sides: the `atlas:` line is still reported, just not fatal.
-func misplacedDirectiveError(sql, dialect string, scope directiveScope) error {
-	for _, misplaced := range misplacedDirectives(sql, dialect, scope) {
+func misplacedDirectiveError(sql, dialect string) error {
+	for _, misplaced := range misplacedDirectives(sql, dialect) {
 		if misplaced.err == nil {
 			continue
 		}
@@ -265,27 +231,29 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 // would bury the real finding. And a `-- +ptah check` line is significant
 // wherever it appears: checks are an ordered list that always runs before the
 // first body statement, so its position never decided anything.
-func misplacedDirectives(sql, dialect string, scope directiveScope) []misplacedDirective {
+func misplacedDirectives(sql, dialect string) []misplacedDirective {
 	options := dialectlexer.Options(dialect)
 	var found []misplacedDirective
 
-	if scope == directiveScopeHeader {
-		headerLength := directiveHeaderLength(sql)
-		for marker := range misplacedDirectiveMarkers(sql, dialect) {
-			if marker.Start < headerLength {
-				continue
-			}
-			directives := parseFileDirectives(slices.Values([]string{marker.Body}))
-			if len(directives) == 0 {
-				continue // a marker the merged parser would have ignored anyway
-			}
-			found = append(found, misplacedDirective{
-				line:   lineNumberAt(sql, marker.Start),
-				text:   directiveLineAt(sql, marker.Start),
-				remedy: "move it above the first SQL statement, or set " + directivesAnywhereEnvVar + "=1",
-				err:    validateRecognizedDirectives(directives),
-			})
+	headerLength := directiveHeaderLength(sql, dialect)
+	for marker := range misplacedDirectiveMarkers(sql, dialect) {
+		if marker.Start < headerLength {
+			continue
 		}
+		directives := parseFileDirectives(slices.Values([]string{marker.Body}))
+		err := validateRecognizedDirectives(directives)
+		if len(directives) == 0 {
+			err = validateMisplacedBareTimeout(marker.Body)
+			if err == nil {
+				continue // a marker every directive parser would have ignored
+			}
+		}
+		found = append(found, misplacedDirective{
+			line:   lineNumberAt(sql, marker.Start),
+			text:   directiveLineAt(sql, marker.Start),
+			remedy: "move it above the first SQL statement",
+			err:    err,
+		})
 	}
 
 	atlasHeaderLength := atlasDirectiveHeaderLength(sql)
@@ -305,6 +273,16 @@ func misplacedDirectives(sql, dialect string, scope directiveScope) []misplacedD
 
 	slices.SortFunc(found, func(a, b misplacedDirective) int { return a.line - b.line })
 	return found
+}
+
+func validateMisplacedBareTimeout(body string) error {
+	for field := range strings.FieldsSeq(body) {
+		switch field {
+		case "lock_timeout", "lock-timeout", "statement_timeout", "statement-timeout":
+			return fmt.Errorf("invalid +ptah directive %q", field)
+		}
+	}
+	return nil
 }
 
 // lineNumberAt returns the 1-based line number of the byte at offset.

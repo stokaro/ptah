@@ -310,8 +310,9 @@ The Atlas header must be in the initial line-comment block: the unbroken run of
 line comments that begins on line 1, each starting in column 1. A blank line
 after the header is accepted but not required.
 
-Both directive families answer to one rule about where a directive is
-significant, and to separate rules about what a bad one costs:
+Ptah directives share one header rule, while Atlas transaction mode keeps its
+own stricter header boundary. Each family also keeps its own rule for what a bad
+directive costs:
 
 - `-- +ptah no_transaction` is significant in the same region — before the
   first executable statement — but accepts indentation and blank lines inside
@@ -323,9 +324,8 @@ significant, and to separate rules about what a bad one costs:
 - The `atlas:` spelling is only reported, never refused, outside its block:
   Atlas CE applies a directory whose `-- atlas:txmode bogus` sits below the
   statement.
-`PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier file-wide scope for
-`-- +ptah` directives only. Unknown, duplicate, and file-level
-`all` values fail before the affected migration body or revision row changes.
+Unknown, duplicate, and file-level `all` values fail before the affected
+migration body or revision row changes.
 Validation applies only to the migrations selected after amount and baseline
 processing.
 

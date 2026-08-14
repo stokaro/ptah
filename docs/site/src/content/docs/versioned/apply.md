@@ -179,8 +179,9 @@ people and pipelines share a directory:
   line after that header is accepted but not required. Explicit file modes
   conflict with global `all`.
 
-  Both spellings answer to one position rule: a directive is significant only
-  **before the first executable statement**. A directive written below the
+  Ptah transaction, timeout, and online-DDL directives are significant only
+  **before the first executable statement**. Atlas transaction mode uses its
+  own stricter header rule described below. A directive written below the
   statements it claims to govern is not honored — and it is not dropped in
   silence either. Ptah reports it at `WARN` on stderr, naming the file, the
   line, the directive and how to fix it, because an operator who writes
@@ -193,14 +194,18 @@ people and pipelines share a directory:
   so does Ptah — with the same warning. `-- +ptah` directives accept the whole
   region, blank lines and indentation included.
 
+  The region uses the target database's comment grammar. In MySQL and MariaDB,
+  a leading `#` comment remains part of the header and does not hide following
+  `lock_timeout` or `statement_timeout` directives; Ptah resolves those timeout
+  values with the execution dialect before it validates or runs the migration.
+
   Position and value are separate facts, and a bad value is not demoted to a
   position warning. A `-- +ptah` directive whose key Ptah recognizes but whose
   **value** it cannot read — `no_transaction=maybe`, `lock_timeout=soon` — fails
   the run wherever the line sits, and the refusal names the position too, so you
   are not told the value is nonsense, told nothing about the line being in the
-  wrong place, and left to discover that on the next run. Whether `maybe` is a
-  boolean is a property of the file, so this verdict does not change with
-  `PTAH_DIRECTIVES_ANYWHERE`. A bare word Ptah does not recognize as a directive
+  wrong place, and left to discover that on the next run. A bare word Ptah does
+  not recognize as a directive
   (`-- +ptah revisit this`) is an ordinary comment and is neither refused nor
   reported.
 
@@ -210,14 +215,6 @@ people and pipelines share a directory:
   sits below the statement. Refusing the second would exit non-zero where Atlas
   CE exits `0`, so Ptah reports it and applies the directory, as CE does.
 
-  Setting `PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier scope of the merged
-  `-- +ptah` directive map — `no_transaction` and the online-DDL keys —
-  in which those directives are significant anywhere in the file. It is there
-  for a directory that already depends on that scope. It restores that scope
-  and nothing else: `-- +ptah lock_timeout` and `-- +ptah statement_timeout`
-  were header-scoped before this change and stay header-scoped under it, and
-  the `-- atlas:` spelling stays exactly what Atlas CE does in either mode.
-  A value that is not a boolean fails the run rather than reading as unset.
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision

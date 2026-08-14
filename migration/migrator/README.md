@@ -653,6 +653,11 @@ Override those defaults in a specific migration file with top-of-file directives
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
 
+The header follows the target database's line-comment grammar. A leading `#`
+comment in a MySQL or MariaDB migration remains in the header, so it does not
+hide timeout directives that follow it. The migrator resolves the effective
+timeouts with the execution dialect before validation and execution.
+
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
 ### Transaction Modes

@@ -78,23 +78,15 @@ func TestParseFileDirectives(t *testing.T) {
 	}
 }
 
-// Test_parseFileDirectivesForDialect_KeepsMySQLStringOpaque exercises the
-// dialect-specific string rules on the only scope that can still reach a string
-// literal.
-//
-// Under the default header scope the region handed to the lexer is blank lines
-// and line comments by construction, so no string literal can open inside it
-// and the dialect can change nothing. The scope opt-in is where a MySQL
-// backslash escape can still swallow a directive-looking line, so that is where
-// the guarantee has to be measured; the header-scope row is the control that
-// says the same file is inert there.
-func Test_parseFileDirectivesForDialect_KeepsMySQLStringOpaque(t *testing.T) {
+// TestParseFileDirectivesForDialectTreatsMySQLHashCommentsAsHeaderComments
+// keeps the header boundary on the same dialect rules as execution.
+func TestParseFileDirectivesForDialectTreatsMySQLHashCommentsAsHeaderComments(t *testing.T) {
 	c := qt.New(t)
-	sql := "SELECT 'prefix \\'\n-- +ptah no_transaction\nsuffix';\n" +
-		"-- +ptah online_ddl_tool=ghost\nSELECT 1;\n"
+	sql := "# ordinary MySQL comment\n-- +ptah no_transaction\nSELECT 1;\n"
 
-	c.Check(parseFileDirectivesForDialectInScope(sql, platform.MySQL, directiveScopeFile),
-		qt.DeepEquals, map[string]string{"online_ddl_tool": "ghost"})
-	c.Check(parseFileDirectivesForDialectInScope(sql, platform.MySQL, directiveScopeHeader),
-		qt.DeepEquals, map[string]string{})
+	c.Check(parseFileDirectivesForDialect(sql, platform.MySQL),
+		qt.DeepEquals, map[string]string{"no_transaction": "true"})
+	c.Check(parseFileDirectivesForDialect(sql, platform.MariaDB),
+		qt.DeepEquals, map[string]string{"no_transaction": "true"})
+	c.Check(ParseFileDirectives(sql), qt.HasLen, 0)
 }
