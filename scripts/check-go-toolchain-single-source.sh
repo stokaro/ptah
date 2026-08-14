@@ -126,6 +126,21 @@ strip_value() {
 	printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//'
 }
 
+# A block scalar keeps its value on the FOLLOWING lines: `default: >-` with
+# 1.25.0 underneath is the string "1.25.0", but a line-oriented read sees `>-`
+# and judges a value that is not there. Every shape test in this file then says
+# "not a version" and reports nothing.
+#
+# Rather than grow a YAML parser to chase the folded, literal, keep, strip and
+# indentation variants -- which would be one more round of covering the spellings
+# someone thought of -- an indicator in any of these positions is refused
+# outright. Nothing this gate reads has a reason to be a block scalar: a Go
+# version, a module path and an input default are short single-line scalars. A
+# value the gate cannot see through is not a value it may pass.
+is_block_scalar() {
+	printf '%s' "$1" | grep -qE '^[|>][0-9+-]*$'
+}
+
 # D1: every setup-go step derives its version, and derives it from THE source.
 #
 # The step is read from its `uses:` line, quoted or not, down to the first later
@@ -345,6 +360,11 @@ while IFS=: read -r forwarding_manifest forwarded_input; do
 	' "$forwarding_manifest")"
 	[[ -n $default_row ]] || continue
 	default_clean="$(strip_value "${default_row#*:}")"
+	if is_block_scalar "$default_clean"; then
+		fail "$forwarding_manifest" "${default_row%%:*}" \
+			"input '$forwarded_input' is forwarded to setup-go and declares its default as the block scalar '$default_clean', whose value is on the following lines and cannot be read here. Write a plain single-line default."
+		continue
+	fi
 	case "$default_clean" in
 	[0-9]*.[0-9]*)
 		fail "$forwarding_manifest" "${default_row%%:*}" \
@@ -364,9 +384,23 @@ while IFS= read -r action_file; do
 	# counted, or the vacuity guard below would read it as a manifest.
 	[[ -n $action_file ]] || continue
 	action_files=$((action_files + 1))
+	# The shape decision lives here rather than in the awk, so that the version
+	# test and the block-scalar refusal are made in one place on one value. The
+	# awk reports every default it finds on a go-ish input; what counts as
+	# unacceptable is decided once, the same way D1c and D3 decide it.
 	while IFS=: read -r line input text; do
-		fail "$action_file" "$line" \
-			"composite action input '$input' defaults to a Go version literal ($text). Leave it empty and read the caller's module through a go-version-file input."
+		clean="$(strip_value "$text")"
+		if is_block_scalar "$clean"; then
+			fail "$action_file" "$line" \
+				"composite action input '$input' declares its default as the block scalar '$clean', whose value is on the following lines and cannot be read here. Write a plain single-line default."
+			continue
+		fi
+		case "$clean" in
+		[0-9]*.[0-9]*)
+			fail "$action_file" "$line" \
+				"composite action input '$input' defaults to a Go version literal ($clean). Leave it empty and read the caller's module through a go-version-file input."
+			;;
+		esac
 	done < <(awk '
 		/^inputs:/ { in_inputs = 1; next }
 		/^[^[:space:]#]/ { in_inputs = 0 }
@@ -375,19 +409,16 @@ while IFS= read -r action_file; do
 			sub(/:$/, "", input)
 			next
 		}
-		# The quoting is stripped BEFORE the value is judged, never matched as
-		# part of the pattern. YAML spells the same scalar `1.26.5`, "1.26.5"
-		# and '"'"'1.26.5'"'"', so a pattern that admits only one of them lets a
+		# The quoting comes off BEFORE the value is judged, never as part of a
+		# pattern. YAML spells the same scalar `1.26.5`, "1.26.5" and
+		# '"'"'1.26.5'"'"', so a pattern that admits only one of them lets a
 		# version through under either of the others -- and a pinned, non-empty
 		# go-version makes setup-go ignore go-version-file entirely, which puts
 		# the action back on a literal with this gate still green.
 		in_inputs && input ~ /[Gg][Oo]|[Tt]oolchain/ && /^[[:space:]]+default:/ {
 			value = $0
 			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
-			gsub(/^["'"'"']|["'"'"']$/, "", value)
-			if (value ~ /^[0-9]+\.[0-9]+/) {
-				print NR ":" input ":" value
-			}
+			print NR ":" input ":" value
 		}
 	' "$action_file")
 
@@ -461,6 +492,11 @@ fi
 if [[ -f .golangci.yml ]]; then
 	while IFS=: read -r file line text; do
 		clean="$(strip_value "$text")"
+		if is_block_scalar "$clean"; then
+			fail "$file" "$line" \
+				"golangci-lint declares run.go as the block scalar '$clean', whose value is on the following lines and cannot be read here. Delete run.go; its documented default is already the go directive from go.mod."
+			continue
+		fi
 		case "$clean" in
 		[0-9]*.[0-9]*)
 			fail "$file" "$line" \
