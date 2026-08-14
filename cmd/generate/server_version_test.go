@@ -204,6 +204,23 @@ func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing
 			version: "PostgreSQL 16.3 (Debian)",
 			names:   "postgres",
 		},
+		{
+			// A PostgreSQL banner on a dialect that speaks the PostgreSQL wire
+			// protocol is still a contradiction between two typed values, even
+			// though a live cockroachdb connection reporting the same banner
+			// keeps its own preset — see
+			// servertarget.TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps.
+			name:    "a PostgreSQL banner on cockroachdb",
+			dialect: "cockroachdb",
+			version: "PostgreSQL 16.3 (Debian)",
+			names:   "postgres",
+		},
+		{
+			name:    "a PostgreSQL banner on spanner",
+			dialect: "spanner",
+			version: "PostgreSQL 14.1",
+			names:   "postgres",
+		},
 	}
 
 	for _, test := range tests {

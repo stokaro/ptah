@@ -988,10 +988,15 @@ type VersionResolution struct {
 	// A product banner outranks the declared dialect here — that is deliberate
 	// and correct on a live connection, where MariaDB announces itself over
 	// the MySQL protocol and CockroachDB over the PostgreSQL one, so the
-	// string is better evidence than the driver name. It is a trap for a
-	// string a person typed: "mysql" plus a MariaDB banner is a contradiction,
-	// and without this field the contradiction is unobservable, because the
-	// returned Capabilities carry no record of which platform produced them.
+	// string is better evidence than the driver name. Without this field that
+	// override is unobservable, because the returned Capabilities carry no
+	// record of which platform produced them.
+	//
+	// This is NOT the answer to "which product does the string name" — that is
+	// BannerPlatform, and a caller refusing a contradiction between two typed
+	// values must ask it instead. The two disagree for a banner naming only
+	// PostgreSQL on a dialect already in the PostgreSQL wire family, which
+	// keeps its own preset and so reports its own name here.
 	//
 	// It is the normalized dialect name, empty only when the dialect itself
 	// normalized to nothing.
@@ -1028,6 +1033,48 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 	return resolution.Capabilities, resolution.VersionSpecific
 }
 
+// BannerPlatform reports the database product a version string names, or the
+// empty string when it names none — a bare "8.0.42" names no product, and
+// neither does an unreadable one.
+//
+// It answers a different question from VersionResolution.ResolvedDialect.
+// This one is about the string alone: which product does it announce? That is
+// the question a caller holding operator input has to ask, because two typed
+// values naming two different servers are a contradiction no preset can
+// resolve. ResolvedDialect answers which ladder the capabilities actually came
+// from, and the two deliberately disagree for a PostgreSQL banner on a
+// PostgreSQL-family dialect — see ResolveServerVersion.
+//
+// It is also the only ordered table of product tokens in the tree.
+// dbschema's wire-dialect detection reads it rather than repeating the
+// substrings, because a second copy is how a live connection and an offline
+// resolution come to disagree about which server a banner describes.
+//
+// The order is load-bearing: three of the products announce the PostgreSQL
+// engine in their own banner — CockroachDB speaks the PostgreSQL wire
+// protocol, YugabyteDB reports "PostgreSQL 11.2-YB-…" and Spanner
+// "Cloud Spanner PostgreSQL" — so PostgreSQL is claimed last, after every
+// token that is more specific than it.
+func BannerPlatform(version string) string {
+	versionLower := strings.ToLower(version)
+	switch {
+	case strings.Contains(versionLower, "cockroachdb"):
+		return platform.CockroachDB
+	case strings.Contains(versionLower, "yugabytedb"),
+		strings.Contains(versionLower, "yugabyte"),
+		strings.Contains(versionLower, "-yb-"):
+		return platform.YugabyteDB
+	case strings.Contains(versionLower, "spanner"):
+		return platform.Spanner
+	case strings.Contains(versionLower, "postgres"):
+		return platform.Postgres
+	case strings.Contains(versionLower, "mariadb"):
+		return platform.MariaDB
+	default:
+		return ""
+	}
+}
+
 // ResolveServerVersion is ForServerVersionResult with the saturation answer
 // attached. It selects exactly the same preset and reports exactly the same
 // VersionSpecific value; Saturated and NewestMeasured say why a saturated
@@ -1036,12 +1083,11 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 // for what saturation means and which dialects can report it.
 func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
-	versionLower := strings.ToLower(version)
 
-	switch {
-	case strings.Contains(versionLower, "cockroachdb"):
+	switch BannerPlatform(version) {
+	case platform.CockroachDB:
 		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
-	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
+	case platform.YugabyteDB:
 		// The banner alone is the whole answer for these two: no version is
 		// consulted, so the string was recognized even though nothing in it
 		// was parsed as a number.
@@ -1051,28 +1097,39 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 			Recognized:      true,
 			ResolvedDialect: platform.YugabyteDB,
 		}
-	case strings.Contains(versionLower, "spanner"):
+	case platform.Spanner:
 		return VersionResolution{
 			Capabilities:    SpannerPostgres(),
 			VersionSpecific: true,
 			Recognized:      true,
 			ResolvedDialect: platform.Spanner,
 		}
-	case strings.Contains(versionLower, "postgres"):
-		// Last of the four product banners, because three of them contain
-		// this word: CockroachDB speaks the PostgreSQL wire protocol,
-		// YugabyteDB reports "PostgreSQL 11.2-YB-…" and Spanner "Cloud Spanner
-		// PostgreSQL". Each is claimed above, so what reaches here is a real
-		// PostgreSQL banner — and it has to be claimed as one rather than
-		// falling through to the numeric ladder of whatever dialect was
-		// declared, which read "PostgreSQL 16.3 (Debian)" on --dialect mysql
-		// as MySQL 16.3 and answered MySQL84.
-		return resolvedAs(postgresBannerResolution(version, dialect), platform.Postgres)
-	}
-
-	// MariaDB announces itself in the version string even when connected via
-	// the mysql dialect/driver; trust the string over the declared dialect.
-	if strings.Contains(versionLower, "mariadb") {
+	case platform.Postgres:
+		// "PostgreSQL" names the FAMILY, and only the family. CockroachDB,
+		// YugabyteDB and Spanner are all reached over the PostgreSQL wire
+		// protocol, and each may report a banner carrying no token of its own
+		// — which is exactly the case dbschema's detectPostgresWireDialect
+		// answers by keeping the dialect the operator connected with. Claiming
+		// the banner as PostgreSQL there would overrule that decision and hand
+		// a live distributed server the PostgreSQL preset: measured, it turned
+		// SpannerPostgres into Postgres14 across 19 keys, among them
+		// materialized_views, functions and triggers, which are the keys that
+		// exist to stop Ptah emitting DDL Spanner refuses.
+		//
+		// So the banner is claimed only for a dialect outside that family,
+		// where it is a genuine contradiction rather than a less specific
+		// spelling of the same server: "PostgreSQL 16.3 (Debian)" on
+		// --dialect mysql used to read as MySQL 16.3 and answer MySQL84.
+		// A version a person typed is refused before it gets this far by
+		// internal/servertarget, which asks BannerPlatform directly and so
+		// still refuses a PostgreSQL banner paired with --dialect cockroachdb.
+		if !platform.IsPostgresFamily(normalized) {
+			return resolvedAs(postgresBannerResolution(version, dialect), platform.Postgres)
+		}
+	case platform.MariaDB:
+		// MariaDB announces itself in the version string even when connected
+		// via the mysql dialect/driver; trust the string over the declared
+		// dialect.
 		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
 	}
 

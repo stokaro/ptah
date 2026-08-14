@@ -45,15 +45,25 @@ func (e *UnrecognizedVersionError) Error() string {
 // DialectMismatchError reports a version string that names a different server
 // product than the dialect it was supplied with.
 //
-// capability.ResolveServerVersion lets a product banner outrank the declared
-// dialect, which is right on a live connection: MariaDB announces itself over
-// the MySQL protocol and CockroachDB over the PostgreSQL one, so the banner is
-// better evidence than the driver name. Applied to two values a person typed it
-// is a silent contradiction instead. Measured before this refusal existed,
-// `ptah schema render --dialect mysql --server-version 10.11.6-MariaDB` exited
-// 0 rendering MySQL DDL against MariaDB capabilities, where the same command
-// without a version exited 2 — so the flag could relax a refusal by naming a
-// server the render was never going to target.
+// A live connection resolves such a contradiction in favor of the string:
+// MariaDB announces itself over the MySQL protocol and CockroachDB over the
+// PostgreSQL one, so the banner is better evidence than the driver name.
+// Applied to two values a person typed it is a silent contradiction instead.
+// Measured before this refusal existed, `ptah schema render --dialect mysql
+// --server-version 10.11.6-MariaDB` exited 0 rendering MySQL DDL against
+// MariaDB capabilities, where the same command without a version exited 2 — so
+// the flag could relax a refusal by naming a server the render was never going
+// to target.
+//
+// The question asked here is capability.BannerPlatform: which product does the
+// string announce? It is deliberately not
+// capability.VersionResolution.ResolvedDialect, which answers which ladder the
+// capabilities came from. The two differ for a PostgreSQL banner on a
+// PostgreSQL-family dialect: `--dialect cockroachdb --server-version
+// 'PostgreSQL 16.3'` resolves on the CockroachDB ladder, because a live
+// CockroachDB may report a banner carrying no product token of its own and
+// must keep its own preset — while the same pair typed on a command line is
+// still a contradiction and is refused here.
 type DialectMismatchError struct {
 	// Dialect is the normalized dialect the caller asked for.
 	Dialect string
@@ -99,10 +109,10 @@ func Resolve(dialect, version string) (Target, error) {
 	if !resolution.Recognized {
 		return Target{}, &UnrecognizedVersionError{Dialect: dialect, Version: version}
 	}
-	if resolution.ResolvedDialect != normalized {
+	if named := capability.BannerPlatform(version); named != "" && named != normalized {
 		return Target{}, &DialectMismatchError{
 			Dialect:         normalized,
-			ResolvedDialect: resolution.ResolvedDialect,
+			ResolvedDialect: named,
 			Version:         version,
 		}
 	}

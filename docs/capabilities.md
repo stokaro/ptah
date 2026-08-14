@@ -305,22 +305,46 @@ for those commands; every surface that reads a live `SELECT version()` banner
 still degrades silently by design, because a server does not typo its own name.
 
 Both also refuse a version that names a **different server product** than the
-dialect it was supplied with. `ResolveServerVersion` lets a product banner
-outrank the declared dialect, which is right on a live connection — MariaDB
-announces itself over the MySQL protocol and CockroachDB over the PostgreSQL
-one — and a silent contradiction between two values a person typed:
-`--dialect mysql --server-version 10.11.6-MariaDB` rendered MySQL DDL against
-MariaDB capabilities at exit `0` where the same command without a version
-exited `2`. `VersionResolution.ResolvedDialect` publishes the platform the
-preset came from, which is what makes the contradiction observable at all;
-`internal/servertarget` reads it and refuses. A banner naming the dialect it was
-given with still resolves.
+dialect it was supplied with. A live connection resolves that contradiction in
+favor of the string — MariaDB announces itself over the MySQL protocol and
+CockroachDB over the PostgreSQL one — and between two values a person typed it
+is a silent contradiction instead: `--dialect mysql --server-version
+10.11.6-MariaDB` rendered MySQL DDL against MariaDB capabilities at exit `0`
+where the same command without a version exited `2`. `capability.BannerPlatform`
+answers which product a string names, which is what makes the contradiction
+observable at all; `internal/servertarget` reads it and refuses. A banner naming
+the dialect it was given with still resolves.
 
-Four product banners are detected, and the PostgreSQL one is detected last
-because three of the others contain the word: CockroachDB speaks the PostgreSQL
-wire protocol, YugabyteDB reports `PostgreSQL 11.2-YB-…` and Spanner
-`Cloud Spanner PostgreSQL`. Checking PostgreSQL first would plan every one of
-those engines as PostgreSQL.
+`BannerPlatform` is the only ordered table of product tokens in the tree —
+`ResolveServerVersion` dispatches on it and `dbschema`'s wire-dialect detection
+reads it, because a second copy is how a live connection and an offline
+resolution come to disagree about which server a banner describes. Five
+products are detected, and the PostgreSQL one is detected last because three of
+the others contain the word: CockroachDB speaks the PostgreSQL wire protocol,
+YugabyteDB reports `PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner
+PostgreSQL`. Checking PostgreSQL first would plan every one of those engines as
+PostgreSQL.
+
+A banner naming **only** PostgreSQL names the family and not the product, so it
+does not displace a declared dialect already in that family. CockroachDB,
+YugabyteDB and Spanner all speak this wire protocol, and a deployment of any of
+them may report a banner carrying no token of its own — Cloud Spanner's
+PostgreSQL interface answers `SELECT version()` with exactly `PostgreSQL 14.1`,
+measured live against the Cloud Spanner emulator behind PGAdapter 0.55.2.
+
+`dbschema.getDatabaseInfo` answers that case by keeping the dialect the operator
+connected with, and `ResolveServerVersion` keeps that dialect's preset for the
+same reason: claiming the banner there replaced `SpannerPostgres()` with a
+PostgreSQL line across 19 keys, among them `materialized_views`, `functions` and
+`triggers`, which exist to stop Ptah emitting DDL Spanner refuses. The two
+readers are held to one answer by
+`dbschema.TestWireDialectDetectionAgreesWithTheCapabilityResolver`.
+
+The offline flags are stricter than the live path here, deliberately: a
+PostgreSQL banner typed alongside `--dialect cockroachdb` is two values naming
+two servers with nothing to prefer between them, so `internal/servertarget`
+refuses it even though a live CockroachDB reporting the same banner keeps its
+own preset.
 
 The two spellings differ because `sql lint --version` predates the flag having
 a name. `cmd/internal/serverversion` registers both and marks them with one

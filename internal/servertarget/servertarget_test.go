@@ -186,6 +186,24 @@ func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
 			version:  "PostgreSQL 16.3 (Debian)",
 			resolved: platform.Postgres,
 		},
+		{
+			name:     "PostgreSQL banner on cockroachdb",
+			dialect:  platform.CockroachDB,
+			version:  "PostgreSQL 16.3 (Debian)",
+			resolved: platform.Postgres,
+		},
+		{
+			name:     "PostgreSQL banner on yugabytedb",
+			dialect:  platform.YugabyteDB,
+			version:  "PostgreSQL 16.3 (Debian)",
+			resolved: platform.Postgres,
+		},
+		{
+			name:     "PostgreSQL banner on spanner",
+			dialect:  platform.Spanner,
+			version:  "PostgreSQL 14.1",
+			resolved: platform.Postgres,
+		},
 	}
 
 	for _, tt := range tests {
@@ -274,6 +292,67 @@ func TestResolve_AcceptsAMatchingBanner(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(target.Capabilities, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps executes the split
+// between the two paths as one claim, because the whole design rests on them
+// answering the same pair differently.
+//
+// A PostgreSQL banner on a PostgreSQL-family dialect is two different events. On
+// a live connection it is one server describing itself less specifically than it
+// could: CockroachDB, YugabyteDB and Spanner all speak this protocol, so the
+// dialect the operator connected with is the only product evidence there is and
+// the resolver keeps its preset. Typed on a command line it is two values naming
+// two servers, with nothing to prefer between them, so this package refuses.
+//
+// Reading capability.VersionResolution.ResolvedDialect here instead of
+// capability.BannerPlatform is what collapses the two: ResolvedDialect reports
+// the CockroachDB ladder for these inputs, correctly, and a refusal keyed on it
+// cannot fire.
+func TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		live    capability.Capabilities
+	}{
+		{
+			name:    "cockroachdb",
+			dialect: platform.CockroachDB,
+			version: "PostgreSQL-compatible server 25.4",
+			live:    capability.CockroachDB25(),
+		},
+		{
+			name:    "yugabytedb",
+			dialect: platform.YugabyteDB,
+			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
+			live:    capability.YugabyteDB25(),
+		},
+		{
+			name:    "spanner",
+			dialect: platform.Spanner,
+			version: "PostgreSQL 14.1",
+			live:    capability.SpannerPostgres(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(tt.dialect, tt.version)
+			c.Assert(resolution.ResolvedDialect, qt.Equals, tt.dialect)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, tt.live)
+
+			target, err := servertarget.Resolve(tt.dialect, tt.version)
+
+			c.Assert(target.Capabilities, qt.IsNil)
+			var mismatch *servertarget.DialectMismatchError
+			c.Assert(err, qt.ErrorAs, &mismatch)
+			c.Assert(mismatch.Dialect, qt.Equals, tt.dialect)
+			c.Assert(mismatch.ResolvedDialect, qt.Equals, platform.Postgres)
 		})
 	}
 }
