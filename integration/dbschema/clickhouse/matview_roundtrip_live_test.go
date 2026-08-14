@@ -28,6 +28,20 @@ func readClickHouseMaterializedViews(
 	return &dbschematypes.DBSchema{MatViews: schema.MatViews}
 }
 
+// readClickHouseViewLikes reads both view kinds and nothing else, so a
+// comparison against a desired schema declaring only views is not also a
+// comparison about the source table.
+func readClickHouseViewLikes(
+	t *testing.T,
+	db *sql.DB,
+	database string,
+) *dbschematypes.DBSchema {
+	t.Helper()
+	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	qt.Assert(t, err, qt.IsNil)
+	return &dbschematypes.DBSchema{Views: schema.Views, MatViews: schema.MatViews}
+}
+
 // TestMaterializedViewLifecycleRoundTripsLive is the acceptance for #1462.
 //
 // It declares a materialized view, plans it, executes the plan against a live
@@ -153,25 +167,40 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(emptyReadback.Tables[0].Name, qt.Equals, "users")
 }
 
-// TestDropAllTablesLeavesMaterializedViewStorageAloneLive covers the third site
-// that shares the MergeTree engine allowlist.
+// TestDropAllTablesResetIsReplayableLive is the acceptance for the reset
+// contract every caller of DropAllTables depends on.
 //
-// The storage table a materialized view owns is a real MergeTree table, and
-// DROP TABLE on it succeeds: the server does not refuse, it just leaves the
-// view pointing at nothing, so a SELECT from the view fails with UNKNOWN_TABLE.
-// DropAllTables says it drops base tables, so the check is that the declared
-// table is gone and the view is still readable.
-func TestDropAllTablesLeavesMaterializedViewStorageAloneLive(t *testing.T) {
+// The shadow replay in migration/generator, the dev-database cleanup in
+// internal/atlasschema and the integration harness all reset with this method
+// and then replay DDL into the same database. Before this change the ClickHouse
+// writer dropped base tables only, and measured on server 26.7.3.19 the replay
+// of the very migration that had just been reset failed on both view kinds:
+//
+//	CREATE VIEW <db>.plain_v               -> code: 57, Table <db>.plain_v already exists
+//	CREATE MATERIALIZED VIEW <db>.stored_v -> code: 57, Table <db>.stored_v already exists
+//
+// A plain view stands beside the materialized one because those two are the
+// separate halves of the same defect: a fix that removed only materialized
+// views would leave the plain view standing and the replay still failing.
+//
+// The materialized view's ".inner_id.<uuid>" storage is not dropped as a table
+// of its own -- DROP TABLE on it succeeds while leaving the view behind,
+// pointing at nothing -- so the check that the database is empty afterwards is
+// also the check that the storage left with its owner rather than separately.
+func TestDropAllTablesResetIsReplayableLive(t *testing.T) {
 	c := qt.New(t)
 	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
 	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	plainView := sqlident.Qualified(platform.ClickHouse, database, "active_users")
 	storedView := sqlident.Qualified(platform.ClickHouse, database, "user_counts")
-	executeClickHouseViewPlan(t, db, []string{
+	migration := []string{
 		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+		"CREATE VIEW " + plainView + " AS SELECT id FROM " + sourceTable,
 		"CREATE MATERIALIZED VIEW " + storedView +
 			" ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM " + sourceTable,
-		"INSERT INTO " + sourceTable + " VALUES (1)",
-	})
+	}
+	executeClickHouseViewPlan(t, db, migration)
+	executeClickHouseViewPlan(t, db, []string{"INSERT INTO " + sourceTable + " VALUES (1)"})
 
 	err := clickhousedb.NewClickHouseWriter(db, database).DropAllTables(t.Context())
 	c.Assert(err, qt.IsNil)
@@ -179,16 +208,23 @@ func TestDropAllTablesLeavesMaterializedViewStorageAloneLive(t *testing.T) {
 	var remaining uint64
 	err = db.QueryRowContext(
 		t.Context(),
-		"SELECT count() FROM system.tables WHERE database = ? AND name = 'users'",
+		"SELECT count() FROM system.tables WHERE database = ? AND is_temporary = 0",
 		database,
 	).Scan(&remaining)
 	c.Assert(err, qt.IsNil)
 	c.Assert(remaining, qt.Equals, uint64(0))
 
-	var stored uint64
-	err = db.QueryRowContext(t.Context(), "SELECT sum(c) FROM "+storedView).Scan(&stored)
+	// The reset is only a reset if the same migration runs again on top of it.
+	executeClickHouseViewPlan(t, db, migration)
+
+	readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
 	c.Assert(err, qt.IsNil)
-	c.Assert(stored, qt.Equals, uint64(1))
+	c.Assert(readback.Tables, qt.HasLen, 1)
+	c.Assert(readback.Tables[0].Name, qt.Equals, "users")
+	c.Assert(readback.Views, qt.HasLen, 1)
+	c.Assert(readback.Views[0].Name, qt.Equals, "active_users")
+	c.Assert(readback.MatViews, qt.HasLen, 1)
+	c.Assert(readback.MatViews[0].Name, qt.Equals, "user_counts")
 }
 
 // TestMaterializedViewStoresRatherThanRecomputesLive is the measurement behind
@@ -229,4 +265,98 @@ func TestMaterializedViewStoresRatherThanRecomputesLive(t *testing.T) {
 
 	c.Assert(readSum(plainView), qt.Equals, uint64(0))
 	c.Assert(readSum(storedView), qt.Equals, uint64(1))
+}
+
+// TestViewKindChangeAppliesLive is the acceptance for a name that changes kind
+// without changing its name.
+//
+// Both view comparators are independent, so this arrives as an addition of one
+// kind next to a removal of the other, and ClickHouse resolves both against one
+// namespace: a plan that emitted the create before the removal is refused with
+// "Code: 57 ... Table ... already exists. (TABLE_ALREADY_EXISTS)". A rendered
+// statement is not an applied one, so the plan is executed here and the catalog
+// is read back.
+//
+// Both directions run, because the two are separate branches of the planner and
+// a fix that reordered only one of them would leave the other unapplyable.
+func TestViewKindChangeAppliesLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	viewName := database + ".user_counts"
+	body := "SELECT count() AS c FROM " + sourceTable
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+		"CREATE MATERIALIZED VIEW " +
+			sqlident.Qualified(platform.ClickHouse, database, "user_counts") +
+			" ENGINE = MergeTree ORDER BY tuple() AS " + body,
+	})
+
+	asPlainView := &goschema.Database{Views: []goschema.View{{
+		StructName: "UserCounts",
+		Name:       viewName,
+		Body:       body,
+	}}}
+	toPlainDiff := schemadiff.CompareWithDialect(
+		asPlainView,
+		readClickHouseViewLikes(t, db, database),
+		platform.ClickHouse,
+	)
+	c.Assert(toPlainDiff.ViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(toPlainDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{viewName})
+	toPlainStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		toPlainDiff,
+		asPlainView,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(toPlainStatements, qt.HasLen, 2)
+	// Executed before the shape is inspected, so the server is the one that
+	// judges the order: a plan that creates first is refused outright.
+	executeClickHouseViewPlan(t, db, toPlainStatements)
+	c.Assert(toPlainStatements[0], qt.Contains, "DROP VIEW IF EXISTS ")
+	c.Assert(toPlainStatements[1], qt.Contains, "CREATE VIEW ")
+
+	plainReadback := readClickHouseViewLikes(t, db, database)
+	c.Assert(plainReadback.Views, qt.HasLen, 1)
+	c.Assert(plainReadback.MatViews, qt.HasLen, 0)
+	c.Assert(
+		schemadiff.CompareWithDialect(asPlainView, plainReadback, platform.ClickHouse).HasChanges(),
+		qt.IsFalse,
+	)
+
+	asMaterialized := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+		StructName: "UserCounts",
+		Name:       viewName,
+		Body:       body,
+	}}}
+	toMaterializedDiff := schemadiff.CompareWithDialect(
+		asMaterialized,
+		plainReadback,
+		platform.ClickHouse,
+	)
+	c.Assert(toMaterializedDiff.MaterializedViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(toMaterializedDiff.ViewsRemoved, qt.DeepEquals, []string{viewName})
+	toMaterializedStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		toMaterializedDiff,
+		asMaterialized,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(toMaterializedStatements, qt.HasLen, 2)
+	executeClickHouseViewPlan(t, db, toMaterializedStatements)
+	c.Assert(toMaterializedStatements[0], qt.Contains, "DROP VIEW IF EXISTS ")
+	c.Assert(toMaterializedStatements[1], qt.Contains, "CREATE MATERIALIZED VIEW ")
+
+	materializedReadback := readClickHouseViewLikes(t, db, database)
+	c.Assert(materializedReadback.Views, qt.HasLen, 0)
+	c.Assert(materializedReadback.MatViews, qt.HasLen, 1)
+	c.Assert(
+		schemadiff.CompareWithDialect(
+			asMaterialized,
+			materializedReadback,
+			platform.ClickHouse,
+		).HasChanges(),
+		qt.IsFalse,
+	)
 }

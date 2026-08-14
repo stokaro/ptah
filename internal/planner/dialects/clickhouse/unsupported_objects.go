@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
@@ -137,6 +138,19 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 // emitted before every create so the object being replaced is gone first. A
 // changed plain view needs none, because CREATE OR REPLACE VIEW is one
 // statement.
+//
+// An object can also change KIND without changing its name. The plain-view and
+// materialized-view comparators are independent, so a name declared as one kind
+// and living in the database as the other arrives as an addition of the desired
+// kind next to a removal of the live kind, and the two do not have to spell the
+// name the same way: measured through migration/schemadiff, a declared view "x"
+// against a database holding a materialized view produces
+// ViewsAdded=[x] with MaterializedViewsRemoved=[ptah_test.x]. ClickHouse
+// refuses the create while the old object still owns the name — measured on
+// server 26.7.3.19, both directions answer "Code: 57. DB::Exception: Table
+// ptah_test.x already exists. (TABLE_ALREADY_EXISTS)" — so those removals are
+// emitted BEFORE the create pass. They are moved rather than added, so the plan
+// still names each object exactly once.
 func reportViewLikes(
 	result []ast.Node,
 	diff *types.SchemaDiff,
@@ -148,6 +162,23 @@ func reportViewLikes(
 		len(diff.MaterializedViewsAdded) + len(diff.MaterializedViewsModified)
 	objects := make([]deporder.ViewLike, 0, capacity)
 	nodes := make(map[viewLikeIdentity]ast.Node, capacity)
+
+	replacedMaterializedViews := crossKindReplacements(
+		diff.MaterializedViewsRemoved,
+		diff.ViewsAdded,
+		semantics,
+	)
+	replacedViews := crossKindReplacements(
+		diff.ViewsRemoved,
+		diff.MaterializedViewsAdded,
+		semantics,
+	)
+	for _, name := range replacedMaterializedViews {
+		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
+	}
+	for _, name := range replacedViews {
+		result = append(result, ast.NewDropView(name).SetIfExists())
+	}
 
 	for _, name := range diff.ViewsAdded {
 		object, node, err := clickHouseViewChange(generated, name, semantics, caps)
@@ -193,12 +224,40 @@ func reportViewLikes(
 		result = append(result, nodes[identityOf(object)])
 	}
 	for _, name := range diff.ViewsRemoved {
+		if slices.Contains(replacedViews, name) {
+			continue
+		}
 		result = append(result, ast.NewDropView(name).SetIfExists())
 	}
 	for _, name := range diff.MaterializedViewsRemoved {
+		if slices.Contains(replacedMaterializedViews, name) {
+			continue
+		}
 		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
 	}
 	return result, nil
+}
+
+// crossKindReplacements returns the removed names the other kind's additions
+// claim, in the order the removals were reported.
+//
+// The two sides come from different schemas and do not have to spell the name
+// the same way — the database reader qualifies what a declaration leaves bare —
+// so membership is decided by objectlookup's identity rule rather than by `==`,
+// which is the mistake objectlookup exists to stop. The returned names are the
+// removal list's own elements, so the caller can skip them from that list by
+// exact string.
+func crossKindReplacements(removed, added []string, semantics identifier.Semantics) []string {
+	if len(removed) == 0 || len(added) == 0 {
+		return nil
+	}
+	replaced := make([]string, 0, len(removed))
+	for _, name := range removed {
+		if objectlookup.Contains(added, name, semantics) {
+			replaced = append(replaced, name)
+		}
+	}
+	return replaced
 }
 
 // appendMaterializedViewReplacementDrop writes the drop half of a replacement

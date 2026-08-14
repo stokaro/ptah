@@ -244,6 +244,13 @@ complete catalog dependency metadata, cleanup also requires that other user
 databases contain no view-like or dictionary objects and no `Buffer`,
 `Distributed`, or `Merge` tables.
 
+The narrower reset that shadow verification and dev-database replay use removes
+tables, views, and materialized views. A materialized view goes as one object,
+with `DROP VIEW`, so its inner storage table leaves with it rather than being
+dropped out from under it. Live views and window views are left alone, matching
+what the ClickHouse reader reports; use the database-realm cleanup above when a
+database has to be emptied completely.
+
 Plain views participate in the complete render, plan, and introspection cycle.
 Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
 qualified names and query bodies, and reads ordinary views from

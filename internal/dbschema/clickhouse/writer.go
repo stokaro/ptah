@@ -200,18 +200,64 @@ func (w *transactionWriter) Rollback() error {
 // IsDryRun reports whether dry-run mode is active.
 func (w *transactionWriter) IsDryRun() bool { return w.writer.IsDryRun() }
 
-// DropAllTables drops every base table in the configured database.
-// Uses DROP TABLE … SYNC so subsequent CREATE TABLE statements don't race
-// against the async drop.
+// currentDatabaseCleanupViewsQuery lists the view-like objects DropAllTables
+// destroys: the two engines the ClickHouse reader reports and the renderer
+// emits. LiveView and WindowView are deliberately absent — the reader never
+// reports them, so destroying them would put the writer ahead of the cleanup
+// plan internal/schemaclean builds from that reader.
+const currentDatabaseCleanupViewsQuery = `
+	SELECT name FROM system.tables
+	WHERE database = currentDatabase()
+	  AND is_temporary = 0
+	  AND engine IN ('View', 'MaterializedView')
+	ORDER BY name
+`
+
+// currentDatabaseCleanupTablesQuery lists the base tables DropAllTables
+// destroys. The storage table a materialized view owns is subtracted here
+// because DROP VIEW takes it along with its view; dropping it separately would
+// leave the view pointing at nothing.
+const currentDatabaseCleanupTablesQuery = `
+	SELECT name FROM system.tables
+	WHERE database = currentDatabase()
+	  AND is_temporary = 0
+	  AND (
+	    engine LIKE '%MergeTree'
+	    OR engine = 'Memory'
+	    OR engine = 'Log'
+	    OR engine = 'TinyLog'
+	    OR engine = 'StripeLog'
+	  )
+	  AND engine NOT LIKE '%View'
+	  AND name NOT IN (` + currentDatabaseMaterializedViewInnerTablesSubquery + `)
+	ORDER BY name
+`
+
+// DropAllTables drops every view, materialized view and base table in the
+// configured database. Uses DROP … SYNC so subsequent CREATE statements don't
+// race against the async drop.
 //
-// Base table means a table the schema declares. Views are left alone, as they
-// always have been, and so is the storage table a materialized view owns, which
-// the engine allowlist would otherwise match: measured on server 26.7.3.19,
-// DROP TABLE on a materialized view's ".inner_id.<uuid>" succeeds at exit 0 and
-// leaves the view itself in system.tables, so a SELECT from it then fails with
-// "Table ... does not exist. (UNKNOWN_TABLE)". Reaching into half of an object
-// this method does not claim to drop is worse than not dropping it. The
-// complete cleanup contract is DropDatabaseRealm.
+// Views go first, and they go as whole objects. A materialized view owns a
+// storage table that the base-table engine allowlist matches on its own, and
+// measured on server 26.7.3.19 a DROP TABLE on that ".inner_id.<uuid>"
+// succeeds at exit 0 while leaving the view itself in system.tables, so a
+// SELECT from the view then fails with
+// "Table ... does not exist. (UNKNOWN_TABLE)". DROP VIEW removes the view and
+// its storage together, so the storage is subtracted from the table list and
+// destroyed by its owner instead.
+//
+// Leaving view-like objects standing is not a smaller destructive scope, it is
+// a reset that does not reset. Every caller of this method — the shadow replay
+// in migration/generator, the dev-database cleanup in internal/atlasschema, the
+// integration harness — replays DDL into the database afterwards, and measured
+// on 26.7.3.19 both halves of that replay fail:
+//
+//	CREATE VIEW <db>.plain_v              -> code: 57, Table <db>.plain_v already exists
+//	CREATE MATERIALIZED VIEW <db>.stored_v -> code: 57, Table <db>.stored_v already exists
+//
+// DropDatabaseRealm remains the stronger contract: it also removes
+// dictionaries, live views and window views, and it refuses rather than
+// proceeding when catalog visibility cannot be proven.
 //
 // Identifiers cannot be bound as parameters; quoteIdent doubles any
 // embedded backtick so a name harvested from system.tables cannot break
@@ -227,47 +273,61 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 		return fmt.Errorf("no database connection")
 	}
 
-	rows, err := w.db.QueryContext(ctx, `
-		SELECT name FROM system.tables
-		WHERE database = currentDatabase()
-		  AND is_temporary = 0
-		  AND (
-		    engine LIKE '%MergeTree'
-		    OR engine = 'Memory'
-		    OR engine = 'Log'
-		    OR engine = 'TinyLog'
-		    OR engine = 'StripeLog'
-		  )
-		  AND engine NOT LIKE '%View'
-		  AND name NOT IN (`+currentDatabaseMaterializedViewInnerTablesSubquery+`)
-		ORDER BY name
-	`)
+	// Both inventories are taken before anything is dropped: the table query
+	// subtracts materialized-view storage by asking the materialized views
+	// themselves, and those are gone once the view drops begin.
+	views, err := w.listCleanupNames(ctx, currentDatabaseCleanupViewsQuery, "views")
 	if err != nil {
-		return fmt.Errorf("clickhouse: list tables: %w", err)
+		return err
+	}
+	tables, err := w.listCleanupNames(ctx, currentDatabaseCleanupTablesQuery, "tables")
+	if err != nil {
+		return err
+	}
+
+	if err := w.dropCleanupObjects(ctx, "VIEW", views); err != nil {
+		return err
+	}
+	return w.dropCleanupObjects(ctx, "TABLE", tables)
+}
+
+func (w *Writer) listCleanupNames(ctx context.Context, query, kind string) ([]string, error) {
+	rows, err := w.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: list %s: %w", kind, err)
 	}
 	defer rows.Close()
 
-	var tables []string
+	var names []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return fmt.Errorf("clickhouse: scan table name: %w", err)
+			return nil, fmt.Errorf("clickhouse: scan %s name: %w", kind, err)
 		}
-		tables = append(tables, name)
+		names = append(names, name)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("clickhouse: iterate tables: %w", err)
+		return nil, fmt.Errorf("clickhouse: iterate %s: %w", kind, err)
 	}
+	return names, nil
+}
 
-	for _, name := range tables {
+func (w *Writer) dropCleanupObjects(ctx context.Context, dropKind string, names []string) error {
+	for _, name := range names {
 		if strings.Contains(name, "`") {
-			return fmt.Errorf("clickhouse: refusing to drop table %q: name contains a backtick", name)
+			return fmt.Errorf(
+				"clickhouse: refusing to drop %s %q: name contains a backtick",
+				strings.ToLower(dropKind),
+				name,
+			)
 		}
-		if err := w.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(name)+" SYNC"); err != nil {
+		if err := w.ExecuteSQL(
+			ctx,
+			"DROP "+dropKind+" IF EXISTS "+quoteIdent(name)+" SYNC",
+		); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
