@@ -232,10 +232,9 @@ var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 }
 
 func TestModifyColumn_KeyColumnNeverRendersNullable(t *testing.T) {
-	c := qt.New(t)
-
 	for _, test := range modifyColumnNullabilityCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := renderer.RenderSQL(test.dialect, keyColumnModifyAlter())
 			test.key(c, out, err)
 		})
@@ -243,10 +242,9 @@ func TestModifyColumn_KeyColumnNeverRendersNullable(t *testing.T) {
 }
 
 func TestModifyColumn_OrdinaryColumnStillRendersNullable(t *testing.T) {
-	c := qt.New(t)
-
 	for _, test := range modifyColumnNullabilityCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := renderer.RenderSQL(test.dialect, ordinaryColumnModifyAlter())
 			test.ordinary(c, out, err)
 		})

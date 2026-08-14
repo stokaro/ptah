@@ -15,8 +15,6 @@ import (
 )
 
 func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		urlEnv  string
@@ -27,7 +25,8 @@ func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			databaseURL := requireLiveLockURL(c, test.urlEnv)
 			first, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)

@@ -30,9 +30,8 @@ func concurrentIndexNode(name, table, column string) *ast.IndexNode {
 }
 
 func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("transactional plan stays one plain file", func(c *qt.C) {
+	t.Run("transactional plan stays one plain file", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{
 			ast.NewCreateTable("users").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
 		}
@@ -48,7 +47,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		c.Assert(contents[0].SQL, qt.Not(qt.Contains), "atlas:txmode")
 	})
 
-	c.Run("concurrent-only plan carries txmode none header", func(c *qt.C) {
+	t.Run("concurrent-only plan carries txmode none header", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{concurrentIndexNode("idx_users_email", "users", "email")}
 
 		contents, err := atlasmigrate.BuildMigrationFileContents(
@@ -62,7 +62,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		c.Assert(contents[0].SQL, qt.Contains, "CREATE INDEX CONCURRENTLY")
 	})
 
-	c.Run("mixed plan splits into transactional then concurrent files", func(c *qt.C) {
+	t.Run("mixed plan splits into transactional then concurrent files", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{
 			ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
 			concurrentIndexNode("idx_users_email", "users", "email"),
@@ -85,7 +86,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		c.Assert(contents[1].SQL, qt.Not(qt.Contains), "CREATE TABLE")
 	})
 
-	c.Run("comments accompany no-transaction statements in one file", func(c *qt.C) {
+	t.Run("comments accompany no-transaction statements in one file", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{
 			ast.NewComment("concurrent index build"),
 			concurrentIndexNode("idx_users_email", "users", "email"),
@@ -102,7 +104,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		c.Assert(contents[0].SQL, qt.Contains, "CREATE INDEX CONCURRENTLY")
 	})
 
-	c.Run("non-postgres dialect never splits", func(c *qt.C) {
+	t.Run("non-postgres dialect never splits", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{
 			ast.NewCreateTable("users").AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary()),
 			&ast.IndexNode{Name: "idx_users_email", Table: "users", Columns: []string{"email"}},
@@ -116,7 +119,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 		c.Assert(contents[0].NoTransaction, qt.IsFalse)
 	})
 
-	c.Run("deterministic output for identical plans", func(c *qt.C) {
+	t.Run("deterministic output for identical plans", func(t *testing.T) {
+		c := qt.New(t)
 		buildNodes := func() []ast.Node {
 			return []ast.Node{
 				ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
@@ -135,9 +139,8 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 }
 
 func TestBuildMigrationFileContents_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("mixed plan with non-concurrent no-transaction statements is refused", func(c *qt.C) {
+	t.Run("mixed plan with non-concurrent no-transaction statements is refused", func(t *testing.T) {
+		c := qt.New(t)
 		nodes := []ast.Node{
 			ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
 			ast.NewAlterType("enum_status").AddOperation(ast.NewAddEnumValueOperation("archived")),

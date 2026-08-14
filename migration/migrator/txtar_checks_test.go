@@ -85,7 +85,6 @@ func newSQLiteTxtarMigrator(t *testing.T, seededRows int, migrationSQL string) (
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
 	c.Assert(err, qt.IsNil)
 	for i := range seededRows {
@@ -344,7 +343,6 @@ func newSQLiteTxtarWedgeMigrator(t *testing.T) (*dbschema.DatabaseConnection, *m
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "wedge.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -464,7 +462,6 @@ func TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow(t *testing
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "wedge-notx.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -492,7 +489,6 @@ func TestNewFSMigrator_TxtarDuplicateChecksSectionFails(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dup-checks.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	_, err = migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -519,7 +515,6 @@ func TestNewFSMigrator_TxtarDuplicateNamedChecksSectionFails(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dup-named-checks.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	_, err = migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -551,7 +546,6 @@ func newSQLiteDryRunMigrator(t *testing.T, first, second string) (*dbschema.Data
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{

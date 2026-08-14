@@ -69,7 +69,6 @@ func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.Datab
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "down.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -236,7 +235,6 @@ func TestMigrateDown_AtlasFormatRepairAfterFailedDownRunsDownBody(t *testing.T) 
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "retry.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	fsys := fstest.MapFS{
 		"1_create_parent.sql": &fstest.MapFile{Data: []byte("CREATE TABLE parent (id INTEGER PRIMARY KEY);\n")},
 		"2_create_child.sql":  &fstest.MapFile{Data: []byte(failingDownTxtar)},
@@ -267,7 +265,6 @@ func TestMigrateDown_PtahFormatFailedDownStillRecordsDirtyState(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "ptah-down.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(conn, fstest.MapFS{
 		"0000000001_parent.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE parent (id INTEGER PRIMARY KEY);\n")},
 		"0000000001_parent.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE parent;\n")},
@@ -307,7 +304,6 @@ func TestMigrateDown_PtahFormatDirtyDownBlocksUntilRepaired(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "ptah-repair.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(conn, fstest.MapFS{
 		"0000000001_parent.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE parent (id INTEGER PRIMARY KEY);\n")},
 		"0000000001_parent.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE parent;\n")},

@@ -583,7 +583,8 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		}
 
 		for _, test := range cases {
-			c.Run(test.name, func(c *qt.C) {
+			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
 
 				err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
@@ -2481,7 +2482,6 @@ func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names 
 	)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(rows.Close(), qt.IsNil) }()
-
 	notes := []string{}
 	for rows.Next() {
 		var note string

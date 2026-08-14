@@ -18,8 +18,6 @@ import (
 )
 
 func TestRescopeStatementsForDevDatabase(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		dialect    string
@@ -248,7 +246,8 @@ func TestRescopeStatementsForDevDatabase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := rescopeStatementsForDevDatabase(test.statements, test.dialect, test.target, test.dev)
 			test.assert(c, got, err)
 		})
@@ -256,8 +255,6 @@ func TestRescopeStatementsForDevDatabase(t *testing.T) {
 }
 
 func TestSchemaScopeNamesDatabase(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -273,7 +270,8 @@ func TestSchemaScopeNamesDatabase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(schemaScopeNamesDatabase(test.dialect), qt.Equals, test.want)
 		})
 	}

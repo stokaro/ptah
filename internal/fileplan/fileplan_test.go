@@ -43,8 +43,6 @@ func TestApply_OverwritesRegularFile(t *testing.T) {
 }
 
 func TestApply_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		files   func(c *qt.C, root string) []fileplan.File
@@ -133,7 +131,8 @@ func TestApply_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := filepath.Join(c.TempDir(), "out")
 
 			err := fileplan.Apply(test.files(c, root))

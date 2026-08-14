@@ -14,8 +14,6 @@ import (
 // binary was in when it produced that line.
 
 func TestGoverns_EnforcedDialects(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -29,7 +27,8 @@ func TestGoverns_EnforcedDialects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(migrateclean.Governs(test.dialect), qt.IsTrue)
 		})
 	}
@@ -40,8 +39,6 @@ func TestGoverns_EnforcedDialects(t *testing.T) {
 // saying the other implementation refuses them, which is the drop-in
 // regression the compatibility policy forbids.
 func TestGoverns_UnmeasuredDialects(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -55,15 +52,14 @@ func TestGoverns_UnmeasuredDialects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(migrateclean.Governs(test.dialect), qt.IsFalse)
 		})
 	}
 }
 
 func TestScopeRefusal_CleanDatabases(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		scope migrateclean.Scope
@@ -130,15 +126,14 @@ func TestScopeRefusal_CleanDatabases(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.scope.Refusal(), qt.IsNil)
 		})
 	}
 }
 
 func TestScopeRefusal_UncleanDatabases(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		scope   migrateclean.Scope
@@ -241,7 +236,8 @@ func TestScopeRefusal_UncleanDatabases(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := test.scope.Refusal()
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantErr)
@@ -256,8 +252,6 @@ func TestScopeRefusal_UncleanDatabases(t *testing.T) {
 // URL — no search_path — against a throwaway PostgreSQL 17 database per cell.
 
 func TestScopeRefusal_CleanRealms(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		scope migrateclean.Scope
@@ -346,15 +340,14 @@ func TestScopeRefusal_CleanRealms(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.scope.Refusal(), qt.IsNil)
 		})
 	}
 }
 
 func TestScopeRefusal_UncleanRealms(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		scope   migrateclean.Scope
@@ -551,7 +544,8 @@ func TestScopeRefusal_UncleanRealms(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := test.scope.Refusal()
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantErr)
@@ -562,8 +556,6 @@ func TestScopeRefusal_UncleanRealms(t *testing.T) {
 // ForRevisions is the boundary between the catalog read and the decision, and
 // the two scopes fill different fields from the same call.
 func TestScopeForRevisions(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name            string
 		scope           migrateclean.Scope
@@ -620,7 +612,8 @@ func TestScopeForRevisions(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := test.scope.ForRevisions(test.revisionsSchema, test.revisionTable)
 
 			c.Assert(got, qt.DeepEquals, test.want)

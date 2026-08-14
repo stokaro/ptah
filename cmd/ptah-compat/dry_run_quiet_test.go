@@ -124,7 +124,8 @@ func TestCompatBinaryDryRunFormatCombinedOutputIsOneJSONDocument(t *testing.T) {
 	binPath := buildCompatBinary(c)
 	migrationsDir := dryRunQuietDir(c)
 
-	c.Run("migrate apply", func(c *qt.C) {
+	t.Run("migrate apply", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "apply.db")
 		run := newCompatProcess(binPath,
 			"migrate", "apply",
@@ -140,7 +141,8 @@ func TestCompatBinaryDryRunFormatCombinedOutputIsOneJSONDocument(t *testing.T) {
 		c.Assert(document["Target"], qt.Equals, "1")
 	})
 
-	c.Run("migrate down", func(c *qt.C) {
+	t.Run("migrate down", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "down.db")
 		applyForReal(c, binPath, dbPath, migrationsDir)
 
@@ -206,7 +208,8 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "quiet.db")
 			run := newCompatProcess(binPath, tt.args(c, dbPath)...)
 			var stdout, stderr bytes.Buffer
@@ -272,7 +275,8 @@ func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			// Each row needs its own revision to roll back. Sharing one
 			// database would make the second row a no-op, and an empty stderr
 			// would then prove nothing.
@@ -324,7 +328,8 @@ func TestCompatBinaryMigrateDownJSONKeepsItsReport(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "down-json.db")
 			applyForReal(c, binPath, dbPath, migrationsDir)
 			args := append([]string{
@@ -424,7 +429,8 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newCompatProcess(binPath, tt.args...)
 			run.Stdin = strings.NewReader("YES\n")
 			combined, err := run.CombinedOutput()
@@ -463,7 +469,8 @@ func TestCompatBinaryValidCircularForeignKeysDoNotWarn(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			runDir := c.TempDir()
 			run := newCompatProcess(binPath,
 				"schema", "apply",
@@ -523,7 +530,8 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newCompatProcess(binPath, tt.args(c)...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout

@@ -29,7 +29,6 @@ const windowRivalBytes = "concurrent writer bytes\n"
 // The control row runs the identical sequence with nothing entering the window,
 // so the refusal cannot be satisfied by a primitive that rejects everything.
 func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		prepare func(c *qt.C, publishedPath string) Destination
@@ -65,7 +64,8 @@ func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			stagedPath := filepath.Join(dir, "staged")
 			publishedPath := filepath.Join(dir, "published")

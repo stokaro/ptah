@@ -49,8 +49,6 @@ func runMigrateImport(c *qt.C, args []string) (*bytes.Buffer, error) {
 // the source format are covered, because the format is resolved from the
 // --from query parameter and from --dir-format on separate code paths.
 func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// prepare writes the source fixture and returns the flags to import it
@@ -112,7 +110,8 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "source")
 			target := filepath.Join(root, "target")
@@ -167,8 +166,6 @@ func TestCompatMigrateImportHelpUsesUpdatedRootWriter(t *testing.T) {
 // non-nil error, so a later reader cannot widen the deletion into a blanket
 // discard without turning this table red.
 func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// prepare writes whatever the rejection needs to be reachable and
@@ -233,7 +230,8 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "source")
 			target := filepath.Join(root, "target")

@@ -13,7 +13,6 @@ import (
 )
 
 func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -128,7 +127,8 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
@@ -139,7 +139,6 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 }
 
 func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -209,7 +208,8 @@ func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
@@ -220,7 +220,6 @@ func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
 }
 
 func TestValidateClickHouseReplayStatement_EngineFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -284,7 +283,8 @@ func TestValidateClickHouseReplayStatement_EngineFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
@@ -295,7 +295,6 @@ func TestValidateClickHouseReplayStatement_EngineFailurePath(t *testing.T) {
 }
 
 func TestValidateClickHouseReplayStatement_LifecycleFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -344,7 +343,8 @@ func TestValidateClickHouseReplayStatement_LifecycleFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
@@ -355,7 +355,6 @@ func TestValidateClickHouseReplayStatement_LifecycleFailurePath(t *testing.T) {
 }
 
 func TestValidateClickHouseReplayStatement_CrossDatabaseFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -414,7 +413,8 @@ func TestValidateClickHouseReplayStatement_CrossDatabaseFailurePath(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
@@ -425,7 +425,6 @@ func TestValidateClickHouseReplayStatement_CrossDatabaseFailurePath(t *testing.T
 }
 
 func TestValidateClickHouseReplayStatement_InsertFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -460,7 +459,8 @@ func TestValidateClickHouseReplayStatement_InsertFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
 				"ptah_dev",
 				clickHouseReplayTokens(test.statement),

@@ -469,7 +469,6 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 }
 
 func TestCompatCommand_RegistersAtlasShorthandFlags(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		path      []string
@@ -533,7 +532,8 @@ func TestCompatCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := NewCompatCommand("atlas")
 			cmd, _, err := root.Find(tt.path)
 
@@ -545,7 +545,6 @@ func TestCompatCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 }
 
 func TestCompatCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		path []string
@@ -569,7 +568,8 @@ func TestCompatCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testing.
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := NewCompatCommand("atlas")
 			cmd, _, err := root.Find(tt.path)
 
@@ -1447,10 +1447,9 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 // stokaro/ptah#951. --include is registered and covered by
 // schema_inspect_include_test.go.
 func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {
-	c := qt.New(t)
-
 	for _, flag := range []string{"--export"} {
-		c.Run(flag, func(c *qt.C) {
+		t.Run(flag, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -1965,9 +1964,8 @@ func TestCompatCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 }
 
 func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("missing version", func(c *qt.C) {
+	t.Run("missing version", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1983,7 +1981,8 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `accepts 1 arg\(s\), received 0`)
 	})
 
-	c.Run("multiple versions", func(c *qt.C) {
+	t.Run("multiple versions", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1999,7 +1998,8 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `accepts 1 arg\(s\), received 2`)
 	})
 
-	c.Run("native version flag", func(c *qt.C) {
+	t.Run("native version flag", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -2799,9 +2799,8 @@ func TestCompatCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 }
 
 func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("migrate_diff_qualifier_invalid_value", func(c *qt.C) {
+	t.Run("migrate_diff_qualifier_invalid_value", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -2815,7 +2814,8 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 		c.Assert(err, qt.ErrorMatches, `invalid --qualifier "bad\.name": character '\.' is not allowed in a schema qualifier`)
 	})
 
-	c.Run("migrate_diff_qualifier_unsupported_dialect", func(c *qt.C) {
+	t.Run("migrate_diff_qualifier_unsupported_dialect", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
@@ -2843,7 +2843,8 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 		c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 	})
 
-	c.Run("schema_apply_plan_registry_url", func(c *qt.C) {
+	t.Run("schema_apply_plan_registry_url", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -2857,7 +2858,8 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts registry plan URLs like "atlas://repo/plans/apply", but Ptah has no plan registry; pass a local plan file saved by .schema plan. as --plan file://<path>`)
 	})
 
-	c.Run("schema_apply_lock_timeout_invalid", func(c *qt.C) {
+	t.Run("schema_apply_lock_timeout_invalid", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -3339,9 +3341,8 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 // flag for it on this verb (see ApplyOptions.SkipChecks). It is the remaining
 // member of the class this test exists to guard.
 func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("skip_checks", func(c *qt.C) {
+	t.Run("skip_checks", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)

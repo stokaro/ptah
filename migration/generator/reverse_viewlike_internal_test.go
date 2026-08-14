@@ -146,7 +146,8 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 	}
 
 	for _, want := range wants {
-		c.Run(want.name, func(c *qt.C) {
+		t.Run(want.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(downSQL, qt.Contains, want.fragment)
 		})
 	}
@@ -193,7 +194,8 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 	}
 
 	for _, want := range wants {
-		c.Run(want.name, func(c *qt.C) {
+		t.Run(want.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(downSQL, qt.Contains, want.fragment)
 		})
 	}
@@ -238,20 +240,24 @@ func TestGenerateDownMigrationSQL_ModifiedViewRollbackDropsInsteadOfReplacing(t 
 		{name: "restores the prior column list", fragment: oldBody},
 	}
 	for _, want := range wants {
-		c.Run(want.name, func(c *qt.C) {
+		t.Run(want.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(downSQL, qt.Contains, want.fragment)
 		})
 	}
 
-	c.Run("never emits the refused replace", func(c *qt.C) {
+	t.Run("never emits the refused replace", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(downSQL, qt.Not(qt.Contains), "CREATE OR REPLACE VIEW rev_active_users")
 	})
-	c.Run("drops before it recreates", func(c *qt.C) {
+	t.Run("drops before it recreates", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(indexOfFragment(downSQL, "DROP VIEW IF EXISTS rev_active_users") <
 			indexOfFragment(downSQL, "CREATE VIEW rev_active_users"), qt.IsTrue,
 			qt.Commentf("down SQL:\n%s", downSQL))
 	})
-	c.Run("does not carry the post-up body", func(c *qt.C) {
+	t.Run("does not carry the post-up body", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(downSQL, qt.Not(qt.Contains), newBody)
 	})
 }
@@ -276,13 +282,16 @@ func TestGenerateDownMigrationSQL_ModifiedViewKeepsLegalReplace(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 
-	c.Run("replaces in place", func(c *qt.C) {
+	t.Run("replaces in place", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(downSQL, qt.Contains, "CREATE OR REPLACE VIEW rev_active_users")
 	})
-	c.Run("restores the prior predicate", func(c *qt.C) {
+	t.Run("restores the prior predicate", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(downSQL, qt.Contains, oldBody)
 	})
-	c.Run("keeps dependents by not dropping", func(c *qt.C) {
+	t.Run("keeps dependents by not dropping", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(downSQL, qt.Not(qt.Contains), "DROP VIEW")
 	})
 }
@@ -322,7 +331,8 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 		{name: "restores the prior trigger body", fragment: oldTrigger},
 	}
 	for _, want := range wants {
-		c.Run(want.name, func(c *qt.C) {
+		t.Run(want.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(downSQL, qt.Contains, want.fragment)
 		})
 	}
@@ -333,8 +343,6 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 // not consume this map, but the diff is serialized into reports, so an
 // unreversed "old -> new" would describe the up migration on a down plan.
 func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
-	c := qt.New(t)
-
 	input := &types.SchemaDiff{
 		ViewsModified: []types.ViewDiff{
 			{ViewName: "v", Changes: map[string]string{"body": "OLD -> NEW"}},
@@ -349,19 +357,22 @@ func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Run("view identity is preserved and the change is flipped", func(c *qt.C) {
+	t.Run("view identity is preserved and the change is flipped", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(result.ViewsModified, qt.HasLen, 1)
 		c.Assert(result.ViewsModified[0].ViewName, qt.Equals, "v")
 		c.Assert(result.ViewsModified[0].Changes["body"], qt.Equals, "NEW -> OLD")
 	})
 
-	c.Run("materialized view identity is preserved and the change is flipped", func(c *qt.C) {
+	t.Run("materialized view identity is preserved and the change is flipped", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(result.MaterializedViewsModified, qt.HasLen, 1)
 		c.Assert(result.MaterializedViewsModified[0].ViewName, qt.Equals, "mv")
 		c.Assert(result.MaterializedViewsModified[0].Changes["body"], qt.Equals, "NEW -> OLD")
 	})
 
-	c.Run("trigger identity including its table is preserved", func(c *qt.C) {
+	t.Run("trigger identity including its table is preserved", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(result.TriggersModified, qt.HasLen, 1)
 		c.Assert(result.TriggersModified[0].TriggerName, qt.Equals, "trg")
 		c.Assert(result.TriggersModified[0].TableName, qt.Equals, "t")

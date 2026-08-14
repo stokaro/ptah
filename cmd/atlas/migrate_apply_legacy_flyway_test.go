@@ -261,9 +261,8 @@ func TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles(t *testing.T) {
 // this build wrote, and the ordinary Flyway workflow of adding a baseline that
 // retires applied migrations, both pass through it.
 func TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("a database migrated only by this build", func(c *qt.C) {
+	t.Run("a database migrated only by this build", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		dir := filepath.Join(root, "migrations")
 		dbPath := filepath.Join(root, "current.db")
@@ -279,7 +278,8 @@ func TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse(t *testing.T) 
 		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	})
 
-	c.Run("a goose directory whose encoding never changed", func(c *qt.C) {
+	t.Run("a goose directory whose encoding never changed", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		dir := filepath.Join(root, "migrations")
 		dbPath := filepath.Join(root, "goose.db")
@@ -366,9 +366,8 @@ func TestCompatMigrateApply_FlywayBaselineAfterApply(t *testing.T) {
 // `migration file V2__b.sql was added out of order`. A loose exemption would
 // silently apply it.
 func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("an ordinary versioned migration below the high-water mark", func(c *qt.C) {
+	t.Run("an ordinary versioned migration below the high-water mark", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		dir := filepath.Join(root, "migrations")
 		dbPath := filepath.Join(root, "ooo.db")
@@ -391,7 +390,8 @@ func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
 		c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"oa", "oc"})
 	})
 
-	c.Run("a versioned migration added after a repeatable", func(c *qt.C) {
+	t.Run("a versioned migration added after a repeatable", func(t *testing.T) {
+		c := qt.New(t)
 		// The repeatable occupies the reserved top slot, so anything added later
 		// sorts below it. Atlas CE refuses this too, by its own out-of-order
 		// check, so the exemption must not reach it.
@@ -544,8 +544,6 @@ func seedFlyway(files ...flywayMigration) func(c *qt.C, dir, dbPath string) {
 // is a measured cell of that matrix; the CE column is stated per row so a
 // future change to either side is comparable against something.
 func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		seed   func(c *qt.C, dir, dbPath string)
@@ -784,7 +782,8 @@ func TestCompatMigrateApply_FlywayBaselineAgainstRecordedHistory(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			dir := filepath.Join(root, "migrations")
 			dbPath := filepath.Join(root, "baseline.db")

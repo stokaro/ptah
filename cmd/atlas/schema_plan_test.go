@@ -353,13 +353,14 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			// --save without --output writes into the working directory, so a
 			// case that stopped refusing would drop its artifact into the
 			// package source tree. Pointing the working directory at a scratch
 			// dir contains that, and the no-file assertion is what proves the
 			// refusal happened before the write rather than after it.
-			scratch := chdirToScratch(c.TB.(*testing.T))
+			scratch := chdirToScratch(t)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				"--from", sqliteURLFromPath(filepath.Join(dir, "plan.db")),
@@ -440,7 +441,8 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			// --save with no --output writes into the working directory, so
 			// point it at a scratch directory: a refusal that regresses must
 			// leave its artifact somewhere a test can see it, not in the

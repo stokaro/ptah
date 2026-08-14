@@ -162,8 +162,6 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabaseWithEmptyDirectory(t *t
 // each one alone applies against the same database the gate refused. Refusing
 // either would be the other half of the parity rule broken.
 func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		extra []string
@@ -181,7 +179,8 @@ func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			migrationsDir, dbPath := writeCleanGateFixture(c)
 			execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
@@ -234,8 +233,6 @@ func TestCompatCommand_MigrateApplyBaselineAndAllowDirtyAreExclusive(t *testing.
 // The states the binary calls clean. Each row is a database the gate must let
 // through, and the assertion is that the migrations really ran.
 func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// setup puts the database into the state under test. A nil-free
@@ -265,7 +262,8 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			migrationsDir, dbPath := writeCleanGateFixture(c)
 			test.setup(c, dbPath)
 

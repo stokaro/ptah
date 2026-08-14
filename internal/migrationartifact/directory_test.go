@@ -49,9 +49,8 @@ func TestPushDirectoryTo_HappyPath(t *testing.T) {
 }
 
 func TestPushDirectoryTo_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("missing reference", func(c *qt.C) {
+	t.Run("missing reference", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := migrationartifact.PushDirectoryTo(
 			context.Background(),
 			memory.New(),
@@ -60,7 +59,8 @@ func TestPushDirectoryTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "OCI reference is required")
 	})
 
-	c.Run("missing directory", func(c *qt.C) {
+	t.Run("missing directory", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := migrationartifact.PushDirectoryTo(
 			context.Background(),
 			memory.New(),
@@ -69,7 +69,8 @@ func TestPushDirectoryTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "migrations directory is required")
 	})
 
-	c.Run("missing sum when verification is requested", func(c *qt.C) {
+	t.Run("missing sum when verification is requested", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		err := os.WriteFile(
 			filepath.Join(dir, "0000000001_create_users.up.sql"),

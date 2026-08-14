@@ -660,7 +660,6 @@ func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
 }
 
 func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		args []string
@@ -671,7 +670,8 @@ func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)

@@ -48,8 +48,6 @@ func assertNoChange() func(c *qt.C, modified []difftypes.TableDiff) {
 // naming the domain; format_type spells the domain the way the server does and
 // qualifies it when the search path needs that.
 func TestCompareWithDialect_PostgresDomainColumnComparesByIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// column is the database side: one column of table t.
@@ -265,7 +263,8 @@ func TestCompareWithDialect_PostgresDomainColumnComparesByIdentity(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &types.DBSchema{
 				Tables: []types.DBTable{{Name: "t", Type: "TABLE", Columns: []types.DBColumn{test.column}}},
 			}

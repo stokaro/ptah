@@ -21,8 +21,6 @@ func insertUsers() *ast.InsertStatement {
 }
 
 func TestRenderInsert_SingleRow(t *testing.T) {
-	c := qt.New(t)
-
 	wantArgs := []any{int64(1), "alice"}
 
 	tests := []struct {
@@ -53,7 +51,8 @@ func TestRenderInsert_SingleRow(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderInsert(insertUsers(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -63,8 +62,6 @@ func TestRenderInsert_SingleRow(t *testing.T) {
 }
 
 func TestRenderInsert_MultiRow(t *testing.T) {
-	c := qt.New(t)
-
 	stmt := &ast.InsertStatement{
 		Table:   "users",
 		Columns: []string{"id", "name"},
@@ -94,7 +91,8 @@ func TestRenderInsert_MultiRow(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderInsert(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -104,8 +102,6 @@ func TestRenderInsert_MultiRow(t *testing.T) {
 }
 
 func TestRenderInsert_Returning(t *testing.T) {
-	c := qt.New(t)
-
 	stmt := &ast.InsertStatement{
 		Table:     "users",
 		Columns:   []string{"name"},
@@ -131,7 +127,8 @@ func TestRenderInsert_Returning(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderInsert(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -141,8 +138,6 @@ func TestRenderInsert_Returning(t *testing.T) {
 }
 
 func TestRenderInsert_Errors(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		stmt        *ast.InsertStatement
@@ -224,7 +219,8 @@ func TestRenderInsert_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderInsert(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
@@ -249,8 +245,6 @@ func updateUser() *ast.UpdateStatement {
 }
 
 func TestRenderUpdate_SetThenWhere(t *testing.T) {
-	c := qt.New(t)
-
 	wantArgs := []any{"bob", "bob@example.com", int64(7)}
 
 	tests := []struct {
@@ -276,7 +270,8 @@ func TestRenderUpdate_SetThenWhere(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderUpdate(updateUser(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -286,8 +281,6 @@ func TestRenderUpdate_SetThenWhere(t *testing.T) {
 }
 
 func TestRenderUpdate_Returning(t *testing.T) {
-	c := qt.New(t)
-
 	stmt := &ast.UpdateStatement{
 		Table:     "users",
 		Set:       []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "bob"}}},
@@ -313,7 +306,8 @@ func TestRenderUpdate_Returning(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderUpdate(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -323,9 +317,8 @@ func TestRenderUpdate_Returning(t *testing.T) {
 }
 
 func TestRenderUpdate_NoWhereGuard(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("without unconditional the whole-table update is rejected", func(c *qt.C) {
+	t.Run("without unconditional the whole-table update is rejected", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.UpdateStatement{
 			Table: "users",
 			Set:   []ast.Assignment{{Column: "active", Value: &ast.BoundValue{Value: false}}},
@@ -336,7 +329,8 @@ func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 		c.Assert(args, qt.IsNil)
 	})
 
-	c.Run("with unconditional the whole-table update renders", func(c *qt.C) {
+	t.Run("with unconditional the whole-table update renders", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.UpdateStatement{
 			Table:         "users",
 			Set:           []ast.Assignment{{Column: "active", Value: &ast.BoundValue{Value: false}}},
@@ -350,8 +344,6 @@ func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 }
 
 func TestRenderUpdate_Errors(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		stmt        *ast.UpdateStatement
@@ -402,7 +394,8 @@ func TestRenderUpdate_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderUpdate(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
@@ -423,8 +416,6 @@ func deleteUser() *ast.DeleteStatement {
 }
 
 func TestRenderDelete_Where(t *testing.T) {
-	c := qt.New(t)
-
 	wantArgs := []any{int64(7)}
 
 	tests := []struct {
@@ -450,7 +441,8 @@ func TestRenderDelete_Where(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderDelete(deleteUser(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -460,16 +452,16 @@ func TestRenderDelete_Where(t *testing.T) {
 }
 
 func TestRenderDelete_NoWhereGuard(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("without unconditional the whole-table delete is rejected", func(c *qt.C) {
+	t.Run("without unconditional the whole-table delete is rejected", func(t *testing.T) {
+		c := qt.New(t)
 		sql, args, err := renderer.RenderDelete(&ast.DeleteStatement{Table: "users"}, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, "renderer: delete without a WHERE clause must be marked unconditional")
 		c.Assert(sql, qt.Equals, "")
 		c.Assert(args, qt.IsNil)
 	})
 
-	c.Run("with unconditional the whole-table delete renders and binds nothing", func(c *qt.C) {
+	t.Run("with unconditional the whole-table delete renders and binds nothing", func(t *testing.T) {
+		c := qt.New(t)
 		sql, args, err := renderer.RenderDelete(&ast.DeleteStatement{Table: "users", Unconditional: true}, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `DELETE FROM "users"`)
@@ -478,8 +470,6 @@ func TestRenderDelete_NoWhereGuard(t *testing.T) {
 }
 
 func TestRenderDelete_Returning(t *testing.T) {
-	c := qt.New(t)
-
 	stmt := &ast.DeleteStatement{
 		Table:     "users",
 		Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: int64(7)}},
@@ -504,7 +494,8 @@ func TestRenderDelete_Returning(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderDelete(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -514,8 +505,6 @@ func TestRenderDelete_Returning(t *testing.T) {
 }
 
 func TestRenderDelete_Errors(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		stmt        *ast.DeleteStatement
@@ -553,7 +542,8 @@ func TestRenderDelete_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderDelete(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
@@ -566,11 +556,10 @@ func TestRenderDelete_Errors(t *testing.T) {
 // value, an UPDATE SET value, and a DELETE WHERE value, and asserts each ends up
 // as a bound argument — never spliced into the SQL text.
 func TestRenderWrite_ValuesStayBound(t *testing.T) {
-	c := qt.New(t)
-
 	payload := `x'); DROP TABLE users; --`
 
-	c.Run("insert value is bound", func(c *qt.C) {
+	t.Run("insert value is bound", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.InsertStatement{
 			Table:   "users",
 			Columns: []string{"name"},
@@ -583,7 +572,8 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{payload})
 	})
 
-	c.Run("update set value is bound", func(c *qt.C) {
+	t.Run("update set value is bound", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.UpdateStatement{
 			Table:         "users",
 			Set:           []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: payload}}},
@@ -596,7 +586,8 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{payload})
 	})
 
-	c.Run("delete where value is bound", func(c *qt.C) {
+	t.Run("delete where value is bound", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.DeleteStatement{
 			Table: "users",
 			Where: &ast.Comparison{Left: &ast.ColumnRef{Name: "name"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: payload}},
@@ -614,9 +605,8 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 // embedded quote is doubled (escaped) so the identifier can never terminate its
 // quotes — an identifier stays an identifier.
 func TestRenderWrite_IdentifiersAreQuoted(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("insert column and table are quoted", func(c *qt.C) {
+	t.Run("insert column and table are quoted", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.InsertStatement{
 			Table:   `us"ers`,
 			Columns: []string{`na"me`},
@@ -628,7 +618,8 @@ func TestRenderWrite_IdentifiersAreQuoted(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{"alice"})
 	})
 
-	c.Run("update assignment column is quoted", func(c *qt.C) {
+	t.Run("update assignment column is quoted", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.UpdateStatement{
 			Table:         "users",
 			Set:           []ast.Assignment{{Column: `na"me`, Value: &ast.BoundValue{Value: "alice"}}},

@@ -18,8 +18,6 @@ import (
 )
 
 func TestPostgresCreatedIndexNames(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		sql  string
@@ -120,7 +118,8 @@ func TestPostgresCreatedIndexNames(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(postgresCreatedIndexNames(tt.sql), qt.DeepEquals, tt.want)
 		})
 	}
@@ -139,7 +138,6 @@ func TestPostgresConditionalCreatedIndexNames(t *testing.T) {
 }
 
 func TestPostgresDroppedIndexNames(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -168,15 +166,14 @@ func TestPostgresDroppedIndexNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(postgresDroppedIndexNames(test.sql), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestUnusableIndexRepairError(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		unusable []postgresUnusableIndex
@@ -220,7 +217,8 @@ func TestUnusableIndexRepairError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := unusableIndexRepairError(1785756328, tt.unusable)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, tt.want)
@@ -233,8 +231,6 @@ func TestUnusableIndexRepairError(t *testing.T) {
 // the fix, because running it is the action an operator reaching for
 // --allow-dirty has already chosen.
 func TestUnusableIndexApplyError(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		unusable []postgresUnusableIndex
@@ -279,7 +275,8 @@ func TestUnusableIndexApplyError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := unusableIndexApplyError(1785756328, tt.unusable)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, tt.want)

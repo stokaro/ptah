@@ -66,8 +66,6 @@ func domainOverEnumColumn() types.DBColumn {
 // community binary v1.3.0 reported the same database "Schemas are synced, no
 // changes to be made."
 func TestColumns_DomainColumnHappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		genType string
@@ -114,7 +112,8 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)
@@ -135,8 +134,6 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 // named `positive` reported it. The name of the domain decided whether the
 // comparator worked.
 func TestColumns_DomainColumnFailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		genType    string
@@ -175,7 +172,8 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)
@@ -191,8 +189,6 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 // makes "int4" and "integer" -- the same type under two catalog spellings --
 // compare equal.
 func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		genType    string
@@ -229,7 +225,8 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)

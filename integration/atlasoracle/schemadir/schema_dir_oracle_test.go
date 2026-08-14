@@ -126,7 +126,8 @@ func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 		qt.Commentf("all measured directory layouts must remain in the oracle matrix"))
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeSchemaSourceDir(c, test.files)
 			emptyHCL := filepath.Join(c.TempDir(), "empty.hcl")
 			c.Assert(os.WriteFile(emptyHCL, []byte("schema \"main\" {}\n"), 0o600), qt.IsNil)

@@ -23,7 +23,6 @@ func TestBaseline_PostgresRecordsAppliedWithoutExecutingSQL(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue269Names(time.Now().UnixNano())
 	cleanupIssue269(t, conn, names)
 	defer cleanupIssue269(t, conn, names)
@@ -56,7 +55,6 @@ func TestBaseline_PostgresSecondRunRequiresForce(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue269Names(time.Now().UnixNano())
 	cleanupIssue269(t, conn, names)
 	defer cleanupIssue269(t, conn, names)
@@ -86,7 +84,6 @@ func TestBaseline_PostgresForceRejectsHistoryAboveBaseline(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue269Names(time.Now().UnixNano())
 	cleanupIssue269(t, conn, names)
 	defer cleanupIssue269(t, conn, names)
@@ -173,7 +170,6 @@ func runIssue269MySQLFamilyBaselineIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue269Names(time.Now().UnixNano())
 	cleanupIssue269(t, conn, names)
 	defer cleanupIssue269(t, conn, names)

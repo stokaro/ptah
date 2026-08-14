@@ -29,7 +29,6 @@ import (
 // The control row publishes through the identical sequence, which keeps the
 // refusals from being satisfiable by a primitive that never commits.
 func Test_publishFileAt_FailurePath_RefusesExpectedFileTakenInsideTheCommitWindow(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		inject func(c *qt.C, publishedPath string)
@@ -72,7 +71,8 @@ func Test_publishFileAt_FailurePath_RefusesExpectedFileTakenInsideTheCommitWindo
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			stagedPath := filepath.Join(dir, "staged")
 			publishedPath := filepath.Join(dir, "published")

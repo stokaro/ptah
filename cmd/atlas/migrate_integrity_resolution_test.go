@@ -42,8 +42,6 @@ func writeIntegrityProject(c *qt.C, format string) (configPath, migrationsDir st
 // migration.format reaching both verbs, which is the path a user hits with a
 // plain `ptah-compat migrate hash --env local` and no directory flags at all.
 func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		format string
@@ -56,7 +54,8 @@ func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			configPath, migrationsDir := writeIntegrityProject(c, tt.format)
 
 			hashOut, _, hashErr := runCompatExit(
@@ -80,9 +79,8 @@ func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
 // the overriding value are always different formats so neither result can be
 // produced by the other rule.
 func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("flag overrides project format", func(c *qt.C) {
+	t.Run("flag overrides project format", func(t *testing.T) {
+		c := qt.New(t)
 		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, _, err := runCompatExit(
@@ -92,7 +90,8 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
-	c.Run("query overrides project format", func(c *qt.C) {
+	t.Run("query overrides project format", func(t *testing.T) {
+		c := qt.New(t)
 		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, _, err := runCompatExit(
@@ -109,7 +108,8 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 	//
 	//	$ atlas migrate hash --env local --dir 'file://migrations?format=atlas'
 	//	  -> 1_init.sql U1__undo.sql V1__x.sql   (atlas, with migration.format = flyway)
-	c.Run("atlas query overrides a converted project format", func(c *qt.C) {
+	t.Run("atlas query overrides a converted project format", func(t *testing.T) {
+		c := qt.New(t)
 		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, stderr, err := runCompatExit(
@@ -120,7 +120,8 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
-	c.Run("project format applies when no spelling is given", func(c *qt.C) {
+	t.Run("project format applies when no spelling is given", func(t *testing.T) {
+		c := qt.New(t)
 		configPath, migrationsDir := writeIntegrityProject(c, "golang-migrate")
 
 		stdout, _, err := runCompatExit(
@@ -136,9 +137,8 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 // arriving through the environment has no --dir token to rewrite, so the atlas
 // row here is what exercises the resolver's append branch.
 func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("PTAH_DIR_FORMAT selects the layout", func(c *qt.C) {
+	t.Run("PTAH_DIR_FORMAT selects the layout", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR_FORMAT", "flyway")
 
@@ -148,7 +148,8 @@ func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, flywayCoveredSet)
 	})
 
-	c.Run("PTAH_DIR carries a converted query", func(c *qt.C) {
+	t.Run("PTAH_DIR carries a converted query", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR", "file://"+dir+"?format=golang-migrate")
 
@@ -158,7 +159,8 @@ func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, golangMigrateCoveredSet)
 	})
 
-	c.Run("an atlas query overrides PTAH_DIR_FORMAT", func(c *qt.C) {
+	t.Run("an atlas query overrides PTAH_DIR_FORMAT", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR_FORMAT", "goose")
 
@@ -168,7 +170,8 @@ func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
-	c.Run("PTAH_DIR carries an atlas query", func(c *qt.C) {
+	t.Run("PTAH_DIR carries an atlas query", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR", "file://"+dir+"?format=atlas")
 
@@ -235,9 +238,8 @@ func TestCompatMigrateValidateConvertedDevURL_HappyPath(t *testing.T) {
 // that matter: integrity is checked before the directory is parsed or replayed,
 // and a clean directory whose SQL does not execute still fails.
 func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("invalid sql on a clean directory", func(c *qt.C) {
+	t.Run("invalid sql on a clean directory", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		devDBPath := filepath.Join(c.TempDir(), "dev.db")
 		c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
@@ -253,7 +255,8 @@ func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
 		c.Assert(stderr, qt.Contains, "error validating migration SQL on dev database")
 	})
 
-	c.Run("integrity is checked before the dev database is touched", func(c *qt.C) {
+	t.Run("integrity is checked before the dev database is touched", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
 			[]byte("-- +goose Up\nCREATE TABLE never_replayed (id int);\n"), 0o600), qt.IsNil)
@@ -344,8 +347,6 @@ func assertNoAtlasSum(c *qt.C, dir string) {
 //     byte-identical sums. These rows fail if the fix is applied to treeNames
 //     or expressed as "reject any .sql directory".
 func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
-	c := qt.New(t)
-
 	const gooseBody = "-- +goose Up\nCREATE TABLE w (id int);\n"
 	const plainBody = "CREATE TABLE w (id int);\n"
 
@@ -416,7 +417,8 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeDirectoryNamedSQLFixture(c, tt.files, tt.dirs)
 
 			stdout, stderr, err := runCompatExit(
@@ -451,8 +453,6 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 // filtered out and, with nothing left underneath, the directory disappeared
 // again.
 func TestCompatMigrateNativeDirectoryNamedSQL(t *testing.T) {
-	c := qt.New(t)
-
 	shapes := []struct {
 		name  string
 		files map[string]string
@@ -506,7 +506,8 @@ func TestCompatMigrateNativeDirectoryNamedSQL(t *testing.T) {
 
 	for _, shape := range shapes {
 		for _, verb := range verbs {
-			c.Run(shape.name+"/"+verb.name, func(c *qt.C) {
+			t.Run(shape.name+"/"+verb.name, func(t *testing.T) {
+				c := qt.New(t)
 				dir := writeDirectoryNamedSQLFixture(c,
 					map[string]string{"1_init.sql": "CREATE TABLE w (id INTEGER PRIMARY KEY);\n"}, nil)
 				hashOut, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir)

@@ -143,7 +143,8 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newCompatProcess(binPath, tt.args...)
 			// An empty working directory: the forwarded-target row resolves the
 			// default relative migration directory from the process cwd, and
@@ -168,7 +169,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 
-	c.Run("clean validation is silent", func(c *qt.C) {
+	t.Run("clean validation is silent", func(t *testing.T) {
+		c := qt.New(t)
 		dir := cleanAtlasDir(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
@@ -182,7 +184,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "")
 	})
 
-	c.Run("nested extra token prints help", func(c *qt.C) {
+	t.Run("nested extra token prints help", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "migrate", "aplly")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -195,7 +198,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "")
 	})
 
-	c.Run("completion group extra token prints help", func(c *qt.C) {
+	t.Run("completion group extra token prints help", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "completion", "sh")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -208,7 +212,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "")
 	})
 
-	c.Run("completion script is generated for the Atlas executable", func(c *qt.C) {
+	t.Run("completion script is generated for the Atlas executable", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "completion", "bash")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -282,7 +287,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 
-	c.Run("checksum mismatch", func(c *qt.C) {
+	t.Run("checksum mismatch", func(t *testing.T) {
+		c := qt.New(t)
 		dir := malformedAtlasDir(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
@@ -298,7 +304,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: checksum mismatch\n")
 	})
 
-	c.Run("missing checksum file", func(c *qt.C) {
+	t.Run("missing checksum file", func(t *testing.T) {
+		c := qt.New(t)
 		dir := atlasDirWithoutSum(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
@@ -314,7 +321,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
 	})
 
-	c.Run("missing checksum file refuses apply", func(c *qt.C) {
+	t.Run("missing checksum file refuses apply", func(t *testing.T) {
+		c := qt.New(t)
 		// Measured Atlas CE v1.2.0 on a directory with no atlas.sum
 		// (stokaro/ptah#970): exit 1, the same output as validate above, and
 		// the target database is never created.
@@ -340,7 +348,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 	})
 
-	c.Run("migrate set operation error", func(c *qt.C) {
+	t.Run("migrate set operation error", func(t *testing.T) {
+		c := qt.New(t)
 		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
@@ -360,7 +369,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: migration with version \"2\" not found\n")
 	})
 
-	c.Run("migrate set missing environment precedes version", func(c *qt.C) {
+	t.Run("migrate set missing environment precedes version", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "migrate", "set")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -374,7 +384,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: stat migrations: no such file or directory\n")
 	})
 
-	c.Run("migrate set missing driver precedes version", func(c *qt.C) {
+	t.Run("migrate set missing driver precedes version", func(t *testing.T) {
+		c := qt.New(t)
 		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
@@ -401,7 +412,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 			"Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n")
 	})
 
-	c.Run("migrate set missing version after environment", func(c *qt.C) {
+	t.Run("migrate set missing version after environment", func(t *testing.T) {
+		c := qt.New(t)
 		dir := cleanAtlasDir(c)
 		dbPath := filepath.Join(c.TempDir(), "state.db")
 		run := newCompatProcess(
@@ -424,7 +436,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(statErr, qt.IsNil)
 	})
 
-	c.Run("migrate set extra version", func(c *qt.C) {
+	t.Run("migrate set extra version", func(t *testing.T) {
+		c := qt.New(t)
 		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
@@ -444,7 +457,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: accepts 1 arg(s), received 2\n")
 	})
 
-	c.Run("migrate set unknown flag", func(c *qt.C) {
+	t.Run("migrate set unknown flag", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "migrate", "set", "1", "--unknown")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -458,7 +472,8 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: unknown flag: --unknown\n")
 	})
 
-	c.Run("unknown root command", func(c *qt.C) {
+	t.Run("unknown root command", func(t *testing.T) {
+		c := qt.New(t)
 		run := newCompatProcess(binPath, "definitely-not-a-command")
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -499,7 +514,8 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := malformedAtlasTxModeDir(c, test.filename, test.directive)
 			run := newCompatProcess(
 				binPath,

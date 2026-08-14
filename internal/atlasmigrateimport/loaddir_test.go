@@ -13,8 +13,6 @@ import (
 )
 
 func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		format    atlasmigrateimport.Format
@@ -95,7 +93,8 @@ func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			for name, content := range tt.files {
 				writeLoadFile(c, dir, name, content)
@@ -172,16 +171,16 @@ CREATE TABLE first_table (id int);
 }
 
 func TestLoadDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("empty directory", func(c *qt.C) {
+	t.Run("empty directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(c.TempDir(), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
 		c.Assert(loaded, qt.IsNil)
 	})
 
-	c.Run("missing directory", func(c *qt.C) {
+	t.Run("missing directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(filepath.Join(c.TempDir(), "does-not-exist"), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `read source migration directory .*: .*`)
@@ -190,8 +189,6 @@ func TestLoadDir_FailurePath(t *testing.T) {
 }
 
 func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		files     map[string]string
@@ -225,7 +222,8 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			for name, content := range tt.files {
 				writeLoadFile(c, dir, name, content)
@@ -310,8 +308,6 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 // Goose parsing — the directive-free path and the out-of-order refusals that
 // replaced this over-refusal — is pinned in goosedirectives_test.go.
 func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		format  atlasmigrateimport.Format
@@ -325,7 +321,8 @@ func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writeLoadFile(c, dir, "1_x.sql", tt.content)
 

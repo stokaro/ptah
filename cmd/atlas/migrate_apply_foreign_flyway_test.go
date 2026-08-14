@@ -47,7 +47,6 @@ func recordForeignFlywayVersions(c *qt.C, dbPath string, tokens []string) {
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-
 	current := revisionVersionsByOrder(c, db)
 	// A fixture that rewrote a different number of rows than it meant to would
 	// leave the database on Ptah's own encoding and make every assertion below
@@ -632,8 +631,6 @@ type foreignFlywayCase struct {
 // control. What each row would print under a BROKEN version of the check is
 // stated on the row.
 func TestCompatMigrateApply_ForeignFlywayDetectorDoesNotOverRefuse(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []foreignFlywayCase{{
 		// Dropping the `slices.Contains(applied, migration.Version)` clause
 		// refuses this one: `1 already-applied migration(s) read as pending`.
@@ -687,7 +684,8 @@ func TestCompatMigrateApply_ForeignFlywayDetectorDoesNotOverRefuse(t *testing.T)
 	}}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			dir := filepath.Join(root, "migrations")
 			dbPath := filepath.Join(root, "keep.db")

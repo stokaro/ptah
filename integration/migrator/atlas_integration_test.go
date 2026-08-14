@@ -658,7 +658,6 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	cleanupIssue273(t, conn)
 	defer cleanupIssue273(t, conn)
 	createLegacyIssue273MetadataTable(t, conn)
@@ -706,7 +705,6 @@ func runAtlasTxtarDownIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	cleanupIssue290(t, conn)
 	defer cleanupIssue290(t, conn)
 
@@ -744,7 +742,6 @@ func runAtlasTemplateIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	cleanupIssue299(t, conn)
 	defer cleanupIssue299(t, conn)
 
@@ -786,7 +783,6 @@ func runAtlasRevisionTableIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	cleanupIssue275(t, conn)
 	defer cleanupIssue275(t, conn)
 
@@ -880,7 +876,6 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	cleanupIssue819(t, conn)
 	defer cleanupIssue819(t, conn)
 

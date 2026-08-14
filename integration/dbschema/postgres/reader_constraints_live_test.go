@@ -32,7 +32,6 @@ type observedConstraint struct {
 }
 
 func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name           string
 		environmentKey string
@@ -56,7 +55,8 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 			defer cancel()
 			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.environmentKey)

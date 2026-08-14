@@ -72,8 +72,6 @@ func TestSchemaInspectIncludeSelectsTopLevelResources(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args []string
@@ -83,7 +81,8 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
@@ -97,8 +96,6 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
-	c := qt.New(t)
-
 	// Both spellings name one top-level table. Atlas treats
 	// the wildcard form as a child-level pattern instead and renders the
 	// tables as empty shells; Ptah keeps the selected table whole.
@@ -111,7 +108,8 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", test.pattern)
@@ -125,8 +123,6 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
-	c := qt.New(t)
-
 	// The qualified candidate for a dotted identifier quotes the dotted part
 	// (`main."dotted.table"`), so the selector matching it holds two dot
 	// characters and one separator. Depth is measured on separators outside
@@ -141,7 +137,8 @@ func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t,
 				"CREATE TABLE \"dotted.table\" (id INTEGER PRIMARY KEY, email TEXT);\n"+
 					"CREATE TABLE inspect_archive (id INTEGER PRIMARY KEY);")
@@ -175,9 +172,8 @@ func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("selected schema keeps the selection", func(c *qt.C) {
+	t.Run("selected schema keeps the selection", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -191,7 +187,8 @@ func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "inspect_archive"`)
 	})
 
-	c.Run("unknown schema does not narrow SQLite inspection", func(c *qt.C) {
+	t.Run("unknown schema does not narrow SQLite inspection", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -211,8 +208,6 @@ func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
-	c := qt.New(t)
-
 	allTables := []string{"inspect_users", "inspect_posts", "inspect_archive"}
 
 	tests := []struct {
@@ -256,7 +251,8 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
@@ -287,8 +283,6 @@ func TestSchemaInspectIncludeCrossScopeDependencyFails(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeValidatesSelectorsBeforeConnecting(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		pattern string
@@ -316,7 +310,8 @@ func TestSchemaInspectIncludeValidatesSelectorsBeforeConnecting(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			// The URL points at a closed port: reaching it would fail with a
 			// connection error instead of the selector error asserted below.
 			_, _, err := runCompatInspect(
@@ -350,9 +345,8 @@ func TestSchemaInspectIncludeValidationRunsBeforeDevDatabaseReset(t *testing.T) 
 }
 
 func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("local schema file", func(c *qt.C) {
+	t.Run("local schema file", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		schemaPath := filepath.Join(dir, "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte(inspectIncludeDDL), 0o600), qt.IsNil)
@@ -368,7 +362,8 @@ func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "inspect_archive"`)
 	})
 
-	c.Run("migration directory", func(c *qt.C) {
+	t.Run("migration directory", func(t *testing.T) {
+		c := qt.New(t)
 		migrationsDir := writeAtlasFormatMigrations(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -384,8 +379,6 @@ func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		format string
@@ -398,7 +391,8 @@ func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(

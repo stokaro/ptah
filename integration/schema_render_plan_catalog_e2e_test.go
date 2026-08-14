@@ -175,7 +175,8 @@ func TestSchemaRenderAndPlanCatalogAgreementE2E(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			runRenderPlanCatalogCase(c, ctx, binaryPath, test)
 		})
 	}
@@ -216,7 +217,6 @@ func runRenderPlanCatalogCase(
 	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, renderName) })
 	createE2EDatabase(c, ctx, adminDB, planName)
 	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, planName) })
-
 	renderURL := replaceDatabaseName(c, adminURL, renderName)
 	planURL := replaceDatabaseName(c, adminURL, planName)
 

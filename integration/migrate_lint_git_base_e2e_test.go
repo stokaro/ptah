@@ -41,7 +41,8 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 
 	dir := newGitFixtureRepository(c, ctx, compatBinary)
 
-	c.Run("a resolvable --git-base analyzes the changeset", func(c *qt.C) {
+	t.Run("a resolvable --git-base analyzes the changeset", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
 			"migrate", "lint",
 			"--dir", "file://migrations",
@@ -55,7 +56,8 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 		c.Check(stdout, qt.Contains, "1 version ok")
 	})
 
-	c.Run("an unresolvable --git-base reports the verb and the status", func(c *qt.C) {
+	t.Run("an unresolvable --git-base reports the verb and the status", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
 			"migrate", "lint",
 			"--dir", "file://migrations",
@@ -68,7 +70,8 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 		c.Check(stderr, qt.Equals, "Error: git diff: exit status 128\n")
 	})
 
-	c.Run("native lint keeps the reproducible invocation", func(c *qt.C) {
+	t.Run("native lint keeps the reproducible invocation", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,
 			"migrations", "lint",
 			"--dir", "migrations",

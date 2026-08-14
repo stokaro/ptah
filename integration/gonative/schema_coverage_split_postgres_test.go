@@ -52,7 +52,6 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	wantRecord := coverage.Set{}.WithKind(coverage.Extension, coverage.Policy, coverage.Sequence)
 	wantDrops := []string{
 		`DROP POLICY IF EXISTS "p" ON "guarded"`,
@@ -70,12 +69,14 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	}
 
 	for _, mode := range modes {
-		c.Run(mode.name, func(c *qt.C) {
+		t.Run(mode.name, func(t *testing.T) {
+			c := qt.New(t)
 			members := coverageSplitInspect(c, dbURL, mode.split)
 			c.Assert(len(members) > 0, qt.IsTrue)
 
 			for _, member := range members {
-				c.Run(filepath.Base(member), func(c *qt.C) {
+				t.Run(filepath.Base(member), func(t *testing.T) {
+					c := qt.New(t)
 					document, readErr := os.ReadFile(member)
 					c.Assert(readErr, qt.IsNil)
 
@@ -102,7 +103,8 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	// still plan every one of the three drops -- otherwise the assertions above
 	// are satisfied by a comparator that can no longer remove anything, which is
 	// the worse defect.
-	c.Run("with the header removed, a split member drops all three", func(c *qt.C) {
+	t.Run("with the header removed, a split member drops all three", func(t *testing.T) {
+		c := qt.New(t)
 		members := coverageSplitInspect(c, dbURL, `split "schema"`)
 		c.Assert(members, qt.HasLen, 1)
 		document, readErr := os.ReadFile(members[0])

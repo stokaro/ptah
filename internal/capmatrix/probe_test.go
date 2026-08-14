@@ -49,8 +49,6 @@ func TestRecordSuite_HappyPath(t *testing.T) {
 // returns success — so a cell whose URL never reached the runner would
 // otherwise be recorded as a nightly pass having executed no test at all.
 func TestRecordSuite_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name     string
 		exitCode int
@@ -82,7 +80,8 @@ func TestRecordSuite_FailurePath(t *testing.T) {
 		write:    func(c *qt.C, dir string, _ integration.TestReport) { c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil) },
 		expect:   "expected exactly one \\*-report.json under .* and found 0, .*",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := filepath.Join(c.TempDir(), "reports")
 			tc.write(c, dir, tc.report)
 

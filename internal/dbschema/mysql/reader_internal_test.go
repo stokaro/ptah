@@ -61,8 +61,6 @@ func wideKeyRows() [][]driver.Value {
 // `Error 1072 (42000): Key column 'a' doesn't exist in table` where the pinned
 // community binary v1.3.0 reported "Schema is synced".
 func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rows   [][]driver.Value
@@ -140,7 +138,8 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")
@@ -159,8 +158,6 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 // missing from Columns so a comparison can decline to read a partial key as a
 // whole one.
 func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rows   [][]driver.Value
@@ -192,7 +189,8 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")

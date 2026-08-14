@@ -37,16 +37,13 @@ type countingHandler struct {
 }
 
 func (countingHandler) Enabled(context.Context, slog.Level) bool { return true }
-
 func (h countingHandler) Handle(_ context.Context, record slog.Record) error {
 	*h.messages = append(*h.messages, record.Message)
 	return nil
 }
 
 func (h countingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-
-func (h countingHandler) WithGroup(string) slog.Handler { return h }
-
+func (h countingHandler) WithGroup(string) slog.Handler      { return h }
 func countMessages(messages []string, want string) int {
 	count := 0
 	for _, message := range messages {

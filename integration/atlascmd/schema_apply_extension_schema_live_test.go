@@ -85,7 +85,8 @@ table "users" {
 		{name: "exclude", args: []string{"--exclude", "pg_catalog"}},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runCompatSchemaApply(targetURL, devURL, path, test.args...)
 			c.Assert(err, qt.ErrorMatches,
 				`.*validate --to schema:.*declares server-owned PostgreSQL schema "pg_catalog".*`)
@@ -99,7 +100,6 @@ table "users" {
 // the equivalent preview path. The invalid declaration must be rejected even
 // when schema comparison itself has no modeled change to render.
 func TestCompatSchemaDiffRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *testing.T) {
-	c := qt.New(t)
 	dir := t.TempDir()
 	fromPath := filepath.Join(dir, "from.hcl")
 	toPath := filepath.Join(dir, "to.hcl")
@@ -124,7 +124,8 @@ func TestCompatSchemaDiffRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(os.WriteFile(fromPath, []byte(test.from), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(toPath, []byte(test.to), 0o600), qt.IsNil)
 
@@ -150,7 +151,8 @@ func TestCompatSchemaDiffRefusesUnsafeIntrospectedSystemSchemasPostgres(t *testi
 	targetURL := createDisposableDatabase(c, dbURL, "ptah_system_diff_"+uniqueScopeSuffix())
 
 	for _, schema := range []string{"pg_catalog", "information_schema"} {
-		c.Run(schema, func(c *qt.C) {
+		t.Run(schema, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := executeCompatSchemaDiff(c,
 				"--from", targetURL,
 				"--to", targetURL,

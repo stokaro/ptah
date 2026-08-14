@@ -230,8 +230,6 @@ func TestLockRelease_DiscardsSessionAfterTimeout(t *testing.T) {
 }
 
 func TestMySQLLockTimeoutSeconds(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -245,7 +243,8 @@ func TestMySQLLockTimeoutSeconds(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(mySQLLockTimeoutSeconds(test.dialect, test.timeout), qt.Equals, test.want)
 		})
 	}
@@ -312,8 +311,6 @@ var (
 )
 
 func TestSQLServerLockTimeoutMilliseconds(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		timeout time.Duration
@@ -326,7 +323,8 @@ func TestSQLServerLockTimeoutMilliseconds(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(sqlServerLockTimeoutMilliseconds(test.timeout), qt.Equals, test.want)
 		})
 	}

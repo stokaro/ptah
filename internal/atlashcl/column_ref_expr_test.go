@@ -24,8 +24,6 @@ import (
 // leaves the two conditional rows green; deleting only the ConditionalExpr arm
 // does the opposite. Neither mutation touches TestParseKeepsColumnAttributesThatNameAColumn.
 func TestParseReadsAColumnAttributeThroughTheParsedExpression(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		hcl    string
@@ -179,7 +177,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			test.assert(c, db)
@@ -227,8 +226,6 @@ func assertSoleIndexField(name string) func(c *qt.C, db *goschema.Database) {
 // would plan an index on "a" for a file the pinned binary refuses with
 // `variable "pick": a number is required`.
 func TestParseRefusesAConditionalColumnWhoseConditionCannotBeDecided(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -350,7 +347,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
@@ -383,8 +381,6 @@ const refusedConditional = `.*index on column contains unsupported reference "va
 // conditional. They go red only under a mutation that lets a taken branch
 // resolve to something that is not a column name, which is what they forbid.
 func TestParseRefusesAConditionalBranchThatCannotNameAColumn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -417,7 +413,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})

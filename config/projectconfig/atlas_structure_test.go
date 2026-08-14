@@ -9,8 +9,6 @@ import (
 )
 
 func TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		body    string
@@ -161,7 +159,8 @@ func TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelect
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -180,8 +179,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		body string
@@ -199,7 +196,8 @@ func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
 	  url = "sqlite://selected.db"
 	}
@@ -218,8 +216,6 @@ func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(
 }
 
 func TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		body string
@@ -245,7 +241,8 @@ func TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -266,8 +263,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigToleratesUnknownLeafAttributesRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		body string
@@ -329,7 +324,8 @@ func TestParseAtlasProjectConfigToleratesUnknownLeafAttributesRegardlessOfSelect
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -381,8 +377,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		body    string
@@ -430,7 +424,8 @@ func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }

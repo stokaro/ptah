@@ -128,7 +128,8 @@ func TestValid_HappyPath_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
 	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(lintdialect.Valid(spelling), qt.IsTrue)
 		})
 	}
@@ -148,7 +149,8 @@ func TestCanonical_HappyPath_ResolvesEverySpellingToItsEngine(t *testing.T) {
 	canonicals := canonicalDialects(c)
 
 	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			canonical, ok := lintdialect.Canonical(spelling)
 
 			c.Assert(ok, qt.IsTrue)
@@ -175,10 +177,9 @@ func TestCanonical_HappyPath_EmptyDialectResolvesToItself(t *testing.T) {
 }
 
 func TestValid_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"oracle", "db2", "postgres!", "post gres", " ", "sqlserver2022"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(lintdialect.Valid(dialect), qt.IsFalse)
 			canonical, ok := lintdialect.Canonical(dialect)
 			c.Assert(ok, qt.IsFalse)
@@ -197,15 +198,14 @@ func TestCompatible_HappyPath_EverySpellingMatchesItsOwnEngine(t *testing.T) {
 	c := qt.New(t)
 
 	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(lintdialect.Compatible(spelling, platform.NormalizeDialect(spelling)), qt.IsTrue)
 		})
 	}
 }
 
 func TestCompatible(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		policy   string
@@ -317,7 +317,8 @@ func TestCompatible(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.assert(c, lintdialect.Compatible(test.policy, test.database))
 		})
 	}

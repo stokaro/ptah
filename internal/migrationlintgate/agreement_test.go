@@ -100,8 +100,6 @@ func lintRefuses(c *qt.C, fsys fstest.MapFS, databaseDialect string) bool {
 // expected one. Agreement alone would be satisfied by both commands refusing
 // everything, so each row also pins which way they agree.
 func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		policy   string
@@ -201,7 +199,8 @@ func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := policyDirectory(test.policy)
 
 			up := upRefuses(fsys, test.database)

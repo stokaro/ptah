@@ -109,7 +109,8 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 				"every placement needs an answer; a missing key reads as dropped"))
 
 			for _, placement := range directiveplacement.All {
-				c.Run(placement.Name, func(c *qt.C) {
+				t.Run(placement.Name, func(t *testing.T) {
+					c := qt.New(t)
 					sql := placement.Render(test.directive)
 
 					c.Check(test.observe(c, sql), qt.Equals, test.honored[placement.Name],

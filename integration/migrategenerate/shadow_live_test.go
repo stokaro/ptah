@@ -34,7 +34,8 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	}()
 
-	c.Run("broken prior migration aborts before writing candidate files", func(c *qt.C) {
+	t.Run("broken prior migration aborts before writing candidate files", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		entitiesDir := writeMigrateGenerateShadowEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
@@ -67,7 +68,8 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		c.Assert(matches, qt.HasLen, 2)
 	})
 
-	c.Run("correct prior migration writes candidate files", func(c *qt.C) {
+	t.Run("correct prior migration writes candidate files", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		entitiesDir := writeMigrateGenerateShadowEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")

@@ -65,7 +65,6 @@ func mySQLFamilyScratchDatabaseURL(t *testing.T, dialect, adminEnv, prefix strin
 	adminConn, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { dbschema.CloseAndWarn(adminConn) })
-
 	database := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(dialect, database)
 	_, err = adminConn.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase)

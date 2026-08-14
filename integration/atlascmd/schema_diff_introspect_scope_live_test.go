@@ -151,7 +151,8 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out := runCompatSchemaDiff(c,
 				"--from", targetURL,
 				"--to", "file://"+desiredPath,
@@ -426,7 +427,8 @@ func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out := runCompatSchemaDiff(c,
 				"--from", fromURL,
 				"--to", "file://"+migrationsDir,

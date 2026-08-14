@@ -142,10 +142,9 @@ func spannerParityCases() []spannerParityCase {
 // SELECT cases stay green, which is what separates the placeholder change from
 // the RETURNING change.
 func TestSpannerRendersIdenticallyToPostgres(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range spannerParityCases() {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			gotSQL, gotArgs, gotErr := tc.render(platform.Spanner)
 			refSQL, refArgs, refErr := tc.render(platform.Postgres)
 
@@ -169,8 +168,6 @@ func TestSpannerRendersIdenticallyToPostgres(t *testing.T) {
 // unconditional"`; teach RETURNING a star column and the second prints the
 // rendered `RETURNING *` against the same want.
 func TestSpannerRejectsTheSameStatementsAsPostgres(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		render  func(dialect string) (string, []any, error)
@@ -200,7 +197,8 @@ func TestSpannerRejectsTheSameStatementsAsPostgres(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, _, spannerErr := tt.render(platform.Spanner)
 			_, _, postgresErr := tt.render(platform.Postgres)
 

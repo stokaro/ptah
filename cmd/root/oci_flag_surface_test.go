@@ -192,7 +192,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	accounted = slices.Compact(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --schema-file but no row states whether it resolves oci://", verb))
 		})
@@ -201,7 +202,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	// The converse: a name that no longer registers --schema-file must not sit
 	// here claiming coverage it cannot have.
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --schema-file", verb))
 		})
@@ -210,7 +212,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	// Every verb that resolves oci:// must register --plain-http. This is the
 	// property stokaro/ptah#928 item 1 is about.
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run("plain-http on "+row.verb, func(c *qt.C) {
+		t.Run("plain-http on "+row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(nativeVerbsRegisteringFlag(root.NewRootCommand(), "plain-http"), qt.Contains, row.verb)
 		})
 	}
@@ -230,7 +233,8 @@ func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runNative(row.args(reference)...)
 			combined := out + errorText(err)
 
@@ -260,7 +264,8 @@ func TestOCISchemaSourceVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			args := slices.DeleteFunc(row.args(reference), func(arg string) bool {
 				return arg == "--plain-http"
 			})
@@ -330,13 +335,15 @@ func TestVerifySum_IsRegisteredExactlyWhereItIsAccountedFor(t *testing.T) {
 	slices.Sort(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --verify-sum but no row states what the flag adds there", verb))
 		})
 	}
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --verify-sum", verb))
 		})
@@ -366,7 +373,8 @@ func TestVerifySum_EveryHelpCarriesTheQualifier(t *testing.T) {
 	// qualifier is the last PROSE but never the last bytes. Asserting the
 	// suffix would be asserting the env-binding machinery, not the wording.
 	for verb, usage := range usages {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(usage, qt.Contains, migrationsource.VerifySumQualifier,
 				qt.Commentf("--verify-sum help on %q does not carry the shared qualifier", verb))
 		})

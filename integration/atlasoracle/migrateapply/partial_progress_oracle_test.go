@@ -94,7 +94,8 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeOracleMigrationDir(c, oracle, map[string]string{
 				partialProgressVersion + "_two.sql": test.directive + partialProgressBody,
 			})
@@ -148,7 +149,6 @@ func readPartialProgressState(c *qt.C, dbPath string) partialProgressState {
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-
 	var state partialProgressState
 	err = db.QueryRow(`
 SELECT applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''),

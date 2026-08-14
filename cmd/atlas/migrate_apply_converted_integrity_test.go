@@ -622,9 +622,8 @@ func TestCompatMigrateApply_ConvertedFlywayNestedFileTamperRefuses(t *testing.T)
 // cannot read, and both must report the checksum state rather than the parse
 // failure, exactly as Atlas CE does.
 func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unhashed and unparseable reports the missing sum", func(c *qt.C) {
+	t.Run("unhashed and unparseable reports the missing sum", func(t *testing.T) {
+		c := qt.New(t)
 		tempDir := c.TempDir()
 		dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 			"1_init.sql": "CREATE TABLE nd (id INTEGER PRIMARY KEY);\n",
@@ -639,7 +638,8 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
 		c.Assert(stderr, qt.Equals, atlasChecksumFileNotFoundStderr)
 	})
 
-	c.Run("tampered until unparseable reports the mismatch", func(c *qt.C) {
+	t.Run("tampered until unparseable reports the mismatch", func(t *testing.T) {
+		c := qt.New(t)
 		tempDir := c.TempDir()
 		dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 			"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",

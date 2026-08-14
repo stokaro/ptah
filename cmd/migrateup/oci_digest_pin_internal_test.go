@@ -77,7 +77,8 @@ func TestMigrateUp_OCITagAndDigestResolvesByDigest(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := "sqlite://" + filepath.Join(c.TempDir(), "pinned.db")
 
 			out, err := runUpInternal(
@@ -141,7 +142,6 @@ func TestMigrateUp_OCIDigestNotInRegistryIsRefused(t *testing.T) {
 // refuse before any DDL runs; the second row also lies in the
 // Docker-Content-Digest header, so only hashing the body catches it.
 func TestMigrateUp_OCISubstitutedManifestIsRefused(t *testing.T) {
-	c := qt.New(t)
 	const repository = "ptah/substituted"
 
 	tests := []struct {
@@ -159,7 +159,8 @@ func TestMigrateUp_OCISubstitutedManifestIsRefused(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			store := newOCIMemoryStore()
 			host := startSubstitutingOCITestRegistry(c, store, repository, tt.header)
 			pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "swapped"), "release")

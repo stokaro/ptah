@@ -62,7 +62,8 @@ func TestSumFileNamesMatchesAtlasCE(t *testing.T) {
 		caseDir := path.Dir(sumPath)
 		formatName, _, _ := strings.Cut(caseDir, "/")
 
-		c.Run(caseDir, func(c *qt.C) {
+		t.Run(caseDir, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := os.DirFS(filepath.Join(root, filepath.FromSlash(caseDir)))
 
 			names, err := atlasmigrateimport.SumFileNames(
@@ -114,7 +115,8 @@ func TestSumFileNamesMatchesAtlasCERefusals(t *testing.T) {
 		caseDir := path.Dir(markerPath)
 		formatName, _, _ := strings.Cut(caseDir, "/")
 
-		c.Run(caseDir, func(c *qt.C) {
+		t.Run(caseDir, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := os.DirFS(filepath.Join(root, filepath.FromSlash(caseDir)))
 
 			names, err := atlasmigrateimport.SumFileNames(
@@ -140,8 +142,6 @@ func TestSumFileNamesMatchesAtlasCERefusals(t *testing.T) {
 }
 
 func TestSumFileNamesPerFormat(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		format atlasmigrateimport.Format
@@ -310,7 +310,8 @@ func TestSumFileNamesPerFormat(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrateimport.SumFileNames(sourceFS(tt.files...), tt.format)
 
 			c.Assert(err, qt.IsNil)
@@ -326,10 +327,9 @@ func TestSumFileNamesPerFormat(t *testing.T) {
 // file, and a verification path built on it would refuse a directory Atlas CE
 // hashed and applies.
 func TestSumFileNamesFlywayPrefixIsCaseSensitive(t *testing.T) {
-	c := qt.New(t)
-
 	for _, prefix := range []string{"v", "b", "r", "u"} {
-		c.Run("lowercase "+prefix+" is not a flyway file", func(c *qt.C) {
+		t.Run("lowercase "+prefix+" is not a flyway file", func(t *testing.T) {
+			c := qt.New(t)
 			lower := prefix + "1__one.sql"
 
 			got, err := atlasmigrateimport.SumFileNames(
@@ -348,9 +348,8 @@ func TestSumFileNamesFlywayPrefixIsCaseSensitive(t *testing.T) {
 // so a rule borrowed from it would keep B1__one.sql. Atlas CE keeps only the
 // highest baseline.
 func TestSumFileNamesFlywayBaselineDropsLowerBaselines(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("lower baseline is squashed", func(c *qt.C) {
+	t.Run("lower baseline is squashed", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("B1__one.sql", "B2__two.sql", "V3__three.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -360,7 +359,8 @@ func TestSumFileNamesFlywayBaselineDropsLowerBaselines(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"B2__two.sql", "V3__three.sql"})
 	})
 
-	c.Run("last baseline wins a version tie", func(c *qt.C) {
+	t.Run("last baseline wins a version tie", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("B2__a.sql", "B2__b.sql", "V3__c.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -378,9 +378,8 @@ func TestSumFileNamesFlywayBaselineDropsLowerBaselines(t *testing.T) {
 // V10. Implementing the cut numerically leaves V10 in the sum and produces a
 // checksum the oracle never wrote, on an entirely ordinary directory.
 func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("baseline at 2 squashes version 10", func(c *qt.C) {
+	t.Run("baseline at 2 squashes version 10", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("B2__base.sql", "V10__ten.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -390,7 +389,8 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"B2__base.sql"})
 	})
 
-	c.Run("version 10 outranks version 2 in output order", func(c *qt.C) {
+	t.Run("version 10 outranks version 2 in output order", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("V2__b.sql", "V10__c.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -400,7 +400,8 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"V2__b.sql", "V10__c.sql"})
 	})
 
-	c.Run("dotted baseline cut also compares as strings", func(c *qt.C) {
+	t.Run("dotted baseline cut also compares as strings", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("B2__base.sql", "V1.5__a.sql", "V2.5__b.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -424,8 +425,6 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 //
 // Every expectation below was measured against the pinned oracle.
 func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -471,7 +470,8 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrateimport.SumFileNames(
 				sourceFS(tt.files...),
 				atlasmigrateimport.FormatFlyway,
@@ -497,9 +497,8 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 // byte, which is what rules those models out and what nobody should later
 // "simplify" into a numeric comparison.
 func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("sweep: the directory name decides, at the token boundary", func(c *qt.C) {
+	t.Run("sweep: the directory name decides, at the token boundary", func(t *testing.T) {
+		c := qt.New(t)
 		// '5' is 0x35. Directories sorting below it lose their file.
 		squashed := []string{"0dir", "1dir", "4dir"}
 		kept := []string{"5dir", "6dir", "9dir", "Adir", "Vdir", "sdir", "zdir"}
@@ -524,7 +523,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		}
 	})
 
-	c.Run("converse sweep: the token decides, for a fixed directory", func(c *qt.C) {
+	t.Run("converse sweep: the token decides, for a fixed directory", func(t *testing.T) {
+		c := qt.New(t)
 		// "5d" and "5e" are the same version number and land on opposite
 		// sides, which is what rules out every numeric interpretation.
 		kept := []string{"1", "4", "5", "50", "5d"}
@@ -551,7 +551,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		}
 	})
 
-	c.Run("the forward squash still compares version tokens, not paths", func(c *qt.C) {
+	t.Run("the forward squash still compares version tokens, not paths", func(t *testing.T) {
+		c := qt.New(t)
 		// zdir sorts after B5, so V1 is reached with the baseline in force.
 		// Its version (1) loses to the token (5) even though its path (zdir/)
 		// would win. The two directions genuinely use different comparisons.
@@ -564,7 +565,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"B5__base.sql"})
 	})
 
-	c.Run("repeatables are exempt from the backwards reach", func(c *qt.C) {
+	t.Run("repeatables are exempt from the backwards reach", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("0dir/R__x.sql", "B5__base.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -574,7 +576,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"B5__base.sql", "0dir/R__x.sql"})
 	})
 
-	c.Run("a superseding baseline reaches backwards again", func(c *qt.C) {
+	t.Run("a superseding baseline reaches backwards again", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("0dir/V9__a.sql", "3dir/V9__b.sql", "B2__base.sql", "zdir/B4__later.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -584,7 +587,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"zdir/B4__later.sql"})
 	})
 
-	c.Run("a non-numeric token is the same rule, not a special case", func(c *qt.C) {
+	t.Run("a non-numeric token is the same rule, not a special case", func(t *testing.T) {
+		c := qt.New(t)
 		// "x" is 0x78, above nearly every path's first byte, so Bx reaches
 		// back over essentially everything. This is what used to be refused.
 		got, err := atlasmigrateimport.SumFileNames(
@@ -596,7 +600,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"sub/Bx__base.sql"})
 	})
 
-	c.Run("a huge numeric token reaches back just as far", func(c *qt.C) {
+	t.Run("a huge numeric token reaches back just as far", func(t *testing.T) {
+		c := qt.New(t)
 		// Numeric, so no refusal keyed on non-numeric tokens could have
 		// covered this one.
 		got, err := atlasmigrateimport.SumFileNames(
@@ -618,9 +623,8 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 // substitution changes the answer, so they are what stops a future reader from
 // merging them.
 func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("supersede compares version tokens, not names", func(c *qt.C) {
+	t.Run("supersede compares version tokens, not names", func(t *testing.T) {
+		c := qt.New(t)
 		// 1dir/B9 installs first. The name "B5__base.sql" sorts above "9"
 		// (0x42 > 0x39) while the token "5" does not, so a name-based
 		// supersede would replace B9 with B5 here.
@@ -633,7 +637,8 @@ func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"1dir/B9__base.sql"})
 	})
 
-	c.Run("the backward reach squashes an exactly equal path", func(c *qt.C) {
+	t.Run("the backward reach squashes an exactly equal path", func(t *testing.T) {
+		c := qt.New(t)
 		// Contrived but reachable: the baseline's version token is literally
 		// "V1.sql", and a survivor is named "V1.sql". Nothing else in the
 		// corpus or the fuzz distinguishes <= from <, so without this the
@@ -647,7 +652,8 @@ func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"sub/BV1.sql.sql"})
 	})
 
-	c.Run("a skipped baseline does not reach backwards", func(c *qt.C) {
+	t.Run("a skipped baseline does not reach backwards", func(t *testing.T) {
+		c := qt.New(t)
 		// zz/B1 loses the supersede test against the installed B5 and is
 		// dropped. It must not reach back on the way out.
 		//
@@ -668,7 +674,8 @@ func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"0a/B5__base.sql", "0b/V9__x.sql"})
 	})
 
-	c.Run("ties resolve oppositely for a baseline and a file", func(c *qt.C) {
+	t.Run("ties resolve oppositely for a baseline and a file", func(t *testing.T) {
+		c := qt.New(t)
 		// An equal-version baseline WINS its comparison and replaces the
 		// incumbent; an equal-version file LOSES its comparison and is
 		// squashed. Same operand types, opposite tie-breaks — which is why
@@ -695,8 +702,6 @@ func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
 // Each case is a pair or triple whose oracle order is decided purely by the
 // comparator, measured against the pinned binary.
 func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -744,7 +749,8 @@ func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrateimport.SumFileNames(
 				sourceFS(tt.files...),
 				atlasmigrateimport.FormatFlyway,
@@ -761,9 +767,8 @@ func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
 // refuse a directory the oracle still considers clean, which is worse than a
 // plain false refusal: the offending file is one a user deliberately archived.
 func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("a hidden directory is not covered", func(c *qt.C) {
+	t.Run("a hidden directory is not covered", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS(".archive/V1__old.sql", "V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -773,7 +778,8 @@ func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"V2__new.sql"})
 	})
 
-	c.Run("a hidden directory nested deeper is not covered either", func(c *qt.C) {
+	t.Run("a hidden directory nested deeper is not covered either", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("sub/.old/V1__old.sql", "sub/V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -783,7 +789,8 @@ func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, []string{"sub/V2__new.sql"})
 	})
 
-	c.Run("an ordinary directory is still covered", func(c *qt.C) {
+	t.Run("an ordinary directory is still covered", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
 			sourceFS("archive/V1__old.sql", "V2__new.sql"),
 			atlasmigrateimport.FormatFlyway,
@@ -806,8 +813,6 @@ func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
 // here is also in the oracle corpus, where CE recorded an atlas.sum holding
 // nothing but the empty-set directory hash.
 func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
-	c := qt.New(t)
-
 	// The sum over no files at all: sha256 of the empty input, base64-encoded.
 	const emptySetSum = "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n"
 
@@ -823,7 +828,8 @@ func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.corpusCase, func(c *qt.C) {
+		t.Run(tt.corpusCase, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := os.DirFS(filepath.Join(
 				"testdata", "ce-sums", filepath.FromSlash(tt.corpusCase),
 			))
@@ -848,15 +854,15 @@ func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
 }
 
 func TestSumFileNamesRejectsBadInput(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil filesystem", func(c *qt.C) {
+	t.Run("nil filesystem", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasmigrateimport.SumFileNames(nil, atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, "source migration filesystem is required")
 	})
 
-	c.Run("unknown format", func(c *qt.C) {
+	t.Run("unknown format", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasmigrateimport.SumFileNames(sourceFS("1_init.sql"), "sqitch")
 
 		c.Assert(err, qt.ErrorMatches, `unknown migration import format "sqitch"`)

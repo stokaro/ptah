@@ -33,7 +33,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 	migrationsDir := writeLatestZeroAtlasDir(c)
 
-	c.Run("zero without Git has no usable selector", func(c *qt.C) {
+	t.Run("zero without Git has no usable selector", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			c.TempDir(),
@@ -49,7 +50,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "Error: --latest or --git-base is required\n")
 	})
 
-	c.Run("zero allows explicit Git", func(c *qt.C) {
+	t.Run("zero allows explicit Git", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",
@@ -68,7 +70,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 		c.Assert(stderr, qt.Not(qt.Contains), "mutually exclusive")
 	})
 
-	c.Run("zero suppresses project latest and allows project Git", func(c *qt.C) {
+	t.Run("zero suppresses project latest and allows project Git", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		project := `lint {
   latest = 1
@@ -100,7 +103,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "Error: --git-base \"-unsafe\" is not a safe Git ref\n")
 	})
 
-	c.Run("positive latest still selects a version", func(c *qt.C) {
+	t.Run("positive latest still selects a version", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",
@@ -116,7 +120,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "")
 	})
 
-	c.Run("positive latest and Git remain exclusive", func(c *qt.C) {
+	t.Run("positive latest and Git remain exclusive", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",
@@ -133,7 +138,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "Error: --latest and --git-base are mutually exclusive\n")
 	})
 
-	c.Run("all-versions opt-in remains usable with zero", func(c *qt.C) {
+	t.Run("all-versions opt-in remains usable with zero", func(t *testing.T) {
+		c := qt.New(t)
 		c.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "1")
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,

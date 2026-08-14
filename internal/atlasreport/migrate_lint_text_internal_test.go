@@ -25,8 +25,6 @@ func fixedZeroClock() func() time.Time {
 }
 
 func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		text string
@@ -50,14 +48,14 @@ func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(wrapContent(test.text, lintWrapWidth), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		code    string
@@ -80,7 +78,8 @@ func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diagnostic, mapped := atlasDiagnosticText(test.code, migrationlint.Finding{
 				Context: &migrationlint.FindingContext{Subjects: []migrationlint.Subject{test.subject}},
 			})
@@ -99,7 +98,6 @@ func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
 // went missing: narrowing a destructive finding to one of its objects reads as
 // complete output and is not.
 func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		code     string
@@ -124,7 +122,8 @@ func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diagnostic, mapped := atlasDiagnosticText(test.code, migrationlint.Finding{
 				Context: &migrationlint.FindingContext{Subjects: test.subjects},
 			})

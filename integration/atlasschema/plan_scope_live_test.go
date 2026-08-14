@@ -55,7 +55,6 @@ table "b" {
 `
 
 func TestPlanLive_SavedPlanIsNotStaleAgainstItsOwnSource(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -103,7 +102,8 @@ table "c" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			path := filepath.Join(c.TempDir(), "desired.hcl")

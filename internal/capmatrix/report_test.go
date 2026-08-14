@@ -75,8 +75,6 @@ func TestAggregate_HappyPath(t *testing.T) {
 // the exact shape a paths filter, a cancelled matrix leg, or a fan-out that
 // produced zero jobs takes in this repository's CI.
 func TestAggregate_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name    string
 		tier    int
@@ -146,7 +144,8 @@ func TestAggregate_FailurePath(t *testing.T) {
 			c.Assert(aggregate.Err(), qt.ErrorMatches, `(?s).*a result arrived for cell "clickhouse-25-8".*`)
 		},
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			tc.assert(c, capmatrix.Aggregate{Tier: tc.tier, Matrix: twoCellMatrix(), Results: tc.results})
 		})
 	}
@@ -168,8 +167,6 @@ func TestAggregate_RefusesAMatrixThatWouldRunNothing(t *testing.T) {
 // requirement: a nightly capability failure has to send the reader to the row
 // that already says so instead of to eighteen suite logs.
 func TestWriteAggregate_TierThreeDefersToTierTwo(t *testing.T) {
-	c := qt.New(t)
-
 	disagreeing := capmatrix.CellResult{
 		Cell: "mariadb-11-4", Tier: 3,
 		Probe: capmatrix.ProbeOutcome{Mismatches: []string{"sequences: preset says false, server does true [DISAGREES]"}},
@@ -195,7 +192,8 @@ func TestWriteAggregate_TierThreeDefersToTierTwo(t *testing.T) {
 			c.Assert(report, qt.Contains, "sequences: preset says false, server does true")
 		},
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			tierDisagreement := disagreeing
 			tierDisagreement.Tier = tc.tier
 			var out strings.Builder
@@ -245,7 +243,8 @@ func TestCellResult_Verdict(t *testing.T) {
 		result: capmatrix.CellResult{Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{}},
 		want:   capmatrix.SuiteFailure,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tc.result.Verdict(), qt.Equals, tc.want)
 		})
 	}

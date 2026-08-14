@@ -133,8 +133,6 @@ func sequenceIsImplicit(catalog pgSequenceCatalog, query string) (bool, error) {
 // replay is exit 0 and the pinned binary v1.3.0 reports the replayed database
 // synced with the source.
 func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		catalog func() pgSequenceCatalog
@@ -160,7 +158,8 @@ func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			catalog := test.catalog()
 			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 				return serveSequenceQuery(catalog, query)

@@ -211,8 +211,6 @@ func TestRenderIdentityByDefaultStaysAssignable(t *testing.T) {
 }
 
 func TestRenderOperationNoticeAccompaniesOperations(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		ops  graphqlrender.Operations
@@ -225,14 +223,16 @@ func TestRenderOperationNoticeAccompaniesOperations(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sdl := render(c, graphqlrender.Options{Operations: test.ops})
 			c.Assert(sdl, qt.Contains, "Ptah generates no resolvers")
 			c.Assert(sdl, qt.Contains, "no authorization or tenant")
 		})
 	}
 
-	c.Run("types only says nothing about operations", func(c *qt.C) {
+	t.Run("types only says nothing about operations", func(t *testing.T) {
+		c := qt.New(t)
 		sdl := render(c, graphqlrender.Options{})
 		c.Assert(sdl, qt.Not(qt.Contains), "Operation shapes")
 	})
@@ -311,9 +311,8 @@ func TestRenderArrayColumn(t *testing.T) {
 // matches nothing: with a query shape requested the root must still be a legal,
 // non-empty type, and with none requested there must be no root at all.
 func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("query shape selected", func(c *qt.C) {
+	t.Run("query shape selected", func(t *testing.T) {
+		c := qt.New(t)
 		res, err := graphqlrender.Render(fixture(), graphqlrender.Options{
 			IncludeTables: []string{"does_not_exist"},
 			Operations:    allOperations,
@@ -324,7 +323,8 @@ func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
 		c.Assert(sdl, qt.Not(qt.Contains), "type Author")
 	})
 
-	c.Run("types only", func(c *qt.C) {
+	t.Run("types only", func(t *testing.T) {
+		c := qt.New(t)
 		res, err := graphqlrender.Render(fixture(), graphqlrender.Options{
 			IncludeTables: []string{"does_not_exist"},
 		})
@@ -428,8 +428,6 @@ func mustRender(c *qt.C, db *goschema.Database) []byte {
 }
 
 func TestRenderDeterministic(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		ops  graphqlrender.Operations
@@ -443,7 +441,8 @@ func TestRenderDeterministic(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			opts := graphqlrender.Options{Operations: test.ops}
 			c.Assert(render(c, opts), qt.Equals, render(c, opts))
 		})
@@ -469,7 +468,8 @@ func TestRenderObjectTypeNamesAreStableAcrossProfiles(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := section(render(c, graphqlrender.Options{Operations: test.ops}), "type Book {")
 			c.Assert(got, qt.Equals, typesOnly)
 		})

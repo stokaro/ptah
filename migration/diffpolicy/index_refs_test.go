@@ -80,7 +80,6 @@ func TestApplyForDialectDropIndex_SkipsMySQLDifferentTableRemoval(t *testing.T) 
 }
 
 func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		dialect  string
@@ -108,7 +107,8 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				IndexesAdded:   []types.IndexRef{test.addition},
 				IndexesRemoved: []types.IndexRef{test.removal},

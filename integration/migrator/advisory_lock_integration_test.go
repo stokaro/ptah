@@ -27,7 +27,6 @@ func TestMigrationAdvisoryLock_PostgresConcurrentRunners(t *testing.T) {
 	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = baseConn.Close() }()
-
 	names := issue124Names(time.Now().UnixNano())
 	cleanupIssue124(t, baseConn, names)
 	defer cleanupIssue124(t, baseConn, names)
@@ -60,7 +59,6 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = baseConn.Close() }()
-
 	names := issue124Names(time.Now().UnixNano())
 	cleanupIssue124(t, baseConn, names)
 	defer cleanupIssue124(t, baseConn, names)
@@ -68,7 +66,6 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 	lockConn, err := baseConn.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = lockConn.Close() }()
-
 	lockName := "ptah-test-migration-lock"
 	lockKey := postgresMigrationLockKeyForTest(lockName)
 	_, err = lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey)
@@ -94,11 +91,9 @@ func TestMigrationAdvisoryLock_PostgresRepairTimeoutIntegration(t *testing.T) {
 	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = baseConn.Close() }()
-
 	lockConn, err := baseConn.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = lockConn.Close() }()
-
 	lockName := "ptah-test-repair-lock"
 	lockKey := postgresMigrationLockKeyForTest(lockName)
 	_, err = lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey)
@@ -130,7 +125,6 @@ func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
 	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = baseConn.Close() }()
-
 	names := issue124Names(time.Now().UnixNano())
 	cleanupIssue124(t, baseConn, names)
 	defer cleanupIssue124(t, baseConn, names)
@@ -138,11 +132,9 @@ func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
 	firstConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = firstConn.Close() }()
-
 	secondConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = secondConn.Close() }()
-
 	hookStarted := make(chan struct{})
 	releaseHook := make(chan struct{})
 	firstErr := make(chan error, 1)
@@ -204,7 +196,6 @@ func TestMigrationAdvisoryLock_SQLServerTimeoutIntegration(t *testing.T) {
 	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = baseConn.Close() }()
-
 	names := issue124Names(time.Now().UnixNano())
 	cleanupIssue124(t, baseConn, names)
 	defer cleanupIssue124(t, baseConn, names)
@@ -212,7 +203,6 @@ func TestMigrationAdvisoryLock_SQLServerTimeoutIntegration(t *testing.T) {
 	lockConn, err := baseConn.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = lockConn.Close() }()
-
 	c.Assert(acquireSQLServerTestMigrationLock(ctx, lockConn), qt.IsNil)
 	defer func() {
 		_ = releaseSQLServerTestMigrationLock(context.Background(), lockConn)
@@ -290,7 +280,6 @@ func runIssue124ConcurrentMigrations(
 				return
 			}
 			defer func() { _ = conn.Close() }()
-
 			<-start
 			if err := run(conn); err != nil {
 				errCh <- err
@@ -355,7 +344,6 @@ func runIssue124AdvisoryLockDefaultTimeoutIntegration(t *testing.T, dbURL string
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue124Names(time.Now().UnixNano())
 	cleanupIssue124(t, conn, names)
 	defer cleanupIssue124(t, conn, names)

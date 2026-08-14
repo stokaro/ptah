@@ -128,7 +128,8 @@ func TestSumFileNamesDifferentialFuzz(t *testing.T) {
 
 	for i := range iterations {
 		layout := randomFlywayLayout(rng)
-		c.Run(fmt.Sprintf("shape-%03d", i), func(c *qt.C) {
+		t.Run(fmt.Sprintf("shape-%03d", i), func(t *testing.T) {
+			c := qt.New(t)
 			checkFlywayLayout(c, oracle, layout)
 		})
 	}
@@ -204,7 +205,8 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 
 	for i := range iterations {
 		layout := randomRealisticFlywayLayout(rng)
-		c.Run(fmt.Sprintf("realistic-%03d", i), func(c *qt.C) {
+		t.Run(fmt.Sprintf("realistic-%03d", i), func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writeLayout(c, dir, layout)
 
@@ -262,7 +264,6 @@ func randomRealisticFlywayLayout(rng *rand.Rand) []string {
 // whose rule is a flat suffix filter, so a future change there is caught too.
 func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 	oracle := requireOracle(t)
-	c := qt.New(t)
 
 	rng := newFuzzRNG(20260802)
 
@@ -276,7 +277,8 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 	for _, format := range formats {
 		for i := range 40 {
 			layout := randomPlainLayout(rng)
-			c.Run(fmt.Sprintf("%s-%02d", format, i), func(c *qt.C) {
+			t.Run(fmt.Sprintf("%s-%02d", format, i), func(t *testing.T) {
+				c := qt.New(t)
 				checkPlainLayout(c, oracle, format, layout)
 			})
 		}

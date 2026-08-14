@@ -21,7 +21,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	build.Dir = "."
 	c.Assert(build.Run(), qt.IsNil)
 
-	c.Run("Ptah revision table", func(c *qt.C) {
+	t.Run("Ptah revision table", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "up", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -40,7 +41,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(total, qt.Equals, 2)
 	})
 
-	c.Run("Atlas revision table", func(c *qt.C) {
+	t.Run("Atlas revision table", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "up", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -75,7 +77,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	// applied=1, total=2 -- and used to record the same state, so nothing could
 	// tell the two rows apart. The recorded state now carries the direction, and
 	// the operator can finish the interrupted rollback from where it stopped.
-	c.Run("Ptah down revision", func(c *qt.C) {
+	t.Run("Ptah down revision", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -111,7 +114,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	// cannot say whether its statement committed. Recording the migration
 	// applied over that is the one thing repair must not do quietly, and
 	// resuming it would repeat SQL that may already be committed.
-	c.Run("Ptah down in-flight statement", func(c *qt.C) {
+	t.Run("Ptah down in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-in-flight.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-execution")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -140,7 +144,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
 	})
 
-	c.Run("Ptah in-flight statement", func(c *qt.C) {
+	t.Run("Ptah in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-in-flight.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "up", "after-execution")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -165,7 +170,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas in-flight statement", func(c *qt.C) {
+	t.Run("Atlas in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-in-flight.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "up", "after-execution")
 		conn := openNoTransactionCrashDatabase(c, databasePath)
@@ -190,7 +196,8 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas down persists rollback progress", func(c *qt.C) {
+	t.Run("Atlas down persists rollback progress", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-down-crash.db")
 		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "down", "after-checkpoint")
 		conn := openNoTransactionCrashDatabase(c, databasePath)

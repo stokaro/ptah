@@ -274,7 +274,8 @@ func TestSchemaExportReadsEveryNonGoSource(t *testing.T) {
 
 	for _, target := range apiExportTargets() {
 		for _, source := range nonGoSchemaSources(dir) {
-			c.Run(target.name+"/"+source.name, func(c *qt.C) {
+			t.Run(target.name+"/"+source.name, func(t *testing.T) {
+				c := qt.New(t)
 				baseline := target.run(c, goSource)
 				c.Assert(baseline, qt.Contains, target.marker)
 
@@ -423,7 +424,8 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runSchemaExport(tt.args...)
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(tt.wantErr), qt.Commentf("stdout:\n%s", stdout))

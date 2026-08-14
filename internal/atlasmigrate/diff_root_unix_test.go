@@ -109,7 +109,6 @@ func preparePublicationHook(opts *atlasmigrate.DiffOptions, swap func()) {
 }
 
 func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
-	c := qt.New(t)
 	tests := []diffSwapCase{
 		{
 			name: "migration directory symlink swapped before planning",
@@ -181,7 +180,8 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			decoy := c.TempDir()
 			c.Assert(os.MkdirAll(filepath.Join(decoy, "migrations"), 0o755), qt.IsNil)
@@ -199,7 +199,6 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 				LockTimeout: time.Second,
 			}
 			test.hook(&opts, func() { test.swap(c, root, decoy) })
-
 			result, err := atlasmigrate.GenerateDiff(context.Background(), conn, opts)
 
 			c.Assert(err, qt.IsNil)

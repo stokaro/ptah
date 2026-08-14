@@ -335,7 +335,8 @@ func TestDefaultDialects(t *testing.T) {
 	c.Assert(slices.IsSorted(dialects), qt.IsTrue)
 
 	for _, dialect := range dialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
 			c.Assert(capability.ForDialect(dialect).Validate(), qt.IsNil)
 		})

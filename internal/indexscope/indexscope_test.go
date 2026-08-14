@@ -104,7 +104,6 @@ func TestNewResolver_DefaultAndNamedSchemaIndexesAreIndependent(t *testing.T) {
 }
 
 func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -115,7 +114,8 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{
 				Indexes: []goschema.Index{
 					{Name: "IDX_Shared", TableName: "users"},
@@ -137,7 +137,6 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 }
 
 func TestNewResolver_CaseInsensitiveDiffCollisionRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -148,7 +147,8 @@ func TestNewResolver_CaseInsensitiveDiffCollisionRejected(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				IndexesAdded: []types.IndexRef{
 					{Name: "IDX_Shared", TableName: "users"},
@@ -199,7 +199,6 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 }
 
 func TestNewResolver_TargetTableResolution(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		tables []goschema.Table
@@ -246,7 +245,8 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{
 				Tables:  test.tables,
 				Indexes: []goschema.Index{test.index},
@@ -377,7 +377,8 @@ func TestIdentityKey_DialectCaseSemantics(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := indexscope.IdentityKey(test.dialect, ref)
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -390,7 +391,6 @@ func TestIdentityKey_DialectCaseSemantics(t *testing.T) {
 }
 
 func TestConflictSet_DialectMatching(t *testing.T) {
-	c := qt.New(t)
 	candidate := types.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Users"}
 	tests := []struct {
 		name    string
@@ -461,7 +461,8 @@ func TestConflictSet_DialectMatching(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			set := indexscope.NewConflictSet(test.dialect, []types.IndexRef{candidate})
 			c.Assert(set.Contains(test.ref), qt.Equals, test.want)
 		})
@@ -469,7 +470,6 @@ func TestConflictSet_DialectMatching(t *testing.T) {
 }
 
 func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -515,7 +515,8 @@ func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			set := indexscope.NewConflictSet(test.dialect, []types.IndexRef{
 				{Name: test.stored, TableName: "users"},
 			})
@@ -564,7 +565,6 @@ func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 }
 
 func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
-	c := qt.New(t)
 	ref := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
 	tests := []struct {
 		name      string
@@ -601,7 +601,8 @@ func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := indexscope.IdentityKeyWithSemantics(test.semantics, ref)
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -609,7 +610,6 @@ func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 }
 
 func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
-	c := qt.New(t)
 	candidate := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
 	lookup := types.IndexRef{Name: "idx_email", TableName: "dbo.users"}
 	tests := []struct {
@@ -647,7 +647,8 @@ func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			set := indexscope.NewConflictSetWithSemantics(test.semantics, []types.IndexRef{candidate})
 			c.Assert(set.Contains(lookup), qt.Equals, test.want)
 		})

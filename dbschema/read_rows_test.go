@@ -21,7 +21,6 @@ func newRegionsConn(t *testing.T) *dbschema.DatabaseConnection {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite:///:memory:")
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	_, err = conn.ExecContext(context.Background(),
 		"CREATE TABLE regions (code TEXT PRIMARY KEY, name TEXT NOT NULL, population INTEGER NOT NULL)")
 	c.Assert(err, qt.IsNil)
@@ -98,7 +97,6 @@ func TestReadTableRows_EmptyTable(t *testing.T) {
 }
 
 func TestReadTableRows_ValidationErrors(t *testing.T) {
-	c := qt.New(t)
 	conn := newRegionsConn(t)
 
 	tests := []struct {
@@ -114,7 +112,8 @@ func TestReadTableRows_ValidationErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			rows, err := dbschema.ReadTableRows(context.Background(), tt.conn, "", tt.table, tt.columns)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(rows, qt.IsNil)

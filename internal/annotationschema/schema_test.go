@@ -76,7 +76,8 @@ func TestGenerateOmitsDroppedAnnotationSyntax(t *testing.T) {
 		"ptah.schema.trigger",
 	}
 	for _, directive := range directivesWithoutPlatformOverrides {
-		c.Run(directive, func(c *qt.C) {
+		t.Run(directive, func(t *testing.T) {
+			c := qt.New(t)
 			definition := defs[directive].(map[string]any)
 			properties := definition["properties"].(map[string]any)
 			attributes := properties["attributes"].(map[string]any)

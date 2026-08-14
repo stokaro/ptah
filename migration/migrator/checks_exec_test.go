@@ -29,7 +29,6 @@ func newSQLiteCheckMigratorWithSQL(t *testing.T, seededRows int, upSQL string) (
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 	for i := range seededRows {
@@ -202,7 +201,6 @@ func TestMigrateUp_PassingCheckDoesNotDeadlockSingleConnectionPool(t *testing.T)
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://:memory:")
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY)") // empty -> check passes
 	c.Assert(err, qt.IsNil)
 	migration := migrator.CreateMigrationFromSQL(1, "drop_users", dropUsersUp, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")

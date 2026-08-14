@@ -48,11 +48,11 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	inspected := boundaryInspect(c, dbURL, true)
 	authored := coverageStripDirectives(inspected)
 
-	c.Run("the document declares the three kinds it does not describe", func(c *qt.C) {
+	t.Run("the document declares the three kinds it does not describe", func(t *testing.T) {
+		c := qt.New(t)
 		declared, decodeErr := coverage.DecodeHeader(inspected)
 		c.Assert(decodeErr, qt.IsNil)
 		c.Assert(declared, qt.DeepEquals, coverage.Set{}.WithKind(
@@ -60,11 +60,13 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		))
 	})
 
-	c.Run("as inspected, applying it back plans nothing", func(c *qt.C) {
+	t.Run("as inspected, applying it back plans nothing", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, inspected, true), qt.HasLen, 0)
 	})
 
-	c.Run("with the header removed, the same document drops all three", func(c *qt.C) {
+	t.Run("with the header removed, the same document drops all three", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, authored, true), qt.DeepEquals, []string{
 			`DROP POLICY IF EXISTS "p" ON "guarded"`,
 			`DROP SEQUENCE IF EXISTS "order_seq"`,
@@ -72,7 +74,8 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		})
 	})
 
-	c.Run("the two documents differ in the header alone", func(c *qt.C) {
+	t.Run("the two documents differ in the header alone", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(coverageDirectiveLines(inspected), qt.HasLen, 3)
 		c.Assert(coverageDirectiveLines(authored), qt.HasLen, 0)
 		c.Assert(coverageStripDirectives(inspected), qt.Equals, authored)

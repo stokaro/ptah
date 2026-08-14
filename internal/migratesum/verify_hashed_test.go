@@ -58,7 +58,8 @@ func TestVerifyHashed_UnhashedDirectorySkipsVerification(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, hashed, err := migratesum.VerifyHashed(os.DirFS(test.dir), test.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(hashed, qt.IsFalse)
@@ -83,7 +84,8 @@ func TestVerifyHashed_HashedDirectoryVerifies(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, hashed, err := migratesum.VerifyHashed(os.DirFS(test.dir), test.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(hashed, qt.IsTrue)
@@ -120,9 +122,8 @@ func TestVerifyHashed_ExplicitFormatIgnoresOtherSumFile(t *testing.T) {
 }
 
 func TestVerifyHashed_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("both sum files in auto mode are ambiguous", func(c *qt.C) {
+	t.Run("both sum files in auto mode are ambiguous", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeHashedPtahDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.AtlasFileName), []byte("h1:bogus=\n"), 0o600), qt.IsNil)
 
@@ -132,7 +133,8 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "both ptah.sum and atlas.sum exist.*")
 	})
 
-	c.Run("both sum files in auto mode are ambiguous, atlas-hashed side", func(c *qt.C) {
+	t.Run("both sum files in auto mode are ambiguous, atlas-hashed side", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeHashedAtlasDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.FileName), []byte("h1:bogus=\n"), 0o600), qt.IsNil)
 
@@ -142,7 +144,8 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "both ptah.sum and atlas.sum exist.*")
 	})
 
-	c.Run("malformed sum file is an error", func(c *qt.C) {
+	t.Run("malformed sum file is an error", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeUnhashedAtlasDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.AtlasFileName), []byte("not a sum file"), 0o600), qt.IsNil)
 
@@ -152,7 +155,8 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMalformed)
 	})
 
-	c.Run("unknown format is rejected", func(c *qt.C) {
+	t.Run("unknown format is rejected", func(t *testing.T) {
+		c := qt.New(t)
 		dir := writeHashedPtahDir(c)
 
 		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormat("bogus"))

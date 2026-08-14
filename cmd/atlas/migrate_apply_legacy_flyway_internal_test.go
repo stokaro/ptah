@@ -23,13 +23,13 @@ import (
 // --revisions-schema is pointed at the table that actually holds their rows
 // rather than at the default one.
 func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
-	c := qt.New(t)
 	stale := []atlasmigrateimport.LegacyFlywayVersion{
 		{Source: "V1__init.sql", Legacy: 10000, Current: 4611686018427469511},
 		{Source: "V2__seed.sql", Legacy: 20000, Current: 4611686018427510315},
 	}
 
-	c.Run("default schema", func(c *qt.C) {
+	t.Run("default schema", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal(stale, "")
 
 		c.Assert(got, qt.Contains, "stokaro/ptah#982")
@@ -41,7 +41,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 			"UPDATE atlas_schema_revisions SET version = '4611686018427510315' WHERE version = '20000';")
 	})
 
-	c.Run("explicit revisions schema", func(c *qt.C) {
+	t.Run("explicit revisions schema", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal(stale, "reporting")
 
 		c.Assert(got, qt.Contains,
@@ -49,7 +50,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 		c.Assert(got, qt.Not(qt.Contains), "UPDATE atlas_schema_revisions")
 	})
 
-	c.Run("a blank revisions schema is not a schema", func(c *qt.C) {
+	t.Run("a blank revisions schema is not a schema", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal(stale, "   ")
 
 		c.Assert(got, qt.Contains, "UPDATE atlas_schema_revisions SET version =")

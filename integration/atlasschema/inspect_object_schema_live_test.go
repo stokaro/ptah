@@ -45,7 +45,6 @@ import (
 // the table row's answer, and both are additionally suppressed on the
 // Atlas-compatible surface.
 func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -230,7 +229,8 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			document, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
@@ -359,7 +359,6 @@ func catalogProbe(query string, args ...any) objectSchemaProbe {
 		rows, err := conn.QueryContext(ctx, query, args...)
 		c.Assert(err, qt.IsNil)
 		defer func() { c.Check(rows.Close(), qt.IsNil) }()
-
 		found := []string{}
 		for rows.Next() {
 			var value string

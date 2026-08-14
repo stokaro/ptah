@@ -127,7 +127,8 @@ func TestNewRootCommand_VersionSpellingsPrintTheSameBlock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(runRootCommandOutput(c, tt.args...), qt.Equals, want)
 		})
 	}
@@ -227,7 +228,6 @@ func captureRootStdIO(c *qt.C, input string, args ...string) (stdout, stderr str
 	outR, outW, err := os.Pipe()
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(outR.Close(), qt.IsNil) }()
-
 	os.Stdin = inR
 	os.Stdout = outW
 	stdout, stderr, err = executeRootCommand(args...)

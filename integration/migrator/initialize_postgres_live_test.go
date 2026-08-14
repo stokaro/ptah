@@ -18,7 +18,6 @@ func TestInitializePostgresCreatesMetadata(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	const migrationsTable = "schema_migrations_initialize_test"
 	_, err = conn.Exec("DROP TABLE IF EXISTS " + migrationsTable)
 	c.Assert(err, qt.IsNil)

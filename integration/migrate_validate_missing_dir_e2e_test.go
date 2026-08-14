@@ -58,7 +58,8 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 	}
 
 	for _, test := range compatCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 
 			stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary, test.args...)
@@ -69,7 +70,8 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 		})
 	}
 
-	c.Run("compat regular file keeps prior diagnostic", func(c *qt.C) {
+	t.Run("compat regular file keeps prior diagnostic", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.WriteFile(filepath.Join(dir, "migration.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
 
@@ -83,7 +85,8 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 			"Error: migrations directory migration.sql: not a directory\n")
 	})
 
-	c.Run("native missing directory keeps native diagnostic", func(c *qt.C) {
+	t.Run("native missing directory keeps native diagnostic", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 
 		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,

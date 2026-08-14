@@ -99,14 +99,14 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			runMySQLMigrateDiffCase(c, ctx, binaryPath, test)
 		})
 	}
 }
 
 func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -153,9 +153,10 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 	}
 
 	for _, engine := range engines {
-		c.Run(engine.config.name, func(c *qt.C) {
+		t.Run(engine.config.name, func(t *testing.T) {
 			for _, race := range engine.races {
-				c.Run(race.name, func(c *qt.C) {
+				t.Run(race.name, func(t *testing.T) {
+					c := qt.New(t)
 					runMySQLLockedDropRace(c, ctx, engine.config, race)
 				})
 			}
@@ -172,7 +173,6 @@ func TestMariaDBLockedDropFailsClosedForConcurrentForeignKeyE2E(t *testing.T) {
 }
 
 func TestMySQLFamilyDropViewUnderExplicitLockIsRejectedE2E(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
@@ -188,14 +188,14 @@ func TestMySQLFamilyDropViewUnderExplicitLockIsRejectedE2E(t *testing.T) {
 	}
 
 	for _, engine := range engines {
-		c.Run(engine.name, func(c *qt.C) {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
 			runMySQLLockedViewDrop(c, ctx, engine)
 		})
 	}
 }
 
 func TestMySQLFamilyProtectedViewDropWinsMetadataLockHandoffE2E(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -213,7 +213,8 @@ func TestMySQLFamilyProtectedViewDropWinsMetadataLockHandoffE2E(t *testing.T) {
 	}
 
 	for _, engine := range engines {
-		c.Run(engine.name, func(c *qt.C) {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
 			runMySQLProtectedViewDropHandoff(c, ctx, engine)
 		})
 	}

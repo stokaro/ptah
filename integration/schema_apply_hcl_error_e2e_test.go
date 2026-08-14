@@ -30,7 +30,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 	buildPtahCompat(c, ctx, repoRoot, compatBinary)
 	buildPtah(c, ctx, repoRoot, nativeBinary)
 
-	c.Run("compat malformed HCL matches Atlas error shape", func(c *qt.C) {
+	t.Run("compat malformed HCL matches Atlas error shape", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		schemaPath := filepath.Join(dir, "schema.hcl")
 		c.Assert(os.WriteFile(schemaPath, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)
@@ -49,7 +50,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
 	})
 
-	c.Run("compat unrelated loader error keeps context", func(c *qt.C) {
+	t.Run("compat unrelated loader error keeps context", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		schemaPath := filepath.Join(dir, "missing.hcl")
 
@@ -70,7 +72,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 	// Cell 9.13's second half. The pinned community binary v1.3.0 echoes the
 	// --to path in the form it was given, and every form above is absolute, so
 	// the rows here are the ones the absolute cases cannot see.
-	c.Run("compat relative --to reports the relative path", func(c *qt.C) {
+	t.Run("compat relative --to reports the relative path", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.MkdirAll(filepath.Join(dir, "fx", "sub"), 0o750), qt.IsNil)
 		relatives := []struct {
@@ -107,7 +110,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			},
 		}
 		for _, relative := range relatives {
-			c.Run(relative.name, func(c *qt.C) {
+			t.Run(relative.name, func(t *testing.T) {
+				c := qt.New(t)
 				c.Assert(os.WriteFile(
 					filepath.Join(dir, relative.written), []byte("schema \"main\" {\n"), 0o600,
 				), qt.IsNil)
@@ -126,7 +130,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			})
 		}
 
-		c.Run("in-tree symlink keeps the authored path", func(c *qt.C) {
+		t.Run("in-tree symlink keeps the authored path", func(t *testing.T) {
+			c := qt.New(t)
 			target := filepath.Join(dir, "fx", "target.hcl")
 			link := filepath.Join(dir, "fx", "linked.hcl")
 			c.Assert(os.WriteFile(target, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)
@@ -146,7 +151,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 				"Error: "+filepath.Join("fx", "linked.hcl")+malformedSchemaHCLProcessDiagnostic+"\n")
 		})
 
-		c.Run("relative directory keeps its member path", func(c *qt.C) {
+		t.Run("relative directory keeps its member path", func(t *testing.T) {
+			c := qt.New(t)
 			schemaDir := filepath.Join(dir, "schemas")
 			c.Assert(os.MkdirAll(schemaDir, 0o750), qt.IsNil)
 			c.Assert(os.WriteFile(
@@ -170,7 +176,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 					malformedSchemaHCLProcessDiagnostic+"\n")
 		})
 
-		c.Run("relative directory keeps a symlinked member's authored path", func(c *qt.C) {
+		t.Run("relative directory keeps a symlinked member's authored path", func(t *testing.T) {
+			c := qt.New(t)
 			schemaDir := filepath.Join(dir, "linked-schemas")
 			fixtureDir := filepath.Join(dir, "fixtures")
 			c.Assert(os.MkdirAll(schemaDir, 0o750), qt.IsNil)
@@ -194,7 +201,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 					malformedSchemaHCLProcessDiagnostic+"\n")
 		})
 
-		c.Run("SQL-named symlink to HCL keeps its authored path", func(c *qt.C) {
+		t.Run("SQL-named symlink to HCL keeps its authored path", func(t *testing.T) {
+			c := qt.New(t)
 			schemaDir := filepath.Join(dir, "sql-link-schemas")
 			fixtureDir := filepath.Join(dir, "sql-link-fixtures")
 			c.Assert(os.MkdirAll(schemaDir, 0o750), qt.IsNil)
@@ -219,7 +227,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		})
 	})
 
-	c.Run("native relative --to keeps the resolved absolute path", func(c *qt.C) {
+	t.Run("native relative --to keeps the resolved absolute path", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.MkdirAll(filepath.Join(dir, "fx"), 0o750), qt.IsNil)
 		schemaPath := filepath.Join(dir, "fx", "native.hcl")
@@ -240,7 +249,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		c.Check(stderr, qt.Equals, "error: "+want+"\n")
 	})
 
-	c.Run("native malformed HCL keeps native context", func(c *qt.C) {
+	t.Run("native malformed HCL keeps native context", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		schemaPath := filepath.Join(dir, "schema.hcl")
 		c.Assert(os.WriteFile(schemaPath, []byte("schema \"main\" {\n"), 0o600), qt.IsNil)

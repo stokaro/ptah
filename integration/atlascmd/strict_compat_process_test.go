@@ -1276,7 +1276,6 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 	stdinReader, stdinWriter := io.Pipe()
 	defer func() { _ = stdinReader.Close() }()
 	defer func() { _ = stdinWriter.Close() }()
-
 	commandContext, cancelCommand := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancelCommand()
 	var stderr bytes.Buffer
@@ -1451,7 +1450,6 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		lock, err := atlasschema.AcquireApplyLock(t.Context(), lockConn, "", time.Second)
 		c.Assert(err, qt.IsNil)
 		defer func() { _ = lock.Release() }()
-
 		var stdoutBuffer, stderrBuffer bytes.Buffer
 		command := exec.CommandContext(t.Context(), compat,
 			"schema", "apply",

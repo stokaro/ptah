@@ -27,8 +27,6 @@ func TestZeroSetDescribesEverything(t *testing.T) {
 }
 
 func TestSetDescribes_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		set   coverage.Set
@@ -102,7 +100,8 @@ func TestSetDescribes_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.check(c, test.set)
 		})
 	}
@@ -133,8 +132,6 @@ func TestNormalizeIsDeterministic(t *testing.T) {
 }
 
 func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -164,7 +161,8 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.set.Directives(), qt.DeepEquals, test.want)
 
 			// The directive lines are the only channel between the process that
@@ -193,8 +191,6 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 // the other half of the contract: the encoding is line-based, so a name must
 // never be able to end its own comment.
 func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		given string
@@ -216,7 +212,8 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			set := coverage.Set{}.WithObject(coverage.Schema, test.given)
 
 			directives := set.Directives()
@@ -251,8 +248,6 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 // the conservative superset, written into the document where a reader can see
 // it.
 func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -272,7 +267,8 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var document strings.Builder
 			for _, directive := range test.set.Directives() {
 				fmt.Fprintf(&document, "// %s\n", directive)
@@ -288,8 +284,6 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 }
 
 func TestDecodeHeader_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		document string
@@ -337,7 +331,8 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := coverage.DecodeHeader(test.document)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -350,8 +345,6 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 // exists to prevent: an unread record reads as no record, and the absence it was
 // protecting becomes a removal.
 func TestDecodeHeader_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		document string
@@ -400,7 +393,8 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := coverage.DecodeHeader(test.document)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.IsZero(), qt.IsTrue)

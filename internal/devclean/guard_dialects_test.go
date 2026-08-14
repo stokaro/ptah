@@ -11,7 +11,6 @@ import (
 )
 
 func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
@@ -39,7 +38,8 @@ func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.IsNil)
 		})
@@ -47,7 +47,6 @@ func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
@@ -220,7 +219,8 @@ func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -228,7 +228,6 @@ func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
@@ -293,7 +292,8 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.IsNil)
 		})
@@ -301,7 +301,6 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
@@ -493,7 +492,8 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -501,7 +501,6 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.MariaDB,
 		Schema:  "ptah_dev",
@@ -534,7 +533,8 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -542,7 +542,6 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
@@ -586,7 +585,8 @@ func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.IsNil)
 		})
@@ -594,7 +594,6 @@ func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
@@ -678,7 +677,8 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -686,7 +686,6 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
@@ -718,7 +717,8 @@ func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.IsNil)
 		})
@@ -726,7 +726,6 @@ func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
@@ -829,7 +828,8 @@ func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

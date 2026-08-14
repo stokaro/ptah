@@ -53,8 +53,6 @@ func TestReadResults_HappyPath(t *testing.T) {
 
 // TestReadResults_FailurePath covers the ways a results directory lies.
 func TestReadResults_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name   string
 		write  func(c *qt.C, dir string)
@@ -89,7 +87,8 @@ func TestReadResults_FailurePath(t *testing.T) {
 		read:   func(dir string) string { return filepath.Join(dir, "never-created") },
 		expect: "(?s).*read the results under .*",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := filepath.Join(c.TempDir(), "results")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 			tc.write(c, dir)

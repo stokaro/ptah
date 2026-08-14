@@ -38,8 +38,6 @@ const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-lin
 // capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners calls the
 // shared parser itself, where the numbers are readable.
 func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name    string
 		dialect string
@@ -98,7 +96,8 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 		banner:  "CockroachDB CCL v26.2.5 (aarch64-unknown-linux-gnu, built 2026/07/28 18:55:27, go1.25.5)",
 		want:    "26.2.5",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := capabilityprobe.ParseVersion(tc.dialect, tc.banner, tc.product)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.String(), qt.Equals, tc.want)

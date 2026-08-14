@@ -373,7 +373,6 @@ func TestMigrationWriterPublishArtifacts_PublishesCompleteBatch(t *testing.T) {
 	migrationWriter, err := OpenMigrationWriter(nil, dir)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = migrationWriter.Close() }()
-
 	paths, err := migrationWriter.PublishArtifacts(
 		t.Context(),
 		[]PublicationArtifact{
@@ -410,7 +409,6 @@ func TestMigrationWriterPublishArtifacts_CollisionRollsBackWholeBatch(t *testing
 	migrationWriter, err := OpenMigrationWriter(nil, dir)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = migrationWriter.Close() }()
-
 	paths, err := migrationWriter.PublishArtifacts(
 		t.Context(),
 		[]PublicationArtifact{
@@ -734,7 +732,6 @@ func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 }
 
 func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		mode publicationMode
@@ -745,7 +742,8 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writer := openTestWriter(c, dir)
 			batch, err := stageMigrationBatchAt(

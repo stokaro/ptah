@@ -49,7 +49,6 @@ import (
 // object across such a rename; on Windows the rename is denied outright, so the
 // hostile step cannot be performed and there is nothing to measure.
 func TestGenerateDiff_RenamedDirectoryCannotRedirectPublication(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		// swap replaces the migration directory from inside the callback. The
@@ -81,7 +80,8 @@ func TestGenerateDiff_RenamedDirectoryCannotRedirectPublication(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			migrations := filepath.Join(root, "migrations")
 			retained := filepath.Join(root, "migrations.moved")

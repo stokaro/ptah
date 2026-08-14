@@ -9,7 +9,6 @@ import (
 )
 
 func TestFilterCases_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	cases := []dbtest.Case{
 		{Name: "users/create", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
 		{Name: "users/delete", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
@@ -37,7 +36,8 @@ func TestFilterCases_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := dbtest.FilterCases(cases, tt.pattern)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, tt.want)

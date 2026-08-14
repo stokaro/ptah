@@ -17,8 +17,6 @@ import (
 // Reverted, every row below fails on the same shape: the field holds
 // `sql("...")` where the row asserts the SQL inside it.
 func TestParseReducesSQLRawExpressionToItsSQL(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		hcl    string
@@ -305,7 +303,8 @@ SQL
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			test.assert(c, db)
@@ -324,8 +323,6 @@ SQL
 // row plans as `DEFAULT "1") + sql("2"` -- the old textual `sql(` prefix match
 // handing back the bytes between the first `sql(` and the last `)`.
 func TestParseRefusesMalformedSQLRawExpression(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -416,7 +413,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})

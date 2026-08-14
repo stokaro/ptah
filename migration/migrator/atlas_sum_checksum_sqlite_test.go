@@ -34,7 +34,6 @@ func newSQLiteAtlasSumMigrator(t *testing.T) (*dbschema.DatabaseConnection, *mig
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "atlas-sum.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	fsys := fstest.MapFS{
 		"atlas.sum": &fstest.MapFile{Data: []byte(
 			"h1:directoryfixturehash=\n" +
@@ -774,7 +773,6 @@ func TestPtahDirPtahRevisions_ChecksumBehaviorUnchanged(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "ptah-dir.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	fsys := fstest.MapFS{
 		"000001_create_widgets.up.sql": &fstest.MapFile{
 			Data: []byte("CREATE TABLE ptah_dir_widgets (id INTEGER PRIMARY KEY);"),

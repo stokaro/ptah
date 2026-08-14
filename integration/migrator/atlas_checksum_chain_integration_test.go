@@ -32,7 +32,6 @@ func TestAtlasChecksumChainOutOfOrderPostgresIntegration(t *testing.T) {
 	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	cleanupIssue1241(t, conn)
 	t.Cleanup(func() { cleanupIssue1241(t, conn) })
-
 	initialFS := issue1241AtlasFS(t, map[string]string{
 		issue1241OneFile:   issue1241OneSQL,
 		issue1241ThreeFile: issue1241ThreeSQL,

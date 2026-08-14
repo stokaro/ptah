@@ -1,9 +1,9 @@
 package main
 
-// White-box by necessity: run's exit codes are this gate's entire contract with
-// CI, and run is unexported in package main, so this package is the only place
-// they can be executed. A gate whose failure exit code has never been run is a
-// gate nobody has watched fail, and this repository has shipped two checks that
+// White-box testing required: run's exit codes are this gate's entire contract
+// with CI, and run is unexported in package main, which no external test package
+// can reach. A gate whose failure exit code has never been executed is a gate
+// nobody has watched fail, and this repository has shipped two checks that
 // reported success while looking at nothing.
 
 import (

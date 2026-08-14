@@ -19,7 +19,6 @@ import (
 )
 
 func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dsnEnv  string
@@ -38,7 +37,8 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openMySQLWriterLiveDatabase(c, test.dsnEnv)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)
@@ -53,7 +53,6 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 }
 
 func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dsnEnv  string
@@ -72,7 +71,8 @@ func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openMySQLWriterLiveDatabase(c, test.dsnEnv)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)

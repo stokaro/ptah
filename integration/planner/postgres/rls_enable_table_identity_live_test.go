@@ -167,7 +167,6 @@ func ordersSchema(tableSchema, policyTable string) *goschema.Database {
 // does not enforce the policy" are different claims and only the second one
 // matters.
 func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForRLSEnable(t)
 
 	tests := []struct {
@@ -259,7 +258,8 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, test.seed)
 			planAndApply(c, dbURL, test.diff, test.generated)

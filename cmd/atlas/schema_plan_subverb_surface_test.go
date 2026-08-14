@@ -110,7 +110,8 @@ func TestAtlasSchemaPlanV13HelpOracleProvenance(t *testing.T) {
 		{name: "validate.txt", hash: "d636db61bea0187ff29dd79ea608b18162cb768719f1081d51433fd32eab9103"},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(provenance.ArtifactSHA256[test.name], qt.Equals, test.hash)
 			c.Assert(fileSHA256(c, filepath.Join(atlasV13SchemaPlanHelpDir, test.name)), qt.Equals, test.hash)
 		})
@@ -163,8 +164,6 @@ var atlasSchemaPlanValidateFlags = []string{
 // --save or --dry-run is the exact mistake the delegation to the parent's run
 // function makes easy.
 func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		path []string
@@ -175,7 +174,8 @@ func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := findAtlasCommand(c, test.path)
 
 			c.Assert(localFlagNames(cmd), qt.DeepEquals, test.want)
@@ -187,8 +187,6 @@ func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
 // capture shows on these sub-verbs. A long name can match while the shorthand
 // silently does not, and `-f` is the one an Atlas pipeline actually types.
 func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		path      []string
@@ -202,7 +200,8 @@ func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := findAtlasCommand(c, test.path)
 
 			flag := cmd.Flags().Lookup(test.flag)
@@ -220,10 +219,9 @@ func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
 // well have been done by registering --save and defaulting it to true, which
 // would accept `--save=false` and quietly turn the verb into a no-op.
 func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
-	c := qt.New(t)
-
 	for _, flag := range []string{"--save", "--dry-run", "--push", "--pending", "--skip-lint", "--directive"} {
-		c.Run(flag, func(c *qt.C) {
+		t.Run(flag, func(t *testing.T) {
+			c := qt.New(t)
 			dir := chdirToScratchC(c)
 			fixture := newPlanFixture(c, "parentonly",
 				`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,

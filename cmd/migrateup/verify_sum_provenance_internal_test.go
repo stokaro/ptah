@@ -235,7 +235,8 @@ func TestMigrateUp_OCISumProvenance(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "provenance.db")
 
 			out, err := runUpInternal(

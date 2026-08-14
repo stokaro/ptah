@@ -18,7 +18,6 @@ import (
 // captured and asserts the rival's bytes, not just the exit status, because a
 // silent overwrite and a refusal both leave a file at the target name.
 func TestPublishFileAt_FailurePath_RefusesChangedDestination(t *testing.T) {
-	c := qt.New(t)
 	rival := "concurrent writer bytes\n"
 	tests := []struct {
 		name        string
@@ -89,7 +88,8 @@ func TestPublishFileAt_FailurePath_RefusesChangedDestination(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			stagedPath := filepath.Join(dir, "staged")
 			publishedPath := filepath.Join(dir, "published")

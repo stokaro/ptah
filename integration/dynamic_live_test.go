@@ -24,7 +24,8 @@ func TestVersionedEntityManager(t *testing.T) {
 		c.Assert(manager.Cleanup(), qt.IsNil)
 	}()
 
-	c.Run("initial schema", func(c *qt.C) {
+	t.Run("initial schema", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(manager.LoadEntityVersion("000-initial"), qt.IsNil)
 		schema, err := manager.GenerateSchemaFromEntities()
 		c.Assert(err, qt.IsNil)
@@ -36,7 +37,8 @@ func TestVersionedEntityManager(t *testing.T) {
 		})
 	})
 
-	c.Run("schema with enums", func(c *qt.C) {
+	t.Run("schema with enums", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(manager.LoadEntityVersion("003-add-enums"), qt.IsNil)
 		schema, err := manager.GenerateSchemaFromEntities()
 		c.Assert(err, qt.IsNil)

@@ -37,8 +37,6 @@ type grantIdentityCase struct {
 // This is stokaro/ptah#1232's defect in a comparator that builds its own key,
 // collected as an instance of stokaro/ptah#1276.
 func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []grantIdentityCase{
 		{
 			// The headline row: identical grant, two spellings.
@@ -157,7 +155,8 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{Grants: test.generated, Roles: test.roles}
 			database := &types.DBSchema{Grants: test.database}
 			diff := &difftypes.SchemaDiff{}

@@ -54,7 +54,6 @@ func newDirtyRetryMigrator(
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(conn, fstest.MapFS{
 		"0000000001_users.up.sql":   &fstest.MapFile{Data: []byte(dirtyRetryFirstUp)},
 		"0000000001_users.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
@@ -454,7 +453,6 @@ CREATE TABLE pets (id INTEGER PRIMARY KEY);
 }
 
 func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		format migrator.RevisionTableFormat
@@ -464,7 +462,8 @@ func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "changed-prefix.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
@@ -567,7 +566,6 @@ func TestMigrateUp_AtlasDirtyContradictoryPartialHashesRefused(t *testing.T) {
 }
 
 func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		format    migrator.RevisionTableFormat
@@ -613,7 +611,8 @@ func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "invalid-progress.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
@@ -631,7 +630,6 @@ func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
 }
 
 func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		stored    string
@@ -647,7 +645,8 @@ func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "canonical-native-state.db")
 			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
 			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
@@ -665,7 +664,6 @@ func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
 }
 
 func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		format    migrator.RevisionTableFormat
@@ -723,7 +721,8 @@ func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "invalid-revision-metadata.db")
 			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
@@ -856,7 +855,6 @@ func TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.
 }
 
 func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		mode migrator.MigrationTxMode
@@ -866,7 +864,8 @@ func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "applied-floor.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
@@ -901,7 +900,6 @@ func newRegisteredDirtyRetryMigrator(
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })
-
 	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
 		migrator.CreateMigrationFromSQL(1, "users", dirtyRetryFirstUp, "DROP TABLE users;\n"),
 		migrator.CreateMigrationFromSQL(2, "seed", secondUp, "DROP TABLE pets;\n"),
@@ -986,7 +984,6 @@ func TestMigrateUp_AllowDirtyRefusesInterruptedRollback(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "down-direction.db"))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })
-
 	migration := migrator.CreateMigrationFromSQL(
 		1,
 		"direction guard",
@@ -1050,7 +1047,6 @@ func TestRepairMigration_UpResumePersistsAbsoluteProgress(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(t.TempDir(), "manual-resume.db"))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })
-
 	initial := migrator.CreateMigrationFromSQL(
 		1,
 		"manual resume",

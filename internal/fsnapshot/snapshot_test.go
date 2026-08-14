@@ -180,7 +180,6 @@ func TestCaptureMatchingBuildsIndependentDirectoryIndex(t *testing.T) {
 }
 
 func TestSnapshotZeroValueAndCloneImplementEmptyFS(t *testing.T) {
-	c := qt.New(t)
 	snapshot := fsnapshot.Snapshot{}
 	tests := []struct {
 		name string
@@ -191,7 +190,8 @@ func TestSnapshotZeroValueAndCloneImplementEmptyFS(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(fstest.TestFS(test.fsys), qt.IsNil)
 			entries, err := fs.ReadDir(test.fsys, ".")
 			c.Assert(err, qt.IsNil)
@@ -218,7 +218,6 @@ func TestFromFiles_ClonesInput(t *testing.T) {
 }
 
 func TestFromFiles_RejectsInvalidPaths(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		path string
@@ -229,7 +228,8 @@ func TestFromFiles_RejectsInvalidPaths(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := fsnapshot.FromFiles(map[string][]byte{tt.path: []byte("schema")})
 			c.Assert(err, qt.ErrorMatches, `invalid snapshot file path ".*"`)
 		})

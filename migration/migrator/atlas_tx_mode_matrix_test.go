@@ -31,7 +31,6 @@ func newAtlasTxModeMatrixMigrator(
 	)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -125,7 +124,6 @@ func assertAtlasTxModeRejectedBeforeWrites(
 }
 
 func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
-	c := qt.New(t)
 	// This matrix pins effective mode selection for #998.
 	//
 	// wantApplied and wantTable now agree in every row, and that agreement is
@@ -191,7 +189,8 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, mig := newAtlasTxModeMatrixMigrator(c, test.globalMode, test.directive)
 			assertAtlasTxModeBodyFailure(c, conn, mig, test.wantTable, test.wantApplied)
 		})
@@ -199,7 +198,6 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 }
 
 func TestAtlasTxModeMatrix_DirectiveFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		globalMode migrator.MigrationTxMode
@@ -239,7 +237,8 @@ func TestAtlasTxModeMatrix_DirectiveFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, mig := newAtlasTxModeMatrixMigrator(c, test.globalMode, test.directive)
 			assertAtlasTxModeRejectedBeforeWrites(c, conn, mig, test.wantErr)
 		})
@@ -247,7 +246,6 @@ func TestAtlasTxModeMatrix_DirectiveFailurePath(t *testing.T) {
 }
 
 func TestAtlasTxModeMalformedDirectives_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		directive string
@@ -266,7 +264,8 @@ func TestAtlasTxModeMalformedDirectives_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, mig := newAtlasTxModeMatrixMigrator(c, migrator.MigrationTxModeFile, test.directive)
 			assertAtlasTxModeRejectedBeforeWrites(c, conn, mig, test.wantErr)
 		})

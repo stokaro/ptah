@@ -19,8 +19,6 @@ import (
 // when the data annotation omits the schema, and the ambiguity guard that
 // refuses to guess when a bare name is shared across schemas.
 func TestOrderByDependency(t *testing.T) {
-	c := qt.New(t)
-
 	names := func(diffs []*datadiff.DataDiff) []string {
 		out := make([]string, len(diffs))
 		for i, d := range diffs {
@@ -39,7 +37,8 @@ func TestOrderByDependency(t *testing.T) {
 		}}
 	}
 
-	c.Run("qualified match follows dependency order", func(c *qt.C) {
+	t.Run("qualified match follows dependency order", func(t *testing.T) {
+		c := qt.New(t)
 		diffs := []*datadiff.DataDiff{
 			{Schema: "app", Table: "articles"},
 			{Schema: "app", Table: "authors"},
@@ -48,7 +47,8 @@ func TestOrderByDependency(t *testing.T) {
 		c.Assert(names(diffs), qt.DeepEquals, []string{"app.authors", "app.articles"})
 	})
 
-	c.Run("bare-name fallback when the data annotation omits the schema", func(c *qt.C) {
+	t.Run("bare-name fallback when the data annotation omits the schema", func(t *testing.T) {
+		c := qt.New(t)
 		diffs := []*datadiff.DataDiff{
 			{Table: "articles"},
 			{Table: "authors"},
@@ -57,7 +57,8 @@ func TestOrderByDependency(t *testing.T) {
 		c.Assert(names(diffs), qt.DeepEquals, []string{"authors", "articles"})
 	})
 
-	c.Run("ambiguous bare name is not guessed", func(c *qt.C) {
+	t.Run("ambiguous bare name is not guessed", func(t *testing.T) {
+		c := qt.New(t)
 		// The same bare name in two schemas must not resolve via the fallback;
 		// with no qualified match either, both rank last and sort alphabetically
 		// by qualified name ("t" < "z.t").

@@ -95,7 +95,6 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	c.Assert(err, qt.IsNil)
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
@@ -125,7 +124,8 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			column := findLiveColumn(c, live.Tables, "t", test.column)
 			c.Assert(column.DomainName, qt.Equals, test.wantDomain)
 			// The base type stays available either way: the read adds a
@@ -154,7 +154,6 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 // business.
 func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -168,7 +167,8 @@ func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testi
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "domain_apply",
 				seed:  domainColumnSeed(),
@@ -177,7 +177,6 @@ func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testi
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 			document := boundaryInspect(c, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `type = sql("positive")`)
 
@@ -214,7 +213,6 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	c.Assert(err, qt.IsNil)
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
@@ -264,7 +262,8 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			column := findLiveColumn(c, live.Tables, "t", test.column)
 			c.Assert(column.DomainName, qt.Equals, test.wantDomain)
 			c.Assert(column.UDTName, qt.Equals, test.wantUDTName)
@@ -286,7 +285,6 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 // that broke this one, which is the whole reason this exists separately.
 func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescriptionChangesNothing(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -298,7 +296,8 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescription
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "domain_over_user_defined_apply",
 				seed:  domainOverUserDefinedSeed(),
@@ -307,7 +306,6 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescription
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 			document := boundaryInspect(c, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `type = sql("d_enum")`)
 			// The control's spelling is asserted too, so a change that made
@@ -360,7 +358,6 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 	target, err := dbschema.ConnectToDatabase(c.Context(), targetURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
-
 	plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
 		ToURLs: []string{sourceURL},
 		// The default the CLI parses out of an unset --tx-mode. One
@@ -387,7 +384,8 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(findLiveColumn(c, replayed.Tables, "t", test.column).DomainName, qt.Equals, test.wantDomain)
 		})
 	}

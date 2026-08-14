@@ -44,11 +44,11 @@ const capabilityReportDefaultLogLevel = slog.LevelWarn
 func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 	dbURL := requirePostgresE2EDatabaseURL(t)
 
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	c.Run("the library writes nothing at the default log level", func(c *qt.C) {
+	t.Run("the library writes nothing at the default log level", func(t *testing.T) {
+		c := qt.New(t)
 		var output bytes.Buffer
 		previousLogger := slog.Default()
 		slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{
@@ -73,7 +73,8 @@ func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 			qt.Commentf("version %q", info.Version))
 	})
 
-	c.Run("a clean binary run writes nothing to stderr", func(c *qt.C) {
+	t.Run("a clean binary run writes nothing to stderr", func(t *testing.T) {
+		c := qt.New(t)
 		repoRoot := e2eRepoRoot(t)
 		binaryPath := filepath.Join(c.TempDir(), "ptah-compat")
 		buildPtahCompat(c, ctx, repoRoot, binaryPath)

@@ -16,7 +16,6 @@ import (
 )
 
 func TestApplyPlans_FailurePath_RevalidatesCompleteSourceSetAfterStaging(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name           string
 		mutate         func(c *qt.C, root, plainPath string)
@@ -49,7 +48,8 @@ func TestApplyPlans_FailurePath_RevalidatesCompleteSourceSetAfterStaging(t *test
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			annotatedPath := filepath.Join(root, "annotated.go")
 			plainPath := filepath.Join(root, "plain.go")
@@ -210,7 +210,6 @@ func TestApplyPlans_FailurePath_RejectsReplacedStagedFile(t *testing.T) {
 // The control row runs the identical mutation one step earlier, where
 // validatePlanPath already rejects it.
 func TestApplyPlans_FailurePath_RefusesForwardCommitOverConcurrentEdit(t *testing.T) {
-	c := qt.New(t)
 	original := []byte(
 		"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
 	)
@@ -264,7 +263,8 @@ func TestApplyPlans_FailurePath_RefusesForwardCommitOverConcurrentEdit(t *testin
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			sourcePath := filepath.Join(root, "model.go")
 			c.Assert(os.WriteFile(sourcePath, original, 0o600), qt.IsNil)
@@ -297,7 +297,6 @@ func TestApplyPlans_FailurePath_RefusesForwardCommitOverConcurrentEdit(t *testin
 // The control row moves the identical mutation one step earlier, where
 // validateCommittedPlan already refuses.
 func TestApplyPlans_FailurePath_RefusesRollbackOverPostCommitEdit(t *testing.T) {
-	c := qt.New(t)
 	firstOriginal := []byte(
 		"package models\n\n//ptah:schema:table name=\"first\"\ntype First struct{}\n",
 	)
@@ -348,7 +347,8 @@ func TestApplyPlans_FailurePath_RefusesRollbackOverPostCommitEdit(t *testing.T) 
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			firstPath := filepath.Join(root, "a.go")
 			secondPath := filepath.Join(root, "z.go")

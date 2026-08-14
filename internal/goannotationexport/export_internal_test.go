@@ -16,7 +16,6 @@ import (
 )
 
 func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name           string
 		mutate         func(c *qt.C, root, source string, original []byte)
@@ -66,7 +65,8 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -97,7 +97,6 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 }
 
 func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		prepare func(c *qt.C, output string)
@@ -114,7 +113,8 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -195,7 +195,6 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 // last barrier: that is what makes this fixture measure the window rather than
 // "any concurrent write".
 func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testing.T) {
-	c := qt.New(t)
 	previousOutput := []byte("previous schema\n")
 	rival := []byte("concurrent writer bytes\n")
 	writePrevious := func(c *qt.C, output string) {
@@ -254,7 +253,8 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")

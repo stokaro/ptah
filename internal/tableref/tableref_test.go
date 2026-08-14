@@ -9,8 +9,6 @@ import (
 )
 
 func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		schema string
@@ -26,7 +24,8 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := tableref.Canonical(tt.schema, tt.table)
 
 			c.Assert(got, qt.Equals, tt.want)
@@ -44,8 +43,6 @@ func TestCanonicalExact_PreservesQuotedIdentifierWhitespace(t *testing.T) {
 }
 
 func TestParse_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		value string
@@ -79,7 +76,8 @@ func TestParse_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, ok := tableref.Parse(tt.value)
 
 			c.Assert(ok, qt.IsTrue)
@@ -89,11 +87,10 @@ func TestParse_HappyPath(t *testing.T) {
 }
 
 func TestParse_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []string{"", `"unterminated`, "[unterminated", "a.b.c", "a..b", `"a"tail`}
 	for _, value := range tests {
-		c.Run(value, func(c *qt.C) {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
 			_, ok := tableref.Parse(value)
 
 			c.Assert(ok, qt.IsFalse)

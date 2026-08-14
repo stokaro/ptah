@@ -35,8 +35,6 @@ type rlsEnabledIdentityCase struct {
 // Same defect as tableMemberKey's (stokaro/ptah#1232) in a comparator that keys
 // by raw string, collected as an instance of stokaro/ptah#1276.
 func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []rlsEnabledIdentityCase{
 		{
 			name:      "a bare declaration matches the qualified table the reader reports",
@@ -92,7 +90,8 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{RLSEnabledTables: test.generated}
 			database := &types.DBSchema{Tables: test.database}
 			diff := &difftypes.SchemaDiff{}

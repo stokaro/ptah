@@ -51,7 +51,6 @@ import (
 //     two cannot be had by giving this one up.
 func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name             string
@@ -110,7 +109,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "user_type_recreate_desired",
 				seed:  test.desired,
@@ -125,7 +125,6 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(target) })
-
 			plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
 				ToURLs: []string{desiredURL},
 				TxMode: migrator.MigrationTxModeFile,
@@ -173,7 +172,6 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 // as well. Only the current definitions can place these statements.
 func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name            string
@@ -214,7 +212,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "user_type_one_kind_desired",
 				seed:  test.desired,
@@ -229,7 +228,6 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 			target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(target) })
-
 			plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
 				ToURLs: []string{desiredURL},
 				TxMode: migrator.MigrationTxModeFile,

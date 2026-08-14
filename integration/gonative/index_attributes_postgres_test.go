@@ -93,7 +93,6 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	c.Assert(err, qt.IsNil)
 
@@ -249,7 +248,8 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.assert(c, findLiveIndex(c, live.Indexes, test.index))
 		})
 	}
@@ -271,7 +271,6 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 // below is part of the fixture rather than a separate one.
 func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -285,7 +284,8 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "index_attributes_apply",
 				seed:  indexAttributeSeed(),
@@ -294,7 +294,6 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-
 			document := boundaryInspect(c, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `ops = "tsvector_ops(siglen=64)"`)
 			// The per-key spelling. It is asserted separately from the one

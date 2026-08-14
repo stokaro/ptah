@@ -23,7 +23,6 @@ func TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry(t *testing.T
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue265Names("postgres")
 	cleanupIssue265(t, conn, names)
 	defer cleanupIssue265(t, conn, names)
@@ -65,7 +64,6 @@ func TestMigrationChecksumMismatch_PostgresIntegration(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue265Names("checksum")
 	cleanupIssue265(t, conn, names)
 	defer cleanupIssue265(t, conn, names)
@@ -165,7 +163,6 @@ func runIssue265MySQLFamilyRepair(t *testing.T, dbURL, dialect string) {
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
-
 	names := issue265Names(dialect)
 	cleanupIssue265(t, conn, names)
 	defer cleanupIssue265(t, conn, names)

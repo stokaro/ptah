@@ -23,8 +23,6 @@ import (
 // at render time and without naming the attribute. The pinned Atlas community
 // binary v1.3.0 exits 1 on all five.
 func TestParseRefusesAColumnAttributeThatCannotNameAColumn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -97,7 +95,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
@@ -116,8 +115,6 @@ table "t" {
 // every value -- which is the only way a guard's non-interference is provable.
 // Measured under that mutant: all five rows fail on `err` being non-nil.
 func TestParseKeepsColumnAttributesThatNameAColumn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		hcl    string
@@ -208,7 +205,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			test.assert(c, db)

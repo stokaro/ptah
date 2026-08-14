@@ -105,7 +105,6 @@ func writeCleanGatePostgresFixture(c *qt.C) string {
 }
 
 func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForCleanGate(t)
 
 	tests := []struct {
@@ -199,7 +198,8 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeCleanGatePostgresFixture(c)
 			dbURL := newCleanGateDatabase(c, adminURL, test.setup)
 			args := []string{"migrate", "apply", "--dir", "file://" + dir, "--url", withCleanGateQuery(dbURL, test.query)}
@@ -220,7 +220,6 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 // opt-ins at realm scope. Measured: either one makes the binary apply against
 // the same database it otherwise refuses.
 func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForCleanGate(t)
 
 	tests := []struct {
@@ -232,7 +231,8 @@ func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeCleanGatePostgresFixture(c)
 			dbURL := newCleanGateDatabase(c, adminURL, []string{"CREATE SCHEMA extra"})
 			cmd := atlas.NewCompatCommand("atlas")

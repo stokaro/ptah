@@ -176,12 +176,9 @@ func (tx *cleanupRetryTransaction) ExecuteSQL(_ context.Context, query string, _
 	return nil
 }
 
-func (*cleanupRetryTransaction) IsDryRun() bool { return false }
-
-func (*cleanupRetryTransaction) Commit() error { return nil }
-
+func (*cleanupRetryTransaction) IsDryRun() bool  { return false }
+func (*cleanupRetryTransaction) Commit() error   { return nil }
 func (*cleanupRetryTransaction) Rollback() error { return nil }
-
 func changeTypes(changes []Change) []string {
 	types := make([]string, 0, len(changes))
 	for _, change := range changes {
@@ -208,7 +205,6 @@ func changeNames(changes []Change) []string {
 // as a wrong token rather than as a query the database rejects only when a
 // cleanup is already under way.
 func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T) {
-	c := qt.New(t)
 	names := revisiontable.DefaultNames()
 
 	tests := []struct {
@@ -272,7 +268,8 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			query, args := revisionTableProbe(test.dialect, test.schema, names)
 
 			c.Assert(args, qt.HasLen, len(names)+1)
@@ -299,8 +296,6 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 // one that coverageFor already reports as not probing, so the two must be
 // changed together.
 func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -311,7 +306,8 @@ func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			query, args := revisionTableProbe(test.dialect, "", revisiontable.DefaultNames())
 
 			c.Assert(query, qt.Equals, "")
@@ -327,8 +323,6 @@ func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
 // PostgreSQL is the live case — its reader hides schema_migrations but surfaces
 // atlas_schema_revisions, so the probe finds a table the plan already carries.
 func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		listed     []Object
@@ -380,7 +374,8 @@ func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(unlistedObjects(test.listed, test.candidates), qt.DeepEquals, test.want)
 		})
 	}
@@ -395,8 +390,6 @@ func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
 // a survivor on a destruction plan. ClickHouse is the other control — its
 // reader hides nothing, so the plan already names both tables.
 func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -414,7 +407,8 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(coverageFor(test.dialect).revisionTables, qt.Equals, test.want)
 		})
 	}

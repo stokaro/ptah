@@ -356,7 +356,6 @@ const placeholder = 0
 }
 
 func TestExport_FailurePath_CleanupRejectsDetachedRecognizedDirective(t *testing.T) {
-	c := qt.New(t)
 	sourceData := []byte(`package models
 
 //ptah:schema:table name="users"
@@ -377,7 +376,8 @@ const placeholder = 0
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -402,7 +402,6 @@ const placeholder = 0
 }
 
 func TestExport_FailurePath_CleanupRejectsTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
-	c := qt.New(t)
 	outputData := []byte("previous useful schema\n")
 	tests := []struct {
 		name          string
@@ -437,7 +436,8 @@ type Helper struct {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -465,7 +465,6 @@ type User struct{}
 }
 
 func TestExport_FailurePath_CleanupRejectsLossyTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
-	c := qt.New(t)
 	outputData := []byte("previous useful schema\n")
 	tests := []struct {
 		name       string
@@ -491,7 +490,8 @@ type Helper struct{}
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -520,7 +520,6 @@ type User struct{}
 }
 
 func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		annotation  string
@@ -548,7 +547,8 @@ func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")

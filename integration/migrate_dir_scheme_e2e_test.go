@@ -59,7 +59,8 @@ func TestMigrateDirectorySchemeDiagnosticsE2E(t *testing.T) {
 	}
 
 	for _, test := range compatCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 
 			stdout, stderr, err := runCLIProcess(ctx, root, compatBinary, test.args...)
@@ -73,7 +74,8 @@ func TestMigrateDirectorySchemeDiagnosticsE2E(t *testing.T) {
 		})
 	}
 
-	c.Run("native validate and status retain bare paths", func(c *qt.C) {
+	t.Run("native validate and status retain bare paths", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		migrationDir := filepath.Join(root, "migrations")
 		c.Assert(os.MkdirAll(migrationDir, 0o755), qt.IsNil)

@@ -429,8 +429,6 @@ func roleNames(roles []types.DBRole) []string {
 }
 
 func TestReadRolesReportsOneRolePerReason(t *testing.T) {
-	c := qt.New(t)
-
 	// Each row is a server holding exactly one role with a reason plus the
 	// role from stokaro/ptah#1267 that has none, so a branch that stops
 	// reading its catalog column loses its own row and nothing else.
@@ -467,7 +465,8 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cluster := []clusterRole{
 				test.used,
 				{name: "someone_elses", schema: "", reads: nil},
@@ -483,8 +482,6 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 }
 
 func TestReadRolesLeavesClusterRolesTheScopeDoesNotUseOut(t *testing.T) {
-	c := qt.New(t)
-
 	// The headline of stokaro/ptah#1267: a database with objects of its own
 	// and no roles of its own must name no roles, however many the server has.
 	tests := []struct {
@@ -513,7 +510,8 @@ func TestReadRolesLeavesClusterRolesTheScopeDoesNotUseOut(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, test.cluster, test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRoles()
@@ -525,8 +523,6 @@ func TestReadRolesLeavesClusterRolesTheScopeDoesNotUseOut(t *testing.T) {
 }
 
 func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
-	c := qt.New(t)
-
 	// Same server, three scopes. A filter that merely dropped some fixed set
 	// of names would answer all three the same way.
 	tests := []struct {
@@ -558,7 +554,8 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRoles()
@@ -570,8 +567,6 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 }
 
 func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
-	c := qt.New(t)
-
 	// Pre-existing behavior this change must not lose: the reserved pg_ roles
 	// and the bootstrap superuser are never described, even when they own an
 	// object in the inspected schema.
@@ -599,7 +594,8 @@ func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := reader.readRoles()
@@ -612,8 +608,6 @@ func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
 }
 
 func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
-	c := qt.New(t)
-
 	// pg_policy is read under the same capability that gates readRLSPolicies,
 	// so a PostgreSQL-family target that manages roles without row-level
 	// security is not sent a query naming a catalog it does not have.
@@ -640,7 +634,8 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, cluster, []string{"public"}, test.caps)
 
 			roles, err := reader.readRoles()
@@ -652,8 +647,6 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 }
 
 func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
-	c := qt.New(t)
-
 	// Ptah describes no ownership: it emits no OWNER TO and no
 	// CREATE SCHEMA ... AUTHORIZATION. An owner is therefore a role the
 	// description would create and then never refer to, and since the
@@ -692,7 +685,8 @@ func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cluster := []clusterRole{
 				test.owner,
 				{name: "table_grantee", schema: "public", reads: byRelationGrant},
@@ -708,8 +702,6 @@ func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
 }
 
 func TestReadRolesOutOfScopeReportsWhatTheDescriptionLeavesOut(t *testing.T) {
-	c := qt.New(t)
-
 	// Same server, three scopes, and the answer readRoles does not give. This
 	// is what tells a comparator that a role missing from the description
 	// still exists on the server, so it plans no CREATE ROLE for it. See the
@@ -747,7 +739,8 @@ func TestReadRolesOutOfScopeReportsWhatTheDescriptionLeavesOut(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRolesOutOfScope()
@@ -759,8 +752,6 @@ func TestReadRolesOutOfScopeReportsWhatTheDescriptionLeavesOut(t *testing.T) {
 }
 
 func TestReadRolesOutOfScopeKeepsSystemRolesOut(t *testing.T) {
-	c := qt.New(t)
-
 	// The complement is the complement of the described set, not of the whole
 	// catalog: the reserved pg_ roles and the bootstrap superuser are excluded
 	// from both reads. Reporting them here would hand the comparator roles it
@@ -789,7 +780,8 @@ func TestReadRolesOutOfScopeKeepsSystemRolesOut(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := reader.readRolesOutOfScope()
@@ -802,8 +794,6 @@ func TestReadRolesOutOfScopeKeepsSystemRolesOut(t *testing.T) {
 }
 
 func TestReadRolesKeepsOrdinaryRolesTheReservedPrefixWouldSwallow(t *testing.T) {
-	c := qt.New(t)
-
 	// PostgreSQL reserves the prefix WITH the underscore, and LIKE reads a
 	// bare underscore as a single-character wildcard, so `NOT LIKE 'pg_%'`
 	// also drops pgbouncer, pgadmin, pgpool and pguser (stokaro/ptah#1291).
@@ -839,7 +829,8 @@ func TestReadRolesKeepsOrdinaryRolesTheReservedPrefixWouldSwallow(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := test.read(reader)
@@ -851,8 +842,6 @@ func TestReadRolesKeepsOrdinaryRolesTheReservedPrefixWouldSwallow(t *testing.T) 
 }
 
 func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
-	c := qt.New(t)
-
 	// The property the comparator depends on, stated with the qualifier it
 	// actually has: whatever the scoping rule decides, every role Ptah manages
 	// lands in exactly one of the two reads. A managed role can therefore never
@@ -884,7 +873,8 @@ func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 
 			described, err := reader.readRoles()
@@ -973,8 +963,6 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 // written half a description would be a worse answer than the silence it
 // replaces.
 func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		env         func(testing.TB)
@@ -1002,7 +990,8 @@ func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}
@@ -1047,8 +1036,6 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 }
 
 func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
-	c := qt.New(t)
-
 	// The safety property of the opt-in, stated on its own because it is the
 	// reason the variable can exist at all: both reads run either way, so the
 	// UNION -- which is what compare.Roles takes existence from -- is the same
@@ -1083,7 +1070,8 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}

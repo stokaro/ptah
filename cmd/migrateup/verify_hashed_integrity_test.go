@@ -175,7 +175,8 @@ func TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum(t *testing.T) {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 
-	c.Run("default applies", func(c *qt.C) {
+	t.Run("default applies", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "unhashed-atlas.db")
 
 		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--dir-format", "atlas")
@@ -184,7 +185,8 @@ func TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum(t *testing.T) {
 		c.Assert(out, qt.Contains, "Migrations completed successfully!")
 	})
 
-	c.Run("verify-sum refuses before connecting", func(c *qt.C) {
+	t.Run("verify-sum refuses before connecting", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "verify-sum.db")
 
 		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--dir-format", "atlas", "--verify-sum")

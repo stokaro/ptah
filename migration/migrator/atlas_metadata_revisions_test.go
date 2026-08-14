@@ -60,7 +60,6 @@ func newSQLiteAtlasFormatMigrator(t *testing.T) (*dbschema.DatabaseConnection, *
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dot-rows.db"))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fstest.MapFS{
@@ -167,7 +166,6 @@ func TestAtlasMetadataRow_DryRunReadsRealVersion(t *testing.T) {
 	// metadata query entirely.
 	conn.SchemaWriter().SetDryRun(true)
 	t.Cleanup(func() { conn.SchemaWriter().SetDryRun(false) })
-
 	version, err := m.GetCurrentVersion(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version, qt.Equals, int64(2))
@@ -187,7 +185,6 @@ func TestAtlasMetadataRow_DryRunOnFreshDatabaseReportsZero(t *testing.T) {
 	// dry run must still report the empty state without erroring.
 	conn.SchemaWriter().SetDryRun(true)
 	t.Cleanup(func() { conn.SchemaWriter().SetDryRun(false) })
-
 	version, err := m.GetCurrentVersion(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version, qt.Equals, int64(0))
