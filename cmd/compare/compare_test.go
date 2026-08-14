@@ -9,6 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/compare"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -80,6 +82,79 @@ func TestCompareCommandValidatesConnectTimeoutBeforeExternalSchema(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `invalid --connect-timeout value "invalid": .*`)
+}
+
+func TestCompareCommandValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	cmd := compare.NewCompareCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--schema-cmd", "/path/that/does/not/exist",
+		"--db-url", "sqlite://test.db",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
+}
+
+func TestCompareCommandValidatesExplicitSQLiteToggleBeforeProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(configPath, []byte("unknown: true\n"), 0o600), qt.IsNil)
+
+	cmd := compare.NewCompareCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://test.db",
+		"--config", configPath,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unknown ptah.yaml key")
+}
+
+func TestCompareCommandValidatesConfigSelectedSQLiteToggle(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(configPath, []byte("url: sqlite://test.db\n"), 0o600), qt.IsNil)
+
+	cmd := compare.NewCompareCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--config", configPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
+}
+
+func TestCompareCommandDoesNotApplySQLiteToggleBeforePostgresProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(configPath, []byte("unknown: true\n"), 0o600), qt.IsNil)
+
+	cmd := compare.NewCompareCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--db-url", "postgres://localhost/database",
+		"--config", configPath,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config .*unknown ptah.yaml key "unknown".*`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), sqlitevirtual.AllowDropEnvVar)
 }
 
 func TestCompareCommandPlansNewSQLiteTablesWithForeignKey(t *testing.T) {

@@ -658,6 +658,37 @@ This distinction preserves Atlas CE's unknown-name behavior without hiding a
 likely typo or a policy that does nothing. The warning goes to stderr; stdout
 and the success exit code remain unchanged.
 
+The tolerance is spelling-sensitive. A name Atlas CE decodes into a structure
+takes a block body; the same name written as an attribute with an object value
+reaches CE's object decoder, which refuses every member name it finds — including
+the members the block spelling accepts. Ptah reproduces that refusal:
+
+```text
+atlas.hcl "lint" at atlas.hcl:3 must be a block, or an empty object
+```
+
+An empty object and `null` are accepted, because they carry no configuration.
+The affected names are `diff`, `lint` and `test` at the top level; `diff`,
+`format`, `lint`, `migration`, `schema` and `test` under `env`; `skip` under
+either spelling of `diff`; `git` under either spelling of `lint`; and
+`format.migrate`, `format.schema` and `schema.repo` under `env`. Each was
+measured against the pinned community binary individually — the set is not
+"every block name", and it is not the same at every scope.
+
+`diff` and `lint` are the two blocks that may sit at the top level as well as
+inside `env`, and Ptah routes both spellings through the same parser, so
+top-level `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are
+refused exactly as their `env` spellings are. `format` and `schema` are not
+decoded into their structures at the top level by either binary — a top-level
+`format { schema = { k = "v" } }` exits 0 on the community binary, and Ptah drops
+the whole block with an ignored-block warning at exit 0 — so those names are
+`env`-scoped only.
+
+Because this is a value rule rather than a structural one, it applies to the
+selected environment only, and it reads the value after `var`, `local` and `data`
+are available. An unselected `env` carrying the attribute spelling does not fail
+the command, which is what Atlas CE does as well.
+
 `PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
 runs. The strict policy refuses an ignored construct before command work, and
 it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,

@@ -15,6 +15,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -50,6 +51,9 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	dialect, err := atlasurl.DialectFromURL(opts.DatabaseURL)
 	if err != nil {
+		return nil, err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 		return nil, err
 	}
 

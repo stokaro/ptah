@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -434,6 +435,9 @@ func prepareDiff(
 	}
 	if len(opts.Desired.Sources) == 0 {
 		return preparedDiff{}, errors.New("migrate diff requires desired state")
+	}
+	if err := sqlitevirtual.ValidateToggle(conn.Info().Dialect); err != nil {
+		return preparedDiff{}, err
 	}
 	opts = normalizeDiffOptions(opts)
 	schemas := schemascope.SplitNames(opts.Schemas)

@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -43,8 +45,11 @@ registries.`,
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")
 	flags.StringVar(&opts.dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
-	flags.BoolVar(&opts.verifySum, "verify-sum", false, "Require the migration directory to match ptah.sum or atlas.sum before pushing")
-	flags.BoolVar(&opts.plainHTTP, "plain-http", false, "Use plain HTTP for an explicitly trusted local registry")
+	flags.BoolVar(&opts.verifySum, "verify-sum", false, migrationsource.VerifySumUsage(
+		"Require the local migration directory to match its ptah.sum or atlas.sum before "+
+			"pushing, and fail when it carries neither",
+	))
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
 

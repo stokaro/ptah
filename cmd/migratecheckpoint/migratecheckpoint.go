@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationversion"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -105,8 +106,18 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
+	if err := sqlitevirtual.ValidateToggle(opts.dialect); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if opts.shadowDB == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("a shadow database URL is required (--%s)", shadowDBFlag))
+	}
+	shadowDialect := opts.dialect
+	if resolvedDialect, dialectErr := atlasurl.DialectFromURL(opts.shadowDB); dialectErr == nil {
+		shadowDialect = resolvedDialect
+	}
+	if err := sqlitevirtual.ValidateToggle(shadowDialect); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if opts.migrationsDir == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("migrations directory is required"))

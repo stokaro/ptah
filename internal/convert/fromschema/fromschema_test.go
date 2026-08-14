@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -863,6 +864,25 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
+}
+
+func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) {
+	c := qt.New(t)
+	table := goschema.Table{
+		StructName:       "VirtualDocs",
+		Schema:           " aux ",
+		Name:             " docs ",
+		VirtualModule:    "fts5",
+		VirtualArguments: "body",
+	}
+
+	result := fromschema.FromTable(table, nil, nil, platform.SQLite)
+
+	c.Assert(result.Name, qt.Equals, `" aux "." docs "`)
+	c.Assert(result.Options[ast.SQLiteVirtualModuleOption], qt.Equals, "fts5")
+	sql, err := renderer.RenderSQL(platform.SQLite, result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "CREATE VIRTUAL TABLE \" aux \".\" docs \" USING fts5(body);\n")
 }
 
 func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testing.T) {
