@@ -336,8 +336,18 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve")
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to"))
+	cmdutil.ConfigureCommandArgs(cmd, atlasSchemaApplyArgs(&opts.url))
 	return cmd
+}
+
+func atlasSchemaApplyArgs(url *string) cobra.PositionalArgs {
+	positionalArgs := cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to")
+	return func(cmd *cobra.Command, args []string) error {
+		if err := sqlitevirtual.ValidateExplicitURLToggle(*url); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		return positionalArgs(cmd, args)
+	}
 }
 
 func strictAtlasSchemaApplyLong() string {
