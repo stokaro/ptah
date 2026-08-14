@@ -33,6 +33,25 @@ labeled output only if every target can render the schema. An unsupported
 feature fails atomically with empty standard output. The combined output is a
 review artifact, not one executable SQL script.
 
+### Rendering for a specific server
+
+`schema render` never connects, so a bare `--dialect` renders against that
+dialect's default capability preset — the newest release line Ptah has measured.
+Add `--server-version` to render for the server you actually run:
+
+```bash
+ptah schema render --root-dir ./models --dialect mysql --server-version 8.0.42
+```
+
+The flag requires `--dialect`, since without one the command renders every
+supported target and a single server version cannot describe all of them. A
+value that names no server is refused with exit code `2` rather than quietly
+ignored, and a value that resolves to something other than an exact measured
+release line is applied and announced on stderr as a `warning:` line. Accepted
+shapes are a dotted version such as `17` or `8.0.42` and a server banner such as
+`PostgreSQL 16.3 (Debian)`, `10.11.6-MariaDB`, or `CockroachDB CCL v25.4.0`.
+`ptah sql lint` spells the same contract `--version`.
+
 ### Schema file paths
 
 Native `--schema-file` inputs use the process working directory as their path

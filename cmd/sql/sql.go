@@ -13,7 +13,9 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqllint"
 )
 
@@ -69,9 +71,11 @@ migration directory specific.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner")
-	flags.StringVar(&version, "version", "",
-		"Server version string used to refine target capabilities, for example 17 or 10.11.6-MariaDB "+
-			"(requires --dialect; a value that names no server is refused)")
+	// Registered through the shared registrar under this command's established
+	// spelling: `--version` here means a server, and the annotation the
+	// registrar attaches is what tells the flag-surface walk that, rather than
+	// the name it shares with two flags that mean something else entirely.
+	serverversion.RegisterAs(flags, "version", &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
 	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
@@ -115,10 +119,10 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 	// the usage error it is, rather than behind whatever the first file has
 	// to say for itself.
 	normalizedDialect := platform.NormalizeDialect(opts.dialect)
-	target, err := sqllint.ResolveTargetVersion(normalizedDialect, opts.version)
+	target, err := servertarget.Resolve(normalizedDialect, opts.version)
 	if err != nil {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format,
-			fmt.Sprintf("invalid --version value %q: expected %s", opts.version, sqllint.RecognizedVersionShapes))
+			fmt.Sprintf("invalid --version value %q: expected %s", opts.version, servertarget.RecognizedVersionShapes))
 	}
 
 	sources, err := readSQLLintSources(cmd.InOrStdin(), opts)

@@ -11,9 +11,13 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/servertarget"
 )
 
 const (
@@ -29,14 +33,15 @@ const schemaCmdUsage = "External program whose stdout is the desired schema " +
 	`whitespace, so arguments cannot contain spaces. Example: "go run ./loader"`
 
 type options struct {
-	rootDirs     []string
-	schemaFiles  []string
-	schemaCmd    string
-	schemaFormat string
-	dialect      string
-	plainHTTP    bool
-	configPath   string
-	envName      string
+	rootDirs      []string
+	schemaFiles   []string
+	schemaCmd     string
+	schemaFormat  string
+	dialect       string
+	serverVersion string
+	plainHTTP     bool
+	configPath    string
+	envName       string
 }
 
 func NewGenerateCommand() *cobra.Command {
@@ -72,6 +77,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage)
+	serverversion.Register(flags, &opts.serverVersion)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.StringVar(&opts.configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -81,6 +87,17 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 func generateCommand(cmd *cobra.Command, opts *options) error {
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
+
+	// Resolved before anything is read so an unusable --server-version is
+	// reported as the usage error it is, rather than behind whatever the first
+	// schema source has to say for itself.
+	target, err := resolveServerTarget(opts)
+	if err != nil {
+		return err
+	}
+	if target.Note != "" {
+		fmt.Fprintf(stderr, "warning: %s\n", target.Note)
+	}
 
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
@@ -127,7 +144,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 
 	var rendered bytes.Buffer
 	for _, d := range dialects {
-		statements, err := renderer.GetOrderedCreateStatements(result, d)
+		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(result, d, renderCapabilities(d, target))
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}
@@ -145,4 +162,50 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	return nil
+}
+
+// resolveServerTarget maps --server-version onto the capability preset the
+// render plans against.
+//
+// A nil Capabilities in the returned target means no server was pinned, and
+// the render falls back to each dialect's default exactly as it did before the
+// flag existed. The refusal of a value that names no server is the whole point
+// of going through servertarget rather than capability.ForServerVersion, which
+// answers an unreadable string with the dialect default and says nothing —
+// correct for a live SELECT version(), wrong for a string a person typed.
+func resolveServerTarget(opts *options) (servertarget.Target, error) {
+	if opts.serverVersion == "" {
+		return servertarget.Target{}, nil
+	}
+	if opts.dialect == "" {
+		return servertarget.Target{}, fmt.Errorf(
+			"--%s requires --%s: with no dialect the command renders every supported target, "+
+				"and one server version cannot describe all of them",
+			serverversion.FlagName, dialectFlag)
+	}
+	dialect := platform.NormalizeDialect(opts.dialect)
+	if dialect == "" {
+		// The dialect names no platform, so there is nothing to resolve the
+		// version against. Reporting nothing here hands the diagnosis to the
+		// renderer, whose "unsupported database dialect" names the flag that
+		// is actually wrong.
+		return servertarget.Target{}, nil
+	}
+	target, err := servertarget.Resolve(dialect, opts.serverVersion)
+	if err != nil {
+		return servertarget.Target{}, fmt.Errorf("invalid --%s value %q: expected %s",
+			serverversion.FlagName, opts.serverVersion, servertarget.RecognizedVersionShapes)
+	}
+	return target, nil
+}
+
+// renderCapabilities picks the capability set one dialect renders against.
+//
+// capability.ForDialect is what renderer.GetOrderedCreateStatements passes on
+// its own, so an unpinned render is byte-identical to the call this replaced.
+func renderCapabilities(dialect string, target servertarget.Target) capability.Capabilities {
+	if target.Capabilities == nil {
+		return capability.ForDialect(dialect)
+	}
+	return target.Capabilities
 }

@@ -291,13 +291,21 @@ has no ladder to spend it on. `Recognized` is `false` only for the first.
 operator input reads this field alone and refuses. A caller holding a live
 banner should keep ignoring it.
 
-`ptah sql lint --version` is that caller. It refuses an unrecognized value with
-exit code `2` and never reports it as the version it linted against; a
-recognized value that did not select an exact measured release line is applied
-and announced, on stderr as a `warning:` line and in `--format json` as
-`version_note`. Silence is reserved for an exact measured-line match. This is
-criterion 6 of issue #916 for that command; the other `--version`-free surfaces
-still degrade silently by design.
+`ptah sql lint --version` and `ptah schema render --server-version` are those
+callers. Both refuse an unrecognized value with exit code `2` and never report
+it as the version they planned against; a recognized value that did not select
+an exact measured release line is applied and announced, on stderr as a
+`warning:` line and — on `sql lint --format json` — as `version_note`. Silence
+is reserved for an exact measured-line match. This is criterion 6 of issue #916
+for those commands; every surface that reads a live `SELECT version()` banner
+still degrades silently by design, because a server does not typo its own name.
+
+The two spellings differ because `sql lint --version` predates the flag having
+a name. `cmd/internal/serverversion` registers both and marks them with one
+annotation, so `cmd/root`'s flag-surface walk can tell them from the two
+`--version` flags on the same command tree that mean something else entirely —
+`migrations checkpoint --version` names a checkpoint and `schema push
+--version` names an artifact tag.
 
 ### Composition
 
@@ -351,6 +359,17 @@ Offline SQL generation has no server banner to inspect. Factories such as
 the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
 value or wants to pin a specific server version in tests/CI.
+
+`ptah schema render --server-version` is the command-line spelling of that pin,
+and the default it corrects is not a theoretical one. `ForDialect("mysql")`
+answers `MySQL84()`, which sets `foreign_keys_require_unique_reference`, so a
+foreign key onto a plain-indexed column is refused at exit `2` while MySQL 8.0
+— and `--dialect mariadb`, at exit `0` — accept it. Passing
+`--server-version 8.0.42` selects `MySQL8019()` and the same schema renders;
+`--server-version 8.4.0` still refuses it, which is the correct answer for that
+server. The flag requires `--dialect`, because without one the command renders
+every supported target in a single pass and one server version does not
+describe nine engines.
 
 ## Supported release lines
 
