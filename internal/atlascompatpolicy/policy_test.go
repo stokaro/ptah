@@ -127,6 +127,10 @@ func TestResolveStrictCERetainsSafetyEnvironment(t *testing.T) {
 	// pinned community binary plans for a SQLite virtual table anyway, so it
 	// adds no Atlas capability for strict mode to refuse.
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "1")
+	// Same grounds: the refusal this lifts is Ptah's own, and the pinned
+	// binary plans the drops regardless, so gating it would make strict mode
+	// the one place Ptah is stricter than the binary it matches.
+	t.Setenv("PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE", "1")
 
 	policy, err := atlascompatpolicy.Resolve()
 
@@ -139,6 +143,7 @@ func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
 		"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 		"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 		"PTAH_HCL_STRICT_REDECLARATIONS",
+		"PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE",
 		"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 		"PTAH_STRICT_DIR_QUERY",
 	} {

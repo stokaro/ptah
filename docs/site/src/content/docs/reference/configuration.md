@@ -115,12 +115,19 @@ convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
 and SQL templates; checksum-only reads preserve those bytes. All inputs remain
 available in the default, complete compatibility profile.
 
-Four opt-in correctness controls remain available because they do not add an
+Six opt-in correctness controls remain available because they do not add an
 Atlas capability: `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
-`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`, and
-`PTAH_ALLOW_NONINTERACTIVE_EDIT`. The last one permits a scripted editor in a
-non-interactive process; it does not add an editor or migration capability.
-Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
+`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`,
+`PTAH_ALLOW_NONINTERACTIVE_EDIT`, `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, and
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`.
+`PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a
+non-interactive process; it does not add an editor or migration capability. The
+two SQLite controls lift refusals that are Ptah's own — the pinned community
+binary plans those drops regardless — so gating them would make strict mode the
+one place Ptah is stricter than the binary it matches. Every one of the six is
+still parsed at the process boundary, so a malformed value is refused before
+command construction rather than lying dormant until the condition it governs
+comes up. Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

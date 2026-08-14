@@ -633,10 +633,22 @@ var gatedBooleanEnvVars = []string{
 // strict mode would move Ptah further from the oracle rather than closer. What
 // strict mode owes it is the parse, because a malformed value would otherwise
 // sit dormant until a comparison happens to hold a virtual table.
+//
+// PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE is retained on the same
+// grounds, and the argument is if anything stronger. The refusal it lifts is
+// Ptah's own: the pinned community binary has no notion of a module this build
+// cannot classify and plans the drops regardless. A true spelling therefore
+// restores oracle behavior rather than adding a capability beyond it, so
+// gating it would make strict mode the one place Ptah is stricter than the
+// binary it exists to match. The parse is still owed, and for the same reason
+// as its sibling: a malformed value would otherwise stay dormant until a
+// comparison happens to meet an unregistered module, which is precisely the
+// run an operator is already debugging. See stokaro/ptah#1028.
 var retainedBooleanEnvVars = []string{
 	"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 	"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 	"PTAH_HCL_STRICT_REDECLARATIONS",
+	"PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE",
 	"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 	"PTAH_STRICT_DIR_QUERY",
 }
