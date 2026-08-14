@@ -515,6 +515,55 @@ each ignored source location once:
 warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
 ```
 
+### Structured settings must be written as blocks
+
+A setting Atlas CE decodes into a structure takes a **block** body. The same
+name written as an **attribute** with an object value is refused:
+
+```text
+Error: atlas.hcl "lint" at atlas.hcl:3 must be a block, or an empty object
+```
+
+This is not a Ptah restriction. Atlas CE routes both spellings to the same
+field, and its object decoder refuses every member name it finds there —
+including the members the block spelling accepts, so `lint = { latest = 1 }`
+and `lint = { anything = 1 }` both fail on the community binary. The attribute
+spelling carries no configuration on either binary. The two values that are
+accepted are an empty object and `null`, for the same reason: they carry
+nothing.
+
+The affected names were measured one at a time and the set is neither "every
+block name" nor scope-independent:
+
+| Scope | Must be a block | Tolerated as an attribute |
+| --- | --- | --- |
+| top level | `diff`, `lint`, `test` | `atlas`, `data`, `format`, `locals`, `migration`, `schema`, `variable` |
+| `env` | `diff`, `format`, `lint`, `migration`, `schema`, `test` | — |
+| `diff` and `env.diff` | `skip` | `concurrent_index` |
+| `lint` and `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
+| `env.format` | `migrate`, `schema` | — |
+| `env.schema` | `repo` | `mode` |
+
+`diff` and `lint` are the two blocks that may sit at the top level as well as
+inside `env`, and their nested names behave the same in both places: top-level
+`diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are refused, the
+same as their `env` spellings.
+
+The `format` and `schema` rows stay `env`-only, and that is measured rather than
+assumed. A top-level `format` or `schema` block is not decoded into those
+structures by the community binary, so top-level `format { schema = { k = "v" } }`
+and `schema { repo = { k = "v" } }` both exit 0 — Ptah drops the whole block with
+an ignored-block warning and exits 0 too.
+
+Writing any of these as a block is unaffected.
+
+This refusal is a value rule, not a structural one, so it follows the same
+selection boundary as every other value: it applies to the environment the
+command selects. An `env "prod"` carrying `lint = { k = "v" }` does not fail a
+command run with `--env dev`, because Atlas CE does not decode an unselected
+environment either. The value is read after `var`, `local` and `data` are
+available, so `lint = local.nothing` resolves normally.
+
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another
