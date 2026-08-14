@@ -84,17 +84,31 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 // declared -- and, once planning followed, as a DROP TABLE for the storage of a
 // view the desired schema still asks for.
 //
-// Both spellings are subtracted: ".inner_id.<uuid>" is what an Atomic database
-// names the storage, and ".inner.<view name>" is the older Ordinary spelling.
-// The set is derived from the materialized views themselves rather than from a
-// leading-dot name pattern, so a declared table is never dropped from the read
+// Which spelling the storage has is decided per view, by the view's own row,
+// not by emitting both. A database engine of Atomic gives every table a UUID and
+// names the storage ".inner_id.<the view's uuid>"; an Ordinary database leaves
+// the UUID at all zeros and names it ".inner.<view name>". Measured on both ends
+// of the range this preset covers, 26.7.3.19 and 24.10.4.191:
+//
+//	database engine   system.tables rows for a view named "mv"
+//	Atomic            mv (uuid a5bb…)  .inner_id.a5bb…  (uuid of its own)
+//	Ordinary          mv (uuid 0000…)  .inner.mv        (uuid 0000…)
+//
+// Subtracting both spellings unconditionally deletes a real table from the read.
+// A leading dot is legal in a quoted ClickHouse name, and on the same servers
+//
+//	CREATE TABLE `.inner.mv` (x UInt64) ENGINE = MergeTree ORDER BY x
+//
+// succeeds in an Atomic database alongside the view "mv" whose storage is
+// ".inner_id.<uuid>". The union arm invented ".inner.mv" and filtered that
+// user table out of both the table read and the index read, and DropAllTables
+// left it standing so the next replay failed on a table that already existed.
+//
+// The set stays derived from the materialized views themselves rather than from
+// a leading-dot name pattern, so a declared table is never dropped from the read
 // merely for how it is spelled.
 const materializedViewInnerTablesSubquery = `
-		SELECT concat('.inner_id.', toString(uuid))
-		FROM system.tables
-		WHERE database = ? AND engine = 'MaterializedView'
-		UNION ALL
-		SELECT concat('.inner.', name)
+		SELECT ` + innerTableNameExpression + `
 		FROM system.tables
 		WHERE database = ? AND engine = 'MaterializedView'
 `
@@ -103,17 +117,22 @@ const materializedViewInnerTablesSubquery = `
 // for a statement scoped by currentDatabase() instead of a bound name, which is
 // how the writer's DropAllTables selects. It is spelled separately rather than
 // parameterized because the two callers bind different numbers of arguments,
-// and a shared string that silently needed two more would be the easier thing
+// and a shared string that silently needed one more would be the easier thing
 // to get wrong.
 const currentDatabaseMaterializedViewInnerTablesSubquery = `
-		SELECT concat('.inner_id.', toString(uuid))
-		FROM system.tables
-		WHERE database = currentDatabase() AND engine = 'MaterializedView'
-		UNION ALL
-		SELECT concat('.inner.', name)
+		SELECT ` + innerTableNameExpression + `
 		FROM system.tables
 		WHERE database = currentDatabase() AND engine = 'MaterializedView'
 `
+
+// innerTableNameExpression names the storage table of the materialized-view row
+// it is evaluated over, choosing the spelling the row's own database engine
+// uses.
+const innerTableNameExpression = `if(
+		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
+		         concat('.inner.', name),
+		         concat('.inner_id.', toString(uuid))
+		       )`
 
 func (r *Reader) resolveDatabaseName() (string, error) {
 	if r.schema != "" {
@@ -147,7 +166,7 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		  AND engine NOT LIKE '%View'
 		  AND name NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY name
-	`, dbName, dbName, dbName)
+	`, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +227,26 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 // RefreshStrategy is reported as "manual" to match the PostgreSQL reader's
 // default. ClickHouse has no refresh statement at all, so no read could report
 // anything narrower, and the comparator does not diff the field.
+//
+// What this read cannot tell apart, stated rather than hidden: a view created
+// with `TO <target table>` routes its rows into a table the user owns and has no
+// inner storage of its own, and system.tables reports it with the same engine
+// and the same as_select as a view that does own its storage. Measured on
+// 26.7.3.19:
+//
+//	name    engine            as_select
+//	mv_to   MaterializedView  SELECT count() AS c FROM wf9d_alias.users
+//	create_table_query: CREATE MATERIALIZED VIEW wf9d_alias.mv_to
+//	                    TO wf9d_alias.mv_target (`c` UInt64) AS SELECT ...
+//
+// The target survives only in create_table_query, and types.DBMatView has
+// nowhere to put it, so such a view is reported as an ordinary one: it compares
+// as synchronized against a declaration of the same query, and a body change
+// would be planned as a drop and a create that recreates it without the target.
+// Representing the shape would be a model change (a target on the shared node,
+// the renderer emitting `TO`, the comparator diffing it); refusing the read
+// outright would take away a read that works today. Neither is decided here --
+// the support matrix says plainly not to manage a `TO` view with Ptah.
 func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error) {
 	rows, err := r.db.Query(`
 		SELECT name, as_select, comment
@@ -338,7 +377,7 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 		WHERE database = ?
 		  AND table NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY table, name
-	`, dbName, dbName, dbName)
+	`, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}

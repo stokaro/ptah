@@ -33,11 +33,11 @@ const cleanupTablesQuery = `
 	  )
 	  AND engine NOT LIKE '%View'
 	  AND name NOT IN (
-		SELECT concat('.inner_id.', toString(uuid))
-		FROM system.tables
-		WHERE database = currentDatabase() AND engine = 'MaterializedView'
-		UNION ALL
-		SELECT concat('.inner.', name)
+		SELECT if(
+		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
+		         concat('.inner.', name),
+		         concat('.inner_id.', toString(uuid))
+		       )
 		FROM system.tables
 		WHERE database = currentDatabase() AND engine = 'MaterializedView'
 )
