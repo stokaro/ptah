@@ -265,7 +265,9 @@ and nothing distinguishes an intentional one from a hostile one. Over an
 `oci://` tag the same limit is sharper still, because the sum travels inside
 the artifact: anyone who can push to the repository can rewrite the checks,
 re-hash, repoint the tag, and watch `--verify-sum` pass. Review the migration
-diff, and pin a digest.
+diff, and pin a digest you reviewed — pinning whatever digest a tag happens to
+resolve to today fixes the bytes without telling you whose they are. Control
+who can push, and use a registry-native signature policy where that matters.
 
 ## Relationship to Atlas
 

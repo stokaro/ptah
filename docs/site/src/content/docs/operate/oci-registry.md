@@ -147,7 +147,8 @@ artifact that carries no integrity file at all. Read
 for what that verification establishes over a movable tag, which is less than
 the flag's name suggests: the sum travels inside the artifact, so it proves the
 pulled files are internally consistent, not that they are the reviewed ones.
-Pin a digest for authenticity.
+Pin a digest to fix which bytes a later pull gets; that section also explains
+why pinning one is not by itself a statement about who published them.
 
 `ptah migrations lint --dir oci://...` also reads an OCI migration artifact
 directly. See [Attach lint and plan reports](#attach-lint-and-plan-reports) for

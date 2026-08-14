@@ -121,8 +121,24 @@ func MutableTagSumWarning(source Source, verifiedSumFile string) string {
 // checks for months. Sharing the sentence makes that drift impossible rather
 // than merely fixed once, and the flag-surface gate in cmd/migrations asserts
 // every registration ends with it.
+//
+// # What the closing clause may and may not promise
+//
+// It used to end "pin a digest for authenticity", and that over-claimed in the
+// opposite direction from the one this constant exists to fix. A digest
+// identifies exact bytes; it does not identify who produced them. An attacker
+// who can repoint a tag can make the command resolve, display, and then pin
+// THEIR digest — the operator would be pinning the attacker's bytes
+// reproducibly. docs/oci_registry.md has said so under "Identity, integrity,
+// and authenticity" all along, so the flag help was contradicting the
+// repository's own security section.
+//
+// The clause therefore promises reproducibility, which is what a digest
+// delivers, and points at the controls that actually establish a publisher.
 const VerifySumQualifier = "A sum checks a directory against the sum stored beside it, so an " +
-	"oci:// tag source proves internal consistency only; pin a digest for authenticity"
+	"oci:// tag source proves internal consistency only. Pinning a digest fixes which bytes you " +
+	"get; it does not establish who published them, so use registry access controls or a " +
+	"signature policy where publisher authenticity matters"
 
 // VerifySumUsage builds one verb's `--verify-sum` help from its own lead and
 // the shared qualifier.

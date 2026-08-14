@@ -132,6 +132,55 @@ func TestMutableTagSumWarning(t *testing.T) {
 	}
 }
 
+// TestVerifySumQualifier_DoesNotPromiseAuthenticityFromADigest pins the half of
+// the sentence that over-claimed in the opposite direction.
+//
+// The qualifier exists so `--verify-sum` does not read as tamper detection. Its
+// closing clause used to say "pin a digest for authenticity", which fixes the
+// first over-claim by making a second one: a digest identifies exact bytes and
+// says nothing about who produced them. An attacker able to repoint a tag makes
+// the command resolve, display, and then pin THEIR digest — reproducibly
+// installing the attacker's bytes. docs/oci_registry.md has said this under
+// "Identity, integrity, and authenticity" all along, so the help contradicted
+// the repository's own security section.
+//
+// The banned phrases are the spellings that actually appeared, not a guess at
+// every possible one; this is a regression guard, not a prose linter. The
+// positive half is what stops the guard being satisfied by deleting the clause
+// and saying nothing at all.
+func TestVerifySumQualifier_DoesNotPromiseAuthenticityFromADigest(t *testing.T) {
+	banned := []struct {
+		name   string
+		phrase string
+	}{
+		{name: "the original over-claim", phrase: "pin a digest for authenticity"},
+		{name: "the same claim, reworded", phrase: "digest for authenticity"},
+	}
+
+	for _, tt := range banned {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(migrationsource.VerifySumQualifier, qt.Not(qt.Contains), tt.phrase)
+		})
+	}
+
+	required := []struct {
+		name   string
+		phrase string
+	}{
+		{name: "says what pinning does give", phrase: "fixes which bytes"},
+		{name: "says what it does not give", phrase: "does not establish who published them"},
+		{name: "names a control that does", phrase: "signature policy"},
+	}
+
+	for _, tt := range required {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(migrationsource.VerifySumQualifier, qt.Contains, tt.phrase)
+		})
+	}
+}
+
 // TestVerifySumUsage_EndsWithTheSharedQualifier pins the composition rule the
 // flag help depends on.
 //
