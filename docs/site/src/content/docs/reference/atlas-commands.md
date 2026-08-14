@@ -301,7 +301,8 @@ selector may come from the selected `atlas.hcl` env instead of the command line.
 `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` runs the analysis with no dev database, which
 Ptah can do and that binary cannot.
 
-Docker dev databases and web reports remain explicit gaps.
+A `docker://` dev database is provisioned: the container is started, used and
+removed by the command. Atlas web reports remain an explicit gap.
 Native twin: [`ptah migrations lint`](../native-commands/).
 
 ### `ptah-compat migrate new`
@@ -488,7 +489,8 @@ Invalid values, unsupported dialects, multi-schema plans, and statement kinds
 Ptah cannot re-qualify yet (for example enum types) fail explicitly before any
 file or checksum is written.
 
-Docker dev databases remain an explicit gap.
+A `docker://` dev database is provisioned: the container is started, used and
+removed by the command.
 Native twin: [`ptah migrations generate`](../native-commands/).
 
 ### `ptah-compat migrate import`

@@ -458,6 +458,127 @@ before destination creation, so the mixed layout cannot partially import. A
 directory containing only numbered SQL names keeps the established one-file
 conversion. Liquibase XML, YAML, and JSON changelogs remain unsupported.
 
+### `docker://` dev databases are provisioned, with two forms deliberately refused
+
+Measured 2026-08-13 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)
+and `ptah-compat`, in a directory holding a hashed `./migrations`, `schema.sql`
+and `schema2.sql`, with every exit status read directly from an unpiped
+invocation.
+
+Before this change `ptah-compat` refused every `docker://` value with a sentence
+saying Ptah required a directly connectable dev database URL. It now starts the
+container itself ([`stokaro/ptah#844`](https://github.com/stokaro/ptah/issues/844)):
+
+| `--dev-url docker://postgres/16/dev` | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | --- | --- | --- |
+| `migrate diff m2 --dir file://migrations --to file://schema.sql` | 0 | 1, refused | **0** |
+| `migrate lint --dir file://migrations --latest 1` | 0 | 1, refused | **0** |
+| `migrate validate --dir file://migrations` | 0 | 1, refused | **0** |
+| `schema inspect -u file://schema.sql` | 0 | 1, refused | **0** |
+| `schema diff --from file://migrations --to file://schema2.sql` | 0 | 1, refused | **0** |
+| `schema apply --url postgres://... --to file://schema.sql --dry-run` | 0 | 1, refused | **0** |
+
+The `schema apply` row was measured against a throwaway PostgreSQL target
+started for the purpose; the other five need no target database. Every cell in
+that column is a run, not a code reading.
+
+Connection parameters written on the dev URL are carried into the provisioned
+connection. Atlas CE honors them, so discarding them is both a wrong answer and
+a `ptah-compat exits 0 where Atlas CE exits 1` cell:
+
+| `schema inspect -u file://schema.sql --dev-url …` | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `docker://postgres/16/dev?search_path=app` | 1, `schema "app" was not found` | 1, `database URL selects schema "app", which does not exist in this database` |
+| `docker://postgres/16/dev?search_path=public` | 0 | 0, byte-identical to the same run with no parameters |
+
+The engine's own parameters are defaults, not overrides: `sslmode=disable` is
+added because the container publishes on loopback and speaks no TLS, and an
+operator who writes `sslmode` replaces it rather than being silently overruled.
+The readiness wait deliberately probes the server with the engine defaults only
+— a `search_path` naming a schema a fresh container cannot have would fail every
+attempt, and the wait would spend its whole budget before reporting a verdict no
+amount of waiting changes. Measured: two minutes before that split, about five
+seconds after it.
+
+A database `--to` with a `docker://` dev database is planned rather than
+refused. The isolation check that asks whether the dev database aliases the
+desired state is not asked of a container that does not exist yet:
+
+| argv | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | :-: | :-: | :-: |
+| `migrate diff m2 --dir file://migrations --to postgres://… --dev-url docker://postgres/16/dev` | 0 | 1, `unsupported database URL dialect` | **0** |
+
+Two `docker://` forms are refused on purpose, because Atlas CE refuses them and
+accepting them would be a `ptah-compat exits 0 where Atlas CE exits 1` cell:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `--dev-url docker://sqlite/dev` | 1, `unsupported docker image "sqlite"` | 1, byte-identical |
+| `--dev-url docker://postgres:16/dev` | 1, `unsupported docker image "postgres:16"` | 1, byte-identical |
+
+Both matter because Ptah's own dialect parser answers happily for each:
+`docker://sqlite` names a dialect Ptah has, and `docker://postgres:16` is read
+by that parser as an engine with a port. The provisioner matches the host
+segment whole against an explicit engine table instead of reusing the dialect
+parser, which is the only reason those two rows come out right.
+
+A container runtime on another machine is supported, and the dev database is
+published where this process can reach it. Measured 2026-08-13 with
+`DOCKER_HOST=ssh://remote-dev`, a host reachable over a tailnet:
+
+| | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | :-: | :-: | :-: |
+| `schema inspect -u file://schema.sql --dev-url docker://postgres/18/dev` | 0 | 1 after 2m0s, `dial tcp 127.0.0.1:32768: connect: connection refused` | **0** |
+
+A container's ports are published on the *daemon's* interfaces, so a loopback
+binding on a remote daemon is reachable from that machine and nowhere else,
+while `docker port` still answers `127.0.0.1:<port>`. Measured on the same run:
+`nc -z 127.0.0.1 32768` exited 0 on the daemon host and 1 here.
+
+Atlas CE binds every interface — its container was caught publishing
+`0.0.0.0:59319->5432/tcp` — and it genuinely honors `DOCKER_HOST`, since
+pointing it at a socket that does not exist exits 1 with `failed to connect to
+the docker API`. Ptah does the same thing only where it is the only thing that
+works, and keeps the tighter binding otherwise:
+
+- a **local** daemon publishes on `127.0.0.1`, which is a deliberate divergence:
+  Atlas CE exposes the dev database on every interface even locally, and
+  matching that would copy a weaker default for nothing (rule 2);
+- a **remote** daemon publishes on every interface of the daemon host and is
+  connected to by that host's name, with a warning naming the exposure.
+
+Refusing a remote daemon was the alternative. It was rejected on the
+measurement: Atlas CE exits 0 there, so refusing would be `ptah-compat` exiting
+1 where it exits 0 — the same capability gap this work exists to close.
+
+Two retained divergences, both recorded rather than chased:
+
+- **Images.** Atlas CE pulls `postgres:<tag>` but the vendor's own
+  `arigaio/mysql:<tag>` and `arigaio/mariadb:<tag>` — measured from its
+  `Unable to find image` diagnostics. Ptah uses the official `mysql` and
+  `mariadb` images. A run that reaches a database is strictly more than one that
+  cannot pull the image, so this falls under rule 2.
+- **`schema diff` between two local schema files.** Neither binary's answer
+  changes with this work, and Ptah still does not normalize local files through
+  the dev database:
+
+  | | Atlas CE v1.3.0 | Ptah |
+  | --- | --- | --- |
+  | `schema diff --from file://schema.sql --to file://schema2.sql --dev-url docker://postgres/16/dev` | `ALTER TABLE "public"."users" ADD COLUMN "email" text NULL;` | `ALTER TABLE "users" ADD COLUMN "email" text;` |
+
+  Ptah uses `--dev-url` on that path only to pin the SQL dialect, and it does so
+  identically for a `docker://` URL and for a directly connectable `postgres://`
+  one — so the value is no longer silently unused in a way that is specific to
+  `docker://`. Normalizing local files through a dev database is a change to the
+  diff engine for every dev URL, not a docker question, and is left open.
+
+Not yet wired, and named so the gap is not mistaken for coverage:
+`migrate checkpoint`, `migrate down`, `migrate test`, `schema test`,
+`schema plan new` and `schema plan validate` register `--dev-url` and still hand
+a `docker://` value to the database connector. Atlas CE v1.3.0 answers
+`unknown flag: --dev-url` on all six — measured — so no parity cell is open on
+them and there is no wording to copy.
+
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost nine attributes that the pinned

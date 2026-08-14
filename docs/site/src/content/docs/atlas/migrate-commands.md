@@ -986,8 +986,8 @@ no-transaction execution because their safe transaction metadata has not been
 proven. The native Atlas layout remains forward-only and carries `--
 atlas:txmode none` on its own file when required.
 
-Docker dev databases fail explicitly until their provisioning semantics are
-implemented.
+A `docker://` dev database is provisioned on the verbs that take one: the
+container is started, used and removed by the command.
 
 ### The publication boundary
 
@@ -1113,8 +1113,8 @@ nor a scope and is unaffected by both.
 
 `migrate lint --dev-url` treats the dev database as scratch space: it drops user
 tables, replays the migration directory, and then runs static lint
-reporting. Docker `--dev-url` values remain an explicit gap; use a directly
-connectable database URL.
+reporting. A `docker://` value is provisioned first: the container is started,
+replayed on, and removed when the command ends.
 
 With no `--format` and no project template, `ptah-compat migrate lint` prints a
 compatibility report: an `Analyzing changes …` header, a per-version block

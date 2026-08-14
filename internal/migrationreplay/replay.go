@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/devclean"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -49,9 +49,19 @@ func Replay(ctx context.Context, opts Options) error {
 	if devURL == "" {
 		return nil
 	}
-	if isDockerURL(devURL) {
-		return fmt.Errorf("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
+	// A docker:// value is provisioned into a real database here rather than
+	// refused. The release runs on every exit path below, including the panic
+	// path, which is why it is deferred immediately and not at the end.
+	//
+	// The operator's spelling is what decides, not the trimmed copy above:
+	// see [devdocker.Parse] for why a leading space is a different value and
+	// not the same one with whitespace on it.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	if err != nil {
+		return err
 	}
+	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 
 	sourceFS := opts.FS
 	if sourceFS == nil {
@@ -300,9 +310,4 @@ func captureReplaySessionState(
 		}
 		return nil
 	}, nil
-}
-
-func isDockerURL(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	return err == nil && parsed.Scheme == "docker"
 }
