@@ -5,7 +5,7 @@ This directory contains PowerShell scripts for running comprehensive tests of th
 ## Prerequisites
 
 - **Docker Desktop** - Required for running database integration tests
-- **Go 1.19+** - For running the tests
+- **Go 1.26.5+** - For running the tests. This is the `go` directive in `go.mod`, the published compatibility floor — not the patch release CI builds with, which is the `toolchain` directive.
 - **PowerShell 7+** - For running the test scripts (works on Windows, macOS, Linux)
 
 ## Test Scripts
