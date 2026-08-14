@@ -551,17 +551,48 @@ func ValidatePlannedChanges(
 // tablesTouchedBy lists the tables the diff would drop or rebuild, in a stable
 // order.
 //
-// Additions are deliberately not counted. A table the plan CREATES cannot be
-// one the module already owns, so it carries none of the risk this gate is
-// about, and counting it would refuse the ordinary case of adding a table
-// beside an index Ptah cannot classify.
+// It has to be a SUPERSET of what the SQLite planner acts on, and the planner
+// derives its rebuild set from more than the obvious two fields. Beside
+// TablesModified it calls existingTablesWithConstraintChanges, which reads
+// ConstraintsAddedWithTables and ConstraintsRemovedWithTables: a table whose
+// columns are unchanged and whose constraint changed is recorded only at schema
+// level, and SQLite has no ALTER for a constraint, so that table is rebuilt --
+// drop, recreate, copy -- exactly like any other. Reading the two table fields
+// alone let that through, which review caught.
+//
+// This is deliberately coarser than the planner's own derivation rather than a
+// copy of it. Refusing more than the planner rebuilds is safe; refusing less is
+// the defect. The one exclusion applied is the one that is sound in the other
+// direction too: a table the plan CREATES cannot be one the module already
+// owns, so an added table carries none of this risk, and counting it would
+// refuse the ordinary case of adding a table with a constraint beside an index
+// Ptah cannot classify.
 func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
+	added := make(map[string]struct{}, len(diff.TablesAdded))
+	for _, name := range diff.TablesAdded {
+		added[name] = struct{}{}
+	}
+
 	touched := slices.Clone(diff.TablesRemoved)
 	for _, table := range diff.TablesModified {
 		touched = append(touched, table.TableName)
 	}
-	slices.Sort(touched)
-	return slices.Compact(touched)
+	for _, constraint := range diff.ConstraintsAddedWithTables {
+		touched = append(touched, constraint.TableName)
+	}
+	for _, constraint := range diff.ConstraintsRemovedWithTables {
+		touched = append(touched, constraint.TableName)
+	}
+
+	kept := touched[:0]
+	for _, name := range touched {
+		if _, ok := added[name]; ok {
+			continue
+		}
+		kept = append(kept, name)
+	}
+	slices.Sort(kept)
+	return slices.Compact(kept)
 }
 
 func quotedStrings(values []string) string {

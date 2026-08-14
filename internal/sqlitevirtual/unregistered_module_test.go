@@ -493,6 +493,57 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			},
 		},
 		{
+			// The constraint-only rebuild. Columns unchanged, so the change is
+			// recorded at schema level and TablesModified is empty -- but
+			// SQLite has no ALTER for a constraint, so planTableRebuilds
+			// derives this table from ConstraintsAddedWithTables and rebuilds
+			// it: drop, recreate, copy. Reading only the two table fields let
+			// it through, which review caught.
+			name:     "a constraint-only rebuild is refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			name:     "a constraint removal is refused too",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The exclusion, and the control for the two rows above: a
+			// constraint on a table the plan CREATES cannot be on storage the
+			// module already owns, so adding a table with a constraint beside an
+			// index Ptah cannot classify stays ordinary work.
+			name:     "a constraint on an added table is not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesAdded: []string{"audit"},
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name:            "a removed table in an unclassifiable database is refused",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),

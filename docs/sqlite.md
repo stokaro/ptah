@@ -311,9 +311,14 @@ register; ... dropping or rebuilding one of them destroys the index it belongs
 to
 ```
 
-Additions are not counted by it. A table the plan CREATES cannot be one the
-module already owns, so adding a table beside an index Ptah cannot classify
-stays ordinary work.
+It counts every table the SQLite planner can rebuild, which is more than the
+obvious ones: a table whose columns are unchanged and whose **constraint**
+changed is recorded only at schema level, and since SQLite has no `ALTER` for a
+constraint, that table is rebuilt too.
+
+Additions are not counted. A table the plan CREATES cannot be one the module
+already owns, so adding a table — with or without a constraint — beside an index
+Ptah cannot classify stays ordinary work.
 
 Two ways forward:
 
