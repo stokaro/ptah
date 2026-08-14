@@ -559,6 +559,13 @@ ignored-block warning and exits 0 too.
 
 Writing any of these as a block is unaffected.
 
+This refusal is a value rule, not a structural one, so it follows the same
+selection boundary as every other value: it applies to the environment the
+command selects. An `env "prod"` carrying `lint = { k = "v" }` does not fail a
+command run with `--env dev`, because Atlas CE does not decode an unselected
+environment either. The value is read after `var`, `local` and `data` are
+available, so `lint = local.nothing` resolves normally.
+
 ### Scalar settings Ptah does not act on are still type-checked
 
 A handful of names are decoded by Atlas CE into a plain string or bool field
@@ -581,6 +588,9 @@ Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
 `drop_schema` and `drop_table` are absent from the table because Ptah acts on
 them, so they are ordinary supported names rather than ignored ones.
 
+This is a value rule too, with the same selection boundary and the same reading
+order as the block rule above, so `drop_column = var.flag` resolves normally.
+
 `env.migration.baseline` is type-checked and still not acted on: `migrate apply`
 reads `--baseline` before project config is merged, so the `atlas.hcl` spelling
 has no effect yet and is reported as having none. The scope matters — a
@@ -592,13 +602,6 @@ The membership is measured name by name and is not "every change kind":
 `add_check`, `drop_role`, `add_policy`, `add_extension` and `drop_domain` are
 among the names the community binary does not decode inside `skip`, so any value
 is accepted for them.
-
-This refusal is a value rule, not a structural one, so it follows the same
-selection boundary as every other value: it applies to the environment the
-command selects. An `env "prod"` carrying `lint = { k = "v" }` does not fail a
-command run with `--env dev`, because Atlas CE does not decode an unselected
-environment either. The value is read after `var`, `local` and `data` are
-available, so `lint = local.nothing` resolves normally.
 
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
