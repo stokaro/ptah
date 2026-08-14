@@ -1662,13 +1662,20 @@ binary exits 1, and "matching is the floor, not the ceiling" is what leaves room
 for the refusal. The two paths through the verb refuse with different text for
 that reason. The default forward inherits the native refusal from
 `ptah migrations down` and prints ptah's own drift report; `--format` runs the
-compat gate and prints the same guidance block `apply` and `status` do.
+shared optional-hash gate and renders the Atlas-format rollback report. An
+unhashed directory remains usable, a drifted hashed directory is refused, and
+`PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1` permits the same explicit recovery as
+native `down`, with a warning. Strict CE policy rejects that extension variable
+and retains the CE refusal surface.
 
 `checkpoint` also enforces it now, on the native verb the compat surface
 forwards to. It was the worst of the ungated set: it replays the whole history
 onto a shadow database and writes what it observed there into a new migration
 under a fresh checksum, so drift was not merely executed but laundered into a
-directory that verifies clean afterwards.
+directory that verifies clean afterwards. The command now verifies and replays
+one immutable snapshot, then its rooted writer refuses publication if the
+directory no longer matches that snapshot before adding the checkpoint and
+refreshing `atlas.sum`.
 
 `rm`, `rebase` and `edit` remain divergent — they write an `atlas.sum` over a
 directory whose previous contents were never verified, turning drift into

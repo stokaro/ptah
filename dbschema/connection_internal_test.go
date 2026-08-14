@@ -756,12 +756,153 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 			version:  "PostgreSQL-compatible server",
 			expected: "cockroachdb",
 		},
+		{
+			name:     "explicit spanner survives a plain PostgreSQL banner",
+			declared: "spanner",
+			version:  "PostgreSQL 14.1",
+			expected: "spanner",
+		},
+		{
+			name:     "explicit yugabyte survives a PostgreSQL engine banner",
+			declared: "yugabytedb",
+			version:  "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
+			expected: "yugabytedb",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(detectPostgresWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
+		})
+	}
+}
+
+// TestWireDialectDetectionAgreesWithTheCapabilityResolver holds the two readers
+// of a SELECT version() banner to one answer.
+//
+// getDatabaseInfo asks detect*WireDialect which product it is connected to, and
+// then hands that dialect plus the same banner to
+// capability.ResolveServerVersion, which asks the same question again to pick
+// the preset the connection will plan with. When the two disagree, the second
+// answer silently wins and the connection is planned as a server it is not:
+// measured, "cockroachdb" plus "PostgreSQL-compatible server 25.4" resolved to
+// PostgreSQL capabilities, and "spanner" plus "PostgreSQL 14.1" replaced
+// SpannerPostgres with Postgres14 across 19 keys — materialized_views,
+// functions and triggers among them. Nothing in the suite noticed, because each
+// reader had its own table and each table was tested alone.
+//
+// This asserts the fixed point rather than either table: whatever dialect the
+// detection settles on, the resolver handed that dialect must answer from it.
+func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
+	tests := []struct {
+		name     string
+		detect   func(declared, version string) string
+		declared string
+		version  string
+	}{
+		{
+			name:     "postgres wire, plain PostgreSQL banner",
+			detect:   detectPostgresWireDialect,
+			declared: "postgres",
+			version:  "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)",
+		},
+		{
+			name:     "postgres wire, CockroachDB banner on a postgres URL",
+			detect:   detectPostgresWireDialect,
+			declared: "postgres",
+			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
+		},
+		{
+			name:     "postgres wire, YugabyteDB banner on a postgres URL",
+			detect:   detectPostgresWireDialect,
+			declared: "postgres",
+			version:  "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang, YugabyteDB",
+		},
+		{
+			name:     "postgres wire, Spanner banner on a postgres URL",
+			detect:   detectPostgresWireDialect,
+			declared: "postgres",
+			version:  "Cloud Spanner PostgreSQL interface",
+		},
+		{
+			name:     "postgres wire, explicit cockroachdb with a generic banner",
+			detect:   detectPostgresWireDialect,
+			declared: "cockroachdb",
+			version:  "PostgreSQL-compatible server 25.4",
+		},
+		{
+			name:     "postgres wire, explicit cockroachdb with an unversioned generic banner",
+			detect:   detectPostgresWireDialect,
+			declared: "cockroachdb",
+			version:  "PostgreSQL-compatible server",
+		},
+		{
+			name:     "postgres wire, explicit cockroachdb with its own banner",
+			detect:   detectPostgresWireDialect,
+			declared: "cockroachdb",
+			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
+		},
+		{
+			name:     "postgres wire, explicit yugabytedb with a PostgreSQL engine banner",
+			detect:   detectPostgresWireDialect,
+			declared: "yugabytedb",
+			version:  "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
+		},
+		{
+			name:     "postgres wire, explicit yugabytedb with its own banner",
+			detect:   detectPostgresWireDialect,
+			declared: "yugabytedb",
+			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+		},
+		{
+			name:     "postgres wire, explicit spanner with a plain PostgreSQL banner",
+			detect:   detectPostgresWireDialect,
+			declared: "spanner",
+			version:  "PostgreSQL 14.1",
+		},
+		{
+			name:     "postgres wire, explicit spanner with its own banner",
+			detect:   detectPostgresWireDialect,
+			declared: "spanner",
+			version:  "Cloud Spanner PostgreSQL interface",
+		},
+		{
+			name:     "mysql wire, MySQL banner",
+			detect:   detectMySQLWireDialect,
+			declared: "mysql",
+			version:  "9.7.1",
+		},
+		{
+			name:     "mysql wire, MariaDB banner on a mysql URL",
+			detect:   detectMySQLWireDialect,
+			declared: "mysql",
+			version:  "10.11.15-MariaDB-ubu2204",
+		},
+		{
+			name:     "mysql wire, the replication prefix on a mysql URL",
+			detect:   detectMySQLWireDialect,
+			declared: "mysql",
+			version:  "5.5.5-10.11.15-MariaDB-ubu2204",
+		},
+		{
+			name:     "mysql wire, explicit mariadb with a generic banner",
+			detect:   detectMySQLWireDialect,
+			declared: "mariadb",
+			version:  "MySQL-compatible server 8.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			detected := tt.detect(tt.declared, tt.version)
+			resolution := capability.ResolveServerVersion(detected, tt.version)
+
+			c.Assert(detected, qt.Not(qt.Equals), "")
+			c.Assert(resolution.ResolvedDialect, qt.Equals, detected)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, capability.ForServerVersion(detected, tt.version))
 		})
 	}
 }

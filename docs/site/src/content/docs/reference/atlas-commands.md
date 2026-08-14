@@ -432,8 +432,12 @@ target. A known retired baseline stays before versioned migrations regardless
 of its token. A known retired versioned row uses numeric component order
 against a versioned target, but uses Flyway's raw-token squash cut against a
 surviving baseline target: for example, B2 keeps retired V10 because `"10"`
-sorts before `"2"`. A single repeatable target follows retired versioned
-history even though its exact identity is empty. This is deliberately safer
+sorts before `"2"`. The same raw-token order applies when both migrations are
+known baselines: selecting B3 keeps retired B2, while selecting B10 removes
+retired B20.
+
+A single repeatable target follows retired versioned history even
+though its exact identity is empty. This is deliberately safer
 than Atlas CE v1.3.0: CE exits `0` but deletes the retired versioned row,
 while Ptah exits `0` and keeps both revision identities. Rows that do not
 distinguish those roles, including ordinary Atlas CE applied rows, refuse
@@ -1218,7 +1222,7 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 | MySQL, MariaDB | Foreign keys, tables, views, stored functions and procedures, events, and MariaDB sequences. |
 | SQLite | Tables and views. |
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
-| ClickHouse | Base tables. Views are not dropped, so they are not reported. |
+| ClickHouse | Base tables, views, and materialized views. A materialized view is removed with `DROP VIEW`, which takes its inner storage table with it; live views and window views are neither read nor dropped. |
 
 Ptah's own migration revision table is included in that accounting. On
 PostgreSQL, MySQL, MariaDB and SQL Server the cleanup destroys it like any other

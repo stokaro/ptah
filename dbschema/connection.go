@@ -946,22 +946,34 @@ SELECT
 	return info, nil
 }
 
+// detectPostgresWireDialect names the product behind a PostgreSQL-wire
+// connection from its own SELECT version() banner.
+//
+// The product tokens come from capability.BannerPlatform rather than a second
+// copy of the same substrings, because this function and
+// capability.ResolveServerVersion must not disagree about which server a
+// banner describes: this one picks the dialect, that one picks the preset the
+// dialect is planned with, and they are handed the same string.
+// TestWireDialectDetectionAgreesWithTheCapabilityResolver holds them together.
+//
+// A banner naming only PostgreSQL is not a product answer here. CockroachDB,
+// YugabyteDB and Spanner all speak this protocol and a deployment of any of
+// them may report a banner carrying no token of its own, so the dialect the
+// operator connected with survives — it is the only evidence left.
 func detectPostgresWireDialect(declaredDialect, version string) string {
-	versionLower := strings.ToLower(version)
-	switch {
-	case strings.Contains(versionLower, "cockroachdb"):
-		return platform.CockroachDB
-	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
-		return platform.YugabyteDB
-	case strings.Contains(versionLower, "spanner"):
-		return platform.Spanner
+	switch banner := capability.BannerPlatform(version); banner {
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return banner
 	default:
 		return platform.NormalizeDialect(declaredDialect)
 	}
 }
 
+// detectMySQLWireDialect is detectPostgresWireDialect's MySQL-wire twin, and
+// reads the same table for the same reason. MariaDB is the one product that
+// announces itself over this protocol.
 func detectMySQLWireDialect(declaredDialect, version string) string {
-	if strings.Contains(strings.ToLower(version), "mariadb") {
+	if capability.BannerPlatform(version) == platform.MariaDB {
 		return platform.MariaDB
 	}
 	return platform.NormalizeDialect(declaredDialect)

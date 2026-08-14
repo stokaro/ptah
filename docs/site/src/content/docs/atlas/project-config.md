@@ -327,6 +327,18 @@ names its own rule rather than blaming the `path` key, which is supported:
 does not have — Atlas's `vars`, for one — is a different failure and keeps the
 construct wording: `unsupported atlas.hcl construct "vars"`.
 
+A `null` reaching a name Ptah acts on is refused, and the refusal names the type
+the setting wants. With `variable "s" { type = string, default = null }`, both
+`dev = null` and `dev = var.s` produce
+`atlas.hcl "dev" at atlas.hcl:8 must be a string`; the declared type of the
+variable makes no difference, and the `bool`, `number` and `list(string)`
+settings behave the same way. This is stricter than the community binary, which
+reads a null as an unset field and exits 0. It is the same standing divergence
+as the label-arity and duplicate refusals, and it can only reject a file that
+binary reads, never accept one it rejects. Names Ptah merely reports as ignored
+are the other case and do accept `null` — see
+[Settings Ptah does not act on are still type-checked](#settings-ptah-does-not-act-on-are-still-type-checked).
+
 ## External schema data source
 
 `data "external_schema"` declares a program whose standard output is the
@@ -550,18 +562,28 @@ block name" nor scope-independent:
 | `diff` and `env.diff` | `skip` | `concurrent_index` |
 | `lint` and `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
 | `env.format` | `migrate`, `schema` | — |
+| `env.migration` | `repo` | `skip_report` |
 | `env.schema` | `repo` | `mode` |
+| `test` and `env.test` | `migrate`, `schema` | everything else |
 
 `diff` and `lint` are the two blocks that may sit at the top level as well as
 inside `env`, and their nested names behave the same in both places: top-level
 `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are refused, the
 same as their `env` spellings.
 
-The `format` and `schema` rows stay `env`-only, and that is measured rather than
-assumed. A top-level `format` or `schema` block is not decoded into those
-structures by the community binary, so top-level `format { schema = { k = "v" } }`
-and `schema { repo = { k = "v" } }` both exit 0 — Ptah drops the whole block with
-an ignored-block warning and exits 0 too.
+The `format`, `migration` and `schema` rows stay `env`-only, and that is measured
+rather than assumed. A top-level `format`, `migration` or `schema` block is not
+decoded into those structures by the community binary, so top-level
+`format { schema = { k = "v" } }`, `migration { repo = { k = "v" } }` and
+`schema { repo = { k = "v" } }` all exit 0 — Ptah drops the whole block with an
+ignored-block warning and exits 0 too.
+
+The `test` row is the one that applies inside a block with no effect at all.
+Neither binary implements `test`: it is dropped whole and reported as ignored.
+The community binary still runs its object decoder on `migrate` and `schema`
+within it, so `test { schema = { q = "v" } }` fails on both while
+`test { schema = {} }` and `test { schema "s" { src = ["file://t.hcl"] } }` do
+not.
 
 Writing any of these as a block is unaffected.
 
@@ -572,10 +594,102 @@ command run with `--env dev`, because Atlas CE does not decode an unselected
 environment either. The value is read after `var`, `local` and `data` are
 available, so `lint = local.nothing` resolves normally.
 
+### Settings Ptah does not act on are still type-checked
+
+A handful of names are decoded by Atlas CE into a plain string, bool or
+string-list field that Ptah has no equivalent for. Ptah accepts the name and
+reports it as having no effect, but the **value** still has to be the kind the
+community binary requires, because that binary refuses a wrong-typed value
+before any command runs:
+
+```text
+Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
+```
+
+| Scope | Name | Required value |
+| --- | --- | --- |
+| `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
+| `lint` and `env.lint` | `review` | a string |
+| `env.migration` | `baseline` | a string |
+| `env` | `include` | a list of strings |
+| `env.migration` | `exclude` | a list of strings |
+| top level | `env` written as an attribute | a block; only `null` is accepted as a value |
+
+`null` is accepted for every one of them, as it is on the community binary.
+`drop_schema` and `drop_table` are absent from the table because Ptah acts on
+them, so they are ordinary supported names rather than ignored ones.
+
+This is a value rule too, with the same selection boundary and the same reading
+order as the block rule above, so `drop_column = var.flag` resolves normally.
+
+A list-valued name takes a tuple, a list or a set of strings, so
+`include = toset(["a", "b"])` is accepted. A null *element* inside one is not,
+which is the one place `null` stops being accepted here — the community binary
+answers `null value is not allowed` for `["public.t1", null]`, and it makes no
+difference whether the list was written literally or came from a
+`variable "tables" { type = list(string) }`. One bare string is not a
+one-element list, and an object is refused even when it is empty —
+`include = {}` fails where `repo = {}` succeeds. That empty object is the shape that separates a
+list-valued name from a struct-valued one, and the top-level `env` row takes it
+one step further: Atlas CE fills that field from `env` blocks and decodes no
+value spelling for it at all, so `env = {}` is refused as well. The `env` block
+spelling is untouched.
+
+`env.migration.baseline` is type-checked and still not acted on: `migrate apply`
+reads `--baseline` before project config is merged, so the `atlas.hcl` spelling
+has no effect yet and is reported as having none. `env.include` and
+`env.migration.exclude` are type-checked and not acted on for the same reason —
+neither has a Ptah setting behind it, and `env.exclude` is the separate,
+supported name.
+
+The scope matters throughout — a `baseline` written at `env` level, inside
+`lint`, or in a top-level `migration` block is not decoded by the community
+binary, and neither is an `include` outside `env` or an `exclude` outside
+`env.migration`, so any value is accepted in those places.
+
+The membership is measured name by name and is not "every change kind":
+`add_view`, `drop_func`, `modify_trigger`, `add_type`, `drop_sequence`,
+`add_check`, `drop_role`, `add_policy`, `add_extension` and `drop_domain` are
+among the names the community binary does not decode inside `skip`, so any value
+is accepted for them.
+
+### An unknown block is tolerated where an unknown attribute is
+
+A body that tolerates a name it does not implement tolerates it in either
+spelling. `diff`, `env.diff`, `lint`, `env.lint`, `env.format.migrate` and
+`env.format.schema` accept an unknown attribute **and** an unknown nested block,
+so a format extension such as `format { migrate { custom { } } }` is accepted
+and reported as having no effect rather than refused, exactly as the community
+binary reads it.
+
+The bodies that refuse a nested block are the leaves, and they are the whole
+list:
+
+| Scope | Leaf bodies that refuse a nested block |
+| --- | --- |
+| `diff` and `env.diff` | `concurrent_index`, `skip` |
+| `lint` and `env.lint` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `git`, `incompatible`, `nestedtx` |
+| `env.schema` | `mode`, `repo` |
+| `env.migration` | `repo` |
+
+```text
+Error: unsupported atlas.hcl construct "anything" at atlas.hcl:5
+```
+
+All 21 scope-and-leaf pairs were measured one at a time and the community binary
+exits 0 on every one of them, so this is a known remaining divergence in the
+loud direction — the same standing policy as the label-arity and duplicate
+refusals. It never accepts a project file that binary rejects.
+
 Structural validation covers every `env` block, including environments that
-are not selected for the current command. An unsupported attribute, nested
-block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks, including ignored attributes and
+are not selected for the current command. A structurally unsupported construct
+therefore fails even when it appears in another environment: a data-source
+field, a label on a supported block that takes none, a duplicate supported
+block, or a nested block inside one of the leaf bodies above. An unknown
+attribute and an unknown nested block in a tolerant body are not in that
+category and are accepted in a selected and an unselected environment alike.
+
+Expressions inside `env` blocks, including ignored attributes and
 block bodies, are evaluated only in the selected environment. An unselected
 environment may therefore refer to variables, files, or environment values
 unavailable in the current invocation. Global `variable`, `locals`, and `data`

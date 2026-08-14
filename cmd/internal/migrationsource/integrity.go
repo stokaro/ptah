@@ -44,18 +44,26 @@ type VerifyOptions struct {
 // confirmation. runtime records the same warning as structured output, so a run
 // whose provenance was qualified is visible to a log collector and not only to
 // whoever was watching the terminal.
+//
+// policy is the escape-hatch decision the calling command already resolved at
+// its own boundary, and it is a parameter rather than a [VerifyOptions] field
+// on purpose: the zero Policy is the strict side, so a caller who forgot to
+// fill a field would silently lose [migrationintegrity.AllowUnverifiedEnvVar]
+// instead of failing to compile.
 func Verify(
 	notice io.Writer,
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
 	source Source,
 	format migrator.MigrationDirFormat,
+	policy migrationintegrity.Policy,
 	opts VerifyOptions,
 ) error {
-	verifiedSumFile, err := migrationintegrity.GateWith(
+	verifiedSumFile, err := migrationintegrity.GateWithPolicy(
 		notice,
 		source.FileSystem,
 		format,
+		policy,
 		migrationintegrity.Options{RequireSum: opts.RequireSum},
 	)
 	if err != nil {

@@ -741,7 +741,7 @@ func atlasApplyVersionKeyAt(versions []int64, keys []string, index int) string {
 
 func atlasApplyCurrentVersionLabel(status *migrator.MigrationStatus) string {
 	if status.CurrentVersionKeySet {
-		return status.CurrentVersionKey
+		return atlasExactIdentityLabel(status.CurrentVersionKey)
 	}
 	return strconv.FormatInt(status.CurrentVersion, 10)
 }

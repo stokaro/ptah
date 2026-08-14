@@ -9,11 +9,11 @@
 //     opt-in); for the migration paths Ptah currently exercises every
 //     statement is executed standalone. BeginTransaction / Commit / Rollback
 //     are therefore no-ops that record the dry-run state.
-//   - DropAllTables iterates `system.tables` and emits `DROP TABLE … SYNC`
-//     for each. SYNC forces a synchronous drop so the table is actually
-//     gone by the time the call returns — without it, subsequent CREATE
-//     TABLE statements can fail with "Table exists" until the async drop
-//     completes.
+//   - DropAllTables iterates `system.tables` and emits `DROP VIEW … SYNC` for
+//     each view and materialized view, then `DROP TABLE … SYNC` for each base
+//     table. SYNC forces a synchronous drop so the object is actually gone by
+//     the time the call returns — without it, subsequent CREATE statements can
+//     fail with "Table exists" until the async drop completes.
 package clickhouse
 
 import (

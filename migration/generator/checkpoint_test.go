@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -14,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -47,6 +49,40 @@ func TestGenerateCheckpointFromShadow_ReplaysHistoryIntoCumulativeSnapshot(t *te
 	c.Assert(up, qt.Contains, "email")
 	c.Assert(down, qt.Contains, "DROP TABLE")
 	c.Assert(down, qt.Contains, "users")
+}
+
+func TestGenerateCheckpointFromShadow_UsesProvidedSnapshotInsteadOfPath(t *testing.T) {
+	c := qt.New(t)
+	reopenedDir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.up.sql"),
+		[]byte("CREATE TABLE changed_after_verification (id INTEGER PRIMARY KEY);"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.down.sql"),
+		[]byte("DROP TABLE changed_after_verification;"),
+		0o600,
+	), qt.IsNil)
+	authorized := fstest.MapFS{
+		"0000000001_authorized.up.sql": {Data: []byte(
+			"CREATE TABLE authorized_snapshot (id INTEGER PRIMARY KEY);",
+		)},
+		"0000000001_authorized.down.sql": {Data: []byte(
+			"DROP TABLE authorized_snapshot;",
+		)},
+	}
+
+	up, _, err := generator.GenerateCheckpointFromShadow(t.Context(), generator.CheckpointFromShadowOptions{
+		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
+		MigrationsDir:     reopenedDir,
+		MigrationsFS:      authorized,
+		Dialect:           "sqlite",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, "authorized_snapshot")
+	c.Assert(up, qt.Not(qt.Contains), "changed_after_verification")
 }
 
 func TestGenerateCheckpointFromShadow_EmptyDirectoryErrors(t *testing.T) {
@@ -92,6 +128,37 @@ func TestWriteCheckpointFiles(t *testing.T) {
 	// Writing the same version again refuses rather than overwriting.
 	_, _, err = generator.WriteCheckpointFiles(dir, 2, "snapshot", "x", "y")
 	c.Assert(err, qt.ErrorMatches, `checkpoint files for version 2 already exist`)
+}
+
+func TestWriteCheckpointFilesWithOptions_RefusesChangedAuthorizedHistory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	prior := filepath.Join(dir, "0000000001_init.up.sql")
+	c.Assert(os.WriteFile(prior, []byte("CREATE TABLE original (id INT);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "0000000001_init.down.sql"),
+		[]byte("DROP TABLE original;\n"),
+		0o600,
+	), qt.IsNil)
+	authorized, err := migrationsnapshot.CaptureDirectory(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(prior, []byte("CREATE TABLE tampered (id INT);\n"), 0o600), qt.IsNil)
+
+	_, _, err = generator.WriteCheckpointFilesWithOptions(
+		dir,
+		2,
+		"snapshot",
+		"CREATE TABLE original (id INT);\n",
+		"DROP TABLE original;\n",
+		generator.CheckpointWriteOptions{AuthorizedMigrationsFS: authorized},
+	)
+
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
+	matches, globErr := filepath.Glob(filepath.Join(dir, "*.checkpoint.*.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
+	_, statErr := os.Stat(filepath.Join(dir, "ptah.sum"))
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 func checkpointSampleSchema() *goschema.Database {

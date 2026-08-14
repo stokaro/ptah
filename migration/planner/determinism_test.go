@@ -116,19 +116,36 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 		for _, scenario := range scenarios {
 			t.Run(dialect+"/"+scenario.name, func(t *testing.T) {
 				c := qt.New(t)
+				dialectGen, dialectDB := determinismInputsForDialect(gen, scenario.db, dialect)
 
-				first, err := planner.GenerateSchemaDiffSQL(schemadiff.CompareWithDialect(gen, scenario.db, dialect), gen, dialect)
+				first, err := planner.GenerateSchemaDiffSQL(
+					schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialectGen, dialect)
 				c.Assert(err, qt.IsNil)
 				c.Assert(first, qt.Not(qt.Equals), "")
 
 				for i := range 100 {
-					sql, err := planner.GenerateSchemaDiffSQL(schemadiff.CompareWithDialect(gen, scenario.db, dialect), gen, dialect)
+					sql, err := planner.GenerateSchemaDiffSQL(
+						schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialectGen, dialect)
 					c.Assert(err, qt.IsNil)
 					c.Assert(sql, qt.Equals, first, qt.Commentf("iteration %d produced different SQL", i))
 				}
 			})
 		}
 	}
+}
+
+func determinismInputsForDialect(generated *goschema.Database, database *dbtypes.DBSchema, dialect string) (*goschema.Database, *dbtypes.DBSchema) {
+	if dialect != "mysql" && dialect != "mariadb" {
+		return generated, database
+	}
+	// MySQL-family roles have their own deterministic fail-closed control. Keep
+	// them out of this fixture so it continues to measure the unrelated table,
+	// constraint and RLS ordering paths after the role refusal.
+	generatedClone := *generated
+	generatedClone.Roles = nil
+	databaseClone := *database
+	databaseClone.Roles = nil
+	return &generatedClone, &databaseClone
 }
 
 // TestGenerateSchemaDiffSQL_DriftedFixtureCoverage pins that the drifted

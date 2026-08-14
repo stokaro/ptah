@@ -465,6 +465,84 @@ func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
 	}
 }
 
+func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
+	oracle := requireAtlasOracle(t)
+	c := qt.New(t)
+	compat := buildCompatBinary(c)
+	tests := []struct {
+		name        string
+		retiredFile migrationFile
+		targetFile  migrationFile
+		target      string
+		wantStdout  string
+		wantRows    []revisionRow
+	}{
+		{
+			name: "retired B2 remains below target B3",
+			retiredFile: migrationFile{
+				name: "B2__two.sql",
+				body: "CREATE TABLE retired_baseline (id INTEGER PRIMARY KEY);\n",
+			},
+			targetFile: migrationFile{
+				name: "B3__three.sql",
+				body: "CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n",
+			},
+			target:     "3",
+			wantStdout: "Current version is 3 (1 set):\n\n  + 3 (three)\n\n",
+			wantRows: []revisionRow{
+				{Version: "2", Description: "two"},
+				{Version: "3", Description: "three"},
+			},
+		},
+		{
+			name: "retired B20 is removed above target B10",
+			retiredFile: migrationFile{
+				name: "B20__twenty.sql",
+				body: "CREATE TABLE retired_baseline (id INTEGER PRIMARY KEY);\n",
+			},
+			targetFile: migrationFile{
+				name: "B10__ten.sql",
+				body: "CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n",
+			},
+			target: "10",
+			wantStdout: "Current version is 10 (1 set, 1 removed):\n\n" +
+				"  + 10 (ten)\n  - 20 (twenty)\n\n",
+			wantRows: []revisionRow{{Version: "10", Description: "ten"}},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			for _, binary := range []string{oracle, compat} {
+				dir := writeHashedFlywayDir(c, oracle, []migrationFile{test.retiredFile})
+				dbPath := filepath.Join(c.TempDir(), "baseline-rotation.db")
+				assertSQLiteApplyIdentity(c, binary, dir, dbPath, []revisionRow{{
+					Version:     strings.TrimPrefix(strings.SplitN(test.retiredFile.name, "__", 2)[0], "B"),
+					Description: strings.TrimSuffix(strings.SplitN(test.retiredFile.name, "__", 2)[1], ".sql"),
+				}})
+				c.Assert(os.Remove(filepath.Join(dir, test.retiredFile.name)), qt.IsNil)
+				c.Assert(os.WriteFile(
+					filepath.Join(dir, test.targetFile.name),
+					[]byte(test.targetFile.body),
+					0o600,
+				), qt.IsNil)
+				hash := runCommand(c, oracle, "migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
+				c.Assert(hash.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", hash.stdout, hash.stderr))
+
+				result := runCommand(c, binary,
+					"migrate", "set", test.target,
+					"--dir", "file://"+dir+"?format=flyway",
+					"--url", "sqlite://"+dbPath,
+				)
+				c.Assert(result.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
+				c.Assert(result.stdout, qt.Equals, test.wantStdout)
+				c.Assert(result.stderr, qt.Equals, "")
+				c.Assert(readSQLiteRevisionRows(c, dbPath), qt.ContentEquals, test.wantRows)
+			}
+		})
+	}
+}
+
 func TestFlywayMigrateSetEmptyIdentityNamesTokenExplicitly(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)

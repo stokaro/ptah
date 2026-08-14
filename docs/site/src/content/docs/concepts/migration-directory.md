@@ -136,7 +136,7 @@ its publication attempt returns, so the plan is a claim on a filesystem object
 rather than on a pathname. Publication refuses a directory that is no longer
 the object the plan holds — a substitute that holds exactly the files the plan
 verified, and a directory removed and recreated at the same pathname, are both
-refused. The refusal is `migration directory changed after migration planning`,
+refused. The refusal is `migration directory changed before publication`,
 and nothing is written
 ([#1118](https://github.com/stokaro/ptah/issues/1118)).
 

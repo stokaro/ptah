@@ -49,12 +49,11 @@ appears in place of the DDL, identically in `ptah schema render` and in the plan
 materialized view presupposes a view and `create_or_replace_trigger`
 presupposes `triggers`, so those two requirement edges are validated.
 
-`sequences`, `role_management`, and `row_level_security` answer the same
-question and answer it the same way. They used to fail the render instead, and
-an error is not something a plan can carry, so the migration planner dropped
-roles, grants, and row-level security from the plan before they reached a
-visitor, without saying so. Refused objects now use the same named-skip shape
-as views, materialized views, functions, and triggers.
+`sequences`, `role_management`, and `row_level_security` use the same named
+skip when a PostgreSQL-family preset disables them. They used to fail the
+render instead, and an error is not something a plan can carry, so the
+migration planner dropped roles, grants, and row-level security from the plan
+before they reached a visitor, without saying so.
 
 For the PostgreSQL family, that refusal path currently applies to Spanner. A
 role, grant, sequence, row-level security enablement, or policy is written as a
@@ -64,10 +63,16 @@ live servers and accept those three categories, so their presets enable them.
 CockroachDB's two measured resolver arms differ where the 25.4 server refuses
 generic and guarded `DROP CONSTRAINT` and `CREATE OR REPLACE TRIGGER`.
 
-A refused object is reported again every time the plan is rebuilt, rather than
-reported once and then called synced. The skip comment is not a change a
-database can absorb. Printed plans keep the diagnostic; the apply execution
-path drops comment-only statements before target or dev-database execution.
+MySQL and MariaDB roles do not take that skip path. Complete-schema validation
+and rendering fail before SQL because Ptah cannot read or converge their role
+state, so a comment-only success would lose an authored security declaration.
+Role-free schemas still validate normally.
+
+A safely skipped object is reported again every time the plan is rebuilt,
+rather than reported once and then called synced. The skip comment is not a
+change a database can absorb. Printed plans keep the diagnostic; the apply
+execution path drops comment-only statements before target or dev-database
+execution.
 
 Exactly one referenced-key policy is enabled for every foreign-key-capable
 preset. PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server, and MySQL 8.4+

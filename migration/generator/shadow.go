@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"regexp"
@@ -153,6 +154,7 @@ type shadowMigrationOptions struct {
 	DatabaseURL         string
 	TargetConnection    *dbschema.DatabaseConnection
 	MigrationsDir       string
+	MigrationsFS        fs.FS
 	Dialect             string
 	Capabilities        capability.Capabilities
 	IdentifierSemantics identifier.Semantics
@@ -213,7 +215,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
-	prior, err := loadPriorMigrations(opts.MigrationsDir)
+	prior, err := loadPriorMigrationsFS(opts.MigrationsFS, opts.MigrationsDir)
 	if err != nil {
 		return newShadowVerificationError("load-prior", "load_prior_error", "load prior migrations", err)
 	}
@@ -291,7 +293,18 @@ func loadPriorMigrations(dir string, opts ...migrator.FSProviderOption) ([]*migr
 		return nil, err
 	}
 
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(dir), opts...)
+	return loadPriorMigrationsFS(os.DirFS(dir), dir, opts...)
+}
+
+func loadPriorMigrationsFS(
+	fsys fs.FS,
+	displayDir string,
+	opts ...migrator.FSProviderOption,
+) ([]*migrator.Migration, error) {
+	if fsys == nil {
+		return loadPriorMigrations(displayDir, opts...)
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -112,6 +112,22 @@ the checkpoint and a tampered checkpoint fails `ptah migrations validate`. That
 is `ptah.sum` for the Ptah convention and `atlas.sum` for `--dir-format atlas`.
 Commit the checkpoint files and the updated sum together.
 
+The command captures the directory once before the shadow replay, verifies that
+snapshot, and executes the same bytes. The rooted checkpoint writer compares
+the directory it holds with the authorized snapshot before it creates the
+checkpoint, then compares the expected snapshot-plus-checkpoint before it
+publishes the sum. The sum is computed from that expected state. If prior
+history changed during the run, the write is refused so a new checksum cannot
+launder unverified bytes.
+
+With `--edit`, the command binds the migration directory before opening the
+editor. After the editor exits, it accepts changed bytes only in the checkpoint
+files created by this run. Every preexisting migration and metadata file must still
+match the snapshot that produced the checkpoint; otherwise the command refuses
+instead of refreshing the checksum over unrelated concurrent changes. The
+edited checkpoint bytes and the replacement checksum are read and published
+through that same bound directory.
+
 A directory must carry only one integrity file. Checkpointing a `ptah.sum`
 directory under `--dir-format atlas` (or an `atlas.sum` directory under
 `--dir-format ptah`) would leave both behind, which `--dir-format auto` refuses

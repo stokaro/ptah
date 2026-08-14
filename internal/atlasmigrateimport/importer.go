@@ -1158,8 +1158,8 @@ func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
 // role is part of that relationship: a retired baseline precedes a versioned
 // target even when its numeric token is larger, while versioned history a
 // selected baseline squashes remains before that baseline by the raw-token cut
-// Flyway uses for files reached after a baseline. Two versioned migrations use
-// component order instead.
+// Flyway uses for files reached after a baseline. The same cut orders two known
+// baselines. Two versioned migrations use component order instead.
 //
 // A repeatable target follows both. Atlas CE rows do not always preserve the
 // retired role, so missing role evidence returns false instead of reconstructing
@@ -1185,7 +1185,8 @@ func CompareFlywayRevisionOrder(
 		return -1, true
 	}
 	if rightRole == flywayRevisionOrderBaseline {
-		if leftRole != flywayRevisionOrderVersioned {
+		if leftRole != flywayRevisionOrderVersioned &&
+			leftRole != flywayRevisionOrderBaseline {
 			return 0, false
 		}
 		return strings.Compare(left.RevisionVersion, right.RevisionVersion), true

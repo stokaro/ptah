@@ -135,6 +135,10 @@ type runOptions struct {
 }
 
 func runLint(cmd *cobra.Command, opts runOptions) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	if err := migrationlintreport.ValidateFormat(opts.format); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
@@ -169,10 +173,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	// never ran here. Tolerating a MISSING integrity file is the part that is
 	// deliberate on both surfaces: linting a directory nobody has hashed is how
 	// you inspect one before adopting it, and the gate keeps that.
-	if _, err := migrationintegrity.Gate(
+	if _, err := migrationintegrity.GateWithPolicy(
 		cmd.ErrOrStderr(),
 		reportOpts.FS,
 		migrator.MigrationDirFormat(reportOpts.DirFormat),
+		integrityPolicy,
+		migrationintegrity.Options{},
 	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}

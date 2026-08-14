@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -114,6 +115,31 @@ func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.DeepEquals, []string{concurrentMigration})
+}
+
+func TestMigrationPlanWriteFiles_RejectsHistoryChangedBeforePlanning(t *testing.T) {
+	c := qt.New(t)
+	outputDir := c.TempDir()
+	migrationPath := filepath.Join(outputDir, "0000000001_seed.up.sql")
+	c.Assert(os.WriteFile(migrationPath, []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+	authorized, err := migrationsnapshot.CaptureDirectory(outputDir)
+	c.Assert(err, qt.IsNil)
+	// This mutation lands before PlanMigration binds the directory, so the
+	// ordinary plan-vs-publication contents check sees only the changed bytes.
+	// The authorized snapshot is the additional boundary that must reject it.
+	c.Assert(os.WriteFile(migrationPath, []byte("SELECT 2;\n"), 0o600), qt.IsNil)
+	opts := newSQLiteMigrationOptions(c, outputDir)
+	opts.PriorMigrationsFS = authorized
+	plan, err := generator.PlanMigration(t.Context(), opts)
+	c.Assert(err, qt.IsNil)
+
+	files, err := plan.WriteFilesContext(t.Context())
+
+	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
+	c.Assert(files, qt.IsNil)
+	contents, err := os.ReadFile(migrationPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "SELECT 2;\n")
 }
 
 func TestMigrationPlanWriteFilesContext_RejectsConcurrentUse(t *testing.T) {

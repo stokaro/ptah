@@ -299,6 +299,39 @@ func TestSQLLint_VersionWithoutDialectStillReportsTheOlderError(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version value")
 }
 
+// TestSQLLint_RefusesABannerFromAnotherServer is the sibling of the same
+// refusal on `ptah schema render`.
+//
+// The defect is one contract with two spellings, so it is closed in
+// internal/servertarget rather than at either command: a version naming a
+// different product than --dialect resolved silently and the report attributed
+// the findings to the dialect the operator asked for. Measured before the
+// refusal existed, `--dialect mysql --version 10.11.6-MariaDB` linted against
+// MariaDB capabilities at exit 1 and said nothing about it.
+func TestSQLLint_RefusesABannerFromAnotherServer(t *testing.T) {
+	c := qt.New(t)
+
+	_, stderr, err := executeWithStdin(concurrentIndexSQL,
+		"lint", "--dialect", "mysql", "--version", "10.11.6-MariaDB", "--stdin")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, "invalid --version: ")
+	c.Assert(stderr, qt.Contains, `"10.11.6-MariaDB" names a mariadb server, but the target dialect is mysql`)
+}
+
+// TestSQLLint_AcceptsAMatchingBanner is the control for the test above: the
+// same banner on the dialect it names still lints.
+func TestSQLLint_AcceptsAMatchingBanner(t *testing.T) {
+	c := qt.New(t)
+
+	_, stderr, err := executeWithStdin(concurrentIndexSQL,
+		"lint", "--dialect", "mariadb", "--version", "10.11.6-MariaDB", "--stdin")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version")
+	c.Assert(stderr, qt.Contains, "CAP001")
+}
+
 const concurrentIndexSQL = "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"
 
 func writeSQLFile(c *qt.C, dir, name, statement string) string {

@@ -442,28 +442,71 @@ func viewNameForDiff(view types.DBView) string {
 // MaterializedViews compares materialized view definitions between generated
 // and database schemas.
 func MaterializedViews(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	generatedViews := make(map[string]goschema.MaterializedView)
+	MaterializedViewsWithDialect(generated, database, diff, "")
+}
+
+// MaterializedViewsWithDialect compares materialized-view definitions with
+// dialect-aware body normalization, matching identity the way
+// [ViewsWithDialect] does.
+//
+// The two kinds have to agree about what a name means. A declaration that names
+// its object without a schema is the ordinary spelling, and a catalog reports
+// every object with one, so matching only on the qualified form makes an
+// unchanged object BOTH added and removed. Measured through
+// MaterializedViewsWithSemantics with a ClickHouse read, a declaration of
+// "user_stats" against a database holding "ptah_test.user_stats":
+//
+//	MaterializedViewsAdded   = [user_stats]
+//	MaterializedViewsRemoved = [ptah_test.user_stats]
+//	MaterializedViewsModified = []
+//
+// The planner answers that with a CREATE before the removal, and ClickHouse
+// refuses it -- "Table ... already exists. (TABLE_ALREADY_EXISTS)" -- while the
+// plain view beside it, which has matched bare names against a uniquely-named
+// database view since #1276, reported nothing at all.
+func MaterializedViewsWithDialect(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
+	generatedViews := make(map[string]goschema.MaterializedView, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
 		view.Canonicalize()
 		generatedViews[view.Name] = view
 	}
 
-	databaseViews := make(map[string]types.DBMatView)
+	databaseViewsByName := make(map[string][]types.DBMatView, len(database.MatViews))
+	databaseViewsByQualifiedName := make(map[string]types.DBMatView, len(database.MatViews))
 	for _, view := range database.MatViews {
-		databaseViews[view.QualifiedName()] = view
+		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
+		databaseViewsByQualifiedName[view.QualifiedName()] = view
 	}
 
-	addedViews, removedViews := compareNamedItems(generatedViews, databaseViews)
-	diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, addedViews...)
-	diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, removedViews...)
-
+	matchedDatabaseViews := make(map[string]struct{}, len(database.MatViews))
 	for viewName, generatedView := range generatedViews {
-		if databaseView, exists := databaseViews[viewName]; exists {
-			viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
-			if len(viewDiff.Changes) > 0 {
-				diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
-			}
+		databaseView, exists := findDatabaseMatViewForGeneratedView(
+			generatedView,
+			databaseViewsByName,
+			databaseViewsByQualifiedName,
+		)
+		if !exists {
+			diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, viewName)
+			continue
 		}
+
+		matchedDatabaseViews[databaseView.QualifiedName()] = struct{}{}
+		viewDiff := MaterializedViewDefinitionsWithDialect(generatedView, databaseView, dialect)
+		if len(viewDiff.Changes) > 0 {
+			diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
+		}
+	}
+
+	for _, view := range database.MatViews {
+		if _, ok := matchedDatabaseViews[view.QualifiedName()]; ok {
+			continue
+		}
+		diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, view.QualifiedName())
 	}
 
 	sort.Strings(diff.MaterializedViewsAdded)
@@ -473,15 +516,52 @@ func MaterializedViews(generated *goschema.Database, database *types.DBSchema, d
 	})
 }
 
+// findDatabaseMatViewForGeneratedView is findDatabaseViewForGeneratedView for
+// the other view kind, and deliberately the same rule: a qualified declaration
+// matches only the object it names, and a bare one matches a database object of
+// that name only when exactly one schema has it. Two schemas holding the same
+// name leave the declaration unmatched rather than guessing between them.
+func findDatabaseMatViewForGeneratedView(
+	generatedView goschema.MaterializedView,
+	databaseViewsByName map[string][]types.DBMatView,
+	databaseViewsByQualifiedName map[string]types.DBMatView,
+) (types.DBMatView, bool) {
+	ref, ok := tableref.Parse(generatedView.Name)
+	if !ok {
+		return types.DBMatView{}, false
+	}
+	if ref.Qualified {
+		view, ok := databaseViewsByQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
+		return view, ok
+	}
+	candidates := databaseViewsByName[ref.Name]
+	if len(candidates) != 1 {
+		return types.DBMatView{}, false
+	}
+	return candidates[0], true
+}
+
 // MaterializedViewsWithSemantics compares materialized-view identities using
 // the same default-schema semantics as tables and ordinary views.
 func MaterializedViewsWithSemantics(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
-	semantics = semantics.Normalize("")
+	semantics = semantics.Normalize(dialect)
+	if semantics.DefaultSchema == "" {
+		// No default schema means no rule for which schema owns an unqualified
+		// name, so identity falls back to the name-matching the plain views use.
+		// ClickHouse is the dialect that reaches this: its connection reports the
+		// current database as the schema on every object it reads and leaves
+		// DefaultSchema empty, so a declaration written "user_stats" and a
+		// readback of "<database>.user_stats" are the same object.
+		MaterializedViewsWithDialect(generated, database, diff, dialect)
+		return
+	}
+
 	generatedViews := make(map[tableIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
 	generatedNames := make(map[tableIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
@@ -504,7 +584,7 @@ func MaterializedViewsWithSemantics(
 			diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, generatedNames[identity])
 			continue
 		}
-		viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
+		viewDiff := MaterializedViewDefinitionsWithDialect(generatedView, databaseView, dialect)
 		if len(viewDiff.Changes) > 0 {
 			diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
 		}
@@ -686,36 +766,84 @@ func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dial
 // MaterializedViewDefinitions performs detailed comparison between generated
 // and database materialized view definitions.
 func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types.DBMatView) difftypes.MaterializedViewDiff {
+	return MaterializedViewDefinitionsWithDialect(genView, dbView, "")
+}
+
+// MaterializedViewDefinitionsWithDialect performs detailed comparison between
+// generated and database materialized view definitions with dialect-aware
+// catalog readback normalization.
+//
+// The body normalization is the same one ordinary views get, and it is the same
+// one for the same reason: a server records the definition it resolved, not the
+// text the author wrote. Measured on PostgreSQL 18.4, `pg_get_viewdef` reports a
+// body authored as `FROM users` as `FROM analytics.users` for a materialized
+// view exactly as it does for a plain one; measured on ClickHouse 26.7.3.19,
+// `system.tables.as_select` reports the same body as `FROM mvqual.users`. Both
+// spellings mean the object the declaration named, so the schema the catalog
+// added is stripped before the two are compared. Without it a no-op comparison
+// reported a body change and the planner answered with a drop and a create,
+// which on ClickHouse destroys the accumulated rows of a view nobody changed.
+func MaterializedViewDefinitionsWithDialect(
+	genView goschema.MaterializedView,
+	dbView types.DBMatView,
+	dialect string,
+) difftypes.MaterializedViewDiff {
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, "", "") {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
 	return viewDiff
 }
 
+// schemaObjectBodiesEqual reports whether a declared view or materialized view
+// body and the one a catalog read back mean the same thing.
+//
+// The first comparison is the strict one. The second removes the qualifiers a
+// server adds on its own: the object's own schema in front of a relation, and
+// the table prefix MySQL puts in front of every column. It is refused outright
+// when the declaration itself qualifies a relation, because then the qualifier
+// is part of what was declared and a readback spelling it differently is a real
+// difference.
+//
+// "The declaration qualifies a relation" is asked of relation positions only.
+// A column prefix -- `u.id` for an alias, `users.id` for a table -- is not a
+// schema, and reading it as one made an unchanged declaration report drift.
 func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema string) bool {
-	if normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) == normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
+	generated := normalizeSQLBody(generatedBody, dialect)
+	if canonicalizeNormalizedSQLBody(generated, dialect) ==
+		normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
 		return true
 	}
 
-	if schemaQualifierPattern.MatchString(strings.ToLower(generatedBody)) {
+	if bodyQualifiesRelation(generated) {
 		return false
 	}
-	return normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) ==
-		normalizeSQLBodyStrippingQualifiers(databaseBody, dialect, databaseSchema)
+	return canonicalizeNormalizedSQLBody(generated, dialect) ==
+		normalizeSQLBodyStrippingQualifiers(
+			databaseBody,
+			dialect,
+			databaseSchema,
+			singlePartQualifierNames(generated),
+		)
 }
 
 func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {
 	return canonicalizeNormalizedSQLBody(normalizeSQLBody(body, dialect), dialect)
 }
 
-func normalizeSQLBodyStrippingQualifiers(body, dialect, schema string) string {
-	return canonicalizeNormalizedSQLBody(stripSQLQualifiers(normalizeSQLBody(body, dialect), schema), dialect)
+func normalizeSQLBodyStrippingQualifiers(
+	body, dialect, schema string,
+	authored map[string]struct{},
+) string {
+	return canonicalizeNormalizedSQLBody(
+		stripSQLQualifiers(normalizeSQLBody(body, dialect), schema, authored),
+		dialect,
+	)
 }
 
 func normalizeSQLBody(body, dialect string) string {
