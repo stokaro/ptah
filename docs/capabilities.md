@@ -189,7 +189,11 @@ artifact expires.
 `CockroachDB25()` and `CockroachDB26()` are the measured CockroachDB release
 arms. The 25.x arm disables generic and guarded `DROP CONSTRAINT` plus
 `CREATE OR REPLACE TRIGGER`; the 26.x arm supports them. `CockroachDB23()`
-remains the conservative historical arm. `YugabyteDB25()` is the current
+remains the conservative historical arm. Both spellings of a CockroachDB
+version reach that ladder: the banner `CockroachDB CCL v25.4.5` and the dotted
+`25.4.5` resolve identically. The dotted form used to fall through to
+`ForDialect("cockroachdb")` — the 26.x arm — and report itself as a dialect with
+no measured ladder. `YugabyteDB25()` is the current
 YugabyteDB distributed-SQL preset; `SpannerPostgres()` is deliberately
 conservative because Spanner's PostgreSQL interface is not a drop-in
 PostgreSQL server.
@@ -291,13 +295,92 @@ has no ladder to spend it on. `Recognized` is `false` only for the first.
 operator input reads this field alone and refuses. A caller holding a live
 banner should keep ignoring it.
 
-`ptah sql lint --version` is that caller. It refuses an unrecognized value with
-exit code `2` and never reports it as the version it linted against; a
-recognized value that did not select an exact measured release line is applied
-and announced, on stderr as a `warning:` line and in `--format json` as
-`version_note`. Silence is reserved for an exact measured-line match. This is
-criterion 6 of issue #916 for that command; the other `--version`-free surfaces
-still degrade silently by design.
+`ptah sql lint --version` and `ptah schema render --server-version` are those
+callers. Both refuse an unrecognized value with exit code `2` and never report
+it as the version they planned against; a recognized value that did not select
+an exact measured release line is applied and announced, on stderr as a
+`warning:` line and — on `sql lint --format json` — as `version_note`. Silence
+is reserved for an exact measured-line match. This is criterion 6 of issue #916
+for those commands; every surface that reads a live `SELECT version()` banner
+still degrades silently by design, because a server does not typo its own name.
+
+Both also refuse a version that names a **different server product** than the
+dialect it was supplied with. A live connection resolves that contradiction in
+favor of the string — MariaDB announces itself over the MySQL protocol and
+CockroachDB over the PostgreSQL one — and between two values a person typed it
+is a silent contradiction instead: `--dialect mysql --server-version
+10.11.6-MariaDB` rendered MySQL DDL against MariaDB capabilities at exit `0`
+where the same command without a version exited `2`. `capability.BannerPlatform`
+answers which product a string names, which is what makes the contradiction
+observable at all; `internal/servertarget` reads it and refuses. A banner naming
+the dialect it was given with still resolves.
+
+`BannerPlatform` is the only ordered table of product tokens in the tree —
+`ResolveServerVersion` dispatches on it and `dbschema`'s wire-dialect detection
+reads it, because a second copy is how a live connection and an offline
+resolution come to disagree about which server a banner describes. Within the
+PostgreSQL wire family the order is load-bearing: PostgreSQL is detected after
+CockroachDB, YugabyteDB and Spanner, because all three contain the word —
+CockroachDB speaks the PostgreSQL wire protocol, YugabyteDB reports
+`PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner PostgreSQL`. Checking
+PostgreSQL first would plan every one of those engines as PostgreSQL.
+
+A product belongs in the table when the **server's own version surface names
+it**, because that string is the only evidence the refusal can act on. Seven of
+the nine dialects qualify:
+
+| dialect | surface that names the product |
+| --- | --- |
+| `postgres` | `SELECT version()` — `PostgreSQL 16.3 (Debian …)` |
+| `mariadb` | `SELECT VERSION()` — `10.11.6-MariaDB-…`, including the `5.5.5-` replication prefix |
+| `cockroachdb` | `SELECT version()` — `CockroachDB CCL v25.4.5 …` |
+| `yugabytedb` | `SELECT version()` — `PostgreSQL 15.12-YB-…` |
+| `spanner` | `SELECT version()` — `Cloud Spanner PostgreSQL …` |
+| `sqlserver` | `@@VERSION` — `Microsoft SQL Server 2025 (RTM-CU7) … - 17.0.4065.4 …` |
+| `clickhouse` | `system.build_options` `VERSION_FULL` — `ClickHouse 26.7.3.19` |
+
+`mysql` and `sqlite` are deliberately absent. Measured, a live `mysql:9.7`
+answers `SELECT VERSION()` with `9.7.2`, and `sqlite_version()` answers a bare
+dotted version. Neither server names its own product anywhere a version string
+is read, so `BannerPlatform` correctly returns `""` for both. A token would have
+to come from a client banner instead, and the MySQL client's is shared with
+MariaDB's (`mysql  Ver 15.1 Distrib 10.11.6-MariaDB`), so it names no server.
+
+SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
+so a resolver that reads the first number out of it reads `2025`; before the
+token existed, `ptah schema render --dialect postgres --server-version '<that
+banner>'` exited `0` and announced that it had planned a PostgreSQL saturated
+past release line `18.x`. Neither SQL Server nor ClickHouse has a version
+ladder, so `ResolveServerVersion` answers those two banners from the product
+alone and never spends the number in them.
+
+A banner naming **only** PostgreSQL names the family and not the product, so it
+does not displace a declared dialect already in that family. CockroachDB,
+YugabyteDB and Spanner all speak this wire protocol, and a deployment of any of
+them may report a banner carrying no token of its own — Cloud Spanner's
+PostgreSQL interface answers `SELECT version()` with exactly `PostgreSQL 14.1`,
+measured live against the Cloud Spanner emulator behind PGAdapter 0.55.2.
+
+`dbschema.getDatabaseInfo` answers that case by keeping the dialect the operator
+connected with, and `ResolveServerVersion` keeps that dialect's preset for the
+same reason: claiming the banner there replaced `SpannerPostgres()` with a
+PostgreSQL line across 19 keys, among them `materialized_views`, `functions` and
+`triggers`, which exist to stop Ptah emitting DDL Spanner refuses. The two
+readers are held to one answer by
+`dbschema.TestWireDialectDetectionAgreesWithTheCapabilityResolver`.
+
+The offline flags are stricter than the live path here, deliberately: a
+PostgreSQL banner typed alongside `--dialect cockroachdb` is two values naming
+two servers with nothing to prefer between them, so `internal/servertarget`
+refuses it even though a live CockroachDB reporting the same banner keeps its
+own preset.
+
+The two spellings differ because `sql lint --version` predates the flag having
+a name. `cmd/internal/serverversion` registers both and marks them with one
+annotation, so `cmd/root`'s flag-surface walk can tell them from the two
+`--version` flags on the same command tree that mean something else entirely —
+`migrations checkpoint --version` names a checkpoint and `schema push
+--version` names an artifact tag.
 
 ### Composition
 
@@ -324,17 +407,43 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   `ysql`/`yugabytedb`, and `cloudspanner`/`spanner` normalize first). Used by
   `GetPlanner` and the renderers.
 - `capability.ResolveServerVersion("mysql", version)` — the full answer:
-  the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`, and
-  `Recognized`. Callers acting on a version string a person supplied must use
-  this and refuse `Recognized == false`; `ForServerVersion` throws that signal
-  away and cannot report it.
+  the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`,
+  `Recognized`, and `ResolvedDialect`. Callers acting on a version string a
+  person supplied must use this and refuse `Recognized == false`;
+  `ForServerVersion` throws that signal away and cannot report it. Do not key
+  the product-contradiction refusal on `ResolvedDialect`: it names the ladder
+  the preset came from, not the product the string names, and the two disagree
+  for exactly the case the commands refuse. Measured,
+  `ResolveServerVersion("cockroachdb", "PostgreSQL 16.3")` reports
+  `ResolvedDialect == "cockroachdb"` — correctly, because a live CockroachDB
+  may report that banner and must keep its own preset — while
+  `ptah schema render --dialect cockroachdb --server-version 'PostgreSQL 16.3'`
+  exits `2`. YugabyteDB and Spanner behave the same way. A caller comparing
+  `ResolvedDialect` therefore accepts input the commands reject.
+- `capability.BannerPlatform(version)` — which product a version string names,
+  or `""` when it names none. This is the question operator input raises:
+  compare it with `platform.NormalizeDialect(dialect)` and refuse when it is
+  non-empty and different from that. Both halves carry weight. The empty answer
+  is not a mismatch — `"8.0.42"` names a version and no product, and
+  `--dialect mysql --server-version 8.0.42` exits `0`. And the comparison is
+  against the normalized name, because no alias ever appears in the answer:
+  `BannerPlatform("CockroachDB CCL v25.4.0")` returns `cockroachdb`, which a
+  check against a raw `crdb` would refuse even though
+  `--dialect crdb --server-version 'CockroachDB CCL v25.4.0'` exits `0`.
+  `internal/servertarget.Resolve` is those two refusals, and it is what both
+  `ptah sql lint --version` and `ptah schema render --server-version` call.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix
   (MariaDB over the mysql driver resolves to the MariaDB preset), and
   `PostgreSQL 16.3 (…)`. PostgreSQL-wire banners containing `CockroachDB`,
   `YugabyteDB`/`Yugabyte`, or `Spanner` resolve to their distributed-SQL
-  presets. `dbschema.ConnectToDatabase` stores this resolved set in
+  presets, and a `Microsoft SQL Server …` or `ClickHouse …` banner resolves to
+  that product's default preset — neither has a version ladder, so the number
+  in the banner is never spent. Whenever the resolution reports
+  `Recognized == false`, the preset it carries is the default of the dialect
+  named by `ResolvedDialect`, never some other engine's.
+  `dbschema.ConnectToDatabase` stores this resolved set in
   `conn.Info().Capabilities`, and live migration generation passes that same
   set through planning, rendering, and safety assessment. Root MySQL 8.4+
   connections keep the conservative unique-key policy because a session value
@@ -351,6 +460,17 @@ Offline SQL generation has no server banner to inspect. Factories such as
 the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
 value or wants to pin a specific server version in tests/CI.
+
+`ptah schema render --server-version` is the command-line spelling of that pin,
+and the default it corrects is not a theoretical one. `ForDialect("mysql")`
+answers `MySQL84()`, which sets `foreign_keys_require_unique_reference`, so a
+foreign key onto a plain-indexed column is refused at exit `2` while MySQL 8.0
+— and `--dialect mariadb`, at exit `0` — accept it. Passing
+`--server-version 8.0.42` selects `MySQL8019()` and the same schema renders;
+`--server-version 8.4.0` still refuses it, which is the correct answer for that
+server. The flag requires `--dialect`, because without one the command renders
+every supported target in a single pass and one server version does not
+describe nine engines.
 
 ## Supported release lines
 
