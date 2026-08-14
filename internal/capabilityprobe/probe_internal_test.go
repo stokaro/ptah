@@ -41,7 +41,6 @@ var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaD
 // them apart is what lets
 // TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
-	c := qt.New(t)
 
 	registered := map[capability.Capability]bool{}
 	for _, key := range capability.All() {
@@ -49,7 +48,8 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 	}
 
 	for _, dialect := range probedDialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 
@@ -97,7 +97,6 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // Each entry is the set plans.go argues for in a comment at the point of
 // declaration. Postgres argues for none: everything it registers, it measures.
 func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tc := range []struct {
 		dialect string
@@ -112,7 +111,8 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		dialect: platform.MariaDB,
 		want:    []capability.Capability{capability.RoleManagement, capability.Sequences},
 	}} {
-		c.Run(tc.dialect, func(c *qt.C) {
+		t.Run(tc.dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(tc.dialect)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(slices.Sorted(maps.Keys(dialectPlan.undecided)), qt.DeepEquals, tc.want,
@@ -123,7 +123,6 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 }
 
 func TestIndexIncludeSPGiSTObservation(t *testing.T) {
-	c := qt.New(t)
 
 	accepted := Attempt{Statement: "CREATE INDEX", Accepted: true}
 	inspected := Attempt{Statement: "SELECT index metadata", Accepted: true}
@@ -177,7 +176,8 @@ func TestIndexIncludeSPGiSTObservation(t *testing.T) {
 			),
 		},
 	} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := indexIncludeSPGiSTObservation(tc.created, tc.inspected, tc.matches)
 			c.Assert(got, qt.Equals, tc.want)
 		})
@@ -185,7 +185,6 @@ func TestIndexIncludeSPGiSTObservation(t *testing.T) {
 }
 
 func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tc := range []struct {
 		name    string
@@ -206,7 +205,8 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 			),
 		},
 	} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := uninspectableIndexIncludeSPGiSTObservation(tc.created)
 			c.Assert(got, qt.Equals, tc.want)
 		})
@@ -218,7 +218,6 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 // owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
 // 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
-	c := qt.New(t)
 
 	registered := len(capability.All())
 	for _, tc := range []struct {
@@ -286,7 +285,8 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.MySQL84(),
 		want: 0,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(tc.cell.Dialect)
 			c.Assert(ok, qt.IsTrue)
 			report := reportOn(tc.cell, true, tc.caps)
@@ -298,10 +298,10 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 // TestPlans_DeclaredUndecidablesCarryAReason pins the shape that makes
 // undecidable an answer rather than a shrug.
 func TestPlans_DeclaredUndecidablesCarryAReason(t *testing.T) {
-	c := qt.New(t)
 
 	for _, dialect := range probedDialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 			for key, reason := range dialectPlan.undecided {
@@ -622,7 +622,6 @@ func TestRun_RefusesAnEmptyMatrix(t *testing.T) {
 // refused for the missing clause, so scoring the guard false would answer a
 // question the run never asked.
 func TestUnmetRequirement(t *testing.T) {
-	c := qt.New(t)
 
 	guardExperiment := experiment{
 		decides:  []capability.Capability{capability.DropConstraintIfExists},
@@ -649,7 +648,8 @@ func TestUnmetRequirement(t *testing.T) {
 		observations: map[capability.Capability]observation{},
 		wantMet:      false,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, met := unmetRequirement(guardExperiment, tc.observations)
 			c.Assert(met, qt.Equals, tc.wantMet)
 		})

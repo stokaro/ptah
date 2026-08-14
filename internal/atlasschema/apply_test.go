@@ -123,7 +123,8 @@ CREATE TABLE users (
 func TestPlanApply_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t2 *testing.T) {
+		c := qt.New(t2)
 		plan, err := atlasschema.PlanApply(t.Context(), nil, atlasschema.ApplyOptions{
 			ToURLs: []string{"file:///schema.sql"},
 		})
@@ -232,7 +233,8 @@ CREATE TABLE runtime_synced (
 func TestPrepareApply_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t2 *testing.T) {
+		c := qt.New(t2)
 		plan, err := atlasschema.PrepareApply(t.Context(), nil, atlasschema.ApplyRuntimeOptions{
 			DevURL: "sqlite://dev.db",
 			ToURLs: []string{"file:///schema.sql"},
@@ -293,9 +295,9 @@ CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 }
 
 func TestApplySQL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		err := atlasschema.ApplySQL(context.Background(), nil, migrator.MigrationTxModeAll, "SELECT 1;")
 		c.Assert(err, qt.ErrorMatches, "schema apply execution requires database connection")
 	})

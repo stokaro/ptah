@@ -1211,7 +1211,6 @@ func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) 
 }
 
 func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
-	c := qt.New(t)
 
 	database := goschema.Database{
 		Tables: []goschema.Table{
@@ -1245,7 +1244,8 @@ func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAu
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 2)
@@ -1289,7 +1289,6 @@ func TestFromDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.
 }
 
 func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t *testing.T) {
-	c := qt.New(t)
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("資料", 40),
 		strings.Repeat("欄位", 20),
@@ -1303,7 +1302,8 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 1)
@@ -1315,7 +1315,6 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t
 }
 
 func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
-	c := qt.New(t)
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("資料", 70),
 		strings.Repeat("欄位", 40),
@@ -1329,7 +1328,8 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacte
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 1)
@@ -1341,7 +1341,6 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacte
 }
 
 func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name           string
 		dialect        string
@@ -1352,7 +1351,8 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := goschema.Database{
 				Tables: []goschema.Table{
 					{StructName: "Parent", Name: "parents"},
@@ -1382,7 +1382,6 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing
 }
 
 func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -1392,7 +1391,8 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testi
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := goschema.Database{
 				Tables: []goschema.Table{
 					{StructName: "Parent", Name: "parents"},

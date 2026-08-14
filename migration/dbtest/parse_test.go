@@ -111,9 +111,9 @@ func TestParseCases_Valid(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := dbtest.ParseCases([]byte(tc.yaml))
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, tc.want)
@@ -184,9 +184,9 @@ func TestParseCases_Invalid(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := dbtest.ParseCases([]byte(tc.yaml))
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(got, qt.IsNil)

@@ -603,7 +603,8 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 func TestPrepareApply_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("nil database connection", func(c *qt.C) {
+	t.Run("nil database connection", func(t *testing.T) {
+		c := qt.New(t)
 		plan, err := atlasmigrate.PrepareApply(context.Background(), nil, atlasmigrate.ApplyOptions{
 			Dir: c.TempDir(),
 		})
@@ -663,7 +664,6 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 }
 
 func TestParseApplyAmount_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -688,7 +688,8 @@ func TestParseApplyAmount_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrate.ParseApplyAmount(tt.args)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)
@@ -697,15 +698,16 @@ func TestParseApplyAmount_HappyPath(t *testing.T) {
 }
 
 func TestParseApplyAmount_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("too many arguments", func(c *qt.C) {
+	t.Run("too many arguments", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ParseApplyAmount([]string{"1", "2"})
 		c.Assert(err, qt.ErrorMatches, "accepts at most one amount argument")
 		c.Assert(got, qt.Equals, uint64(0))
 	})
 
-	c.Run("invalid unsigned integer", func(c *qt.C) {
+	t.Run("invalid unsigned integer", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ParseApplyAmount([]string{"nope"})
 		c.Assert(err, qt.ErrorMatches, `amount argument "nope" is not a valid unsigned integer: .*`)
 		c.Assert(got, qt.Equals, uint64(0))
@@ -713,7 +715,6 @@ func TestParseApplyAmount_FailurePath(t *testing.T) {
 }
 
 func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -738,7 +739,8 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", tt.value)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)
@@ -747,21 +749,23 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 }
 
 func TestParseMigrationVersionFlag_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("invalid integer", func(c *qt.C) {
+	t.Run("invalid integer", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "nope")
 		c.Assert(err, qt.ErrorMatches, `--baseline "nope" is not a valid migration version: .*`)
 		c.Assert(got, qt.Equals, int64(0))
 	})
 
-	c.Run("zero", func(c *qt.C) {
+	t.Run("zero", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "0")
 		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
 		c.Assert(got, qt.Equals, int64(0))
 	})
 
-	c.Run("negative", func(c *qt.C) {
+	t.Run("negative", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "-1")
 		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
 		c.Assert(got, qt.Equals, int64(0))

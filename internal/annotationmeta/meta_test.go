@@ -31,7 +31,6 @@ func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 }
 
 func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
-	c := qt.New(t)
 
 	directives := []string{
 		"ptah:schema:field",
@@ -40,7 +39,8 @@ func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
 	}
 
 	for _, directive := range directives {
-		c.Run(directive, func(c *qt.C) {
+		t.Run(directive, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsTrue)
 		})
 	}
@@ -53,7 +53,6 @@ func TestAllowsAttribute_AcceptsIndexInclude(t *testing.T) {
 }
 
 func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -88,14 +87,14 @@ func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(annotationmeta.AllowsAttribute(test.directive, test.attribute), qt.IsFalse)
 		})
 	}
 }
 
 func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testing.T) {
-	c := qt.New(t)
 
 	directives := []string{
 		"ptah:schema:index",
@@ -106,7 +105,8 @@ func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testin
 	}
 
 	for _, directive := range directives {
-		c.Run(directive, func(c *qt.C) {
+		t.Run(directive, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(annotationmeta.AllowsAttribute(directive, "platform.postgres.type"), qt.IsFalse)
 		})
 	}

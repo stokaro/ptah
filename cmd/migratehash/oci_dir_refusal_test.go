@@ -23,7 +23,6 @@ const refusalDigest = "sha256:" +
 // what the other verbs do. The refusal must say the artifact is immutable and
 // point at the workflow that does work.
 func TestHash_RefusesOCIDirectoryByName(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -48,7 +47,8 @@ func TestHash_RefusesOCIDirectoryByName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, err := execute("--dir", tt.dir)
 
 			c.Assert(err, qt.IsNotNil)
@@ -69,7 +69,6 @@ func TestHash_RefusesOCIDirectoryByName(t *testing.T) {
 // the test above pass, so the refusal has to be measured against a path that
 // must still be hashed -- including one whose name merely contains "oci".
 func TestHash_OCIRefusalLeavesLocalDirectoriesAlone(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -81,7 +80,8 @@ func TestHash_OCIRefusalLeavesLocalDirectoriesAlone(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := filepath.Join(c.TempDir(), tt.base)
 			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"),

@@ -21,7 +21,6 @@ import (
 // the plan, and a missing CREATE SEQUENCE is a column DEFAULT that will not
 // resolve at apply time.
 func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name           string
@@ -48,7 +47,8 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			increment := int64(5)
 			generated := &goschema.Database{
 				Sequences: []goschema.Sequence{{
@@ -114,7 +114,6 @@ func TestSequenceLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 // against it fail to apply. The second is worse in kind: it does not fail, it
 // emits a WARNING comment and plans no value removal at all.
 func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -139,7 +138,8 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{
 				Enums: []goschema.Enum{{
 					Name:   "status",
@@ -198,7 +198,6 @@ func TestEnumLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 // halves go through the same lookup, so the row that matters is the one where
 // the two sides spell the schema differently: the pair must still be a pair.
 func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -263,7 +262,8 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
@@ -286,7 +286,6 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 // that catalog; these rows assert the plan for every object kind that reaches
 // the same tier.
 func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
-	c := qt.New(t)
 
 	reportingUsers := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: "reporting"}},
@@ -338,7 +337,8 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")

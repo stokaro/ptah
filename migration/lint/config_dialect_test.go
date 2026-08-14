@@ -97,7 +97,8 @@ func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T)
 	c := qt.New(t)
 
 	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			cfg, err := lint.LoadConfigFS(dialectFixture(spelling), lint.ConfigFileName)
 
 			c.Assert(err, qt.IsNil)

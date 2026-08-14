@@ -53,7 +53,6 @@ func notNullBaseline() []lint.BaselineColumn {
 // non-nullable "integer" column "oid" will fail in case table "users" is not
 // empty`, and exits 1.
 func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -74,7 +73,8 @@ func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(fixture(renameBaselineFS()), renameBaselineOptions(test.baseline))
 
 			c.Assert(err, qt.IsNil)
@@ -118,7 +118,6 @@ func TestAnalyzeFS_RenameAddSideSubjectCarriesTheIntroducedColumn(t *testing.T) 
 // MF103 for, and each differs from the reporting fixture on exactly one axis, so
 // a rule that ignored that axis would fail here while the reporting case passed.
 func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -205,7 +204,8 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(fixture(test.files), renameBaselineOptions(test.baseline))
 
 			c.Assert(err, qt.IsNil)
@@ -256,7 +256,6 @@ func TestAnalyzeFS_RenameAddSideResolvesQualifiedReference(t *testing.T) {
 // version with nothing to resolve spends a round trip to learn nothing, and
 // failing to list one leaves the diagnostic unreachable.
 func TestAnalyzeFS_BaselineVersionsAsksOnlyForWhatItCanUse(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -300,7 +299,8 @@ func TestAnalyzeFS_BaselineVersionsAsksOnlyForWhatItCanUse(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(fixture(test.files), test.options)
 
 			c.Assert(err, qt.IsNil)

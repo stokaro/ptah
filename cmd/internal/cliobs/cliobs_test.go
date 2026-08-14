@@ -93,14 +93,15 @@ func TestJSONOutputWriterFlushesPartialLine(t *testing.T) {
 }
 
 func TestStartRejectsInvalidLogOptions(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("invalid log format", func(c *qt.C) {
+	t.Run("invalid log format", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := cliobs.Start(context.Background(), cliobs.Options{LogFormat: "xml"})
 		c.Assert(err, qt.IsNotNil)
 	})
 
-	c.Run("invalid log level", func(c *qt.C) {
+	t.Run("invalid log level", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := cliobs.Start(context.Background(), cliobs.Options{LogLevel: "trace"})
 		c.Assert(err, qt.IsNotNil)
 	})

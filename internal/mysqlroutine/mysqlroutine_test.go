@@ -18,7 +18,6 @@ import (
 // same destructive drop and create forever -- measured on MySQL 26.7.0 and
 // MariaDB 12.3.2, still there after a second apply.
 func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -34,14 +33,16 @@ func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := mysqlroutine.Characteristic(test.volatility)
 			c.Assert(err, qt.IsNil)
 			c.Check(got, qt.Equals, test.want)
 		})
 	}
 
-	c.Run("the three clauses are three distinct values", func(c *qt.C) {
+	t.Run("the three clauses are three distinct values", func(t *testing.T) {
+		c := qt.New(t)
 		seen := map[string]string{}
 		for _, volatility := range []string{
 			mysqlroutine.Immutable, mysqlroutine.Stable, mysqlroutine.Volatile,
@@ -63,7 +64,6 @@ func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T
 // would silently reinterpret it, which is the failure mode this package exists
 // to end.
 func TestCharacteristic_RefusesAValueItCannotEncode(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -75,7 +75,8 @@ func TestCharacteristic_RefusesAValueItCannotEncode(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := mysqlroutine.Characteristic(test.volatility)
 			c.Assert(err, qt.IsNotNil)
 			c.Check(err.Error(), qt.Contains, test.volatility)
@@ -90,7 +91,6 @@ func TestCharacteristic_RefusesAValueItCannotEncode(t *testing.T) {
 // A mutant that reads only IS_DETERMINISTIC -- which is what the reader did --
 // fails the STABLE row, because it is NOT DETERMINISTIC exactly like VOLATILE.
 func TestVolatilityFromCatalog_InvertsCharacteristic(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name            string
@@ -113,14 +113,16 @@ func TestVolatilityFromCatalog_InvertsCharacteristic(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(
 				mysqlroutine.VolatilityFromCatalog(test.isDeterministic, test.sqlDataAccess),
 				qt.Equals, test.volatility)
 		})
 	}
 
-	c.Run("a routine outside the encoding still reads as volatile", func(c *qt.C) {
+	t.Run("a routine outside the encoding still reads as volatile", func(t *testing.T) {
+		c := qt.New(t)
 		c.Check(mysqlroutine.VolatilityFromCatalog("NO", "MODIFIES SQL DATA"),
 			qt.Equals, mysqlroutine.Volatile)
 	})
@@ -133,7 +135,6 @@ func TestVolatilityFromCatalog_InvertsCharacteristic(t *testing.T) {
 // `security: DEFINER -> INVKOER` on a successful apply, forever. Measured on
 // MySQL 26.7.0 and MariaDB 12.3.2.
 func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
-	c := qt.New(t)
 
 	accepted := []struct {
 		name     string
@@ -147,7 +148,8 @@ func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
 	}
 
 	for _, test := range accepted {
-		c.Run("accepted/"+test.name, func(c *qt.C) {
+		t.Run("accepted/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := mysqlroutine.SecurityClause(test.security)
 			c.Assert(err, qt.IsNil)
 			c.Check(got, qt.Equals, test.want)
@@ -164,7 +166,8 @@ func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
 	}
 
 	for _, test := range refused {
-		c.Run("refused/"+test.name, func(c *qt.C) {
+		t.Run("refused/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := mysqlroutine.SecurityClause(test.security)
 			c.Assert(err, qt.IsNotNil)
 			c.Check(err.Error(), qt.Contains, test.security)
@@ -186,7 +189,6 @@ func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
 // The rows that must NOT change are the control. A mutant that truncated at the
 // first "(" would pass every integer row and fail varchar, decimal and enum.
 func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -235,7 +237,8 @@ func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.NormalizeType(test.in), qt.Equals, test.want)
 		})
 	}
@@ -259,7 +262,6 @@ func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
 // spelling on the desired side against a different catalog spelling, which is
 // permanent drift -- the failure this package exists to end.
 func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
-	c := qt.New(t)
 
 	refused := []struct {
 		name       string
@@ -277,7 +279,8 @@ func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
 	}
 
 	for _, test := range refused {
-		c.Run("refused/"+test.name, func(c *qt.C) {
+		t.Run("refused/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := mysqlroutine.ValidateSignature(test.parameters, test.returns)
 			c.Assert(err, qt.IsNotNil)
 			c.Check(err.Error(), qt.Contains, test.want)
@@ -299,7 +302,8 @@ func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
 	}
 
 	for _, test := range accepted {
-		c.Run("accepted/"+test.name, func(c *qt.C) {
+		t.Run("accepted/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.ValidateSignature(test.parameters, test.returns), qt.IsNil)
 		})
 	}
@@ -324,7 +328,6 @@ func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
 // The plain-integer rows are the control: they must still lose their width, or
 // the two engines stop agreeing with each other.
 func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -342,12 +345,14 @@ func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.NormalizeType(test.in), qt.Equals, test.want)
 		})
 	}
 
-	c.Run("two widths do not collapse onto one type", func(c *qt.C) {
+	t.Run("two widths do not collapse onto one type", func(t *testing.T) {
+		c := qt.New(t)
 		c.Check(mysqlroutine.NormalizeType("int(5) zerofill"),
 			qt.Not(qt.Equals), mysqlroutine.NormalizeType("int(10) zerofill"))
 	})
@@ -363,7 +368,6 @@ func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
 // exactly, which is why the refusal asks for the width rather than rejecting
 // ZEROFILL outright -- and the accepted rows below are that control.
 func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
-	c := qt.New(t)
 
 	refused := []struct {
 		name       string
@@ -376,7 +380,8 @@ func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
 	}
 
 	for _, test := range refused {
-		c.Run("refused/"+test.name, func(c *qt.C) {
+		t.Run("refused/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := mysqlroutine.ValidateSignature(test.parameters, test.returns)
 			c.Assert(err, qt.IsNotNil)
 			c.Check(err.Error(), qt.Contains, "ZEROFILL")
@@ -395,7 +400,8 @@ func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
 	}
 
 	for _, test := range accepted {
-		c.Run("accepted/"+test.name, func(c *qt.C) {
+		t.Run("accepted/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.ValidateSignature(test.parameters, test.returns), qt.IsNil)
 		})
 	}
@@ -414,7 +420,6 @@ func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
 // by accident, and the two-parameter rows are the control: real separators must
 // still separate.
 func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -441,12 +446,14 @@ func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.NormalizeParameterList(test.in), qt.Equals, test.want)
 		})
 	}
 
-	c.Run("the two enum spellings stay distinct", func(c *qt.C) {
+	t.Run("the two enum spellings stay distinct", func(t *testing.T) {
+		c := qt.New(t)
 		c.Check(mysqlroutine.NormalizeParameterList("p ENUM('x,y')"),
 			qt.Not(qt.Equals), mysqlroutine.NormalizeParameterList("p ENUM('x','y')"))
 	})
@@ -456,13 +463,13 @@ func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
 // both sides of a comparison: the catalog spelling is already a fixed point, so
 // normalizing it again cannot move it.
 func TestNormalizeType_IsIdempotent(t *testing.T) {
-	c := qt.New(t)
 
 	for _, in := range []string{
 		"integer", "int(11)", "varchar(20)", "decimal(10,2)", "int(10) unsigned",
 		"bool", "double precision", "character varying(20)", "text",
 	} {
-		c.Run(in, func(c *qt.C) {
+		t.Run(in, func(t *testing.T) {
+			c := qt.New(t)
 			once := mysqlroutine.NormalizeType(in)
 			c.Check(mysqlroutine.NormalizeType(once), qt.Equals, once)
 		})
@@ -474,7 +481,6 @@ func TestNormalizeType_IsIdempotent(t *testing.T) {
 // function whose argument is called `integer` would be renamed by its own
 // normalization.
 func TestNormalizeParameterList_NormalizesTypesAndKeepsNames(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -491,7 +497,8 @@ func TestNormalizeParameterList_NormalizesTypesAndKeepsNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(mysqlroutine.NormalizeParameterList(test.in), qt.Equals, test.want)
 		})
 	}

@@ -183,7 +183,6 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 }
 
 func TestResolveApplyDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -233,7 +232,8 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -333,10 +333,10 @@ func applyDirFormatCases() []struct {
 // makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
 // consume this one value.
 func TestResolveApplyDirFormat(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tt := range applyDirFormatCases() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 
 			c.Assert(err, qt.IsNil)
@@ -347,7 +347,8 @@ func TestResolveApplyDirFormat(t *testing.T) {
 		})
 	}
 
-	c.Run("unknown format reports the resolve error", func(c *qt.C) {
+	t.Run("unknown format reports the resolve error", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
 		var unknownFormat *atlasmigrate.UnknownDirFormatError
 
@@ -369,7 +370,6 @@ func TestResolveApplyDirFormat(t *testing.T) {
 // is still a key that selected the layout — first-one-wins loses a VALUE, not
 // the key (stokaro/ptah#990).
 func TestIgnoredDirQueryKeys(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -407,7 +407,8 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlasmigrate.IgnoredDirQueryKeys(tt.query)
 
 			c.Assert(got, qt.DeepEquals, tt.want)

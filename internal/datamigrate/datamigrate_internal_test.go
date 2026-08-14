@@ -15,7 +15,6 @@ import (
 )
 
 func TestRejectsExplicitInsert(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -34,14 +33,14 @@ func TestRejectsExplicitInsert(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(rejectsExplicitInsert(tt.dialect, tt.col), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestInsertableColumns_Success(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -74,7 +73,8 @@ func TestInsertableColumns_Success(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			table := types.DBTable{Name: "t", Columns: tt.columns}
 			cols, err := insertableColumns(tt.dialect, "t", table, tt.keys)
 			c.Assert(err, qt.IsNil)
@@ -84,7 +84,6 @@ func TestInsertableColumns_Success(t *testing.T) {
 }
 
 func TestInsertableColumns_Refusals(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -124,7 +123,8 @@ func TestInsertableColumns_Refusals(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			table := types.DBTable{Name: "t", Columns: tt.columns}
 			cols, err := insertableColumns(tt.dialect, "t", table, tt.keys)
 			c.Assert(err, qt.IsNotNil)
@@ -135,7 +135,6 @@ func TestInsertableColumns_Refusals(t *testing.T) {
 }
 
 func TestFindManagedTable(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name          string
@@ -203,7 +202,8 @@ func TestFindManagedTable(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, found := findManagedTable(&types.DBSchema{Tables: tt.tables}, tt.wantSchema, tt.defaultSchema, tt.table)
 			c.Assert(found, qt.Equals, tt.wantFound)
 			c.Assert(got.Schema, qt.Equals, tt.wantGotSchema)

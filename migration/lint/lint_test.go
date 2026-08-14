@@ -456,7 +456,6 @@ ALTER TABLE t ADD COLUMN c INT;`,
 }
 
 func TestLintFS_AtlasTxtarTxModeIsDirectional(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -495,7 +494,8 @@ DROP INDEX idx;
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			findings, err := lint.LintFS(
 				fixture(map[string]string{"1_txmode.sql": test.sql}),
 				lint.Options{
@@ -1155,73 +1155,85 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	c.Run("missing explicit file", func(c *qt.C) {
+	t.Run("missing explicit file", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/nope.yaml")
 		c.Assert(err, qt.ErrorMatches, "failed to read lint config .*nope.yaml.*")
 	})
 
 	c.Assert(writeFile(dir+"/broken.yaml", "dialect: [not, a, string"), qt.IsNil)
-	c.Run("malformed YAML", func(c *qt.C) {
+	t.Run("malformed YAML", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/broken.yaml")
 		c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
 	})
 
 	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  DS102:\n    severity: fatal\n"), qt.IsNil)
-	c.Run("invalid rule severity", func(c *qt.C) {
+	t.Run("invalid rule severity", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/bad-severity.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
 	})
 
 	c.Assert(writeFile(dir+"/bad-dialect.yaml", "dialect: oracle\n"), qt.IsNil)
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/bad-dialect.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported lint dialect "oracle": expected postgres.*`)
 	})
 
 	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)
-	c.Run("malformed exclude glob", func(c *qt.C) {
+	t.Run("malformed exclude glob", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/bad-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	})
 
 	c.Assert(writeFile(dir+"/empty-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '  '\n"), qt.IsNil)
-	c.Run("empty exclude glob", func(c *qt.C) {
+	t.Run("empty exclude glob", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/empty-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "  ": pattern must not be empty`)
 	})
 
 	c.Assert(writeFile(dir+"/non-normalized-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '**/../**'\n"), qt.IsNil)
-	c.Run("non-normalized exclude glob", func(c *qt.C) {
+	t.Run("non-normalized exclude glob", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/non-normalized-exclude.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
 	})
 
 	c.Assert(writeFile(dir+"/unknown-top-level.yaml", "severty: error\n"), qt.IsNil)
-	c.Run("unknown top-level key", func(c *qt.C) {
+	t.Run("unknown top-level key", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/unknown-top-level.yaml")
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.Config.*`)
 	})
 
 	c.Assert(writeFile(dir+"/unknown-rule-key.yaml", "rules:\n  DS103:\n    severty: error\n"), qt.IsNil)
-	c.Run("unknown nested rule key", func(c *qt.C) {
+	t.Run("unknown nested rule key", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/unknown-rule-key.yaml")
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.RuleConfig.*`)
 	})
 
 	c.Assert(writeFile(dir+"/lowercase-selector.yaml", "rules:\n  ds103:\n    severity: error\n"), qt.IsNil)
-	c.Run("lowercase rule selector", func(c *qt.C) {
+	t.Run("lowercase rule selector", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/lowercase-selector.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' DS103 '\n"), qt.IsNil)
-	c.Run("whitespace-padded rule selector", func(c *qt.C) {
+	t.Run("whitespace-padded rule selector", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/whitespace-selector.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " DS103 " must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)
-	c.Run("multiple YAML documents", func(c *qt.C) {
+	t.Run("multiple YAML documents", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := lint.LoadConfig(dir + "/multiple-documents.yaml")
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*multiple YAML documents are not supported`)
 	})
@@ -1254,7 +1266,6 @@ func TestLintFS_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
 }
 
 func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -1284,7 +1295,8 @@ func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := lint.ValidateOptions(lint.Options{
 				RuleConfigs: map[string]lint.RuleConfig{
 					"DS101": {Exclude: []string{test.pattern}},
@@ -1310,7 +1322,8 @@ func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			configPath := filepath.Join(dir, test.name+".yaml")
 			contents := fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", test.pattern)
 			c.Assert(writeFile(configPath, contents), qt.IsNil)

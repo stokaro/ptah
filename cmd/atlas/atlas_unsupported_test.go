@@ -12,12 +12,12 @@ import (
 )
 
 func TestCompatCommand_UnsupportedCommands(t *testing.T) {
-	c := qt.New(t)
 
 	tests := unsupportedCommandTests()
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -34,12 +34,12 @@ func TestCompatCommand_UnsupportedCommands(t *testing.T) {
 }
 
 func TestCompatCommand_UnsupportedCommandsHelp(t *testing.T) {
-	c := qt.New(t)
 
 	tests := unsupportedCommandTests()
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)

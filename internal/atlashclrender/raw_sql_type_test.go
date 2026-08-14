@@ -30,7 +30,6 @@ import (
 // call fails and the "still parses to the same type" assertion still passes,
 // which is why the loss was invisible to the existing round-trip tests.
 func TestRenderWritesSQLRawExpressionColumnTypeBackAsTheCall(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -78,7 +77,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			parsed, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 

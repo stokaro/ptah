@@ -9,7 +9,6 @@ import (
 )
 
 func TestSQLForAssessment_ExpandsExecutableComments(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -30,7 +29,8 @@ func TestSQLForAssessment_ExpandsExecutableComments(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := sqlsafety.SQLForAssessment(test.sql, test.dialect)
 			c.Assert(got, qt.Equals, test.want)
 		})

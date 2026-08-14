@@ -16,7 +16,6 @@ import (
 // used resolved a name across two DIFFERENT schemas, so `attached.v`'s body was
 // rendered under the name the diff carried.
 func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -61,7 +60,8 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
@@ -75,7 +75,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // `Active_Notes` and `active_notes` are one object and only a folding rule joins
 // them.
 func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -120,7 +119,8 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")

@@ -23,7 +23,6 @@ import (
 // `schema inspect -u file://...`: exit 0, and DDL byte-identical to the same
 // schema with the construct deleted.
 func TestParseIgnoreUnknownNamesDropsTheName(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -422,7 +421,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, strictErr := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
@@ -458,7 +458,6 @@ table "t" {
 // They are here so that reintroducing any such wildcard fails a test rather
 // than shipping.
 func TestParseIgnoreUnknownNamesStillEvaluatesTheBody(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -725,7 +724,8 @@ annotation "gql" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
@@ -745,7 +745,6 @@ annotation "gql" {
 // row is the one stokaro/ptah#1016 exists for -- an Atlas v1.3.0 annotation
 // declaration, whose body needs the `string` keyword to resolve.
 func TestParseIgnoreUnknownNamesAcceptsEvaluableBodies(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -847,7 +846,8 @@ annotation "gql" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
@@ -869,7 +869,6 @@ annotation "gql" {
 // from a bug. If a later change makes any of these parse, this test is where
 // the decision gets revisited rather than quietly reversed.
 func TestParseIgnoreUnknownNamesIsStricterThanTheOracleOnReferences(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -925,7 +924,8 @@ annotation "gql" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
@@ -943,7 +943,6 @@ annotation "gql" {
 // Both cases below hold a construct whose only nested block is dropped. The
 // name goes; the requirement the block was supposed to satisfy does not.
 func TestParseIgnoreUnknownNamesKeepsStructuralRefusals(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -984,7 +983,8 @@ func TestParseIgnoreUnknownNamesKeepsStructuralRefusals(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",

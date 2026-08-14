@@ -111,7 +111,6 @@ func assertReverseCoverageField(
 // by reflection, so renaming a field breaks this test rather than quietly
 // emptying it.
 func TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback(t *testing.T) {
-	c := qt.New(t)
 
 	schema, dbSchema := modifiedCategoryContext()
 	diffType := reflect.TypeFor[types.SchemaDiff]()
@@ -149,7 +148,8 @@ func TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.field, func(c *qt.C) {
+		t.Run(test.field, func(t *testing.T) {
+			c := qt.New(t)
 			_, exists := diffType.FieldByName(test.field)
 			c.Assert(exists, qt.IsTrue,
 				qt.Commentf("SchemaDiff has no field %s; this gate is naming something that moved", test.field))
@@ -249,14 +249,14 @@ func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
 // report the builder's omission as the fixture's -- so the fixture states its own
 // completeness separately.
 func TestReverseCoverageDiff_PopulatesEverySchemaDiffField(t *testing.T) {
-	c := qt.New(t)
 
 	populated := reflect.ValueOf(*reverseCoverageDiff())
 	diffType := populated.Type()
 
 	for i := range diffType.NumField() {
 		field := diffType.Field(i)
-		c.Run(field.Name, func(c *qt.C) {
+		t.Run(field.Name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(populated.Field(i).IsZero(), qt.IsFalse,
 				qt.Commentf(
 					"reverseCoverageDiff left SchemaDiff.%s at its zero value; teach fillDistinctly "+

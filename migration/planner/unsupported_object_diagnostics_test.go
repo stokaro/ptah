@@ -130,7 +130,8 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -210,7 +211,8 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -240,7 +242,8 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -334,14 +337,14 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 }
 
 func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -354,14 +357,14 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -372,14 +375,14 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 }
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -420,7 +423,8 @@ func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 			c.Assert(rendered, qt.Contains, test.want)
 		})

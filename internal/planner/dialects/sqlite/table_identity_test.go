@@ -36,7 +36,6 @@ func identityRebuildSchema(tableSchema string) *goschema.Database {
 // the unknown double-quoted identifier as a STRING LITERAL and writes the
 // column's own name into every row, exiting 0.
 func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name             string
@@ -78,7 +77,8 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				TablesModified: []types.TableDiff{{
 					TableName:    test.diffTableName,
@@ -111,7 +111,6 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 // answered "not being created" across a spelling difference and the plan both
 // created and rebuilt one table.
 func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name            string
@@ -136,7 +135,8 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				TablesAdded:      []string{test.addedTableName},
 				ConstraintsAdded: []string{"ck_notes_body"},

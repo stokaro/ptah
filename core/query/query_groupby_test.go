@@ -63,7 +63,6 @@ func TestCountStarArgumentIsCountStar(t *testing.T) {
 }
 
 func TestAggregateStarArgumentRejected(t *testing.T) {
-	c := qt.New(t)
 
 	// Only Count("*") maps to the star form. Every other "*" aggregate argument —
 	// a non-COUNT aggregate, COUNT(DISTINCT *), or a qualified star — has no valid
@@ -82,7 +81,8 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := query.Select().Exprs(tt.expr).From("t").Build()
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, `.*is not a valid column reference.*`)
@@ -192,7 +192,6 @@ func TestSelectBuilder_ExprsAndExprAs(t *testing.T) {
 }
 
 func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
-	c := qt.New(t)
 
 	// A grouped aggregate query with a WHERE filter, a HAVING over COUNT(*), and a
 	// LIMIT, proving the fluent API composes and placeholders order across clauses.
@@ -226,7 +225,8 @@ func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)

@@ -251,9 +251,9 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 }
 
 func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("postgres", func(c *qt.C) {
+	t.Run("postgres", func(t *testing.T) {
+		c := qt.New(t)
 		predicate := schemaselection.PostgresNonSystemSchemasPredicate("postgres")
 
 		c.Assert(predicate, qt.Contains, "n.nspname <> 'information_schema'")
@@ -261,7 +261,8 @@ func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *te
 		c.Assert(predicate, qt.Contains, "n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
 	})
 
-	c.Run("cockroachdb", func(c *qt.C) {
+	t.Run("cockroachdb", func(t *testing.T) {
+		c := qt.New(t)
 		predicate := schemaselection.PostgresNonSystemSchemasPredicate("cockroachdb")
 
 		c.Assert(predicate, qt.Contains, "n.nspname <> 'information_schema'")
@@ -282,7 +283,6 @@ func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
 }
 
 func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -297,7 +297,8 @@ func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				schemaselection.IsPostgresFamilySystemSchema(test.dialect, test.schema),
 				qt.Equals,
@@ -308,7 +309,6 @@ func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
 }
 
 func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -321,7 +321,8 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
 				test.dialect,
 				[]goschema.Schema{{Name: test.schema}},
@@ -334,7 +335,6 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 }
 
 func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -347,7 +347,8 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
 				test.dialect,
 				[]goschema.Schema{{Name: test.schema}},

@@ -195,7 +195,6 @@ func TestIndexes_TableQualifiedRefsHaveDeterministicOrdering(t *testing.T) {
 }
 
 func TestIndexesWithDialect_CaseInsensitiveIdentityHasNoDiff(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		dialect   string
@@ -227,7 +226,8 @@ func TestIndexesWithDialect_CaseInsensitiveIdentityHasNoDiff(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{Indexes: []goschema.Index{test.generated}}
 			database := &types.DBSchema{Indexes: []types.DBIndex{test.database}}
 			diff := &difftypes.SchemaDiff{}

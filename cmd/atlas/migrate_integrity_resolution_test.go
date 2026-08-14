@@ -235,9 +235,9 @@ func TestCompatMigrateValidateConvertedDevURL_HappyPath(t *testing.T) {
 // that matter: integrity is checked before the directory is parsed or replayed,
 // and a clean directory whose SQL does not execute still fails.
 func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("invalid sql on a clean directory", func(c *qt.C) {
+	t.Run("invalid sql on a clean directory", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		devDBPath := filepath.Join(c.TempDir(), "dev.db")
 		c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
@@ -253,7 +253,8 @@ func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
 		c.Assert(stderr, qt.Contains, "error validating migration SQL on dev database")
 	})
 
-	c.Run("integrity is checked before the dev database is touched", func(c *qt.C) {
+	t.Run("integrity is checked before the dev database is touched", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
 			[]byte("-- +goose Up\nCREATE TABLE never_replayed (id int);\n"), 0o600), qt.IsNil)

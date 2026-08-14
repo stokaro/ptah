@@ -583,7 +583,8 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		}
 
 		for _, test := range cases {
-			c.Run(test.name, func(c *qt.C) {
+			t.Run(test.name, func(t2 *testing.T) {
+				c := qt.New(t2)
 				migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
 
 				err = issue887Migrator(conn, names, migration).MigrateUp(ctx)

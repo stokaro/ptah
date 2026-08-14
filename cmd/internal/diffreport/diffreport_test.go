@@ -11,7 +11,6 @@ import (
 )
 
 func TestCategoriesNamesEveryChangedObject(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -65,7 +64,8 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(diffreport.Categories(test.diff), qt.DeepEquals, test.want)
 		})
 	}
@@ -75,7 +75,6 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 // rule: a diff carries fields that describe how it was produced, and reporting
 // those as differences would make a synced schema look modified.
 func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -90,7 +89,8 @@ func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(diffreport.Categories(test.diff), qt.HasLen, 0)
 		})
 	}

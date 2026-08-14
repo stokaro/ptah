@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseApplyLockTimeout_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -29,7 +28,8 @@ func TestParseApplyLockTimeout_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasschema.ParseApplyLockTimeout(test.value)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -38,7 +38,6 @@ func TestParseApplyLockTimeout_HappyPath(t *testing.T) {
 }
 
 func TestParseApplyLockTimeout_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -52,7 +51,8 @@ func TestParseApplyLockTimeout_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasschema.ParseApplyLockTimeout(test.value)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, time.Duration(0))
@@ -83,7 +83,8 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 		c.Assert(lock.Release(), qt.IsNil)
 	})
 
-	c.Run("nil lock releases without error", func(c *qt.C) {
+	t.Run("nil lock releases without error", func(t *testing.T) {
+		c := qt.New(t)
 		var lock *atlasschema.ApplyLock
 		c.Assert(lock.Release(), qt.IsNil)
 		c.Assert(lock.Supported(), qt.IsFalse)
@@ -91,9 +92,9 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 }
 
 func TestAcquireApplyLock_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		lock, err := atlasschema.AcquireApplyLock(c.Context(), nil, "", time.Second)
 		c.Assert(err, qt.ErrorMatches, "schema apply locking requires database connection")
 		c.Assert(lock, qt.IsNil)

@@ -23,7 +23,6 @@ import (
 // at render time and without naming the attribute. The pinned Atlas community
 // binary v1.3.0 exits 1 on all five.
 func TestParseRefusesAColumnAttributeThatCannotNameAColumn(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -97,7 +96,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})

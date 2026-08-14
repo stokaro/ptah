@@ -21,7 +21,6 @@ import (
 // stops the first one's fix from inventing a schema nobody has. Measured
 // 2026-08-07 on PostgreSQL 17, MySQL 9.7 and SQLite.
 func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -143,7 +142,8 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
 				&goschema.Database{},
 				test.schema,

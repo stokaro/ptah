@@ -360,29 +360,32 @@ func TestLive(_ *testing.T) {}
 }
 
 func TestRun_FailurePathValidatesConfiguration(t *testing.T) {
-	c := qt.New(t)
-	c.Run("package", func(c *qt.C) {
+	t.Run("package", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Tags:    []string{"integration"},
 			Timeout: time.Minute,
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour package is required")
 	})
-	c.Run("tags", func(c *qt.C) {
+	t.Run("tags", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Timeout: time.Minute,
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour requires at least one build tag")
 	})
-	c.Run("timeout", func(c *qt.C) {
+	t.Run("timeout", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Tags:    []string{"integration"},
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour timeout must be positive")
 	})
-	c.Run("invalid tag", func(c *qt.C) {
+	t.Run("invalid tag", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Tags:    []string{"integration,unix"},
@@ -390,7 +393,8 @@ func TestRun_FailurePathValidatesConfiguration(t *testing.T) {
 		})
 		c.Assert(err, qt.ErrorMatches, `build tag "integration,unix" is not valid`)
 	})
-	c.Run("narrow integration package", func(c *qt.C) {
+	t.Run("narrow integration package", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./integration/fixture",
 			Tags:    []string{"integration"},

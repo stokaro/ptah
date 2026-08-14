@@ -22,7 +22,6 @@ import (
 // other test in this package would notice.
 
 func TestScopeDatabaseKeepsCoverage(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -34,7 +33,8 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			schema := &dbschematypes.DBSchema{
 				Tables: []dbschematypes.DBTable{
 					{Name: "kept", Schema: "public"},
@@ -52,7 +52,6 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 }
 
 func TestScopeGeneratedKeepsCoverage(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -63,7 +62,8 @@ func TestScopeGeneratedKeepsCoverage(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			schema := &goschema.Database{
 				Tables: []goschema.Table{
 					{Name: "kept", StructName: "Kept", Schema: "public"},

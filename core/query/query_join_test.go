@@ -127,7 +127,6 @@ func TestSelectBuilder_FromClearsPreviousAlias(t *testing.T) {
 }
 
 func TestSelectBuilder_Columns(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -147,7 +146,8 @@ func TestSelectBuilder_Columns(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.stmt.Columns, qt.DeepEquals, tt.want)
 		})
 	}
@@ -171,7 +171,6 @@ func TestSelectBuilder_QualifiedStarProjection(t *testing.T) {
 }
 
 func TestSelectBuilder_JoinMethodsSetType(t *testing.T) {
-	c := qt.New(t)
 
 	on := query.Col("b", "a_id").EqCol(query.Col("a", "id"))
 
@@ -203,7 +202,8 @@ func TestSelectBuilder_JoinMethodsSetType(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := tt.build()
 			c.Assert(stmt.Joins, qt.HasLen, 1)
 			c.Assert(stmt.Joins[0].Type, qt.Equals, tt.wantType)

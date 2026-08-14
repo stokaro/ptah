@@ -11,7 +11,6 @@ import (
 )
 
 func TestReplayGuardSQLite_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{Dialect: platform.SQLite})
 	tests := []struct {
 		name      string
@@ -40,7 +39,8 @@ func TestReplayGuardSQLite_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.IsNil)
 		})
@@ -48,7 +48,6 @@ func TestReplayGuardSQLite_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardSQLite_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	guard := devclean.NewReplayGuard(types.DBInfo{Dialect: platform.SQLite})
 	tests := []struct {
 		name      string
@@ -98,7 +97,8 @@ func TestReplayGuardSQLite_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := guard.ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

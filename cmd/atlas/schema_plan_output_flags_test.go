@@ -251,7 +251,8 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			outPath := filepath.Join(c.TB.TempDir(), "named.plan.json")
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),

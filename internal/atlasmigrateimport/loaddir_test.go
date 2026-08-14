@@ -172,16 +172,17 @@ CREATE TABLE first_table (id int);
 }
 
 func TestLoadDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("empty directory", func(c *qt.C) {
+	t.Run("empty directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(c.TempDir(), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
 		c.Assert(loaded, qt.IsNil)
 	})
 
-	c.Run("missing directory", func(c *qt.C) {
+	t.Run("missing directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(filepath.Join(c.TempDir(), "does-not-exist"), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `read source migration directory .*: .*`)

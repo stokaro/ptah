@@ -133,14 +133,15 @@ func TestArtifactWriteToDir_HappyPath(t *testing.T) {
 }
 
 func TestArtifactWriteToDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("missing filesystem", func(c *qt.C) {
+	t.Run("missing filesystem", func(t2 *testing.T) {
+		c := qt.New(t2)
 		err := (ociartifact.Artifact{}).WriteToDir(filepath.Join(t.TempDir(), "output"))
 		c.Assert(err, qt.ErrorMatches, "artifact filesystem is required")
 	})
 
-	c.Run("empty directory destination", func(c *qt.C) {
+	t.Run("empty directory destination", func(t2 *testing.T) {
+		c := qt.New(t2)
 		output := t.TempDir()
 		artifact := ociartifact.Artifact{FileSystem: fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
@@ -150,7 +151,8 @@ func TestArtifactWriteToDir_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "artifact output path already exists: .*")
 	})
 
-	c.Run("nonempty destination", func(c *qt.C) {
+	t.Run("nonempty destination", func(t2 *testing.T) {
+		c := qt.New(t2)
 		output := t.TempDir()
 		err := os.WriteFile(filepath.Join(output, "keep.txt"), []byte("keep"), 0o600)
 		c.Assert(err, qt.IsNil)
@@ -165,7 +167,8 @@ func TestArtifactWriteToDir_FailurePath(t *testing.T) {
 		c.Assert(string(contents), qt.Equals, "keep")
 	})
 
-	c.Run("file destination", func(c *qt.C) {
+	t.Run("file destination", func(t2 *testing.T) {
+		c := qt.New(t2)
 		output := filepath.Join(t.TempDir(), "output")
 		err := os.WriteFile(output, []byte("keep"), 0o600)
 		c.Assert(err, qt.IsNil)
@@ -207,7 +210,6 @@ func TestArtifactWriteToDir_PathSwapDoesNotDeleteReplacement(t *testing.T) {
 }
 
 func TestPushTo_PartialTagFailureReturnsPublishedState(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		failAt      int
@@ -229,7 +231,8 @@ func TestPushTo_PartialTagFailureReturnsPublishedState(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			target := &failingTagTarget{
 				Store:  memory.New(),
 				failAt: tt.failAt,
@@ -255,31 +258,34 @@ func TestPushTo_PartialTagFailureReturnsPublishedState(t *testing.T) {
 }
 
 func TestPushTo_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
-	c.Run("nil filesystem", func(c *qt.C) {
+	t.Run("nil filesystem", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), nil, ociartifact.PushOptions{
 			ArtifactType: ociartifact.MigrationArtifactType,
 		})
 		c.Assert(err, qt.ErrorMatches, "artifact filesystem is required")
 	})
 
-	c.Run("missing artifact type", func(c *qt.C) {
+	t.Run("missing artifact type", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
 		}, ociartifact.PushOptions{})
 		c.Assert(err, qt.ErrorMatches, "artifact type is required")
 	})
 
-	c.Run("empty artifact", func(c *qt.C) {
+	t.Run("empty artifact", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{}, ociartifact.PushOptions{
 			ArtifactType: ociartifact.MigrationArtifactType,
 		})
 		c.Assert(err, qt.ErrorMatches, "artifact must contain at least one file")
 	})
 
-	c.Run("symbolic link", func(c *qt.C) {
+	t.Run("symbolic link", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"migration.sql": {Data: []byte("../outside.sql"), Mode: fs.ModeSymlink},
 		}, ociartifact.PushOptions{
@@ -288,7 +294,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrUnsafeArtifactPath)
 	})
 
-	c.Run("file count limit", func(c *qt.C) {
+	t.Run("file count limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"one.sql": {Data: []byte("SELECT 1;")},
 			"two.sql": {Data: []byte("SELECT 2;")},
@@ -299,7 +306,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("single file limit", func(c *qt.C) {
+	t.Run("single file limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
 		}, ociartifact.PushOptions{
@@ -309,7 +317,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("file growth after stat remains bounded", func(c *qt.C) {
+	t.Run("file growth after stat remains bounded", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), misreportedSizeFS{
 			data:         "12345",
 			reportedSize: 1,
@@ -320,7 +329,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("total size limit", func(c *qt.C) {
+	t.Run("total size limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"one.sql": {Data: []byte("1234")},
 			"two.sql": {Data: []byte("5678")},
@@ -331,7 +341,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("path length limit", func(c *qt.C) {
+	t.Run("path length limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			strings.Repeat("a", 9) + ".sql": {Data: []byte("SELECT 1;")},
 		}, ociartifact.PushOptions{
@@ -341,7 +352,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("path depth limit", func(c *qt.C) {
+	t.Run("path depth limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"one/two/migration.sql": {Data: []byte("SELECT 1;")},
 		}, ociartifact.PushOptions{
@@ -351,7 +363,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrArtifactLimit)
 	})
 
-	c.Run("invalid tag before upload", func(c *qt.C) {
+	t.Run("invalid tag before upload", func(t *testing.T) {
+		c := qt.New(t)
 		store := memory.New()
 		_, err := ociartifact.PushTo(ctx, store, fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
@@ -364,7 +377,8 @@ func TestPushTo_FailurePath(t *testing.T) {
 		c.Assert(err, qt.IsNotNil)
 	})
 
-	c.Run("latest cannot be write once", func(c *qt.C) {
+	t.Run("latest cannot be write once", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.PushTo(ctx, memory.New(), fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
 		}, ociartifact.PushOptions{
@@ -632,7 +646,8 @@ func TestPush_DigestReferenceFailsBeforeNetworkAccess(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := client.Push(context.Background(), tt.ref, fstest.MapFS{
 				"migration.sql": {Data: []byte("SELECT 1;")},
 			}, ociartifact.PushOptions{ArtifactType: ociartifact.MigrationArtifactType})

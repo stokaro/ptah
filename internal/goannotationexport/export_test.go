@@ -520,7 +520,6 @@ type User struct{}
 }
 
 func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		annotation  string
@@ -548,7 +547,8 @@ func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")

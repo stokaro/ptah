@@ -24,7 +24,6 @@ import (
 // Crossing schemas here is not a missing statement, it is a wrong one: the view
 // body or trigger definition of `reporting.x` rendered under the name `app.x`.
 func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -83,7 +82,8 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
@@ -96,7 +96,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // spellings that DO name one object still resolve, so the rows above are a
 // refusal to guess rather than a refusal to work.
 func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -141,7 +140,8 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")

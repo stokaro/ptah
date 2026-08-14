@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseQualifier_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -29,7 +28,8 @@ func TestParseQualifier_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier(test.raw)
 			c.Assert(err, qt.IsNil)
 			c.Assert(qualifier.Name(), qt.Equals, test.want)
@@ -39,7 +39,6 @@ func TestParseQualifier_HappyPath(t *testing.T) {
 }
 
 func TestParseQualifier_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -69,7 +68,8 @@ func TestParseQualifier_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier(test.raw)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(qualifier.IsZero(), qt.IsTrue)
@@ -78,7 +78,6 @@ func TestParseQualifier_FailurePath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -92,7 +91,8 @@ func TestQualifierValidateScope_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier("tenant")
 			c.Assert(err, qt.IsNil)
 			c.Assert(qualifier.ValidateScope(test.dialect, test.schemas), qt.IsNil)
@@ -101,23 +101,25 @@ func TestQualifierValidateScope_HappyPath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
 		c.Assert(qualifier.ValidateScope(platform.SQLite, nil), qt.ErrorMatches,
 			`atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
 	})
 
-	c.Run("multiple schema scope", func(c *qt.C) {
+	t.Run("multiple schema scope", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
 		c.Assert(qualifier.ValidateScope(platform.Postgres, []string{"app", "audit"}), qt.ErrorMatches,
 			`atlas migrate diff --qualifier "tenant" requires a single schema scope, got --schema "app,audit"`)
 	})
 
-	c.Run("zero qualifier skips validation", func(c *qt.C) {
+	t.Run("zero qualifier skips validation", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(atlasmigrate.Qualifier{}.ValidateScope(platform.SQLite, []string{"a", "b"}), qt.IsNil)
 	})
 }
@@ -226,7 +228,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(comment.Text, qt.Equals, "WARNING: destructive operation")
 	})
 
-	c.Run("zero qualifier leaves nodes untouched", func(c *qt.C) {
+	t.Run("zero qualifier leaves nodes untouched", func(t *testing.T) {
+		c := qt.New(t)
 		table := ast.NewCreateTable("users")
 
 		err := atlasmigrate.Qualifier{}.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{table})

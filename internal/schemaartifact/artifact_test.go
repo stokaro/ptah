@@ -49,15 +49,16 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 }
 
 func TestCapture_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("nil database", func(c *qt.C) {
+	t.Run("nil database", func(t *testing.T) {
+		c := qt.New(t)
 		snapshot, err := schemaartifact.Capture(nil)
 		c.Assert(err, qt.ErrorMatches, "schema database is required")
 		c.Assert(snapshot, qt.IsNil)
 	})
 
-	c.Run("managed data", func(c *qt.C) {
+	t.Run("managed data", func(t *testing.T) {
+		c := qt.New(t)
 		db := usersDatabase()
 		db.ManagedData = []goschema.ManagedData{{Table: "users"}}
 		snapshot, err := schemaartifact.Capture(db)
@@ -65,7 +66,8 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(snapshot, qt.IsNil)
 	})
 
-	c.Run("role password", func(c *qt.C) {
+	t.Run("role password", func(t *testing.T) {
+		c := qt.New(t)
 		db := usersDatabase()
 		db.Roles = []goschema.Role{{Name: "app_user", Password: "secret"}}
 		snapshot, err := schemaartifact.Capture(db)
@@ -73,7 +75,8 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(snapshot, qt.IsNil)
 	})
 
-	c.Run("lossy HCL export", func(c *qt.C) {
+	t.Run("lossy HCL export", func(t *testing.T) {
+		c := qt.New(t)
 		db := usersDatabase()
 		db.Indexes = []goschema.Index{{Name: "missing_idx", TableName: "missing"}}
 		snapshot, err := schemaartifact.Capture(db)

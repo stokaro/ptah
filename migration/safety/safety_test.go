@@ -191,7 +191,6 @@ func TestRenderJSON(t *testing.T) {
 }
 
 func TestNewReportDestructiveVerdictDoesNotDependOnAssessmentOrder(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		assessments []safety.StatementAssessment
@@ -213,7 +212,8 @@ func TestNewReportDestructiveVerdictDoesNotDependOnAssessmentOrder(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			report := safety.NewReport(test.assessments)
 			c.Assert(report.Highest, qt.Equals, safety.Destructive)
 			c.Assert(report.Destructive, qt.IsTrue)

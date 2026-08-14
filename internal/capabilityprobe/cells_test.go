@@ -42,7 +42,8 @@ func TestCells_UseExactlyTheSharedMeasuredLines(t *testing.T) {
 		c.Assert(declared, qt.ContentEquals, lines,
 			qt.Commentf("the matrix cells and resolver identifiers must name exactly the same %s lines", dialect))
 		for _, line := range lines {
-			c.Run(dialect+" "+line, func(c *qt.C) {
+			t.Run(dialect+" "+line, func(t *testing.T) {
+				c := qt.New(t)
 				version, err := capabilityprobe.ParseVersion(dialect, line, "")
 				c.Assert(err, qt.IsNil)
 				cell, found := capabilityprobe.CellFor(dialect, version)
@@ -67,11 +68,11 @@ func declaredLines(dialect string) []string {
 }
 
 func TestCells_AreWellFormed(t *testing.T) {
-	c := qt.New(t)
 
 	seen := map[string]bool{}
 	for _, cell := range capabilityprobe.Cells {
-		c.Run(cell.String(), func(c *qt.C) {
+		t.Run(cell.String(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(platform.NormalizeDialect(cell.Dialect), qt.Equals, cell.Dialect,
 				qt.Commentf("a cell dialect must already be normalized or CellFor will never match it"))
 			c.Assert(cell.Line, qt.Not(qt.Equals), "")
@@ -209,7 +210,6 @@ func TestCellFor(t *testing.T) {
 // matrix declares the containers, and this one checks that what those
 // containers report on the wire lands on a cell.
 func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tc := range []struct {
 		dialect string
@@ -228,7 +228,8 @@ func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
 		{platform.YugabyteDB, "2026.1.0.0"},
 		{platform.SQLServer, "17.0.4065.4"},
 	} {
-		c.Run(fmt.Sprintf("%s %s", tc.dialect, tc.version), func(c *qt.C) {
+		t.Run(fmt.Sprintf("%s %s", tc.dialect, tc.version), func(t *testing.T) {
+			c := qt.New(t)
 			version, err := capabilityprobe.ParseVersion(tc.dialect, tc.version, "")
 			c.Assert(err, qt.IsNil)
 			_, found := capabilityprobe.CellFor(tc.dialect, version)

@@ -36,7 +36,6 @@ type dottedPolicyCase struct {
 //
 // Joined with a dot both become `a.b.c`, and deduplication keeps one.
 func TestDeduplicate_KeepsPoliciesADelimiterWouldCollapse(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []dottedPolicyCase{
 		{
@@ -95,7 +94,8 @@ func TestDeduplicate_KeepsPoliciesADelimiterWouldCollapse(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &goschema.Database{Tables: test.tables, RLSPolicies: test.policies}
 
 			goschema.Deduplicate(database)

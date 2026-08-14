@@ -245,7 +245,8 @@ func TestCellResult_Verdict(t *testing.T) {
 		result: capmatrix.CellResult{Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{}},
 		want:   capmatrix.SuiteFailure,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tc.result.Verdict(), qt.Equals, tc.want)
 		})
 	}

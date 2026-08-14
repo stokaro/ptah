@@ -337,7 +337,8 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "protobuf", "--root-dir", dir}, tt.args...)
 
 			stdout, stderr, err := runSchemaExport(args...)
@@ -376,7 +377,8 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "graphql", "--root-dir", dir}, tt.args...)
 			wantErr := tt.flag + " is only supported with --to protobuf"
 

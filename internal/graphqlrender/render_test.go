@@ -311,9 +311,9 @@ func TestRenderArrayColumn(t *testing.T) {
 // matches nothing: with a query shape requested the root must still be a legal,
 // non-empty type, and with none requested there must be no root at all.
 func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("query shape selected", func(c *qt.C) {
+	t.Run("query shape selected", func(t *testing.T) {
+		c := qt.New(t)
 		res, err := graphqlrender.Render(fixture(), graphqlrender.Options{
 			IncludeTables: []string{"does_not_exist"},
 			Operations:    allOperations,
@@ -324,7 +324,8 @@ func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
 		c.Assert(sdl, qt.Not(qt.Contains), "type Author")
 	})
 
-	c.Run("types only", func(c *qt.C) {
+	t.Run("types only", func(t *testing.T) {
+		c := qt.New(t)
 		res, err := graphqlrender.Render(fixture(), graphqlrender.Options{
 			IncludeTables: []string{"does_not_exist"},
 		})

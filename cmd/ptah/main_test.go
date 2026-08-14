@@ -32,7 +32,8 @@ func TestPtahAtlasNamespaceRemoved(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newPtahProcess(binPath, tt.args...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout

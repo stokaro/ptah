@@ -87,7 +87,8 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(parts[tt.index], qt.DeepEquals, tt.want)
 		})
 	}

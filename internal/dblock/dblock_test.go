@@ -13,7 +13,6 @@ import (
 )
 
 func TestSupported(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -34,7 +33,8 @@ func TestSupported(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(dblock.Supported(test.dialect), qt.Equals, test.want)
 		})
 	}
@@ -61,7 +61,8 @@ func TestAcquire_HappyPath(t *testing.T) {
 		c.Assert(lock.Release(c.Context()), qt.IsNil)
 	})
 
-	c.Run("nil and zero locks release without error", func(c *qt.C) {
+	t.Run("nil and zero locks release without error", func(t *testing.T) {
+		c := qt.New(t)
 		var lock *dblock.Lock
 		c.Assert(lock.Release(c.Context()), qt.IsNil)
 		c.Assert(lock.Supported(), qt.IsFalse)

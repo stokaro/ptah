@@ -58,7 +58,8 @@ func TestVerifyHashed_UnhashedDirectorySkipsVerification(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, hashed, err := migratesum.VerifyHashed(os.DirFS(test.dir), test.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(hashed, qt.IsFalse)
@@ -83,7 +84,8 @@ func TestVerifyHashed_HashedDirectoryVerifies(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, hashed, err := migratesum.VerifyHashed(os.DirFS(test.dir), test.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(hashed, qt.IsTrue)

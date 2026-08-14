@@ -10,7 +10,6 @@ import (
 )
 
 func TestRenderSchemaPlanName(t *testing.T) {
-	c := qt.New(t)
 	data := atlasreport.SchemaPlanName{
 		FromHash: "ERERERERERERERERERERERERERERERERERERERERERE=",
 		ToHash:   "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
@@ -47,7 +46,8 @@ func TestRenderSchemaPlanName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasreport.RenderSchemaPlanName(tt.format, data)
 
 			c.Assert(err, qt.IsNil)
@@ -72,16 +72,17 @@ func TestNewSchemaPlanName_HappyPath(t *testing.T) {
 }
 
 func TestNewSchemaPlanName_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("invalid from fingerprint", func(c *qt.C) {
+	t.Run("invalid from fingerprint", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasreport.NewSchemaPlanName("not-a-digest", "sha256:"+strings.Repeat("2", 64))
 
 		c.Assert(err, qt.ErrorMatches, `parse from schema fingerprint for --name-format: .*`)
 		c.Assert(got, qt.DeepEquals, atlasreport.SchemaPlanName{})
 	})
 
-	c.Run("invalid to fingerprint", func(c *qt.C) {
+	t.Run("invalid to fingerprint", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasreport.NewSchemaPlanName("sha256:"+strings.Repeat("1", 64), "not-a-digest")
 
 		c.Assert(err, qt.ErrorMatches, `parse to schema fingerprint for --name-format: .*`)
@@ -90,7 +91,6 @@ func TestNewSchemaPlanName_FailurePath(t *testing.T) {
 }
 
 func TestRenderSchemaPlanNameErrors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -104,7 +104,8 @@ func TestRenderSchemaPlanNameErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasreport.RenderSchemaPlanName(tt.format, atlasreport.SchemaPlanName{ToHash: "sha256:abc"})
 
 			c.Assert(err, qt.ErrorMatches, tt.want)

@@ -424,7 +424,8 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newCompatProcess(binPath, tt.args...)
 			run.Stdin = strings.NewReader("YES\n")
 			combined, err := run.CombinedOutput()
@@ -463,7 +464,8 @@ func TestCompatBinaryValidCircularForeignKeysDoNotWarn(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			runDir := c.TempDir()
 			run := newCompatProcess(binPath,
 				"schema", "apply",

@@ -63,7 +63,6 @@ func localSource() migrationsource.Source {
 // a local directory carries a sum reviewed beside the migrations, and an
 // unhashed source verified nothing, so it claimed nothing to qualify.
 func TestMutableTagSumWarning(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name            string
 		source          func() migrationsource.Source
@@ -126,7 +125,8 @@ func TestMutableTagSumWarning(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(migrationsource.MutableTagSumWarning(tt.source(), tt.verifiedSumFile), qt.Equals, tt.want)
 		})
 	}
@@ -190,7 +190,6 @@ func TestVerifySumQualifier_DoesNotPromiseAuthenticityFromADigest(t *testing.T) 
 // registered --verify-sum help carries the qualifier; this asserts the helper
 // those registrations go through cannot produce one that does not.
 func TestVerifySumUsage_EndsWithTheSharedQualifier(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		lead string
@@ -201,7 +200,8 @@ func TestVerifySumUsage_EndsWithTheSharedQualifier(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			usage := migrationsource.VerifySumUsage(tt.lead)
 			c.Assert(usage, qt.Contains, migrationsource.VerifySumQualifier)
 			c.Assert(usage[len(usage)-len(migrationsource.VerifySumQualifier):],

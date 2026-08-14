@@ -116,7 +116,6 @@ func TestWriterDropDatabaseRealm_UsesPinnedConnectionForVerification(t *testing.
 }
 
 func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	tests := []string{
 		"information_schema",
 		"METRICS_SCHEMA",
@@ -131,7 +130,8 @@ func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *test
 	}
 
 	for _, database := range tests {
-		c.Run(database, func(c *qt.C) {
+		t.Run(database, func(t2 *testing.T) {
+			c := qt.New(t2)
 			recorder := &mysqlCleanupRecorder{}
 			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
 			writer := mysql.NewMySQLWriterWithServerVersion(
@@ -258,7 +258,6 @@ func TestWriterDropAllTables_RejectsMariaDBCrossDatabaseViews(t *testing.T) {
 }
 
 func TestWriterDropAllTables_RejectsExternalStoredProgramsBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		schema string
@@ -272,7 +271,8 @@ func TestWriterDropAllTables_RejectsExternalStoredProgramsBeforeMutation(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			recorder := &mysqlCleanupRecorder{
 				foreignKeyChecks: 1,
 				externalStoredPrograms: [][]driver.Value{{
@@ -491,7 +491,6 @@ func TestWriterDropAllTables_RejectsViewCreatedBeforeLockedRecheck(t *testing.T)
 }
 
 func TestWriterDropAllTables_DropsManagedViewsThroughProtectedHandoff(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -510,7 +509,8 @@ func TestWriterDropAllTables_DropsManagedViewsThroughProtectedHandoff(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			recorder := &mysqlCleanupRecorder{
 				foreignKeyChecks: 1,
 				viewDropStarted:  make(chan struct{}),

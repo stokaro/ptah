@@ -11,9 +11,9 @@ import (
 )
 
 func TestInsertBuilder(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("single row", func(c *qt.C) {
+	t.Run("single row", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.InsertInto("users").
 			Columns("id", "name").
 			Values(int64(1), "alice").
@@ -24,7 +24,8 @@ func TestInsertBuilder(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{int64(1), "alice"})
 	})
 
-	c.Run("multi row with returning", func(c *qt.C) {
+	t.Run("multi row with returning", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.InsertInto("users").
 			Columns("id", "name").
 			Values(int64(1), "alice").
@@ -37,7 +38,8 @@ func TestInsertBuilder(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{int64(1), "alice", int64(2), "bob"})
 	})
 
-	c.Run("nil value binds SQL NULL", func(c *qt.C) {
+	t.Run("nil value binds SQL NULL", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.InsertInto("users").
 			Columns("name", "deleted_at").
 			Values("alice", nil).
@@ -50,9 +52,9 @@ func TestInsertBuilder(t *testing.T) {
 }
 
 func TestUpdateBuilder(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("set values are numbered before the where value", func(c *qt.C) {
+	t.Run("set values are numbered before the where value", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.Update("users").
 			Set("name", "bob").
 			Set("email", "bob@example.com").
@@ -65,7 +67,8 @@ func TestUpdateBuilder(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{"bob", "bob@example.com", int64(7)})
 	})
 
-	c.Run("unconditional update renders without a where", func(c *qt.C) {
+	t.Run("unconditional update renders without a where", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.Update("flags").
 			Set("enabled", true).
 			Unconditional().
@@ -76,7 +79,8 @@ func TestUpdateBuilder(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{true})
 	})
 
-	c.Run("a where-less update without the opt-in is rejected at render time", func(c *qt.C) {
+	t.Run("a where-less update without the opt-in is rejected at render time", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.Update("users").Set("active", false).Build()
 		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, "renderer: update without a WHERE clause must be marked unconditional")
@@ -86,9 +90,9 @@ func TestUpdateBuilder(t *testing.T) {
 }
 
 func TestDeleteBuilder(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("delete with a where", func(c *qt.C) {
+	t.Run("delete with a where", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.DeleteFrom("users").
 			Where(query.Eq("id", int64(7))).
 			Build()
@@ -98,7 +102,8 @@ func TestDeleteBuilder(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{int64(7)})
 	})
 
-	c.Run("unconditional delete renders without a where", func(c *qt.C) {
+	t.Run("unconditional delete renders without a where", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.DeleteFrom("sessions").Unconditional().Build()
 		sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
@@ -106,7 +111,8 @@ func TestDeleteBuilder(t *testing.T) {
 		c.Assert(args, qt.HasLen, 0)
 	})
 
-	c.Run("a where-less delete without the opt-in is rejected at render time", func(c *qt.C) {
+	t.Run("a where-less delete without the opt-in is rejected at render time", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.DeleteFrom("users").Build()
 		sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, "renderer: delete without a WHERE clause must be marked unconditional")
@@ -120,11 +126,11 @@ func TestDeleteBuilder(t *testing.T) {
 // story: the expression constructors return plain nodes, so a filter composes
 // across statement kinds.
 func TestWriteBuilder_SharedWhereFragment(t *testing.T) {
-	c := qt.New(t)
 
 	filter := query.And(query.Eq("tenant_id", int64(42)), query.Eq("draft", true))
 
-	c.Run("update reuses the fragment", func(c *qt.C) {
+	t.Run("update reuses the fragment", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.Update("commodities").Set("archived", true).Where(filter).Build()
 		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
@@ -132,7 +138,8 @@ func TestWriteBuilder_SharedWhereFragment(t *testing.T) {
 		c.Assert(args, qt.DeepEquals, []any{true, int64(42), true})
 	})
 
-	c.Run("delete reuses the fragment", func(c *qt.C) {
+	t.Run("delete reuses the fragment", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := query.DeleteFrom("commodities").Where(filter).Build()
 		sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)

@@ -9,7 +9,6 @@ import (
 )
 
 func TestComparisonOperatorString(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -26,14 +25,14 @@ func TestComparisonOperatorString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.op.String(), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestLogicalOperatorString(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -46,14 +45,14 @@ func TestLogicalOperatorString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.op.String(), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestJoinTypeString(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -68,14 +67,14 @@ func TestJoinTypeString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.jt.String(), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestSortDirectionString(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -88,7 +87,8 @@ func TestSortDirectionString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.dir.String(), qt.Equals, tt.want)
 		})
 	}

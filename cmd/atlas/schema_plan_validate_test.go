@@ -709,7 +709,8 @@ func TestSchemaPlanValidateRequiredInputs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate", test.args...)
 
 			c.Assert(err, qt.IsNotNil)
@@ -743,7 +744,8 @@ func TestSchemaPlanValidateRefusesUnimplementedTransitionFlags(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
 				fixture.validateArgs(test.args...)...)
 

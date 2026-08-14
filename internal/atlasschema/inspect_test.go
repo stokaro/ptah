@@ -118,7 +118,8 @@ func TestInspect_IncludeSelection(t *testing.T) {
 func TestInspect_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("invalid format before connection", func(c *qt.C) {
+	t.Run("invalid format before connection", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{
 			Format: "{{ if }}",
 		})
@@ -126,7 +127,8 @@ func TestInspect_FailurePath(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{})
 		c.Assert(err, qt.ErrorMatches, "schema inspect requires database connection")
 		c.Assert(rendered, qt.Equals, "")

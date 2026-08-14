@@ -56,7 +56,6 @@ func TestWriterDropDatabaseRealm_Live(t *testing.T) {
 }
 
 func TestWriterDropDatabaseRealm_RejectsExternalDependencyLive(t *testing.T) {
-	c := qt.New(t)
 	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
 	writer := clickhouse.NewClickHouseWriter(db, database)
 	tests := []struct {
@@ -95,7 +94,8 @@ func TestWriterDropDatabaseRealm_RejectsExternalDependencyLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			externalDatabase := fmt.Sprintf(
 				"ptah_realm_external_%s_%d",
 				test.name,

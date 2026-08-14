@@ -11,7 +11,6 @@ import (
 )
 
 func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -43,7 +42,8 @@ func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, selected := mysqlStorageEngineSelection(test.statement, "mysql")
 			c.Assert(selected, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
@@ -52,7 +52,6 @@ func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedStateChange_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE DATABASE archive",
@@ -71,7 +70,8 @@ func TestMySQLUnwitnessedStateChange_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnwitnessedStateChange(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -79,7 +79,6 @@ func TestMySQLUnwitnessedStateChange_Present(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SET SESSION sql_mode = 'ANSI_QUOTES'",
@@ -95,7 +94,8 @@ func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnwitnessedStateChange(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -103,7 +103,6 @@ func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
 }
 
 func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
@@ -122,7 +121,8 @@ func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -130,7 +130,6 @@ func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
 }
 
 func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
@@ -140,7 +139,8 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnsafeSQLModeChange(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -148,7 +148,6 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 }
 
 func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -161,7 +160,8 @@ func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, found := mysqlParserChangingSQLMode(test.sqlMode)
 			c.Assert(found, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
@@ -170,7 +170,6 @@ func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
 }
 
 func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -182,7 +181,8 @@ func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, found := mysqlParserChangingSQLMode(test.sqlMode)
 			c.Assert(found, qt.IsFalse)
 			c.Assert(got, qt.Equals, "")
@@ -191,7 +191,6 @@ func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SELECT id INTO OUTFILE '/tmp/jobs.csv' FROM jobs",
@@ -200,7 +199,8 @@ func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnwitnessedFilesystemWrite(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -208,7 +208,6 @@ func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"INSERT INTO outfile VALUES (1)",
@@ -217,7 +216,8 @@ func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlUnwitnessedFilesystemWrite(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -225,7 +225,6 @@ func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
 }
 
 func TestMySQLExecutableComment_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"/*! SET autocommit = 0 */",
@@ -235,7 +234,8 @@ func TestMySQLExecutableComment_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlExecutableComment(significantSQLTokens(statement, "mariadb"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -243,7 +243,6 @@ func TestMySQLExecutableComment_Present(t *testing.T) {
 }
 
 func TestMySQLExecutableComment_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"/* ordinary comment */ SELECT 1",
@@ -252,7 +251,8 @@ func TestMySQLExecutableComment_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlExecutableComment(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -260,7 +260,6 @@ func TestMySQLExecutableComment_Absent(t *testing.T) {
 }
 
 func TestMySQLOpaqueExecution_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CALL apply_changes()",
@@ -273,7 +272,8 @@ func TestMySQLOpaqueExecution_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlOpaqueExecution(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -281,7 +281,6 @@ func TestMySQLOpaqueExecution_Present(t *testing.T) {
 }
 
 func TestMySQLOpaqueExecution_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"INSERT INTO jobs (id) VALUES (1)",
@@ -290,7 +289,8 @@ func TestMySQLOpaqueExecution_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlOpaqueExecution(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -298,7 +298,6 @@ func TestMySQLOpaqueExecution_Absent(t *testing.T) {
 }
 
 func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE VIEW active_jobs AS SELECT * FROM jobs",
@@ -310,7 +309,8 @@ func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlDefinesIndirectWriter(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -318,7 +318,6 @@ func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
 }
 
 func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TABLE jobs (function_name VARCHAR(32)) ENGINE=InnoDB",
@@ -327,7 +326,8 @@ func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlDefinesIndirectWriter(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -523,7 +523,6 @@ func TestMySQLReferencedExternalSchema(t *testing.T) {
 }
 
 func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -563,7 +562,8 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, test.schema, "mysql")
 			c.Assert(visible, qt.IsTrue)
 		})
@@ -571,7 +571,6 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
 }
 
 func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -599,13 +598,15 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, "ptahtest", "mysql")
 			c.Assert(visible, qt.IsFalse)
 		})
 	}
 
-	c.Run("unknown grant escape fails closed", func(c *qt.C) {
+	t.Run("unknown grant escape fails closed", func(t *testing.T) {
+		c := qt.New(t)
 		visible := mysqlGrantsProvideTriggerCatalogVisibility(
 			[]string{"GRANT TRIGGER ON `ptah\\qtest`.* TO `ptah`@`%`"},
 			"ptahqtest",
@@ -614,7 +615,8 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 		c.Assert(visible, qt.IsFalse)
 	})
 
-	c.Run("database wildcard grant fails closed", func(c *qt.C) {
+	t.Run("database wildcard grant fails closed", func(t *testing.T) {
+		c := qt.New(t)
 		visible := mysqlGrantsProvideTriggerCatalogVisibility(
 			[]string{"GRANT TRIGGER ON `ptah%`.* TO `ptah`@`%`"},
 			"ptahtest",
@@ -623,7 +625,8 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 		c.Assert(visible, qt.IsFalse)
 	})
 
-	c.Run("escaped database revoke overrides global grant", func(c *qt.C) {
+	t.Run("escaped database revoke overrides global grant", func(t *testing.T) {
+		c := qt.New(t)
 		visible := mysqlGrantsProvideTriggerCatalogVisibility(
 			[]string{
 				"GRANT ALL PRIVILEGES ON *.* TO `ptah`@`%`",
@@ -641,7 +644,6 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 // escaped literal name is decoded, but an unescaped wildcard is not inferred to
 // cover the selected database.
 func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -697,7 +699,8 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			visible := mysqlGrantsProvideTriggerCatalogVisibility(test.grants, test.schema, "mysql")
 			c.Assert(visible, qt.Equals, test.want)
 		})
@@ -705,7 +708,6 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
 }
 
 func TestMySQLReferencedCatalogName(t *testing.T) {
-	c := qt.New(t)
 	names := map[string]struct{}{"active_jobs": {}}
 
 	statements := []string{
@@ -720,7 +722,8 @@ func TestMySQLReferencedCatalogName(t *testing.T) {
 		"SELECT * FROM ptahtest.active_jobs",
 	}
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			relation, referenced := mysqlReferencedCatalogName(significantSQLTokens(statement, "mysql"), names)
 			c.Assert(referenced, qt.IsTrue)
 			c.Assert(relation, qt.Equals, "active_jobs")
@@ -729,7 +732,6 @@ func TestMySQLReferencedCatalogName(t *testing.T) {
 }
 
 func TestMySQLReferencedCatalogName_IgnoresNonRelationIdentifiers(t *testing.T) {
-	c := qt.New(t)
 	names := map[string]struct{}{"active_jobs": {}}
 
 	statements := []string{
@@ -739,7 +741,8 @@ func TestMySQLReferencedCatalogName_IgnoresNonRelationIdentifiers(t *testing.T) 
 		"CREATE TABLE jobs (active_jobs INT)",
 	}
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			relation, referenced := mysqlReferencedCatalogName(significantSQLTokens(statement, "mysql"), names)
 			c.Assert(referenced, qt.IsFalse)
 			c.Assert(relation, qt.Equals, "")
@@ -748,7 +751,6 @@ func TestMySQLReferencedCatalogName_IgnoresNonRelationIdentifiers(t *testing.T) 
 }
 
 func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TEMPORARY TABLE schema_migrations (version BIGINT)",
@@ -760,7 +762,8 @@ func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlReferencesNamedRelation(
 				significantSQLTokens(statement, "mysql"),
 				"app",
@@ -773,7 +776,6 @@ func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
 }
 
 func TestMySQLReferencesNamedRelation_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TEMPORARY TABLE audit.schema_migrations (version BIGINT)",
@@ -785,7 +787,8 @@ func TestMySQLReferencesNamedRelation_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlReferencesNamedRelation(
 				significantSQLTokens(statement, "mysql"),
 				"app",
@@ -843,7 +846,6 @@ func TestMigrationHasStatementInterceptor(t *testing.T) {
 }
 
 func TestMySQLCreateTableLike_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TABLE jobs_archive LIKE archive.jobs",
@@ -852,7 +854,8 @@ func TestMySQLCreateTableLike_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlCreateTableLike(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -860,7 +863,6 @@ func TestMySQLCreateTableLike_Present(t *testing.T) {
 }
 
 func TestMySQLCreateTableLike_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TABLE jobs (id BIGINT) ENGINE=InnoDB",
@@ -869,7 +871,8 @@ func TestMySQLCreateTableLike_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlCreateTableLike(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -877,7 +880,6 @@ func TestMySQLCreateTableLike_Absent(t *testing.T) {
 }
 
 func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TEMPORARY TABLE jobs (id BIGINT)",
@@ -885,7 +887,8 @@ func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlCreatesTemporaryTable(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsTrue)
 		})
@@ -893,7 +896,6 @@ func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
 }
 
 func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"CREATE TABLE jobs (id BIGINT)",
@@ -902,7 +904,8 @@ func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
 	}
 
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			got := mysqlCreatesTemporaryTable(significantSQLTokens(statement, "mysql"))
 			c.Assert(got, qt.IsFalse)
 		})
@@ -910,7 +913,6 @@ func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
 }
 
 func TestMySQLStorageEngineSelection_Absent(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -926,7 +928,8 @@ func TestMySQLStorageEngineSelection_Absent(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, selected := mysqlStorageEngineSelection(test.statement, "mysql")
 			c.Assert(selected, qt.IsFalse)
 			c.Assert(got, qt.Equals, "")
@@ -938,7 +941,6 @@ func TestMySQLStorageEngineSelection_Absent(t *testing.T) {
 // report zero without database evidence; the MySQL-family integration path
 // replaces that value with the committed revision-row witness.
 func TestRolledBackApplied(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -1006,7 +1008,8 @@ func TestRolledBackApplied(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := rolledBackApplied(tt.dialect, tt.txMode, tt.executed)
 			c.Assert(got, qt.Equals, tt.want)
 		})

@@ -156,9 +156,9 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 // relations, and putting a column on the wrong one is the mistake the resolver
 // exists to prevent.
 func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("a named non-default schema selects its own table", func(c *qt.C) {
+	t.Run("a named non-default schema selects its own table", func(t *testing.T) {
+		c := qt.New(t)
 		generated := &goschema.Database{
 			Tables: []goschema.Table{
 				{StructName: "PublicUser", Name: "users", Schema: "public"},
@@ -201,7 +201,8 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 		)
 	})
 
-	c.Run("a table the schema does not declare gets no column DDL", func(c *qt.C) {
+	t.Run("a table the schema does not declare gets no column DDL", func(t *testing.T) {
+		c := qt.New(t)
 		generated := &goschema.Database{
 			Tables: []goschema.Table{{StructName: "Other", Name: "other", Schema: "public"}},
 			Fields: []goschema.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},

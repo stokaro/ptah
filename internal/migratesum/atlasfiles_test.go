@@ -89,21 +89,23 @@ func TestComputeAtlasFilesSumIgnoreDirective(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 
-	c.Run("the ignored file gets no entry", func(c *qt.C) {
+	t.Run("the ignored file gets no entry", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(withIgnored.Entries, qt.HasLen, 1)
 		c.Assert(withIgnored.Entries[0].Name, qt.Equals, "2_kept.sql")
 	})
 
-	c.Run("but its name still feeds the running hash", func(c *qt.C) {
+	t.Run("but its name still feeds the running hash", func(t *testing.T) {
 		// If the name were skipped along with the contents, these would match.
+		c := qt.New(t)
 		c.Assert(withIgnored.Entries[0].Hash, qt.Not(qt.Equals), alone.Entries[0].Hash)
 	})
 }
 
 func TestComputeAtlasFilesRejectsBadInput(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("duplicate name", func(c *qt.C) {
+	t.Run("duplicate name", func(t *testing.T) {
+		c := qt.New(t)
 		fsys := atlasSourceFS(map[string]string{"a.sql": "CREATE TABLE a (id int);\n"})
 
 		_, err := migratesum.ComputeAtlasFiles(fsys, []string{"a.sql", "a.sql"})
@@ -111,7 +113,8 @@ func TestComputeAtlasFilesRejectsBadInput(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `duplicate migration file name "a.sql"`)
 	})
 
-	c.Run("missing file", func(c *qt.C) {
+	t.Run("missing file", func(t *testing.T) {
+		c := qt.New(t)
 		fsys := atlasSourceFS(map[string]string{"a.sql": "CREATE TABLE a (id int);\n"})
 
 		_, err := migratesum.ComputeAtlasFiles(fsys, []string{"a.sql", "gone.sql"})
@@ -191,14 +194,16 @@ func TestVerifyAtlasFiles(t *testing.T) {
 		c.Assert(result.OK(), qt.IsTrue)
 	})
 
-	c.Run("missing sum file", func(c *qt.C) {
+	t.Run("missing sum file", func(t *testing.T) {
+		c := qt.New(t)
 		result, err := migratesum.VerifyAtlasFiles(seed(), names)
 
 		c.Assert(result, qt.IsNil)
 		c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
 	})
 
-	c.Run("malformed sum file", func(c *qt.C) {
+	t.Run("malformed sum file", func(t *testing.T) {
+		c := qt.New(t)
 		fsys := seed()
 		fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: []byte("garbage\n")}
 
@@ -217,7 +222,8 @@ func TestVerifyAtlasFilesHashed(t *testing.T) {
 		return atlasSourceFS(map[string]string{"1_init.sql": "CREATE TABLE a (id int);\n"})
 	}
 
-	c.Run("unhashed directory reports hashed=false", func(c *qt.C) {
+	t.Run("unhashed directory reports hashed=false", func(t *testing.T) {
+		c := qt.New(t)
 		result, hashed, err := migratesum.VerifyAtlasFilesHashed(seed(), names)
 
 		c.Assert(err, qt.IsNil)
@@ -244,7 +250,8 @@ func TestVerifyAtlasFilesHashed(t *testing.T) {
 		c.Assert(result.OK(), qt.IsFalse)
 	})
 
-	c.Run("a ptah.sum does not count as hashed", func(c *qt.C) {
+	t.Run("a ptah.sum does not count as hashed", func(t *testing.T) {
+		c := qt.New(t)
 		fsys := seed()
 		fsys[migratesum.FileName] = &fstest.MapFile{Data: []byte("h1:whatever\n")}
 

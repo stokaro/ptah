@@ -225,7 +225,6 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 // contract — they end up in the file names `migrate import` writes and in the
 // revisions `migrate apply` records.
 func TestLoadFSFlywayAtlasVersions(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -284,7 +283,8 @@ func TestLoadFSFlywayAtlasVersions(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.IsNil)
@@ -337,7 +337,6 @@ func TestLoadFSFlywayBaselineDoesNotShiftSurvivorVersions(t *testing.T) {
 // duplicate version rather than reporting anything, so refusing is a refusal
 // toward the oracle rather than past it.
 func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -360,7 +359,8 @@ func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -378,7 +378,6 @@ func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
 // Closing these means giving the migrator a version that is not an int64, which
 // is a change to revision tracking rather than to this importer.
 func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -405,7 +404,8 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -428,9 +428,9 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 // version is positive and below the reserved repeatable slot is what makes the
 // row a bound rather than a spot check.
 func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("the largest representable version converts", func(c *qt.C) {
+	t.Run("the largest representable version converts", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadFS(
 			flywaySource("V113020439624235.99.99__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
 
@@ -438,7 +438,8 @@ func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
 		c.Assert(entryNames(loaded), qt.DeepEquals, []string{"9223372036854754447_x.sql"})
 	})
 
-	c.Run("one past it is refused", func(c *qt.C) {
+	t.Run("one past it is refused", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadFS(
 			flywaySource("V113020439624236__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
 

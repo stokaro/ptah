@@ -9,7 +9,6 @@ import (
 )
 
 func TestCompute(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -182,7 +181,8 @@ func TestCompute(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := datadiff.Compute("", tt.table, tt.keys, tt.desired, tt.live)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, tt.want)
@@ -191,7 +191,6 @@ func TestCompute(t *testing.T) {
 }
 
 func TestComputeErrors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -220,7 +219,8 @@ func TestComputeErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := datadiff.Compute("", "regions", tt.keys, tt.desired, tt.live)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(got, qt.IsNil)

@@ -281,10 +281,10 @@ func TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone(t *testing.T) 
 // command that produces no SQL at all. A refusal that removes the other
 // statements is a worse answer than the omission it replaces.
 func TestRender_MySQLFamilyNamesRolesInsteadOfAbortingTheRender(t *testing.T) {
-	c := qt.New(t)
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), dialect)
 
 			c.Assert(err, qt.IsNil)

@@ -37,7 +37,6 @@ type reservedPrefixCase struct {
 // control in the other direction is that the drop leaves the internal schema
 // intact and reports success, which the surrounding suite already covers.
 func TestWriterDropAllTables_DropsUserObjectsNamedSqliteSomething(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []reservedPrefixCase{
 		{
@@ -66,7 +65,8 @@ func TestWriterDropAllTables_DropsUserObjectsNamedSqliteSomething(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			db := openFileSQLiteDB(t)
 			execSQL(t, db, test.create)
 

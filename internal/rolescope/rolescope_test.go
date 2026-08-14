@@ -105,7 +105,6 @@ func TestDescribeAllEnvVarIsSpelledLikeTheDocumentationQuotesIt(t *testing.T) {
 // with no roles from a server whose roles this description declined to
 // mention.
 func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -133,7 +132,8 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var out bytes.Buffer
 
 			rolescope.ReportUndescribed(&out, &dbschematypes.DBSchema{RolesOutOfScope: test.omitted})
@@ -175,7 +175,6 @@ func TestReportUndescribedNeverPrintsARoleName(t *testing.T) {
 // writer row is the inspect surfaces' spelling of "no diagnostics stream", and
 // a note that panicked there would fail a read that succeeded.
 func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -212,7 +211,8 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var out bytes.Buffer
 
 			test.report(&out)

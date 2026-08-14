@@ -27,9 +27,9 @@ func TestRender_SplitterRoundTrip(t *testing.T) {
 		{name: "mysql backslash-quote payload", dialect: "mysql", value: `\'; DROP TABLE regions; --`},
 	}
 
-	c := qt.New(t)
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &datadiff.DataDiff{
 				Table: "regions",
 				Keys:  []string{"code"},
@@ -184,7 +184,6 @@ UPDATE "prices" SET "val" = 'old' WHERE "code" = 'A' AND "tenant" = 1;
 // TestRenderEmptyDiff confirms a no-op diff renders to two empty scripts rather
 // than an error.
 func TestRenderEmptyDiff(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -201,7 +200,8 @@ func TestRenderEmptyDiff(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			up, down, err := datadiff.Render(tt.diff, "postgres")
 			c.Assert(err, qt.IsNil)
 			c.Assert(up, qt.Equals, "")
@@ -215,7 +215,6 @@ func TestRenderEmptyDiff(t *testing.T) {
 // the asserted up script pins down the exact literal produced for each value
 // kind and dialect.
 func TestRenderLiterals(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -350,7 +349,8 @@ func TestRenderLiterals(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &datadiff.DataDiff{
 				Table:   "t",
 				Keys:    []string{"id"},
@@ -389,7 +389,6 @@ func TestRenderStringInjectionIsEscaped(t *testing.T) {
 // TestRenderLiteralErrors verifies that values with no safe SQL literal cause
 // Render to fail rather than emit anything, and that no partial output leaks.
 func TestRenderLiteralErrors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -403,7 +402,8 @@ func TestRenderLiteralErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &datadiff.DataDiff{
 				Table:   "t",
 				Keys:    []string{"id"},
@@ -422,7 +422,6 @@ func TestRenderLiteralErrors(t *testing.T) {
 // insert whose down statement cannot target it), and updates with nothing to
 // set.
 func TestRenderErrors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -486,7 +485,8 @@ func TestRenderErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			up, down, err := datadiff.Render(tt.diff, "postgres")
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(up, qt.Equals, "")

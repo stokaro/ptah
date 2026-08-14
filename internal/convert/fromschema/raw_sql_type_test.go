@@ -21,7 +21,6 @@ import (
 //
 // Without the fix, wantRawSQL is false on every row.
 func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -75,7 +74,8 @@ func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			column := fromschema.FromField(test.field, nil, test.platform)
 			c.Assert(column.Type, qt.Equals, test.wantType)
 			c.Assert(column.TypeRawSQL, qt.Equals, test.wantRawSQL)

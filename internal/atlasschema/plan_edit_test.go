@@ -79,7 +79,6 @@ func TestPlanFileWithStatementsFromSQLDoesNotMutateTheReceiver(t *testing.T) {
 }
 
 func TestPlanFileWithStatementsFromSQLSplitsWithThePlansOwnDialect(t *testing.T) {
-	c := qt.New(t)
 	// A lone backslash before the closing quote escapes it in the MySQL family
 	// and does not in SQLite, so the same text is one statement there and two
 	// here. This is the input that separates "the plan's dialect reaches the
@@ -99,7 +98,8 @@ func TestPlanFileWithStatementsFromSQLSplitsWithThePlansOwnDialect(t *testing.T)
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: tt.dialect}
 
 			got := plan.WithStatementsFromSQL(edited)
@@ -152,7 +152,6 @@ func TestPlanFileWithStatementsFromSQLClassifiesPastLeadingComments(t *testing.T
 }
 
 func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -164,7 +163,8 @@ func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := atlasschema.PlanFile{Dialect: test.dialect}.WithStatementsFromSQL(test.sql)
 
 			c.Assert(plan.Statements, qt.HasLen, 1)

@@ -97,7 +97,8 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			path := filepath.Join(dir, test.file)
 
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",

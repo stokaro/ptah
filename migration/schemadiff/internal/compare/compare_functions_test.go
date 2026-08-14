@@ -238,7 +238,6 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 // different function, or the fix would have replaced one collision with
 // another.
 func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing.T) {
-	c := qt.New(t)
 
 	function := func(name string) goschema.Function {
 		return goschema.Function{
@@ -282,7 +281,8 @@ func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			gen := &goschema.Database{Functions: []goschema.Function{function(test.desired)}}
 			db := &dbtypes.DBSchema{
 				Functions: []dbtypes.DBFunction{dbFunction(test.dbSchema, test.dbName)},

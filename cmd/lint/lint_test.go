@@ -960,7 +960,8 @@ func TestRunLint_LocalSourceValidationPrecedence(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, stderr, err := execute(test.args...)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)

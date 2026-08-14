@@ -282,7 +282,8 @@ func TestEveryDeclaredVariableIsNamedAndDefaultedSafely(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(strings.HasPrefix(variable.Name(), envbool.Prefix), qt.IsTrue)
 			c.Assert(variable.Default(), qt.IsFalse, qt.Commentf(
 				"a boolean PTAH_* variable defaulting to the permissive side turns a typo"+

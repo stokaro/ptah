@@ -52,7 +52,8 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	inspected := boundaryInspect(c, dbURL, true)
 	authored := coverageStripDirectives(inspected)
 
-	c.Run("the document declares the three kinds it does not describe", func(c *qt.C) {
+	t.Run("the document declares the three kinds it does not describe", func(t *testing.T) {
+		c := qt.New(t)
 		declared, decodeErr := coverage.DecodeHeader(inspected)
 		c.Assert(decodeErr, qt.IsNil)
 		c.Assert(declared, qt.DeepEquals, coverage.Set{}.WithKind(
@@ -72,7 +73,8 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		})
 	})
 
-	c.Run("the two documents differ in the header alone", func(c *qt.C) {
+	t.Run("the two documents differ in the header alone", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(coverageDirectiveLines(inspected), qt.HasLen, 3)
 		c.Assert(coverageDirectiveLines(authored), qt.HasLen, 0)
 		c.Assert(coverageStripDirectives(inspected), qt.Equals, authored)

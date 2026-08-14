@@ -15,7 +15,6 @@ import (
 // from an introspected database, which qualifies every name it read; the diff
 // records the name the Go schema spells, which is normally bare.
 func TestView_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -104,7 +103,8 @@ func TestView_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := objectlookup.View(test.views, test.lookup, test.semantics)
 			c.Assert(got, qt.IsNotNil)
 			c.Assert(got.Body, qt.Equals, test.wantBody)
@@ -117,7 +117,6 @@ func TestView_HappyPath(t *testing.T) {
 // statement for either of them would be a coin toss on which one the migration
 // destroys.
 func TestView_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -152,7 +151,8 @@ func TestView_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(objectlookup.View(test.views, test.lookup, test.semantics), qt.IsNil)
 		})
 	}
@@ -180,7 +180,6 @@ func TestMaterializedView_FailurePath(t *testing.T) {
 // TestTrigger_HappyPath covers the half of a trigger's identity that carries a
 // schema: the table it hangs on.
 func TestTrigger_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -217,7 +216,8 @@ func TestTrigger_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := objectlookup.Trigger(test.triggers, test.table, test.trigger, test.semantics)
 			c.Assert(got, qt.IsNotNil)
 			c.Assert(got.Body, qt.Equals, test.wantBody)
@@ -226,7 +226,6 @@ func TestTrigger_HappyPath(t *testing.T) {
 }
 
 func TestTrigger_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -262,7 +261,8 @@ func TestTrigger_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				objectlookup.Trigger(test.triggers, test.table, test.trigger, test.semantics),
 				qt.IsNil,
@@ -274,7 +274,6 @@ func TestTrigger_FailurePath(t *testing.T) {
 // TestContains pins the identity-aware replacement for the
 // `slices.Contains(diff.Tables…, ref)` shape.
 func TestContains(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -335,7 +334,8 @@ func TestContains(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(objectlookup.Contains(test.names, test.lookup, test.semantics), qt.Equals, test.want)
 		})
 	}
@@ -345,7 +345,6 @@ func TestContains(t *testing.T) {
 // QualifiedName goes through: tables, domains, composites, ranges, sequences and
 // enums.
 func TestQualified(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -390,7 +389,8 @@ func TestQualified(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := objectlookup.Qualified(test.tables, test.lookup, test.semantics)
 			c.Assert(got, qt.IsNotNil)
 			c.Assert(got.StructName, qt.Equals, test.wantStruct)

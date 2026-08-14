@@ -852,7 +852,6 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 }
 
 func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name          string
@@ -868,7 +867,8 @@ func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *tes
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
@@ -894,7 +894,6 @@ func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 }
 
 func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name          string
@@ -908,7 +907,8 @@ func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
