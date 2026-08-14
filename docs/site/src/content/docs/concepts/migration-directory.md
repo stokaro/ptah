@@ -175,8 +175,9 @@ unaffected. The refusal names the entry and the rule.
   What travels does change what the integrity file *establishes*: `ptah.sum`
   sits inside the artifact rather than beside the migrations in a reviewed
   repository, so over a movable tag it proves the pulled files are internally
-  consistent, not that they are the reviewed ones. Pin a digest for
-  authenticity — see
+  consistent, not that they are the reviewed ones. Pinning a digest fixes which
+  bytes a later pull gets; it does not say who published them, and whoever
+  repointed the tag chose the digest you would be pinning — see
   [Identity, integrity, and authenticity](../../operate/oci-registry/#identity-integrity-and-authenticity).
 - **Edits are a maintenance operation.** Because files are hashed and ordered,
   changing history has dedicated commands rather than ad-hoc file edits — see
