@@ -273,6 +273,216 @@ func TestOCISchemaSourceVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	}
 }
 
+// migrationDirFlags names every spelling a command uses for the migration
+// DIRECTORY it reads.
+//
+// Two spellings exist and neither is going away: `--dir` on the verbs that only
+// ever look at a directory, `--migrations-dir` on the verbs that also take a
+// schema or a database. The walk below covers both, because a census of one
+// spelling is how `migrations validate` — a `--dir` verb sitting beside
+// `migrations up`, a `--migrations-dir` verb — went a full release resolving no
+// scheme at all while the gate above reported every row green
+// (stokaro/ptah#1499). That gate walks `--schema-file`, which validate does not
+// register, so the defect was outside every set anything was counting.
+func migrationDirFlags() []string {
+	return []string{"dir", "migrations-dir"}
+}
+
+// ociMigrationDirVerbs enumerates the commands that resolve an oci:// MIGRATION
+// DIRECTORY, as opposed to an oci:// schema artifact.
+//
+// The rows drive the real command exactly as the schema rows above do, and for
+// the same reason: registration is not acceptance.
+func ociMigrationDirVerbs() []ociSourceVerb {
+	return []ociSourceVerb{
+		{
+			verb: "migrations validate",
+			args: func(reference string) []string {
+				return []string{"migrations", "validate", "--dir", reference, "--plain-http"}
+			},
+		},
+		{
+			verb: "migrations lint",
+			args: func(reference string) []string {
+				return []string{"migrations", "lint", "--dir", reference, "--plain-http"}
+			},
+		},
+		{
+			verb: "migrations up",
+			args: func(reference string) []string {
+				return []string{
+					"migrations", "up", "--migrations-dir", reference,
+					"--db-url", "sqlite://:memory:", "--plain-http",
+				}
+			},
+		},
+		{
+			verb: "migrations down",
+			args: func(reference string) []string {
+				return []string{
+					"migrations", "down", "--migrations-dir", reference,
+					"--db-url", "sqlite://:memory:", "--target", "0", "--plain-http",
+				}
+			},
+		},
+		{
+			verb: "migrations status",
+			args: func(reference string) []string {
+				return []string{
+					"migrations", "status", "--migrations-dir", reference,
+					"--db-url", "sqlite://:memory:", "--plain-http",
+				}
+			},
+		},
+	}
+}
+
+// localOnlyMigrationDirVerb is one command whose migration-directory flag is
+// NOT dispatched to the OCI puller, with the reason it is not.
+type localOnlyMigrationDirVerb struct {
+	verb string
+	// why records why a registry reference is meaningless on this verb, so a
+	// reader can tell a deliberate exception from a row nobody got to yet. Two
+	// shapes recur: the flag names a directory the command WRITES, and an OCI
+	// artifact is immutable; or it names a directory the command rewrites in
+	// place after reading.
+	why string
+}
+
+// localOnlyMigrationDirVerbs accounts for every remaining command registering a
+// migration-directory flag.
+//
+// This list is long on purpose. The alternative is a walk that silently ignores
+// what it does not recognise, which is the failure mode the file's opening
+// comment is about: a new verb landing outside every set. A verb added here
+// needs its reason written beside it, and a verb that starts resolving the
+// scheme has to move to the table above, where it is driven rather than merely
+// named.
+func localOnlyMigrationDirVerbs() []localOnlyMigrationDirVerb {
+	return []localOnlyMigrationDirVerb{
+		{verb: "migrations hash", why: "it rewrites the integrity file in the directory; an artifact is immutable"},
+		{verb: "migrations create", why: "it writes new migration files into the directory"},
+		{verb: "migrations generate", why: "it writes generated migration files into the directory"},
+		{verb: "migrations edit", why: "it rewrites a migration and re-hashes the directory in place"},
+		{verb: "migrations rebase", why: "it re-timestamps a migration and re-hashes the directory in place"},
+		{verb: "migrations rm", why: "it deletes a migration pair and re-hashes the directory in place"},
+		{verb: "migrations checkpoint", why: "it squashes history into a new file written to the directory"},
+		{verb: "migrations import", why: "the flag names the destination the converted files are written to"},
+		{verb: "migrations data", why: "it writes a generated data migration into the directory"},
+		{verb: "migrations push", why: "the flag names the LOCAL directory being published; the registry is the positional argument"},
+		{verb: "migrations baseline", why: "it reads the directory to record revisions, and is not wired to the puller"},
+		{verb: "migrations repair", why: "it reads the directory to rewrite revision metadata, and is not wired to the puller"},
+		{verb: "migrations set", why: "it reads the directory to move the revision boundary, and is not wired to the puller"},
+		{verb: "migrations test", why: "it runs migration test files from a local working tree, and is not wired to the puller"},
+		{verb: "schema test", why: "it runs schema test files from a local working tree, and is not wired to the puller"},
+		{verb: "schema inspect", why: "the flag supplies a local migration directory to replay, and is not wired to the puller"},
+	}
+}
+
+// TestOCIMigrationDirVerbs_EveryDirectoryFlagIsAccountedFor is the census.
+//
+// It walks the built tree for both migration-directory spellings and requires
+// every leaf that registers either to appear in exactly one of the two tables,
+// in both directions.
+func TestOCIMigrationDirVerbs_EveryDirectoryFlagIsAccountedFor(t *testing.T) {
+	c := qt.New(t)
+
+	var registered []string
+	for _, flag := range migrationDirFlags() {
+		found := nativeVerbsRegisteringFlag(root.NewRootCommand(), flag)
+		c.Assert(len(found) > 0, qt.IsTrue,
+			qt.Commentf("the walk found no --%s at all, so it is measuring nothing", flag))
+		registered = append(registered, found...)
+	}
+	slices.Sort(registered)
+	registered = slices.Compact(registered)
+
+	var accounted []string
+	for _, row := range ociMigrationDirVerbs() {
+		accounted = append(accounted, row.verb)
+	}
+	for _, row := range localOnlyMigrationDirVerbs() {
+		c.Assert(row.why, qt.Not(qt.Equals), "",
+			qt.Commentf("%q is excluded with no reason written beside it", row.verb))
+		accounted = append(accounted, row.verb)
+	}
+	slices.Sort(accounted)
+	c.Assert(slices.Compact(slices.Clone(accounted)), qt.DeepEquals, accounted,
+		qt.Commentf("a verb is listed twice: %q", accounted))
+
+	for _, verb := range registered {
+		c.Run(verb, func(c *qt.C) {
+			c.Assert(accounted, qt.Contains, verb,
+				qt.Commentf("%q registers a migration-directory flag but no row states whether it resolves oci://", verb))
+		})
+	}
+	for _, verb := range accounted {
+		c.Run("still registered: "+verb, func(c *qt.C) {
+			c.Assert(registered, qt.Contains, verb,
+				qt.Commentf("%q is accounted for but no longer registers a migration-directory flag", verb))
+		})
+	}
+
+	for _, row := range ociMigrationDirVerbs() {
+		c.Run("plain-http on "+row.verb, func(c *qt.C) {
+			c.Assert(nativeVerbsRegisteringFlag(root.NewRootCommand(), "plain-http"), qt.Contains, row.verb)
+		})
+	}
+}
+
+// TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP is the reachability
+// gate for migration directories, and it is the one that would have caught
+// stokaro/ptah#1499.
+//
+// `migrations validate --dir oci://…` did not fail at the dial: it failed at
+// `stat oci://…: no such file or directory`, because the reference never
+// reached a registry client at all. Requiring the dial distinguishes the three
+// dispositions — resolves it, refuses the scheme, treats it as a path — without
+// a registry being involved.
+func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
+	c := qt.New(t)
+	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
+
+	for _, row := range ociMigrationDirVerbs() {
+		c.Run(row.verb, func(c *qt.C) {
+			out, err := runNative(row.args(reference)...)
+			combined := out + errorText(err)
+
+			c.Check(combined, qt.Not(qt.Contains), "unknown flag: --plain-http")
+			// The path-shaped failure stokaro/ptah#1499 reported. A command
+			// that stats the reference never dials, so this and the dial
+			// assertion below cannot both hold.
+			c.Check(combined, qt.Not(qt.Contains), "no such file or directory")
+			c.Check(combined, qt.Contains, "connection refused",
+				qt.Commentf("output:\n%s", combined))
+			c.Check(combined, qt.Contains, "http://",
+				qt.Commentf("output:\n%s", combined))
+			c.Check(combined, qt.Not(qt.Contains), "https://")
+		})
+	}
+}
+
+// TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS is the other direction: the
+// flag must be what selected plain HTTP, not a default that was never
+// encrypted.
+func TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
+	c := qt.New(t)
+	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
+
+	for _, row := range ociMigrationDirVerbs() {
+		c.Run(row.verb, func(c *qt.C) {
+			args := slices.DeleteFunc(row.args(reference), func(arg string) bool {
+				return arg == "--plain-http"
+			})
+			out, err := runNative(args...)
+			combined := out + errorText(err)
+
+			c.Check(combined, qt.Contains, "https://",
+				qt.Commentf("output:\n%s", combined))
+		})
+	}
+}
+
 // verifySumVerb is one command registering --verify-sum, with the reason.
 type verifySumVerb struct {
 	verb string
@@ -289,9 +499,14 @@ type verifySumVerb struct {
 // --verify-sum is the DIFFERENT question: it refuses a directory that carries
 // no sum at all. Measured against an unhashed artifact published to a registry:
 // `up` without the flag exits 0, `up --verify-sum` exits 2 `ptah.sum not
-// found`. Nothing else on the native surface asks that question — `migrations
-// validate` does, but it cannot read an oci:// directory, so for a registry
-// source the flag is the only spelling there is.
+// found`.
+//
+// `migrations validate` asks the same question, and since stokaro/ptah#1499 it
+// asks it of an oci:// reference too. The flag survives that because the two
+// are not interchangeable: validate resolves the reference in its own process,
+// so a movable tag can select different bytes before the executing verb
+// resolves it again. --verify-sum verifies the artifact the same invocation is
+// about to execute, which is the window a separate call cannot close.
 func verifySumVerbs() []verifySumVerb {
 	return []verifySumVerb{
 		{
