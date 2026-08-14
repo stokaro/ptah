@@ -308,7 +308,7 @@ while IFS= read -r action_file; do
 		else
 			line="${gvf_defaults[0]%%:*}"
 			value="${gvf_defaults[0]#*:}"
-			clean="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+			clean="$(strip_value "$value")"
 			case "$clean" in
 			go.mod | ./go.mod) ;;
 			*)
@@ -329,11 +329,21 @@ fi
 #
 # `run.go` is documented to default to the go directive in go.mod. Setting it
 # duplicates a fact, and this is the copy that drifted.
+#
+# The scalar is judged after its quoting comes off, for the same reason as D2:
+# `go: 1.26.6`, `go: "1.26.6"` and `go: '1.26.6'` are one value in three
+# spellings, and a detector that recognizes only some of them stays silent on
+# the rest.
 if [[ -f .golangci.yml ]]; then
-	while IFS=: read -r file line _; do
-		fail "$file" "$line" \
-			"golangci-lint declares run.go. Delete it; its documented default is already the go directive from go.mod."
-	done < <(awk '/^run:/{in_run=1; next} /^[^[:space:]#]/{in_run=0} in_run && /^[[:space:]]+go:[[:space:]]*"?[0-9]/{print FILENAME ":" NR ":" $0}' .golangci.yml)
+	while IFS=: read -r file line text; do
+		clean="$(strip_value "$text")"
+		case "$clean" in
+		[0-9]*.[0-9]*)
+			fail "$file" "$line" \
+				"golangci-lint declares run.go ($clean). Delete it; its documented default is already the go directive from go.mod."
+			;;
+		esac
+	done < <(awk '/^run:/{in_run=1; next} /^[^[:space:]#]/{in_run=0} in_run && /^[[:space:]]+go:/{value = $0; sub(/^[[:space:]]*go:[[:space:]]*/, "", value); print FILENAME ":" NR ":" value}' .golangci.yml)
 fi
 
 # D4: the root's floor never rises above the secondary module's.
