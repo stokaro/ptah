@@ -505,17 +505,26 @@ type Extension struct {
 //	    RoleID int64
 //	}
 type Table struct {
-	StructName    string   // Name of the Go struct this table represents
-	Name          string   // Database table name
-	Schema        string   // Optional database schema/namespace (PostgreSQL-style)
-	Engine        string   // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
-	AutoIncrement string   // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
-	Charset       string   // Table default character set (MySQL/MariaDB specific)
-	Collate       string   // Table default collation (MySQL/MariaDB specific)
-	Strict        bool     // SQLite STRICT table option
-	WithoutRowID  bool     // SQLite WITHOUT ROWID table option
-	Comment       string   // Table comment/description
-	PrimaryKey    []string // Composite primary key column names
+	StructName    string // Name of the Go struct this table represents
+	Name          string // Database table name
+	Schema        string // Optional database schema/namespace (PostgreSQL-style)
+	Engine        string // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
+	AutoIncrement string // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
+	Charset       string // Table default character set (MySQL/MariaDB specific)
+	Collate       string // Table default collation (MySQL/MariaDB specific)
+	Strict        bool   // SQLite STRICT table option
+	WithoutRowID  bool   // SQLite WITHOUT ROWID table option
+	// VirtualModule is the SQLite module that owns this table, from the USING
+	// clause of its CREATE VIRTUAL TABLE statement. Only the SQLite reader
+	// sets it: no desired-state source can declare a virtual table, so it is
+	// always empty on a schema parsed from Go annotations, HCL, YAML, or a
+	// .sql file. A non-empty value makes the table render as
+	// CREATE VIRTUAL TABLE rather than CREATE TABLE. See stokaro/ptah#1028.
+	VirtualModule string
+	// VirtualArguments is the text between the module's parentheses, verbatim.
+	VirtualArguments string
+	Comment          string   // Table comment/description
+	PrimaryKey       []string // Composite primary key column names
 	// PrimaryKeyParts carries dialect-specific metadata for composite primary
 	// key elements, such as MySQL prefix lengths and DESC ordering.
 	PrimaryKeyParts []PrimaryKeyPart

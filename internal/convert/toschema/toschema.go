@@ -264,6 +264,12 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	if withoutRowID, exists := table.Options["WITHOUT_ROWID"]; exists {
 		tableSchema.WithoutRowID, _ = strconv.ParseBool(withoutRowID)
 	}
+	// The inverse of what fromschema writes. Reading these back keeps a
+	// goschema -> AST -> goschema trip from turning a virtual table into an
+	// ordinary one, which is the shape the whole defect took the first time.
+	// See stokaro/ptah#1028.
+	tableSchema.VirtualModule = table.Options[ast.SQLiteVirtualModuleOption]
+	tableSchema.VirtualArguments = table.Options[ast.SQLiteVirtualArgumentsOption]
 
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
@@ -282,7 +288,10 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 		// Store platform-specific options as overrides
 		platformOverrides := make(map[string]string)
 		for key, value := range table.Options {
-			if key != "ENGINE" && key != "STRICT" && key != "WITHOUT_ROWID" {
+			switch key {
+			case "ENGINE", "STRICT", "WITHOUT_ROWID",
+				ast.SQLiteVirtualModuleOption, ast.SQLiteVirtualArgumentsOption:
+			default:
 				platformOverrides[strings.ToLower(key)] = value
 			}
 		}

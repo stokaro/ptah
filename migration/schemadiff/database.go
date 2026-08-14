@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -48,6 +49,13 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		return nil, nil, fmt.Errorf("compare schemas: database connection is nil")
 	}
 	info := conn.Info()
+	// Resolve the comparison-owned toggle before catalog queries. Direct
+	// library callers must not run identifier-semantics SQL before reporting a
+	// malformed setting; command adapters perform the same check before they
+	// load desired sources or connect.
+	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
+		return nil, nil, err
+	}
 	names := collectIdentifierNames(generated, database, info.Schema)
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {

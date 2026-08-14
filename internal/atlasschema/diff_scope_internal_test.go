@@ -135,6 +135,30 @@ func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) 
 	c.Assert(got.schema.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "app"}})
 }
 
+func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) {
+	c := qt.New(t)
+	current := &types.DBSchema{
+		Schemas: []types.DBSchemaInfo{{Name: "Sales"}},
+		Tables:  []types.DBTable{{Schema: "Sales", Name: "orders"}},
+	}
+	scope := atlasfilter.Scope{Exclude: []string{"Sales"}, DefaultSchema: "dbo"}
+
+	from, to := scopeDiffStates(
+		diffDatabaseState(current),
+		atlassource.State{Schema: &goschema.Database{}, DefaultSchema: "dbo"},
+		scope,
+		platform.SQLServer,
+	)
+
+	c.Assert(from.err, qt.IsNil)
+	c.Assert(to.err, qt.IsNil)
+	c.Assert(from.report.Unmatched, qt.IsNil)
+	c.Assert(from.database.Schemas, qt.HasLen, 0)
+	c.Assert(from.database.Tables, qt.HasLen, 0)
+	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.SQLServer)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
 func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 	c := qt.New(t)
 	database := &types.DBSchema{

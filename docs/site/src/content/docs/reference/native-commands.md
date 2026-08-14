@@ -19,7 +19,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema apply` | Apply a desired schema directly to a database, with an advisory lock, optional dev-database rehearsal, and interactive approval (`--auto-approve` for scripts). |
 | `ptah schema plan` | Save the declarative apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
-| `ptah schema inspect` | Inspect a live database, a schema file, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
+| `ptah schema inspect` | Inspect a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
 | `ptah schema diff` | Diff two arbitrary schema states (files, database URLs, or migration directories) into migration SQL or JSON. |
 | `ptah schema fmt` | Format HCL schema files canonically; `--check` is a no-write CI gate. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, or a Protobuf Edition 2023 definition. |
@@ -101,12 +101,25 @@ directory.
 
 Native `migrations up`, `status`, and `down` accept `oci://` through
 `--migrations-dir`. `migrations lint` accepts an OCI `--dir` and can attach its
-canonical report with `--attach`. Native `schema compare`, `drift`, and
-`migrations plan` accept an OCI desired-schema artifact through
-`--schema-file`; a plan with exactly one OCI schema source can attach its
-canonical safety report. Use digest pins for reproducible runs and reserve
-`--plain-http` for an explicitly trusted local registry. See [OCI registry
+canonical report with `--attach`. Native `schema render`, `export`, `inspect`,
+`compare`, `drift`, `plan`, `apply` and `push`, and `migrations plan` and
+`generate`, accept an OCI desired-schema artifact through `--schema-file`; a
+plan with exactly one OCI schema source can attach its canonical safety report.
+Use digest pins for reproducible runs and reserve `--plain-http` for an
+explicitly trusted local registry. See [OCI registry
 artifacts](../../operate/oci-registry/).
+
+Every command that resolves an `oci://` source registers `--plain-http`, and
+that pairing is not maintained by hand: a test walks the built command tree and
+requires each command whose `--schema-file` reaches the OCI loader to register
+the flag, then drives it at a registry to prove the value reaches the client
+rather than merely parsing.
+
+`migrations validate` is the exception, and deliberately so for now: it takes a
+local `--dir` only, so an artifact must be pulled before it can be validated on
+its own. `migrations hash` refuses `oci://` by design, because it writes the
+integrity file back into the directory it hashed and a registry artifact is
+immutable.
 
 `ptah oci referrers <oci-reference>` lists direct attachment descriptors.
 `--type` accepts `all`, `lint`, `plan`, or `deployment`; `--format` accepts
