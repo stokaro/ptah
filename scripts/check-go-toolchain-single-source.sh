@@ -259,6 +259,26 @@ while IFS=: read -r file line _; do
 	# by its neighbors.
 done < <(git grep -nE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' -- .github)
 
+# D1b: the enumeration above is a census, not a sample.
+#
+# Widening the pattern only ever covers the spellings someone thought of, and
+# this gate has already been caught out twice by exactly that -- once on a
+# quoted `uses:` value, once on a quoted input default. So the shape match is
+# paired with a count that needs no shape: every line under .github that mentions
+# the action at all must have been enumerated as a step.
+#
+# The anti-vacuity floor below cannot do this job. It fires when the scan
+# collapses, and the dangerous case is the scan losing ONE step: 26 of 27 still
+# clears the floor, and the version key inside the step that left is read by
+# nothing. A disagreement here is a failure, so the next spelling that escapes
+# the pattern reddens the gate rather than shrinking the sample.
+setup_go_mentions="$(git grep -c 'actions/setup-go@' -- .github | awk -F: '{n += $2} END {print n+0}')"
+if ((setup_go_mentions != setup_go_steps)); then
+	printf 'go toolchain check: %d lines under .github mention actions/setup-go@ but %d were enumerated as steps. A reference spelled in a way the scan does not reach leaves its version key unjudged\n' \
+		"$setup_go_mentions" "$setup_go_steps" >&2
+	exit 1
+fi
+
 # D2: no version-shaped default in a composite action.
 #
 # A composite action runs in the CALLER's workspace, so it cannot point
