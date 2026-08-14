@@ -124,12 +124,17 @@ second list to forget.
 These opt-in correctness controls remain available because they do not add an
 Atlas capability: `PTAH_ALLOW_NONINTERACTIVE_EDIT`,
 `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_HCL_STRICT_REDECLARATIONS`,
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
 
 `PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
 process; it does not add an editor or migration capability.
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned
-community binary plans for a SQLite virtual table anyway. Every other declared
+community binary plans for a SQLite virtual table anyway, and
+`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE` lifts a refusal that is Ptah's
+own, since the binary has no notion of a module this build cannot classify and
+plans the drops regardless. Gating either would make strict mode the one place
+Ptah is stricter than the binary it matches. Every other declared
 boolean is gated, and a malformed value for any of them fails the process
 whatever its classification. Native `ptah` does not read
 `PTAH_ATLAS_STRICT_COMPAT`.
@@ -250,6 +255,13 @@ standalone index removals under the same gate. A skipped change is never
 emitted, so it never trips the `--check-destructive` gate. A selected environment's
 `diff.skip` replaces the top-level list; an explicit empty list clears all
 inherited skip kinds.
+
+`drop_table` also reaches the comparison, not only the rendered SQL. Ptah's
+SQLite virtual-table guard refuses a comparison for the `DROP TABLE` it predicts,
+and a project that skips table drops has already deleted that statement, so the
+refusal does not fire — see [SQLite](../../databases/sqlite/). It is the only
+skip kind that changes what a comparison refuses, and it changes nothing about
+what a comparison computes.
 
 The Atlas-compatible command tree lives in the separate `ptah-compat` binary,
 the drop-in replacement for scripts that expect Atlas-style root commands.

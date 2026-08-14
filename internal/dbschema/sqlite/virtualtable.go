@@ -2,7 +2,11 @@ package sqlite
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/sqlitemodule"
 )
 
 // tableKind is SQLite's own answer to "what kind of table is this", as
@@ -50,7 +54,12 @@ const (
 // the module can say which suffixes it owns. A database using a module this
 // build does not register therefore keeps its virtual table recognized as
 // virtual, while that module's shadow tables are reported as ordinary tables.
-// That residue is documented in docs/sqlite.md.
+//
+// Which case a given database is in is not guessed at. The reader asks
+// [sqlitemodule.RegisteredOn] on the same connection and records every virtual
+// table whose module is missing, so the description says out loud that it could
+// not classify part of this database instead of presenting the module's storage
+// as user tables. See [readUnregisteredVirtualTables] and docs/sqlite.md.
 func (r *Reader) readTableKinds() (map[string]tableKind, error) {
 	const query = `SELECT name, type FROM pragma_table_list WHERE schema = ?`
 	rows, err := r.db.Query(query, r.schema)
@@ -71,6 +80,49 @@ func (r *Reader) readTableKinds() (map[string]tableKind, error) {
 		return nil, fmt.Errorf("sqlite: iterate table kinds: %w", err)
 	}
 	return kinds, nil
+}
+
+// readUnregisteredVirtualTables names the virtual tables in this database whose
+// module the connection cannot load, in a stable order.
+//
+// Those are exactly the tables whose shadow tables SQLite could not mark, so
+// the list is also the reader's statement about which ordinary-looking tables
+// in the same description may not be ordinary at all. It is asked of the same
+// connection the rest of the read uses, because an answer from anywhere else
+// could disagree with the `PRAGMA table_list` kinds it explains.
+//
+// An empty result is the ordinary case and claims something specific: every
+// module this database uses is loaded, so every shadow table was marked and the
+// description contains no module-owned storage.
+func (r *Reader) readUnregisteredVirtualTables(
+	virtualTables map[string]virtualTableSpec,
+) ([]types.DBVirtualTable, error) {
+	if len(virtualTables) == 0 {
+		// No virtual table means no module to resolve. Skipping the query here
+		// is not only an optimization: it keeps a reader pointed at a build or
+		// a connection that cannot answer `PRAGMA module_list` working exactly
+		// as before for every database that never needed the answer.
+		return nil, nil
+	}
+	registered, err := sqlitemodule.RegisteredOn(r.db)
+	if err != nil {
+		return nil, err
+	}
+	var unregistered []types.DBVirtualTable
+	for name, spec := range virtualTables {
+		if registered.Registers(spec.Module) {
+			continue
+		}
+		unregistered = append(unregistered, types.DBVirtualTable{
+			Schema: r.outputSchema(),
+			Name:   name,
+			Module: spec.Module,
+		})
+	}
+	sort.Slice(unregistered, func(i, j int) bool {
+		return unregistered[i].Name < unregistered[j].Name
+	})
+	return unregistered, nil
 }
 
 func tableKindFromCatalog(kind string) tableKind {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -287,7 +288,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection) error {
 			replayed, compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
-				opts.Diagnostics, opts.ValidateLiveObject,
+				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy,
 			)
 			if err != nil {
 				return err
@@ -593,6 +594,13 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 // new migration file on every run: two runs, two files, and applying the
 // directory failed at SQLSTATE 42P07. Measured on PostgreSQL 17.10
 // (stokaro/ptah#1276).
+// policy is what [atlasschema.ApplyDiffPolicy] will do to the answer once this
+// returns. The comparison needs it because the SQLite virtual-table guard runs
+// inside it and refuses on the statements it predicts: a migration directory
+// that creates an fts5 index has no way to be declared by --to, so the drop
+// this guard refuses is planned -- unless the project skips `drop_table`, in
+// which case it is deleted again and the refusal is for nothing
+// (stokaro/ptah#1028).
 func compareReplayedState(
 	ctx context.Context,
 	replayConn *dbschema.DatabaseConnection,
@@ -602,6 +610,7 @@ func compareReplayedState(
 	desired *goschema.Database,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
+	policy atlasschema.DiffPolicy,
 ) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {
@@ -614,8 +623,10 @@ func compareReplayedState(
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.SkipTableDrops = policy.SkipDropTable
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, replayConn, desired, replayed, nil,
+		ctx, replayConn, desired, replayed, compareOpts,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)

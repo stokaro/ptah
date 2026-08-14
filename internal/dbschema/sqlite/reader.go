@@ -93,6 +93,17 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	schema.Triggers = catalog.triggers(r.outputSchema())
 	reconcileColumnUniqueness(&schema)
 
+	// Recorded last, on the schema rather than on any table, because it is a
+	// statement about what this read could not classify. Where the module is
+	// missing, the tables above include that module's private storage described
+	// as ordinary tables, and nothing on those rows can say so -- SQLite did not
+	// mark them, which is the whole condition. See stokaro/ptah#1028.
+	unregistered, err := r.readUnregisteredVirtualTables(catalog.virtualTables)
+	if err != nil {
+		return nil, err
+	}
+	schema.UnregisteredVirtualTables = unregistered
+
 	return &schema, nil
 }
 

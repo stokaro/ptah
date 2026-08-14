@@ -92,9 +92,15 @@ Applying that output to an empty database recreates the same object — a
 full-text index that answers `MATCH`, not a plain table of the same name.
 
 Nothing in the reader names a module. `PRAGMA table_list` classifies every
-table as `table`, `virtual` or `shadow`, so `fts3`, `fts4`, `fts5`, `rtree`,
-`rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build registers
-are all read the same way.
+table as `table`, `virtual` or `shadow`, so `fts5`, `rtree`, `rtree_i32`,
+`geopoly`, `fts5vocab`, `dbstat` and any module a build registers are all read
+the same way.
+
+Which modules this build registers is asked rather than assumed. It answers
+`PRAGMA module_list` with exactly seven — `dbstat`, `fts5`, `fts5vocab`,
+`geopoly`, `rtree`, `rtree_i32`, `sqlite_dbpage` — and `fts3` and `fts4` are
+not among them. See [Virtual table limitations](#virtual-table-limitations) for
+what follows from that.
 
 The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
 and their siblings — are not reported at all. They are the module's own
@@ -165,14 +171,71 @@ Non-SQLite operations do not consult the variable. The opt-in covers only the
 first row of the table above — a kind collision and a changed declaration stay
 refused however it is set.
 
+A project that already configures the drop away is not asked for either
+variable. With `diff.skip: [drop_table]` in `ptah.yaml`, or
+`diff { skip { drop_table = true } }` in an Atlas project file, every table drop
+and the dependent removals a dropped table carries are deleted from the diff
+before any SQL is rendered, so the first row of the table above is not refused:
+the `DROP TABLE` it warns about is never planned. Measured on an `fts5` database
+whose desired state names only the ordinary table, `ptah schema apply` reported
+`Schema is synced, no changes to be made.` at exit 0 with `MATCH` still
+answering, where the same run without the policy exited 2. The other rows are
+unaffected — `skip drop_table` filters removals, not modifications, and no
+policy makes one kind of object convertible into another.
+
+`drop_column` and `drop_index` are read the same way by the unregistered-module
+guard below: a removed column is what makes SQLite rebuild a table, and a
+removed index is a `DROP INDEX` against a table Ptah cannot classify, so a
+project that skips either one is not refused for it. `drop_enum` is not read at
+all, because SQLite has no enum type.
+
 ## Virtual table limitations
 
 - Shadow tables belonging to a module the reading build does not register
   cannot be identified, because only that module knows which suffixes are its
   own. SQLite reports them as ordinary tables and so does Ptah. The virtual
-  table itself is still recognized and still round-trips. This is permanent
-  because it is SQLite's own answer: no catalog field distinguishes a shadow
-  table without the module.
+  table itself is still recognized and still round-trips. This part is
+  permanent because it is SQLite's own answer: no catalog field distinguishes a
+  shadow table without the module.
+
+  What is **not** permanent is planning against that description. Measured on
+  `fts3` and `fts4`, excluding the virtual table left the module's storage in
+  the comparison and `ptah schema apply` dropped every one of those tables at
+  exit 0, after which `MATCH` answered `SQL logic error`; the `fts5` control
+  reported a synced schema and changed nothing. A comparison whose database
+  side holds a virtual table this build cannot load is now refused **when the
+  plan could act on such a table** — when some live table in it is one the
+  desired side does not name, or names and describes so differently that SQLite
+  can only converge it by rebuilding, since a `DROP TABLE` and the rebuild
+  SQLite uses in place of an `ALTER` destroy the module's storage equally, or
+  loses an index or trigger the plan drops or replaces on it. A table that
+  merely **gains** a column, an index or a trigger is none of those:
+  `ALTER TABLE ... ADD COLUMN` is a statement SQLite has and a `CREATE` removes
+  nothing, so that comparison runs at exit 0 with no opt-in.
+  A generated **migration** is checked in both directions, because reversing an
+  added column produces a removed one and SQLite converges that by rebuilding
+  the table: `ptah migrations generate` is refused when its down file would
+  rebuild such a table, even though its up file is the single
+  `ALTER TABLE ... ADD COLUMN` the comparison admits. What the migration itself
+  creates is discounted, so adding an ordinary table still generates both files
+  and rolls back by dropping only that table. `ptah schema diff` and
+  `ptah schema apply` plan no rollback and are unaffected.
+  The refusal survives excluding the virtual table,
+  because the tables at risk are not the one an operator would exclude; but a
+  narrowing that leaves nothing the plan can touch, such as `--include users`,
+  runs normally, and so do two databases that both hold the same index. A read
+  still succeeds and prints a note, naming the virtual tables the rendered
+  document still contains, or warning without a name where a projection dropped
+  them and left their storage behind. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
+  restores the old comparison for an operator who wants it — two databases that
+  both already hold the same `fts4` index then compare normally and report a
+  synced schema. A project that skips `drop_table` needs no opt-in for the
+  removal half either: the drops are deleted from the diff before anything is
+  rendered, so only a rebuild of a table the desired state names is still
+  refused. Separately, **adding** such a table has no opt-in: a plan
+  carrying `CREATE VIRTUAL TABLE ... USING fts4` is answered with
+  `no such module: fts4`, so that one is refused before the plan, and only where
+  the statement would actually be planned.
 - A user-created index on a recognized shadow table is refused rather than
   omitted. Ptah cannot replay that index without exposing the module-owned
   table as an ordinary schema object.

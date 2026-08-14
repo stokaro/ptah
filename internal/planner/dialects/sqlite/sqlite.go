@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
+	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -151,7 +152,7 @@ func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (
 	}
 
 	for _, table := range diff.TablesModified {
-		if !tableDiffNeedsRebuild(table) {
+		if !sqliterebuild.NeedsTableRebuild(table) {
 			continue
 		}
 		add(table.TableName, table.ColumnsAdded)
@@ -165,8 +166,8 @@ func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (
 		// The columns this table gains in the SAME diff have to travel with it.
 		// A table reaches this loop when its constraint change arrived at schema
 		// level (ConstraintsAddedWithTables) rather than on the TableDiff, so
-		// tableDiffNeedsRebuild answered false and the loop above skipped it --
-		// even though the diff also adds columns to it.
+		// [sqliterebuild.NeedsTableRebuild] answered false and the loop above
+		// skipped it -- even though the diff also adds columns to it.
 		//
 		// Passing nil here made rebuildCopiedColumns copy the new column out of
 		// the old table, where it does not exist. SQLite reads an unknown
@@ -182,13 +183,6 @@ func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (
 		add(tableName, addedColumnsFor(diff, tableName, semantics))
 	}
 	return rebuilds, nil
-}
-
-func tableDiffNeedsRebuild(table types.TableDiff) bool {
-	return len(table.ColumnsModified) > 0 ||
-		len(table.ColumnsRemoved) > 0 ||
-		len(table.ConstraintsAdded) > 0 ||
-		len(table.ConstraintsRemoved) > 0
 }
 
 // existingTablesWithConstraintChanges returns the sorted names of tables that
@@ -913,8 +907,8 @@ func unsupportedFeaturef(format string, args ...any) error {
 //
 // planTableRebuilds needs it for a table whose constraint change is recorded at
 // schema level: such a table is in TablesModified with its ColumnsAdded, but
-// tableDiffNeedsRebuild does not select it, so the rebuild would otherwise be
-// planned without knowing which columns are new.
+// [sqliterebuild.NeedsTableRebuild] does not select it, so the rebuild would
+// otherwise be planned without knowing which columns are new.
 //
 // tableName arrives from a constraint's owning table and the TableDiff names
 // come from the comparator, so the two are matched by identity rather than as
