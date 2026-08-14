@@ -564,11 +564,12 @@ func appendOCIReferenceRow(census []string, match []string) []string {
 // documentation instead of from the command tree.
 //
 // The reference page said `migrations validate` "takes a local --dir only, so
-// an artifact must be pulled before it can be validated on its own" for a full
-// release after the verb was wired to the puller, and the walk above went green
-// throughout: it gates what the binary does, and nothing gated what the page
-// says about it. A reader consulting the reference was told the workflow did not
-// exist (stokaro/ptah#1499).
+// an artifact must be pulled before it can be validated on its own". That was
+// accurate until stokaro/ptah#1499 wired the verb to the puller, and it survived
+// the commit that did: the walk above gates what the binary does, and nothing
+// gated what the page says about it, so every row stayed green while the command
+// reference told a reader the workflow did not exist and sent them to do a pull
+// the verb no longer needs.
 //
 // The comparison is set equality in both directions and it pairs each command
 // with its flag, so neither a verb that starts resolving the scheme nor one that
