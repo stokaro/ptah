@@ -261,10 +261,29 @@ func atlasProjectLoadOptions(
 	}
 }
 
+// openAtlasProjectSource reads the project file for one command, and reports
+// `false` instead of an error when the file is absent and the command did not
+// ask for one.
+//
+// The environment is refused FIRST, before the path is even spelled, and that
+// ordering is the point. This function is the compatibility adapter's own
+// project-load boundary: it opens atlas.hcl itself and short-circuits on a
+// missing file, so the missing-file arm reaches neither
+// [projectconfig.LoadAtlasFileCollectionWithOptions] nor
+// [projectconfig.ParseAtlasFSCollectionWithOptions], where the same refusal
+// lives. Measured on ptah-compat with `PTAH_ATLAS_IGNORE_ENV_SCHEMAS` exported
+// empty, running `schema inspect --url sqlite://probe.db`: in a directory
+// holding an atlas.hcl it exits 1 naming the variable, and in a directory
+// holding none it exited 0 and described the database. A boolean `PTAH_*`
+// variable is a property of the environment, so the presence of a file it says
+// nothing about may not choose the answer.
 func openAtlasProjectSource(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 ) (atlasProjectSource, bool, error) {
+	if err := projectconfig.ValidateAtlasEnvironmentVariables(); err != nil {
+		return atlasProjectSource{}, false, err
+	}
 	path, err := atlasConfigPathValue(flags.configPath)
 	if err != nil {
 		return atlasProjectSource{}, false, err
