@@ -1226,11 +1226,11 @@
   {
     "area": "Data and distribution",
     "feature": "oci:// as a `--schema-file` desired-state source",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Accepted by schema render/compare/drift/plan/apply and migrations plan/generate. schema inspect rejects it, and only three of those expose `--plain-http`.",
-    "evidence": "ptah schema drift/compare --schema-file oci://... --plain-http -> works; ptah schema inspect --schema-file oci://... -> 'unsupported desired-state URL scheme \"oci\"'; ptah schema render/plan/apply and migrations generate -> 'unknown flag: --plain-http'. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: the Atlas Pipelines tier table lists Atlas Registry as absent from Starter and included in Pro (limited to 500 objects) — Atlas-side confirmation that registry-backed schema sources are Pro-gated"
+    "note": "Accepted by schema render, export, inspect, compare, drift, plan, apply and push, plus migrations plan and generate. All ten expose `--plain-http`, and a walk of the command tree gates the pairing.",
+    "evidence": "Measured against a registry:3 container on localhost serving plain HTTP. All ten verbs exit 0 with --plain-http and exit 2 'http: server gave HTTP response to HTTPS client' without it, so the flag does the work and TLS is still the default. schema inspect --schema-file oci://... --dev-url sqlite://dev.db --plain-http emits HCL byte-identical to the same artifact pulled to a local file with schema pull (diff exit 0), where it previously exited 2 'unsupported desired-state URL scheme \"oci\"'. Its oci:// resolution happens on the native verb, before classification: internal/atlassource.Classify is shared with ptah-compat, whose schema inspect must go on refusing oci:// because the pinned community binary answers 'sql/sqlclient: unknown driver \"oci\"' at exit 1. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: the Atlas Pipelines tier table lists Atlas Registry as absent from Starter and included in Pro (limited to 500 objects) — Atlas-side confirmation that registry-backed schema sources are Pro-gated"
   },
   {
     "area": "Data and distribution",
@@ -1247,8 +1247,8 @@
     "ptah": "partial",
     "atlas_oss": "na",
     "atlas_pro": "no",
-    "note": "On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes.",
-    "evidence": "tampered file, unchanged sum: push and up both exit 2 'migration directory does not match ptah.sum: changed: 1785514698_init.up.sql'; tampered file plus re-run migrations hash: up --verify-sum exits 0 and creates table 'evil'. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `--verify-sum` does not appear on the page, which enumerates every command and its flags. Scoped to the flag: Atlas's directory-integrity mechanism is atlas.sum with `migrate validate`, which checks a migration directory rather than an artifact against a sum embedded in it. Control as above."
+    "note": "On migrations push, up, down and status. It checks a directory against the sum stored beside it, so an `oci://` tag source proves internal consistency only; pin a digest for authenticity.",
+    "evidence": "The flag's job is the case the always-on gate does not cover. That gate refuses a HASHED directory that does not match its sum, on every verb executing the directory's SQL; a directory carrying NO sum passes it. Measured against an unhashed directory published to a registry:3 container: `up` exits 0 without the flag and exits 2 'migration sum verification failed: ptah.sum not found' with it, and the same holds on down and status. `migrations validate` asks the same question but cannot resolve an oci:// reference ('stat oci://...: no such file or directory'), so for a registry source the flag is the only spelling. What it does NOT establish: tampered file, unchanged sum -> push and up both exit 2 'migration directory does not match ptah.sum: changed: 1785514698_init.up.sql'; tampered file plus re-run migrations hash -> push --verify-sum exits 0, up --verify-sum exits 0 and the resulting SQLite catalog is ['evil', 'schema_migrations']. Every tag-resolved verification prints the qualifier at runtime. Atlas CLI reference (atlasgo.io/cli-reference), retrieved 2026-08-03: `--verify-sum` does not appear on the page, which enumerates every command and its flags. Scoped to the flag: Atlas's directory-integrity mechanism is atlas.sum with `migrate validate`, which checks a migration directory rather than an artifact against a sum embedded in it. Control as above."
   },
   {
     "area": "OCI artifacts",

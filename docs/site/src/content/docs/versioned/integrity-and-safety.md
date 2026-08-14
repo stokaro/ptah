@@ -203,6 +203,21 @@ error: migration sum verification failed: ptah.sum not found; run `ptah migratio
 That flag is the only thing on the native surface that rejects a never-hashed
 directory; a hashed one is always verified with or without it.
 
+It is registered on `migrations up`, `down`, `status` and `push`, and it means
+the same thing on each: require a sum, and require it to match. The three read
+and write verbs cover the destructive direction and the reporting one, which
+matters most for a registry source — `ptah migrations validate` asks the same
+question, but it takes a local `--dir` only and answers an `oci://` reference
+with `stat oci://...: no such file or directory`, so for an artifact
+`--verify-sum` is the only spelling there is.
+
+`status` is the one verb that runs no gate without the flag. It executes none
+of the directory's SQL, so it is outside the always-on class below, and it is
+the verb an operator reaches for while diagnosing a directory that has drifted
+— gating it by default would refuse to describe the thing being investigated.
+Pass `--verify-sum` when the report itself has to be an integrity claim, such
+as in a CI job that reads it to decide whether to deploy.
+
 **A sum check is worth what the sum's provenance is worth.** Either gate
 compares a directory against the sum stored beside it. For a local directory
 that sum was reviewed in version control next to the migrations. For an

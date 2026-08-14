@@ -254,8 +254,18 @@ would parse as version `0` and the rollback would revert the entire history.
 ## Integrity
 
 Check directives live in the migration file, so they are covered by the existing
-`ptah.sum` integrity verification with no new checksum surface — tampering with a
-check changes the file hash and fails verification.
+`ptah.sum` integrity verification with no new checksum surface — editing a check
+out of band changes the file hash and fails verification.
+
+Know what that does and does not establish. `ptah.sum` records the bytes the
+directory is *expected* to have; it detects a file edited without re-hashing.
+Editing the check and re-running `ptah migrations hash` produces a directory
+that verifies clean, because re-hashing is how an intentional edit is recorded
+and nothing distinguishes an intentional one from a hostile one. Over an
+`oci://` tag the same limit is sharper still, because the sum travels inside
+the artifact: anyone who can push to the repository can rewrite the checks,
+re-hash, repoint the tag, and watch `--verify-sum` pass. Review the migration
+diff, and pin a digest.
 
 ## Relationship to Atlas
 

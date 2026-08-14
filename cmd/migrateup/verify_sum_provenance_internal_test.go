@@ -1,10 +1,19 @@
 package migrateup
 
-// White-box testing required: mutableTagSumWarning is the predicate that
-// decides whether a sum verification gets its provenance qualifier
-// (stokaro/ptah#944), and the distinction it draws — a sum reviewed in version
-// control beside the migrations versus a sum shipped inside an artifact a
-// movable tag selected — is not observable through any exported API.
+// White-box testing required: this file hosts the in-process OCI registry
+// harness (ociMemoryStore, startOCITestRegistry, pushProvenanceArtifact and
+// runUpInternal) that oci_digest_pin_internal_test.go also drives, and that
+// file needs package-internal access of its own. Keeping one harness in one
+// package is what stops two in-process registries drifting into disagreeing
+// about what a tag resolves to.
+//
+// The provenance PREDICATE this file used to reach into is no longer private:
+// it is [go.5x5.cz/ptah/cmd/internal/migrationsource.MutableTagSumWarning],
+// exported when `migrations down` and `status` gained --verify-sum and needed
+// the same qualifier (stokaro/ptah#928 item 4). Its own rows moved with it, to
+// cmd/internal/migrationsource, because a predicate reachable through an
+// exported API no longer justifies a white-box test. What stays here is the
+// wiring half, which drives the real apply path.
 
 import (
 	"bytes"
@@ -24,124 +33,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/errdef"
 
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/migration/migrator"
 )
-
-const (
-	provenanceDigest      = "sha256:" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	provenanceOtherDigest = "sha256:" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-)
-
-func ociTagSource(reference, tag, resolved string) migrationsource.Source {
-	return migrationsource.Source{
-		Display:   reference,
-		DirFormat: migrator.MigrationDirFormatPtah,
-		OCI: &migrationsource.OCI{
-			Reference:       reference,
-			Descriptor:      ocispec.Descriptor{Digest: digest.Digest(resolved)},
-			Tag:             tag,
-			DigestReference: "oci://reg.test/ptah/app@" + resolved,
-		},
-	}
-}
-
-func ociDigestSource(resolved string) migrationsource.Source {
-	reference := "oci://reg.test/ptah/app@" + resolved
-	return migrationsource.Source{
-		Display:   reference,
-		DirFormat: migrator.MigrationDirFormatPtah,
-		OCI: &migrationsource.OCI{
-			Reference:       reference,
-			Descriptor:      ocispec.Descriptor{Digest: digest.Digest(resolved)},
-			PinnedByDigest:  true,
-			DigestReference: reference,
-		},
-	}
-}
-
-func localSource() migrationsource.Source {
-	return migrationsource.Source{
-		Display:   "/srv/app/migrations",
-		DirFormat: migrator.MigrationDirFormatPtah,
-	}
-}
-
-// TestMutableTagSumWarning pins which provenances get the qualifier. Only the
-// tag rows may produce text: a digest reference already names the exact bytes,
-// a local directory carries a sum reviewed beside the migrations, and an
-// unhashed source verified nothing, so it claimed nothing to qualify.
-func TestMutableTagSumWarning(t *testing.T) {
-	c := qt.New(t)
-	tests := []struct {
-		name            string
-		source          func() migrationsource.Source
-		verifiedSumFile string
-		want            string
-	}{
-		{
-			name: "oci tag verified names tag digest and pin",
-			source: func() migrationsource.Source {
-				return ociTagSource("oci://reg.test/ptah/app:release", "release", provenanceDigest)
-			},
-			verifiedSumFile: "ptah.sum",
-			want: "oci://reg.test/ptah/app:release is a movable tag: ptah.sum travels inside the artifact, " +
-				"so verifying it proves the pulled files are internally consistent, not that they are the " +
-				"reviewed ones. This tag resolved to " + provenanceDigest + "; pass oci://reg.test/ptah/app@" +
-				provenanceDigest + " to pin these exact bytes.",
-		},
-		{
-			name:            "oci digest verified stays silent",
-			source:          func() migrationsource.Source { return ociDigestSource(provenanceDigest) },
-			verifiedSumFile: "ptah.sum",
-			want:            "",
-		},
-		{
-			name:            "local directory verified stays silent",
-			source:          localSource,
-			verifiedSumFile: "ptah.sum",
-			want:            "",
-		},
-		{
-			name: "oci tag with nothing verified stays silent",
-			source: func() migrationsource.Source {
-				return ociTagSource("oci://reg.test/ptah/app:release", "release", provenanceDigest)
-			},
-			verifiedSumFile: "",
-			want:            "",
-		},
-		{
-			name: "oci tag quotes the digest it actually resolved to",
-			source: func() migrationsource.Source {
-				return ociTagSource("oci://reg.test/ptah/app:release", "release", provenanceOtherDigest)
-			},
-			verifiedSumFile: "ptah.sum",
-			want: "oci://reg.test/ptah/app:release is a movable tag: ptah.sum travels inside the artifact, " +
-				"so verifying it proves the pulled files are internally consistent, not that they are the " +
-				"reviewed ones. This tag resolved to " + provenanceOtherDigest + "; pass oci://reg.test/ptah/app@" +
-				provenanceOtherDigest + " to pin these exact bytes.",
-		},
-		{
-			name: "oci tag names the sum file that actually verified",
-			source: func() migrationsource.Source {
-				return ociTagSource("oci://reg.test/ptah/app:stable", "stable", provenanceDigest)
-			},
-			verifiedSumFile: "atlas.sum",
-			want: "oci://reg.test/ptah/app:stable is a movable tag: atlas.sum travels inside the artifact, " +
-				"so verifying it proves the pulled files are internally consistent, not that they are the " +
-				"reviewed ones. This tag resolved to " + provenanceDigest + "; pass oci://reg.test/ptah/app@" +
-				provenanceDigest + " to pin these exact bytes.",
-		},
-	}
-
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			c.Assert(mutableTagSumWarning(tt.source(), tt.verifiedSumFile), qt.Equals, tt.want)
-		})
-	}
-}
 
 // ociStoredBlob is one content-addressed object the in-process registry serves.
 type ociStoredBlob struct {

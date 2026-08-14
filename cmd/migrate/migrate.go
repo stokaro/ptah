@@ -83,7 +83,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "text", "Safety report format: text, html, or json")
 	flags.BoolVar(&opts.attach, attachFlag, false, "Attach the migration plan to the exact OCI schema artifact digest")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Allow an unencrypted HTTP connection to a local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)

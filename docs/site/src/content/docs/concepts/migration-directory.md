@@ -171,7 +171,13 @@ unaffected. The refusal names the entry and the rule.
 
 - **The directory is portable.** Every environment replays the same files in
   the same order, and the directory can be published to and consumed from an
-  OCI registry (`--migrations-dir oci://...`) without changing its meaning.
+  OCI registry (`--migrations-dir oci://...`) without changing what it applies.
+  What travels does change what the integrity file *establishes*: `ptah.sum`
+  sits inside the artifact rather than beside the migrations in a reviewed
+  repository, so over a movable tag it proves the pulled files are internally
+  consistent, not that they are the reviewed ones. Pin a digest for
+  authenticity — see
+  [Identity, integrity, and authenticity](../../operate/oci-registry/#identity-integrity-and-authenticity).
 - **Edits are a maintenance operation.** Because files are hashed and ordered,
   changing history has dedicated commands rather than ad-hoc file edits — see
   [Maintain migration history](../../versioned/maintain-history/).

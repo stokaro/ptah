@@ -2,6 +2,8 @@ package schema
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,7 +13,9 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemaartifact"
 )
 
 const (
@@ -26,6 +30,17 @@ const (
 	inspectSplitFlag         = "split"
 )
 
+// inspectOCIMaterializedName is the file the pulled schema artifact is written
+// to before it is inspected.
+//
+// The extension is load-bearing, not decorative: the inspection source is a
+// path handed to the shared resolver, which decides what a source IS from its
+// extension. A schema artifact carries canonical HCL — that is what
+// `ptah schema push` publishes and what `ptah schema pull` writes — so the
+// materialized file has to say .hcl or the resolver refuses a file it can
+// read.
+const inspectOCIMaterializedName = "schema.hcl"
+
 type schemaInspectOptions struct {
 	dbURL          string
 	schemaFile     string
@@ -37,6 +52,7 @@ type schemaInspectOptions struct {
 	format         string
 	outDir         string
 	split          string
+	plainHTTP      bool
 	connectTimeout string
 	configPath     string
 	envName        string
@@ -80,7 +96,7 @@ inspected output never references an object it omitted.`,
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, inspectDBURLFlag, "", "Live database URL to inspect")
-	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Local schema file to inspect (.hcl, .yaml, .yml, or .sql); requires --dev-url")
+	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Schema file to inspect: a local .hcl, .yaml, .yml, or .sql file, or an oci:// schema artifact; requires --dev-url")
 	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
 	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
@@ -89,6 +105,7 @@ inspected output never references an object it omitted.`,
 	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, or json")
 	flags.StringVar(&opts.outDir, inspectOutDirFlag, "", "Directory the inspected schema is exported into as files (hcl and sql formats only)")
 	flags.StringVar(&opts.split, inspectSplitFlag, "", "File grouping for --out-dir: object (default), schema, or type")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -116,6 +133,16 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
 	)
+
+	// An oci:// --schema-file is resolved here, into a real local file, before
+	// anything classifies the value. See materializeOCISchemaFile for why the
+	// shared classifier is deliberately left alone.
+	if materialized, cleanup, err := materializeOCISchemaFile(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	} else if cleanup != nil {
+		defer cleanup()
+		opts.schemaFile = materialized
+	}
 
 	sourceURL, err := resolveInspectSource(opts)
 	if err != nil {
@@ -151,6 +178,64 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+// materializeOCISchemaFile pulls an oci:// --schema-file to a local canonical
+// HCL file and returns its path plus the cleanup that removes it. A value that
+// is not an oci:// reference returns ("", nil, nil), which is the caller's
+// signal that nothing was materialized.
+//
+// # Why here, and not in the shared classifier
+//
+// Every sibling command that accepts an oci:// --schema-file resolves it
+// through [go.5x5.cz/ptah/internal/schemaload], which parses the artifact into
+// a desired schema directly. `schema inspect` cannot: it does not parse its
+// source at all. It hands the source to
+// [go.5x5.cz/ptah/internal/atlasschema.InspectSource], which materializes it on
+// a destructively reset --dev-url database and introspects the result, so the
+// output is normalized by a real database of the target dialect. That is the
+// whole point of the verb, and it is why the refusal was not an oversight: the
+// value goes to [go.5x5.cz/ptah/internal/atlassource.Classify], which names no
+// oci source kind.
+//
+// Teaching Classify one would have been the smaller diff and the wrong change.
+// That function is shared with the Atlas-compatible surface: thirteen non-test
+// call sites live under cmd/atlas and internal/atlasschema, and
+// cmd/atlas/compat_url_diagnostic.go re-words exactly its unsupported-scheme
+// verdict — its own comment says it does so "so a scheme added to
+// atlassource.Classify later is recognized here without this file being
+// edited". Adding an oci branch would therefore stop `ptah-compat schema
+// inspect --url oci://...` refusing, and the pinned community binary refuses
+// that reference at exit 1 (`sql/sqlclient: unknown driver "oci"`). Widening
+// the classifier would hand a compatibility-policy (a) violation to a surface
+// this issue never mentioned.
+//
+// So the scheme is resolved before classification instead, on the one native
+// verb that wants it, through the same schemaartifact.PullToFile that
+// `ptah schema pull` uses. The bytes inspected are byte-for-byte the bytes
+// `schema pull` would have written, because it is not a second implementation
+// of the pull.
+func materializeOCISchemaFile(cmd *cobra.Command, opts schemaInspectOptions) (string, func(), error) {
+	reference := strings.TrimSpace(opts.schemaFile)
+	if !strings.HasPrefix(reference, ociartifact.Scheme) {
+		return "", nil, nil
+	}
+	dir, err := os.MkdirTemp("", "ptah-inspect-oci-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	_, output, err := schemaartifact.PullToFile(
+		cmd.Context(),
+		reference,
+		filepath.Join(dir, inspectOCIMaterializedName),
+		opts.plainHTTP,
+	)
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return output, cleanup, nil
 }
 
 // resolveInspectSource maps the native source flags onto one inspection URL.

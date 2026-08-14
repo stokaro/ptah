@@ -217,6 +217,23 @@ disposable database that is reset, has the source materialized on it, and is
 then introspected, so the output is normalized by a real database of the
 target dialect.
 
+`--schema-file` also accepts an `oci://` schema artifact, which is the same
+scheme every other desired-state command takes. The artifact is pulled to its
+canonical HCL, then materialized and introspected like any other schema file,
+so the output is byte-identical to inspecting the same artifact after
+`ptah schema pull`. Add `--plain-http` for a trusted local registry:
+
+```bash
+ptah schema inspect \
+  --schema-file oci://ghcr.io/acme/app-schema:v1 \
+  --dev-url "postgres://localhost:5432/dev?sslmode=disable"
+```
+
+The Atlas-compatible `ptah-compat schema inspect --url` does not accept
+`oci://` and refuses it with `sql/sqlclient: unknown driver "oci"`. That is
+deliberate: the compat surface's contract is to match the pinned community
+binary, which has no `oci://` driver at all.
+
 With `--out-dir` the inspected schema is exported as files instead of one
 stream — one file per object by default, or grouped with `--split schema` /
 `--split type`:
