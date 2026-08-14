@@ -343,6 +343,12 @@ func heredocDelimiters(command string) ([]string, error) {
 			quote = char
 			continue
 		}
+		if char == '#' && (index == 0 || command[index-1] == ' ' || command[index-1] == '\t') {
+			// The rest of the line is a comment, so a `<<` in it redirects
+			// nothing. Reading one would demand a terminator the workflow
+			// never writes and refuse a step the shell runs happily.
+			break
+		}
 		if char != '<' || index+1 == len(command) || command[index+1] != '<' {
 			continue
 		}

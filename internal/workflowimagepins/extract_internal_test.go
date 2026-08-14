@@ -256,6 +256,42 @@ jobs:
 	c.Check(images, qt.DeepEquals, []string{"after/quoted:1"})
 }
 
+func TestFileIgnoresHeredocPayloadOpenedAfterQuotedHash(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          grep -v "#" <<EOF >start.sh
+          docker run heredoc/quoted-hash:1
+          EOF
+          docker run after/quoted-hash:2
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/quoted-hash:2"})
+}
+
+func TestFileInventoriesCommandsAfterTrailingCommentRedirectionText(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          echo ready # the old form wrote this with <<EOF
+          docker run after/comment:1
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/comment:1"})
+}
+
 func TestFileRejectsDuplicateRunKey(t *testing.T) {
 	c := qt.New(t)
 	path := writeWorkflow(c, `
