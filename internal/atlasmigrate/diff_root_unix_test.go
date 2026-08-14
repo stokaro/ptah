@@ -146,7 +146,15 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			stage: func(c *qt.C, root, _ string) (string, string) {
 				bound := filepath.Join(root, "realnest", "migrations")
 				c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
-				c.Assert(os.Symlink(filepath.Join(root, "realnest"), filepath.Join(root, "nest")), qt.IsNil)
+				// The link target is relative on purpose. os.Root resolves an
+				// absolute target against the process root, so it reports an
+				// escape even for a link that points at a sibling inside this
+				// very directory, and the run is then refused before it plans
+				// anything -- see
+				// TestGenerateDiff_AbsoluteAncestorSymlinkIsRefusedBeforePlanning.
+				// A relative target keeps the ancestor reachable, which is what
+				// this row needs in order to reach the swap at all.
+				c.Assert(os.Symlink("realnest", filepath.Join(root, "nest")), qt.IsNil)
 				return filepath.Join(root, "nest", "migrations"), bound
 			},
 			swap: func(c *qt.C, root, decoy string) {
@@ -206,6 +214,50 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			c.Assert(dirEntryNames(c, filepath.Join(decoy, "migrations")), qt.HasLen, 0)
 		})
 	}
+}
+
+// TestGenerateDiff_AbsoluteAncestorSymlinkIsRefusedBeforePlanning pins a
+// behavior the Go 1.26.6 toolchain changed, which is why the ancestor row above
+// stages a relative link instead.
+//
+// os.Root resolves an absolute symlink target against the process root, so it
+// reports an escape even when the target is a sibling inside the same project
+// root -- as `nest` is here. Through Go 1.26.5 os.Root.MkdirAll answered
+// fs.ErrExist for such an existing component, and rootMkdirAll deliberately
+// tolerates fs.ErrExist because containment is the rooted open's job rather
+// than the create's, so the run reached planning and published into the
+// directory it had opened. Go 1.26.6 makes MkdirAll stat the component it found,
+// so the escape surfaces at the create and the run refuses first.
+//
+// The refusal is the fail-closed direction and the standard library exports no
+// sentinel for it, so this records the behavior rather than string-matching an
+// unexported error in order to undo it. The property that did not change, and
+// the one asserted below, is that a refused run writes nothing anywhere.
+func TestGenerateDiff_AbsoluteAncestorSymlinkIsRefusedBeforePlanning(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+
+	bound := filepath.Join(root, "realnest", "migrations")
+	c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
+	c.Assert(os.Symlink(filepath.Join(root, "realnest"), filepath.Join(root, "nest")), qt.IsNil)
+
+	schemaPath := filepath.Join(root, "schema.sql")
+	writeDiffDesiredSchema(c, schemaPath)
+	conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         filepath.Join(root, "nest", "migrations"),
+		Root:        openDiffProjectRoot(c, root),
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_email",
+		LockTimeout: time.Second,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `create migration directory parent: .*`)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	c.Assert(atlasSQLFiles(c, bound), qt.HasLen, 0)
+	c.Assert(fileExists(filepath.Join(bound, "atlas.sum")), qt.IsFalse)
 }
 
 func TestGenerateDiff_CreatesMissingMigrationDirectoryInsideOpenedRoot(t *testing.T) {
