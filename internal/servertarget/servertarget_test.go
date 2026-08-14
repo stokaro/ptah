@@ -1,6 +1,7 @@
 package servertarget_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -353,6 +354,138 @@ func TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps(t *testing.T) {
 			c.Assert(err, qt.ErrorAs, &mismatch)
 			c.Assert(mismatch.Dialect, qt.Equals, tt.dialect)
 			c.Assert(mismatch.ResolvedDialect, qt.Equals, platform.Postgres)
+		})
+	}
+}
+
+// TestResolve_MatchesTheDocumentedBannerPlatformRecipe executes the recipe
+// docs/capabilities.md gives an API caller, against the package the commands
+// actually call, so the two cannot drift apart in prose alone.
+//
+// They already had. The document told callers to refuse a ResolvedDialect other
+// than the dialect they asked for, and that rule is not the one implemented: it
+// accepts all three PostgreSQL-family rows below, which every native command
+// exits 2 on. A library caller following the published instruction would have
+// let through exactly the contradiction the flag was added to refuse.
+//
+// Both halves of the recipe are asserted, because both have a failure mode a
+// row here would otherwise not reach. An empty BannerPlatform is not a
+// mismatch — a bare dotted version names no product — and the comparison is
+// against the normalized dialect, since no alias is ever the answer, so a check
+// written against a raw "crdb" refuses a CockroachDB banner on a CockroachDB
+// target.
+//
+// resolvedDialectAgrees is the column that makes the divergence observable
+// rather than asserted: it is true wherever the withdrawn rule would have
+// accepted, and the first three rows pair it with a refusal.
+func TestResolve_MatchesTheDocumentedBannerPlatformRecipe(t *testing.T) {
+	tests := []struct {
+		name string
+		// dialect is passed exactly as a caller would type it, alias included.
+		dialect string
+		version string
+		// banner is what capability.BannerPlatform answers for version alone.
+		banner string
+		// normalized is platform.NormalizeDialect(dialect).
+		normalized string
+		// refused is what the recipe, and Resolve, must both decide.
+		refused bool
+		// resolvedDialectAgrees reports whether the withdrawn
+		// ResolvedDialect rule would have accepted this pair.
+		resolvedDialectAgrees bool
+	}{
+		{
+			name:                  "PostgreSQL banner on cockroachdb",
+			dialect:               platform.CockroachDB,
+			version:               "PostgreSQL 16.3",
+			banner:                platform.Postgres,
+			normalized:            platform.CockroachDB,
+			refused:               true,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "PostgreSQL banner on yugabytedb",
+			dialect:               platform.YugabyteDB,
+			version:               "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
+			banner:                platform.Postgres,
+			normalized:            platform.YugabyteDB,
+			refused:               true,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "PostgreSQL banner on spanner",
+			dialect:               platform.Spanner,
+			version:               "PostgreSQL 14.1",
+			banner:                platform.Postgres,
+			normalized:            platform.Spanner,
+			refused:               true,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "PostgreSQL banner on mysql, where the two rules agree",
+			dialect:               platform.MySQL,
+			version:               "PostgreSQL 16.3 (Debian)",
+			banner:                platform.Postgres,
+			normalized:            platform.MySQL,
+			refused:               true,
+			resolvedDialectAgrees: false,
+		},
+		{
+			name:                  "MariaDB banner on mysql, where the two rules agree",
+			dialect:               platform.MySQL,
+			version:               "10.11.6-MariaDB",
+			banner:                platform.MariaDB,
+			normalized:            platform.MySQL,
+			refused:               true,
+			resolvedDialectAgrees: false,
+		},
+		{
+			name:                  "a bare dotted version names no product",
+			dialect:               platform.MySQL,
+			version:               "8.0.42",
+			banner:                "",
+			normalized:            platform.MySQL,
+			refused:               false,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "a CockroachDB banner on the crdb alias",
+			dialect:               "crdb",
+			version:               "CockroachDB CCL v25.4.0",
+			banner:                platform.CockroachDB,
+			normalized:            platform.CockroachDB,
+			refused:               false,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "a PostgreSQL banner on the pgx alias",
+			dialect:               "pgx",
+			version:               "PostgreSQL 16.3 (Debian)",
+			banner:                platform.Postgres,
+			normalized:            platform.Postgres,
+			refused:               false,
+			resolvedDialectAgrees: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			banner := capability.BannerPlatform(tt.version)
+			normalized := platform.NormalizeDialect(tt.dialect)
+			c.Assert(banner, qt.Equals, tt.banner)
+			c.Assert(normalized, qt.Equals, tt.normalized)
+
+			recipe := banner != "" && banner != normalized
+			c.Assert(recipe, qt.Equals, tt.refused)
+
+			resolution := capability.ResolveServerVersion(tt.dialect, tt.version)
+			c.Assert(resolution.ResolvedDialect == normalized, qt.Equals, tt.resolvedDialectAgrees)
+
+			_, err := servertarget.Resolve(tt.dialect, tt.version)
+			var mismatch *servertarget.DialectMismatchError
+			c.Assert(errors.As(err, &mismatch), qt.Equals, tt.refused)
 		})
 	}
 }

@@ -380,9 +380,29 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
 - `capability.ResolveServerVersion("mysql", version)` — the full answer:
   the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`,
   `Recognized`, and `ResolvedDialect`. Callers acting on a version string a
-  person supplied must use this and refuse `Recognized == false`, and refuse a
-  `ResolvedDialect` other than the dialect they asked for;
-  `ForServerVersion` throws both signals away and cannot report either.
+  person supplied must use this and refuse `Recognized == false`;
+  `ForServerVersion` throws that signal away and cannot report it. Do not key
+  the product-contradiction refusal on `ResolvedDialect`: it names the ladder
+  the preset came from, not the product the string names, and the two disagree
+  for exactly the case the commands refuse. Measured,
+  `ResolveServerVersion("cockroachdb", "PostgreSQL 16.3")` reports
+  `ResolvedDialect == "cockroachdb"` — correctly, because a live CockroachDB
+  may report that banner and must keep its own preset — while
+  `ptah schema render --dialect cockroachdb --server-version 'PostgreSQL 16.3'`
+  exits `2`. YugabyteDB and Spanner behave the same way. A caller comparing
+  `ResolvedDialect` therefore accepts input the commands reject.
+- `capability.BannerPlatform(version)` — which product a version string names,
+  or `""` when it names none. This is the question operator input raises:
+  compare it with `platform.NormalizeDialect(dialect)` and refuse when it is
+  non-empty and different from that. Both halves carry weight. The empty answer
+  is not a mismatch — `"8.0.42"` names a version and no product, and
+  `--dialect mysql --server-version 8.0.42` exits `0`. And the comparison is
+  against the normalized name, because no alias ever appears in the answer:
+  `BannerPlatform("CockroachDB CCL v25.4.0")` returns `cockroachdb`, which a
+  check against a raw `crdb` would refuse even though
+  `--dialect crdb --server-version 'CockroachDB CCL v25.4.0'` exits `0`.
+  `internal/servertarget.Resolve` is those two refusals, and it is what both
+  `ptah sql lint --version` and `ptah schema render --server-version` call.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix
