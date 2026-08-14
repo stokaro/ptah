@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -247,15 +247,26 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.EnsureDevDatabase(devURL); err != nil {
 		return State{}, err
 	}
-	if isDockerURL(devURL) {
-		return State{}, errors.New("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
-	}
+	// The dialect check runs on the URL AS WRITTEN, before any container is
+	// started: `docker://postgres/16/dev` names its dialect in the text, so a
+	// mismatch with the pinned dialect is answerable without provisioning, and
+	// answering it first keeps a refused run from paying for a container it
+	// would immediately throw away.
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
+	// The operator's spelling decides whether this is a docker URL at all; the
+	// normalization above is this path's, and it applies to the answer. See
+	// [devdocker.Parse]: a leading space is not a docker URL with whitespace on
+	// it, it is a value the pinned binary cannot parse.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
+	if err != nil {
+		return State{}, err
+	}
+	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 	snapshot := s.migrationSnapshot
 	if snapshot == nil {
-		var err error
 		snapshot, err = CaptureVerifiedMigrationDir(source.Path)
 		if err != nil {
 			return State{}, err
@@ -408,9 +419,4 @@ func filterByTable[T any](values []T, keep func(T) bool) []T {
 		}
 	}
 	return out
-}
-
-func isDockerURL(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	return err == nil && parsed.Scheme == "docker"
 }

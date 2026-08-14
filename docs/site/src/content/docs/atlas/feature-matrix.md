@@ -77,8 +77,8 @@ Across the 180 capabilities below:
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 111 |
-| Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 21 |
+| Ptah supports it with a stated limitation | 49 |
+| Ptah does not implement it | 20 |
 | Ptah and Atlas CE both support it | 34 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
@@ -234,7 +234,7 @@ seven of them as open capabilities regardless.
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose reports, seed directories, and named docker:// refusal. schema test accepts `-s/--schema`, Go, SQL/HCL, or database sources; scopes retain database-wide extensions; env:// refuses. |
-| Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does. |
+| Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; the replay path provisions a docker:// dev database. schema apply `--dry-run` runs the same rehearsal the real apply does. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
@@ -250,7 +250,7 @@ seven of them as open capabilities regardless.
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. |
 | data "hcl_schema" reference | 🟡 | ✅ | ✅ | Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct. |
-| Docker dev databases (`docker://` `--dev-url`) | ❌ | ✅ | ✅ | migrate diff, lint and validate refuse docker:// and require a directly connectable dev database URL. |
+| Docker dev databases (`docker://` `--dev-url`) | 🟡 | ✅ | ✅ | migrate diff, lint, validate, schema inspect, schema diff and the apply rehearsal start a container and remove it. `docker://sqlite` and the colon form stay refused, as on CE. Six verbs are unwired. |
 | env:// desired-state references | 🟡 | ✅ | ✅ | Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; native `--schema-file` refuses it by name; elsewhere (`--exclude`) the literal string is used silently. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❌ | ❌ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable. |
