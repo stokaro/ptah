@@ -141,7 +141,10 @@ func atlasDirQueryStrictFromEnv() (bool, error) {
 // that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly empty value
 // is now refused here too, which is stokaro/ptah#1334's one change to this
 // reader.
-var dirQueryStrict = envbool.New(dirQueryStrictEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Retained]: turning an ignored `--dir`
+// query key into a refusal adds no Atlas capability, it only refuses earlier
+// than the pinned binary does, so strict compatibility keeps it reachable.
+var dirQueryStrict = envbool.New(dirQueryStrictEnvVar, false, envbool.Retained)
 
 // reportIgnoredDirQuery names the `--dir` URL query keys the run took no
 // meaning from, on every verb that reads that query.

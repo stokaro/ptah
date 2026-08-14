@@ -398,7 +398,9 @@ const atlasMigrateLintAllVersionsEnvVar = "PTAH_ATLAS_LINT_ALL_VERSIONS"
 
 // atlasLintAllVersions is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: linting a directory the pinned
+// binary refuses to lint at all is behavior that binary does not have.
+var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false, envbool.Gated)
 
 // atlasMigrateLintAllVersions reports whether the opt-in lints the whole
 // directory. Unset keeps the default and a valid false spelling keeps it too; an
@@ -509,7 +511,10 @@ func requireAtlasMigrateLintDevURL(cmd *cobra.Command, devURL string) error {
 
 // atlasLintWithoutDevURL is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: the pinned binary marks
+// `--dev-url` required and exits 1 without it, so running anyway is a
+// capability it does not have.
+var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false, envbool.Gated)
 
 // lintWithoutDevURL reports whether the opt-in asks for Ptah's database-free
 // analysis. Unset keeps the requirement and a valid false spelling keeps it too;
