@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -127,17 +128,26 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 			projectCfg.StringValue(projectconfig.StringDatabaseURL),
 		)
 	}
-	opts.devURL = dbcli.EffectiveString(
+	// Normalized once, here, so every consumer judges the same bytes.
+	//
+	// atlasschema.inspectOnDev trims before it enforces the dev-database
+	// requirement, so an un-normalized copy reaching any earlier check makes
+	// that check disagree with the one that decides. `--dev-url '   '` was
+	// exactly that: the OCI preflight saw three spaces, called them a value,
+	// pulled the artifact, and only then reported `--dev-url cannot be empty`.
+	// Trimming in the preflight as well would have fixed the symptom and left
+	// the next reader of this value free to reintroduce it.
+	opts.devURL = strings.TrimSpace(dbcli.EffectiveString(
 		cmd,
 		inspectDevURLFlag,
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
-	)
+	))
 
 	// An oci:// --schema-file is resolved here, into a real local file, before
 	// anything classifies the value. See materializeOCISchemaFile for why the
 	// shared classifier is deliberately left alone.
-	materialized, cleanup, err := materializeOCISchemaFile(cmd, opts)
+	materialized, cleanup, err := materializeOCISchemaFile(cmd, opts, projectCfg)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -154,17 +164,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	format, err := resolveInspectFormat(opts)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	connectTimeout, err := dbcli.ParseConnectTimeout(
-		dbcli.EffectiveString(
-			cmd,
-			dbcli.ConnectTimeoutFlagName,
-			opts.connectTimeout,
-			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
-		))
+	locals, err := resolveInspectLocals(cmd, opts, projectCfg)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -175,15 +175,62 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		Schemas:        dbcli.ParseSchemas(opts.schemas),
 		Include:        opts.include,
 		Exclude:        opts.exclude,
-		Format:         format,
+		Format:         locals.format,
 		Diagnostics:    cmd.ErrOrStderr(),
-		ConnectTimeout: connectTimeout,
+		ConnectTimeout: locals.connectTimeout,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+// inspectLocals are the values this command derives without contacting a
+// registry, a network, or a database.
+type inspectLocals struct {
+	format         string
+	connectTimeout time.Duration
+}
+
+// resolveInspectLocals derives every local value the run needs, and returns the
+// first error any of those derivations produces.
+//
+// It exists because the alternative — a preflight that lists the local checks
+// it happens to know about — has now drifted from the real sequence twice on
+// this one function, and both times the same way: a check that runs, but not
+// on the value or at the point the next step actually uses. First
+// --connect-timeout was parsed after the OCI pull, so an unparseable duration
+// was reported as a registry dial failure; before that it was --format and the
+// selectors. A hand-maintained subset will drift again the next time a local
+// value is added here, and nothing about adding one would prompt the author to
+// look at the preflight.
+//
+// So there is no subset. Both callers run this same function: the OCI
+// materialization runs it before it pulls, and the main flow runs it where the
+// values are used. It is pure, so running it twice costs nothing, and a local
+// check added here is covered in front of the registry without anybody
+// remembering to do that.
+func resolveInspectLocals(
+	cmd *cobra.Command,
+	opts schemaInspectOptions,
+	projectCfg projectconfig.Config,
+) (inspectLocals, error) {
+	format, err := resolveInspectFormat(opts)
+	if err != nil {
+		return inspectLocals{}, err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(
+		dbcli.EffectiveString(
+			cmd,
+			dbcli.ConnectTimeoutFlagName,
+			opts.connectTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+		))
+	if err != nil {
+		return inspectLocals{}, err
+	}
+	return inspectLocals{format: format, connectTimeout: connectTimeout}, nil
 }
 
 // materializeOCISchemaFile pulls an oci:// --schema-file to a local canonical
@@ -221,7 +268,11 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 // `ptah schema pull` uses. The bytes inspected are byte-for-byte the bytes
 // `schema pull` would have written, because it is not a second implementation
 // of the pull.
-func materializeOCISchemaFile(cmd *cobra.Command, opts schemaInspectOptions) (string, func(), error) {
+func materializeOCISchemaFile(
+	cmd *cobra.Command,
+	opts schemaInspectOptions,
+	projectCfg projectconfig.Config,
+) (string, func(), error) {
 	reference := strings.TrimSpace(opts.schemaFile)
 	if !strings.HasPrefix(reference, ociartifact.Scheme) {
 		return "", nil, nil
@@ -239,12 +290,15 @@ func materializeOCISchemaFile(cmd *cobra.Command, opts schemaInspectOptions) (st
 	// atlasschema rather than being restated, so the message and the order stay
 	// the ones InspectSource would have produced.
 	//
-	// resolveInspectFormat is called here as well as at its usual place below.
-	// It is pure, so calling it twice costs nothing, and calling it here rather
-	// than hoisting it keeps the order every non-OCI invocation already had:
-	// hoisting would change which message a local source wrong in two ways
-	// receives, which is a behavior change this defect does not license.
-	if _, err := resolveInspectFormat(opts); err != nil {
+	// resolveInspectLocals is the whole local sequence, not a list of the parts
+	// this function remembered. It runs here and again where its values are
+	// used; it is pure, so the second run costs nothing, and a local check
+	// added to it is covered in front of the registry automatically. Calling it
+	// here rather than hoisting it keeps the order every non-OCI invocation
+	// already had: hoisting would change which message a local source wrong in
+	// two ways receives, which is a behavior change this defect does not
+	// license.
+	if _, err := resolveInspectLocals(cmd, opts, projectCfg); err != nil {
 		return "", nil, err
 	}
 	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(atlasschema.InspectSourceOptions{

@@ -144,6 +144,28 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			extra: []string{"--dev-url", "sqlite://:memory:", "--include", "[type=column]"},
 			want:  `unsupported Atlas include selector "[type=column]"`,
 		},
+		{
+			// Parsed after the pull until stokaro/ptah#1496, so an
+			// unparseable duration was reported as a registry dial failure.
+			name:  "unparseable --connect-timeout",
+			extra: []string{"--dev-url", "sqlite://:memory:", "--connect-timeout", "nonsense"},
+			want:  `invalid --connect-timeout value "nonsense"`,
+		},
+		{
+			// The preflight judged the raw flag while the code that enforces
+			// the same requirement trimmed first, so three spaces read as a
+			// value here and as empty there. The two are one value now.
+			name:  "whitespace-only --dev-url",
+			extra: []string{"--dev-url", "   "},
+			want:  "--dev-url cannot be empty",
+		},
+		{
+			// The same disagreement on the other dev-URL verdict: a leading
+			// space stopped the docker:// form being recognized.
+			name:  "whitespace-prefixed docker --dev-url",
+			extra: []string{"--dev-url", " docker://postgres/16/dev"},
+			want:  "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL",
+		},
 	}
 
 	for _, tt := range tests {
