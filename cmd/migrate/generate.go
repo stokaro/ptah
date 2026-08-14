@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -228,16 +229,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("database URL is required")
 		}
 	}
+	dialect, err := atlasurl.DialectFromURL(targetURL)
+	if err != nil {
+		return err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return err
+	}
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
 	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
-	}
-	dialect, err := atlasurl.DialectFromURL(targetURL)
-	if err != nil {
-		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -119,6 +120,9 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 	dialect, err := atlasurl.DialectFromURL(dbURL)
 	if err != nil {
+		return err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)

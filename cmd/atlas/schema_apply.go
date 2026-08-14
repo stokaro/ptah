@@ -26,9 +26,11 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -392,6 +394,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		opts.lintPolicy = projectCfg.Lint
 	}
 	opts.formatOutput = formatOutput
+	// The toggle belongs to every SQLite apply invocation. Resolve it as soon
+	// as the effective target URL is known, before classifying or executing a
+	// desired source. Invalid non-SQLite URLs retain their Atlas-compatible
+	// diagnostics below.
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.url); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if strings.TrimSpace(opts.planURL) != "" {
 		return runAtlasSchemaApplyPlanFile(cmd, opts)
 	}
