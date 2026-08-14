@@ -669,10 +669,20 @@ atlas.hcl "lint" at atlas.hcl:3 must be a block, or an empty object
 
 An empty object and `null` are accepted, because they carry no configuration.
 The affected names are `diff`, `lint` and `test` at the top level; `diff`,
-`format`, `lint`, `migration`, `schema` and `test` under `env`; `diff.skip`,
-`format.migrate`, `format.schema`, `lint.git` and `schema.repo` under those. Each
-was measured against the pinned community binary individually — the set is not
+`format`, `lint`, `migration`, `schema` and `test` under `env`; `skip` under
+either spelling of `diff`; `git` under either spelling of `lint`; and
+`format.migrate`, `format.schema` and `schema.repo` under `env`. Each was
+measured against the pinned community binary individually — the set is not
 "every block name", and it is not the same at every scope.
+
+`diff` and `lint` are the two blocks that may sit at the top level as well as
+inside `env`, and Ptah routes both spellings through the same parser, so
+top-level `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are
+refused exactly as their `env` spellings are. `format` and `schema` are not
+decoded into their structures at the top level by either binary — a top-level
+`format { schema = { k = "v" } }` exits 0 on the community binary, and Ptah drops
+the whole block with an ignored-block warning at exit 0 — so those names are
+`env`-scoped only.
 
 Because this is a value rule rather than a structural one, it applies to the
 selected environment only, and it reads the value after `var`, `local` and `data`

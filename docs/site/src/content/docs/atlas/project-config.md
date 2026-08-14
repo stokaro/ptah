@@ -539,10 +539,21 @@ block name" nor scope-independent:
 | --- | --- | --- |
 | top level | `diff`, `lint`, `test` | `atlas`, `data`, `format`, `locals`, `migration`, `schema`, `variable` |
 | `env` | `diff`, `format`, `lint`, `migration`, `schema`, `test` | — |
-| `env.diff` | `skip` | `concurrent_index` |
+| `diff` and `env.diff` | `skip` | `concurrent_index` |
+| `lint` and `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
 | `env.format` | `migrate`, `schema` | — |
-| `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
 | `env.schema` | `repo` | `mode` |
+
+`diff` and `lint` are the two blocks that may sit at the top level as well as
+inside `env`, and their nested names behave the same in both places: top-level
+`diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are refused, the
+same as their `env` spellings.
+
+The `format` and `schema` rows stay `env`-only, and that is measured rather than
+assumed. A top-level `format` or `schema` block is not decoded into those
+structures by the community binary, so top-level `format { schema = { k = "v" } }`
+and `schema { repo = { k = "v" } }` both exit 0 — Ptah drops the whole block with
+an ignored-block warning and exits 0 too.
 
 Writing any of these as a block is unaffected.
 

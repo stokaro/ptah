@@ -180,6 +180,32 @@ env "local" {
 `,
 			err: `atlas\.hcl "test" at atlas\.hcl:1 must be a block, or an empty object`,
 		},
+		// `diff` and `lint` are the two blocks that may sit at the top level as
+		// well as inside `env`, and the nested names behave the same in both
+		// places. Without these two rows the scope table would document a
+		// narrower rule than the parser enforces.
+		{
+			name: "top level diff skip",
+			raw: `diff {
+  skip = { k = "v" }
+}
+env "local" {
+  url = "sqlite://file.db"
+}
+`,
+			err: `atlas\.hcl "skip" at atlas\.hcl:2 must be a block, or an empty object`,
+		},
+		{
+			name: "top level lint git",
+			raw: `lint {
+  git = { k = "v" }
+}
+env "local" {
+  url = "sqlite://file.db"
+}
+`,
+			err: `atlas\.hcl "git" at atlas\.hcl:2 must be a block, or an empty object`,
+		},
 	}
 
 	for _, test := range tests {
@@ -482,6 +508,42 @@ env "local" {
 }
 `},
 		{name: "top level frobnicate9 control", raw: `frobnicate9 = { k = "v" }
+env "local" {
+  url = "sqlite://file.db"
+}
+`},
+		// Same scopes as the two top-level refusals above, and the reason the
+		// table cannot simply say "top level and env alike" for every nested
+		// row: these two names are tolerated where `skip` and `git` are not.
+		{name: "top level diff concurrent_index", raw: `diff {
+  concurrent_index = { k = "v" }
+}
+env "local" {
+  url = "sqlite://file.db"
+}
+`},
+		{name: "top level lint condrop", raw: `lint {
+  condrop = { k = "v" }
+}
+env "local" {
+  url = "sqlite://file.db"
+}
+`},
+		// `format` and `schema` are env-scoped for this rule. A top-level block
+		// of either name is not decoded into the structure by the pinned binary
+		// -- both exit 0 there -- and Ptah drops the whole block, so a row that
+		// labelled these "top level and env alike" would exit 1 where the binary
+		// exits 0.
+		{name: "top level format schema", raw: `format {
+  schema = { k = "v" }
+}
+env "local" {
+  url = "sqlite://file.db"
+}
+`},
+		{name: "top level schema repo", raw: `schema {
+  repo = { k = "v" }
+}
 env "local" {
   url = "sqlite://file.db"
 }

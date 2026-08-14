@@ -163,9 +163,27 @@ func atlasTolerantLeafStructure(attributes ...string) atlasBodyStructure {
 //
 // The keys are the scope strings the tolerance-path callers already pass:
 // atlasTopLevelScope for the project body, "env" for an env body, and the bare
-// block names for the container parsers, which serve the top-level and the env
-// spelling of the same block. `diff { skip = { k = "v" } }` was measured at the
-// top level as well as under `env` and refuses in both.
+// block names for the container parsers.
+//
+// The bare keys are deliberate. `diff` and `lint` are the two blocks that may
+// sit at the top level as well as inside `env`, and parseDiff/parseLint serve
+// both, so "diff" and "lint" cover both spellings -- measured, both refuse:
+//
+//	diff { skip = { k = "v" } }  (top level)  -> 1  *cmdapi.SkipChanges
+//	lint { git  = { k = "v" } }  (top level)  -> 1  set field "git"
+//	diff { concurrent_index = { … } }         -> 0  (control, same scope)
+//	lint { condrop = { … } }                  -> 0  (control, same scope)
+//
+// "format" and "env.schema" are NOT the same case, which is why only one of
+// them carries the env prefix. A top-level `format` or `schema` block is not
+// decoded into those structures by the pinned binary and is not collected by
+// collectAtlasTopBlock either, so it never reaches these parsers:
+//
+//	format { schema = { k = "v" } }  (top level)  -> 0 on both
+//	schema { repo   = { k = "v" } }  (top level)  -> 0 on both
+//
+// Labelling every nested row "top level and env alike" would therefore
+// over-claim by two scopes.
 var atlasStructAttributes = map[string][]string{
 	atlasTopLevelScope: {"diff", "lint", "test"},
 	"env":              {"diff", "format", "lint", "migration", "schema", "test"},
