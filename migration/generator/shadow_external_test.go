@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -83,6 +84,49 @@ func TestVerifyBaselineShadow_ConnectFailureReturnsStructuredError(t *testing.T)
 	c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)
 	c.Assert(shadowErr.Result.Mismatches[0].Kind, qt.Equals, "connect_error")
 	c.Assert(shadowErr.Err, qt.IsNotNil)
+}
+
+func TestVerifyBaselineShadow_UsesProvidedSnapshotInsteadOfPath(t *testing.T) {
+	c := qt.New(t)
+	target, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+	_, err = target.ExecContext(t.Context(), "CREATE TABLE authorized_snapshot (id INTEGER PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+
+	reopenedDir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.up.sql"),
+		[]byte("CREATE TABLE changed_after_verification (id INTEGER PRIMARY KEY);"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.down.sql"),
+		[]byte("DROP TABLE changed_after_verification;"),
+		0o600,
+	), qt.IsNil)
+	authorized := fstest.MapFS{
+		"0000000001_authorized.up.sql": {Data: []byte(
+			"CREATE TABLE authorized_snapshot (id INTEGER PRIMARY KEY);",
+		)},
+		"0000000001_authorized.down.sql": {Data: []byte(
+			"DROP TABLE authorized_snapshot;",
+		)},
+	}
+
+	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
+		TargetConn:        target,
+		MigrationsDir:     reopenedDir,
+		MigrationsFS:      authorized,
+		Version:           1,
+		Dialect:           "sqlite",
+	})
+
+	c.Assert(err, qt.IsNil)
 }
 
 func TestVerifyBaselineShadow_SchemaMismatchReturnsAllStructuredDifferences(t *testing.T) {

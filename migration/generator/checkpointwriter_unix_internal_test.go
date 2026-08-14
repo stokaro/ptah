@@ -13,6 +13,7 @@ package generator
 // replacement pointed at.
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +21,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -44,6 +46,87 @@ const (
 	checkpointWriterVersion      = 2099010100
 	atlasCheckpointWriterVersion = 20990101000000
 )
+
+func TestAuthorizedCheckpointWritersDoNotHashAConcurrentHistoryEdit(t *testing.T) {
+	tests := []struct {
+		name       string
+		priorNames []string
+		write      func(string, fs.FS) error
+		checkpoint func(string) ([]string, error)
+		sumName    string
+	}{
+		{
+			name:       "atlas checkpoint",
+			priorNames: []string{"20200101000000_init.sql"},
+			write: func(dir string, authorized fs.FS) error {
+				_, err := WriteAtlasCheckpointFileWithOptions(
+					dir,
+					atlasCheckpointWriterVersion,
+					"squash",
+					"CREATE TABLE users (id integer);\n",
+					CheckpointWriteOptions{AuthorizedMigrationsFS: authorized},
+				)
+				return err
+			},
+			checkpoint: func(dir string) ([]string, error) {
+				return filepath.Glob(filepath.Join(dir, "*_squash.sql"))
+			},
+			sumName: "atlas.sum",
+		},
+		{
+			name: "paired checkpoint",
+			priorNames: []string{
+				"0000000001_init.up.sql",
+				"0000000001_init.down.sql",
+			},
+			write: func(dir string, authorized fs.FS) error {
+				_, _, err := WriteCheckpointFilesWithOptions(
+					dir,
+					checkpointWriterVersion,
+					"squash",
+					"CREATE TABLE users (id integer);\n",
+					"DROP TABLE users;\n",
+					CheckpointWriteOptions{AuthorizedMigrationsFS: authorized},
+				)
+				return err
+			},
+			checkpoint: func(dir string) ([]string, error) {
+				return filepath.Glob(filepath.Join(dir, "*.checkpoint.*.sql"))
+			},
+			sumName: "ptah.sum",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			for _, name := range test.priorNames {
+				c.Assert(os.WriteFile(filepath.Join(dir, name), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+			}
+			authorized, err := migrationsnapshot.CaptureDirectory(dir)
+			c.Assert(err, qt.IsNil)
+			prior := filepath.Join(dir, test.priorNames[0])
+			afterMigrationFileNamesChosen = func([]string) {
+				afterMigrationFileNamesChosen = nil
+				c.Assert(os.WriteFile(prior, []byte("SELECT 2;\n"), 0o600), qt.IsNil)
+			}
+			defer func() { afterMigrationFileNamesChosen = nil }()
+
+			err = test.write(dir, authorized)
+
+			c.Assert(err, qt.ErrorIs, ErrMigrationDirectoryChanged)
+			checkpoints, globErr := test.checkpoint(dir)
+			c.Assert(globErr, qt.IsNil)
+			c.Assert(checkpoints, qt.HasLen, 0)
+			contents, readErr := os.ReadFile(prior)
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(string(contents), qt.Equals, "SELECT 2;\n")
+			_, statErr := os.Stat(filepath.Join(dir, test.sumName))
+			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+		})
+	}
+}
 
 // TestCheckpointWritersReplacedDirectoryCannotRedirectTheWrite asserts both
 // halves the acceptance criteria ask for, for each of the three writers: every

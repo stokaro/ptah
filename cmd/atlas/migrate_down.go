@@ -16,10 +16,12 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
+	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -30,7 +32,7 @@ import (
 // byte-identical to the plain forward; with --format (flag or PTAH_FORMAT) the
 // verb executes the rollback through internal/atlasmigrate and renders the
 // Atlas Go-template report instead of the native text output.
-func newAtlasMigrateDownCommand() *cobra.Command {
+func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	verb := atlasMigrateDownVerb()
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
@@ -38,7 +40,7 @@ func newAtlasMigrateDownCommand() *cobra.Command {
 		if atlasArgsHaveHelp(args) || !atlasMigrateDownWantsFormat(verb, args) {
 			return forward(cmd, args)
 		}
-		return runAtlasMigrateDownFormat(cmd, verb, args)
+		return runAtlasMigrateDownFormat(cmd, verb, policy, args)
 	}
 	return cmd
 }
@@ -109,8 +111,13 @@ type atlasMigrateDownFormatOptions struct {
 func runAtlasMigrateDownFormat(
 	cmd *cobra.Command,
 	verb atlasVerb,
+	compatibilityPolicy atlascompatpolicy.Policy,
 	args []string,
 ) (runErr error) {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	parentFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return err
@@ -168,7 +175,17 @@ func runAtlasMigrateDownFormat(
 	// there is no oracle behavior to match and compatibility policy (b) applies:
 	// matching is the floor, not the ceiling. Refusing here cannot break policy
 	// (a) either, which forbids exiting 0 where the community binary exits 1.
-	if err := verifyAtlasApplyChecksum(cmd, source.FileSystem, atlasmigrateimport.FormatAtlas); err != nil {
+	if compatibilityPolicy.IsStrictCE() {
+		if err := verifyAtlasApplyChecksum(cmd, source.FileSystem, atlasmigrateimport.FormatAtlas); err != nil {
+			return err
+		}
+	} else if _, err := migrationintegrity.GateWithPolicy(
+		cmd.ErrOrStderr(),
+		source.FileSystem,
+		migrator.MigrationDirFormatAtlas,
+		integrityPolicy,
+		migrationintegrity.Options{},
+	); err != nil {
 		return err
 	}
 

@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/deploymentreport"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
@@ -271,6 +272,10 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 }
 
 func migrateUpCommand(cmd *cobra.Command, opts *options) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return err
@@ -342,7 +347,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
 
-	if err := runIntegrityGate(cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, opts); err != nil {
+	if err := runIntegrityGate(cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, integrityPolicy, opts); err != nil {
 		return err
 	}
 
@@ -582,9 +587,10 @@ func runIntegrityGate(
 	runtime *cliobs.Runtime,
 	source migrationsource.Source,
 	format migrator.MigrationDirFormat,
+	integrityPolicy migrationintegrity.Policy,
 	opts *options,
 ) error {
-	return migrationsource.Verify(notice, emit, runtime, source, format, migrationsource.VerifyOptions{
+	return migrationsource.Verify(notice, emit, runtime, source, format, integrityPolicy, migrationsource.VerifyOptions{
 		RequireSum: opts.verifySum,
 		Verbose:    opts.verbose,
 	})
