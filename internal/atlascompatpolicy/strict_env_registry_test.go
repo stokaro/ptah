@@ -67,20 +67,24 @@ const retainedControlsMarker = "opt-in correctness controls remain available"
 // it is configuration the operator got wrong, and the only run that would
 // otherwise surface it is the one that happens to reach the behavior.
 func TestStrictCERefusesAMalformedValueForEveryRegisteredVariable(t *testing.T) {
+	c := qt.New(t)
+
 	registered := envbool.Registered()
-	qt.Assert(t, len(registered) > 10, qt.IsTrue, qt.Commentf(
+	c.Assert(len(registered) > 10, qt.IsTrue, qt.Commentf(
 		"found %d declarations; an enumeration over an empty registry is also green",
 		len(registered)))
 
 	for _, variable := range registered {
 		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
+
 			clearDeclaredEnvironment(t)
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 			t.Setenv(variable.Name(), "maybe")
 
 			_, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.ErrorMatches,
+			c.Assert(err, qt.ErrorMatches,
 				`invalid boolean value "maybe" for `+variable.Name())
 		})
 	}
@@ -106,8 +110,10 @@ func TestStrictCEAnswersEveryRegisteredVariableByItsDeclaredClass(t *testing.T) 
 
 	for _, variable := range envbool.Registered() {
 		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
+
 			assert := assertions[variable.Class()]
-			qt.Assert(t, assert, qt.IsNotNil, qt.Commentf(
+			c.Assert(assert, qt.IsNotNil, qt.Commentf(
 				"no expectation is written down for class %s", variable.Class()))
 			clearDeclaredEnvironment(t)
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
@@ -135,14 +141,16 @@ func TestStrictCEAnswersEveryRegisteredVariableByItsDeclaredClass(t *testing.T) 
 func TestStrictCEAcceptsADisabledValueForEveryRegisteredVariable(t *testing.T) {
 	for _, variable := range envbool.Registered() {
 		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
+
 			clearDeclaredEnvironment(t)
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 			t.Setenv(variable.Name(), "false")
 
 			policy, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, policy.IsStrictCE(), qt.Equals,
+			c.Assert(err, qt.IsNil)
+			c.Assert(policy.IsStrictCE(), qt.Equals,
 				variable.Name() != atlascompatpolicy.StrictCompatEnvVar)
 		})
 	}
@@ -157,14 +165,16 @@ func TestStrictCEAcceptsADisabledValueForEveryRegisteredVariable(t *testing.T) {
 func TestFullCompatibilityInspectsNoRegisteredVariable(t *testing.T) {
 	for _, variable := range envbool.Registered() {
 		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
+
 			clearDeclaredEnvironment(t)
 			t.Setenv(variable.Name(), "maybe")
 			envbooltest.Unset(atlascompatpolicy.StrictCompatEnvVar)(t)
 
 			policy, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, policy.IsStrictCE(), qt.IsFalse)
+			c.Assert(err, qt.IsNil)
+			c.Assert(policy.IsStrictCE(), qt.IsFalse)
 		})
 	}
 }
@@ -177,22 +187,26 @@ func TestFullCompatibilityInspectsNoRegisteredVariable(t *testing.T) {
 // derived, so it is gated instead -- the documented set has to be exactly the
 // set the registry classifies as retained.
 func TestDocumentedRetainedControlsMatchTheRegistry(t *testing.T) {
+	c := qt.New(t)
+
 	documented := documentedRetainedControls(t)
-	qt.Assert(t, len(documented) > 0, qt.IsTrue, qt.Commentf(
+	c.Assert(len(documented) > 0, qt.IsTrue, qt.Commentf(
 		"no variable names found near %q; the paragraph moved or was reworded",
 		retainedControlsMarker))
 
-	qt.Assert(t, documented, qt.DeepEquals, registeredNamesWithClass(envbool.Retained))
+	c.Assert(documented, qt.DeepEquals, registeredNamesWithClass(envbool.Retained))
 }
 
 // documentedRetainedControls returns the variable names the configuration
 // reference lists as retained, sorted.
 func documentedRetainedControls(t *testing.T) []string {
 	t.Helper()
+	c := qt.New(t)
+
 	path := filepath.Join("..", "..", "docs", "site", "src", "content", "docs",
 		"reference", "configuration.md")
 	contents, err := os.ReadFile(path)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	names := ptahVarPattern.FindAllString(markedParagraph(
 		string(contents), retainedControlsMarker), -1)
@@ -244,12 +258,16 @@ func clearDeclaredEnvironment(t *testing.T) {
 // assertStrictRefuses expects the policy to name the variable it refused.
 func assertStrictRefuses(t *testing.T, name string, err error) {
 	t.Helper()
-	qt.Assert(t, err, qt.ErrorMatches,
+	c := qt.New(t)
+
+	c.Assert(err, qt.ErrorMatches,
 		atlascompatpolicy.StrictCompatEnvVar+` does not allow `+name)
 }
 
 // assertStrictAccepts expects strict mode to resolve with the variable enabled.
 func assertStrictAccepts(t *testing.T, _ string, err error) {
 	t.Helper()
-	qt.Assert(t, err, qt.IsNil)
+	c := qt.New(t)
+
+	c.Assert(err, qt.IsNil)
 }

@@ -314,7 +314,9 @@ func TestEveryDeclaredVariableStatesAClassification(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
+
 			c.Assert(variable.Class(), qt.Not(qt.Equals), envbool.Unclassified, qt.Commentf(
 				"state envbool.Gated or envbool.Retained at the envbool.New call for %s,"+
 					" and say in a comment which capability the pinned community binary"+
