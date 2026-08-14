@@ -99,6 +99,22 @@ const materializedViewInnerTablesSubquery = `
 		WHERE database = ? AND engine = 'MaterializedView'
 `
 
+// currentDatabaseMaterializedViewInnerTablesSubquery is the same subtraction
+// for a statement scoped by currentDatabase() instead of a bound name, which is
+// how the writer's DropAllTables selects. It is spelled separately rather than
+// parameterized because the two callers bind different numbers of arguments,
+// and a shared string that silently needed two more would be the easier thing
+// to get wrong.
+const currentDatabaseMaterializedViewInnerTablesSubquery = `
+		SELECT concat('.inner_id.', toString(uuid))
+		FROM system.tables
+		WHERE database = currentDatabase() AND engine = 'MaterializedView'
+		UNION ALL
+		SELECT concat('.inner.', name)
+		FROM system.tables
+		WHERE database = currentDatabase() AND engine = 'MaterializedView'
+`
+
 func (r *Reader) resolveDatabaseName() (string, error) {
 	if r.schema != "" {
 		return r.schema, nil

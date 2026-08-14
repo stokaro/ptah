@@ -204,6 +204,15 @@ func (w *transactionWriter) IsDryRun() bool { return w.writer.IsDryRun() }
 // Uses DROP TABLE … SYNC so subsequent CREATE TABLE statements don't race
 // against the async drop.
 //
+// Base table means a table the schema declares. Views are left alone, as they
+// always have been, and so is the storage table a materialized view owns, which
+// the engine allowlist would otherwise match: measured on server 26.7.3.19,
+// DROP TABLE on a materialized view's ".inner_id.<uuid>" succeeds at exit 0 and
+// leaves the view itself in system.tables, so a SELECT from it then fails with
+// "Table ... does not exist. (UNKNOWN_TABLE)". Reaching into half of an object
+// this method does not claim to drop is worse than not dropping it. The
+// complete cleanup contract is DropDatabaseRealm.
+//
 // Identifiers cannot be bound as parameters; quoteIdent doubles any
 // embedded backtick so a name harvested from system.tables cannot break
 // out of the quoted identifier. The explicit "contains backtick" rejection
@@ -230,6 +239,7 @@ func (w *Writer) DropAllTables(ctx context.Context) error {
 		    OR engine = 'StripeLog'
 		  )
 		  AND engine NOT LIKE '%View'
+		  AND name NOT IN (`+currentDatabaseMaterializedViewInnerTablesSubquery+`)
 		ORDER BY name
 	`)
 	if err != nil {

@@ -153,6 +153,44 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(emptyReadback.Tables[0].Name, qt.Equals, "users")
 }
 
+// TestDropAllTablesLeavesMaterializedViewStorageAloneLive covers the third site
+// that shares the MergeTree engine allowlist.
+//
+// The storage table a materialized view owns is a real MergeTree table, and
+// DROP TABLE on it succeeds: the server does not refuse, it just leaves the
+// view pointing at nothing, so a SELECT from the view fails with UNKNOWN_TABLE.
+// DropAllTables says it drops base tables, so the check is that the declared
+// table is gone and the view is still readable.
+func TestDropAllTablesLeavesMaterializedViewStorageAloneLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	storedView := sqlident.Qualified(platform.ClickHouse, database, "user_counts")
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+		"CREATE MATERIALIZED VIEW " + storedView +
+			" ENGINE = MergeTree ORDER BY tuple() AS SELECT count() AS c FROM " + sourceTable,
+		"INSERT INTO " + sourceTable + " VALUES (1)",
+	})
+
+	err := clickhousedb.NewClickHouseWriter(db, database).DropAllTables(t.Context())
+	c.Assert(err, qt.IsNil)
+
+	var remaining uint64
+	err = db.QueryRowContext(
+		t.Context(),
+		"SELECT count() FROM system.tables WHERE database = ? AND name = 'users'",
+		database,
+	).Scan(&remaining)
+	c.Assert(err, qt.IsNil)
+	c.Assert(remaining, qt.Equals, uint64(0))
+
+	var stored uint64
+	err = db.QueryRowContext(t.Context(), "SELECT sum(c) FROM "+storedView).Scan(&stored)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stored, qt.Equals, uint64(1))
+}
+
 // TestMaterializedViewStoresRatherThanRecomputesLive is the measurement behind
 // capability.MaterializedViews for this preset.
 //
