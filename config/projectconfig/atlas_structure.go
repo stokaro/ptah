@@ -633,6 +633,21 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 		blockStructure, ok := structure.blocks[block.Type]
 		if !ok {
 			if !structure.allowUnknownBlocks {
+				// The leaf bodies -- everything built by
+				// [atlasTolerantLeafStructure] -- are the only ones that reach
+				// this arm, and they refuse every nested block. That is a known
+				// remaining divergence in the loud direction, like the label
+				// arity below: measured with `schema inspect --env local`, exit
+				// codes read directly from unpiped invocations, the pinned
+				// community binary v1.3.0 answers 0 for all 21 scope-and-leaf
+				// pairs (`skip` and `concurrent_index` under either spelling of
+				// `diff`; the seven analyzer bodies and `git` under either
+				// spelling of `lint`; `mode` and `repo` under `env.schema`;
+				// `repo` under `env.migration`). Refusing keeps a misspelled
+				// policy body from being dropped in silence and can never
+				// accept a file that binary rejects, so it is not the rule (a)
+				// direction. The container bodies around them tolerate an
+				// unknown block, which is why this arm is not reached for them.
 				return unsupportedBlock(block)
 			}
 			if err := p.recordIgnoredBlock(scope, block); err != nil {

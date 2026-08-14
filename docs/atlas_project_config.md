@@ -656,8 +656,8 @@ Ptah classifies every `atlas.hcl` name into one of three outcomes:
 | Structurally unsupported | Ptah rejects the file with a location-aware error, even when the construct is in an unselected environment. |
 | Ignored by Atlas CE | Ptah accepts the name for compatibility, records it in `Config.IgnoredConstructs`, and the CLI warns that it has no effect. |
 
-Structurally unsupported data-source fields, labels on a block that takes none,
-nested blocks inside a body that takes none, and duplicate supported blocks fail
+Structurally unsupported data-source fields, labels on a supported block that
+takes none, nested blocks inside a leaf body, and duplicate supported blocks fail
 with a location-aware error. A second `schema` block in one `env` reports the
 duplicate at its own line:
 
@@ -665,12 +665,25 @@ duplicate at its own line:
 unsupported atlas.hcl construct "schema" at atlas.hcl:6
 ```
 
-Unknown attribute names are not in that category. `diff`, `env.diff`, `lint`,
-`env.lint`, `env.format.migrate` and `env.format.schema` each accept a name they
-do not implement and report it as having no effect, because the community binary
-reads those files at exit 0. What those bodies still refuse is a nested block:
+Neither an unknown attribute name nor an unknown nested block is in that
+category. `diff`, `env.diff`, `lint`, `env.lint`, `env.format.migrate` and
+`env.format.schema` each accept a name they do not implement — written as an
+attribute or as a block — and report it as having no effect, because the
+community binary reads those files at exit 0. `lint { frobnicate9 { } }` and
+`format { migrate { custom { } } }` are exit 0 on both binaries, which is why a
+format extension written as a block is accepted rather than refused.
+
+A nested block is refused in the leaf bodies only: `concurrent_index` and `skip`
+under either spelling of `diff`; `concurrent_index`, `condrop`, `data_depend`,
+`destructive`, `git`, `incompatible` and `nestedtx` under either spelling of
+`lint`; `mode` and `repo` under `env.schema`; and `repo` under `env.migration`.
 `lint { destructive { anything { } } }` and `diff { skip { anything { } } }` both
-fail with `unsupported atlas.hcl construct "anything"`.
+fail with `unsupported atlas.hcl construct "anything"`. All 21 of those
+scope-and-leaf pairs were measured with `schema inspect --env local`, every exit
+code read directly from an unpiped invocation: the community binary answers 0 on
+each, so this refusal is a known remaining divergence in the loud direction, the
+same standing policy as the label-arity and duplicate refusals above. It never
+lets Ptah accept a project file that binary rejects.
 
 Ptah does not turn a construct that Atlas CE decodes or enforces into a no-op.
 The ignored category is limited to names that Atlas CE itself accepts without

@@ -629,10 +629,43 @@ The membership is measured name by name and is not "every change kind":
 among the names the community binary does not decode inside `skip`, so any value
 is accepted for them.
 
+### An unknown block is tolerated where an unknown attribute is
+
+A body that tolerates a name it does not implement tolerates it in either
+spelling. `diff`, `env.diff`, `lint`, `env.lint`, `env.format.migrate` and
+`env.format.schema` accept an unknown attribute **and** an unknown nested block,
+so a format extension such as `format { migrate { custom { } } }` is accepted
+and reported as having no effect rather than refused, exactly as the community
+binary reads it.
+
+The bodies that refuse a nested block are the leaves, and they are the whole
+list:
+
+| Scope | Leaf bodies that refuse a nested block |
+| --- | --- |
+| `diff` and `env.diff` | `concurrent_index`, `skip` |
+| `lint` and `env.lint` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `git`, `incompatible`, `nestedtx` |
+| `env.schema` | `mode`, `repo` |
+| `env.migration` | `repo` |
+
+```text
+Error: unsupported atlas.hcl construct "anything" at atlas.hcl:5
+```
+
+All 21 scope-and-leaf pairs were measured one at a time and the community binary
+exits 0 on every one of them, so this is a known remaining divergence in the
+loud direction — the same standing policy as the label-arity and duplicate
+refusals. It never accepts a project file that binary rejects.
+
 Structural validation covers every `env` block, including environments that
-are not selected for the current command. An unsupported attribute, nested
-block, label, or duplicate therefore fails even when it appears in another
-environment. Expressions inside `env` blocks, including ignored attributes and
+are not selected for the current command. A structurally unsupported construct
+therefore fails even when it appears in another environment: a data-source
+field, a label on a supported block that takes none, a duplicate supported
+block, or a nested block inside one of the leaf bodies above. An unknown
+attribute and an unknown nested block in a tolerant body are not in that
+category and are accepted in a selected and an unselected environment alike.
+
+Expressions inside `env` blocks, including ignored attributes and
 block bodies, are evaluated only in the selected environment. An unselected
 environment may therefore refer to variables, files, or environment values
 unavailable in the current invocation. Global `variable`, `locals`, and `data`

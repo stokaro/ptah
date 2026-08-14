@@ -1270,3 +1270,160 @@ func TestParseAtlasProjectConfigOrdersIgnoredGlobalLintAttributesDeterministical
 		{Name: "zebra", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
 	})
 }
+
+// TestParseAtlasProjectConfigToleratesUnknownTopLevelNestedBlocks pins the
+// top-level half of the body rule: a body that tolerates an unknown attribute
+// tolerates the same name written as a block, at the top level exactly as it
+// does under `env`.
+//
+// Measured with `schema inspect --env local` in a directory holding only the
+// project file, every exit code read directly from an unpiped invocation: the
+// pinned community binary v1.3.0 and Ptah both answer 0 for
+// `diff { frobnicate9 {} }` and `lint { frobnicate9 {} }` at the top level.
+// The `env` spellings are pinned by
+// TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection; these
+// two rows are the top-level scope, which reaches the block parsers rather than
+// the structure validator and was unpinned.
+func TestParseAtlasProjectConfigToleratesUnknownTopLevelNestedBlocks(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "top level diff",
+			body: `diff {
+  frobnicate9 {}
+}`,
+		},
+		{
+			name: "top level lint",
+			body: `lint {
+  frobnicate9 {}
+}`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			raw := []byte(test.body + `
+env "local" {
+  url = "sqlite://selected.db"
+}
+`)
+
+			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(ignoredAtlasNames(cfg), qt.Contains, "frobnicate9")
+		})
+	}
+}
+
+// TestParseAtlasProjectConfigRefusesNestedBlocksInTopLevelLeafBodies pins the
+// other side of the same rule at the same scope: the leaf bodies refuse a
+// nested block, and they are the only bodies that do.
+//
+// This is a known remaining divergence in the loud direction, not parity. The
+// pinned community binary v1.3.0 answers 0 for every row below, measured with
+// `schema inspect --env local`, exit codes read directly from unpiped
+// invocations; it answers 0 for the `env` spellings too, which
+// TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelection
+// pins. Ptah refuses instead so that a misspelled policy body is not silently
+// dropped, and refusing can never accept a file that binary rejects.
+func TestParseAtlasProjectConfigRefusesNestedBlocksInTopLevelLeafBodies(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "diff concurrent index",
+			body: `diff {
+  concurrent_index {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "diff skip",
+			body: `diff {
+  skip {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint concurrent index",
+			body: `lint {
+  concurrent_index {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint constraint drop",
+			body: `lint {
+  condrop {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint data dependency",
+			body: `lint {
+  data_depend {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint destructive",
+			body: `lint {
+  destructive {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint git",
+			body: `lint {
+  git {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint incompatible",
+			body: `lint {
+  incompatible {
+    anything {}
+  }
+}`,
+		},
+		{
+			name: "lint nested transaction",
+			body: `lint {
+  nestedtx {
+    anything {}
+  }
+}`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			raw := []byte(test.body + `
+env "local" {
+  url = "sqlite://selected.db"
+}
+`)
+
+			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+			c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "anything" at atlas\.hcl:[0-9]+`)
+		})
+	}
+}
