@@ -1052,6 +1052,320 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 	}
 }
 
+// TestValidatePlannedRollbackRefusesADestructiveRollback is the down-direction
+// half of the same gate.
+//
+// A generated migration is two files, and only the up file had a gate. The down
+// file is planned from the reverse of the forward diff, and reversal turns a
+// change SQLite performs in place into one it does not: `reverseTableDiffs`
+// swaps ColumnsAdded into ColumnsRemoved, and
+// [go.5x5.cz/ptah/internal/planner/sqliterebuild.NeedsTableRebuild] reports a
+// rebuild for that -- drop, recreate, copy. So the add-column exemption
+// TestValidatePlannedChangesRefusesAChangeItCannotVouchFor pins, which is right
+// about the forward statement, said nothing about the file generated beside it.
+//
+// Reproduced through generator.PlanMigration on an fts4 database this build
+// cannot load, with a programmatic desired schema naming the module's storage
+// and one extra column on `docs_content`: the up file was the single statement
+// `ALTER TABLE "docs_content" ADD COLUMN "spurious" TEXT;` and the down file
+// beside it dropped and recreated `docs_content`, both written at exit 0.
+// Restoring the pre-exemption gate refused the same run at the comparison,
+// which is where the gap came from.
+//
+// The second row is the reason this is not simply the forward gate pointed at
+// the reverse diff. A migration that CREATES a table has a rollback that drops
+// it, and that table cannot be storage the module already owns because it did
+// not exist before the migration ran. The reverse diff records it as a removal,
+// so a gate reading the reverse diff's own additions would refuse
+// `migrations generate` for adding an ordinary table to a database holding an
+// unloadable module -- the over-refusal this package has fixed three times
+// already, arriving a fourth time by a new route.
+func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
+	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Name: "docs", VirtualModule: "fts4"},
+			{Name: "docs_content"},
+		},
+		UnregisteredVirtualTables: unclassified,
+	}
+
+	tests := []struct {
+		name            string
+		dialect         string
+		env             func(testing.TB)
+		database        *types.DBSchema
+		forward         *difftypes.SchemaDiff
+		reverse         *difftypes.SchemaDiff
+		wantErr         bool
+		wantUnsupported bool
+		wantContains    []string
+	}{
+		{
+			// THE ROW THIS GATE EXISTS FOR. The forward direction is a bare
+			// `ALTER TABLE ... ADD COLUMN`, which the up-direction gate admits
+			// and should; the rollback that Ptah writes beside it rebuilds the
+			// module's storage.
+			name:     "an added column reversed into a removed one is refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  addingColumn("docs_content"),
+			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"email"},
+			}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+				`virtual table "docs" (module fts4)`,
+				"turns an added column into a removed one",
+				sqlitevirtual.AllowUnregisteredModuleEnvVar,
+			},
+		},
+		{
+			// THE CONTROL FOR THE CREATION SET, and the row that fails if the
+			// exclusion is asked of the reverse diff instead of the forward
+			// one. Adding an ordinary table to a database that happens to hold
+			// an unloadable module is exactly the work the earlier rounds
+			// unblocked.
+			name:     "a table the migration creates is not counted when the rollback drops it again",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			reverse:  removing("audit"),
+			wantErr:  false,
+		},
+		{
+			// Its control: the exclusion is about the tables THIS migration
+			// created, not about reverse removals in general. A rollback that
+			// drops storage the migration did not create is still refused.
+			name:            "a rollback drop of a table the migration did not create is still counted",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database:        holdingFTS4,
+			forward:         &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			reverse:         removing("docs_content"),
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+			},
+		},
+		{
+			// The identity half of the same exclusion. The forward diff carries
+			// the comparator's spelling and the reverse removal carries the
+			// drop order's, so a raw string lookup answers "different object"
+			// for one object (stokaro/ptah#1351).
+			name:     "a created table spelled with its schema is still not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"main.audit"}},
+			reverse:  removing("audit"),
+			wantErr:  false,
+		},
+		{
+			// The index half of the creation set. `migrations generate` for a
+			// database holding an unloadable module must still be able to add
+			// an index, and the rollback of an addition is a drop.
+			name:     "an index the migration creates is not counted when the rollback drops it",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
+				{Name: "docs_content_docid_idx", TableName: "docs_content"},
+			}},
+			reverse: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
+				{Name: "docs_content_docid_idx", TableName: "docs_content"},
+			}},
+			wantErr: false,
+		},
+		{
+			// Its control, and the reason "created" is narrower than "added".
+			// An index dropped and recreated under one name REPLACES the object
+			// that was there, so its rollback puts the earlier definition back
+			// over whatever the module was maintaining.
+			name:     "an index the migration only replaces is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "docs_content_docid_idx", TableName: "docs_content"},
+				},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "docs_content_docid_idx", TableName: "docs_content"},
+				},
+			},
+			reverse: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
+				{Name: "docs_content_docid_idx", TableName: "docs_content"},
+			}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+			},
+		},
+		{
+			// The granularity control: the exclusion is asked of the index, not
+			// of the table it sits on, so one created index does not excuse
+			// every removal aimed at its table.
+			name:     "a created index does not excuse another removal on the same table",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
+				{Name: "docs_content_new_idx", TableName: "docs_content"},
+			}},
+			reverse: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
+				{Name: "docs_content_new_idx", TableName: "docs_content"},
+				{Name: "docs_content_old_idx", TableName: "docs_content"},
+			}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+			},
+		},
+		{
+			// The trigger half of the same pair.
+			name:     "a trigger the migration creates is not counted when the rollback drops it",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{
+				{TriggerName: "docs_content_guard", TableName: "docs_content"},
+			}},
+			reverse: &difftypes.SchemaDiff{TriggersRemoved: []difftypes.TriggerRef{
+				{TriggerName: "docs_content_guard", TableName: "docs_content"},
+			}},
+			wantErr: false,
+		},
+		{
+			name:     "a trigger the migration only replaces is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{
+				TriggersAdded: []difftypes.TriggerRef{
+					{TriggerName: "docs_content_guard", TableName: "docs_content"},
+				},
+				TriggersRemoved: []difftypes.TriggerRef{
+					{TriggerName: "docs_content_guard", TableName: "docs_content"},
+				},
+			},
+			reverse: &difftypes.SchemaDiff{TriggersRemoved: []difftypes.TriggerRef{
+				{TriggerName: "docs_content_guard", TableName: "docs_content"},
+			}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+			},
+		},
+		{
+			// A trigger the forward direction MODIFIES is put back by the
+			// rollback over the module's own, so a reversed modification is a
+			// replacement however the creation set reads.
+			name:     "a trigger the rollback replaces is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward: &difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{
+				TriggerName: "docs_content_guard",
+				TableName:   "docs_content",
+				Changes:     map[string]string{"body": "old -> new"},
+			}}},
+			reverse: &difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{
+				TriggerName: "docs_content_guard",
+				TableName:   "docs_content",
+				Changes:     map[string]string{"body": "new -> old"},
+			}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains: []string{
+				`the rollback generated beside this migration changes "docs_content"`,
+			},
+		},
+		{
+			// A rollback that only re-creates what the forward direction
+			// dropped removes nothing, so it is not this gate's harm. It is the
+			// pre-comparison half's, and that one already refused the forward
+			// drop.
+			name:     "a rollback that only restores a dropped table is not refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  removing("docs_content"),
+			reverse:  &difftypes.SchemaDiff{TablesAdded: []string{"docs_content"}},
+			wantErr:  false,
+		},
+		{
+			name:     "a rollback that changes nothing is not refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  &difftypes.SchemaDiff{},
+			reverse:  &difftypes.SchemaDiff{},
+			wantErr:  false,
+		},
+		{
+			name:     "a rollback against a classifiable database is not refused",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			forward:  addingColumn("docs"),
+			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs",
+				ColumnsRemoved: []string{"email"},
+			}}},
+			wantErr: false,
+		},
+		{
+			name:     "the opt-in lifts it",
+			dialect:  "sqlite",
+			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			database: holdingFTS4,
+			forward:  addingColumn("docs_content"),
+			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"email"},
+			}}},
+			wantErr: false,
+		},
+		{
+			name:     "a non SQLite dialect is not touched",
+			dialect:  "mysql",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			forward:  addingColumn("docs_content"),
+			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsRemoved: []string{"email"},
+			}}},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			tt.env(t)
+
+			err := sqlitevirtual.ValidatePlannedRollback(tt.dialect, tt.database, tt.forward, tt.reverse)
+
+			c.Assert(err != nil, qt.Equals, tt.wantErr)
+			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
+			for _, fragment := range tt.wantContains {
+				c.Assert(errorText(err), qt.Contains, fragment)
+			}
+		})
+	}
+}
+
 // TestDiffPolicySkipKindsAreClassified is the census that keeps the next skip
 // kind from defaulting to "this gate does not read it".
 //

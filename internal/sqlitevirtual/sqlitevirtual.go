@@ -665,7 +665,181 @@ func ValidatePlannedChanges(
 	if platform.NormalizeDialect(dialect) != platform.SQLite || diff == nil {
 		return nil
 	}
-	touched := tablesTouchedBy(diff, policy)
+	// The objects this plan CREATES are its own, so the plan and the creation
+	// set are the same diff. A rollback is the one case where they differ; see
+	// [ValidatePlannedRollback].
+	return refusePlanTouchingUnclassifiedStorage(
+		database,
+		tablesTouchedBy(diff, createdBy(diff), policy),
+		forwardPlan,
+	)
+}
+
+// ValidatePlannedRollback refuses the ROLLBACK of a plan that would change a
+// table in a database whose modules this build cannot load.
+//
+// A generated migration is two artifacts, and only one of them had a gate. The
+// down file is planned from the reverse of the forward diff, and reversal turns
+// changes SQLite expresses in place into changes it does not: an added column
+// comes back as a removed one, and [sqliterebuild.NeedsTableRebuild] reports a
+// rebuild for that -- drop, recreate, copy. So the exemption
+// [ValidatePlannedChanges] grants an add-column-only diff, which is correct for
+// the forward direction, admitted a rollback that rebuilds the table.
+//
+// Reproduced through [go.5x5.cz/ptah/migration/generator.PlanMigration] on an
+// fts4 database this build cannot load, with a programmatic desired schema
+// naming the module's storage and one extra column on `docs_content`. The up
+// file was the single statement
+//
+//	ALTER TABLE "docs_content" ADD COLUMN "spurious" TEXT;
+//
+// and the down file beside it was
+//
+//	CREATE TABLE "__ptah_rebuild_docs_content" (...);
+//	INSERT INTO "__ptah_rebuild_docs_content" (...) SELECT ... FROM "docs_content";
+//	DROP TABLE "docs_content";
+//	ALTER TABLE "__ptah_rebuild_docs_content" RENAME TO "docs_content";
+//
+// written at exit 0 with no refusal. Restoring the pre-exemption gate refused
+// the same run at the comparison, which is where the gap came from: the
+// exemption is right about the forward statement and says nothing about the
+// file generated beside it.
+//
+// It asks the same question of the same predicate, and differs from
+// [ValidatePlannedChanges] in exactly one input: the creation set. An object a
+// migration CREATES cannot be one the module already owns, so the rollback that
+// removes it again destroys nothing -- and the objects a ROLLBACK removes are
+// the ones the FORWARD direction created, which the reverse diff records as
+// removals. Reading the reverse diff's own additions instead would refuse
+// `migrations generate` for adding an ordinary table, an index or a trigger to
+// a database that happens to hold an unloadable module, which is the
+// over-refusal this package has now fixed three times arriving a fourth way.
+// See [createdBy] for why "created" is narrower than "added".
+//
+// No [Policy] is taken, because at this seam there is nothing left to promise:
+// both callers filter the forward diff through their diff policy BEFORE the
+// reverse is derived from it (see [go.5x5.cz/ptah/migration/generator] and
+// [go.5x5.cz/ptah/internal/atlasmigrate]), and nothing filters the reverse
+// afterwards. A caller that grew a later filter would be refused for a
+// statement it deletes, which is the safe direction and the one the zero Policy
+// already stands for.
+func ValidatePlannedRollback(
+	dialect string,
+	database *types.DBSchema,
+	forward *difftypes.SchemaDiff,
+	reverse *difftypes.SchemaDiff,
+) error {
+	if platform.NormalizeDialect(dialect) != platform.SQLite || forward == nil || reverse == nil {
+		return nil
+	}
+	return refusePlanTouchingUnclassifiedStorage(
+		database,
+		tablesTouchedBy(reverse, createdBy(forward), Policy{}),
+		rollbackPlan,
+	)
+}
+
+// created names the objects a migration brings into existence, which is the one
+// class of object its rollback can remove without removing anything the
+// database had before.
+//
+// It is deliberately narrower than "added". An index dropped and recreated
+// under one name is a REPLACEMENT of the object that was there, not a new
+// object, and so is a trigger; the rollback of a replacement puts the earlier
+// definition back over the module's own, which is a removal like any other. So
+// an addition counts as a creation only when the same migration does not also
+// remove it.
+type created struct {
+	tables   []string
+	indexes  []difftypes.IndexRef
+	triggers []difftypes.TriggerRef
+}
+
+// createdBy reads the creation set off the diff that performs the creations.
+//
+// For a forward plan that is the plan's own diff, and the index and trigger
+// halves are inert there: an entry this gate counts is in the diff's removals,
+// which is exactly what disqualifies it from being a creation. They matter for
+// a rollback, where the removals ARE the forward direction's additions.
+func createdBy(diff *difftypes.SchemaDiff) created {
+	semantics := diffSemantics(diff)
+	set := created{tables: diff.TablesAdded}
+	removedIndexes := diff.IndexRemovals()
+	for _, ref := range diff.IndexAdditions() {
+		if containsIndexRef(removedIndexes, ref, semantics) {
+			continue
+		}
+		set.indexes = append(set.indexes, ref)
+	}
+	for _, ref := range diff.TriggersAdded {
+		if containsTriggerRef(diff.TriggersRemoved, ref, semantics) {
+			continue
+		}
+		set.triggers = append(set.triggers, ref)
+	}
+	return set
+}
+
+// containsIndexRef joins two index references on the object they name rather
+// than on their spelling, for the reason [objectlookup] gives: the two sides of
+// a reversal carry the comparator's spelling and the declaration's, and SQLite
+// folds ASCII case besides.
+func containsIndexRef(
+	refs []difftypes.IndexRef,
+	ref difftypes.IndexRef,
+	semantics identifier.Semantics,
+) bool {
+	return slices.ContainsFunc(refs, func(candidate difftypes.IndexRef) bool {
+		return objectlookup.Same(candidate.Name, ref.Name, semantics) &&
+			objectlookup.Same(candidate.TableName, ref.TableName, semantics)
+	})
+}
+
+func containsTriggerRef(
+	refs []difftypes.TriggerRef,
+	ref difftypes.TriggerRef,
+	semantics identifier.Semantics,
+) bool {
+	return slices.ContainsFunc(refs, func(candidate difftypes.TriggerRef) bool {
+		return objectlookup.Same(candidate.TriggerName, ref.TriggerName, semantics) &&
+			objectlookup.Same(candidate.TableName, ref.TableName, semantics)
+	})
+}
+
+// planSubject is how a refusal names the artifact whose statements were
+// counted, and why one of them can be refused when the other was not.
+//
+// The two directions must not share one noun. A run whose whole forward plan is
+// `ALTER TABLE "docs_content" ADD COLUMN "spurious" TEXT` and whose refusal
+// said "the plan changes docs_content" would send an operator looking for a
+// statement that is not there.
+type planSubject struct {
+	// changes is the clause naming the artifact and its verb. The refusal
+	// continues with the tables, so it ends where a list belongs.
+	changes string
+	// reversal explains, for a rollback, how a forward plan this gate admitted
+	// reaches here at all. It is empty for the forward plan, whose statements
+	// need no such explanation.
+	reversal string
+}
+
+var (
+	forwardPlan  = planSubject{changes: "the plan changes"}
+	rollbackPlan = planSubject{
+		changes: "the rollback generated beside this migration changes",
+		reversal: " the forward statements are ones SQLite performs in place, but reversing them" +
+			" for the down file turns an added column into a removed one, which SQLite has no ALTER" +
+			" for and converges by rebuilding the table;",
+	}
+)
+
+// refusePlanTouchingUnclassifiedStorage is the one refusal both directions
+// raise, so the rule cannot be stated twice and drift.
+func refusePlanTouchingUnclassifiedStorage(
+	database *types.DBSchema,
+	touched []string,
+	subject planSubject,
+) error {
 	if len(touched) == 0 {
 		return nil
 	}
@@ -685,8 +859,8 @@ func ValidatePlannedChanges(
 		return nil
 	}
 	return fmt.Errorf(
-		"%w: the plan changes %s in a database that holds virtual %s %s whose %s this build of Ptah"+
-			" does not register; SQLite marks a module's shadow tables as shadow only while the module"+
+		"%w: %s %s in a database that holds virtual %s %s whose %s this build of Ptah"+
+			" does not register;%s SQLite marks a module's shadow tables as shadow only while the module"+
 			" is loaded, so Ptah cannot tell that module's private storage from ordinary tables, and"+
 			" dropping or rebuilding one of them destroys the index it belongs to, while dropping or"+
 			" replacing an index or trigger one of them carries removes machinery the module may be"+
@@ -695,10 +869,12 @@ func ValidatePlannedChanges(
 			" apply this change with a build that registers %s, or set %s=1 to plan it against tables"+
 			" Ptah cannot vouch for",
 		ptaherr.ErrUnsupportedFeature,
+		subject.changes,
 		quotedStrings(touched),
 		noun(len(unclassified)),
 		names(unclassified),
 		moduleNoun(len(distinctModules(unclassified))),
+		subject.reversal,
 		registered.String(),
 		modulesOf(unclassified),
 		AllowUnregisteredModuleEnvVar,
@@ -744,10 +920,14 @@ func ValidatePlannedChanges(
 // capability, and three exclusions mark those places. All three are sound in
 // the other direction too:
 //
-//   - a table the plan CREATES cannot be one the module already owns, so an
-//     added table carries none of this risk, and counting it would refuse the
-//     ordinary case of adding a table with a constraint beside an index Ptah
-//     cannot classify;
+//   - a table the MIGRATION creates cannot be one the module already owns, so
+//     an added table carries none of this risk, and counting it would refuse
+//     the ordinary case of adding a table with a constraint beside an index
+//     Ptah cannot classify. The set is a parameter rather than the diff's own
+//     TablesAdded because the rollback direction records the same tables as
+//     removals: reading the reverse diff's additions there would refuse every
+//     `migrations generate` that adds a table to a database holding an
+//     unloadable module;
 //   - a change the caller's [Policy] deletes again before anything is rendered
 //     is not in the plan at all. Counting one refused a `schema apply` whose
 //     whole plan the policy had already emptied;
@@ -783,8 +963,14 @@ func ValidatePlannedChanges(
 // module's storage table, which is the residue [ValidateComparison] already
 // records. A rebuild, by contrast, is drop-recreate-copy and takes the index
 // with it for good.
-func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
-	// The exclusion is an identity question, not a string one. TablesAdded
+//
+// makes names what this MIGRATION brings into existence, which is what the
+// first exclusion is really about. For a forward plan that is the diff's own
+// creations; for a rollback it is the forward direction's, because the reverse
+// diff records those same objects as the removals the down file performs. See
+// [ValidatePlannedRollback] and [createdBy].
+func tablesTouchedBy(diff *difftypes.SchemaDiff, makes created, policy Policy) []string {
+	// The exclusion is an identity question, not a string one. The created set
 	// carries the comparator's spelling while a constraint's TableName comes
 	// from the declaration or the catalog, so one may say `main.t` where the
 	// other says `t`, and SQLite folds ASCII case besides. A raw lookup answers
@@ -819,10 +1005,22 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 	// dropping or rebuilding the table itself. The owning table is what is
 	// counted: it is the thing this gate can weigh against the module's
 	// storage, and the index or trigger name says nothing about whose it is.
+	//
+	// An object this migration created is discounted at the REF, before its
+	// owning table joins the list -- dropping an index the migration built
+	// removes nothing the database had, while its table may well carry another
+	// index that a genuine removal would take. Excluding the table instead
+	// would let one created index cover every removal aimed at it.
 	for _, ref := range planned.IndexesRemoved {
+		if containsIndexRef(makes.indexes, ref, semantics) {
+			continue
+		}
 		touched = append(touched, ref.TableName)
 	}
 	for _, ref := range planned.TriggersRemoved {
+		if containsTriggerRef(makes.triggers, ref, semantics) {
+			continue
+		}
 		touched = append(touched, ref.TableName)
 	}
 	for _, modified := range planned.TriggersModified {
@@ -831,7 +1029,7 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 
 	kept := touched[:0]
 	for _, name := range touched {
-		if objectlookup.Contains(diff.TablesAdded, name, semantics) {
+		if objectlookup.Contains(makes.tables, name, semantics) {
 			continue
 		}
 		// Asked through the same identity helper as the addition exclusion, and

@@ -212,6 +212,14 @@ all, because SQLite has no enum type.
   merely **gains** a column, an index or a trigger is none of those:
   `ALTER TABLE ... ADD COLUMN` is a statement SQLite has and a `CREATE` removes
   nothing, so that comparison runs at exit 0 with no opt-in.
+  A generated **migration** is checked in both directions, because reversing an
+  added column produces a removed one and SQLite converges that by rebuilding
+  the table: `ptah migrations generate` is refused when its down file would
+  rebuild such a table, even though its up file is the single
+  `ALTER TABLE ... ADD COLUMN` the comparison admits. What the migration itself
+  creates is discounted, so adding an ordinary table still generates both files
+  and rolls back by dropping only that table. `ptah schema diff` and
+  `ptah schema apply` plan no rollback and are unaffected.
   The refusal survives excluding the virtual table,
   because the tables at risk are not the one an operator would exclude; but a
   narrowing that leaves nothing the plan can touch, such as `--include users`,

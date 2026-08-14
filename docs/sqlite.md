@@ -278,8 +278,9 @@ requires the module that is missing. Ptah says what it cannot determine instead
 of advising something that destroys data.
 
 The refusal fires only when the plan can actually act on such a table, and that
-question is asked in two places because only one half of it is answerable before
-the comparison runs:
+question is asked in three places because only one part of it is answerable
+before the comparison runs, and a generated migration is two files rather than
+one:
 
 - **Before comparing**, when some live table is one the desired side does not
   name. That is exactly the comparator's removal set, so no second copy of its
@@ -290,6 +291,15 @@ the comparison runs:
   SQLite planner rebuild it — drop, recreate, copy — which destroys a module's
   storage as surely as a drop. Whether that will happen is the comparator's
   answer, so it is read from the diff rather than guessed at beforehand.
+- **When a rollback is planned beside the migration**, on the reversed diff.
+  Reversal turns changes SQLite performs in place into changes it does not: an
+  added column comes back as a removed one, which SQLite converges by rebuilding
+  the table. The up file can therefore be a single
+  `ALTER TABLE ... ADD COLUMN` — which the check above admits, correctly — while
+  the down file written beside it drops and recreates the module's storage. Only
+  `ptah migrations generate` and the `migration/generator` planning API produce a
+  rollback; `ptah schema diff` and `ptah schema apply` have no down direction and
+  are unaffected.
 
 Two consequences worth knowing:
 
@@ -378,6 +388,28 @@ index therefore runs at exit 0 and prints its one
 `ALTER TABLE "users" ADD COLUMN "email" TEXT;`, with no opt-in. A table diff that
 also removes or changes a column, or carries a constraint change, is a rebuild
 and is still refused.
+
+**The rollback of an added column is counted, though.** A migration is generated
+in both directions, and reversing an added column produces a removed one, which
+SQLite converges by rebuilding the table. So a *generated migration* whose up
+file is that one `ALTER TABLE ... ADD COLUMN` is refused when its down file would
+rebuild a table in a database holding a module this build cannot load:
+
+```text
+unsupported feature: the rollback generated beside this migration changes
+"docs_content" in a database that holds virtual table "docs" (module fts4) whose
+module this build of Ptah does not register; the forward statements are ones
+SQLite performs in place, but reversing them for the down file turns an added
+column into a removed one, which SQLite has no ALTER for and converges by
+rebuilding the table; ...
+```
+
+The rollback check discounts what the migration itself creates: a table, index or
+trigger the up file creates cannot be storage the module already owns, so the
+down file dropping it again removes nothing that was there. Measured on an `fts4`
+database this build cannot load, adding an ordinary `audit` table still generates
+both files at exit 0 with `DROP TABLE IF EXISTS "audit";` as the rollback. An
+index or trigger the up file *replaces* rather than creates stays counted.
 
 The residue that leaves is stated rather than hidden, and it is not destruction:
 a desired state that explicitly **names** one of the module's storage tables with
