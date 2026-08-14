@@ -1,6 +1,7 @@
 package projectconfig_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -247,6 +248,52 @@ func TestParseAtlasEnvSchemasOptOut(t *testing.T) {
 			c.Check(ignoredConstructContains(cfg, "schemas"), qt.Equals, test.wantIgnored)
 		})
 	}
+}
+
+func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		env  string
+	}{
+		{
+			name: "selected environment omits schemas",
+			raw: `env "local" {
+  url = "sqlite://project.db"
+}
+`,
+			env: "local",
+		},
+		{
+			name: "project has no environment block",
+			raw:  "",
+			env:  "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(projectconfig.IgnoreEnvSchemasEnvVar, "")
+
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", test.env)
+
+			c.Assert(err, qt.ErrorMatches,
+				`invalid boolean value "" for PTAH_ATLAS_IGNORE_ENV_SCHEMAS`)
+		})
+	}
+}
+
+func TestLoadAtlasEnvSchemasOptOutValidatesWithoutAConfigFile(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(projectconfig.IgnoreEnvSchemasEnvVar, "")
+
+	_, err := projectconfig.LoadAtlasFileCollectionWithOptions(
+		filepath.Join(t.TempDir(), projectconfig.AtlasFileName),
+		projectconfig.AtlasLoadOptions{},
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "" for PTAH_ATLAS_IGNORE_ENV_SCHEMAS`)
 }
 
 // assertOptionalErrorMatches asserts the error against want, treating an empty

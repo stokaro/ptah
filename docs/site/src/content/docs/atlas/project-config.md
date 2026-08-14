@@ -160,7 +160,11 @@ realm-wide description; the attribute is then reported as having no effect, as
 any other tolerated name is. The variable governs the selection only — a value
 the field cannot hold is refused with it set exactly as it is without it,
 because Atlas CE refuses that file and compatibility never exits 0 where the
-community binary exits 1.
+community binary exits 1. A present malformed value is refused on every Atlas
+project-config load or parse, even when the file is absent or the selected
+environment omits `schemas`.
+`PTAH_ATLAS_STRICT_COMPAT=1` rejects an enabled opt-out because restoring the
+realm-wide Ptah view is deliberately outside the CE-only profile.
 
 `format.schema.inspect` follows the Atlas-compatible command's template
 semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those

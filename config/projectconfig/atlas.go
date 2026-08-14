@@ -57,6 +57,9 @@ func LoadAtlasFileCollectionWithOptions(
 	path string,
 	opts AtlasLoadOptions,
 ) ([]Config, error) {
+	if _, err := ignoreEnvSchemas.Resolve(); err != nil {
+		return nil, err
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve atlas config path %s: %w", path, err)
@@ -200,8 +203,9 @@ func singularAtlasConfig(configs []Config, envName string) (Config, error) {
 }
 
 type atlasParser struct {
-	ctx         *hcl.EvalContext
-	varOverride map[string]cty.Value
+	ctx              *hcl.EvalContext
+	varOverride      map[string]cty.Value
+	ignoreEnvSchemas bool
 	// baseDir is the directory that contains the parsed atlas.hcl file, as
 	// spelled by the caller. Relative data.external_schema working_dir values
 	// resolve against it so the configured program runs where the config file
@@ -261,6 +265,10 @@ func newAtlasParser(
 	filename string,
 	rejectListMapForEach bool,
 ) (atlasParser, error) {
+	ignoreSchemas, err := ignoreEnvSchemas.Resolve()
+	if err != nil {
+		return atlasParser{}, err
+	}
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err
@@ -281,6 +289,7 @@ func newAtlasParser(
 			},
 		},
 		varOverride:          overrides,
+		ignoreEnvSchemas:     ignoreSchemas,
 		baseDir:              filepath.Dir(filename),
 		rejectListMapForEach: rejectListMapForEach,
 		externalSchemas:      map[string]externalSchemaDataSource{},
@@ -943,11 +952,7 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		if err != nil {
 			return err
 		}
-		ignore, err := ignoreEnvSchemas.Resolve()
-		if err != nil {
-			return err
-		}
-		if ignore {
+		if p.ignoreEnvSchemas {
 			p.noteIgnored("attribute", attrName, attr.NameRange)
 			return nil
 		}
