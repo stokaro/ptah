@@ -648,6 +648,12 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 				// accept a file that binary rejects, so it is not the rule (a)
 				// direction. The container bodies around them tolerate an
 				// unknown block, which is why this arm is not reached for them.
+				//
+				// Only the `env` spellings reach this arm at all: this
+				// validator walks env bodies. The top-level `diff` and `lint`
+				// spellings answer the same rule inside their parsers, where
+				// each leaf ends with a refusal of block.Body.Blocks[0], so a
+				// change here needs the parser half changed with it.
 				return unsupportedBlock(block)
 			}
 			if err := p.recordIgnoredBlock(scope, block); err != nil {
