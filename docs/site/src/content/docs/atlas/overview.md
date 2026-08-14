@@ -304,6 +304,13 @@ reported a synced schema and changed nothing.
   tables and describes it differently is refused under the policy too, because
   `skip drop_table` filters removals rather than modifications and SQLite
   converges a modification by dropping and recreating the table.
+- A change SQLite can make in place is not asked for it either. A table whose
+  only change is a column the desired state adds is planned as
+  `ALTER TABLE ... ADD COLUMN`, which drops and rebuilds nothing, so a narrowed
+  comparison such as `--include users` against a database holding an `fts4`
+  index runs at exit 0 and prints that one statement. Remove or change a column
+  on the same table, or change a constraint, and it is a rebuild again and
+  refused again.
 
 See [SQLite](../../databases/sqlite/) for the whole picture.
 

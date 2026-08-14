@@ -111,6 +111,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
+	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -581,10 +582,16 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // thoroughly as dropping it outright. Answering that here means a second copy
 // of the comparator's rules, free to drift from the rules that actually decide.
 //
-// So it is asked afterwards, of the comparator's own answer. A diff that
-// removes or modifies nothing cannot touch the module's storage, whatever Ptah
-// believes that storage to be, and a diff that removes or modifies something in
-// a database Ptah cannot classify might be touching it.
+// So it is asked afterwards, of the comparator's own answer. A diff that drops
+// or rebuilds nothing cannot destroy the module's storage, whatever Ptah
+// believes that storage to be, and a diff that drops or rebuilds something in a
+// database Ptah cannot classify might be destroying it.
+//
+// The set is drop-or-rebuild rather than "anything changed", and the difference
+// is a whole class of change: `ALTER TABLE ... ADD COLUMN` is a statement
+// SQLite has, so a table whose only change is added columns is neither dropped
+// nor rebuilt and is not counted. See [tablesTouchedBy], which asks the
+// planner's own rebuild predicate rather than a second spelling of it.
 //
 // Callers pass the same database description they passed to
 // [ValidateComparison], and the same [Policy]. The diff reaching this seam is
@@ -654,10 +661,11 @@ func ValidatePlannedChanges(
 // drop, recreate, copy -- exactly like any other. Reading the two table fields
 // alone let that through, which review caught.
 //
-// This is deliberately coarser than the planner's own derivation rather than a
-// copy of it. Refusing more than the planner rebuilds is safe; refusing less is
-// the defect. Two exclusions are applied, and both are sound in the other
-// direction too:
+// It is coarser than the planner's own derivation wherever being coarser is
+// free, because refusing a table the planner does not rebuild is safe while
+// missing one is the defect. It is NOT coarser where the extra refusal costs a
+// capability, and three exclusions mark those places. All three are sound in
+// the other direction too:
 //
 //   - a table the plan CREATES cannot be one the module already owns, so an
 //     added table carries none of this risk, and counting it would refuse the
@@ -666,11 +674,30 @@ func ValidatePlannedChanges(
 //   - a table the plan would DROP under a caller that skips `drop_table` is not
 //     dropped at all, and its dependent removals go with it, so it is not
 //     rebuilt either. Counting it refused a `schema apply` whose whole plan the
-//     policy had already emptied.
+//     policy had already emptied;
+//   - a table whose only change is COLUMNS ADDED is neither dropped nor
+//     rebuilt. SQLite expresses that with `ALTER TABLE ... ADD COLUMN`, which
+//     rewrites no row and touches no other object, so this gate's whole
+//     premise -- "drop or rebuild destroys the index" -- does not apply to it.
+//     Counting it refused `schema diff --include users` against an fts4
+//     database whose plan was the single statement
+//     `ALTER TABLE "users" ADD COLUMN "email" TEXT;`, and sent the operator to
+//     an opt-in that also permits the drops.
 //
 // The second is keyed on the caller's [Policy] rather than on anything in the
 // diff, because the diff at this seam is the comparator's answer and not yet
-// the plan.
+// the plan. The third is keyed on [sqliterebuild.NeedsTableRebuild], the same
+// predicate `planTableRebuilds` selects with, so the two cannot drift.
+//
+// The residue the third exclusion leaves is measured rather than assumed, and
+// it is not destruction. `ALTER TABLE docs_content ADD COLUMN spurious TEXT`
+// on a live fts4 index left every row in place and `docs MATCH 'brown'` still
+// answering 1, and only refused further writes (`INSERT INTO docs` reported
+// `SQL logic error`); dropping the added column again restored them, with the
+// rows still there. Reaching even that needs a desired state that NAMES the
+// module's storage table, which is the residue [ValidateComparison] already
+// records. A rebuild, by contrast, is drop-recreate-copy and takes the index
+// with it for good.
 func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 	// The exclusion is an identity question, not a string one. TablesAdded
 	// carries the comparator's spelling while a constraint's TableName comes
@@ -683,6 +710,12 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 
 	touched := slices.Clone(diff.TablesRemoved)
 	for _, table := range diff.TablesModified {
+		// Asked through the planner's own predicate rather than a second
+		// spelling of it, so a change to what SQLite can express in place is
+		// made once and both readers see it.
+		if !sqliterebuild.NeedsTableRebuild(table) {
+			continue
+		}
 		touched = append(touched, table.TableName)
 	}
 	for _, constraint := range diff.ConstraintsAddedWithTables {

@@ -343,14 +343,32 @@ register; ... dropping or rebuilding one of them destroys the index it belongs
 to
 ```
 
-It counts every table the SQLite planner can rebuild, which is more than the
-obvious ones: a table whose columns are unchanged and whose **constraint**
+It counts every table the SQLite planner drops or rebuilds, which is more than
+the obvious ones: a table whose columns are unchanged and whose **constraint**
 changed is recorded only at schema level, and since SQLite has no `ALTER` for a
 constraint, that table is rebuilt too.
 
 Additions are not counted. A table the plan CREATES cannot be one the module
 already owns, so adding a table — with or without a constraint — beside an index
 Ptah cannot classify stays ordinary work.
+
+**Adding a column is not counted either.** `ALTER TABLE t ADD COLUMN c` is a
+statement SQLite has, so the planner emits it in place and drops or rebuilds
+nothing — and this refusal is about a drop or a rebuild. A narrowed comparison
+such as `ptah schema diff --include users` against a database holding an `fts4`
+index therefore runs at exit 0 and prints its one
+`ALTER TABLE "users" ADD COLUMN "email" TEXT;`, with no opt-in. A table diff that
+also removes or changes a column, or carries a constraint change, is a rebuild
+and is still refused.
+
+The residue that leaves is stated rather than hidden, and it is not destruction:
+a desired state that explicitly **names** one of the module's storage tables with
+an extra column plans an `ALTER TABLE ... ADD COLUMN` against it. Measured on a
+live `fts4` index, that leaves every row in place and `MATCH` still answering,
+and refuses only further writes (`INSERT` reports `SQL logic error`) until the
+added column is dropped again, after which they resume. A rebuild is
+drop-recreate-copy and takes the index with it for good, which is why the two are
+treated differently.
 
 Two ways forward:
 

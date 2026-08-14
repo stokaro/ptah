@@ -557,6 +557,79 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			},
 		},
 		{
+			// THE ROW THE ADD-COLUMN FINDING ADDED. `ALTER TABLE t ADD COLUMN c`
+			// is a statement SQLite has, so the planner emits it in place and
+			// drops or rebuilds nothing -- see TestPlannerAddsColumnsAndIndexes
+			// in internal/planner/dialects/sqlite. Counting it refused
+			// `schema diff --include users` against an fts4 database whose whole
+			// plan was `ALTER TABLE "users" ADD COLUMN "email" TEXT;`, and the
+			// only escape offered was the opt-in that also permits the drops.
+			name:     "a table that only gains a column is not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff:     addingColumn("users"),
+			wantErr:  false,
+		},
+		{
+			// The first control for the row above. The exclusion is about a
+			// table diff whose ONLY change is added columns; one rebuilding
+			// change beside them still rebuilds the table, added columns and
+			// all.
+			name:     "a table that gains a column and loses one is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "docs_content",
+				ColumnsAdded:   []string{"spurious"},
+				ColumnsRemoved: []string{"c1body"},
+			}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The second control. A constraint recorded ON the table diff also
+			// rebuilds -- SQLite has no ALTER for a constraint -- so the
+			// exclusion must not read "TablesModified is never counted".
+			name:     "a table diff carrying a constraint change is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:        "docs_content",
+				ColumnsAdded:     []string{"spurious"},
+				ConstraintsAdded: []string{"docs_content_chk"},
+			}}},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The third control, and the one that keeps the exclusion from
+			// re-opening the constraint route the previous round closed: the
+			// same add-column-only table diff, beside a schema-level constraint
+			// change on that table. planTableRebuilds derives it from
+			// ConstraintsAddedWithTables and rebuilds it, so the gate must too.
+			name:     "an added column beside a schema level constraint change is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
+					TableName:    "docs_content",
+					ColumnsAdded: []string{"spurious"},
+				}},
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
 			// The constraint-only rebuild. Columns unchanged, so the change is
 			// recorded at schema level and TablesModified is empty -- but
 			// SQLite has no ALTER for a constraint, so planTableRebuilds
@@ -795,8 +868,30 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 // modifying and removing build the one-change diffs this gate reads. The gate
 // asks the comparator's answer rather than recomputing it, so a test supplies
 // that answer directly.
+//
+// modifying carries a CHANGED COLUMN rather than an empty TableDiff. The
+// difference is the whole subject of the add-column finding: an entry recording
+// no change at all, and an entry recording only added columns, are both
+// converged without a rebuild, so a fixture that used one of those pinned a
+// refusal the planner's own predicate does not justify. `type: TEXT -> INTEGER`
+// is the smallest shape SQLite has no ALTER for.
 func modifying(table string) *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: table}}}
+	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName: table,
+		ColumnsModified: []difftypes.ColumnDiff{{
+			ColumnName: "c0title",
+			Changes:    map[string]string{"type": "TEXT -> INTEGER"},
+		}},
+	}}}
+}
+
+// addingColumn builds the diff the SQLite planner converges with a single
+// `ALTER TABLE ... ADD COLUMN`.
+func addingColumn(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName:    table,
+		ColumnsAdded: []string{"email"},
+	}}}
 }
 
 func removing(table string) *difftypes.SchemaDiff {

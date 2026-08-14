@@ -199,9 +199,12 @@ policy makes one kind of object convertible into another.
   reported a synced schema and changed nothing. A comparison whose database
   side holds a virtual table this build cannot load is now refused **when the
   plan could act on such a table** — when some live table in it is one the
-  desired side does not name, or names with a different column list, since a
-  `DROP TABLE` and the rebuild SQLite uses in place of an `ALTER` destroy the
-  module's storage equally. The refusal survives excluding the virtual table,
+  desired side does not name, or names and describes so differently that SQLite
+  can only converge it by rebuilding, since a `DROP TABLE` and the rebuild
+  SQLite uses in place of an `ALTER` destroy the module's storage equally. A
+  table that merely **gains** a column is neither: `ALTER TABLE ... ADD COLUMN`
+  is a statement SQLite has, so that comparison runs at exit 0 with no opt-in.
+  The refusal survives excluding the virtual table,
   because the tables at risk are not the one an operator would exclude; but a
   narrowing that leaves nothing the plan can touch, such as `--include users`,
   runs normally, and so do two databases that both hold the same index. A read
