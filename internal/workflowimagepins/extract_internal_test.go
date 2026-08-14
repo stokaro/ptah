@@ -86,6 +86,52 @@ jobs:
 	c.Check(images, qt.DeepEquals, []string{"dynamic/enabled:3"})
 }
 
+func TestFileIgnoresStaticallyDisabledJobs(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  disabled-expression:
+    if: ${{ false }}
+    services:
+      database:
+        image: disabled/service:1
+    steps:
+      - run: docker run disabled/run:2
+  disabled-boolean:
+    if: false
+    container: disabled/container:3
+  dynamic:
+    if: ${{ github.event_name == 'push' }}
+    container: dynamic/container:4
+  enabled:
+    steps:
+      - run: docker run enabled/run:5
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{
+		"dynamic/container:4",
+		"enabled/run:5",
+	})
+}
+
+func TestFileRejectsNonScalarJobCondition(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    if:
+      - false
+    container: example/database:1.2.3
+`)
+
+	_, err := File(path)
+
+	c.Check(err, qt.ErrorMatches, `.*:5: job test if must be a scalar`)
+}
+
 func TestFileAcceptsCombinedBooleanDockerOptions(t *testing.T) {
 	c := qt.New(t)
 	path := writeWorkflow(c, `

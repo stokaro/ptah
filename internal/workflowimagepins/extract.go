@@ -87,6 +87,16 @@ func File(path string) ([]string, error) {
 }
 
 func imagesFromJob(path, name string, job *yaml.Node) ([]string, error) {
+	// A skipped job starts nothing: not its container, not its services and
+	// not its steps. Inventorying them would let a dead job keep a stale
+	// Compose pin green, which is the bypass this package exists to close.
+	disabled, err := staticallyDisabled(path, job, "job "+name)
+	if err != nil {
+		return nil, err
+	}
+	if disabled {
+		return nil, nil
+	}
 	var images []string
 	container, ok, err := mappingValue(job, "container", path)
 	if err != nil {
@@ -180,7 +190,7 @@ func imagesFromSteps(path string, steps *yaml.Node) ([]string, error) {
 		if step.Kind != yaml.MappingNode {
 			return nil, nodeError(path, step, "step must be a mapping")
 		}
-		disabled, err := stepIsStaticallyDisabled(path, step)
+		disabled, err := staticallyDisabled(path, step, "step")
 		if err != nil {
 			return nil, err
 		}
@@ -209,13 +219,17 @@ func imagesFromSteps(path string, steps *yaml.Node) ([]string, error) {
 	return images, nil
 }
 
-func stepIsStaticallyDisabled(path string, step *yaml.Node) (bool, error) {
-	condition, ok, err := mappingValue(step, "if", path)
+// staticallyDisabled reports whether the if condition of a job or a step is
+// provably false. Both carry the same condition grammar and GitHub Actions
+// skips both the same way, so one reader answers for both; a dynamic condition
+// stays inventoried because nothing here can decide it.
+func staticallyDisabled(path string, node *yaml.Node, context string) (bool, error) {
+	condition, ok, err := mappingValue(node, "if", path)
 	if err != nil || !ok {
 		return false, err
 	}
 	if condition.Kind != yaml.ScalarNode {
-		return false, nodeError(path, condition, "step if must be a scalar")
+		return false, nodeError(path, condition, context+" if must be a scalar")
 	}
 	if condition.Tag == "!!bool" {
 		return condition.Value == "false", nil

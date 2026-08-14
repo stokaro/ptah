@@ -86,6 +86,19 @@ write_repo 'jobs:
 assert_rejected 'a statically disabled step is not an executable pin'
 
 write_repo 'jobs:
+  dead:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: example/database:1.2.3
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true'
+assert_rejected 'a statically disabled job is not an executable pin'
+
+write_repo 'jobs:
   test:
     runs-on: ubuntu-latest
     services:
