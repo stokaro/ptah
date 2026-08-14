@@ -40,7 +40,8 @@ trap 'rm -f "$workflow_pins"' EXIT
 # Only executable workflow image declarations count. Searching the workflow
 # text lets a comment, an echo, or an unused variable keep a stale Compose pin
 # green. The extractor reads job container and service image fields plus the
-# image operand of docker run commands; later command arguments do not count.
+# image operand of docker run commands; later command arguments, and the lines
+# a heredoc passes to a command as data, do not count.
 if [[ -n ${PTAH_WORKFLOW_IMAGE_PINS:-} ]]; then
 	"$PTAH_WORKFLOW_IMAGE_PINS" "$workflow_dir" >"$workflow_pins"
 else

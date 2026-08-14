@@ -208,7 +208,11 @@ func imagesFromSteps(path string, steps *yaml.Node) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		for command := range logicalDockerRunCommands(script) {
+		commands, err := logicalDockerRunCommands(script)
+		if err != nil {
+			return nil, fmt.Errorf("%s:%d: %w", path, run.Line, err)
+		}
+		for _, command := range commands {
 			image, err := dockerRunImage(command, path, run.Line)
 			if err != nil {
 				return nil, err
@@ -246,31 +250,138 @@ func staticallyDisabled(path string, node *yaml.Node, context string) (bool, err
 	return wrapped && strings.TrimSpace(inner) == "false", nil
 }
 
-func logicalDockerRunCommands(script string) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		var command string
-		for line := range strings.SplitSeq(script, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			if command != "" {
-				command += " "
-			}
-			command += trimmed
-			if continued, ok := strings.CutSuffix(command, "\\"); ok {
-				command = strings.TrimSpace(continued)
-				continue
-			}
-			fields := strings.Fields(command)
-			if len(fields) >= 2 && fields[0] == "docker" && fields[1] == "run" {
-				if !yield(command) {
-					return
-				}
-			}
-			command = ""
+// logicalDockerRunCommands returns the logical `docker run` commands a step's
+// run value executes. Physical lines joined by a trailing backslash form one
+// command, and the lines a heredoc feeds to a command are its payload: the
+// shell passes them as data, so a `docker run` written inside one starts
+// nothing and must not reach the inventory.
+func logicalDockerRunCommands(script string) ([]string, error) {
+	lines := strings.Split(script, "\n")
+	var commands []string
+	var command string
+	for index := 0; index < len(lines); index++ {
+		trimmed := strings.TrimSpace(lines[index])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
 		}
+		if command != "" {
+			command += " "
+		}
+		command += trimmed
+		if continued, ok := strings.CutSuffix(command, "\\"); ok {
+			command = strings.TrimSpace(continued)
+			continue
+		}
+		// A backslash-continued command opens its payloads after its last
+		// physical line, because the shell removes the escaped newlines
+		// before it reads the here-document.
+		delimiters, err := heredocDelimiters(command)
+		if err != nil {
+			return nil, err
+		}
+		last, err := skipHeredocPayloads(lines, index+1, delimiters)
+		if err != nil {
+			return nil, err
+		}
+		index = last
+		fields := strings.Fields(command)
+		if len(fields) >= 2 && fields[0] == "docker" && fields[1] == "run" {
+			commands = append(commands, command)
+		}
+		command = ""
 	}
+	return commands, nil
+}
+
+// skipHeredocPayloads returns the index of the last line consumed by the
+// payloads a command opened, which is the line before its first command again.
+// A heredoc whose terminator never arrives is refused rather than guessed at:
+// treating the remainder of the script as payload would silently drop every
+// command after it, and the workflow that wrote it would not run either.
+func skipHeredocPayloads(lines []string, next int, delimiters []string) (int, error) {
+	for _, delimiter := range delimiters {
+		terminator := -1
+		for index := next; index < len(lines); index++ {
+			if strings.TrimSpace(lines[index]) != delimiter {
+				continue
+			}
+			terminator = index
+			break
+		}
+		if terminator < 0 {
+			return 0, fmt.Errorf("heredoc delimiter %q is never terminated", delimiter)
+		}
+		next = terminator + 1
+	}
+	return next - 1, nil
+}
+
+// heredocDelimiters returns the terminators of the here-documents one logical
+// command opens, in the order their payloads follow it. A `<<` inside a quoted
+// word is text rather than a redirection, and `<<<` is a herestring whose word
+// travels on the same line, so neither opens a payload.
+func heredocDelimiters(command string) ([]string, error) {
+	var delimiters []string
+	var quote byte
+	for index := 0; index < len(command); index++ {
+		char := command[index]
+		if quote != 0 {
+			if char == '\\' && quote == '"' {
+				index++
+				continue
+			}
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		if char == '\\' {
+			index++
+			continue
+		}
+		if char == '\'' || char == '"' {
+			quote = char
+			continue
+		}
+		if char != '<' || index+1 == len(command) || command[index+1] != '<' {
+			continue
+		}
+		if index+2 < len(command) && command[index+2] == '<' {
+			index += 2
+			continue
+		}
+		delimiter, consumed := heredocDelimiter(command[index+2:])
+		if delimiter == "" {
+			return nil, fmt.Errorf("heredoc redirection has no delimiter: %q", command)
+		}
+		delimiters = append(delimiters, delimiter)
+		index += consumed + 1
+	}
+	return delimiters, nil
+}
+
+// heredocDelimiter reads the terminator word that follows a `<<` operator and
+// reports how many bytes of the operator's remainder it consumed. Quoting a
+// delimiter only suppresses expansion inside the payload, so the terminator is
+// the word with its quoting removed either way, and `<<-` differs only in
+// stripping leading tabs from the payload this package already trims.
+func heredocDelimiter(rest string) (string, int) {
+	consumed := 0
+	if strings.HasPrefix(rest, "-") {
+		consumed++
+	}
+	for consumed < len(rest) && (rest[consumed] == ' ' || rest[consumed] == '\t') {
+		consumed++
+	}
+	word := rest[consumed:]
+	if end := strings.IndexAny(word, " \t;&|<>()"); end >= 0 {
+		word = word[:end]
+	}
+	consumed += len(word)
+	for _, quoting := range []string{`\`, `'`, `"`} {
+		word = strings.ReplaceAll(word, quoting, "")
+	}
+	return word, consumed
 }
 
 func dockerRunImage(command, path string, line int) (string, error) {

@@ -151,6 +151,111 @@ jobs:
 	})
 }
 
+func TestFileIgnoresHeredocPayloads(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          cat >start.sh <<'EOF'
+          docker run heredoc/first:1
+          docker run heredoc/second:2
+          EOF
+          docker run after/heredoc:3
+      - run: |
+          docker run --rm opener/image:4 sh <<-SCRIPT
+          docker run heredoc/dashed:5
+          SCRIPT
+      - run: |
+          tee first.txt second.txt <<A <<B
+          docker run heredoc/a:6
+          A
+          docker run heredoc/b:7
+          B
+          docker run after/both:8
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{
+		"after/heredoc:3",
+		"opener/image:4",
+		"after/both:8",
+	})
+}
+
+func TestFileIgnoresHeredocPayloadOfContinuedCommand(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          cat <<'EOF' \
+            >start.sh
+          docker run heredoc/continued:1
+          EOF
+          docker run after/continued:2
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/continued:2"})
+}
+
+func TestFileRejectsUnterminatedHeredoc(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          cat >start.sh <<'EOF'
+          docker run never/terminated:1
+`)
+
+	_, err := File(path)
+
+	c.Check(err, qt.ErrorMatches, `.*:5: heredoc delimiter "EOF" is never terminated`)
+}
+
+func TestFileInventoriesCommandsAfterHerestring(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          grep -q ready <<<"$status"
+          docker run after/herestring:1
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/herestring:1"})
+}
+
+func TestFileInventoriesCommandsAfterQuotedRedirectionText(t *testing.T) {
+	c := qt.New(t)
+	path := writeWorkflow(c, `
+jobs:
+  test:
+    steps:
+      - run: |
+          echo "writes a << b line"
+          docker run after/quoted:1
+`)
+
+	images, err := File(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Check(images, qt.DeepEquals, []string{"after/quoted:1"})
+}
+
 func TestFileRejectsDuplicateRunKey(t *testing.T) {
 	c := qt.New(t)
 	path := writeWorkflow(c, `

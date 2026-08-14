@@ -101,6 +101,18 @@ assert_rejected 'a statically disabled job is not an executable pin'
 write_repo 'jobs:
   test:
     runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat >start-database.sh <<EOF
+          set -eu
+          docker run example/database:1.2.3
+          EOF
+          echo wrote start-database.sh'
+assert_rejected 'a heredoc payload is not an executable pin'
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
     services:
       database:
         image: example/database:1.2.3'
@@ -154,6 +166,25 @@ write_repo 'jobs:
             --publish 1234:1234 \
             example/database:1.2.3 \
             serve'
+assert_accepted
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          docker run --rm example/database:1.2.3 sh <<EOF
+          echo the command that opens a heredoc still runs
+          EOF'
+assert_accepted
+
+write_repo 'jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          grep -q ready <<<"$status"
+          docker run example/database:1.2.3'
 assert_accepted
 
 write_repo 'jobs:
