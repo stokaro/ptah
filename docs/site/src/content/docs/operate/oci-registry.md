@@ -154,6 +154,26 @@ why pinning one is not by itself a statement about who published them.
 directly. See [Attach lint and plan reports](#attach-lint-and-plan-reports) for
 the optional referrer output.
 
+`ptah migrations validate --dir oci://...` answers the integrity question on its
+own, without a database and without executing anything:
+
+```bash
+ptah migrations validate --dir "$MIGRATIONS"
+```
+
+It exits 0 when the artifact matches the sum it carries, 1 when a migration was
+added, removed or edited out of band, and 2 when the artifact carries no sum at
+all — the same contract it has for a local directory.
+
+When the reference is a tag, a successful run prints on standard error the same
+movable-tag qualifier `up`, `down` and `status` print, naming the digest the tag
+resolved to. A digest-pinned reference prints nothing extra: there is no movable
+pointer left to warn about.
+
+It does not replace `--verify-sum` on the consuming verbs: a separate call
+resolves the tag in its own process, so a movable tag can select different bytes
+before `up` or `down` resolves it again.
+
 ## Reconstruct a migration directory
 
 ```bash
