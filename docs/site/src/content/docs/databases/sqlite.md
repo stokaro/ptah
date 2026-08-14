@@ -171,6 +171,18 @@ Non-SQLite operations do not consult the variable. The opt-in covers only the
 first row of the table above — a kind collision and a changed declaration stay
 refused however it is set.
 
+A project that already configures the drop away is not asked for either
+variable. With `diff.skip: [drop_table]` in `ptah.yaml`, or
+`diff { skip { drop_table = true } }` in an Atlas project file, every table drop
+and the dependent removals a dropped table carries are deleted from the diff
+before any SQL is rendered, so the first row of the table above is not refused:
+the `DROP TABLE` it warns about is never planned. Measured on an `fts5` database
+whose desired state names only the ordinary table, `ptah schema apply` reported
+`Schema is synced, no changes to be made.` at exit 0 with `MATCH` still
+answering, where the same run without the policy exited 2. The other rows are
+unaffected — `skip drop_table` filters removals, not modifications, and no
+policy makes one kind of object convertible into another.
+
 ## Virtual table limitations
 
 - Shadow tables belonging to a module the reading build does not register
@@ -198,7 +210,10 @@ refused however it is set.
   them and left their storage behind. `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE=1`
   restores the old comparison for an operator who wants it — two databases that
   both already hold the same `fts4` index then compare normally and report a
-  synced schema. Separately, **adding** such a table has no opt-in: a plan
+  synced schema. A project that skips `drop_table` needs no opt-in for the
+  removal half either: the drops are deleted from the diff before anything is
+  rendered, so only a rebuild of a table the desired state names is still
+  refused. Separately, **adding** such a table has no opt-in: a plan
   carrying `CREATE VIRTUAL TABLE ... USING fts4` is answered with
   `no such module: fts4`, so that one is refused before the plan, and only where
   the statement would actually be planned.

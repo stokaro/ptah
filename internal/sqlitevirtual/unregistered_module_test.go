@@ -53,6 +53,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 		env             func(testing.TB)
 		desired         *goschema.Database
 		database        *types.DBSchema
+		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
 		wantContains    []string
@@ -419,6 +420,68 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			// THE ROW THE DROP-POLICY FINDING ADDED, on the unregistered-module
+			// half. This is the `--exclude docs` shape -- the virtual table gone
+			// from Tables and the module's storage left behind under names
+			// nothing declares -- which is the run that destroyed the index. A
+			// caller that skips drop_table deletes every one of those five DROP
+			// TABLE statements before they are rendered, so there is nothing
+			// left to destroy and nothing to refuse.
+			//
+			// Measured on the command with `diff.skip: [drop_table]` in
+			// ptah.yaml, on an fts4 database built by a system SQLite that has
+			// the module: `ptah schema apply` exited 2 before this change, and
+			// the same run with both opt-ins set reported `Schema is synced, no
+			// changes to be made.` at exit 0 -- an empty plan the refusal was
+			// standing in front of.
+			name:    "a caller that skips table drops is not refused for the drops it skips",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "docs_content"},
+					{Name: "docs_docsize"},
+					{Name: "docs_segdir"},
+					{Name: "docs_segments"},
+					{Name: "docs_stat"},
+					{Name: "users"},
+				},
+				UnregisteredVirtualTables: unclassified,
+			},
+			policy:  sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr: false,
+		},
+		{
+			// The control that keeps the row above from being "never refuse".
+			// `skip drop_table` says nothing about a module this build cannot
+			// CREATE: the plan still carries CREATE VIRTUAL TABLE and this build
+			// still answers `no such module: fts4`, and no policy makes a module
+			// exist.
+			name:            "skipping table drops does not lift the addition refusal",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:         declaringVirtual("docs", "fts4", "title, body"),
+			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			policy:          sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{"the desired schema adds", "no such module: fts4"},
+		},
+		{
+			// And the parse is still owed under the policy. Resolving the opt-in
+			// after the policy short-circuit would leave a typo dormant on
+			// exactly the projects that configure one (stokaro/ptah#1334).
+			name:         "a malformed opt-in is refused under the policy too",
+			dialect:      "sqlite",
+			env:          envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"),
+			desired:      declaring("users"),
+			database:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs_content"}, {Name: "users"}}, UnregisteredVirtualTables: unclassified},
+			policy:       sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:      true,
+			wantContains: []string{sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -426,7 +489,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, tt.database)
+			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, tt.database, tt.policy)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
@@ -471,6 +534,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 		env             func(testing.TB)
 		database        *types.DBSchema
 		diff            *difftypes.SchemaDiff
+		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
 		wantContains    []string
@@ -644,6 +708,72 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			diff:     modifying("docs_content"),
 			wantErr:  false,
 		},
+		{
+			// THE ROW THE DROP-POLICY FINDING ADDED, on the post-diff half. The
+			// caller filters TablesRemoved out of this diff after this gate
+			// returns, so counting a removal here refuses a plan that will not
+			// contain it.
+			name:     "a removal is not counted when the caller skips table drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff:     removing("docs_stat"),
+			policy:   sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:  false,
+		},
+		{
+			// A dropped table's dependent removals go with it, so a constraint
+			// whose host is being dropped is not an ALTER on a kept table --
+			// both implementations of the policy delete it. Counting the host
+			// would refuse the same emptied plan by another route.
+			name:     "a constraint on a table the policy keeps from dropping is not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesRemoved: []string{"main.docs_content"},
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			policy:  sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr: false,
+		},
+		{
+			// THE CONTROL for both rows above, and the reason the policy is not
+			// simply "return nil". `skip drop_table` filters removals, not
+			// modifications: a table both sides name and describe differently is
+			// still rebuilt by the SQLite planner -- drop, recreate, copy -- and
+			// on a table that is really the module's storage that destroys the
+			// index just the same.
+			name:            "a rebuild is still refused when the caller skips table drops",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database:        holdingFTS4,
+			diff:            modifying("docs_content"),
+			policy:          sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
+			// The second control: a constraint-only rebuild reaches
+			// planTableRebuilds through a schema-level field the drop policy
+			// never touches, so it stays refused too.
+			name:     "a constraint-only rebuild is still refused when the caller skips table drops",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			policy:          sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
 	}
 
 	for _, tt := range tests {
@@ -651,7 +781,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			err := sqlitevirtual.ValidatePlannedChanges(tt.dialect, tt.database, tt.diff)
+			err := sqlitevirtual.ValidatePlannedChanges(tt.dialect, tt.database, tt.diff, tt.policy)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)

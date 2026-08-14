@@ -158,7 +158,12 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// A SQLite virtual table on the --from side is an object --to cannot
 	// declare, so comparing them plans a DROP nobody asked for
 	// (stokaro/ptah#1028).
-	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database); err != nil {
+	//
+	// It gets the same diff policy that filters the diff below, because the
+	// refusal is a claim about a statement and `skip drop_table` deletes that
+	// statement before it is rendered.
+	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: opts.Policy.SkipDropTable}
+	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database, virtualPolicy); err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
 
@@ -173,7 +178,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// differently is rebuilt by the SQLite planner, which destroys a module's
 	// storage as surely as a drop (stokaro/ptah#1028).
 	if err := sqlitevirtual.ValidatePlannedChanges(
-		dialect, fromSide.database, compared,
+		dialect, fromSide.database, compared, virtualPolicy,
 	); err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}

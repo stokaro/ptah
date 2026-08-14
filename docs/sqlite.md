@@ -302,6 +302,38 @@ Two consequences worth knowing:
 `--exclude docs` is the opposite case and stays refused, because it leaves the
 module's storage tables in the comparison with nothing naming them.
 
+### A project that skips `drop_table`
+
+Both refusals are claims about a statement, so a project that configures the
+drop away is not refused for it. With `diff.skip: [drop_table]` in `ptah.yaml`,
+or `diff { skip { drop_table = true } }` in an Atlas project file, every table
+drop — and the dependent index, constraint, trigger, RLS and grant removals a
+dropped table would carry — is deleted from the diff before any SQL is
+rendered, so nothing the guard is warning about can happen.
+
+Measured on an `fts4` database built by a system SQLite that has the module,
+with a desired state naming only the ordinary table:
+
+| run | result |
+| --- | --- |
+| `ptah schema apply`, no project policy | refused, exit 2 |
+| the same run with `diff.skip: [drop_table]` | `Schema is synced, no changes to be made.`, exit 0, `MATCH` still `1` |
+
+This is narrow on purpose. `skip drop_table` filters removals, not
+modifications, so a desired state that NAMES one of the module's storage tables
+and describes it differently is still refused — the SQLite planner rebuilds
+that table, and a rebuild is drop, recreate, copy. Measured on the same
+database, with the policy set:
+
+```text
+unsupported feature: the plan changes "docs_content" in a database that holds
+virtual table "docs" (module fts4) ...
+```
+
+The same applies to the plain virtual-table refusal above: with the policy set,
+a live `fts5` index the desired state does not name is no longer refused,
+because the `DROP TABLE` it warns about is never rendered.
+
 The post-comparison refusal names the tables the plan would change:
 
 ```text

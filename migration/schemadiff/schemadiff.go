@@ -94,7 +94,13 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// there is a different kind of object. Refuse both before anything is
 	// compared, rather than planning a DROP the operator never asked for
 	// (stokaro/ptah#1028).
-	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database); err != nil {
+	//
+	// The caller's diff policy travels with the comparison because both halves
+	// of that guard predict statements, and a caller that skips `drop_table`
+	// deletes the predicted DROP again before anything is rendered. See
+	// [config.CompareOptions.SkipTableDrops].
+	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: merged.SkipTableDrops}
+	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database, virtualPolicy); err != nil {
 		return nil, nil, err
 	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
@@ -126,7 +132,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// answer rather than anything the pre-comparison check could compute
 	// without a second copy of these rules (stokaro/ptah#1028).
 	if err := sqlitevirtual.ValidatePlannedChanges(
-		info.Dialect, database, diff,
+		info.Dialect, database, diff, virtualPolicy,
 	); err != nil {
 		return nil, nil, err
 	}

@@ -256,6 +256,13 @@ emitted, so it never trips the `--check-destructive` gate. A selected environmen
 `diff.skip` replaces the top-level list; an explicit empty list clears all
 inherited skip kinds.
 
+`drop_table` also reaches the comparison, not only the rendered SQL. Ptah's
+SQLite virtual-table guard refuses a comparison for the `DROP TABLE` it predicts,
+and a project that skips table drops has already deleted that statement, so the
+refusal does not fire — see [SQLite](../../databases/sqlite/). It is the only
+skip kind that changes what a comparison refuses, and it changes nothing about
+what a comparison computes.
+
 The Atlas-compatible command tree lives in the separate `ptah-compat` binary,
 the drop-in replacement for scripts that expect Atlas-style root commands.
 Atlas project flags such as `--config`, `-c`, `--env`, and repeated

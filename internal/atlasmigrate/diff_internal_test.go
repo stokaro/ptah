@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -41,6 +42,79 @@ const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared
 	" the replayed migration directory records `ptah:not-described sequence`," +
 	" so this comparison cannot tell it apart from one that already exists," +
 	" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n"
+
+// TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard is
+// `migrate diff`'s half of the plumbing internal/atlasschema and
+// migration/generator pin.
+//
+// A migration directory can create an FTS5 index, and no --to document can
+// declare one, so the replayed state holds a virtual table the desired side
+// never names -- the shape the SQLite virtual-table guard refuses because it
+// plans DROP TABLE. That refusal happens inside the comparison, while
+// atlasschema.ApplyDiffPolicy deletes the drop afterwards, so a project
+// carrying `diff { skip { drop_table = true } }` was refused for a statement it
+// had configured away.
+//
+// The zero-policy row is the control: without it this would pass just as well
+// against a guard that had been switched off.
+func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
+	tests := []struct {
+		name         string
+		policy       atlasschema.DiffPolicy
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name:         "a plan that would drop the virtual table is refused",
+			policy:       atlasschema.DiffPolicy{},
+			wantErr:      true,
+			wantContains: `virtual table "docs" (module fts5)`,
+		},
+		{
+			name:    "a plan whose table drops the policy removes is not refused",
+			policy:  atlasschema.DiffPolicy{SkipDropTable: true},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := connectDiffComparisonSQLite(c)
+			replayed := &dbschematypes.DBSchema{
+				Tables: []dbschematypes.DBTable{
+					{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"},
+				},
+			}
+			runtime := diffRuntime{
+				readDevSchema: func(
+					*dbschema.DatabaseConnection,
+					[]string,
+					string,
+				) (*dbschematypes.DBSchema, error) {
+					return replayed, nil
+				},
+			}
+
+			_, _, err := compareReplayedState(
+				c.Context(), conn, runtime, nil, conn.Info().Schema,
+				&goschema.Database{}, nil, nil, tt.policy,
+			)
+
+			c.Assert(err != nil, qt.Equals, tt.wantErr)
+			c.Assert(errorTextOf(err), qt.Contains, tt.wantContains)
+		})
+	}
+}
+
+// errorTextOf renders an error for a Contains assertion that also has to accept
+// the nil case, where the expected fragment is empty.
+func errorTextOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	c := qt.New(t)
@@ -63,6 +137,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema, desired, nil, nil,
+		atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -88,7 +163,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&goschema.Database{}, nil, nil,
+		&goschema.Database{}, nil, nil, atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -125,6 +200,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public", desired, nil, nil,
+		atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -152,6 +228,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public",
 		schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{}, schemas, "public"), nil, nil,
+		atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -179,7 +256,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&goschema.Database{Sequences: []goschema.Sequence{{Name: "order_seq"}}},
-		diagnostics, nil,
+		diagnostics, nil, atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)

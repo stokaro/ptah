@@ -295,6 +295,15 @@ reported a synced schema and changed nothing.
 - A read is never refused. `ptah db read` and `schema inspect` print a note
   naming the table and module, and leave standard output and the exit code
   alone.
+- A project that skips table drops is not asked for it. With
+  `diff { skip { drop_table = true } }` in the project file — or
+  `diff.skip: [drop_table]` in `ptah.yaml` — every table drop and the dependent
+  removals it carries are deleted from the diff before any SQL is rendered, so
+  the refusal, which is a claim about a `DROP TABLE`, does not fire. What still
+  fires is a rebuild: a desired state that NAMES one of the module's storage
+  tables and describes it differently is refused under the policy too, because
+  `skip drop_table` filters removals rather than modifications and SQLite
+  converges a modification by dropping and recreating the table.
 
 See [SQLite](../../databases/sqlite/) for the whole picture.
 

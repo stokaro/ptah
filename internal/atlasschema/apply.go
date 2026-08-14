@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
@@ -311,7 +312,14 @@ func computeApplyPlan(
 		readScope: readScope,
 	}
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
+	// The comparison is told what applyDiffPolicy will do to its answer. The
+	// SQLite virtual-table guard runs inside CompareWithDatabase and refuses on
+	// the statements it predicts, so without this a plan whose every drop the
+	// policy deletes was refused before the policy could delete it
+	// (stokaro/ptah#1028).
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, compareOpts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}

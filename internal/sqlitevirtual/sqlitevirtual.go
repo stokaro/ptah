@@ -85,6 +85,11 @@
 // nothing in it is dropped or rebuilt, so nothing can be destroyed however
 // badly Ptah has misclassified it.
 //
+// Both questions are about statements, so both take the caller's [Policy]: a
+// project that skips `drop_table` deletes every table drop from the diff before
+// it is planned, and a refusal keyed on a drop that will never be rendered is a
+// refusal for something that cannot happen.
+//
 // Adding a virtual table whose module is absent is refused separately and with
 // no opt-in, because the `CREATE VIRTUAL TABLE` a plan would carry fails with
 // `no such module`. That check belongs to the addition branch alone: two states
@@ -226,6 +231,41 @@ func ValidateExplicitURLToggle(databaseURL string) error {
 	return ValidateToggle(dialect)
 }
 
+// Policy is what the caller will do to the diff between the comparison and the
+// plan, as far as this guard's predictions are concerned.
+//
+// Every refusal in this package is a claim about a statement: "planning the
+// removal would delete the index", "comparing this description would plan DROP
+// TABLE", "the plan changes docs_content". A caller whose diff policy deletes
+// those statements again makes the claim false, and refusing on it is the
+// over-refusal this package has now had to fix three times -- once for
+// `--include users`, once for two databases holding the same index, and once
+// here.
+//
+// The zero value promises nothing, so a seam that says nothing keeps the
+// strictest reading and a new caller that forgets to pass its policy refuses
+// more rather than less.
+type Policy struct {
+	// SkipDropTable reports that the caller removes every table drop from the
+	// diff before planning it -- `diff.skip: [drop_table]` in ptah.yaml, and
+	// `diff { skip { drop_table = true } }` in an Atlas project file.
+	//
+	// It carries the dependent removals with it, which is what makes the whole
+	// table safe to discount rather than only its DROP TABLE: both
+	// implementations of this policy also drop the index, constraint, trigger,
+	// RLS and grant removals belonging to a table they keep
+	// ([go.5x5.cz/ptah/migration/diffpolicy.Apply] and
+	// [go.5x5.cz/ptah/internal/atlasschema.ApplyDiffPolicy]). A table that is
+	// not dropped and whose dependent removals are gone is not rebuilt either.
+	//
+	// It does NOT cover a rebuild. `skip drop_table` filters removals, not
+	// modifications, so a table both sides name and describe differently is
+	// still dropped and recreated by the SQLite planner -- which is why the
+	// post-diff half of the guard keeps running under this policy and only its
+	// removal input is discounted.
+	SkipDropTable bool
+}
+
 // Table is one live virtual table and the module declaration that owns it.
 type Table struct {
 	Schema    string
@@ -247,7 +287,16 @@ func (t Table) String() string {
 // It is called at the seams that already return an error and that every verb
 // which compares a live database goes through. A comparison the desired state
 // cannot express is refused there rather than planned badly here.
-func ValidateComparison(dialect string, desired *goschema.Database, database *types.DBSchema) error {
+//
+// policy is what the caller will do to the diff before it is planned; see
+// [Policy]. The refusals that predict a `DROP TABLE` stand down when the caller
+// has said it removes every one of them.
+func ValidateComparison(
+	dialect string,
+	desired *goschema.Database,
+	database *types.DBSchema,
+	policy Policy,
+) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite {
 		// A non-SQLite target has no virtual tables to classify, so this
 		// subsystem is not invoked on that run and must not fail a MySQL plan
@@ -278,7 +327,7 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 	// ordinary` off the description; where a module is missing that answer was
 	// never SQLite's, and the tables it is wrong about are not the ones an
 	// operator can see or exclude.
-	if err := validateDatabaseIsClassifiable(desired, database, registered, semantics); err != nil {
+	if err := validateDatabaseIsClassifiable(desired, database, registered, semantics, policy); err != nil {
 		return err
 	}
 
@@ -290,6 +339,18 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 			// The desired state says nothing about it. When that side is a
 			// document it could not have said anything, so the silence is not
 			// intent: this is the data-loss path.
+			//
+			// Unless the caller deletes the statement again. `skip drop_table`
+			// filters this table out of TablesRemoved before the plan is
+			// rendered, so the `DROP TABLE "docs"` this refusal exists to
+			// prevent is never emitted, and refusing sends an operator to an
+			// opt-in for a plan that drops nothing. Measured with
+			// `diff.skip: [drop_table]` in ptah.yaml: both opt-ins set,
+			// `ptah schema apply` reports `Schema is synced, no changes to be
+			// made.` at exit 0 -- and without them it exited 2.
+			if policy.SkipDropTable {
+				continue
+			}
 			removals = append(removals, side.table())
 		case side.wanted.virtual && !side.present:
 			// An addition: the module declaration reaches the renderer and
@@ -410,11 +471,17 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 // paired name rather than about the description as a whole, so it is asked
 // where the pairing already decides that a name is an addition. See the
 // `side.wanted.virtual && !side.present` branch in [ValidateComparison].
+//
+// The whole condition is about a DROP TABLE, so a caller whose [Policy] skips
+// table drops is answered by [ValidatePlannedChanges] alone. That is not a hole:
+// the rebuild half of the harm is exactly what the post-diff gate reads, and
+// `skip drop_table` does not filter a modification.
 func validateDatabaseIsClassifiable(
 	desired *goschema.Database,
 	database *types.DBSchema,
 	registered sqlitemodule.Set,
 	semantics identifier.Semantics,
+	policy Policy,
 ) error {
 	// Resolved before the side is scanned, so a malformed opt-in is reported on
 	// every SQLite comparison rather than only the ones holding an unregistered
@@ -425,6 +492,13 @@ func validateDatabaseIsClassifiable(
 		return err
 	}
 	if unregisteredAllowed {
+		return nil
+	}
+	// Asked AFTER the opt-in is resolved, deliberately: a malformed value must
+	// still be a configuration error on the projects that configure a diff
+	// policy, or the typo stays dormant on exactly the runs this branch lets
+	// through (stokaro/ptah#1334).
+	if policy.SkipDropTable {
 		return nil
 	}
 	unclassified := liveUnregistered(database, registered)
@@ -513,18 +587,24 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // a database Ptah cannot classify might be touching it.
 //
 // Callers pass the same database description they passed to
-// [ValidateComparison]. A database with no unclassifiable module returns nil
-// whatever the diff says, so this is inert for every other SQLite comparison
-// and for every other dialect.
+// [ValidateComparison], and the same [Policy]. The diff reaching this seam is
+// the comparator's answer rather than the plan -- every caller that filters it
+// does so afterwards -- so the policy is how this gate learns which of the
+// changes it can see will still be there when the SQL is rendered.
+//
+// A database with no unclassifiable module returns nil whatever the diff says,
+// so this is inert for every other SQLite comparison and for every other
+// dialect.
 func ValidatePlannedChanges(
 	dialect string,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
+	policy Policy,
 ) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite || diff == nil {
 		return nil
 	}
-	touched := tablesTouchedBy(diff)
+	touched := tablesTouchedBy(diff, policy)
 	if len(touched) == 0 {
 		return nil
 	}
@@ -576,12 +656,22 @@ func ValidatePlannedChanges(
 //
 // This is deliberately coarser than the planner's own derivation rather than a
 // copy of it. Refusing more than the planner rebuilds is safe; refusing less is
-// the defect. The one exclusion applied is the one that is sound in the other
-// direction too: a table the plan CREATES cannot be one the module already
-// owns, so an added table carries none of this risk, and counting it would
-// refuse the ordinary case of adding a table with a constraint beside an index
-// Ptah cannot classify.
-func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
+// the defect. Two exclusions are applied, and both are sound in the other
+// direction too:
+//
+//   - a table the plan CREATES cannot be one the module already owns, so an
+//     added table carries none of this risk, and counting it would refuse the
+//     ordinary case of adding a table with a constraint beside an index Ptah
+//     cannot classify;
+//   - a table the plan would DROP under a caller that skips `drop_table` is not
+//     dropped at all, and its dependent removals go with it, so it is not
+//     rebuilt either. Counting it refused a `schema apply` whose whole plan the
+//     policy had already emptied.
+//
+// The second is keyed on the caller's [Policy] rather than on anything in the
+// diff, because the diff at this seam is the comparator's answer and not yet
+// the plan.
+func tablesTouchedBy(diff *difftypes.SchemaDiff, policy Policy) []string {
 	// The exclusion is an identity question, not a string one. TablesAdded
 	// carries the comparator's spelling while a constraint's TableName comes
 	// from the declaration or the catalog, so one may say `main.t` where the
@@ -605,6 +695,15 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
 	kept := touched[:0]
 	for _, name := range touched {
 		if objectlookup.Contains(diff.TablesAdded, name, semantics) {
+			continue
+		}
+		// Asked through the same identity helper as the addition exclusion, and
+		// against diff.TablesRemoved rather than the accumulated list, so a
+		// constraint whose host is being dropped is discounted with the drop.
+		// The spellings really do differ: TablesRemoved carries the
+		// comparator's, a constraint's TableName the declaration's or the
+		// catalog's (stokaro/ptah#1351).
+		if policy.SkipDropTable && objectlookup.Contains(diff.TablesRemoved, name, semantics) {
 			continue
 		}
 		kept = append(kept, name)

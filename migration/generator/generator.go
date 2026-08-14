@@ -566,7 +566,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		conn,
 		generated,
 		dbSchema,
-		opts.CompareOptions,
+		compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
@@ -905,6 +905,28 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 		return fmt.Errorf("destructive migration statements require AllowDestructive")
 	}
 	return nil
+}
+
+// compareOptionsWithDiffPolicy tells the comparison what
+// [planGeneratedMigrationSpecs] will do to its answer.
+//
+// The SQLite virtual-table guard runs inside the comparison and refuses on the
+// statements it predicts, while the skip filter that deletes those statements
+// runs afterwards, here. Without this the comparison refused a plan the policy
+// had already emptied (stokaro/ptah#1028). The caller's options are copied
+// rather than written through: GenerateMigrationOptions is a value the caller
+// may reuse for another run.
+func compareOptionsWithDiffPolicy(
+	opts *config.CompareOptions,
+	policy DiffPolicy,
+) *config.CompareOptions {
+	merged := config.DefaultCompareOptions()
+	if opts != nil {
+		*merged = *opts
+		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
+	}
+	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropTable)
+	return merged
 }
 
 type generatedMigrationSpec struct {
