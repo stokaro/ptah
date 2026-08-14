@@ -74,6 +74,17 @@ func stripSQLQualifiers(value, schema string, authored map[string]struct{}) stri
 	return stripSinglePartQualifiers(value, authored)
 }
 
+// stripMatchingSchemaQualifiers removes the object's own schema from the places
+// a catalog puts it: in front of a relation, and in front of the table half of a
+// three-part column reference.
+//
+// It is deliberately not "every occurrence of this name followed by a dot". A
+// relation alias may be spelled the same as the database it lives in --
+// `SELECT analytics.id FROM users AS analytics` in database `analytics` is legal
+// -- and removing that prefix here would take it off the readback while the
+// declaration kept it, reporting a change on an object nobody edited. On
+// ClickHouse that reads as a body change and is planned as a drop and a create,
+// which discards the view's accumulated rows.
 func stripMatchingSchemaQualifiers(value, schema string) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
@@ -81,7 +92,9 @@ func stripMatchingSchemaQualifiers(value, schema string) string {
 			i = copyQuotedSQL(&b, value, i)
 			continue
 		}
-		if strings.HasPrefix(value[i:], schema+".") && startsIdentifierAt(value, i) {
+		if strings.HasPrefix(value[i:], schema+".") &&
+			startsIdentifierAt(value, i) &&
+			qualifiesRelationAt(value, i, i+len(schema)) {
 			i += len(schema)
 			continue
 		}

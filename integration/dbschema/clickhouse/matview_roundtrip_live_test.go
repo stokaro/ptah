@@ -330,6 +330,143 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
 }
 
+// TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive is the collision
+// between the two normalizations: an alias spelled exactly like the database.
+//
+// The catalog adds the database in front of the relation, and the declaration
+// already uses that same word as a column prefix. A normalization that removed
+// every occurrence of the schema name took the prefix off the readback while the
+// declaration kept it, and reported a body change on an object nobody edited --
+// which on ClickHouse is planned as a drop and a create.
+//
+// The alias here is the realm database's own name, so the two really are the
+// same word on a live server rather than in a fixture.
+func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+	})
+
+	body := "SELECT " + database + ".id AS id FROM users AS " + database
+	declared := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserIDs",
+			Name:       database + ".user_ids",
+			Body:       body,
+		}},
+		Views: []goschema.View{{
+			StructName: "UserIDsPlain",
+			Name:       database + ".user_ids_plain",
+			Body:       body,
+		}},
+	}
+	creationDiff := schemadiff.CompareWithDialect(
+		declared,
+		readClickHouseViewLikes(t, db, database),
+		platform.ClickHouse,
+	)
+	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		creationDiff,
+		declared,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(createStatements, qt.HasLen, 2)
+	executeClickHouseViewPlan(t, db, createStatements)
+
+	// The readback carries the database twice over: once as the alias the
+	// declaration wrote, once as the qualifier the server resolved.
+	readback := readClickHouseViewLikes(t, db, database)
+	c.Assert(readback.MatViews, qt.HasLen, 1)
+	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".id")
+	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".users")
+
+	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
+}
+
+// TestMaterializedViewUnqualifiedNameRoundTripsLive is the acceptance for a
+// declaration that names the object itself without a database.
+//
+// Every other live test here writes the object's name qualified, and that is the
+// one spelling this cannot see. ClickHouse reports every object with the current
+// database as its schema and its connection leaves the default identifier schema
+// empty, so a declaration of "user_stats" and a readback of
+// "<database>.user_stats" have to be recognized as one object. Matching only the
+// qualified form reported the unchanged object as both added and removed, the
+// planner emitted the create before the removal, and the server refused it:
+//
+//	Code: 57. DB::Exception: Table <db>.user_stats already exists.
+//	(TABLE_ALREADY_EXISTS)
+//
+// The plain view standing beside it is the control: it has matched bare names
+// against a uniquely-named database view since #1276, so a run where only the
+// materialized half moves is the whole finding.
+//
+// The second apply is the point of the test: a plan produced from a settled
+// database must be empty, and an empty plan is the only one that can be executed
+// twice.
+func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64) ENGINE = MergeTree ORDER BY id",
+	})
+
+	// Unqualified on both halves: the object's own name as well as its source.
+	declared := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserStats",
+			Name:       "user_stats",
+			Body:       "SELECT count() AS c FROM users",
+		}},
+		Views: []goschema.View{{
+			StructName: "ActiveUsers",
+			Name:       "active_users",
+			Body:       "SELECT id FROM users",
+		}},
+	}
+	creationDiff := schemadiff.CompareWithDialect(
+		declared,
+		readClickHouseViewLikes(t, db, database),
+		platform.ClickHouse,
+	)
+	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		creationDiff,
+		declared,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(createStatements, qt.HasLen, 2)
+	executeClickHouseViewPlan(t, db, createStatements)
+
+	readback := readClickHouseViewLikes(t, db, database)
+	c.Assert(readback.MatViews, qt.HasLen, 1)
+	c.Assert(readback.MatViews[0].Schema, qt.Equals, database)
+	c.Assert(readback.Views, qt.HasLen, 1)
+	c.Assert(readback.Views[0].Schema, qt.Equals, database)
+
+	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	c.Assert(settledDiff.MaterializedViewsAdded, qt.HasLen, 0)
+	c.Assert(settledDiff.MaterializedViewsRemoved, qt.HasLen, 0)
+	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
+
+	// The second apply: an empty plan, executed.
+	settledStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		settledDiff,
+		declared,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(settledStatements, qt.HasLen, 0)
+	executeClickHouseViewPlan(t, db, settledStatements)
+}
+
 // TestDropAllTablesResetIsReplayableLive is the acceptance for the reset
 // contract every caller of DropAllTables depends on.
 //

@@ -442,28 +442,71 @@ func viewNameForDiff(view types.DBView) string {
 // MaterializedViews compares materialized view definitions between generated
 // and database schemas.
 func MaterializedViews(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	generatedViews := make(map[string]goschema.MaterializedView)
+	MaterializedViewsWithDialect(generated, database, diff, "")
+}
+
+// MaterializedViewsWithDialect compares materialized-view definitions with
+// dialect-aware body normalization, matching identity the way
+// [ViewsWithDialect] does.
+//
+// The two kinds have to agree about what a name means. A declaration that names
+// its object without a schema is the ordinary spelling, and a catalog reports
+// every object with one, so matching only on the qualified form makes an
+// unchanged object BOTH added and removed. Measured through
+// MaterializedViewsWithSemantics with a ClickHouse read, a declaration of
+// "user_stats" against a database holding "ptah_test.user_stats":
+//
+//	MaterializedViewsAdded   = [user_stats]
+//	MaterializedViewsRemoved = [ptah_test.user_stats]
+//	MaterializedViewsModified = []
+//
+// The planner answers that with a CREATE before the removal, and ClickHouse
+// refuses it -- "Table ... already exists. (TABLE_ALREADY_EXISTS)" -- while the
+// plain view beside it, which has matched bare names against a uniquely-named
+// database view since #1276, reported nothing at all.
+func MaterializedViewsWithDialect(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
+	generatedViews := make(map[string]goschema.MaterializedView, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
 		view.Canonicalize()
 		generatedViews[view.Name] = view
 	}
 
-	databaseViews := make(map[string]types.DBMatView)
+	databaseViewsByName := make(map[string][]types.DBMatView, len(database.MatViews))
+	databaseViewsByQualifiedName := make(map[string]types.DBMatView, len(database.MatViews))
 	for _, view := range database.MatViews {
-		databaseViews[view.QualifiedName()] = view
+		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
+		databaseViewsByQualifiedName[view.QualifiedName()] = view
 	}
 
-	addedViews, removedViews := compareNamedItems(generatedViews, databaseViews)
-	diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, addedViews...)
-	diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, removedViews...)
-
+	matchedDatabaseViews := make(map[string]struct{}, len(database.MatViews))
 	for viewName, generatedView := range generatedViews {
-		if databaseView, exists := databaseViews[viewName]; exists {
-			viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
-			if len(viewDiff.Changes) > 0 {
-				diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
-			}
+		databaseView, exists := findDatabaseMatViewForGeneratedView(
+			generatedView,
+			databaseViewsByName,
+			databaseViewsByQualifiedName,
+		)
+		if !exists {
+			diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, viewName)
+			continue
 		}
+
+		matchedDatabaseViews[databaseView.QualifiedName()] = struct{}{}
+		viewDiff := MaterializedViewDefinitionsWithDialect(generatedView, databaseView, dialect)
+		if len(viewDiff.Changes) > 0 {
+			diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
+		}
+	}
+
+	for _, view := range database.MatViews {
+		if _, ok := matchedDatabaseViews[view.QualifiedName()]; ok {
+			continue
+		}
+		diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, view.QualifiedName())
 	}
 
 	sort.Strings(diff.MaterializedViewsAdded)
@@ -471,6 +514,31 @@ func MaterializedViews(generated *goschema.Database, database *types.DBSchema, d
 	sort.Slice(diff.MaterializedViewsModified, func(i, j int) bool {
 		return diff.MaterializedViewsModified[i].ViewName < diff.MaterializedViewsModified[j].ViewName
 	})
+}
+
+// findDatabaseMatViewForGeneratedView is findDatabaseViewForGeneratedView for
+// the other view kind, and deliberately the same rule: a qualified declaration
+// matches only the object it names, and a bare one matches a database object of
+// that name only when exactly one schema has it. Two schemas holding the same
+// name leave the declaration unmatched rather than guessing between them.
+func findDatabaseMatViewForGeneratedView(
+	generatedView goschema.MaterializedView,
+	databaseViewsByName map[string][]types.DBMatView,
+	databaseViewsByQualifiedName map[string]types.DBMatView,
+) (types.DBMatView, bool) {
+	ref, ok := tableref.Parse(generatedView.Name)
+	if !ok {
+		return types.DBMatView{}, false
+	}
+	if ref.Qualified {
+		view, ok := databaseViewsByQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
+		return view, ok
+	}
+	candidates := databaseViewsByName[ref.Name]
+	if len(candidates) != 1 {
+		return types.DBMatView{}, false
+	}
+	return candidates[0], true
 }
 
 // MaterializedViewsWithSemantics compares materialized-view identities using
@@ -483,6 +551,17 @@ func MaterializedViewsWithSemantics(
 	semantics identifier.Semantics,
 ) {
 	semantics = semantics.Normalize(dialect)
+	if semantics.DefaultSchema == "" {
+		// No default schema means no rule for which schema owns an unqualified
+		// name, so identity falls back to the name-matching the plain views use.
+		// ClickHouse is the dialect that reaches this: its connection reports the
+		// current database as the schema on every object it reads and leaves
+		// DefaultSchema empty, so a declaration written "user_stats" and a
+		// readback of "<database>.user_stats" are the same object.
+		MaterializedViewsWithDialect(generated, database, diff, dialect)
+		return
+	}
+
 	generatedViews := make(map[tableIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
 	generatedNames := make(map[tableIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {

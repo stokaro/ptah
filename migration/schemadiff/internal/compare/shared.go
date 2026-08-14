@@ -139,26 +139,3 @@ func uniqueStringsPreserveOrder(values []string) []string {
 	}
 	return result
 }
-
-// compareNamedItems is a generic helper function that compares two maps of named items
-// and returns the names of items that are added (in generated but not in database)
-// and removed (in database but not in generated).
-//
-// This helper eliminates code duplication between Functions and RLSPolicies comparison logic.
-func compareNamedItems[T, U any](generated map[string]T, database map[string]U) (added, removed []string) {
-	// Find added items (in generated but not in database)
-	for name := range generated {
-		if _, exists := database[name]; !exists {
-			added = append(added, name)
-		}
-	}
-
-	// Find removed items (in database but not in generated)
-	for name := range database {
-		if _, exists := generated[name]; !exists {
-			removed = append(removed, name)
-		}
-	}
-
-	return added, removed
-}
