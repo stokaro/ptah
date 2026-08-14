@@ -5,7 +5,7 @@ This directory contains PowerShell scripts for running comprehensive tests of th
 ## Prerequisites
 
 - **Docker Desktop** - Required for running database integration tests
-- **Go 1.19+** - For running the tests
+- **Go 1.26.5+** - For running the tests. This is the `go` directive in `go.mod`, the published compatibility floor — not the patch release CI builds with, which is the `toolchain` directive.
 - **PowerShell 7+** - For running the test scripts (works on Windows, macOS, Linux)
 
 ## Test Scripts
@@ -105,9 +105,9 @@ Detailed integration test runner with Docker Compose:
 
 The integration tests use Docker Compose to start:
 
-- **PostgreSQL 16** on port 5432
-- **MySQL 8.0** on port 3310  
-- **MariaDB 10.11** on port 3307
+- **PostgreSQL 18** on port 5432
+- **MySQL 26.7** on port 3310
+- **MariaDB 12.3** on port 3307
 
 Connection details:
 - Database: `ptah_test`

@@ -121,3 +121,38 @@ func TestMigrateGenerateJSONReportWritesSiblingSafetyArtifact(t *testing.T) {
 	c.Assert(report.Destructive, qt.IsFalse)
 	c.Assert(report.Assessments, qt.HasLen, 1)
 }
+
+func TestMigrateGenerateValidatesSQLiteToggleBeforeMigrationsDirectoryPath(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://" + filepath.Join(root, "target.db"),
+		"--migrations-dir", "../outside",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+}
+
+func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "postgres://localhost/ptah",
+		"--migrations-dir", "../outside",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid migrations directory: .*outside allowed root.*`)
+}

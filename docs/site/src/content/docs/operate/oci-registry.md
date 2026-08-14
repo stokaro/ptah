@@ -64,8 +64,9 @@ reference.
 HTTPS is the default. `--plain-http` disables transport encryption and is only
 for an explicitly trusted local registry used for development or tests. Do not
 use it with GHCR, ECR, GAR, Harbor, Docker Hub, or a production registry.
-This applies to `ptah oci referrers` as well as push, pull, and direct-consumer
-commands.
+Every command that resolves an `oci://` source registers the flag, including
+`ptah oci referrers`, `ptah schema inspect`, and the rest of push, pull, and the
+direct consumers.
 
 Registry operations and Docker credential-helper lookups have a two-minute
 default deadline, with shorter dial, TLS-handshake, and response-header
@@ -137,8 +138,17 @@ ptah migrations down \
 
 `up`, `status`, and `down` pull into an immutable in-memory filesystem and use
 the ordinary Ptah migration engine. An explicit `--dir-format` must match the
-artifact metadata. `up --verify-sum` verifies the pulled artifact before
-opening the database.
+artifact metadata.
+
+`--verify-sum` is available on `up`, `down` and `status`. It verifies the pulled
+artifact before opening the database and, unlike the always-on gate, refuses an
+artifact that carries no integrity file at all. Read
+[Identity, integrity, and authenticity](#identity-integrity-and-authenticity)
+for what that verification establishes over a movable tag, which is less than
+the flag's name suggests: the sum travels inside the artifact, so it proves the
+pulled files are internally consistent, not that they are the reviewed ones.
+Pin a digest to fix which bytes a later pull gets; that section also explains
+why pinning one is not by itself a statement about who published them.
 
 `ptah migrations lint --dir oci://...` also reads an OCI migration artifact
 directly. See [Attach lint and plan reports](#attach-lint-and-plan-reports) for
@@ -326,6 +336,37 @@ ptah schema pull \
 ```
 
 The output file must not already exist.
+
+## Consume a desired schema
+
+Every native command that has a `--schema-file` resolves `oci://` through it:
+`schema render`, `export`, `inspect`, `compare`, `drift`, `plan`, `apply` and
+`push`, plus `migrations plan` and `generate`. All ten expose `--plain-http`
+for a trusted local registry.
+
+The scheme belongs to that flag rather than to desired state in general.
+`schema diff` takes its sources through `--from`/`--to` and `schema test`
+through `--root-dir`; neither resolves `oci://`, and neither registers
+`--plain-http`. Pull the artifact with `ptah schema pull` and pass the file if
+you need one of those two.
+
+`schema inspect` is the one that materializes rather than parses: the artifact
+is pulled to a canonical HCL file, that file is materialized on the
+destructively reset `--dev-url` database, and the result is introspected — so
+its output is normalized by a real database of the target dialect, exactly as
+it is for a local schema file. The output is byte-identical to inspecting the
+same artifact after `ptah schema pull`.
+
+```bash
+ptah schema inspect \
+  --schema-file "$SCHEMA" \
+  --dev-url "$DEV_DATABASE_URL"
+```
+
+The Atlas-compatible `ptah-compat schema inspect --url` deliberately does not
+accept `oci://`, and refuses it with the community binary's own
+`sql/sqlclient: unknown driver "oci"`. That surface's contract is to match the
+pinned community binary, which has no `oci://` driver.
 
 ## Compare and check drift
 

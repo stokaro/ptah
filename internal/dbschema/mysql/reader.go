@@ -4,12 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -433,11 +433,18 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 // 26.7.0, where `f_full(a INT, b VARCHAR(10)) RETURNS varchar(20)` reports
 // three rows: (0, NULL, varchar(20)), (1, a, int), (2, b, varchar(10)).
 //
-// Volatility is derived from IS_DETERMINISTIC, the inverse of the mapping the
-// renderer applies. The renderer emits DETERMINISTIC only for IMMUTABLE, so
-// IS_DETERMINISTIC = YES reads back as IMMUTABLE and NO as VOLATILE. That
-// round-trips every value the renderer can produce; a STABLE declaration lands
-// on VOLATILE, which the comparator normalizes rather than reporting as drift.
+// Volatility is derived from the two catalog columns the renderer encodes it
+// into, IS_DETERMINISTIC and SQL_DATA_ACCESS. The mapping and the measurements
+// that force it live in [mysqlroutine.VolatilityFromCatalog], next to the
+// [mysqlroutine.Characteristic] it inverts, because the two halves drifting
+// apart is exactly the defect this replaces: reading only IS_DETERMINISTIC
+// reconstructed every non-deterministic routine as VOLATILE, so a declared
+// STABLE function reported `volatility: VOLATILE -> STABLE` and planned the
+// same destructive drop and create on every apply, forever. Measured on MySQL
+// 26.7.0 and MariaDB 12.3.2, the diff was still there after a second apply.
+//
+// A body the connected account may not see is refused rather than reported as
+// empty; see [errFunctionBodyHidden].
 func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 	parameters, err := r.readRoutineParameters(dbName)
 	if err != nil {
@@ -449,8 +456,9 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 			ROUTINE_NAME,
 			DTD_IDENTIFIER,
 			IS_DETERMINISTIC,
+			SQL_DATA_ACCESS,
 			SECURITY_TYPE,
-			COALESCE(ROUTINE_DEFINITION, ''),
+			ROUTINE_DEFINITION,
 			COALESCE(ROUTINE_COMMENT, '')
 		FROM information_schema.ROUTINES
 		WHERE ROUTINE_SCHEMA = ?
@@ -468,67 +476,89 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 		var (
 			fn              types.DBFunction
 			isDeterministic string
+			sqlDataAccess   string
+			body            sql.NullString
 		)
-		if err := rows.Scan(&fn.Name, &fn.Returns, &isDeterministic, &fn.Security, &fn.Body, &fn.Comment); err != nil {
+		if err := rows.Scan(
+			&fn.Name, &fn.Returns, &isDeterministic, &sqlDataAccess,
+			&fn.Security, &body, &fn.Comment,
+		); err != nil {
 			return nil, err
 		}
+		if !body.Valid {
+			return nil, hiddenRoutineBodyError(dbName, fn.Name)
+		}
+		fn.Body = body.String
 		fn.Schema = dbName
 		fn.Language = "sql"
-		fn.Returns = normalizeRoutineType(fn.Returns)
+		fn.Returns = mysqlroutine.NormalizeType(fn.Returns)
 		fn.Parameters = parameters[fn.Name]
-		fn.Volatility = "VOLATILE"
-		if strings.EqualFold(isDeterministic, "YES") {
-			fn.Volatility = "IMMUTABLE"
-		}
+		fn.Volatility = mysqlroutine.VolatilityFromCatalog(isDeterministic, sqlDataAccess)
 		functions = append(functions, fn)
 	}
 	return functions, rows.Err()
 }
 
-// integerRoutineTypes are the types whose parenthesized argument is a display
-// width rather than a size. Everything else -- varchar(20), decimal(10,2) --
-// carries meaning in the parentheses and is left alone.
-var integerRoutineTypes = []string{"tinyint", "smallint", "mediumint", "int", "bigint"}
-
-// normalizeRoutineType strips the legacy integer display width from a catalog
-// type so the two engines this reader serves answer with one spelling.
+// hiddenRoutineBodyError refuses a read whose function bodies the connected
+// account may not see.
 //
-// Measured on the same declaration, `f1(a int) RETURNS int`: MySQL 26.7.0
-// reports DTD_IDENTIFIER `int`, MariaDB 10.11.18 reports `int(11)`. Without
-// this the identical schema converges on MySQL and reports a permanent
-// `parameters, returns` diff on MariaDB -- the engines disagreeing with each
-// other, not the operator disagreeing with either.
+// information_schema.ROUTINES reports ROUTINE_DEFINITION as NULL, rather than
+// omitting the row, when the account may see that a routine exists but lacks
+// the privilege to inspect another definer's body. Measured on MySQL 26.7.0 and
+// MariaDB 12.3.2 with an account holding only SELECT and EXECUTE on the
+// database, every function it could name came back with a NULL body.
 //
-// The width is dropped, not the rest: `int(11) unsigned` keeps its unsigned.
-func normalizeRoutineType(dataType string) string {
-	trimmed := strings.TrimSpace(dataType)
-	open := strings.Index(trimmed, "(")
-	if open < 0 {
-		return trimmed
-	}
-	base := strings.TrimSpace(trimmed[:open])
-	if !slices.Contains(integerRoutineTypes, strings.ToLower(base)) {
-		return trimmed
-	}
-	closing := strings.Index(trimmed[open:], ")")
-	if closing < 0 {
-		return trimmed
-	}
-	suffix := strings.TrimSpace(trimmed[open+closing+1:])
-	if suffix == "" {
-		return base
-	}
-	return base + " " + suffix
+// Coalescing that to the empty string turned "I am not allowed to know" into
+// "the author wrote nothing". [compare.FunctionDefinitions] then reported body
+// drift against every desired function, and the planner answered it with the
+// destructive DROP-then-CREATE pair -- so an account that may alter routines
+// but not read them would replace a function that already matched, using a body
+// it had never been able to compare against. The failure is silent and it
+// destroys someone else's work, which is why this refuses the read instead of
+// returning a value it knows is wrong.
+//
+// The trade is deliberate and it is a narrowing: a read that used to return a
+// fabricated body now returns an error naming the routine and the privilege.
+// Reporting a schema this account cannot actually read was never a capability.
+func hiddenRoutineBodyError(dbName, routine string) error {
+	return fmt.Errorf(
+		"cannot read the body of function %s.%s: information_schema reports its "+
+			"ROUTINE_DEFINITION as NULL, which means this account may see the routine "+
+			"but not inspect another definer's body. Comparing against it would report "+
+			"drift that is not there and plan a replacement of a function this account "+
+			"cannot read. Grant SHOW_ROUTINE (or connect as the routine's definer), or "+
+			"exclude the schema from this operation",
+		dbName, routine)
 }
 
-// readRoutineParameters returns the rendered argument list of every function in
+// readRoutineParameters returns the rendered argument list of every FUNCTION in
 // dbName, keyed by function name. See readFunctions for why ordinal 0 is
 // skipped.
+//
+// The ROUTINE_TYPE filter is what restricts the rows to functions, and it is
+// load-bearing rather than tidiness. MySQL and MariaDB let one schema hold a
+// procedure and a function of the same name -- they are different routine
+// types -- and information_schema.PARAMETERS keys both by SPECIFIC_NAME. A
+// query filtered only by schema and ordinal therefore returned both sets under
+// one key and appended them into the function's signature. Measured on MySQL
+// 26.7.0 with `dual_name(a INT) RETURNS int` beside
+// `dual_name(IN p_x VARCHAR(50), IN p_y DECIMAL(10,2))`, the old query returned
+// three rows for that name, and the function's reconstructed parameters became
+// `a int, p_x varchar(50), p_y decimal(10,2)` -- a signature it never had, and
+// therefore parameter drift that no apply could ever resolve.
+//
+// The filter is PARAMETERS' own ROUTINE_TYPE column rather than a join onto
+// ROUTINES, because a join cannot separate them: SPECIFIC_NAME is the SAME
+// string for the procedure and the function, so joining on (schema,
+// SPECIFIC_NAME) matches the procedure's parameter rows against the function's
+// ROUTINES row and lets every one of them through. Measured: the joined form
+// still produced `a int, p_x varchar(50), p_y decimal(10,2)` on both engines.
 func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error) {
 	query := `
 		SELECT SPECIFIC_NAME, PARAMETER_NAME, DTD_IDENTIFIER
 		FROM information_schema.PARAMETERS
 		WHERE SPECIFIC_SCHEMA = ?
+		AND ROUTINE_TYPE = 'FUNCTION'
 		AND ORDINAL_POSITION > 0
 		ORDER BY SPECIFIC_NAME, ORDINAL_POSITION`
 
@@ -544,7 +574,7 @@ func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error)
 		if err := rows.Scan(&routine, &name, &dataType); err != nil {
 			return nil, err
 		}
-		declarations[routine] = append(declarations[routine], name+" "+normalizeRoutineType(dataType))
+		declarations[routine] = append(declarations[routine], name+" "+mysqlroutine.NormalizeType(dataType))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

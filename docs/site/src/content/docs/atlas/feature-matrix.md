@@ -76,8 +76,8 @@ Across the 180 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 110 |
-| Ptah supports it with a stated limitation | 49 |
+| Ptah supports it fully | 111 |
+| Ptah supports it with a stated limitation | 48 |
 | Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 34 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
@@ -144,7 +144,7 @@ seven of them as open capabilities regardless.
 | Dev-database rehearsal before apply | ✅ | ✅ | ✅ | Dev DB reset, target schema recreated, exact plan rehearsed, under `--dry-run` too; dev==target and failed rehearsal abort. A non-database `--to` requires `--dev-url`. |
 | Drift detection against desired schema | ✅ | ❌ | ✅ | Native `ptah schema drift`: `--severity`, `--exit-code`, `--ignore`, text/json/github-actions. Atlas Cloud drift monitoring is out of scope. |
 | Exclude selector that matches nothing is diagnosed | ✅ | ❌ | ❔ | A selector naming no object warns on inspect and diff and exits 1 on apply, and only a filter that asked it may call it empty; a PTAH_ATLAS opt-in restores the permissive behavior. |
-| Exclude subtracts a named schema and its contents | ✅ | ✅ | ❔ | A one-part selector names a schema, which leaves with every object in it. Schemas were read and rendered but never asked, so `--exclude app` refused as unmatched and still planned app's drops. |
+| Exclude subtracts a named schema and its contents | ✅ | ✅ | ❔ | A one-part selector names a schema by catalog or quoted spelling, and it leaves with all contents. Case-preserving names remain addressable without collapsing case or quoted whitespace. |
 | Exclude subtracts sequences, domains, composite types and range types | ✅ | ❔ | ❔ | `--exclude` reaches the same object kinds `--include` selects. Before, these four were read and cloned but never offered to a pattern, so excluding one was a silent no-op that still planned its DROP. |
 | Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply registers the shared helper set, so {{ json . }} renders an Atlas-shaped document. schema diff registers only sql, as the community binary does. |
 | Inspect `--exclude` field selectors | 🟡 | ❌ | ❔ | [type=extension].version, and .comment on table, view and materialized_view; .* names all of them. A field Ptah cannot subtract is refused, not ignored as the community binary does. |
@@ -199,7 +199,7 @@ seven of them as open capabilities regardless.
 | Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state. Dry-run reports distinguish preflight rejection from attempted rollback. Registry flags remain waivers. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
-| Transaction modes (`--tx-mode` file/all/none) | 🟡 | ✅ | ✅ | Targets Atlas CE v1.3.0 per-file behavior; conformance evidence is pending. Txtar section modes are a Ptah extension; #887 tracks revision bookkeeping. |
+| Transaction modes (`--tx-mode` file/all/none) | 🟡 | ✅ | ✅ | File/all/none behavior is tested; none-mode partial progress is pinned both ways against Atlas CE v1.3.0. Txtar section modes remain a Ptah safety extension. |
 | Verb `migrate ls` | 🟡 | ❌ | ✅ | Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. |
 | Verb `migrate show` | ❌ | ❌ | ✅ | Beyond the CE pin: prints a migration's SQL in Atlas; no compat or native Ptah verb exists, and the gap register triages it as future work. |
 
@@ -266,14 +266,14 @@ seven of them as open capabilities regardless.
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
 | Extensions | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB preserve non-default schemas. CockroachDB and Spanner refuse placement before SQL. Other targets name unsupported extensions without executing them; Atlas CE refuses blocks. |
-| Functions | 🟡 | ❌ | ✅ | `schema render` and `schema apply` both emit CREATE FUNCTION for PostgreSQL, CockroachDB and YugabyteDB. Spanner names the function as skipped in both. MySQL/MariaDB drop it silently. |
-| MySQL and MariaDB | 🟡 | ✅ | ✅ | Matviews are an explicit error on both `render` and `apply`; extensions and MariaDB SEQUENCE objects get a not-supported comment on both. Functions, domains, roles/grants and RLS still drop silently. |
+| Functions | 🟡 | ❌ | ✅ | `schema render` and `schema apply` emit CREATE FUNCTION for PostgreSQL, CockroachDB, YugabyteDB, MySQL and MariaDB; the MySQL family reads them back and plans them too. Spanner skips. |
+| MySQL and MariaDB | 🟡 | ✅ | ✅ | Stored functions render, read back and plan. Matviews are an explicit error; extensions and MariaDB SEQUENCE objects get a not-supported comment. Domains, roles/grants and RLS drop silently. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit roles, grants and RLS; Spanner names them as skipped on `render` and `apply` alike. Atlas prices this as Pro; CE no-ops `role` silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skip comments; foreign keys render. SERIAL hard-errors, no dedicated driver (PostgreSQL pgx path), no live container or live test. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Every accepted spelling renders the same DDL, and SQL Server is in `schema render`'s default dialect list and its `--dialect` help. No sequences, RLS, roles/grants or matviews. |
-| SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops do emit a full rebuild; type, nullability, default and uniqueness changes fail with "modifying columns ... requires a table rebuild plan". PG-only objects error one at a time. |
+| SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops rebuild; other shape changes fail closed. Virtual tables preserve exact identity, and indexes on module-owned shadow tables are refused. |
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit CREATE SEQUENCE. MySQL, MariaDB, ClickHouse and Spanner name it as skipped; SQLite and SQL Server still drop it silently. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | Every accepted spelling of an engine renders the same trigger DDL; Spanner names it skipped. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading it. |
@@ -316,11 +316,11 @@ control — come from the registry, not from Ptah. The full workflow is on
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❌ | On migrations push and up only. It checks the directory against the ptah.sum inside the same artifact, so content rewritten with its sum passes. |
+| Artifact integrity check (`--verify-sum`) | 🟡 | ➖ | ❌ | On migrations push (local, pre-upload) and up/down/status (pulled). A sum checks a directory against the sum stored beside it, so an `oci://` tag source proves internal consistency only; pin a digest. |
 | Declarative reference data | ✅ | ❌ | ✅ | //ptah:schema:data rows diffed by key into a reversible data migration. Atlas lists declarative data management as a Pro feature. |
 | Digest pinning and write-once version tags | ✅ | ➖ | ❔ | Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
-| oci:// as a `--schema-file` desired-state source | 🟡 | ❌ | ✅ | Accepted by schema render/compare/drift/plan/apply and migrations plan/generate. schema inspect rejects it, and only three of those expose `--plain-http`. |
+| oci:// as a `--schema-file` desired-state source | ✅ | ❌ | ✅ | Accepted by schema render, export, inspect, compare, drift, plan, apply and push, plus migrations plan and generate. All ten expose `--plain-http`, and a walk of the command tree gates the pairing. |
 | Referrer attachments: lint, plan, deployment reports | 🟡 | ❌ | ❔ | lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest. `oci referrers` lists descriptors only; no flag downloads the payload. |
 | Registry-backed distribution: `oci://` vs `atlas://` | ✅ | ❌ | ✅ | `atlas://` functions — publish, pull, digest-pin, run migrations directly, schemas via `--schema-file` — over any OCI registry, no account. See [OCI registry artifacts](../../operate/oci-registry/). |
 

@@ -9,9 +9,9 @@ This document summarizes the complete implementation of the integration test sui
 ### 🏗️ Infrastructure
 
 - **Docker Compose Setup** (`docker-compose.yaml`)
-  - PostgreSQL 16 container with health checks
-  - MySQL 8 container with native password authentication
-  - MariaDB 10.11 container with health checks
+  - PostgreSQL 18 container with health checks
+  - MySQL 26.7 container with native password authentication
+  - MariaDB 12.3 container with health checks
   - Test runner service with proper dependencies
   - Volume management for data persistence
   - Test profile for isolated execution
@@ -143,9 +143,9 @@ The integration test suite covers:
 - ✅ Partial failure recovery
 
 ### Multi-Database Support
-- ✅ PostgreSQL 16
-- ✅ MySQL 8
-- ✅ MariaDB 10.11
+- ✅ PostgreSQL 18
+- ✅ MySQL 26.7
+- ✅ MariaDB 12.3
 
 ## 🚀 Usage Examples
 

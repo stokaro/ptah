@@ -57,6 +57,134 @@ The SQLite renderer and planner support:
 Introspection ignores SQLite system objects (names starting with `sqlite_`)
 and Ptah's own revision table.
 
+## Virtual tables
+
+A virtual table is read as a virtual table, not as an ordinary one.
+`ptah db read` emits the statement that created it:
+
+```bash
+ptah db read --db-url "sqlite://app.db"
+```
+
+```sql
+CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
+```
+
+On the compatibility surface the SQL format has to be asked for —
+`ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'`.
+Without it, `schema inspect` returns HCL, as the community CLI does, and
+neither HCL nor JSON has a virtual-table construct: the table renders as
+`table "docs" { schema = schema.main }` with no columns, which is what the
+pinned community binary emits for the same object and which does not replay.
+
+The document is not changed — matching the community binary is what the surface
+is for — but the loss is reported rather than left silent:
+
+- ordinarily, a note on standard error names each virtual table the rendering
+  dropped and points at `--format '{{ sql . }}'`, leaving standard output and
+  the exit code untouched;
+- under `PTAH_ATLAS_STRICT_COMPAT=1` the same condition is refused, because
+  strict mode owns the process output contract. The SQL format is unaffected.
+
+The module name and the text between its parentheses are carried verbatim, so
+tokenizer options, quoted values and commas inside quoted arguments survive.
+Applying that output to an empty database recreates the same object — a
+full-text index that answers `MATCH`, not a plain table of the same name.
+
+Nothing in the reader names a module. `PRAGMA table_list` classifies every
+table as `table`, `virtual` or `shadow`, so `fts3`, `fts4`, `fts5`, `rtree`,
+`rtree_i32`, `geopoly`, `fts5vocab`, `dbstat` and any module a build registers
+are all read the same way.
+
+The shadow tables a module maintains — `docs_data`, `docs_idx`, `docs_config`
+and their siblings — are not reported at all. They are the module's own
+bookkeeping, and applying a `CREATE TABLE` for one creates a table SQLite
+would have created itself, which then collides when the virtual table is
+created. Suppression comes from SQLite's classification rather than from the
+names, so a `docs_data` an operator created is still reported as their table.
+
+An explicit user-created index on a shadow table is refused during the read.
+Ptah cannot expose the module-owned table as an ordinary desired object, and
+omitting the index would claim a complete schema that cannot be replayed.
+SQLite's own autoindexes have no stored `CREATE INDEX` statement and remain
+internal to the module.
+
+## Virtual tables in a comparison
+
+No schema **document** can declare a virtual table. Go annotations, HCL, YAML
+and `.sql` schema files have no syntax for one, and the native SQL schema
+parser says so out loud: feeding it `ptah db read` output for a database
+holding a virtual table fails with `unsupported CREATE target: VIRTUAL`. But
+`schema diff` also accepts a **database URL** as its desired side, read by the
+same reader, so a desired table can itself be virtual.
+
+Each name either side calls virtual is classified, and only the answers a plan
+cannot express are refused:
+
+| desired side | database side | outcome |
+| --- | --- | --- |
+| does not name it | virtual | **refused** — a document could not have asked for it to be kept, so silence is not a request to drop |
+| ordinary table | virtual | **refused** — two kinds of object under one name |
+| virtual | ordinary table | **refused** — the same collision, mirrored |
+| virtual, different declaration | virtual | **refused** — no `ALTER VIRTUAL TABLE`, so converging destroys the index |
+| virtual, same declaration | virtual | synced |
+| virtual | absent | planned as `CREATE VIRTUAL TABLE` |
+
+The module name is folded the way SQLite folds an identifier; the module
+arguments are compared verbatim, because only the module interprets them and
+normalizing whitespace would equate two different tokenizers.
+Catalog identifier bytes are preserved too: a quoted table named `" docs "`
+is distinct from `docs`, and an authorized removal targets only the former.
+
+Every verb that compares a live database is covered — `ptah schema apply`,
+`diff`, `compare`, `plan`, `drift`, and `ptah-compat schema diff`,
+`schema apply` and `migrate diff`. Reading is untouched: `ptah db read` and
+`ptah-compat schema inspect` compare nothing.
+
+Say which one you meant to proceed:
+
+```bash
+# keep it: both sides ignore the table, the rest converges
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --exclude docs
+
+# drop it: plans DROP TABLE, destroying the index and the module's shadow tables
+PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1 \
+  ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql
+```
+
+An unset variable and an explicit false both keep the refusal. A value that is
+not a boolean is a configuration error. An explicit SQLite URL or dialect is
+validated before project configuration and command early returns. A SQLite URL
+selected by project configuration is validated immediately after the effective
+configuration merge and before source loading, path resolution, database or SQL
+work. The public migration generator has no project-config merge and validates
+before resolving filesystem paths.
+`migrations checkpoint --dialect sqlite` validates before requiring the shadow
+URL, then validates the URL-derived dialect again when the URL exists.
+Non-SQLite operations do not consult the variable. The opt-in covers only the
+first row of the table above — a kind collision and a changed declaration stay
+refused however it is set.
+
+## Virtual table limitations
+
+- Shadow tables belonging to a module the reading build does not register
+  cannot be identified, because only that module knows which suffixes are its
+  own. SQLite reports them as ordinary tables and so does Ptah. The virtual
+  table itself is still recognized and still round-trips. This is permanent
+  because it is SQLite's own answer: no catalog field distinguishes a shadow
+  table without the module.
+- A user-created index on a recognized shadow table is refused rather than
+  omitted. Ptah cannot replay that index without exposing the module-owned
+  table as an ordinary schema object.
+- A schema document cannot declare a virtual table, so a comparison whose
+  desired side is a document can only refuse or be scoped past one. Two
+  databases can be compared and found synced, but a changed declaration is
+  still refused rather than converged: recreating a virtual table destroys its
+  contents, and Ptah does not parse module arguments to tell an equivalent
+  declaration from a changed one. Declaring virtual tables in desired state and
+  planning a recreate are tracked in
+  [#1028](https://github.com/stokaro/ptah/issues/1028).
+
 ## Rebuild-required changes
 
 Ptah's rebuild planning is intentionally conservative: where it cannot prove

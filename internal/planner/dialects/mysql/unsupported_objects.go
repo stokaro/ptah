@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -95,10 +96,21 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 // planFunctions plans the create, replace and drop of stored functions for a
 // target that hosts them.
 //
-// A modified function is planned as its full CREATE node, exactly as an added
-// one is: the MySQL-family renderer prefixes every CREATE FUNCTION with
-// DROP FUNCTION IF EXISTS, because neither engine has the single-statement
-// replace form the PostgreSQL planner leans on, so one node covers both cases.
+// A modified function is planned as TWO nodes: a DROP FUNCTION IF EXISTS
+// followed by the full CREATE. Neither engine has the single-statement replace
+// form the PostgreSQL planner leans on -- `CREATE OR REPLACE FUNCTION` is
+// Error 1064 on MySQL 26.7.0 -- so the pair is what a replacement is here.
+//
+// The drop is planned rather than rendered inside the CREATE. It used to be
+// the first line of VisitCreateFunction, which made one node render two
+// statements, and an element of GetOrderedCreateStatements holding two
+// statements is executed as one string by the compatibility dev-database path,
+// where the driver's default DSN refuses it. Emitting the drop as its own node
+// keeps every element a single statement without giving up the replacement.
+//
+// An ADDED function gets no drop. Nothing of that name is there to replace,
+// and the IF EXISTS that made the old unconditional prefix safe was hiding
+// that distinction rather than expressing it.
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.
@@ -116,9 +128,33 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 		if !ok {
 			continue
 		}
+		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 		node := fromschema.FromFunction(fn)
-		node.SetComment(fmt.Sprintf("Modify function %s: %s",
-			fn.Name, strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")))
+		// The two halves of a replacement travel together or not at all.
+		//
+		// The renderer answers a CREATE FUNCTION whose language this target
+		// cannot run with a named skip comment and no DDL. Planning the DROP
+		// anyway made `schema apply` execute the drop, create nothing, and
+		// report success -- the operator asked for a change and got a deletion.
+		// Measured on MySQL 26.7.0 and MariaDB 12.3.2: zero rows in
+		// information_schema.ROUTINES afterwards. The shape needs no exotic
+		// schema, because Canonicalize defaults an omitted `language=` to
+		// plpgsql, so an ordinary annotation reaches it.
+		//
+		// The CREATE node is still emitted, and that is deliberate: it renders
+		// the skip comment, so the plan says which function was left alone
+		// instead of silently omitting it. Nothing executable is produced.
+		if !mysqlroutine.RunsLanguage(fn.Language) {
+			node.SetComment(fmt.Sprintf(
+				"Function %s differs (%s) but its language is not one this target runs; "+
+					"left unchanged, and NOT dropped", fn.Name, changes))
+			result = append(result, node)
+			continue
+		}
+		result = append(result, ast.NewDropFunction(fn.Name).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Replace function %s: %s", fn.Name, changes)))
+		node.SetComment(fmt.Sprintf("Modify function %s: %s", fn.Name, changes))
 		result = append(result, node)
 	}
 	for _, name := range diff.FunctionsRemoved {

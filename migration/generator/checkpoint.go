@@ -11,7 +11,9 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -259,8 +261,20 @@ type CheckpointFromShadowOptions struct {
 // as a checkpoint migration body pair (up creates everything, down drops it).
 // The migration directory is the source of truth, so no target database is
 // needed. The shadow database is dropped clean before the replay and its
-// migration metadata is removed before introspection.
+// migration metadata is removed before introspection. For a SQLite shadow,
+// malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused
+// before the shadow connection or replay.
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
+	dialect := opts.Dialect
+	if resolvedDialect, dialectErr := atlasurl.DialectFromURL(opts.ShadowDatabaseURL); dialectErr == nil {
+		dialect = resolvedDialect
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return "", "", fmt.Errorf(
+			"checkpoint generation failed: validate SQLite virtual-table drop toggle: %w",
+			err,
+		)
+	}
 	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()

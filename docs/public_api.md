@@ -287,6 +287,16 @@ plan records the migration-directory snapshot used during planning and refuses
 publication with `generator.ErrMigrationDirectoryChanged` if that history
 changed.
 
+When its URL or connection selects SQLite, `PlanMigration` validates
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before resolving `OutputDir`. A malformed
+value therefore fails before filesystem work; non-SQLite plans do not consult
+the variable.
+
+`GenerateCheckpointFromShadow` and `VerifyBaselineShadow` apply the same
+SQLite-only validation before connecting to or mutating a shadow database.
+The checkpoint path therefore cannot drop and replay a shadow database before
+reporting a malformed value.
+
 `migration/generator.PlanBidirectionalSchemaDiff` is the lower-level planning
 boundary for callers that already hold a schema diff. Its input binds the diff,
 desired and current schemas, normalized dialect capabilities, and concurrent

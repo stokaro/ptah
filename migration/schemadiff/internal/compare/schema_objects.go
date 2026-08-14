@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -82,10 +83,80 @@ import (
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func Functions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	FunctionsWithDialect(generated, database, diff, "")
+}
+
+// routineIdentityKey returns the key under which two spellings of one stored
+// routine name are the same routine.
+//
+// Stored-routine names are case-insensitive on MySQL and MariaDB, and that is
+// independent of the table-name rules [identifier.Semantics] carries: both
+// engines report TableNames as ComparisonExact, and lower_case_table_names does
+// not govern routines. Measured on MySQL 26.7.0, with `foo` in the catalog,
+// `SELECT Foo(1)` and `SELECT FOO(1)` both resolve to it, `DROP FUNCTION IF
+// EXISTS Foo` drops it, and `CREATE FUNCTION BAR` is refused with
+// Error 1304 "FUNCTION BAR already exists" while `bar` is present.
+//
+// Keying routines by their exact spelling therefore made live `foo` and desired
+// `Foo` two objects: the diff carried an addition AND a removal, the planner
+// created `Foo` and then executed `DROP FUNCTION IF EXISTS foo`, which resolves
+// to the very routine it had just created, and a successful apply left the
+// database with no function at all. Measured on both engines: zero rows in
+// information_schema.ROUTINES afterwards.
+func routineIdentityKey(name, dialect string) string {
+	if isMySQLFamily(dialect) {
+		// The rule itself is mysqlroutine.IdentityKey, not a ToLower written
+		// here, because the declaration validator in core/renderer has to reach
+		// the same answer: a pair this folds together is a pair that target
+		// cannot host, and it must be refused rather than silently reduced to
+		// one by this map.
+		return mysqlroutine.IdentityKey(name)
+	}
+	return name
+}
+
+// qualifiedRoutineIdentityKey folds ONLY the routine component of a name that
+// may carry a schema.
+//
+// The scope of the folding rule matters as much as the rule. Routine names are
+// case-insensitive on these engines; SCHEMA names are not -- they follow
+// lower_case_table_names, which is 0 on both pinned images, and the identifier
+// semantics already describe them as ComparisonExact. Folding the whole string
+// applied the routine rule to the database name too.
+//
+// That was not symmetrical, which is what made it a defect rather than merely
+// a wide rule: the desired side folded `Sales.Foo` whole, while the database
+// side folded only [types.DBFunction.Name] and left `Schema` exact. The two
+// identities then disagreed on the schema component, so an unchanged function
+// was reported as BOTH added and removed and the plan tried to create a
+// function that was already there.
+//
+// Parsing is delegated to tableref so a routine whose own name contains a dot,
+// quoted as `"tenant.data"`, is not mistaken for a schema-qualified one.
+// The key is built through tableref.Canonical on BOTH sides so the two spell
+// an unqualified name the same way by construction; findDatabaseFunction
+// re-parses it and looks the qualified form up the same way.
+func qualifiedRoutineIdentityKey(name, dialect string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return tableref.Canonical("", routineIdentityKey(name, dialect))
+	}
+	return tableref.Canonical(ref.Schema, routineIdentityKey(ref.Name, dialect))
+}
+
+// FunctionsWithDialect compares functions using the target's routine identity
+// and type-spelling rules. See [routineIdentityKey] and
+// [FunctionDefinitionsWithDialect] for what the dialect decides.
+func FunctionsWithDialect(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
 	// Build lookup maps for function comparison
 	generatedFunctionMap := make(map[string]goschema.Function)
 	for _, fn := range generated.Functions {
-		generatedFunctionMap[fn.Name] = fn
+		generatedFunctionMap[qualifiedRoutineIdentityKey(fn.Name, dialect)] = fn
 	}
 
 	// A generated function's name may be schema-qualified -- the HCL parser
@@ -98,23 +169,28 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
 	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
 	for _, fn := range database.Functions {
-		databaseFunctionsByName[fn.Name] = append(databaseFunctionsByName[fn.Name], fn)
-		databaseFunctionsByQualifiedName[fn.QualifiedName()] = fn
+		key := routineIdentityKey(fn.Name, dialect)
+		databaseFunctionsByName[key] = append(databaseFunctionsByName[key], fn)
+		// The schema keeps its own spelling; only the routine half is folded.
+		databaseFunctionsByQualifiedName[tableref.Canonical(fn.Schema, key)] = fn
 	}
 
 	matchedDatabaseFunctions := make(map[string]struct{}, len(database.Functions))
-	for functionName, generatedFunction := range generatedFunctionMap {
+	for functionKey, generatedFunction := range generatedFunctionMap {
 		databaseFunction, exists := findDatabaseFunction(
-			functionName,
+			functionKey,
 			databaseFunctionsByName,
 			databaseFunctionsByQualifiedName,
 		)
 		if !exists {
-			diff.FunctionsAdded = append(diff.FunctionsAdded, functionName)
+			// The desired spelling, never the folded key: the planner resolves
+			// this name back to its declaration by exact match, and the
+			// rendered DDL must carry what the operator wrote.
+			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedFunction.Name)
 			continue
 		}
 		matchedDatabaseFunctions[databaseFunction.QualifiedName()] = struct{}{}
-		functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
+		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 		}
@@ -143,25 +219,34 @@ func FunctionsWithSemantics(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
 	semantics = semantics.Normalize("")
 	if semantics.DefaultSchema == "" {
-		Functions(generated, database, diff)
+		FunctionsWithDialect(generated, database, diff, dialect)
 		return
 	}
 
 	generatedFunctions := make(map[tableIdentity]goschema.Function, len(generated.Functions))
 	generatedNames := make(map[tableIdentity]string, len(generated.Functions))
 	for _, function := range generated.Functions {
-		identity := newQualifiedTableIdentity(function.Name, semantics)
+		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
+		// string lowercased the SCHEMA too, while the database loop below folds
+		// only the routine name and leaves function.Schema to the identifier
+		// semantics. The two sides then disagreed about the schema component of
+		// `Sales.Foo`, so an unchanged function was reported as both added and
+		// removed and the plan tried to create one that already existed.
+		identity := newQualifiedTableIdentity(
+			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
 		generatedFunctions[identity] = function
 		generatedNames[identity] = function.Name
 	}
 	databaseFunctions := make(map[tableIdentity]types.DBFunction, len(database.Functions))
 	databaseNames := make(map[tableIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
-		identity := newTableIdentity(function.Schema, function.Name, semantics)
+		identity := newTableIdentity(
+			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
 		databaseFunctions[identity] = function
 		databaseNames[identity] = function.QualifiedName()
 	}
@@ -172,7 +257,7 @@ func FunctionsWithSemantics(
 			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedNames[identity])
 			continue
 		}
-		functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
+		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 		}
@@ -487,6 +572,31 @@ func MaterializedViewsWithSemantics(
 //  1. DROP FUNCTION (with CASCADE if dependencies exist)
 //  2. CREATE OR REPLACE FUNCTION with new definition
 func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunction) difftypes.FunctionDiff {
+	return FunctionDefinitionsWithDialect(genFunction, dbFunction, "")
+}
+
+// FunctionDefinitionsWithDialect compares two function definitions using the
+// target's own routine spelling rules.
+//
+// The dialect is needed because a routine type has two spellings and only the
+// target knows they are one type. On the MySQL family the operator writes
+// `returns="INTEGER"`, [goschema.Function.Canonicalize] lowercases it to
+// `integer`, and information_schema answers `int` -- both engines resolve the
+// synonym themselves before recording it. Comparing those exactly reported
+// `returns: int -> integer` on a function that already matched, and the planner
+// answered with another destructive drop and create, on every inspection.
+// Measured on MySQL 26.7.0 and MariaDB 12.3.2, the same declaration also
+// produced `parameters: a int -> a integer`.
+//
+// The normalization runs on BOTH sides through the one function the reader also
+// uses, [mysqlroutine.NormalizeType]. Normalizing only the catalog was the
+// original defect: it made the two engines agree with each other while leaving
+// the desired side speaking a third spelling.
+func FunctionDefinitionsWithDialect(
+	genFunction goschema.Function,
+	dbFunction types.DBFunction,
+	dialect string,
+) difftypes.FunctionDiff {
 	functionDiff := difftypes.FunctionDiff{
 		FunctionName: genFunction.Name,
 		Changes:      make(map[string]string),
@@ -499,6 +609,15 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 	// The DB-side read path already returns canonical case by construction,
 	// so we only normalize the gen side.
 	genFunction.Canonicalize()
+
+	// After Canonicalize, not before: it lowercases Returns and Parameters, and
+	// the synonym table this resolves is keyed on the lowercase spelling.
+	if isMySQLFamily(dialect) {
+		genFunction.Returns = mysqlroutine.NormalizeType(genFunction.Returns)
+		genFunction.Parameters = mysqlroutine.NormalizeParameterList(genFunction.Parameters)
+		dbFunction.Returns = mysqlroutine.NormalizeType(dbFunction.Returns)
+		dbFunction.Parameters = mysqlroutine.NormalizeParameterList(dbFunction.Parameters)
+	}
 
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {

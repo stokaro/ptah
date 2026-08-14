@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1049,13 +1050,33 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for MySQL/MariaDB.
 //
-// The statement is preceded by DROP FUNCTION IF EXISTS because neither engine
-// offers the replace form Ptah's PostgreSQL renderer relies on for the same
-// node: `CREATE OR REPLACE FUNCTION f() RETURNS integer DETERMINISTIC RETURN 2`
-// is Error 1064 on MySQL 26.7.0. MariaDB 10.11.18 does accept it, but the
-// drop-then-create pair is accepted by both, so the family shares one shape --
-// the same trade the trigger renderer above makes when a target lacks
-// capability.CreateOrReplaceTrigger.
+// # One statement, not two
+//
+// This renders the CREATE alone. It used to prefix every function with its own
+// `DROP FUNCTION IF EXISTS`, because neither engine offers the replace form
+// Ptah's PostgreSQL renderer relies on for the same node -- `CREATE OR REPLACE
+// FUNCTION f() RETURNS integer DETERMINISTIC RETURN 2` is Error 1064 on MySQL
+// 26.7.0 -- so a modified function needed the pair.
+//
+// Putting the pair in one visitor put two statements in one element of
+// [renderer.GetOrderedCreateStatements], and that list is not always split
+// before it is executed. [planner.GenerateSchemaDiffSQLStatements] runs
+// sqlutil.SplitSQLStatements over its output, which is why the planner path
+// worked; the compatibility dev-database path does not. `materializeOnDev`
+// passes each element unchanged to ExecuteSQL, and convertMySQLURL does not
+// enable go-sql-driver's multiStatements option, so materializing any desired
+// schema containing a function failed at the second statement. Measured on
+// both engines through dbschema.ConnectToDatabase with the default DSN:
+//
+//	Error 1064 (42000): ... right syntax to use near
+//	'CREATE FUNCTION `p_fn`(a INT) RETURNS int DETERMINISTIC ...' at line 2
+//
+// The drop a replacement still needs is now a separate node the planner emits
+// in front of this one; see planFunctions in the MySQL-family planner. That
+// keeps the invariant every other visitor already holds -- one node renders one
+// statement -- rather than making one caller compensate for one visitor.
+//
+// # The characteristic
 //
 // A characteristic is always emitted. With binary logging on and
 // log_bin_trust_function_creators off -- the MySQL 26.7.0 image's own defaults
@@ -1065,11 +1086,11 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 //	  -> Error 1418 (HY000): This function has none of DETERMINISTIC, NO SQL,
 //	     or READS SQL DATA in its declaration and binary logging is enabled
 //
-// Only those three satisfy the check. Measured on the same server,
-// MODIFIES SQL DATA and a bare NOT DETERMINISTIC are BOTH refused with the
-// same 1418, which is why a VOLATILE function maps to READS SQL DATA rather
-// than to the MODIFIES spelling its name suggests: the latter renders a
-// statement the engine will not accept.
+// Which characteristic encodes which volatility, and the measured grid of what
+// the server accepts, lives in [mysqlroutine.Characteristic]. It is written
+// there rather than here because the reader has to invert it, and the two
+// halves drifting apart is what made a declared STABLE function plan the same
+// destructive replacement on every apply.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	if !r.caps.Has(capability.Functions) {
 		r.notGenerated("CREATE FUNCTION", node.Name)
@@ -1077,61 +1098,97 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	}
 	// A routine body is written in a language, and MySQL and MariaDB run
 	// exactly one: SQL. A function declared LANGUAGE plpgsql is PostgreSQL
-	// procedural code, and no envelope makes it run here -- the shared
-	// integration fixture is the worked example, declaring
-	// `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, where the return
-	// type alone is Error 1064 on MySQL 26.7.0 before the body is even reached.
+	// procedural code, and no envelope makes it run here -- the worked example
+	// is `RETURNS VOID ... BEGIN PERFORM set_config(...); END;`, where the
+	// return type alone is Error 1064 on MySQL 26.7.0 before the body is even
+	// reached.
 	//
-	// So this skip is about the declaration, not the engine, and it says so.
-	// The distinction matters: `-- CREATE FUNCTION f1 not supported in MySQL`
-	// was false because MySQL hosts functions perfectly well (stokaro/ptah#929),
-	// and a target that declines every function would be the same lie in a new
-	// spelling. A function whose body this target can run still gets real DDL,
-	// which is what capability.Functions claims and what the live round trip
-	// proves.
-	if language := strings.ToLower(strings.TrimSpace(node.Language)); language != "" && language != "sql" {
-		r.w.WriteLinef("-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
+	// It stays a SKIP rather than becoming a refusal, and that was measured
+	// rather than assumed. A refusal breaks a workflow that works today:
+	// applying ONE schema across postgres, mysql and mariadb. Ptah has no way to
+	// scope a declared object to a dialect -- `//ptah:schema:function` accepts
+	// name, params, returns, language, security, volatility, body and comment,
+	// and internal/annotationmeta grants `platform.<dialect>.<key>` overrides to
+	// exactly three directives (field, embedded, table), none of which is a
+	// function. An unknown attribute is a hard parse error, so `platform=` or
+	// `dialect=` cannot even be written. Until a declaration can say "this
+	// object is PostgreSQL's", refusing here would leave an operator with a
+	// multi-dialect schema no way to express what they already express by
+	// declaring a plpgsql function and letting non-PostgreSQL targets pass it
+	// by. The only alternative available today is `exclude` in ptah.yaml, which
+	// is an operator-side filter at invocation, not a property of the
+	// declaration.
+	//
+	// What the message says is new, and it is the part worth keeping. The skip
+	// used to name only the language. [goschema.Function.Canonicalize] defaults
+	// an UNSET language to plpgsql -- PostgreSQL's default, baked into a
+	// dialect-neutral type -- so a function annotated without `language=` lands
+	// here too and is skipped when it should have been generated. Measured on
+	// MySQL 26.7.0 and MariaDB 12.3.2: `schema apply` exits 0 having created
+	// nothing, and the diff asks for the same function forever. That trap costs
+	// an afternoon to find, so the comment names it and names the one word that
+	// settles it.
+	//
+	// The message still never blames the engine. `-- CREATE FUNCTION f1 not
+	// supported in MySQL` was false because MySQL hosts functions perfectly well
+	// (stokaro/ptah#929); this is about the declaration, and it says so.
+	// The predicate is mysqlroutine.RunsLanguage rather than a comparison
+	// written here, because the MySQL-family planner has to reach the same
+	// answer: it must not plan the DROP half of a replacement whose CREATE half
+	// this branch is about to skip.
+	if !mysqlroutine.RunsLanguage(node.Language) {
+		language := strings.ToLower(strings.TrimSpace(node.Language))
+		r.w.WriteLinef(
+			"-- %s: CREATE FUNCTION %s declares language %s, which this target does not run; skipped.",
 			r.dialectUpper, escapeIdentifier(node.Name), language)
+		r.w.WriteLinef(
+			"--   If this body is SQL, declare language=\"sql\": an annotation that omits the")
+		r.w.WriteLinef(
+			"--   language is defaulted to plpgsql and is skipped here for the same reason.")
 		return nil
 	}
+	// Both refusals happen before anything is written. A value this target
+	// cannot represent must not reach the output at all: the planner emits a
+	// DROP for a replacement in front of this node, and a CREATE that is
+	// refused after that drop has already been rendered would leave a
+	// migration whose only effect is to delete the operator's function.
+	characteristic, err := mysqlroutine.Characteristic(node.Volatility)
+	if err != nil {
+		return &ptaherr.RenderError{
+			Dialect: r.dialect,
+			Err:     err,
+			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+		}
+	}
+	security, err := mysqlroutine.SecurityClause(node.Security)
+	if err != nil {
+		return &ptaherr.RenderError{
+			Dialect: r.dialect,
+			Err:     err,
+			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+		}
+	}
+	if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: r.dialect,
+			Err:     err,
+			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+		}
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s;", escapeQualifiedIdentifier(node.Name))
 
 	header := fmt.Sprintf("CREATE FUNCTION %s(%s) RETURNS %s",
 		escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
-	parts := []string{header, mysqlRoutineCharacteristic(node.Volatility)}
-	if security := mysqlRoutineSecurity(node.Security); security != "" {
+	parts := []string{header, characteristic}
+	if security != "" {
 		parts = append(parts, security)
 	}
 	parts = append(parts, terminateStatement(node.Body))
 	r.w.WriteLinef("%s", strings.Join(parts, " "))
 	return nil
-}
-
-// mysqlRoutineCharacteristic maps Ptah's PostgreSQL-shaped volatility onto the
-// MySQL-family characteristic that both engines accept under default binary
-// logging. See VisitCreateFunction for the measurements behind the mapping.
-func mysqlRoutineCharacteristic(volatility string) string {
-	if strings.EqualFold(strings.TrimSpace(volatility), "IMMUTABLE") {
-		return "DETERMINISTIC"
-	}
-	return "READS SQL DATA"
-}
-
-// mysqlRoutineSecurity renders the SQL SECURITY clause. An unset or
-// unrecognized value renders nothing so the server applies its own default
-// (DEFINER), rather than Ptah inventing a security context for the operator.
-func mysqlRoutineSecurity(security string) string {
-	switch strings.ToUpper(strings.TrimSpace(security)) {
-	case "DEFINER":
-		return "SQL SECURITY DEFINER"
-	case "INVOKER":
-		return "SQL SECURITY INVOKER"
-	default:
-		return ""
-	}
 }
 
 // VisitCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)

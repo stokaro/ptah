@@ -15,23 +15,9 @@
   "postUpdateOptions": [
     "gomodTidy"
   ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.golangci\\.yml$/",
-        "/^go/\\.golangci\\.yml$/"
-      ],
-      "matchStrings": [
-        "go:\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
-      ],
-      "depNameTemplate": "golang",
-      "datasourceTemplate": "golang-version",
-      "versioningTemplate": "semver"
-    }
-  ],
   "packageRules": [
     {
+      "description": "The Go toolchain is declared once, as the `toolchain` directive in go.mod, and the built-in gomod manager proposes bumps for it without configuration. There is deliberately no customManager for a Go version: the one that used to live here could only reach .golangci.yml (its second file pattern, go/.golangci.yml, never existed), so a golang bump moved that file alone while fifteen other declarations stayed behind. The `go` directive is a published compatibility floor for two separately released import paths and moves on a human decision, not a bot's.",
       "matchDatasources": [
         "golang-version",
         "docker"
