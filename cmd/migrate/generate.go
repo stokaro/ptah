@@ -11,6 +11,8 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -257,18 +259,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
-	if err != nil {
-		return err
-	}
-
-	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:    rootDirs,
-		SchemaFiles: schemaFiles,
-		Commands:    commands,
-		Dialect:     dialect,
-		PlainHTTP:   plainHTTP,
-	})
+	generated, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
 	if err != nil {
 		return err
 	}
@@ -358,4 +349,30 @@ func writeGeneratedMigrationFiles(out io.Writer, targetURL string, files *genera
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
+}
+
+// loadGenerateSchema reads the desired schema for `migrations generate`.
+//
+// It lives outside migrateGenerateCommand because that function is a linear
+// sequence of flag reads and grew past the length limit when `--plain-http`
+// was added for oci:// sources (stokaro/ptah#928 item 1). The flag is read
+// here rather than beside its siblings so the value and its only consumer
+// stay in one place.
+func loadGenerateSchema(
+	cmd *cobra.Command,
+	rootDirs, schemaFiles []string,
+	commands []schemasource.Command,
+	dialect string,
+) (*goschema.Database, error) {
+	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
+	if err != nil {
+		return nil, err
+	}
+	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+		Commands:    commands,
+		Dialect:     dialect,
+		PlainHTTP:   plainHTTP,
+	})
 }
