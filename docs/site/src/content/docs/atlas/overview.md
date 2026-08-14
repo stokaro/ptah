@@ -245,6 +245,27 @@ as it was before the refusal existed. That is worth having on a cluster
 bootstrapped under a name other than `postgres`, where `CREATE ROLE "postgres"`
 succeeds.
 
+**`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`** — by default, a comparison whose
+database side holds a SQLite virtual table is refused before anything is
+compared, naming the table and its module. No desired-state format can declare a
+virtual table, so its absence is not a request to drop it, and planning the
+removal deletes the index and everything in it. Measured on the pinned community
+binary v1.3.0, `schema diff` plans that drop plus one per shadow table and
+exits 0.
+
+- Set it to `1` and the removal is planned as before.
+- `--exclude <table>` is the other direction: the table is kept and the rest of
+  the schema converges.
+- A malformed value refuses every SQLite comparison command and public
+  migration-generator call before filesystem path resolution, schema source
+  loading, database connection, or SQL. Non-SQLite operations ignore it.
+- The opt-in covers only the removal. A desired ordinary table colliding with a
+  live virtual one stays refused however it is set, because the planner cannot
+  convert one kind into the other.
+- `schema inspect` compares nothing and is unaffected.
+
+See [SQLite](../../databases/sqlite/) for the whole picture.
+
 **`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
 `data "external_schema"` is not evaluated, because it runs a
 repository-controlled program. Set it to `1` and the data source is evaluated,

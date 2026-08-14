@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/planartifact"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -83,7 +84,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "text", "Safety report format: text, html, or json")
 	flags.BoolVar(&opts.attach, attachFlag, false, "Attach the migration plan to the exact OCI schema artifact digest")
-	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Allow an unencrypted HTTP connection to a local OCI registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
@@ -95,6 +96,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
 	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return err
+	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
 		return err
@@ -133,6 +137,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 	dialect, err := atlasurl.DialectFromURL(dbURL)
 	if err != nil {
+		return err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)

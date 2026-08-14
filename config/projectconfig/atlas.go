@@ -304,10 +304,20 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	// CE's tolerance covers unknown ATTRIBUTES as well as blocks -- measured,
 	// and the point stokaro/ptah#1014 left open. The expression is still
 	// evaluated, so a bad reference in one is still fatal.
+	//
+	// The tolerance is not universal at this scope either: three top-level names
+	// are decoded into a struct and refuse an object body. See
+	// [atlasStructAttributes].
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
-		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+		value, diags := attr.Expr.Value(p.ctx)
+		if diags.HasErrors() {
 			return nil, p.evaluationFailed(name, attr, diags)
+		}
+		if atlasStructAttribute(atlasTopLevelScope, name) {
+			if err := checkAtlasStructAttribute(name, attr, value); err != nil {
+				return nil, err
+			}
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
@@ -446,15 +456,26 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // CE acts on that Ptah has not implemented yet, and refusing is where such a
 // construct waits.
 //
-// One class the probe found and nothing here answers yet: env.diff, env.format,
-// env.lint, env.migration, env.schema and env.test written as OBJECT-VALUED
-// ATTRIBUTES rather than as blocks. CE decodes each -- `env { lint = { k = "v" } }`
-// answers `converting cty.Value to *cmdapi.Lint: unsupported attribute "k"`,
-// exit 1 -- and Ptah's structure validator, which classifies attributes and
-// blocks separately, sends the attribute spelling to the tolerance and exits 0.
-// The block spelling of all six is implemented, so this is a spelling gap and
-// not an unimplemented setting; it is recorded here rather than fixed because
-// the fix belongs in the validator's attribute/block split, not in this map.
+// The class this map used to record and not answer -- a name CE decodes into a
+// struct written as an OBJECT-VALUED ATTRIBUTE rather than as a block -- is
+// answered in the structure validator's attribute/block split instead, which is
+// where it belonged. It is not a holding-pen case: the attribute spelling
+// carries no configuration on CE either, so matching it is a refusal and not an
+// unimplemented setting. See [atlasStructAttributeRule].
+//
+// One name the probe has caught that IS a holding-pen case, and is not in the
+// map yet: env.migration.baseline. `migration { baseline = [1,2] }` under
+// `schema inspect --env local` answers `value of attr "baseline" cannot be read
+// as string`, exit 1, on the pinned binary and exit 0 on Ptah -- while
+// skip_report and a frobnicate9 control in the SAME block under the SAME command
+// both answer 0 on the binary, which is what makes baseline's refusal
+// meaningful. It is left out because the honest resolution is a parser arm
+// rather than a refusal: --baseline already exists on `migrate apply`, so the
+// value has a meaning Ptah can carry out, and refusing a well-formed
+// `baseline = "20240101000000"` would exit 1 where the binary exits 0. That
+// wiring is stokaro/ptah#934 item 5a; `migrate apply` parses --baseline into
+// runOpts before project config is merged, so it needs a change in that command
+// and not only here.
 var ceEnforcedConstructs = map[string]struct{}{}
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
@@ -482,8 +503,18 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 	if err := rejectEnforcedConstruct(scope, name, attr.NameRange); err != nil {
 		return err
 	}
-	if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
 		return p.evaluationFailed(name, attr, diags)
+	}
+	// A name CE decodes into a struct is not tolerable in every shape. This is
+	// the right place for that check rather than the structure validator: it
+	// runs once per SELECTED env with `var`, `local` and `data` already in the
+	// context. See [atlasStructAttributes].
+	if atlasStructAttribute(scope, name) {
+		if err := checkAtlasStructAttribute(name, attr, value); err != nil {
+			return err
+		}
 	}
 	p.noteIgnored("attribute", name, attr.NameRange)
 	return nil

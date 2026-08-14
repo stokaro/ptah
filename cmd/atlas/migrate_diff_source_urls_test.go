@@ -41,6 +41,33 @@ func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
 	c.Assert(entries, qt.HasLen, 0)
 }
 
+func TestMigrateDiffRejectsMalformedSQLiteVirtualDropToggleBeforeSourceAndConnect(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	devPath := filepath.Join(t.TempDir(), "missing", "dev.db")
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff", "toggle_order",
+		"--to", "file://" + filepath.Join(t.TempDir(), "missing.sql"),
+		"--dev-url", "sqlite://" + devPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "connect to --dev-url")
+	c.Assert(out.String(), qt.Not(qt.Contains), "missing.sql")
+	_, statErr := os.Stat(migrationsDir)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
 func TestMigrateDiffEnvSrcDesiredState(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()

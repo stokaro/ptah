@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/schemaartifact"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
@@ -41,7 +42,7 @@ OCI 1.1 artifact. Authentication comes from the Docker credential store.`,
 	flags.StringVar(&opts.dialect, "dialect", "", "Dialect hint used when parsing SQL schema files")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")
-	flags.BoolVar(&opts.plainHTTP, "plain-http", false, "Use plain HTTP for an explicitly trusted local registry")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
 

@@ -128,6 +128,11 @@ func convertTablesAndFields(
 			PrimaryKey:   primaryKeysByTable[dbTable.QualifiedName()],
 			Strict:       dbTable.Strict,
 			WithoutRowID: dbTable.WithoutRowID,
+			// A virtual table's module declaration is what recreates it.
+			// Dropping it here is what made `ptah db read` describe an FTS5
+			// index as an ordinary table. See stokaro/ptah#1028.
+			VirtualModule:    dbTable.VirtualModule,
+			VirtualArguments: dbTable.VirtualArguments,
 		}
 		database.Tables = append(database.Tables, table)
 

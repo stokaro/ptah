@@ -173,6 +173,41 @@ func (p Policy) validateSchemaObjects(database *goschema.Database, source string
 	return nil
 }
 
+// ValidateRenderedVirtualTables refuses an inspection whose rendering dropped a
+// SQLite virtual table's module declaration.
+//
+// The rendered HCL and JSON have no virtual-table construct, so a virtual table
+// becomes `table "docs" { schema = schema.main }` -- an empty block that names
+// an ordinary table which, replayed, is not a full-text index. That is what the
+// pinned community binary emits too, and outside strict mode Ptah matches it
+// and says so on the diagnostics stream. Strict mode owns the process output
+// contract, so it refuses rather than handing a pipeline a lossy document that
+// looks complete.
+//
+// It is format-specific by construction: the caller only asks when the module
+// declaration is actually missing from the output, so `--format '{{ sql . }}'`,
+// which renders CREATE VIRTUAL TABLE, is never refused.
+func (p Policy) ValidateRenderedVirtualTables(names []string) error {
+	if !p.strictCE || len(names) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"Atlas Community Edition strict compatibility does not support rendering SQLite virtual %s %s"+
+			" in a format that cannot carry the module declaration;"+
+			" use --format '{{ sql . }}', or exclude the %s from the inspection",
+		strictVirtualNoun(len(names)),
+		strings.Join(names, ", "),
+		strictVirtualNoun(len(names)),
+	)
+}
+
+func strictVirtualNoun(count int) string {
+	if count == 1 {
+		return "table"
+	}
+	return "tables"
+}
+
 // LiveSchemaObject describes the live catalog identity relevant to Atlas
 // compatibility policy. ImplicitSequence distinguishes a sequence owned by a
 // table column from a standalone sequence the Community Edition surface does
@@ -593,10 +628,17 @@ var gatedBooleanEnvVars = []string{
 // an Atlas capability. Strict mode keeps them available, but still parses
 // every present value at the process boundary so malformed configuration is
 // refused before command construction or any external work.
+// PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP is retained rather than gated. A true
+// spelling adds no Atlas capability: it restores the `DROP TABLE` the pinned
+// community binary plans for a SQLite virtual table anyway, so refusing it in
+// strict mode would move Ptah further from the oracle rather than closer. What
+// strict mode owes it is the parse, because a malformed value would otherwise
+// sit dormant until a comparison happens to hold a virtual table.
 var retainedBooleanEnvVars = []string{
 	"PTAH_ALLOW_NONINTERACTIVE_EDIT",
 	"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
 	"PTAH_HCL_STRICT_REDECLARATIONS",
+	"PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP",
 	"PTAH_STRICT_DIR_QUERY",
 }
 
