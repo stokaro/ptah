@@ -1,0 +1,39 @@
+{
+  "packages": [
+    "./cmd/migratevalidate/",
+    "./cmd/root/",
+    "./internal/migrationvalidate/"
+  ],
+  "mutations": [
+    {
+      "name": "the native verb forgets it may resolve a registry",
+      "file": "cmd/migratevalidate/migratevalidate.go",
+      "old": "\tsrc := &source{registryBacked: true}",
+      "new": "\tsrc := &source{}"
+    },
+    {
+      "name": "--plain-http parses and is dropped on the floor",
+      "file": "cmd/migratevalidate/migratevalidate.go",
+      "old": "\t\tPlainHTTP: src.plainHTTP,",
+      "new": "\t\tPlainHTTP: false,"
+    },
+    {
+      "name": "the scheme decides on its own, so the compatibility surface pulls too",
+      "file": "cmd/migratevalidate/migratevalidate.go",
+      "old": "\tif src.registryBacked && strings.HasPrefix(src.dir, ociartifact.Scheme) {",
+      "new": "\tif strings.HasPrefix(src.dir, ociartifact.Scheme) {"
+    },
+    {
+      "name": "a non-empty Dir wins over the resolved snapshot",
+      "file": "internal/migrationvalidate/validate.go",
+      "old": "\tif opts.FS == nil {\n\t\treturn migratesum.VerifyDirWithFormat(opts.Dir, opts.DirFormat)\n\t}",
+      "new": "\tif opts.Dir != \"\" {\n\t\treturn migratesum.VerifyDirWithFormat(opts.Dir, opts.DirFormat)\n\t}"
+    },
+    {
+      "name": "the snapshot is verified but the replay re-reads Dir",
+      "file": "internal/migrationvalidate/validate.go",
+      "old": "\t\tDir:       opts.Dir,\n\t\tFS:        opts.FS,",
+      "new": "\t\tDir:       opts.Dir,\n\t\tFS:        nil,"
+    }
+  ]
+}

@@ -212,11 +212,34 @@ before the upload; that command reports the tag it pushed and the resulting
 digest as separate fields and constructs no pinned reference, because there is
 no tag-resolved provenance to qualify yet.
 
-The three consuming verbs are what matters most for a registry source.
-`ptah migrations validate` asks the same question, but it takes a local `--dir`
-only and answers an `oci://` reference with
-`stat oci://...: no such file or directory`, so for an artifact `--verify-sum`
-is the only spelling there is.
+`ptah migrations validate` asks the same question without executing anything,
+and it takes an `oci://` reference too:
+
+```bash
+ptah migrations validate \
+  --dir oci://registry.example.com/acme/app-migrations:v1
+```
+
+It exits 0 when the artifact matches the sum it carries, 1 when a migration was
+added, removed or edited out of band, and 2 when the artifact carries no sum at
+all. Earlier releases answered `stat oci://...: no such file or directory`
+here, which left the read-only integrity question answerable only by a verb
+that writes.
+
+HTTPS is the default here as everywhere else. `--plain-http` is registered on
+this verb too, and like every other registration it is only for an explicitly
+trusted local registry — never for a reference that looks like the one above.
+
+Because the reference above is a tag, a successful run also prints the
+movable-tag qualifier described below, naming the digest the tag resolved to. A
+digest-pinned reference prints nothing extra.
+
+That does not retire `--verify-sum` on the consuming verbs, and the reason is
+timing rather than coverage. `validate` resolves the reference in its own
+process; the consuming verb resolves it again in the next one. A movable tag
+can select different bytes in between, so only the flag verifies the artifact
+the same invocation is about to execute. Pin a digest, or pass the flag, or
+both.
 
 `status` is the one verb that runs no gate without the flag. It executes none
 of the directory's SQL, so it is outside the always-on class below, and it is
