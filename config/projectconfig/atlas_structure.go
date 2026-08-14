@@ -321,12 +321,15 @@ func (k atlasLeafValueKind) want() string {
 // are absent here because Ptah acts on them, so they never reach the tolerance
 // path; they are the in-block positive control that the probe fires at all.
 //
-// The keys are bare rather than env-prefixed because parseDiffSkip and
-// parseLintAttr each serve a top-level block and an env block, and both
-// spellings were measured to refuse:
+// The `diff.skip` and `lint` keys are bare rather than env-prefixed because
+// parseDiffSkip and parseLintAttr each serve a top-level block and an env
+// block, and both spellings were measured to refuse:
 //
 //	diff { skip { drop_column = { k = "v" } } }  (top level)  -> 1
 //	lint { review = 1 }                          (top level)  -> 1
+//
+// `env.migration` below is env-prefixed for the opposite measured reason, the
+// same one that keeps `env.schema` out of [atlasStructAttributes]' bare keys.
 var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	"diff.skip": {
 		"add_column":         atlasLeafBool,

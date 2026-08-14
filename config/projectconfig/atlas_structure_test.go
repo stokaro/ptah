@@ -371,6 +371,17 @@ env "local" {
 			wantErr: `atlas\.hcl "name" at atlas\.hcl:6 must be a string`,
 		},
 		{
+			name: "env lint review given a bool",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  lint {
+    review = true
+  }
+}
+`,
+			wantErr: `atlas\.hcl "review" at atlas\.hcl:4 must be a string`,
+		},
+		{
 			name: "env migration baseline given a list",
 			raw: `env "local" {
   url = "sqlite://s.db"
@@ -572,6 +583,28 @@ func TestParseAtlasProjectConfigAcceptsAtlasCEDecodedLeafValues(t *testing.T) {
 }
 `,
 			ignored: "add_index",
+		},
+		{
+			// The value is a variable reference, so this row also pins where
+			// the check runs: on the tolerance path, after `var` is in the
+			// evaluation context, not in the structure validator that runs
+			// before it. The community binary exits 0 here too.
+			name: "diff skip bool given a variable reference",
+			raw: `variable "flag" {
+  type    = bool
+  default = true
+}
+
+env "local" {
+  url = "sqlite://s.db"
+  diff {
+    skip {
+      drop_column = var.flag
+    }
+  }
+}
+`,
+			ignored: "drop_column",
 		},
 		{
 			// A well-formed baseline is tolerated and reported, not acted on:
