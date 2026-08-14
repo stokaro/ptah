@@ -359,9 +359,10 @@ while IFS=: read -r forwarding_manifest forwarded_key forwarded_input; do
 	default_row="$(awk -v want="$forwarded_input" '
 		/^inputs:/ { in_inputs = 1; next }
 		/^[^[:space:]#]/ { in_inputs = 0 }
-		in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+		in_inputs && /^  ["'"'"']?[A-Za-z0-9_-]+["'"'"']?:[[:space:]]*$/ {
 			input = $1
 			sub(/:$/, "", input)
+			gsub(/^["'"'"']|["'"'"']$/, "", input)
 			next
 		}
 		in_inputs && input == want && /^[[:space:]]+default:/ {
@@ -455,9 +456,10 @@ while IFS= read -r action_file; do
 	done < <(awk '
 		/^inputs:/ { in_inputs = 1; next }
 		/^[^[:space:]#]/ { in_inputs = 0 }
-		in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+		in_inputs && /^  ["'"'"']?[A-Za-z0-9_-]+["'"'"']?:[[:space:]]*$/ {
 			input = $1
 			sub(/:$/, "", input)
+			gsub(/^["'"'"']|["'"'"']$/, "", input)
 			next
 		}
 		# The quoting comes off BEFORE the value is judged, never as part of a
@@ -496,9 +498,10 @@ while IFS= read -r action_file; do
 		done < <(awk '
 			/^inputs:/ { in_inputs = 1; next }
 			/^[^[:space:]#]/ { in_inputs = 0 }
-			in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+			in_inputs && /^  ["'"'"']?[A-Za-z0-9_-]+["'"'"']?:[[:space:]]*$/ {
 				input = $1
 				sub(/:$/, "", input)
+				gsub(/^["'"'"']|["'"'"']$/, "", input)
 				next
 			}
 			in_inputs && input == "go-version-file" && /^[[:space:]]+default:/ {
