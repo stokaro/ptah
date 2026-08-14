@@ -409,3 +409,41 @@ func TestValidateSchema_MySQLFamilyRoleRefusalIsNarrow(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole pins WHICH
+// role the sentence names when a schema declares several.
+//
+// Two gates answer the same schema. This one runs before a caller asks for SQL;
+// the MySQL planner runs after, and it sorts diff.RolesAdded, so the CREATE ROLE
+// node it renders first -- and refuses on -- is the alphabetically first role.
+// Naming the parse-order role here made the two gates disagree about the same
+// schema: the integration fixture declares app_user, admin_user, readonly_user
+// and got "app_user" from validation where the planner says "admin_user". It
+// also moved the name whenever a declaration was reordered, which is not a
+// property of the schema.
+func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing.T) {
+	declarationOrders := [][]string{
+		// The 016-roles integration fixture's own order.
+		{"app_user", "admin_user", "readonly_user"},
+		{"readonly_user", "app_user", "admin_user"},
+		{"admin_user", "app_user", "readonly_user"},
+	}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, order := range declarationOrders {
+			t.Run(dialect+"/"+strings.Join(order, ","), func(t *testing.T) {
+				c := qt.New(t)
+				roles := make([]goschema.Role, 0, len(order))
+				for _, name := range order {
+					roles = append(roles, goschema.Role{Name: name})
+				}
+
+				err := renderer.ValidateSchema(&goschema.Database{Roles: roles}, dialect)
+
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err, qt.ErrorMatches,
+					".*"+dialect+": CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state.*")
+			})
+		}
+	}
+}
