@@ -168,38 +168,40 @@ while IFS=: read -r file line _; do
 	step_forwards=0
 
 	if ((gv_seen == 1)) && [[ -n $gv_value ]]; then
-		if is_forwarded_input "$gv_value"; then
-			if is_action_manifest "$file"; then
+		case "$gv_value" in
+		'${{'*'}}')
+			if is_forwarded_input "$gv_value" && is_action_manifest "$file"; then
 				step_forwards=1
 			else
 				step_ok=0
 				fail "$file" "$gv_line" \
-					"setup-go step takes its Go version from the expression '$gv_value'. Only a composite action manifest may forward its own input; a workflow must write 'go-version-file: go.mod' so the toolchain is read from the single source (toolchain $toolchain)."
+					"setup-go step takes its Go version from the expression '$gv_value'. An expression shows only that a value is derived, never from what, so it is accepted in one place: a composite action manifest forwarding one of its own inputs. Write 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
 			fi
-		else
+			;;
+		*)
 			step_ok=0
 			fail "$file" "$gv_line" \
 				"setup-go step pins a Go version literal ('$gv_value'). Use 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
-		fi
+			;;
+		esac
 	fi
 
 	if ((gvf_seen == 1)); then
 		case "$gvf_value" in
 		go.mod | ./go.mod) ;;
-		*)
-			if is_forwarded_input "$gvf_value"; then
-				if is_action_manifest "$file"; then
-					step_forwards=1
-				else
-					step_ok=0
-					fail "$file" "$gvf_line" \
-						"setup-go step takes its module file from the expression '$gvf_value'. Only a composite action manifest may forward its own input; a workflow must name the module: 'go-version-file: go.mod'."
-				fi
+		'${{'*'}}')
+			if is_forwarded_input "$gvf_value" && is_action_manifest "$file"; then
+				step_forwards=1
 			else
 				step_ok=0
 				fail "$file" "$gvf_line" \
-					"setup-go step reads '$gvf_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+					"setup-go step takes its module file from the expression '$gvf_value'. An expression shows only that a value is derived, never from what, so it is accepted in one place: a composite action manifest forwarding one of its own inputs. Elsewhere, name the module: 'go-version-file: go.mod'."
 			fi
+			;;
+		*)
+			step_ok=0
+			fail "$file" "$gvf_line" \
+				"setup-go step reads '$gvf_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
 			;;
 		esac
 	fi
