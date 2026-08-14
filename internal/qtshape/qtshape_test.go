@@ -62,6 +62,38 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 			},
 		},
 		{
+			// The gap a callback-shape rule leaves. Every subtest here is
+			// (*qt.C).Run with the callback named somewhere else, which is the
+			// same object graph as the inline form.
+			name:    "a subtest callback named elsewhere is still a violation",
+			fixture: "indirectsubtest.go.txt",
+			want: []wantFinding{
+				{line: 33, rule: qtshape.RuleCheckerSubtest},
+				{line: 34, rule: qtshape.RuleCheckerSubtest},
+				{line: 35, rule: qtshape.RuleCheckerSubtest},
+				{line: 38, rule: qtshape.RuleCheckerSubtest},
+				{line: 40, rule: qtshape.RuleCheckerSubtest},
+				{line: 48, rule: qtshape.RuleCheckerSubtest},
+			},
+		},
+		{
+			// The other gap. These have the required t.Run signature and the
+			// required testing.TB receiver and still assert against the parent,
+			// which Go reports as "subtest may have called FailNow on a parent
+			// test". The two nested subtests at lines 37-40 share one borrowed
+			// identifier and are reported once.
+			name:    "a subtest that borrows the enclosing checker or TB is reported",
+			fixture: "borrowedchecker.go.txt",
+			want: []wantFinding{
+				{line: 20, rule: qtshape.RuleBorrowedChecker},
+				{line: 24, rule: qtshape.RuleBorrowedChecker},
+				{line: 29, rule: qtshape.RuleBorrowedChecker},
+				{line: 39, rule: qtshape.RuleBorrowedChecker},
+				{line: 48, rule: qtshape.RuleBorrowedChecker},
+				{line: 56, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
+		{
 			name:    "a renamed quicktest import is reported before it can silence R1 and R2",
 			fixture: "aliasrenamed.go.txt",
 			want: []wantFinding{
@@ -116,6 +148,49 @@ func TestScanFileNamesTheReceiverItFound(t *testing.T) {
 	c.Check(got[3].Message, qt.Contains, "c.Run")
 	c.Check(got[4].Message, qt.Contains, "outer.Run")
 	c.Check(got[5].Message, qt.Contains, "<expr>.Run")
+}
+
+// TestScanFileSaysWhichBranchMatched pins the two independent reasons a subtest
+// can be a (*qt.C).Run. Without this, a rule that recognized only one of them
+// could still satisfy the count assertion above by reporting the other five
+// findings twice over, and the branch that survives matters: the receiver branch
+// is the only thing that reaches a callback this package cannot resolve, and the
+// callback branch is the only thing that reaches a checker held in a field.
+func TestScanFileSaysWhichBranchMatched(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "indirectsubtest.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 6)
+
+	// A method value: nothing but the receiver identifies it.
+	c.Check(got[2].Message, qt.Contains, "c.Run is a (*qt.C).Run subtest")
+	// A checker reached through a struct field: nothing but the callback
+	// identifies it.
+	c.Check(got[5].Message, qt.Contains, "<expr>.Run with the func(*qt.C) callback declared")
+}
+
+// TestScanFileNamesWhatWasBorrowed pins which of the two borrowed kinds each R3
+// finding is about. A rule that only ever reported the checker would satisfy the
+// count above, and `qt.New(t)` inside a closure whose own parameter is `subT` is
+// the spelling that has neither a *qt.C nor a wrong signature to give it away.
+func TestScanFileNamesWhatWasBorrowed(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "borrowedchecker.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 6)
+
+	c.Check(got[0].Message, qt.Contains, "asserts through c, a *qt.C declared outside this subtest")
+	c.Check(got[2].Message, qt.Contains, "uses t, a testing.TB from the enclosing scope")
 }
 
 func TestScanFilesRefusesAnEmptySelection(t *testing.T) {

@@ -49,3 +49,51 @@ func TestConformingHelperTakingC(t *testing.T) {
 	c := qt.New(t)
 	assertTwo(c)
 }
+
+// A subtest owns its checker, and a plain closure nested inside that subtest
+// uses it. The nested closure is not a subtest and inherits the right checker.
+func TestConformingNestedScopes(t *testing.T) {
+	t.Run("subtest", func(t *testing.T) {
+		c := qt.New(t)
+
+		check := func() {
+			c.Check(3, qt.Equals, 3)
+		}
+		check()
+
+		t.Run("nested subtest", func(t *testing.T) {
+			c := qt.New(t)
+			c.Check(4, qt.Equals, 4)
+		})
+	})
+}
+
+// A struct field named c and a composite-literal key named c are the identifier
+// c in the syntax tree and neither reads a checker. Reporting either would make
+// the borrowed-checker rule fire on ordinary table tests.
+func TestConformingFieldNamedC(t *testing.T) {
+	type row struct {
+		c    int
+		want int
+	}
+
+	c := qt.New(t)
+	c.Check(1, qt.Equals, 1)
+
+	t.Run("a field named c is not the checker", func(t *testing.T) {
+		checker := qt.New(t)
+		got := row{c: 5, want: 5}
+		checker.Check(got.c, qt.Equals, got.want)
+	})
+}
+
+// A subtest reads a fixture built by the parent. Only checkers and testing.TBs
+// may not cross the boundary; everything else the parent set up may.
+func TestConformingSubtestReadsParentFixture(t *testing.T) {
+	want := 6
+
+	t.Run("subtest", func(t *testing.T) {
+		c := qt.New(t)
+		c.Check(want, qt.Equals, 6)
+	})
+}

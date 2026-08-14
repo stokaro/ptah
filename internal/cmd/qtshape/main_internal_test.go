@@ -50,6 +50,10 @@ func TestViolating(t *testing.T) {
 	c.Run("subtest", func(c *qt.C) {
 		c.Assert(2, qt.Equals, 2)
 	})
+
+	t.Run("borrowed", func(t *testing.T) {
+		c.Assert(3, qt.Equals, 3)
+	})
 }
 `
 
@@ -69,13 +73,14 @@ func TestRunReportsTheRightExitCode(t *testing.T) {
 			},
 		},
 		{
-			name:  "both violations exit 1 and are named with their rule",
+			name:  "every violation exits 1 and is named with its rule",
 			stdin: func(t *testing.T) string { return writeFixture(t, "violating_test.go", violatingSource) },
 			want:  exitFindings,
 			wantStdout: func(c *qt.C, stdout string) {
 				c.Check(stdout, qt.Contains, ": R1: ")
 				c.Check(stdout, qt.Contains, ": R2: ")
-				c.Check(strings.Count(stdout, "\n"), qt.Equals, 2)
+				c.Check(stdout, qt.Contains, ": R3: ")
+				c.Check(strings.Count(stdout, "\n"), qt.Equals, 3)
 			},
 		},
 		{

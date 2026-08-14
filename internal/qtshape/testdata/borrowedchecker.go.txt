@@ -1,0 +1,58 @@
+// Every subtest here has the required t.Run signature and the required
+// testing.TB receiver, and every one of them asserts against the parent test.
+// The callback shape alone cannot tell these from the target shape.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func assertThrough(c *qt.C) {
+	c.Check(1, qt.Equals, 1)
+}
+
+func TestBorrowedChecker(t *testing.T) {
+	c := qt.New(t)
+
+	t.Run("asserts through the parent checker", func(t *testing.T) {
+		c.Assert(2, qt.Equals, 2)
+	})
+
+	t.Run("hands the parent checker to a helper", func(t *testing.T) {
+		assertThrough(c)
+	})
+
+	t.Run("builds a checker from the parent TB", func(subT *testing.T) {
+		subT.Log("the parameter is not the TB this checker is built from")
+		inner := qt.New(t)
+		inner.Assert(3, qt.Equals, 3)
+	})
+}
+
+func TestNestedBorrowedChecker(t *testing.T) {
+	c := qt.New(t)
+
+	t.Run("outer", func(t *testing.T) {
+		t.Run("inner", func(t *testing.T) {
+			c.Assert(4, qt.Equals, 4)
+		})
+	})
+}
+
+func BenchmarkBorrowedChecker(b *testing.B) {
+	c := qt.New(b)
+
+	b.Run("subbenchmark", func(b *testing.B) {
+		c.Assert(5, qt.Equals, 5)
+	})
+}
+
+func FuzzBorrowedChecker(f *testing.F) {
+	c := qt.New(f)
+
+	f.Fuzz(func(t *testing.T, input string) {
+		c.Assert(input, qt.Not(qt.Equals), "")
+	})
+}

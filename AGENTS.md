@@ -953,6 +953,27 @@ Writing the subtest as `t.Run` also makes the shadowing explicit. Under
 and a reader cannot tell which one a line uses. Under `t.Run` the new `c` is a
 declaration on its own line, in the scope it belongs to.
 
+The `qt.New` inside the closure is the rule, not decoration. A subtest that
+keeps asserting through the enclosing `c` has the right signature and the wrong
+checker, and the difference is visible the moment an assertion fails:
+
+```
+=== NAME  TestBorrowedParentChecker
+    borrow_test.go:13:
+        error:
+          values are not equal
+=== NAME  TestBorrowedParentChecker/subtest_that_must_fail
+    testing.go:1913: test executed panic(nil) or runtime.Goexit: subtest may have called FailNow on a parent test
+```
+
+The diagnostic is filed against the parent, `c.Assert` calls `FailNow` on a test
+that is not the one running, and everything after that line in the closure is
+skipped without the subtest ever saying why. A checker built from the subtest's
+own `t` reports the same failure against the subtest. The same applies to
+`b.Run` and to the `f.Fuzz` target, and to `qt.New(t)` written inside a closure
+whose own parameter is spelled something other than `t`: the checker must come
+from the `testing.TB` the closure was handed.
+
 Run the shape gate before finishing test changes:
 
 ```bash

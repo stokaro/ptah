@@ -1,0 +1,49 @@
+// Every subtest here is the prohibited (*qt.C).Run shape written so that the
+// callback is not an inline func(*qt.C) literal. A rule that only inspects the
+// second argument's literal signature reports none of them.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+type holder struct {
+	checker *qt.C
+}
+
+type carrier struct{}
+
+func (carrier) sub(c *qt.C) {
+	c.Assert(1, qt.Equals, 1)
+}
+
+func declared(c *qt.C) {
+	c.Assert(2, qt.Equals, 2)
+}
+
+func TestIndirectSubtests(t *testing.T) {
+	c := qt.New(t)
+
+	assigned := func(c *qt.C) {
+		c.Assert(3, qt.Equals, 3)
+	}
+
+	c.Run("callback declared at file scope", declared)
+	c.Run("callback assigned to a variable", assigned)
+	c.Run("callback this package cannot resolve without types", carrier{}.sub)
+
+	outer := qt.New(t)
+	outer.Run("receiver is not named c", declared)
+
+	qt.New(t).Run("receiver is not an identifier at all", declared)
+}
+
+func TestReceiverReachedThroughAField(t *testing.T) {
+	h := holder{checker: qt.New(t)}
+
+	// The receiver is a selector this package cannot resolve; the callback is
+	// what identifies the shape.
+	h.checker.Run("named callback on an unresolvable receiver", declared)
+}

@@ -1170,8 +1170,6 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-	c := qt.New(t)
-
 	// Example data
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{
@@ -1187,6 +1185,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 	}
 
 	t.Run("simple usage with defaults", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Most common usage - just compare with defaults
 		diff := schemadiff.Compare(generated, database)
 
@@ -1195,6 +1195,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 	})
 
 	t.Run("custom ignore list", func(t *testing.T) {
+		c := qt.New(t)
+
 		// User wants to ignore specific extensions
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
@@ -1204,6 +1206,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 	})
 
 	t.Run("manage all extensions", func(t *testing.T) {
+		c := qt.New(t)
+
 		// User wants to manage all extensions (no ignoring)
 		opts := config.WithIgnoredExtensions()
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
@@ -1213,6 +1217,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 	})
 
 	t.Run("add to default ignore list", func(t *testing.T) {
+		c := qt.New(t)
+
 		// User wants defaults plus additional ignored extensions
 		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
