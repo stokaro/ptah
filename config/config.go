@@ -41,6 +41,49 @@ type CompareOptions struct {
 	// Catalog-sensitive callers must provide a complete resolved snapshot;
 	// first-party live operations obtain one through schemadiff.
 	IdentifierSemantics *identifier.Semantics
+
+	// SkipTableDrops reports that the caller removes every table drop from the
+	// diff before it is planned: `diff.skip: [drop_table]` in ptah.yaml, and
+	// `diff { skip { drop_table = true } }` in an Atlas project file.
+	//
+	// It changes NO comparison result. Nothing here reads it except the SQLite
+	// virtual-table guard, which refuses a comparison for the statements it
+	// predicts -- and a table drop the caller filters out again is a statement
+	// nothing will run. Without this, a `schema apply` configured to skip table
+	// drops was refused on an fts4 database whose plan the policy had already
+	// emptied, and the operator was sent to two dangerous opt-ins to obtain
+	// `Schema is synced, no changes to be made.` (stokaro/ptah#1028).
+	//
+	// It is deliberately narrow. `skip drop_table` does not filter a
+	// modification, so the guard's post-comparison half keeps refusing a
+	// rebuild of a table Ptah could not classify; only the removal input is
+	// discounted.
+	SkipTableDrops bool
+
+	// SkipColumnDrops reports that the caller removes every column drop from
+	// the diff before it is planned: `diff.skip: [drop_column]` in ptah.yaml.
+	//
+	// It changes NO comparison result, and only the SQLite virtual-table guard
+	// reads it, for the same reason SkipTableDrops exists. SQLite has no ALTER
+	// for a removed column, so the planner converges one by rebuilding the
+	// table -- drop, recreate, copy -- and the guard refuses a rebuild it
+	// cannot vouch for. A column drop the caller filters out again is a rebuild
+	// nothing will perform. Without this, `ptah migrations generate` with
+	// `diff.skip: [drop_table, drop_column]` was refused at exit 2 on an fts4
+	// database whose plan the policy had already emptied to nothing.
+	SkipColumnDrops bool
+
+	// SkipIndexDrops reports that the caller removes every standalone index
+	// drop from the diff before it is planned: `diff.skip: [drop_index]` in
+	// ptah.yaml. Index replacements are not removed by that policy and are not
+	// discounted by this field.
+	//
+	// It changes NO comparison result either. The SQLite virtual-table guard
+	// counts the table an index removal is aimed at, because Ptah cannot tell a
+	// module's own index from one an operator added any more than it can tell
+	// the module's storage from an ordinary table; a drop the caller deletes
+	// again is not one of those.
+	SkipIndexDrops bool
 }
 
 // DefaultCompareOptions returns the default comparison options with sensible defaults.

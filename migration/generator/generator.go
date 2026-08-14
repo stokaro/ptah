@@ -578,7 +578,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		conn,
 		generated,
 		dbSchema,
-		opts.CompareOptions,
+		compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
@@ -982,6 +982,39 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 		return fmt.Errorf("destructive migration statements require AllowDestructive")
 	}
 	return nil
+}
+
+// compareOptionsWithDiffPolicy tells the comparison what
+// [planGeneratedMigrationSpecs] will do to its answer.
+//
+// The SQLite virtual-table guard runs inside the comparison and refuses on the
+// statements it predicts, while the skip filter that deletes those statements
+// runs afterwards, here. Without this the comparison refused a plan the policy
+// had already emptied (stokaro/ptah#1028). The caller's options are copied
+// rather than written through: GenerateMigrationOptions is a value the caller
+// may reuse for another run.
+//
+// Every skip kind the guard can read is forwarded, not only the table drop.
+// `drop_column` empties a table diff's ColumnsRemoved, which is one of the
+// fields the rebuild predicate reads, and `drop_index` empties the standalone
+// index removals the guard counts the owning table for; forwarding one of the
+// three left the other two refusing plans this function had already emptied.
+// diffpolicy.DropEnum is the one kind deliberately not forwarded: SQLite has no
+// enum type and the guard reads no enum field, and the census in
+// internal/sqlitevirtual fails if a new kind appears unclassified.
+func compareOptionsWithDiffPolicy(
+	opts *config.CompareOptions,
+	policy DiffPolicy,
+) *config.CompareOptions {
+	merged := config.DefaultCompareOptions()
+	if opts != nil {
+		*merged = *opts
+		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
+	}
+	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropTable)
+	merged.SkipColumnDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropColumn)
+	merged.SkipIndexDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropIndex)
+	return merged
 }
 
 type generatedMigrationSpec struct {

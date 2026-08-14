@@ -129,6 +129,49 @@ type CompareOptions struct {
     // Catalog-sensitive callers must provide a complete resolved snapshot;
     // first-party live operations obtain one through schemadiff.
     IdentifierSemantics *identifier.Semantics
+
+    // SkipTableDrops reports that the caller removes every table drop from the
+    // diff before it is planned: `diff.skip: [drop_table]` in ptah.yaml, and
+    // `diff { skip { drop_table = true } }` in an Atlas project file.
+    //
+    // It changes NO comparison result. Nothing here reads it except the SQLite
+    // virtual-table guard, which refuses a comparison for the statements it
+    // predicts -- and a table drop the caller filters out again is a statement
+    // nothing will run. Without this, a `schema apply` configured to skip table
+    // drops was refused on an fts4 database whose plan the policy had already
+    // emptied, and the operator was sent to two dangerous opt-ins to obtain
+    // `Schema is synced, no changes to be made.` (stokaro/ptah#1028).
+    //
+    // It is deliberately narrow. `skip drop_table` does not filter a
+    // modification, so the guard's post-comparison half keeps refusing a
+    // rebuild of a table Ptah could not classify; only the removal input is
+    // discounted.
+    SkipTableDrops bool
+
+    // SkipColumnDrops reports that the caller removes every column drop from
+    // the diff before it is planned: `diff.skip: [drop_column]` in ptah.yaml.
+    //
+    // It changes NO comparison result, and only the SQLite virtual-table guard
+    // reads it, for the same reason SkipTableDrops exists. SQLite has no ALTER
+    // for a removed column, so the planner converges one by rebuilding the
+    // table -- drop, recreate, copy -- and the guard refuses a rebuild it
+    // cannot vouch for. A column drop the caller filters out again is a rebuild
+    // nothing will perform. Without this, `ptah migrations generate` with
+    // `diff.skip: [drop_table, drop_column]` was refused at exit 2 on an fts4
+    // database whose plan the policy had already emptied to nothing.
+    SkipColumnDrops bool
+
+    // SkipIndexDrops reports that the caller removes every standalone index
+    // drop from the diff before it is planned: `diff.skip: [drop_index]` in
+    // ptah.yaml. Index replacements are not removed by that policy and are not
+    // discounted by this field.
+    //
+    // It changes NO comparison result either. The SQLite virtual-table guard
+    // counts the table an index removal is aimed at, because Ptah cannot tell a
+    // module's own index from one an operator added any more than it can tell
+    // the module's storage from an ordinary table; a drop the caller deletes
+    // again is not one of those.
+    SkipIndexDrops bool
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -146,6 +189,7 @@ const PtahFileName = "ptah.yaml" ...
 const OnlineDDLToolGhost = "ghost" ...
 const OnlineDDLFallbackError = "error" ...
 const IgnoreEnvSchemasEnvVar = "PTAH_ATLAS_IGNORE_ENV_SCHEMAS"
+func ValidateAtlasEnvironmentVariables() error
 type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
     func Load(opts LoadOptions) (Config, error)
@@ -5538,6 +5582,7 @@ type DBSequence struct{ ... }
 type DBTable struct{ ... }
 type DBTrigger struct{ ... }
 type DBView struct{ ... }
+type DBVirtualTable struct{ ... }
 type SchemaExecutor interface{ ... }
 type SchemaReader interface{ ... }
 type SchemaTransaction interface{ ... }
@@ -6167,6 +6212,33 @@ type DBSchema struct {
     // asked about. The zero value claims the read covered everything; see
     // [go.5x5.cz/ptah/core/coverage].
     NotDescribed coverage.Set `json:"not_described,omitzero"`
+
+    // UnregisteredVirtualTables lists the SQLite virtual tables this read found
+    // whose module the reading build does not register.
+    //
+    // It is the description's own statement that part of this database could
+    // not be classified. SQLite reports a table as `shadow` only when the
+    // module that owns it is loaded and claims the name, so with the module
+    // absent a virtual table is still recognized as virtual while its private
+    // storage arrives as ordinary user tables. Tables therefore holds objects
+    // that are not user tables, and no field on any of them says so -- the fact
+    // belongs to the read, not to a row.
+    //
+    // A comparator that ignores this plans DROP TABLE for a module's storage.
+    // Measured on stokaro/ptah#1028: against an fts4 database this build cannot
+    // load, `ptah schema apply` planned and executed five drops at exit 0 and
+    // `MATCH` went from returning a row to `SQL logic error`.
+    //
+    // It is separate from Tables on purpose, because narrowing survives it. The
+    // tables at risk are not the virtual table an operator would exclude, so a
+    // selection that removes the virtual table leaves every dangerous row in
+    // place; a signal carried on the excluded row would vanish exactly when it
+    // matters. See [go.5x5.cz/ptah/internal/sqlitevirtual].
+    //
+    // It is never serialized: the same database read by a build that registers
+    // the module yields an empty list, so this describes the reader rather than
+    // the database, and a description that carried it would not be portable.
+    UnregisteredVirtualTables []DBVirtualTable `json:"-"`
 }
     DBSchema represents the complete schema read from a database
 
@@ -6290,6 +6362,19 @@ type DBView struct {
     DBView represents a database view read from the database.
 
 func (v DBView) QualifiedName() string
+
+### go.5x5.cz/ptah/dbschema/types.DBVirtualTable
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBVirtualTable struct {
+    Schema string
+    Name   string
+    Module string
+}
+    DBVirtualTable identifies one SQLite virtual table and the module that owns
+    it, for the lists that talk about virtual tables rather than describe them.
+
 
 ### go.5x5.cz/ptah/dbschema/types.SchemaExecutor
 
