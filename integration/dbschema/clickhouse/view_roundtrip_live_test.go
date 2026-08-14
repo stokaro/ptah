@@ -19,16 +19,18 @@ import (
 
 func readClickHouseViews(t *testing.T, db *sql.DB, database string) *dbschematypes.DBSchema {
 	t.Helper()
+	c := qt.New(t)
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{Views: schema.Views}
 }
 
 func executeClickHouseViewPlan(t *testing.T, db *sql.DB, statements []string) {
 	t.Helper()
+	c := qt.New(t)
 	for _, statement := range statements {
 		_, err := db.ExecContext(t.Context(), statement)
-		qt.Assert(t, err, qt.IsNil, qt.Commentf("execute ClickHouse view plan: %s", statement))
+		c.Assert(err, qt.IsNil, qt.Commentf("execute ClickHouse view plan: %s", statement))
 	}
 }
 

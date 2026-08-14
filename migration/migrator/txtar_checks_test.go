@@ -79,17 +79,18 @@ ALTER TABLE users ADD COLUMN email TEXT;
 
 func newSQLiteTxtarMigrator(t *testing.T, seededRows int, migrationSQL string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "txtar-checks.db")
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	for i := range seededRows {
 		_, err = conn.Exec("INSERT INTO users (id, name) VALUES (?, 'alice')", i+1)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 	}
 
 	m, err := migrator.NewFSMigrator(
@@ -99,17 +100,18 @@ func newSQLiteTxtarMigrator(t *testing.T, seededRows int, migrationSQL string) (
 		},
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
-	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
 	return conn, m
 }
 
 func usersHasEmailColumn(t *testing.T, conn *dbschema.DatabaseConnection) bool {
 	t.Helper()
+	c := qt.New(t)
 	var count int
 	err := conn.QueryRow("SELECT count(*) FROM pragma_table_info('users') WHERE name = 'email'").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count == 1
 }
 
@@ -337,9 +339,10 @@ func TestMigrateUp_TxtarTxModeAllWithSkipChecksProceeds(t *testing.T) {
 // asserts users is empty and therefore fails.
 func newSQLiteTxtarWedgeMigrator(t *testing.T) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "wedge.db"))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	m, err := migrator.NewFSMigrator(
@@ -351,24 +354,25 @@ func newSQLiteTxtarWedgeMigrator(t *testing.T) (*dbschema.DatabaseConnection, *m
 		},
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
-	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
 	return conn, m
 }
 
 func revisionVersions(t *testing.T, conn *dbschema.DatabaseConnection) []string {
 	t.Helper()
+	c := qt.New(t)
 	rows, err := conn.Query("SELECT version FROM atlas_schema_revisions ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
 	var versions []string
 	for rows.Next() {
 		var version string
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
@@ -541,10 +545,11 @@ SELECT 3;
 // configuration #1005 is about: writes are intercepted, reads are not.
 func newSQLiteDryRunMigrator(t *testing.T, first, second string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "dry-run-checks.db")
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	m, err := migrator.NewFSMigrator(
@@ -555,9 +560,9 @@ func newSQLiteDryRunMigrator(t *testing.T, first, second string) (*dbschema.Data
 		},
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
-	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
 	conn.SchemaWriter().SetDryRun(true)
 	return conn, m
 }

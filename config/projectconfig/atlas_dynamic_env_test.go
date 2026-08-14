@@ -159,6 +159,7 @@ func TestParseAtlasCollectionCanRejectListAndMapForEach(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.prefix + `env {
   for_each = ` + test.forEach + `
   name     = atlas.env
@@ -175,14 +176,14 @@ func TestParseAtlasCollectionCanRejectListAndMapForEach(t *testing.T) {
 				},
 			)
 
-			qt.Assert(t, err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			configs, err := projectconfig.ParseAtlasCollectionWithOptions(
 				raw,
 				"atlas.hcl",
 				projectconfig.AtlasLoadOptions{EnvName: "local"},
 			)
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, configs, qt.HasLen, 1)
+			c.Assert(err, qt.IsNil)
+			c.Assert(configs, qt.HasLen, 1)
 		})
 	}
 }

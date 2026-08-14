@@ -200,14 +200,15 @@ func assertIssue269Revisions(
 	want []issue269Revision,
 ) {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(
 		context.Background(),
 		fmt.Sprintf("SELECT COUNT(*) FROM %s", names.migrationsTable),
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, count, qt.Equals, len(want))
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, len(want))
 
 	for _, wantRevision := range want {
 		var got issue269Revision
@@ -219,8 +220,8 @@ func assertIssue269Revisions(
 			),
 			wantRevision.Version,
 		).Scan(&got.Version, &got.State, &got.Applied, &got.Total)
-		qt.Assert(t, err, qt.IsNil)
-		qt.Assert(t, got, qt.DeepEquals, wantRevision)
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.DeepEquals, wantRevision)
 	}
 }
 
@@ -238,6 +239,7 @@ func cleanupIssue269(t *testing.T, conn *dbschema.DatabaseConnection, names issu
 
 func mysqlFamilyTableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var exists int
 	err := conn.QueryRowContext(
@@ -245,6 +247,6 @@ func mysqlFamilyTableExists(t *testing.T, conn *dbschema.DatabaseConnection, tab
 		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
 		tableName,
 	).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists > 0
 }

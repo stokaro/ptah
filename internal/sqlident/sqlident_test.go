@@ -108,7 +108,8 @@ func TestBareOrQuoted(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qt.Assert(t, sqlident.BareOrQuoted(tt.dialect, tt.input), qt.Equals, tt.want)
+			c := qt.New(t)
+			c.Assert(sqlident.BareOrQuoted(tt.dialect, tt.input), qt.Equals, tt.want)
 		})
 	}
 }

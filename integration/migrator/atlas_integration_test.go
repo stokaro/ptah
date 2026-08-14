@@ -1926,6 +1926,7 @@ func cleanupIssue937(t *testing.T, conn *dbschema.DatabaseConnection) {
 
 func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
+	c := qt.New(t)
 
 	_, err := conn.ExecContext(
 		context.Background(),
@@ -1935,75 +1936,80 @@ func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConn
 			applied_at TIMESTAMP NOT NULL
 		)`,
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func issue273UsersCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_273_users").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue273Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_273 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
 func issue290WidgetsCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_290_widgets").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue290Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_290 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
 func issue299Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_299 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
@@ -2019,17 +2025,18 @@ type issue275Revision struct {
 
 func issue275Revisions(t *testing.T, conn *dbschema.DatabaseConnection) []issue275Revision {
 	t.Helper()
+	c := qt.New(t)
 
 	rows, err := conn.Query(`SELECT version, description, type, applied, total, hash, operator_version
 FROM atlas_schema_revisions
 ORDER BY CAST(version AS BIGINT)`)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var revisions []issue275Revision
 	for rows.Next() {
 		var revision issue275Revision
-		qt.Assert(t, rows.Scan(
+		c.Assert(rows.Scan(
 			&revision.Version,
 			&revision.Description,
 			&revision.RevisionType,
@@ -2040,7 +2047,7 @@ ORDER BY CAST(version AS BIGINT)`)
 		), qt.IsNil)
 		revisions = append(revisions, revision)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return revisions
 }
 

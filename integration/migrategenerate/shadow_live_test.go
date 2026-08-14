@@ -133,6 +133,7 @@ func requireMigrateGeneratePostgresTestConnection(
 	ctx context.Context,
 ) (string, *dbschema.DatabaseConnection) {
 	t.Helper()
+	c := qt.New(t)
 	var dbURL string
 	for _, name := range []string{"TEST_DATABASE_URL", "TEST_DB_URL", "POSTGRES_TEST_DSN", "POSTGRES_URL"} {
 		if value := os.Getenv(name); value != "" {
@@ -144,8 +145,8 @@ func requireMigrateGeneratePostgresTestConnection(
 		t.Skip("PostgreSQL test database URL is not set")
 	}
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)
 	return dbURL, conn
 }
 

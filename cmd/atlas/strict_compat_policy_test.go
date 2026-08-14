@@ -16,29 +16,31 @@ import (
 )
 
 func TestStrictCECommandTreeExposesOnlyCommunityCommandsInHelp(t *testing.T) {
+	c := qt.New(t)
 	root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 
 	schema, _, err := root.Find([]string{"schema"})
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, availableChildNames(schema), qt.DeepEquals,
+	c.Assert(err, qt.IsNil)
+	c.Assert(availableChildNames(schema), qt.DeepEquals,
 		[]string{"apply", "clean", "diff", "fmt", "inspect"})
 
 	migrate, _, err := root.Find([]string{"migrate"})
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, availableChildNames(migrate), qt.DeepEquals,
+	c.Assert(err, qt.IsNil)
+	c.Assert(availableChildNames(migrate), qt.DeepEquals,
 		[]string{"apply", "diff", "hash", "import", "lint", "new", "set", "status", "validate"})
 }
 
 func TestFullCompatibilityCommandTreeRetainsExtensions(t *testing.T) {
+	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
 
 	plan, _, err := root.Find([]string{"schema", "plan"})
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, plan.Hidden, qt.IsFalse)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Hidden, qt.IsFalse)
 
 	down, _, err := root.Find([]string{"migrate", "down"})
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, down.Hidden, qt.IsFalse)
+	c.Assert(err, qt.IsNil)
+	c.Assert(down.Hidden, qt.IsFalse)
 }
 
 func TestStrictCEFlagSurfaceMatchesCommunityInventory(t *testing.T) {
@@ -117,11 +119,12 @@ func TestStrictCEFlagSurfaceMatchesCommunityInventory(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(strings.Join(test.path, " "), func(t *testing.T) {
+			c := qt.New(t)
 			root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 			cmd, _, err := root.Find(test.path)
 
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, visibleLocalFlagNames(cmd), qt.DeepEquals, test.want)
+			c.Assert(err, qt.IsNil)
+			c.Assert(visibleLocalFlagNames(cmd), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -140,26 +143,28 @@ func TestFullCompatibilityFlagSurfaceRetainsExtensions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(strings.Join(test.path, " "), func(t *testing.T) {
+			c := qt.New(t)
 			root := atlas.NewCompatCommand("atlas")
 			cmd, _, err := root.Find(test.path)
 
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			for _, name := range test.want {
-				qt.Assert(t, cmd.Flags().Lookup(name), qt.IsNotNil, qt.Commentf("flag %s", name))
+				c.Assert(cmd.Flags().Lookup(name), qt.IsNotNil, qt.Commentf("flag %s", name))
 			}
 		})
 	}
 }
 
 func TestStrictCEHelpOmitsPtahEnvironmentBindings(t *testing.T) {
+	c := qt.New(t)
 	strictHelp := executeAtlasHelp(t,
 		atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE()),
 		"schema", "inspect",
 	)
 	fullHelp := executeAtlasHelp(t, atlas.NewCompatCommand("atlas"), "schema", "inspect")
 
-	qt.Assert(t, strictHelp, qt.Not(qt.Contains), "[env: PTAH_")
-	qt.Assert(t, fullHelp, qt.Contains, "[env: PTAH_URL]")
+	c.Assert(strictHelp, qt.Not(qt.Contains), "[env: PTAH_")
+	c.Assert(fullHelp, qt.Contains, "[env: PTAH_URL]")
 }
 
 func TestStrictCEHelpDoesNotAdvertiseOmittedExtensions(t *testing.T) {
@@ -175,6 +180,7 @@ func TestStrictCEHelpDoesNotAdvertiseOmittedExtensions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(strings.Join(test.path, " "), func(t *testing.T) {
+			c := qt.New(t)
 			strictHelp := executeAtlasHelp(t,
 				atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE()),
 				test.path...,
@@ -182,8 +188,8 @@ func TestStrictCEHelpDoesNotAdvertiseOmittedExtensions(t *testing.T) {
 			fullHelp := executeAtlasHelp(t, atlas.NewCompatCommand("atlas"), test.path...)
 
 			for _, fragment := range test.fragments {
-				qt.Assert(t, strictHelp, qt.Not(qt.Contains), fragment)
-				qt.Assert(t, fullHelp, qt.Contains, fragment)
+				c.Assert(strictHelp, qt.Not(qt.Contains), fragment)
+				c.Assert(fullHelp, qt.Contains, fragment)
 			}
 		})
 	}
@@ -217,6 +223,7 @@ Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -226,9 +233,9 @@ Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 			_, err := root.ExecuteC()
 
-			qt.Assert(t, exitcode.Code(err, 0), qt.Equals, test.wantCode)
-			qt.Assert(t, stdout.String(), qt.Equals, test.wantStdout)
-			qt.Assert(t, stderr.String(), qt.Equals, test.wantStderr)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, test.wantCode)
+			c.Assert(stdout.String(), qt.Equals, test.wantStdout)
+			c.Assert(stderr.String(), qt.Equals, test.wantStderr)
 		})
 	}
 }
@@ -281,6 +288,7 @@ func TestStrictCEGatedFlagsUsePtahDiagnostic(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -290,9 +298,9 @@ func TestStrictCEGatedFlagsUsePtahDiagnostic(t *testing.T) {
 
 			_, err := root.ExecuteC()
 
-			qt.Assert(t, exitcode.Code(err, 0), qt.Equals, 1)
-			qt.Assert(t, stdout.String(), qt.Equals, "")
-			qt.Assert(t, stderr.String(), qt.Equals, atlasStrictCompatGateStderr(test.path))
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(stdout.String(), qt.Equals, "")
+			c.Assert(stderr.String(), qt.Equals, atlasStrictCompatGateStderr(test.path))
 		})
 	}
 }
@@ -306,6 +314,7 @@ Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 }
 
 func TestStrictCEGateKeepsUnknownFlagParsing(t *testing.T) {
+	c := qt.New(t)
 	root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -315,12 +324,13 @@ func TestStrictCEGateKeepsUnknownFlagParsing(t *testing.T) {
 
 	_, err := root.ExecuteC()
 
-	qt.Assert(t, exitcode.Code(err, 0), qt.Equals, 2)
-	qt.Assert(t, stdout.String(), qt.Equals, "")
-	qt.Assert(t, stderr.String(), qt.Equals, "Error: unknown flag: --dir\n")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Equals, "Error: unknown flag: --dir\n")
 }
 
 func TestStrictCERejectsNonCommunityDialectBeforeCommandWork(t *testing.T) {
+	c := qt.New(t)
 	root := atlas.NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -330,9 +340,9 @@ func TestStrictCERejectsNonCommunityDialectBeforeCommandWork(t *testing.T) {
 
 	_, err := root.ExecuteC()
 
-	qt.Assert(t, exitcode.Code(err, 0), qt.Equals, 1)
-	qt.Assert(t, stdout.String(), qt.Equals, "")
-	qt.Assert(t, stderr.String(), qt.Equals,
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Equals,
 		"Error: Atlas Community Edition strict compatibility does not support database dialect \"clickhouse\"\n")
 }
 
@@ -360,12 +370,13 @@ func visibleLocalFlagNames(cmd *cobra.Command) []string {
 
 func executeAtlasHelp(t *testing.T, root *cobra.Command, path ...string) string {
 	t.Helper()
+	c := qt.New(t)
 	var stdout bytes.Buffer
 	root.SetOut(&stdout)
 	root.SetArgs(append(path, "--help"))
 
 	_, err := root.ExecuteC()
 
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return stdout.String()
 }

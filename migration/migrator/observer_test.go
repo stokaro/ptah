@@ -136,14 +136,15 @@ var (
 
 func openStatementObserverSQLite(t *testing.T) *dbschema.DatabaseConnection {
 	t.Helper()
+	c := qt.New(t)
 
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
 		"sqlite://"+filepath.Join(t.TempDir(), "statement-observer.sqlite"),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() {
-		qt.Check(t, conn.Close(), qt.IsNil)
+		c.Check(conn.Close(), qt.IsNil)
 	})
 	return conn
 }
@@ -154,6 +155,7 @@ func statementObserverTableCount(
 	tableName string,
 ) int {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(
@@ -161,7 +163,7 @@ func statementObserverTableCount(
 		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
 		tableName,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -171,13 +173,14 @@ func statementObserverRowCount(
 	tableName string,
 ) int {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(
 		context.Background(),
 		"SELECT count(*) FROM "+tableName,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -194,6 +197,7 @@ func readStatementObserverRevisionProgress(
 	version int64,
 ) statementObserverRevisionProgress {
 	t.Helper()
+	c := qt.New(t)
 
 	var progress statementObserverRevisionProgress
 	err := conn.QueryRowContext(
@@ -201,7 +205,7 @@ func readStatementObserverRevisionProgress(
 		"SELECT applied, total, error_stmt FROM "+tableName+" WHERE version = ?",
 		version,
 	).Scan(&progress.applied, &progress.total, &progress.errorStatement)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return progress
 }
 

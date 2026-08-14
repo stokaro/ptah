@@ -359,11 +359,12 @@ func sqliteRevisionCompletionTarget() revisionCompletionTarget {
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			t.Helper()
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				t.Context(),
 				"sqlite://"+filepath.Join(t.TempDir(), "revision-completion.db"),
 			)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -416,8 +417,9 @@ func postgresRevisionCompletionTarget() revisionCompletionTarget {
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			t.Helper()
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(t.Context(), postgresTestURL(t))
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -489,9 +491,10 @@ func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompl
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			t.Helper()
+			c := qt.New(t)
 			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEnv, "ptah_rev999")
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -557,12 +560,13 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			t.Helper()
+			c := qt.New(t)
 			dbURL := os.Getenv("CLICKHOUSE_URL")
 			if dbURL == "" {
 				t.Skip("CLICKHOUSE_URL not set")
 			}
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {

@@ -199,34 +199,35 @@ func openClickHouseReplayRealm(
 	t *testing.T,
 ) (adminConnection, realmConnection *dbschema.DatabaseConnection, databaseName string) {
 	t.Helper()
+	c := qt.New(t)
 	adminURL, configured := os.LookupEnv("PTAH_CLICKHOUSE_REALM_TEST_URL")
 	if !configured {
 		t.Skip("PTAH_CLICKHOUSE_REALM_TEST_URL is not configured")
 	}
 	admin, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	database := fmt.Sprintf("ptah_replay_%d", time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(platform.ClickHouse, database)
 	_, err = admin.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	parsedURL, err := url.Parse(adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	parsedURL.Path = "/" + database
 	parsedURL.RawPath = ""
 	realm, err := dbschema.ConnectToDatabase(t.Context(), parsedURL.String())
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	t.Cleanup(func() {
-		qt.Check(t, realm.Close(), qt.IsNil)
+		c.Check(realm.Close(), qt.IsNil)
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_, cleanupErr := admin.ExecContext(
 			cleanupCtx,
 			"DROP DATABASE IF EXISTS "+quotedDatabase+" SYNC",
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, admin.Close(), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
 	})
 	return admin, realm, database
 }
@@ -235,27 +236,28 @@ func openSQLServerReplayRealm(
 	t *testing.T,
 ) (adminConnection, realmConnection *dbschema.DatabaseConnection) {
 	t.Helper()
+	c := qt.New(t)
 	adminURL, configured := os.LookupEnv("PTAH_SQLSERVER_REALM_TEST_URL")
 	if !configured {
 		t.Skip("PTAH_SQLSERVER_REALM_TEST_URL is not configured")
 	}
 	admin, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	database := fmt.Sprintf("ptah_replay_%d", time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(platform.SQLServer, database)
 	_, err = admin.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	parsedURL, err := url.Parse(adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	query := parsedURL.Query()
 	query.Set("database", database)
 	parsedURL.RawQuery = query.Encode()
 	realm, err := dbschema.ConnectToDatabase(t.Context(), parsedURL.String())
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	t.Cleanup(func() {
-		qt.Check(t, realm.Close(), qt.IsNil)
+		c.Check(realm.Close(), qt.IsNil)
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_, cleanupErr := admin.ExecContext(
@@ -263,8 +265,8 @@ func openSQLServerReplayRealm(
 			"ALTER DATABASE "+quotedDatabase+" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "+
 				"DROP DATABASE "+quotedDatabase,
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, admin.Close(), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
 	})
 	return admin, realm
 }

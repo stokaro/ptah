@@ -348,6 +348,7 @@ func quoteSQLServerIdentifier(identifier string) string {
 
 func sqlServerLiveTableExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName, tableName string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(t.Context(), `
@@ -356,7 +357,7 @@ FROM sys.tables AS t
 JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 WHERE s.name = @p1 AND t.name = @p2
 `, schemaName, tableName).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 

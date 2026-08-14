@@ -21,11 +21,12 @@ import (
 
 func openInitializeOnceSQLite(t *testing.T) *dbschema.DatabaseConnection {
 	t.Helper()
+	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
 		"sqlite://"+filepath.Join(t.TempDir(), "initialize-once.db"),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }

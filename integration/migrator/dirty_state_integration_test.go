@@ -197,6 +197,7 @@ func runIssue265MySQLFamilyRepair(t *testing.T, dbURL, dialect string) {
 
 func issue265ColumnExists(t *testing.T, conn *dbschema.DatabaseConnection, table, column string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(
@@ -205,12 +206,13 @@ func issue265ColumnExists(t *testing.T, conn *dbschema.DatabaseConnection, table
 		table,
 		column,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 
 func issue265TableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int
 	err := conn.QueryRowContext(
@@ -218,7 +220,7 @@ func issue265TableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableN
 		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
 		tableName,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 

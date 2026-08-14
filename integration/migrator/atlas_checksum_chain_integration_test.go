@@ -78,12 +78,13 @@ func TestAtlasChecksumChainOutOfOrderPostgresIntegration(t *testing.T) {
 
 func issue1241AtlasFS(t *testing.T, files map[string]string) fstest.MapFS {
 	t.Helper()
+	c := qt.New(t)
 	fsys := make(fstest.MapFS, len(files)+1)
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
 	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 	return fsys
 }
@@ -94,32 +95,35 @@ func issue1241Migrator(
 	fsys fstest.MapFS,
 ) *migrator.Migrator {
 	t.Helper()
+	c := qt.New(t)
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return m.WithMigrationsTable("", issue1241RevisionTable).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 }
 
 func issue1241StoredHash(t *testing.T, conn *dbschema.DatabaseConnection, version string) string {
 	t.Helper()
+	c := qt.New(t)
 	var hash string
 	err := conn.QueryRowContext(
 		t.Context(),
 		"SELECT hash FROM "+issue1241RevisionTable+" WHERE version = $1",
 		version,
 	).Scan(&hash)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return hash
 }
 
 func issue1241EntryHash(t *testing.T, fsys fstest.MapFS, name string) string {
 	t.Helper()
+	c := qt.New(t)
 	sum, err := migratesum.Parse(fsys[migratesum.AtlasFileName].Data)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	entries := make(map[string]string, len(sum.Entries))
 	for _, entry := range sum.Entries {
 		entries[entry.Name] = strings.TrimPrefix(entry.Hash, "h1:")

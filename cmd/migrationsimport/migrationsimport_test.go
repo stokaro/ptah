@@ -23,6 +23,7 @@ func execute(args ...string) (stdout string, err error) {
 
 func writeGolangMigrateSource(t *testing.T) string {
 	t.Helper()
+	c := qt.New(t)
 	dir := t.TempDir()
 	files := map[string]string{
 		"1_init.up.sql":   "CREATE TABLE t (id int);\n",
@@ -31,7 +32,7 @@ func writeGolangMigrateSource(t *testing.T) string {
 		"README.md":       "# migrations\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	return dir
 }

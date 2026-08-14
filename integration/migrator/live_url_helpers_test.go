@@ -59,21 +59,22 @@ func mySQLFamilyTestURL(t *testing.T, dialect string, envNames ...string) string
 // while the system database is used only to provision and remove the realm.
 func mySQLFamilyScratchDatabaseURL(t *testing.T, dialect, adminEnv, prefix string) string {
 	t.Helper()
+	c := qt.New(t)
 
 	adminURL := mySQLFamilyTestURL(t, dialect, adminEnv)
 	adminConn, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { dbschema.CloseAndWarn(adminConn) })
 
 	database := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(dialect, database)
 	_, err = adminConn.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_, cleanupErr := adminConn.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quotedDatabase)
-		qt.Check(t, cleanupErr, qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
 	})
 
 	return mySQLFamilyURLWithDatabase(t, adminURL, database)
@@ -81,18 +82,19 @@ func mySQLFamilyScratchDatabaseURL(t *testing.T, dialect, adminEnv, prefix strin
 
 func mySQLFamilyURLWithDatabase(t *testing.T, rawURL, database string) string {
 	t.Helper()
+	c := qt.New(t)
 
 	if strings.Contains(rawURL, "@tcp(") {
 		scheme, dsn, found := strings.Cut(rawURL, "://")
-		qt.Assert(t, found, qt.IsTrue)
+		c.Assert(found, qt.IsTrue)
 		config, err := mysqldriver.ParseDSN(dsn)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		config.DBName = database
 		return scheme + "://" + config.FormatDSN()
 	}
 
 	parsed, err := url.Parse(rawURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + database
 	return parsed.String()
 }

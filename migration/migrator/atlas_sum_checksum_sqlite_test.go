@@ -29,9 +29,10 @@ const (
 // format on an ephemeral SQLite database.
 func newSQLiteAtlasSumMigrator(t *testing.T) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "atlas-sum.db"))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	fsys := fstest.MapFS{
@@ -49,15 +50,16 @@ DROP TABLE atlas_sum_widgets;
 `)},
 	}
 	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return conn, m
 }
 
 func storedRevisionChecksum(t *testing.T, conn *dbschema.DatabaseConnection, version int64) string {
 	t.Helper()
+	c := qt.New(t)
 	var checksum string
 	err := conn.QueryRow("SELECT checksum FROM schema_migrations WHERE version = ?", version).Scan(&checksum)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return checksum
 }
 
@@ -80,12 +82,13 @@ const (
 
 func atlasChainFS(t *testing.T, files map[string]string) fstest.MapFS {
 	t.Helper()
+	c := qt.New(t)
 	fsys := make(fstest.MapFS, len(files)+1)
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
 	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 	return fsys
 }
@@ -96,11 +99,12 @@ func newSQLiteAtlasChainMigrator(
 	fsys fstest.MapFS,
 ) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+dbPath)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return conn, m
 }
 
@@ -123,8 +127,9 @@ func atlasChainExpandedFS(t *testing.T, twoSQL string) fstest.MapFS {
 
 func atlasChainEntryHash(t *testing.T, fsys fstest.MapFS, name string) string {
 	t.Helper()
+	c := qt.New(t)
 	sum, err := migratesum.Parse(fsys[migratesum.AtlasFileName].Data)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	entries := make(map[string]string, len(sum.Entries))
 	for _, entry := range sum.Entries {
 		entries[entry.Name] = strings.TrimPrefix(entry.Hash, "h1:")
@@ -134,12 +139,13 @@ func atlasChainEntryHash(t *testing.T, fsys fstest.MapFS, name string) string {
 
 func atlasChainTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
 	t.Helper()
+	c := qt.New(t)
 	var count int
 	err := conn.QueryRow(
 		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
 		table,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count == 1
 }
 
@@ -150,8 +156,9 @@ func installSuccessfulAtlasChainTwoRevision(
 	appliedAt any,
 ) {
 	t.Helper()
+	c := qt.New(t)
 	_, err := conn.Exec(atlasChainTwoSQL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	_, err = conn.Exec(
 		`INSERT INTO schema_migrations
 (version, description, applied_at, state, applied, total, execution_time_ms, checksum)
@@ -161,7 +168,7 @@ VALUES (?, ?, ?, 'applied', 1, 1, 0, ?)`,
 		appliedAt,
 		atlasChainEntryHash(t, fsys, atlasChainTwoFile),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func setAtlasChainAppliedAt(
@@ -171,12 +178,13 @@ func setAtlasChainAppliedAt(
 	appliedAt time.Time,
 ) {
 	t.Helper()
+	c := qt.New(t)
 	_, err := conn.Exec(
 		"UPDATE schema_migrations SET applied_at = ? WHERE version = ?",
 		appliedAt,
 		version,
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func TestAtlasSumPtahRevisions_OutOfOrderInsertionReconcilesTheAppliedChain(t *testing.T) {

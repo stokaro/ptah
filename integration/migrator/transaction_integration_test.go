@@ -150,6 +150,7 @@ func cleanupIssue262(t *testing.T, conn *dbschema.DatabaseConnection) {
 
 func columnExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName, columnName string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var exists bool
 	err := conn.QueryRowContext(
@@ -164,24 +165,26 @@ func columnExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName, co
 		tableName,
 		columnName,
 	).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists
 }
 
 func issue262MigrationRecordCount(t *testing.T, conn *dbschema.DatabaseConnection) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	if !tableExists(t, conn, "schema_migrations_issue_262") {
 		return 0
 	}
 	var count int64
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM schema_migrations_issue_262").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func schemaExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var exists bool
 	err := conn.QueryRowContext(
@@ -189,6 +192,6 @@ func schemaExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName st
 		"SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
 		schemaName,
 	).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists
 }

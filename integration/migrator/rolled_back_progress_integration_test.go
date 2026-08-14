@@ -2336,11 +2336,12 @@ func issue887Names(prefix string) issue887TestNames {
 
 func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password string) string {
 	t.Helper()
+	c := qt.New(t)
 
 	scheme, remainder, found := strings.Cut(rawURL, "://")
-	qt.Assert(t, found, qt.IsTrue)
+	c.Assert(found, qt.IsTrue)
 	_, endpoint, found := strings.Cut(remainder, "@")
-	qt.Assert(t, found, qt.IsTrue)
+	c.Assert(found, qt.IsTrue)
 	return fmt.Sprintf("%s://%s:%s@%s", scheme, username, password, endpoint)
 }
 
@@ -2392,13 +2393,14 @@ func issue887AppliedCount(t *testing.T, conn *dbschema.DatabaseConnection, names
 
 func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
 	t.Helper()
+	c := qt.New(t)
 
 	var failure string
 	err := conn.QueryRowContext(
 		context.Background(),
 		fmt.Sprintf("SELECT error FROM %s WHERE version = '1'", names.revisionsTable),
 	).Scan(&failure)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return failure
 }
 
@@ -2409,6 +2411,7 @@ func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, nam
 
 func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table string) string {
 	t.Helper()
+	c := qt.New(t)
 
 	var engine string
 	err := conn.QueryRowContext(
@@ -2417,12 +2420,13 @@ func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table 
 		conn.Info().Schema,
 		table,
 	).Scan(&engine)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return engine
 }
 
 func issue887TableCount(t *testing.T, conn *dbschema.DatabaseConnection, table string) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2431,7 +2435,7 @@ func issue887TableCount(t *testing.T, conn *dbschema.DatabaseConnection, table s
 		conn.Info().Schema,
 		table,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2442,6 +2446,7 @@ func issue887ColumnCount(
 	column string,
 ) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2452,48 +2457,51 @@ WHERE table_schema = ? AND table_name = ? AND column_name = ?`,
 		table,
 		column,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887ScalarCount(t *testing.T, conn *dbschema.DatabaseConnection, query string) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(context.Background(), query).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) []string {
 	t.Helper()
+	c := qt.New(t)
 
 	rows, err := conn.QueryContext(
 		context.Background(),
 		fmt.Sprintf("SELECT note FROM %s ORDER BY note", names.ledgerTable),
 	)
-	qt.Assert(t, err, qt.IsNil)
-	defer func() { qt.Check(t, rows.Close(), qt.IsNil) }()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
 
 	notes := []string{}
 	for rows.Next() {
 		var note string
-		qt.Assert(t, rows.Scan(&note), qt.IsNil)
+		c.Assert(rows.Scan(&note), qt.IsNil)
 		notes = append(notes, note)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return notes
 }
 
 func issue887CreateUser(t *testing.T, conn *dbschema.DatabaseConnection) (username, password string) {
 	t.Helper()
+	c := qt.New(t)
 
 	username = fmt.Sprintf("p887_%d", time.Now().UnixNano())
 	password = username + "_password"
 	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
 		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password,
 	))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return username, password
 }
 
@@ -2504,13 +2512,14 @@ func issue887GrantBasePrivileges(
 	username string,
 ) {
 	t.Helper()
+	c := qt.New(t)
 
 	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
 		"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON %s.* TO '%s'@'%%'",
 		sqlident.Quote(dialect, conn.Info().Schema),
 		username,
 	))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func issue887IndexCount(
@@ -2521,6 +2530,7 @@ func issue887IndexCount(
 	index string,
 ) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2531,12 +2541,13 @@ WHERE table_schema = ? AND table_name = ? AND index_name = ?`,
 		table,
 		index,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event string) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2545,16 +2556,17 @@ func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event s
 		conn.Info().Schema,
 		event,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887FileMissing(t *testing.T, conn *dbschema.DatabaseConnection, path string) bool {
 	t.Helper()
+	c := qt.New(t)
 
 	var missing bool
 	err := conn.QueryRowContext(context.Background(), "SELECT LOAD_FILE(?) IS NULL", path).Scan(&missing)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return missing
 }
 
@@ -2565,6 +2577,7 @@ func issue887TableCountInSchema(
 	table string,
 ) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2573,7 +2586,7 @@ func issue887TableCountInSchema(
 		schema,
 		table,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2585,6 +2598,7 @@ func issue887SchemaPrivilegeCount(
 	privilege string,
 ) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2595,7 +2609,7 @@ WHERE table_schema = ? AND grantee = ? AND privilege_type = ?`,
 		fmt.Sprintf("'%s'@'%%'", username),
 		privilege,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2608,6 +2622,7 @@ func issue887RoutinePrivilegeCount(
 	privilege string,
 ) int64 {
 	t.Helper()
+	c := qt.New(t)
 
 	var count int64
 	err := conn.QueryRowContext(
@@ -2619,13 +2634,14 @@ WHERE Db = ? AND Routine_name = ? AND User = ? AND FIND_IN_SET(?, Proc_priv) > 0
 		username,
 		privilege,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887CloseConnection(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
-	qt.Check(t, conn.Close(), qt.IsNil)
+	c := qt.New(t)
+	c.Check(conn.Close(), qt.IsNil)
 }
 
 func issue887DropDatabase(t *testing.T, conn *dbschema.DatabaseConnection, database string) {
@@ -2660,11 +2676,12 @@ func issue887DropRole(t *testing.T, conn *dbschema.DatabaseConnection, role stri
 
 func issue887CleanupSQL(t *testing.T, conn *dbschema.DatabaseConnection, query string) {
 	t.Helper()
+	c := qt.New(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err := conn.ExecContext(ctx, query)
-	qt.Check(t, err, qt.IsNil, qt.Commentf("cleanup query: %s", query))
+	c.Check(err, qt.IsNil, qt.Commentf("cleanup query: %s", query))
 }
 
 func cleanupIssue887(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) {

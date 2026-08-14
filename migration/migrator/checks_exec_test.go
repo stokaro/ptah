@@ -23,30 +23,32 @@ func newSQLiteCheckMigrator(t *testing.T, seededRows int) (*dbschema.DatabaseCon
 
 func newSQLiteCheckMigratorWithSQL(t *testing.T, seededRows int, upSQL string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	t.Helper()
+	c := qt.New(t)
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "checks.db")
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	_, err = conn.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY)")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	for i := range seededRows {
 		_, err = conn.Exec("INSERT INTO users (id) VALUES (?)", i+1)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 	}
 
 	migration := migrator.CreateMigrationFromSQL(1, "drop_users", upSQL, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
-	qt.Assert(t, m.Initialize(ctx), qt.IsNil)
+	c.Assert(m.Initialize(ctx), qt.IsNil)
 	return conn, m
 }
 
 func usersTableExists(t *testing.T, conn *dbschema.DatabaseConnection) bool {
 	t.Helper()
+	c := qt.New(t)
 	var count int
 	err := conn.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count == 1
 }
 

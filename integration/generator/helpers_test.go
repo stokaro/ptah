@@ -30,10 +30,11 @@ func requireGeneratorDatabaseConnection(
 	envKey string,
 ) *dbschema.DatabaseConnection {
 	t.Helper()
+	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), requireGeneratorDatabaseURL(t, envKey))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() {
-		qt.Check(t, conn.Close(), qt.IsNil)
+		c.Check(conn.Close(), qt.IsNil)
 	})
 	return conn
 }
