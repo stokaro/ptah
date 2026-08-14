@@ -150,6 +150,49 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 				{line: 6, rule: qtshape.RuleImportAlias},
 			},
 		},
+		{
+			// R2's receiver keyed on the spelling reported line 25 here, where an
+			// inner block binds c to a runner. A repository-wide gate that refuses
+			// that code refuses correct code.
+			name:    "a checker name shadowed by an unrelated value is not a checker receiver",
+			fixture: "shadowedchecker.go.txt",
+			want: []wantFinding{
+				{line: 34, rule: qtshape.RuleCheckerSubtest},
+			},
+		},
+		{
+			// R2 keyed on the call reported none of these: the prohibited method
+			// was bound to a name, written as a method expression, or handed to a
+			// helper before it was called.
+			name:    "the checker Run method is reported wherever it is referenced",
+			fixture: "runmethodvalue.go.txt",
+			want: []wantFinding{
+				{line: 24, rule: qtshape.RuleCheckerSubtest},
+				{line: 33, rule: qtshape.RuleCheckerSubtest},
+				{line: 41, rule: qtshape.RuleCheckerSubtest},
+			},
+		},
+		{
+			// The enclosing-scope walk only reaches a parent TB that is a name it
+			// can classify. These two spell it as an initializer and as a field,
+			// and both produce the parent-FailNow failure.
+			name:    "a checker built from a TB the closure was not handed is reported",
+			fixture: "foreigntb.go.txt",
+			want: []wantFinding{
+				{line: 22, rule: qtshape.RuleBorrowedChecker},
+				{line: 31, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
+		{
+			// Suppressing by the set of names a closure declares somewhere lost
+			// both of these and invented the one at line 52, where c is an int.
+			name:    "a borrowed checker is decided at the position it is read",
+			fixture: "latedeclaration.go.txt",
+			want: []wantFinding{
+				{line: 20, rule: qtshape.RuleBorrowedChecker},
+				{line: 32, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -234,6 +277,46 @@ func TestScanFileNamesWhatWasBorrowed(t *testing.T) {
 
 	c.Check(got[0].Message, qt.Contains, "asserts through c, a *qt.C declared outside this subtest")
 	c.Check(got[2].Message, qt.Contains, "uses t, a testing.TB from the enclosing scope")
+}
+
+// TestScanFileNamesTheForeignCheckerSource pins what each R3 finding in
+// foreigntb.go.txt is about. The two spellings are what make the rule
+// necessary: one reaches the parent TB through a name an initializer bound and
+// the other through a field, and a rule that recognized only names would
+// satisfy the count above by reporting the first one twice.
+func TestScanFileNamesTheForeignCheckerSource(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "foreigntb.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 2)
+
+	c.Check(got[0].Message, qt.Contains, "builds its checker from parent")
+	c.Check(got[1].Message, qt.Contains, "builds its checker from held.tb")
+}
+
+// TestScanFileNamesTheRunReferenceItFound pins the receiver of each method-value
+// finding. Without it a rule that reported the same reference three times, or
+// that recognized only the `run := c.Run` binding and counted the two calls it
+// could see, would satisfy the count above.
+func TestScanFileNamesTheRunReferenceItFound(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "runmethodvalue.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 3)
+
+	c.Check(got[0].Col, qt.Equals, 9)
+	c.Check(got[1].Message, qt.Contains, "<expr>.Run")
+	c.Check(got[2].Col, qt.Equals, 11)
 }
 
 func TestScanFilesRefusesAnEmptySelection(t *testing.T) {

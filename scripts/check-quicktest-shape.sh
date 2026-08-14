@@ -4,10 +4,12 @@
 #   R1  the package-level qt.Assert / qt.Check are forbidden; assert through a
 #       *qt.C created from the testing.TB that owns the scope
 #   R2  c.Run is forbidden; subtests are t.Run(name, func(t *testing.T)) with a
-#       fresh qt.New inside. The callback may be named elsewhere and the
-#       receiver may be any expression; both spellings are the same subtest
+#       fresh qt.New inside. The callback may be named elsewhere, the receiver
+#       may be any expression, and the method may be referenced without being
+#       called there and then; all of those are the same subtest
 #   R3  a t.Run, b.Run or f.Fuzz closure may not assert through a checker, or
-#       build one from a testing.TB, that belongs to the scope outside it
+#       build one from a testing.TB, that belongs to the scope outside it, and
+#       the qt.New it does build must take the testing.TB it was handed
 #
 # There is no baseline and no exemption mechanism, on purpose. scripts/check-test-style.sh
 # carries one because it is cleaning up a pre-existing backlog under issue #541;

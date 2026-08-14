@@ -1,0 +1,52 @@
+// R2 used to fire only where the call was written X.Run(...), so binding the
+// method to a name first ran exactly the forbidden subtest and the gate said
+// nothing. What is prohibited is the method, so the reference to it is the
+// finding, whatever is done with the value afterwards.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+// stepper has nothing to do with quicktest. Its Run is bound to a name below
+// exactly as the checker's is, and is not a violation.
+type stepper struct{}
+
+func (stepper) Run(name string, step func(int)) {}
+
+func register(run func(string, func(*qt.C)) bool) {}
+
+func TestRunBoundToAName(t *testing.T) {
+	c := qt.New(t)
+
+	run := c.Run
+	run("the method value is the same subtest", func(c *qt.C) {
+		c.Assert(1, qt.Equals, 1)
+	})
+}
+
+func TestRunAsAMethodExpression(t *testing.T) {
+	c := qt.New(t)
+
+	(*qt.C).Run(c, "the method expression is the same subtest", func(c *qt.C) {
+		c.Assert(2, qt.Equals, 2)
+	})
+}
+
+func TestRunHandedToAHelper(t *testing.T) {
+	c := qt.New(t)
+
+	register(c.Run)
+}
+
+func TestUnrelatedRunBoundToAName(t *testing.T) {
+	var steps stepper
+
+	run := steps.Run
+	run("an unrelated runner is not a subtest", func(int) {})
+
+	c := qt.New(t)
+	c.Check(3, qt.Equals, 3)
+}

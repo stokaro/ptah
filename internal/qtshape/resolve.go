@@ -22,6 +22,11 @@ import (
 //     alone. `callback := func(t *testing.T) { c.Assert(...) }` followed by
 //     `t.Run(name, callback)` escaped both rules while producing exactly the
 //     parent-FailNow failure R3 exists to prevent.
+//   - R2's receiver and R3's inherited names were then still decided by
+//     membership in a set of names, which is the same mistake one level down.
+//     An inner `c := runner{}` was reported as the checker the enclosing
+//     function happens to call `c`, and a `c := qt.New(t)` written halfway down
+//     a closure retroactively excused every assertion above it.
 //
 // The resolution here is lexical and positional because Go's scoping is: a name
 // declared inside a block is what that name means from the end of its
@@ -75,6 +80,23 @@ type nameDecl struct {
 	// lit is set when the name was bound to a function literal, which is the
 	// only case in which this package can look inside the callback's body.
 	lit *ast.FuncLit
+	// typ is the type written in the declaration, and value its initializer,
+	// when it has them. They are kept unclassified because deciding whether a
+	// type is *qt.C is itself a name resolution through this table, so it
+	// cannot run until the table is built.
+	typ   ast.Expr
+	value ast.Expr
+	// checker and tb are filled in by classifyBindings once the file's imports
+	// are resolved: the name denotes a *qt.C, or a testing.T, B, F or TB.
+	checker bool
+	tb      bool
+}
+
+// declaredWithin reports whether this declaration is written inside a region of
+// source. For a closure that is the difference between a name the closure owns
+// and one it reaches out of itself for, which is the whole of R3.
+func (d *nameDecl) declaredWithin(s span) bool {
+	return s.contains(d.from)
 }
 
 // bindings is one file's lexical name table.
@@ -123,6 +145,15 @@ func (b *bindings) lookup(name string, pos token.Pos) (*nameDecl, bool) {
 	}
 
 	return best, best != nil
+}
+
+// each visits every declaration in the table, in no particular order.
+func (b *bindings) each(visit func(d *nameDecl)) {
+	for _, decls := range b.decls {
+		for _, d := range decls {
+			visit(d)
+		}
+	}
 }
 
 // closer reports whether d is a nearer declaration than best: a narrower block
@@ -177,6 +208,8 @@ func (b *bindings) declarePackageSpec(spec ast.Spec) {
 				scope: b.file,
 				sig:   declaredSignature(typed.Type, value),
 				lit:   literalOf(value),
+				typ:   typed.Type,
+				value: value,
 			})
 		}
 	case *ast.TypeSpec:
@@ -260,7 +293,7 @@ func (b *bindings) declareFields(list *ast.FieldList, sc span) {
 	}
 	for _, field := range list.List {
 		for _, name := range field.Names {
-			b.declare(name.Name, &nameDecl{from: sc.start, scope: sc, sig: functionType(field.Type)})
+			b.declare(name.Name, &nameDecl{from: sc.start, scope: sc, sig: functionType(field.Type), typ: field.Type})
 		}
 	}
 }
@@ -281,6 +314,7 @@ func (b *bindings) declareAssign(assign *ast.AssignStmt, sc span) {
 			scope: sc,
 			sig:   declaredSignature(nil, value),
 			lit:   literalOf(value),
+			value: value,
 		})
 	}
 }
@@ -299,6 +333,8 @@ func (b *bindings) declareValueSpec(spec *ast.ValueSpec, sc span) {
 			scope: sc,
 			sig:   declaredSignature(spec.Type, value),
 			lit:   literalOf(value),
+			typ:   spec.Type,
+			value: value,
 		})
 	}
 }

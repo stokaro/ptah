@@ -1,0 +1,55 @@
+// Suppressing a borrowed checker with "this closure declares that name
+// somewhere" is wrong in both directions. Go's scope for a short variable
+// declaration begins at the end of the declaration, so an assertion written
+// above it still runs on the parent's checker; and a name an enclosing block
+// bound to something that is not a checker at all does not become one by being
+// spelled c.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestDeclarationAfterTheUse(t *testing.T) {
+	c := qt.New(t)
+	c.Check(1, qt.Equals, 1)
+
+	t.Run("the assertion above the declaration is the parent's", func(t *testing.T) {
+		c.Assert(2, qt.Equals, 2)
+
+		c := qt.New(t)
+		c.Assert(3, qt.Equals, 3)
+	})
+}
+
+func TestDeclarationInsideANestedBlock(t *testing.T) {
+	c := qt.New(t)
+	c.Check(4, qt.Equals, 4)
+
+	t.Run("a nested block never covers the closure's own", func(t *testing.T) {
+		c.Assert(5, qt.Equals, 5)
+
+		{
+			c := qt.New(t)
+			c.Assert(6, qt.Equals, 6)
+		}
+	})
+}
+
+// An enclosing block takes the name over for something that is not a checker,
+// so the closure reads an int and nothing crosses the boundary.
+func TestUnrelatedShadowIsNotABorrowedChecker(t *testing.T) {
+	c := qt.New(t)
+	c.Check(7, qt.Equals, 7)
+
+	{
+		c := 8
+
+		t.Run("the c this closure reads is an int", func(t *testing.T) {
+			inner := qt.New(t)
+			inner.Assert(c, qt.Equals, 8)
+		})
+	}
+}

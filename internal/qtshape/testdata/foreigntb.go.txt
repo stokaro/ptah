@@ -1,0 +1,54 @@
+// R3 reached the parent's testing.TB only where it was a name it could
+// classify: a parameter, or a var with the type written out. A TB bound by an
+// initializer, or reached through a field, produced the same parent-FailNow
+// failure and was silent. What AGENTS.md states is that the checker comes from
+// the testing.TB the closure was handed, so that is what is asked.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+type fixtureTB struct {
+	tb testing.TB
+}
+
+func TestCheckerFromATBBoundByAnInitializer(t *testing.T) {
+	parent := t
+
+	t.Run("the checker is not built from the handed TB", func(t *testing.T) {
+		c := qt.New(parent)
+		c.Assert(1, qt.Equals, 1)
+	})
+}
+
+func TestCheckerFromATBReachedThroughAField(t *testing.T) {
+	held := fixtureTB{tb: t}
+
+	t.Run("the checker is not built from the handed TB", func(t *testing.T) {
+		c := qt.New(held.tb)
+		c.Assert(2, qt.Equals, 2)
+	})
+}
+
+// The target shape, and two things that are not violations: a helper closure
+// nested inside the subtest builds its checker from the TB it was itself
+// handed, and a subtest that asserts nothing needs no checker at all.
+func TestConformingCheckerSources(t *testing.T) {
+	t.Run("the closure builds from its own parameter", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(3, qt.Equals, 3)
+
+		nested := func(tb testing.TB) {
+			inner := qt.New(tb)
+			inner.Assert(4, qt.Equals, 4)
+		}
+		nested(t)
+	})
+
+	t.Run("a subtest that asserts nothing needs no checker", func(t *testing.T) {
+		t.Log("work")
+	})
+}

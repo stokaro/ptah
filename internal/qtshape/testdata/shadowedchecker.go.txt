@@ -1,0 +1,37 @@
+// R2's receiver used to be matched by spelling against every checker the
+// enclosing function declares, so an inner block that takes the name over for
+// something else was reported as a quicktest subtest and a repository-wide gate
+// refused correct code. The receiver is resolved where it is written instead.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+// runner has nothing to do with quicktest, and its Run takes a callback of its
+// own.
+type runner struct{}
+
+func (runner) Run(name string, step func(int)) {}
+
+func TestShadowedReceiverIsNotAChecker(t *testing.T) {
+	c := qt.New(t)
+	c.Check(1, qt.Equals, 1)
+
+	{
+		c := runner{}
+		c.Run("an inner c that is not the checker", func(int) {})
+	}
+}
+
+// The same spelling in the same file, where it really is the checker. Without
+// this the fixture would be satisfied by a rule that reports nothing at all.
+func TestTheCheckerItselfIsStillReported(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("a real checker subtest", func(c *qt.C) {
+		c.Assert(2, qt.Equals, 2)
+	})
+}
