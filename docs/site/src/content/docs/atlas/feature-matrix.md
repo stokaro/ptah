@@ -72,14 +72,14 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 180 capabilities below:
+Across the 181 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 111 |
+| Ptah supports it fully | 112 |
 | Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 20 |
-| Ptah and Atlas CE both support it | 34 |
+| Ptah and Atlas CE both support it | 35 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
 | Atlas CE has it and Ptah does not, or only in part | 23 |
@@ -175,6 +175,7 @@ seven of them as open capabilities regardless.
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
 | Baseline an existing database | ✅ | ✅ | ✅ | Ptah adds a standalone baseline verb with `--shadow-db` verification and `--dry-run`; CE exposes baselining as migrate apply `--baseline`. |
 | Create an empty migration file | ✅ | ✅ | ✅ | Native create writes an up/down pair; compat new writes the selected layout's skeleton for atlas and all five external formats, refreshes `atlas.sum`, `--edit` opens $VISUAL or $EDITOR on atlas. |
+| Direct Flyway revision identity | ✅ | ✅ | ✅ | Exact Flyway tokens persist; numeric keys retain order. Empty identities render as "". A repeatable set target preserves retired versioned rows that CE deletes; unknown roles and ties fail closed. |
 | Directory integrity file: hash, validate, and the apply/status/set/import gate | ✅ | ✅ | ✅ | hash writes `ptah.sum` or `atlas.sum`; validate checks it. Compat apply, status and set refuse a stale or missing `atlas.sum`; import verifies one the source carries. Native up gates hashed dirs only. |
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. |
@@ -183,7 +184,7 @@ seven of them as open capabilities regardless.
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Ptah records failed rollback direction, error, and completed-statement count in both revision-table formats; compat keeps the Atlas schema but does not copy Atlas's hidden failed-down state. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as Atlas CE runs it. Editing the body then fails on a Ptah revision checksum where CE exits 0. |
 | Generate migrations from a schema diff | 🟡 | ✅ | ✅ | diff and new stamp the UTC YYYYMMDDHHMMSS second, stepping only past a version already taken, as CE does; checkpoint and rebase bump past the newest. Every step parses back as a second. |
-| migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Requests a verified dirty-row retry and unmanaged-object adoption. Recovery skips only an unchanged committed prefix and preserves progress; URL scope selects tables or schemas for adoption. |
+| migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Exact-identity retries require the current provider to own the dirty body; the flag also permits unmanaged-object adoption. Recovery preserves the committed prefix. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import writes Ptah format; compat import writes Atlas format and orders `R__` last. Conventional Liquibase SQL becomes a global numeric changeset stream. Liquibase XML/YAML/JSON is unsupported. |
 | Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with Open rules; its features page marks the CLI Pro. Compat requires `--dev-url`. `--latest 0` disables latest selection but preserves Git; opt-ins lift each precondition. |

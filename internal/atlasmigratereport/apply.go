@@ -40,6 +40,7 @@ func WriteApplyFormat(w io.Writer, format string, opts ApplyFormatOptions) error
 		SelectedKeys:     result.SelectedKeys,
 		CurrentVersion:   result.CurrentVersion,
 		CurrentKey:       result.CurrentKey,
+		CurrentKeySet:    result.CurrentKeySet,
 		ErrorText:        result.ErrorText,
 		ApplyError:       result.ApplyError,
 		Applied:          result.Applied,

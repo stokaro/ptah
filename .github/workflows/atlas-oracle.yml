@@ -83,6 +83,12 @@ jobs:
           ./integration/atlasoracle/migratedirquery
           -count=1
 
+      - name: Verify Flyway revision identity contract
+        run: >-
+          go test -tags=integration
+          ./integration/atlasoracle/flywayrevision
+          -count=1
+
       - name: Regenerate Atlas CE corpus
         run: >-
           internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh

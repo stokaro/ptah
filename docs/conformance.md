@@ -1939,8 +1939,8 @@ The repository's Atlas-oracle workflow independently rebuilds Atlas CE from an
 immutable source archive, verifies that the release tag resolves to the locked
 commit, checks the committed SHA-256 digest and exact
 `atlas community version v1.3.0` output, then runs the migration-directory
-query and migrate-apply interoperability controls, runs the
-differential migration-sum tests, and regenerates the committed corpus.
+query, migrate-apply interoperability, and Flyway revision-identity controls,
+runs the differential migration-sum tests, and regenerates the committed corpus.
 Reproduce that oracle locally:
 
 ```bash
@@ -1953,6 +1953,10 @@ GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   go test -tags=integration -count=1 \
   ./integration/atlasoracle/migrateapply
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/flywayrevision
 GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   PTAH_ATLAS_FUZZ_N=200 \

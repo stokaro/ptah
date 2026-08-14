@@ -193,6 +193,7 @@ func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 	c.Assert(stdout, qt.Contains, "  -- Executed Files:  1\n")
 	c.Assert(stdout, qt.Contains, "  -- Pending Files:   1\n")
+	c.Assert(stdout, qt.Contains, "  -- Current Version: 1\n")
 }
 
 // TestCompatMigrateRevisionVerbs_DirFormatIsVerbatim pins the case rule these

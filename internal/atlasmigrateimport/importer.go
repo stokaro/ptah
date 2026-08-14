@@ -30,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/importer"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -1152,6 +1153,107 @@ func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
 	return sources, nil
 }
 
+// CompareFlywayRevisionOrder compares a retired exact Flyway identity on the
+// left with the selected provider migration on the right. The persisted file
+// role is part of that relationship: a retired baseline precedes a versioned
+// target even when its numeric token is larger, while versioned history a
+// selected baseline squashes remains before that baseline by the raw-token cut
+// Flyway uses for files reached after a baseline. Two versioned migrations use
+// component order instead.
+//
+// A repeatable target follows both. Atlas CE rows do not always preserve the
+// retired role, so missing role evidence returns false instead of reconstructing
+// every retired token as a versioned file.
+func CompareFlywayRevisionOrder(
+	left, right migrator.AtlasRevisionOrderIdentity,
+) (int, bool) {
+	if left.RevisionVersion == right.RevisionVersion {
+		return 0, true
+	}
+	leftRole, leftOK := classifyFlywayRevisionOrderRole(left)
+	rightRole, rightOK := classifyFlywayRevisionOrderRole(right)
+	if !leftOK || !rightOK {
+		return 0, false
+	}
+	if rightRole == flywayRevisionOrderRepeatable {
+		return -1, true
+	}
+	if leftRole == flywayRevisionOrderRepeatable {
+		return 1, true
+	}
+	if leftRole == flywayRevisionOrderBaseline && rightRole == flywayRevisionOrderVersioned {
+		return -1, true
+	}
+	if rightRole == flywayRevisionOrderBaseline {
+		if leftRole != flywayRevisionOrderVersioned {
+			return 0, false
+		}
+		return strings.Compare(left.RevisionVersion, right.RevisionVersion), true
+	}
+	if leftRole == flywayRevisionOrderBaseline {
+		return 0, false
+	}
+	if leftRole != flywayRevisionOrderVersioned {
+		return 0, false
+	}
+	leftComponents, leftOK := comparableFlywayVersionComponents(left.RevisionVersion)
+	rightComponents, rightOK := comparableFlywayVersionComponents(right.RevisionVersion)
+	if !leftOK || !rightOK {
+		return 0, false
+	}
+	order := compareFlywaySumVersions(leftComponents, rightComponents)
+	return order, order != 0
+}
+
+type flywayRevisionOrderRole uint8
+
+const (
+	flywayRevisionOrderUnknown flywayRevisionOrderRole = iota
+	flywayRevisionOrderBaseline
+	flywayRevisionOrderVersioned
+	flywayRevisionOrderRepeatable
+)
+
+func classifyFlywayRevisionOrderRole(
+	identity migrator.AtlasRevisionOrderIdentity,
+) (flywayRevisionOrderRole, bool) {
+	if identity.Repeatable {
+		return flywayRevisionOrderRepeatable, true
+	}
+	switch identity.AtlasType {
+	case migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
+		migrator.AtlasRevisionTypeBaseline |
+			migrator.AtlasRevisionTypeApplied |
+			migrator.AtlasRevisionTypeManuallySet:
+		return flywayRevisionOrderBaseline, true
+	case migrator.AtlasRevisionTypeBaseline:
+		if identity.OperatorVersion == revisiontable.SourceBaselineOperatorVersion {
+			return flywayRevisionOrderBaseline, true
+		}
+	case migrator.AtlasRevisionTypeApplied,
+		migrator.AtlasRevisionTypeApplied | migrator.AtlasRevisionTypeManuallySet:
+		if identity.OperatorVersion == revisiontable.SourceIdentityOperatorVersion {
+			return flywayRevisionOrderVersioned, true
+		}
+	}
+	return flywayRevisionOrderUnknown, false
+}
+
+func comparableFlywayVersionComponents(version string) ([]int64, bool) {
+	if version == "" {
+		return nil, false
+	}
+	file := flywaySumFile{
+		name:       "V" + version + ".sql",
+		version:    version,
+		components: parseFlywaySumVersion(version),
+	}
+	if _, err := flywayOrderingKey(file); err != nil {
+		return nil, false
+	}
+	return file.components, true
+}
+
 // FlywayCoveredSourceVersion carries both spellings one executed Flyway
 // migration has: the version token the source tool identifies it by, and the
 // int64 Ptah's migrator executes and records it under.
@@ -1206,6 +1308,32 @@ func FlywayCoveredSourceVersions(fsys fs.FS, format Format) ([]FlywayCoveredSour
 		}
 	}
 	return out, nil
+}
+
+// FlywayCoveredRepeatableVersions reports the converted execution-order keys
+// whose source files are Flyway repeatables. Conversion renders every entry as
+// a numeric Atlas filename, so the exact repeatable role has to travel beside
+// the converted filesystem rather than be inferred from its empty source
+// token: an ordinary V.sql also owns the empty token.
+func FlywayCoveredRepeatableVersions(fsys fs.FS, format Format) ([]int64, error) {
+	if format != FormatFlyway {
+		return nil, nil
+	}
+	covered, err := flywayCoveredFiles(fsys)
+	if err != nil {
+		return nil, err
+	}
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+	repeatable := make([]int64, 0, 1)
+	for i, file := range covered {
+		if file.kind == flywaySumRepeatable {
+			repeatable = append(repeatable, versions[i])
+		}
+	}
+	return repeatable, nil
 }
 
 // flywaySquashedSourceVersions reports the tokens of the migrations a surviving
