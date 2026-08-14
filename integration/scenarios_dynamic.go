@@ -2,13 +2,16 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
@@ -248,7 +251,7 @@ func GetDynamicScenarios() []TestScenario {
 		},
 		{
 			Name:             "dynamic_roles_cross_database",
-			Description:      "Test PostgreSQL roles are skipped gracefully on MySQL/MariaDB",
+			Description:      "Test PostgreSQL roles fail closed on MySQL/MariaDB without changing the database",
 			EnhancedTestFunc: testDynamicRolesCrossDatabase,
 		},
 		{
@@ -3410,14 +3413,17 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 
 // Helper functions for roles testing
 
-// skipNonPostgreSQLForRoles skips the test for non-PostgreSQL databases
-func skipNonPostgreSQLForRoles(conn *dbschema.DatabaseConnection, recorder *StepRecorder) error {
-	if conn.Info().Dialect != "postgres" {
-		return recorder.RecordStep("Skip Non-PostgreSQL", "Roles are PostgreSQL-only features", func() error {
-			return nil
-		})
+// skipNonPostgreSQLForRoles records that a PostgreSQL-only scenario has no
+// work on this target. The boolean tells the caller to return immediately;
+// recording a successful step alone does not stop the scenario.
+func skipNonPostgreSQLForRoles(conn *dbschema.DatabaseConnection, recorder *StepRecorder) (bool, error) {
+	if conn.Info().Dialect == platform.Postgres {
+		return false, nil
 	}
-	return nil
+	err := recorder.RecordStep("Skip Non-PostgreSQL", "Roles are PostgreSQL-only features", func() error {
+		return nil
+	})
+	return true, err
 }
 
 // verifyBasicRolesSchema verifies the basic roles schema contains expected roles
@@ -3474,7 +3480,8 @@ func verifyBasicRolesSchema(schema *goschema.Database) error {
 
 // testDynamicRolesBasic tests basic PostgreSQL role creation setup
 func testDynamicRolesBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQLForRoles(conn, recorder); err != nil {
+	skipped, err := skipNonPostgreSQLForRoles(conn, recorder)
+	if err != nil || skipped {
 		return err
 	}
 
@@ -3545,7 +3552,8 @@ func verifyAdvancedRolesSchema(schema *goschema.Database) error {
 
 // testDynamicRolesAdvanced tests advanced PostgreSQL role configurations
 func testDynamicRolesAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQLForRoles(conn, recorder); err != nil {
+	skipped, err := skipNonPostgreSQLForRoles(conn, recorder)
+	if err != nil || skipped {
 		return err
 	}
 
@@ -3571,7 +3579,8 @@ func testDynamicRolesAdvanced(ctx context.Context, conn *dbschema.DatabaseConnec
 	})
 }
 
-// testDynamicRolesCrossDatabase tests PostgreSQL roles are skipped gracefully on MySQL/MariaDB
+// testDynamicRolesCrossDatabase tests PostgreSQL-shaped roles fail closed on
+// MySQL and MariaDB before any table is applied.
 func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
 	vem, err := NewVersionedEntityManager(fixtures)
 	if err != nil {
@@ -3583,7 +3592,11 @@ func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseC
 
 	// Test cross-database compatibility using the 016-roles fixture
 	return recorder.RecordStep("Test Cross-Database Compatibility", "Apply role fixtures on different database dialects", func() error {
-		if err := vem.MigrateToVersion(ctx, conn, "016-roles", "Roles cross-database test"); err != nil {
+		err := vem.MigrateToVersion(ctx, conn, "016-roles", "Roles cross-database test")
+		if dialect == platform.MySQL || dialect == platform.MariaDB {
+			return verifyMySQLFamilyRoleRefusal(conn, err)
+		}
+		if err != nil {
 			return fmt.Errorf("failed to migrate to 016-roles: %w", err)
 		}
 
@@ -3604,20 +3617,35 @@ func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseC
 				return fmt.Errorf("PostgreSQL should have roles in schema")
 			}
 		} else if len(schema.Tables) == 0 {
-			// For MySQL/MariaDB, the schema still contains all features from entity fixtures
-			// but they should be ignored during SQL generation and migration
-			// This test verifies that the migration completed successfully without errors
-			// which means the PostgreSQL-specific features were properly skipped
-
-			// The fact that we reached this point means the migration succeeded,
-			// which proves that PostgreSQL-specific features were gracefully skipped
-
-			// Verify that basic schema elements are still present
 			return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
 		}
 
 		return nil
 	})
+}
+
+func verifyMySQLFamilyRoleRefusal(conn *dbschema.DatabaseConnection, err error) error {
+	if err == nil {
+		return fmt.Errorf("expected MySQL-family role declaration to fail closed")
+	}
+	if !errors.Is(err, ptaherr.ErrUnsupportedFeature) {
+		return fmt.Errorf("expected unsupported-feature role refusal, got: %w", err)
+	}
+	want := fmt.Sprintf(
+		"%s: CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state; manage roles outside Ptah for this target",
+		conn.Info().Dialect,
+	)
+	if !strings.Contains(err.Error(), want) {
+		return fmt.Errorf("expected named MySQL-family role refusal %q, got: %w", want, err)
+	}
+	schema, readErr := conn.Reader().ReadSchema()
+	if readErr != nil {
+		return fmt.Errorf("read schema after MySQL-family role refusal: %w", readErr)
+	}
+	if len(schema.Tables) != 0 {
+		return fmt.Errorf("MySQL-family role refusal changed the database: found %d tables", len(schema.Tables))
+	}
+	return nil
 }
 
 // testDynamicRolesModification tests PostgreSQL role modification and schema diffing

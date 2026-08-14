@@ -1300,24 +1300,15 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	return nil
 }
 
-// notGenerated records that Ptah does not generate the named object for this
-// MySQL-family target, in the same sentence the SQL Server renderer uses.
+// notGenerated records that Ptah does not generate the named operation for
+// this MySQL-family target, in the same sentence the SQL Server renderer uses.
 //
-// These five visitors returned an ERROR until the converter stopped gating
-// emission by dialect name. That was survivable only because the node never
-// arrived: FromDatabase deleted every role and grant before the MySQL family
-// could see one, so a schema declaring a role rendered at exit 0 with the role
-// missing and nothing said about it. Now the node arrives, and an error here
-// would abort the whole render -- turning fifteen silent omissions into a
-// command that produces no SQL at all, which removes a capability rather than
-// restoring one.
-//
-// The sentence names the generator rather than the engine because the engine
-// claim would be false: MySQL has had roles and GRANT ... TO <role> since 8.0
-// and MariaDB since 10.0.5. capability.MySQL84 and capability.MariaDB1011 leave
-// RoleManagement off because Ptah has no MySQL-family role reader and no
-// MySQL-family role planner, so a CREATE ROLE emitted here would never be read
-// back or planned again.
+// The sentence names the generator rather than the engine: some operations
+// routed here have an engine-specific equivalent that Ptah does not model.
+// Roles are deliberately not handled by this helper. A declared role is
+// first-class state, and Ptah has no MySQL-family role reader or convergent
+// planner, so its visitors fail closed instead of reporting comment-only
+// success.
 func (r *Renderer) notGenerated(kind, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- %s: %s is not generated for this target; skipped.", r.dialectUpper, kind)
@@ -1326,23 +1317,26 @@ func (r *Renderer) notGenerated(kind, name string) {
 	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
 }
 
-// VisitCreateRole names the role Ptah does not generate for this target. See
-// notGenerated for why it is a comment and not an error.
+// VisitCreateRole refuses the PostgreSQL-shaped role Ptah cannot converge on
+// this target. MySQL and MariaDB both host roles, but Ptah has no reader or
+// planner for their role model, so a successful comment-only render would
+// discard declared state.
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	r.notGenerated("role", node.Name)
-	return nil
+	return r.unsupportedRole("CREATE ROLE", node.Name)
 }
 
-// VisitDropRole names the role drop Ptah does not generate for this target.
+// VisitDropRole refuses rather than reporting a successful comment-only drop.
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	r.notGenerated("DROP ROLE", node.Name)
-	return nil
+	return r.unsupportedRole("DROP ROLE", node.Name)
 }
 
-// VisitAlterRole names the role change Ptah does not generate for this target.
+// VisitAlterRole refuses rather than silently omitting a detected role change.
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	r.notGenerated("ALTER ROLE", node.Name)
-	return nil
+	return r.unsupportedRole("ALTER ROLE", node.Name)
+}
+
+func (r *Renderer) unsupportedRole(operation, name string) error {
+	return unsupportedRoleError(r.dialect, operation, name)
 }
 
 // VisitGrantPrivilege names the grant Ptah does not generate for this target.

@@ -441,3 +441,60 @@ func executableSQL(sqlText string) string {
 	}
 	return strings.Join(kept, "\n")
 }
+
+// databaseDeclaringRoles builds a desired schema whose only content is the
+// named roles, in the order given.
+func databaseDeclaringRoles(names ...string) *goschema.Database {
+	roles := make([]goschema.Role, 0, len(names))
+	for _, name := range names {
+		roles = append(roles, goschema.Role{Name: name})
+	}
+	return &goschema.Database{Roles: roles}
+}
+
+// TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate pins the sentence
+// a MySQL-family plan produces for a schema carrying several roles.
+//
+// Planning passes two refusal gates. renderer.ValidateSchemaWithCapabilities
+// reads the DESIRED schema before a dialect planner is chosen, so it sees roles
+// in declaration order; the MySQL planner's own CREATE ROLE nodes are rendered
+// after it, and the comparer sorts diff.RolesAdded, so that gate refuses on the
+// alphabetically first role. Only whichever gate is reached first is ever seen,
+// and the two named different roles for the same schema: the 016-roles fixture
+// declares app_user, admin_user, readonly_user, and the live MySQL and MariaDB
+// cross-database scenarios failed with `expected ... CREATE ROLE admin_user
+// ..., got ... CREATE ROLE app_user ...` (stokaro/ptah#1479).
+//
+// A plan is the path the integration scenario takes, so this is the level the
+// disagreement has to be pinned at; the second case removes the roles from the
+// desired schema so the planner gate answers instead of validation.
+func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
+	// The order goschema parses the 016-roles fixture in.
+	declarationOrder := []string{"app_user", "admin_user", "readonly_user"}
+	// The order compare.Roles leaves diff.RolesAdded in.
+	added := []string{"admin_user", "app_user", "readonly_user"}
+
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+	}{
+		{name: "validation gate", generated: databaseDeclaringRoles(declarationOrder...)},
+		{name: "planner gate", generated: &goschema.Database{}},
+	}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				statements, err := planner.GenerateSchemaDiffSQLStatements(
+					&types.SchemaDiff{RolesAdded: added}, test.generated, dialect)
+
+				c.Assert(statements, qt.HasLen, 0)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err, qt.ErrorMatches,
+					".*"+dialect+": CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state.*")
+			})
+		}
+	}
+}
