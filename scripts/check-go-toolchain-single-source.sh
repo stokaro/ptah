@@ -367,7 +367,7 @@ while IFS=: read -r file line _; do
 	# somebody happened to use -- and a step this scan never finds is a step
 	# whose version nothing judges, while the vacuity threshold stays satisfied
 	# by its neighbors.
-done < <(git grep -nE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' -- .github)
+done < <(git grep -niE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' -- .github)
 
 # D1b: the enumeration above is a census, not a sample.
 #
@@ -382,7 +382,7 @@ done < <(git grep -nE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' -- .github)
 # clears the floor, and the version key inside the step that left is read by
 # nothing. A disagreement here is a failure, so the next spelling that escapes
 # the pattern reddens the gate rather than shrinking the sample.
-setup_go_mentions="$(git grep -c 'actions/setup-go@' -- .github | awk -F: '{n += $2} END {print n+0}')"
+setup_go_mentions="$(git grep -ci 'actions/setup-go@' -- .github | awk -F: '{n += $2} END {print n+0}')"
 if ((setup_go_mentions != setup_go_steps)); then
 	printf 'go toolchain check: %d lines under .github mention actions/setup-go@ but %d were enumerated as steps. A reference spelled in a way the scan does not reach leaves its version key unjudged\n' \
 		"$setup_go_mentions" "$setup_go_steps" >&2
@@ -511,7 +511,7 @@ while IFS= read -r action_file; do
 	# the default -- or the whole input -- leaves the step selecting nothing,
 	# and a detector that only inspects rows it found reports success because it
 	# found none.
-	if grep -qE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' "$action_file"; then
+	if grep -qiE 'uses:[[:space:]]*["'"'"']?actions/setup-go@' "$action_file"; then
 		# Collected with a read loop rather than `mapfile`, which is a bash 4
 		# builtin: macOS still ships bash 3.2, and a developer running this
 		# locally would otherwise get exit 127 instead of a verdict.
