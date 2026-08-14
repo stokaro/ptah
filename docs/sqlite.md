@@ -167,7 +167,9 @@ description reports them as ordinary tables.
 ```
 
 The exit code and standard output are untouched, so a pipeline that captures
-the document keeps working. What a comparison does with such a database is the
+the document keeps working. The note names only the virtual tables the rendered
+document still contains, so a selection that dropped them — `--include users`,
+say — renders no note either. What a comparison does with such a database is the
 subject of the next section, and it is not a note.
 
 ## Virtual Tables in a Comparison
@@ -259,6 +261,27 @@ registers dbstat, fts5, fts5vocab, geopoly, rtree, rtree_i32, sqlite_dbpage
 There is no safe exclusion to suggest, because naming the tables to exclude
 requires the module that is missing. Ptah says what it cannot determine instead
 of advising something that destroys data.
+
+The refusal fires only when the comparison can actually plan that removal —
+when some live table in it is one the desired side does not name. That is
+decidable without knowing which tables belong to the module, which is the whole
+difficulty: a `DROP TABLE` is only ever planned for a live table the desired
+state leaves out, so where there is no such table there is no drop and no
+storage can be destroyed. Two consequences worth knowing:
+
+- `--include users` narrows the comparison to one table the desired side names.
+  Nothing is droppable, so the comparison runs — measured as
+  `Schemas are synced, no changes to be made.` at exit 0, with no opt-in.
+- Two databases that both hold the same `fts4` index compare normally for the
+  same reason, and need no opt-in either.
+
+`--exclude docs` is the opposite case and stays refused, because it leaves the
+module's storage tables in the comparison with nothing naming them.
+
+One residue is stated rather than hidden: a desired state that *does* name such
+a table, with a different shape, can still plan an `ALTER` against module
+storage. Bounding that would require knowing which tables are the module's, and
+nothing can. This check bounds the destruction that was measured.
 
 Two ways forward:
 

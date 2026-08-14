@@ -127,11 +127,15 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			// still checked directly, so a zero value cannot read as "every
 			// module is present".
 			//
-			// The desired state DECLARES the table, so the #1469 removal
+			// The desired state DECLARES the virtual table, so the #1469 removal
 			// refusal cannot fire and answer for this row. Asserting only that
 			// some error came back would have been vacuous: with the list
 			// empty and the table undeclared, the removal refusal produces a
 			// message containing the same table and module.
+			//
+			// `docs_content` is what makes the run dangerous and therefore
+			// refusable -- a live table nothing names, which on a real fts4
+			// database is the module's own storage.
 			name:    "a virtual table is checked even with no list recorded",
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
@@ -139,6 +143,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			database: &types.DBSchema{
 				Tables: []types.DBTable{
 					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
+					{Name: "docs_content"},
 				},
 			},
 			wantErr:         true,
@@ -155,7 +160,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
 			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}},
+				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: []types.DBVirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "notes_ix", Module: "fts4"},
@@ -178,7 +183,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
 			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}},
+				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: []types.DBVirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
@@ -209,7 +214,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "false"),
 			desired: declaring("users"),
 			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}},
+				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -300,18 +305,55 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			// The control for the row above, and the reason it is not simply a
-			// hole: without the opt-in the same pair is still refused, by the
-			// database-side check rather than the addition check.
-			name:            "the same pair without the opt-in is still refused for the database side",
-			dialect:         "sqlite",
-			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			// And the same pair needs no opt-in at all, because nothing in it
+			// can be dropped: every live table is named on the desired side, so
+			// no DROP TABLE is planned however badly Ptah has misclassified the
+			// module's storage. Refusing this was the over-strict half of the
+			// same finding.
+			name:     "an unregistered module present on both sides needs no opt-in",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired:  declaringVirtual("docs", "fts4", "title, body"),
+			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			wantErr:  false,
+		},
+		{
+			// THE SCOPING ROW. `--include users` narrows the comparison to a
+			// single table the desired side names, so the module's storage is
+			// not in it and cannot be dropped. Measured on the command: the
+			// same run reports `Schemas are synced, no changes to be made.` at
+			// exit 0, and refusing it sent an operator to the opt-in for a run
+			// that was already safe.
+			//
+			// The recorded marker is deliberately still present -- narrowing
+			// cannot make the read's statement untrue, and this is exactly the
+			// case where the marker must not be read as "refuse".
+			name:    "a positive scope that leaves nothing droppable is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "users"}},
+				UnregisteredVirtualTables: unclassified,
+			},
+			wantErr: false,
+		},
+		{
+			// The control that keeps the row above from being a hole: add one
+			// live table the desired side does not name -- which is what
+			// `--exclude docs` leaves behind on a real fts4 database -- and the
+			// refusal fires again.
+			name:    "one undeclared live table is enough to refuse",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaring("users"),
+			database: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
+				UnregisteredVirtualTables: unclassified,
+			},
 			wantErr:         true,
 			wantUnsupported: true,
-			wantContains:    []string{"the database holds virtual table", "does not register"},
-			wantAbsent:      []string{"the desired schema adds"},
+			wantContains:    []string{"does not register"},
 		},
 		{
 			// The opt-in waives the database side and nothing else. An addition
@@ -442,6 +484,7 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		{
 			name: "an unclassified table is named with its module",
 			schema: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantContains: []string{
@@ -454,12 +497,40 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		{
 			name: "every unclassified table is named, not just the first",
 			schema: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "docs", VirtualModule: "fts4"},
+					{Name: "legacy", VirtualModule: "fts3"},
+				},
 				UnregisteredVirtualTables: []types.DBVirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
 				},
 			},
 			wantContains: []string{`"docs" (module fts4)`, `"legacy" (module fts3)`, "fts3, fts4"},
+		},
+		{
+			// Selection runs before the note. A table the projection dropped is
+			// not in the document, so naming it would send a reader looking for
+			// a statement that is not there. Measured on the command:
+			// `schema inspect --include users` against an fts4 database renders
+			// only `users` and now says nothing.
+			name: "a table the projection dropped is not named",
+			schema: &types.DBSchema{
+				Tables:                    []types.DBTable{{Name: "users"}},
+				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			},
+			wantSilent: true,
+		},
+		{
+			// A document with no tables in it has no statements to warn about.
+			// Selection can produce one: `--include` naming something the
+			// database does not have renders nothing, and a note beside an
+			// empty rendering describes a document that does not exist.
+			name: "an empty description says nothing",
+			schema: &types.DBSchema{
+				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			},
+			wantSilent: true,
 		},
 	}
 

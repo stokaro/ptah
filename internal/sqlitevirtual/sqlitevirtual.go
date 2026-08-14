@@ -225,16 +225,16 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 	if err != nil {
 		return err
 	}
+	semantics := identifier.ForDialect(dialect)
 	// Asked before anything is classified, because it decides whether the
 	// classification means anything. Every branch below reads `this table is
 	// ordinary` off the description; where a module is missing that answer was
 	// never SQLite's, and the tables it is wrong about are not the ones an
 	// operator can see or exclude.
-	if err := validateDatabaseIsClassifiable(database, registered); err != nil {
+	if err := validateDatabaseIsClassifiable(desired, database, registered, semantics); err != nil {
 		return err
 	}
 
-	semantics := identifier.ForDialect(dialect)
 	sides := pairSides(desired, database, semantics)
 	var collisions, transitions, removals, uncreatable []Table
 	for _, side := range sides {
@@ -337,12 +337,37 @@ func ValidateComparison(dialect string, desired *goschema.Database, database *ty
 // `SQL logic error`. Refused, waivable by [AllowUnregisteredModuleEnvVar],
 // because comparing such a database is something an operator could do before.
 //
+// It fires only when the comparison can actually plan that removal -- when some
+// live table in it is one the desired side does not name. That condition is
+// decidable without knowing WHICH tables are the module's, which is the whole
+// difficulty: a `DROP TABLE` is only ever planned for a live table the desired
+// state leaves out, so if there is no such table there is no drop, and no
+// module storage can be destroyed however badly Ptah has misclassified it.
+//
+// Scoping is what makes the distinction matter. Measured: `--include users`
+// against an fts4 database narrows the comparison to `users` alone and plans
+// nothing -- `Schemas are synced, no changes to be made.` -- yet an
+// unconditional refusal rejected it at exit 2 and sent the operator to the
+// opt-in for a run that was already safe. `--exclude docs` on the same database
+// is the opposite case and must still be refused, because it leaves the
+// module's five storage tables in the comparison with nothing naming them.
+//
+// The residue is stated rather than hidden: a desired state that DOES name such
+// a table, with a different shape, can still plan an ALTER against module
+// storage. Bounding that would mean knowing which tables are the module's, and
+// nothing here can. This check bounds the destruction that was measured.
+//
 // The desired side is NOT checked here. Its only impossible statement is the
 // `CREATE VIRTUAL TABLE` an addition plans, which is a question about one
 // paired name rather than about the description as a whole, so it is asked
 // where the pairing already decides that a name is an addition. See the
 // `side.wanted.virtual && !side.present` branch in [ValidateComparison].
-func validateDatabaseIsClassifiable(database *types.DBSchema, registered sqlitemodule.Set) error {
+func validateDatabaseIsClassifiable(
+	desired *goschema.Database,
+	database *types.DBSchema,
+	registered sqlitemodule.Set,
+	semantics identifier.Semantics,
+) error {
 	// Resolved before the side is scanned, so a malformed opt-in is reported on
 	// every SQLite comparison rather than only the ones holding an unregistered
 	// module. [ValidateToggle] already resolved it at the seam; doing it again
@@ -356,6 +381,9 @@ func validateDatabaseIsClassifiable(database *types.DBSchema, registered sqlitem
 	}
 	unclassified := liveUnregistered(database, registered)
 	if len(unclassified) == 0 {
+		return nil
+	}
+	if !someLiveTableIsUndeclared(desired, database, semantics) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -414,6 +442,41 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 		registered.String(),
 		modulesOf(wanted),
 	)
+}
+
+// someLiveTableIsUndeclared reports whether the comparison still holds a live
+// table the desired side does not name -- the one shape that plans a
+// `DROP TABLE`, and therefore the one that can destroy a module's storage.
+//
+// It joins on the comparator's own table identity rather than on a second
+// spelling of the rule, for the reason [identity] gives: SQLite folds ASCII
+// only, and a Unicode fold would call `"Ä"` and `"ä"` one table when the engine
+// reports two.
+//
+// A nil desired state names nothing, so every live table is undeclared and the
+// answer is true for any non-empty database. That is the same reading
+// [pairSides] gives it, and it keeps a nil desired state from being mistaken
+// for one that declared everything.
+func someLiveTableIsUndeclared(
+	desired *goschema.Database,
+	database *types.DBSchema,
+	semantics identifier.Semantics,
+) bool {
+	if database == nil {
+		return false
+	}
+	declared := make(map[string]struct{})
+	if desired != nil {
+		for _, table := range desired.Tables {
+			declared[identity(table.Schema, table.Name, semantics)] = struct{}{}
+		}
+	}
+	for _, table := range database.Tables {
+		if _, ok := declared[identity(table.Schema, table.Name, semantics)]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // liveUnregistered lists the database side's unclassifiable virtual tables.
@@ -650,13 +713,38 @@ func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
 	if w == nil || schema == nil || len(schema.UnregisteredVirtualTables) == 0 {
 		return
 	}
+	// Only the tables the document still contains are named, because the note
+	// names them and a reader cannot look up a name that is not there.
+	// Selection runs before this: `--include users` renders a document with no
+	// virtual table in it at all, and a note saying `virtual table "docs" ...
+	// this description reports them as ordinary tables` then describes a
+	// rendering that does not exist. An empty document falls out of the same
+	// rule and says nothing.
+	//
+	// The residue is a read-surface one and is smaller than the alternative. A
+	// projection that drops the virtual table while keeping its storage --
+	// `--exclude docs` -- goes unmentioned, so an operator who replays that
+	// document creates the module's tables as ordinary ones. They removed
+	// `docs` by name, so they know it is there; whereas naming a table the
+	// document does not contain sends every other reader looking for it.
+	semantics := identifier.ForDialect(platform.SQLite)
+	present := make(map[string]struct{}, len(schema.Tables))
+	for _, table := range schema.Tables {
+		present[identity(table.Schema, table.Name, semantics)] = struct{}{}
+	}
 	unclassified := make([]Table, 0, len(schema.UnregisteredVirtualTables))
 	for _, table := range schema.UnregisteredVirtualTables {
+		if _, ok := present[identity(table.Schema, table.Name, semantics)]; !ok {
+			continue
+		}
 		unclassified = append(unclassified, Table{
 			Schema: table.Schema,
 			Name:   table.Name,
 			Module: table.Module,
 		})
+	}
+	if len(unclassified) == 0 {
+		return
 	}
 	fmt.Fprintf(w,
 		"note: virtual %s %s %s a module this build does not register, so SQLite could not mark the"+
