@@ -193,6 +193,21 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 				{line: 32, rule: qtshape.RuleBorrowedChecker},
 			},
 		},
+		{
+			// `alias := c` has no written type and no qt.New, so classifying a
+			// declaration by its own syntax alone read every alias as an
+			// ordinary value: the three borrowed checkers and the prohibited
+			// Run below were all silent. The last two functions are the
+			// negatives that keep the propagation positional.
+			name:    "a checker or TB copied into another name keeps its identity",
+			fixture: "aliasedidentity.go.txt",
+			want: []wantFinding{
+				{line: 24, rule: qtshape.RuleBorrowedChecker},
+				{line: 32, rule: qtshape.RuleBorrowedChecker},
+				{line: 42, rule: qtshape.RuleBorrowedChecker},
+				{line: 50, rule: qtshape.RuleCheckerSubtest},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -276,7 +291,30 @@ func TestScanFileNamesWhatWasBorrowed(t *testing.T) {
 	c.Assert(got, qt.HasLen, 6)
 
 	c.Check(got[0].Message, qt.Contains, "asserts through c, a *qt.C declared outside this subtest")
-	c.Check(got[2].Message, qt.Contains, "uses t, a testing.TB from the enclosing scope")
+	c.Check(got[2].Message, qt.Contains, "builds its checker from t, which is not the testing.TB this subtest closure was handed")
+}
+
+// TestScanFileNamesWhatWasAliased pins which branch each finding in
+// aliasedidentity.go.txt comes from. The counts alone cannot separate them: a
+// propagation that carried only the checker would report the first and third
+// and could satisfy a count by reporting one of them twice, and the second is
+// the only site in the fixtures where the borrowed testing.TB message is the
+// one that survives dedupe.
+func TestScanFileNamesWhatWasAliased(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "aliasedidentity.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 4)
+
+	c.Check(got[0].Message, qt.Contains, "asserts through alias, a *qt.C declared outside this subtest")
+	c.Check(got[1].Message, qt.Contains, "uses parent, a testing.TB from the enclosing scope")
+	c.Check(got[2].Message, qt.Contains, "asserts through second, a *qt.C declared outside this subtest")
+	c.Check(got[3].Message, qt.Contains, "alias.Run is a (*qt.C).Run subtest")
 }
 
 // TestScanFileNamesTheForeignCheckerSource pins what each R3 finding in

@@ -1,0 +1,79 @@
+// A checker or a testing.TB copied into another name is the same object, and
+// `alias := c` has neither a written type nor a qt.New for the classification
+// pass to read. Every violation here is one an ordinary alias used to hide,
+// and every alias below is resolved at the position its initializer is written.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+type runner struct{}
+
+func (runner) Run(name string, f func(t *testing.T)) {
+	f(nil)
+}
+
+func TestAliasedChecker(t *testing.T) {
+	c := qt.New(t)
+	alias := c
+
+	t.Run("asserts through an alias of the parent checker", func(t *testing.T) {
+		alias.Assert(1, qt.Equals, 1)
+	})
+}
+
+func TestAliasedTB(t *testing.T) {
+	parent := t
+
+	t.Run("reads an alias of the parent TB", func(t *testing.T) {
+		parent.Log("this belongs to the parent test")
+	})
+}
+
+func TestAliasChain(t *testing.T) {
+	c := qt.New(t)
+	first := c
+	second := first
+
+	t.Run("asserts through the second link of the chain", func(t *testing.T) {
+		second.Assert(2, qt.Equals, 2)
+	})
+}
+
+func TestAliasedCheckerRunMethodValue(t *testing.T) {
+	c := qt.New(t)
+	alias := c
+
+	run := alias.Run
+	run("child", func(c *qt.C) {
+		c.Assert(3, qt.Equals, 3)
+	})
+}
+
+// The target shape, and two things that are not violations: an alias the
+// closure declares itself is the closure's own checker, and an alias of a
+// value that shadows the checker is that value, whatever the outer scope calls
+// it.
+func TestAliasDeclaredInsideTheSubtest(t *testing.T) {
+	t.Run("the alias is the closure's own checker", func(t *testing.T) {
+		c := qt.New(t)
+		alias := c
+		alias.Assert(4, qt.Equals, 4)
+	})
+}
+
+func TestAliasOfAShadowingValue(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(5, qt.Equals, 5)
+
+	{
+		c := runner{}
+		alias := c
+		alias.Run("not a quicktest subtest", func(t *testing.T) {
+			t.Log("work")
+		})
+	}
+}

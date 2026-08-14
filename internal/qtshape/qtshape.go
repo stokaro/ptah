@@ -207,6 +207,62 @@ func (a *analysis) classifyBindings() {
 		d.checker = a.isCheckerType(d.typ) || a.isCheckerConstructor(d.value)
 		d.tb = a.isTBType(d.typ)
 	})
+	a.propagateAliases()
+}
+
+// propagateAliases carries checker and testing.TB identity across a declaration
+// that copies another name: `alias := c` binds the same checker, and
+// `parent := t` the same testing.TB.
+//
+// Neither spelling has a written type and neither initializer is a qt.New call,
+// so the pass above sees nothing in either and every rule downstream then reads
+// the alias as an ordinary value. That is a hole in R2 and R3 at once:
+// `alias.Run(name, callback)` is the prohibited subtest, and
+// `t.Run(name, func(t *testing.T) { alias.Assert(...) })` is the parent-FailNow
+// failure R3 exists to prevent, with nothing in the syntax to distinguish it
+// from the spelling that is caught.
+//
+// The source is resolved at the position the initializer is written, so an
+// alias of an unrelated `c` in a nearer scope is that value and not the
+// checker. Only a bare identifier is followed: `tb := f.tb` reaches through a
+// field this package cannot resolve, and R3's foreign-TB check already covers
+// the qt.New spelling of that.
+func (a *analysis) propagateAliases() {
+	// A chain is resolved by repetition because the table is a map and hands
+	// out declarations in no order: `second := first` may be classified before
+	// `first := c`. Each pass only ever turns a flag on, so the loop settles
+	// after at most one pass per link.
+	for {
+		changed := false
+		a.names.each(func(d *nameDecl) {
+			source, ok := a.aliasSource(d)
+			if !ok {
+				return
+			}
+			gained := (source.checker && !d.checker) || (source.tb && !d.tb)
+			d.checker = d.checker || source.checker
+			d.tb = d.tb || source.tb
+			changed = changed || gained
+		})
+		if !changed {
+			return
+		}
+	}
+}
+
+// aliasSource resolves the declaration an initializer names when the
+// initializer is a bare identifier, at the position that identifier is written.
+func (a *analysis) aliasSource(d *nameDecl) (*nameDecl, bool) {
+	ident, ok := d.value.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	source, ok := a.names.lookup(ident.Name, ident.Pos())
+	if !ok || source == d {
+		return nil, false
+	}
+
+	return source, true
 }
 
 // source is the exact text an expression was written as, so a message can name
@@ -466,9 +522,13 @@ func (a *analysis) borrowedCheckerFindings(call *ast.CallExpr) []Finding {
 
 	closure := span{start: lit.Pos(), end: lit.End()}
 
+	// The foreign-checker walk goes first so that where both walks land on the
+	// same identifier -- `parent := t` read as the argument of qt.New -- dedupe
+	// keeps the message that names the qt.New, which is the one that says what
+	// to write instead.
 	var findings []Finding
-	findings = append(findings, a.inheritedFindings(lit, closure)...)
 	findings = append(findings, a.foreignCheckerFindings(lit, closure)...)
+	findings = append(findings, a.inheritedFindings(lit, closure)...)
 
 	return findings
 }
