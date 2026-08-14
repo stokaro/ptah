@@ -163,24 +163,43 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			// The same disagreement on the other dev-URL verdict: a leading
 			// space stopped the docker:// form being recognized.
 			//
-			// The engine name is the observable now, and it had to become one.
-			// This row used to assert the blanket refusal of every `docker://`
-			// value, and stokaro/ptah#844 made them provisionable, so a valid
-			// one is no longer a local error at all -- it is a container this
-			// verb starts. What the row is FOR survives that: a leading space
-			// must not stop the docker form being recognized, and the verdict
-			// must still be reached without a registry.
+			// The value this row carries changed with stokaro/ptah#1468, which
+			// made `docker://` a dev database this verb PROVISIONS rather than
+			// one it refuses. `docker://postgres/16/dev` is therefore no longer
+			// a local error at all, and the row would have been pinning the
+			// absence of a feature. What is still local is the URL's FORM, so
+			// the row names an engine no image table has.
 			//
-			// An engine no image table names is that verdict. It is read from
-			// the URL text alone, so it is answerable here, and it goes on
-			// discriminating both ways: a preflight judging the raw flag would
-			// not see `docker://` at all and would pull first, and a preflight
-			// that stopped reading the docker text would pull first too. Both
-			// were true of this branch before the fix, and both reported the
-			// typo as `fetch OCI manifest: ... connection refused`.
-			name:  "whitespace-prefixed docker --dev-url",
+			// The leading space is kept, but it no longer discriminates on its
+			// own and the comment above must not claim it does: measured by
+			// removing the command's TrimSpace, this row stays GREEN, because
+			// atlasurl and devdocker both normalize a docker URL themselves.
+			// The row above is the one that reddens, and it is what pins the
+			// command's single normalization. What the space still proves here
+			// is the other direction -- that the docker preflight is reached
+			// for a value carrying one, so it does not have to trim again.
+			name:  "whitespace-prefixed docker --dev-url naming no engine",
 			extra: []string{"--dev-url", " docker://nosuchengine/16/dev"},
-			want:  `unsupported docker image "nosuchengine"`,
+			want:  `unsupported docker --dev-url engine "nosuchengine"`,
+		},
+		{
+			// A different function answers this one. The engine is real and
+			// the dialect pins, so only devdocker.Parse can refuse it: a
+			// preflight that ran the dialect check alone would pass the row
+			// above and still dial the registry for this.
+			name:  "docker --dev-url path with too many segments",
+			extra: []string{"--dev-url", "docker://postgres/16/a/b/c"},
+			want:  `docker --dev-url path "/16/a/b/c" has more than <tag>/<database>`,
+		},
+		{
+			// The refusal most worth reaching without a network. The parameter
+			// would point the connection away from the container the URL
+			// provisions, at a database this run then destructively resets, so
+			// answering it after an authenticated registry round trip is the
+			// worst place to answer it.
+			name:  "docker --dev-url rerouting parameter",
+			extra: []string{"--dev-url", "docker://postgres/16/dev?host=prod.example"},
+			want:  `docker --dev-url parameter "host" would point the connection away from the container this URL provisions`,
 		},
 	}
 
@@ -201,6 +220,49 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			c.Check(combined, qt.Not(qt.Contains), "fetch OCI manifest")
 		})
 	}
+}
+
+// TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry is the other
+// half of the docker rows above, and the half that stops them being satisfied
+// by deleting a capability.
+//
+// The rows answer the forms that are wrong in the URL text. A `docker://` value
+// that is NOT wrong is a dev database stokaro/ptah#1468 provisions, so it has to
+// travel on to the pull. Without this test the cheapest way to make those rows
+// green is the check this file used to carry -- refuse every `docker://` -- and
+// that would pass all three while silently removing the feature the branch
+// exists to add.
+//
+// It also pins the order of the two remote steps, which is a decision and not an
+// accident. The artifact is pulled BEFORE the container is started, so a
+// registry that cannot be reached leaves nothing behind to clean up. The pinned
+// community binary v1.3.0 orders them the other way: measured with an unreadable
+// source and `--dev-url docker://postgres/16/dev`, it creates, starts and
+// destroys a postgres:16 container and only then reports that the file does not
+// exist. Matching that would trade a wasted network read for a container
+// lifecycle on every failed run, which compatibility rule (b) does not ask for.
+// Reversing the two here would answer this invocation with a Docker diagnostic,
+// or start a real database inside a unit test, instead of the dial failure
+// below.
+func TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry(t *testing.T) {
+	c := qt.New(t)
+	reference := closedRegistryReference(c)
+
+	out, err := runCommand(schema.NewSchemaCommand(),
+		"inspect", "--schema-file", reference, "--plain-http",
+		"--dev-url", "docker://postgres/16/dev")
+	combined := out + errorText(err)
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
+	c.Check(combined, qt.Contains, "connection refused", qt.Commentf("output:\n%s", combined))
+	// The value was carried, not refused: none of the dev-URL verdicts fired.
+	c.Check(combined, qt.Not(qt.Contains), "directly connectable dev database URL")
+	c.Check(combined, qt.Not(qt.Contains), "unsupported docker")
+	// Nothing reached the Docker daemon, because the pull came first. A build
+	// that provisioned before pulling could not produce an output free of every
+	// spelling of the word.
+	c.Check(combined, qt.Not(qt.Contains), "docker")
+	c.Check(combined, qt.Not(qt.Contains), "Docker")
 }
 
 // TestCompatSchemaInspect_StillRefusesOCI is the guard that makes the decision

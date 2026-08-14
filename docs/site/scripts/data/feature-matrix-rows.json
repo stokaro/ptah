@@ -1022,8 +1022,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--shadow-db` on generate, checkpoint, baseline and down; docker:// is refused. schema apply `--dry-run` runs the same rehearsal the real apply does.",
-    "evidence": "Built ptah binary --help: --shadow-db on `migrations generate`, `migrations checkpoint`, `migrations baseline`, `migrations down`; `migrations validate --dev-url docker://postgres/16/dev` exits 2 with \"docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay\"; conformance PARITY.md line 48 (dbtest-workflow) for the working replay path. The schema apply dry-run hole was closed by stokaro/ptah#940 item A: measured 2026-08-08, `schema apply --dev-url sqlite:///nonexistent-dir-xyz/dev.db --dry-run` exits 1 with \"connect to --dev-url: failed to ping database: unable to open database file (14)\", the same refusal --auto-approve gives, where it used to exit 0 and print a plan."
+    "note": "`--shadow-db` on generate, checkpoint, baseline and down; the replay path provisions a docker:// dev database. schema apply `--dry-run` runs the same rehearsal the real apply does.",
+    "evidence": "Built ptah binary --help: --shadow-db on `migrations generate`, `migrations checkpoint`, `migrations baseline`, `migrations down`; conformance PARITY.md line 48 (dbtest-workflow) for the working replay path. The docker:// refusal this row used to quote was deleted by stokaro/ptah#1468, which replaced it in internal/migrationreplay/replay.go with a devdocker.Resolve call; the message \"for migration SQL replay\" now occurs nowhere in the tree, and the Docker dev database row above carries that change's own measurements. The schema apply dry-run hole was closed by stokaro/ptah#940 item A: measured 2026-08-08, `schema apply --dev-url sqlite:///nonexistent-dir-xyz/dev.db --dry-run` exits 1 with \"connect to --dev-url: failed to ping database: unable to open database file (14)\", the same refusal --auto-approve gives, where it used to exit 0 and print a plan."
   },
   {
     "area": "Verification and contracts",

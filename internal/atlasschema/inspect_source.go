@@ -145,7 +145,55 @@ func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
 	if err := ValidateInspectOptions(opts); err != nil {
 		return err
 	}
-	return refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic)
+	if err := refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic); err != nil {
+		return err
+	}
+	return refuseInspectDevURLForm(opts.DevURL)
+}
+
+// refuseInspectDevURLForm answers every dev database URL verdict that is
+// decidable from the URL text alone.
+//
+// It exists because stokaro/ptah#1468 turned `docker://` from a value this
+// inspection refused into one it PROVISIONS, and the provisioning happens deep
+// inside [inspectOnDev] -- after the source has been fetched. That moved a whole
+// family of purely local argument errors back behind the registry, which is the
+// defect stokaro/ptah#1496 fixed for --format, --include and --connect-timeout.
+// Measured on a build of that merge: `--dev-url docker://nosuchengine/16/dev`
+// with a local --schema-file answers `unsupported docker --dev-url engine
+// "nosuchengine"`, and the same mistake with an oci:// --schema-file answered a
+// registry dial failure instead. The rerouting-parameter refusal -- the one that
+// stops a dev URL pointing the connection at a database the run then resets --
+// was behind the registry too.
+//
+// The two checks are the two the run reaches anyway, in the order it reaches
+// them: [atlassource.PinDialect] pins the dialect off --dev-url before any
+// source is loaded, and [devdocker.Parse] is the first thing
+// [devdocker.Provision] does. They are CALLED here rather than restated, so the
+// message an operator sees is the same one either spelling of the invocation
+// produces, and a verdict either function learns later is answered in front of
+// the registry without this function being edited. That is the same reason
+// resolveInspectLocals exists on the calling command: a hand-maintained list of
+// the checks somebody remembered drifts, and has drifted, twice.
+//
+// It is separate from [refuseInspectDevURL] because that one owns the verdicts
+// the two surfaces word differently; these are text facts both surfaces share.
+//
+// The value is NOT trimmed here. It is normalized once, by the command, so that
+// every consumer judges the same bytes; trimming again would let the next
+// caller reintroduce the disagreement that normalization removed.
+func refuseInspectDevURLForm(devURL string) error {
+	// No sets are passed: a caller reaching this has a source that is not a
+	// database URL, so it contributes no dialect, and this computes exactly the
+	// --dev-url half inspectOnDev computes from the same value.
+	if _, _, err := atlassource.PinDialect(devURL); err != nil {
+		return err
+	}
+	if !devdocker.IsURL(devURL) {
+		return nil
+	}
+	_, err := devdocker.Parse(devURL)
+	return err
 }
 
 // InspectSource classifies the --url inspection source and renders it with
@@ -199,38 +247,20 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 // sentences for the same value; see [InspectSourceOptions.DevURLDiagnostic].
 //
 // A `docker://` value used to be refused here outright. It is now provisioned
-// instead, by [devdocker.Resolve] further down, and the refusals that remain for
-// one -- an image no engine table names, a form the pinned community binary
-// rejects -- are that package's, in the pinned binary's own words.
+// instead, by [devdocker.Resolve] further down, and the verdicts that remain
+// for one are read from the URL text by [refuseInspectDevURLForm] and by
+// [devdocker.Parse] itself, in the pinned binary's own words.
 //
-// Those refusals are read from the URL TEXT, so they belong here, in front of
-// everything, and not only where the container is started. `ptah schema inspect`
-// pulls an `oci://` --schema-file from a registry before it can classify the
-// source, and it runs this function first precisely so a local argument error
-// never costs a network round trip. Leaving the docker verdicts at the
-// provisioning seam put them behind that pull: a plain typo in the engine name
-// was reported as `fetch OCI manifest: ... connection refused`, which is the
-// defect stokaro/ptah#1496 fixed, reached through a different door.
-// devURL is the operator's spelling. The docker verdict is read from those
-// bytes, because they are what decides whether a container is started at all; a
-// value normalized first would be judged here and provisioned there, which is
-// the disagreement stokaro/ptah#1496 was about. Everything else keeps the
-// normalized copy it has always had.
+// The value arrives as the operator wrote it and is normalized here for these
+// two verdicts only. What must NOT be normalized is the value handed to the
+// provisioner: see [devdocker.Parse] for the leading space that is not
+// whitespace around a docker URL but a value with no scheme at all.
 func refuseInspectDevURL(devURL string, surfaceDiagnostic func(string) error) error {
 	trimmed := strings.TrimSpace(devURL)
 	if trimmed == "" {
 		// Atlas parity: `atlas schema inspect -u file://...` without a dev
 		// database fails with exactly this message.
 		return errors.New("--dev-url cannot be empty")
-	}
-	if devdocker.IsURL(devURL) {
-		// Parse is pure: it reads the text and contacts no daemon, so this
-		// costs nothing on the URLs it accepts. It is also the same function
-		// the provisioner calls, so the two cannot come to disagree about
-		// which docker URLs exist.
-		if _, err := devdocker.Parse(devURL); err != nil {
-			return err
-		}
 	}
 	if surfaceDiagnostic == nil {
 		return nil
