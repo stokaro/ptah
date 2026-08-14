@@ -75,20 +75,32 @@
 // them without the module. It is waivable by
 // [AllowUnregisteredModuleEnvVar], which restores what Ptah did before.
 //
-// It fires only when the plan can act on such a table, and that question is
-// asked in two places because only half of it is answerable before the
-// comparison runs. Here: some live table is one the desired side does not name,
-// which is exactly the comparator's removal set. Afterwards, in
-// [ValidatePlannedChanges]: the diff removes or rebuilds something. Neither
-// needs to identify the module's tables, which is the whole difficulty, and
-// together they keep a narrowed comparison such as `--include users` running --
-// nothing in it is dropped or rebuilt, so nothing can be destroyed however
-// badly Ptah has misclassified it.
+// It fires only when a plan can act on such a table, and that question is asked
+// in three places: only part of it is answerable before the comparison runs, and
+// a generated migration is two plans rather than one.
 //
-// Both questions are about statements, so both take the caller's [Policy]: a
-// project that skips `drop_table` deletes every table drop from the diff before
-// it is planned, and a refusal keyed on a drop that will never be rendered is a
-// refusal for something that cannot happen.
+//   - Here: some live table is one the desired side does not name, which is
+//     exactly the comparator's removal set.
+//   - Afterwards, in [ValidatePlannedChanges]: the diff removes or rebuilds
+//     something.
+//   - Where a rollback is planned beside the migration, in
+//     [ValidatePlannedRollback]: the REVERSED diff does. Reversal turns changes
+//     SQLite performs in place into changes it does not, so an up file that is
+//     one `ALTER TABLE ... ADD COLUMN` -- which the second check admits, and
+//     should -- can be published beside a down file that rebuilds the module's
+//     storage.
+//
+// None of the three needs to identify the module's tables, which is the whole
+// difficulty, and together they keep a narrowed comparison such as
+// `--include users` running -- nothing in it is dropped or rebuilt, so nothing
+// can be destroyed however badly Ptah has misclassified it.
+//
+// The first two questions are about statements a caller may still filter, so
+// both take the caller's [Policy]: a project that skips `drop_table` deletes
+// every table drop from the diff before it is planned, and a refusal keyed on a
+// drop that will never be rendered is a refusal for something that cannot
+// happen. The third does not, because by then the filtering has already run;
+// see [ValidatePlannedRollback].
 //
 // Adding a virtual table whose module is absent is refused separately and with
 // no opt-in, because the `CREATE VIRTUAL TABLE` a plan would carry fails with
