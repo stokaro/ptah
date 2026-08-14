@@ -260,9 +260,8 @@ qualified names and query bodies, and reads ordinary views from
 Materialized views do too. Ptah emits
 `CREATE MATERIALIZED VIEW <name> ENGINE = MergeTree ORDER BY tuple() AS <query>`,
 reads the object back from `system.tables`, and plans a changed query as a drop
-followed by a create, because ClickHouse has no statement that edits the query
-of an existing materialized view. Three ClickHouse-specific points are worth
-knowing before adopting them:
+followed by a create. Several ClickHouse-specific points are worth knowing
+before adopting them:
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
@@ -285,10 +284,29 @@ knowing before adopting them:
   drift and is never planned as a drop and a create. A qualifier naming some
   other database is a real difference and is still reported.
 
+- A changed query is applied destructively. The drop takes the inner storage
+  table and every row the view had accumulated, and the replacement omits
+  `POPULATE`, so the view starts empty again and refills only from new inserts.
+  ClickHouse does have `ALTER TABLE <view> MODIFY QUERY`, which keeps the stored
+  rows, but it refuses any query whose output columns differ from the ones the
+  storage table already has, and a Ptah declaration carries a query body with no
+  column list to compare, so the planner cannot tell the two cases apart before
+  the statement runs. Treat a materialized-view body change as a change that
+  empties the view.
+
 The `TO <target table>` form and refreshable materialized views are not emitted:
 the shared schema model carries a name and a query, so it cannot name a separate
 target table, and `REFRESH MATERIALIZED VIEW` remains a named diagnostic because
 ClickHouse has no such statement.
+
+A materialized view created elsewhere with `TO <target table>` is still read, and
+it is read as though it owned its storage: `system.tables` reports the same
+engine and the same `as_select` for both forms, and the target appears only in
+`create_table_query`, which this reader does not consult. Such a view therefore
+compares as synchronized against a declaration of the same query, and a later
+body change is planned as a drop and a create that recreates it in the
+inner-storage form, so inserts stop reaching the original target table. Do not
+manage a `TO` materialized view with Ptah.
 
 ### Atlas revision metadata on ClickHouse
 

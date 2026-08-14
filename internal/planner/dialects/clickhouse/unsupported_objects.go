@@ -133,11 +133,29 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 // as well as emit an unexecutable order.
 //
 // A changed materialized view is planned as a drop followed by a create, the
-// shape the PostgreSQL planner uses, because ClickHouse has no statement that
-// edits the query of an existing materialized view in place. Those drops are
-// emitted before every create so the object being replaced is gone first. A
-// changed plain view needs none, because CREATE OR REPLACE VIEW is one
-// statement.
+// shape the PostgreSQL planner uses. Those drops are emitted before every create
+// so the object being replaced is gone first. A changed plain view needs none,
+// because CREATE OR REPLACE VIEW is one statement.
+//
+// ClickHouse does have an in-place edit, and it is deliberately not what this
+// emits. Measured on 26.7.3.19 and on 24.10.4.191,
+// `ALTER TABLE <mv> MODIFY QUERY <select>` rewrites system.tables.as_select and
+// leaves every accumulated row in the storage table -- but only while the
+// projection is unchanged. A select naming one different output column is
+// refused outright:
+//
+//	ALTER TABLE mq MODIFY QUERY SELECT sum(id) AS total FROM users
+//	-> Code: 16. DB::Exception: Column total does not exist in the
+//	   materialized view's inner table. (NO_SUCH_COLUMN_IN_TABLE)
+//
+// A goschema.MaterializedView carries a body and no column list, and nothing
+// here parses the select, so the planner cannot tell offline which of the two a
+// given body change is. Drop and create is the shape that covers both, and what
+// it costs is the stored rows. See the discussion on #1519.
+//
+// The plain view beside it is not affected either way: MODIFY QUERY on a View is
+// "Alter of type 'MODIFY_QUERY' is not supported by storage View.
+// (NOT_IMPLEMENTED)", and CREATE OR REPLACE VIEW already covers it.
 //
 // An object can also change KIND without changing its name. The plain-view and
 // materialized-view comparators are independent, so a name declared as one kind

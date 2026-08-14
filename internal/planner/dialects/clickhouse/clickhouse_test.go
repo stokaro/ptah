@@ -345,10 +345,15 @@ func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *tes
 }
 
 // TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating
-// pins the order and the count. ClickHouse has no statement that edits the
-// SELECT of an existing materialized view, so a plan that emitted the create
-// alone would leave the old query in place on a server that already has the
-// object.
+// pins the order and the count. A plan that emitted the create alone would be
+// refused by the server, which answers "Table ... already exists" while the old
+// object still owns the name, so the old query would stay in place.
+//
+// The one in-place edit ClickHouse does have is not usable here: measured on
+// 26.7.3.19 and 24.10.4.191, `ALTER TABLE <mv> MODIFY QUERY` keeps the stored
+// rows but refuses any select whose output columns differ, and a
+// goschema.MaterializedView carries no column list for the planner to compare.
+// See the comment on reportViewLikes.
 func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
