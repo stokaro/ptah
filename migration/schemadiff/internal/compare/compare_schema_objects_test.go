@@ -272,6 +272,103 @@ func TestMaterializedViews_DetectsAuthoredSchemaQualifierChange(t *testing.T) {
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
 }
 
+// TestMaterializedViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource pins
+// the same readback normalization for a body that prefixes its columns.
+//
+// Measured on ClickHouse 26.7.3.19, a body authored as
+// `SELECT u.id AS id FROM users AS u` comes back from system.tables.as_select as
+// `SELECT u.id AS id FROM <database>.users AS u`: the alias survives untouched
+// and only the relation gains the database. Reading `u.` as an authored schema
+// refused the qualifier-stripping comparison and reported a body change, and on
+// ClickHouse that plan is a DROP VIEW and a CREATE, which destroys the rows the
+// materialized view had accumulated.
+//
+// The plain view beside it carries the same body, because the guard is shared:
+// the two kinds must answer alike.
+func TestMaterializedViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.MaterializedViews(&goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "analytics.user_ids",
+			Body: "SELECT u.id AS id FROM users AS u",
+		}},
+		Views: []goschema.View{{
+			Name: "analytics.user_ids_plain",
+			Body: "SELECT u.id AS id FROM users AS u",
+		}},
+	}, &dbschematypes.DBSchema{
+		MatViews: []dbschematypes.DBMatView{{
+			Name:   "user_ids",
+			Schema: "analytics",
+			Body:   "SELECT u.id AS id FROM analytics.users AS u",
+		}},
+		Views: []dbschematypes.DBView{{
+			Name:   "user_ids_plain",
+			Schema: "analytics",
+			Body:   "SELECT u.id AS id FROM analytics.users AS u",
+		}},
+	}, diff)
+
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(diff.MaterializedViewsAdded, qt.HasLen, 0)
+	c.Assert(diff.MaterializedViewsRemoved, qt.HasLen, 0)
+}
+
+// TestViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource is the plain-view
+// half of the same guard, driven through the view comparator itself rather than
+// as a bystander of the materialized-view one.
+func TestViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.ViewsWithDialect(&goschema.Database{
+		Views: []goschema.View{{
+			Name: "analytics.user_ids_plain",
+			Body: "SELECT u.id AS id FROM users AS u",
+		}},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{{
+			Name:   "user_ids_plain",
+			Schema: "analytics",
+			Body:   "SELECT u.id AS id FROM analytics.users AS u",
+		}},
+	}, diff, "clickhouse")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 0)
+	c.Assert(diff.ViewsAdded, qt.HasLen, 0)
+	c.Assert(diff.ViewsRemoved, qt.HasLen, 0)
+}
+
+// TestMaterializedViews_DetectsAColumnQualifierChange is the inverse control for
+// the alias normalization above.
+//
+// Only the qualifiers the declaration itself uses survive the readback strip. A
+// body that reads a column off a different relation is a different body, and a
+// normalization that dropped every column prefix instead of only the ones the
+// catalog added would report these two as equal.
+func TestMaterializedViews_DetectsAColumnQualifierChange(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.MaterializedViews(&goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "analytics.joined_ids",
+			Body: "SELECT a.id AS id FROM users AS a, accounts AS b",
+		}},
+	}, &dbschematypes.DBSchema{
+		MatViews: []dbschematypes.DBMatView{{
+			Name:   "joined_ids",
+			Schema: "analytics",
+			Body:   "SELECT b.id AS id FROM analytics.users AS a, analytics.accounts AS b",
+		}},
+	}, diff)
+
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
 func TestTriggers_KeyedByTableAndDetectsBodyChange(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

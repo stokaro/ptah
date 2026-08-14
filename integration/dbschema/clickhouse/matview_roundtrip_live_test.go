@@ -248,6 +248,88 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
 }
 
+// TestMaterializedViewAliasedBodyRoundTripsLive is the acceptance for a
+// declaration that gives its source an alias.
+//
+// It is the same readback one spelling further along, and the spelling that
+// separates "the declaration qualifies a relation" from "the declaration
+// prefixes a column". Measured on server 26.7.3.19, both view kinds:
+//
+//	CREATE MATERIALIZED VIEW user_ids ... AS SELECT u.id AS id FROM users AS u
+//	-> as_select = SELECT u.id AS id FROM <db>.users AS u
+//
+// The alias survives untouched and only the relation gained the database. A
+// comparison that read `u.` as an authored schema qualifier refused to remove
+// the one the server added, reported a body change on a declaration nobody
+// edited, and the ClickHouse planner answers that with a DROP VIEW and a CREATE,
+// which destroys every row the materialized view had accumulated.
+//
+// The plain view beside it carries the same body: the guard is shared between
+// the two kinds, so both had the defect and both have to answer alike now.
+func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64, active Bool) ENGINE = MergeTree ORDER BY id",
+	})
+
+	declared := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserIDs",
+			Name:       database + ".user_ids",
+			Body:       "SELECT u.id AS id FROM users AS u",
+		}},
+		Views: []goschema.View{{
+			StructName: "UserIDsPlain",
+			Name:       database + ".user_ids_plain",
+			Body:       "SELECT u.id AS id FROM users AS u",
+		}},
+	}
+	creationDiff := schemadiff.CompareWithDialect(
+		declared,
+		readClickHouseViewLikes(t, db, database),
+		platform.ClickHouse,
+	)
+	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		creationDiff,
+		declared,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(createStatements, qt.HasLen, 2)
+	executeClickHouseViewPlan(t, db, createStatements)
+
+	// The readback keeps the alias and adds the database, for both kinds, which
+	// is what makes the comparison below a real question rather than a string
+	// equality.
+	readback := readClickHouseViewLikes(t, db, database)
+	c.Assert(readback.MatViews, qt.HasLen, 1)
+	c.Assert(readback.MatViews[0].Body, qt.Contains, "u.id")
+	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".users")
+	c.Assert(readback.Views, qt.HasLen, 1)
+	c.Assert(readback.Views[0].Body, qt.Contains, "u.id")
+	c.Assert(readback.Views[0].Body, qt.Contains, database+".users")
+
+	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
+
+	// A body that really did change is still a change.
+	changed := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserIDs",
+			Name:       database + ".user_ids",
+			Body:       "SELECT u.id AS id FROM users AS u WHERE u.active = true",
+		}},
+		Views: declared.Views,
+	}
+	changeDiff := schemadiff.CompareWithDialect(changed, readback, platform.ClickHouse)
+	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
+}
+
 // TestDropAllTablesResetIsReplayableLive is the acceptance for the reset
 // contract every caller of DropAllTables depends on.
 //

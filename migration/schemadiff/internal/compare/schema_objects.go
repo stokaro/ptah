@@ -721,24 +721,50 @@ func MaterializedViewDefinitionsWithDialect(
 	return viewDiff
 }
 
+// schemaObjectBodiesEqual reports whether a declared view or materialized view
+// body and the one a catalog read back mean the same thing.
+//
+// The first comparison is the strict one. The second removes the qualifiers a
+// server adds on its own: the object's own schema in front of a relation, and
+// the table prefix MySQL puts in front of every column. It is refused outright
+// when the declaration itself qualifies a relation, because then the qualifier
+// is part of what was declared and a readback spelling it differently is a real
+// difference.
+//
+// "The declaration qualifies a relation" is asked of relation positions only.
+// A column prefix -- `u.id` for an alias, `users.id` for a table -- is not a
+// schema, and reading it as one made an unchanged declaration report drift.
 func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema string) bool {
-	if normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) == normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
+	generated := normalizeSQLBody(generatedBody, dialect)
+	if canonicalizeNormalizedSQLBody(generated, dialect) ==
+		normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
 		return true
 	}
 
-	if schemaQualifierPattern.MatchString(strings.ToLower(generatedBody)) {
+	if bodyQualifiesRelation(generated) {
 		return false
 	}
-	return normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) ==
-		normalizeSQLBodyStrippingQualifiers(databaseBody, dialect, databaseSchema)
+	return canonicalizeNormalizedSQLBody(generated, dialect) ==
+		normalizeSQLBodyStrippingQualifiers(
+			databaseBody,
+			dialect,
+			databaseSchema,
+			singlePartQualifierNames(generated),
+		)
 }
 
 func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {
 	return canonicalizeNormalizedSQLBody(normalizeSQLBody(body, dialect), dialect)
 }
 
-func normalizeSQLBodyStrippingQualifiers(body, dialect, schema string) string {
-	return canonicalizeNormalizedSQLBody(stripSQLQualifiers(normalizeSQLBody(body, dialect), schema), dialect)
+func normalizeSQLBodyStrippingQualifiers(
+	body, dialect, schema string,
+	authored map[string]struct{},
+) string {
+	return canonicalizeNormalizedSQLBody(
+		stripSQLQualifiers(normalizeSQLBody(body, dialect), schema, authored),
+		dialect,
+	)
 }
 
 func normalizeSQLBody(body, dialect string) string {

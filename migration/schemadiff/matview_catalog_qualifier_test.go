@@ -75,6 +75,87 @@ func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *tes
 	}
 }
 
+// TestCompareWithDialect_MaterializedViewAliasedBodyMatchesCatalogReadback pins
+// the round trip of a materialized view whose body gives its source an alias.
+//
+// This is the same readback, one spelling further along. Measured on ClickHouse
+// 26.7.3.19, a body authored as `SELECT u.id AS id FROM users AS u` comes back
+// from system.tables.as_select as
+// `SELECT u.id AS id FROM mvqual.users AS u`: the alias is untouched and only
+// the relation gained the database name. Reading the alias prefix as an authored
+// schema qualifier refused the normalization entirely and reported a body change
+// for a declaration nobody edited -- which the ClickHouse planner answers with a
+// drop and a create.
+//
+// Only ClickHouse is in the table, and deliberately. Measured on PostgreSQL
+// 18.4, pg_get_viewdef rewrites the same authored body further than the
+// qualifier: `SELECT u.id AS id FROM users AS u` comes back as
+// `SELECT id FROM analytics.users u`, dropping both the alias prefix and the
+// `AS`, and a body that needs the prefix comes back with a parenthesized join
+// tree. Those rewrites are a separate normalization gap, they predate this
+// change, and pinning a PostgreSQL row here would mean inventing a readback that
+// server does not produce.
+func TestCompareWithDialect_MaterializedViewAliasedBodyMatchesCatalogReadback(t *testing.T) {
+	c := qt.New(t)
+
+	generated, database := aliasedMaterializedViewReadbackFixtures("mvqual", "mvqual")
+
+	diff := schemadiff.CompareWithDialect(generated, database, "clickhouse")
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+}
+
+// TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs is the
+// inverse control: with the alias present, a relation resolved into some other
+// schema is still a different body.
+func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated, database := aliasedMaterializedViewReadbackFixtures("mvqual", "archive")
+
+	diff := schemadiff.CompareWithDialect(generated, database, "clickhouse")
+
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+// aliasedMaterializedViewReadbackFixtures is materializedViewReadbackFixtures
+// with the source aliased and the projection qualified by that alias, the
+// spelling the catalog keeps and the declaration therefore has to keep too.
+func aliasedMaterializedViewReadbackFixtures(
+	schema string,
+	readbackSchema string,
+) (*goschema.Database, *types.DBSchema) {
+	generated := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserIDs",
+			Name:       schema + ".user_ids",
+			Body:       "SELECT u.id AS id FROM users AS u",
+		}},
+		Views: []goschema.View{{
+			StructName: "UserIDsPlain",
+			Name:       schema + ".user_ids_plain",
+			Body:       "SELECT u.id AS id FROM users AS u",
+		}},
+	}
+	database := &types.DBSchema{
+		MatViews: []types.DBMatView{{
+			Name:            "user_ids",
+			Schema:          schema,
+			Body:            "SELECT u.id AS id FROM " + readbackSchema + ".users AS u",
+			RefreshStrategy: "manual",
+		}},
+		Views: []types.DBView{{
+			Name: "user_ids_plain",
+			// The plain view's readback always carries the object's own schema:
+			// it is the control for the normalization, not a second subject.
+			Schema: schema,
+			Body:   "SELECT u.id AS id FROM " + schema + ".users AS u",
+		}},
+	}
+	return generated, database
+}
+
 // materializedViewReadbackFixtures builds a desired schema whose bodies name
 // their source without a qualifier, and a catalog read of the same two objects
 // whose bodies carry readbackSchema as the qualifier the server resolved.
