@@ -99,12 +99,16 @@ func TestRegistersFoldsASCIICase(t *testing.T) {
 		},
 	}
 
+	c := qt.New(t)
+
 	registered, err := sqlitemodule.Registered()
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qt.Assert(t, registered.Registers(tt.module), qt.Equals, tt.want)
+			c := qt.New(t)
+
+			c.Assert(registered.Registers(tt.module), qt.Equals, tt.want)
 		})
 	}
 }
