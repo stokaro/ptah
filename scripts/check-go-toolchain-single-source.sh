@@ -215,19 +215,30 @@ if [[ -f .golangci.yml ]]; then
 	done < <(awk '/^run:/{in_run=1; next} /^[^[:space:]#]/{in_run=0} in_run && /^[[:space:]]+go:[[:space:]]*"?[0-9]/{print FILENAME ":" NR ":" $0}' .golangci.yml)
 fi
 
-# D4: the secondary module's floor does not exceed the root's.
+# D4: the root's floor never rises above the secondary module's.
 #
-# testkit is a separately released import path that depends on the root module,
-# and Go requires a main module's `go` directive to be at least its
-# dependencies'. Its CI jobs also select their toolchain from the ROOT go.mod, so
-# nothing else in the tree states this relationship.
+# testkit is a separately released import path that REQUIRES the root module, so
+# testkit is the main module of its own build and the root is its dependency. Go
+# requires a main module's `go` directive to be at least its dependencies', which
+# makes raising the ROOT's floor the breaking direction. Measured, with the local
+# replace in place:
+#
+#   root go 1.26.6, testkit go 1.26.5 -> go build ./... in testkit/ exits 1
+#     go: module .. requires go >= 1.26.6 (running go 1.26.5)
+#   root go 1.26.5, testkit go 1.26.6 -> go build ./... in testkit/ exits 0
+#
+# So testkit sitting HIGHER is legal and needs no gate; testkit sitting LOWER
+# than the root is what breaks, and it breaks at the next release rather than
+# today, because the published-pin job resolves the tagged root whose directive
+# was frozen at release time. Nothing else in the tree states this relationship.
 root_go="$(awk '/^go /{print $2; exit}' go.mod)"
 if [[ -f testkit/go.mod ]]; then
 	testkit_go="$(awk '/^go /{print $2; exit}' testkit/go.mod)"
+	testkit_go_line="$(awk '/^go /{print NR; exit}' testkit/go.mod)"
 	highest="$(printf '%s\n%s\n' "$root_go" "$testkit_go" | sort -V | tail -1)"
-	if [[ $testkit_go != "$root_go" && $highest == "$testkit_go" ]]; then
-		fail "testkit/go.mod" "3" \
-			"testkit declares go $testkit_go but the root module it depends on declares go $root_go. A main module's go directive may not be below its dependencies'."
+	if [[ $testkit_go != "$root_go" && $highest == "$root_go" ]]; then
+		fail "testkit/go.mod" "$testkit_go_line" \
+			"testkit declares go $testkit_go but the root module it requires declares go $root_go. testkit is the main module of its own build, and a main module's go directive may not be below its dependencies' -- raise this floor with the root's."
 	fi
 fi
 
