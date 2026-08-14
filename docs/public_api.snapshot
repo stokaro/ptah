@@ -4862,6 +4862,7 @@ func NormalizeDialect(dialect string) string
 
 ## go.5x5.cz/ptah/core/platform/capability
 
+func BannerPlatform(version string) string
 func DefaultDialects() []string
 func Doc(key Capability) string
 type Capabilities map[Capability]bool
@@ -4976,6 +4977,25 @@ type VersionResolution struct {
     // holding a live banner should keep ignoring it: SELECT version() is not
     // a typo, and degrading quietly is right there.
     Recognized bool
+    // ResolvedDialect names the platform the returned preset belongs to,
+    // which is NOT always the dialect that was asked for.
+    //
+    // A product banner outranks the declared dialect here — that is deliberate
+    // and correct on a live connection, where MariaDB announces itself over
+    // the MySQL protocol and CockroachDB over the PostgreSQL one, so the
+    // string is better evidence than the driver name. Without this field that
+    // override is unobservable, because the returned Capabilities carry no
+    // record of which platform produced them.
+    //
+    // This is NOT the answer to "which product does the string name" — that is
+    // BannerPlatform, and a caller refusing a contradiction between two typed
+    // values must ask it instead. The two disagree for a banner naming only
+    // PostgreSQL on a dialect already in the PostgreSQL wire family, which
+    // keeps its own preset and so reports its own name here.
+    //
+    // It is the normalized dialect name, empty only when the dialect itself
+    // normalized to nothing.
+    ResolvedDialect string
 }
     VersionResolution reports how a server version string was mapped onto a
     capability preset.

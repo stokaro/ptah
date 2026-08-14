@@ -7,7 +7,44 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+)
+
+// The version strings below are what four servers answer about themselves.
+// They are literals rather than a shared fixture because BannerPlatform's whole
+// job is reading these bytes: a helper that produced them would be a second
+// spelling of the thing under test.
+const (
+	// sqlServer2025Banner is @@VERSION from a live
+	// mcr.microsoft.com/mssql/server:2025-latest container, the same bytes
+	// capability_internal_test.go pins (an external test package cannot read
+	// that file's unexported const). The marketing year in front of the product
+	// version is why this banner needs a product token at all: the shared
+	// parser reads it as major 2025.
+	sqlServer2025Banner = "Microsoft SQL Server 2025 (RTM-CU7) (KB5096981) - 17.0.4065.4 (X64) \n" +
+		"\tJul  8 2026 23:26:08 \n" +
+		"\tCopyright (C) 2025 Microsoft Corporation\n" +
+		"\tEnterprise Developer Edition (64-bit) on Linux (Ubuntu 24.04.4 LTS) <X64>"
+
+	// sqlServer2022Banner is the shorter shape this file already resolves in
+	// TestResolveServerVersion, kept here so both are read by one table.
+	sqlServer2022Banner = "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5"
+
+	// clickHouseVersionFull is system.build_options VERSION_FULL, measured on
+	// clickhouse/clickhouse-server:26.7. It is the ClickHouse surface that
+	// names the product: SELECT version() answers a bare "26.7.3.19".
+	clickHouseVersionFull = "ClickHouse 26.7.3.19"
+
+	// clickHouseBinaryBanner is `clickhouse-server --version` from the same
+	// container — the string an operator is most likely to paste, since the
+	// in-band one carries no name.
+	clickHouseBinaryBanner = "ClickHouse server version 26.7.3.19 (official build)."
+
+	// mySQLClientBannerOnMariaDB is what `mysql --version` prints on a MariaDB
+	// installation. It is the reason "mysql" is not a product token: the client
+	// name is shared, and the server it names here is MariaDB.
+	mySQLClientBannerOnMariaDB = "mysql  Ver 15.1 Distrib 10.11.6-MariaDB, for debian-linux-gnu (x86_64)"
 )
 
 func TestCapabilities_Has_NilSafe(t *testing.T) {
@@ -722,4 +759,470 @@ func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
 
 	c.Assert(unreadable.Recognized, qt.IsFalse)
 	c.Assert(unladdered.Recognized, qt.IsTrue)
+}
+
+// TestResolveServerVersionReportsTheDialectItAnsweredFrom pins the field that
+// makes the banner precedence observable.
+//
+// A product banner outranks the declared dialect on purpose: MariaDB announces
+// itself over the MySQL protocol and CockroachDB over the PostgreSQL one, so on
+// a live connection the string is better evidence than the driver name. The
+// returned Capabilities carry no record of that override, which is fine for a
+// connection and a trap for two values a person typed — "mysql" plus a MariaDB
+// banner is a contradiction that resolved silently before ResolvedDialect
+// existed. internal/servertarget refuses that contradiction; it reads
+// BannerPlatform rather than this field, because this one reports the ladder
+// the preset came from and a PostgreSQL-family dialect keeps its own ladder for
+// a banner naming only PostgreSQL.
+func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		resolved string
+	}{
+		{name: "a MariaDB banner outranks mysql", dialect: "mysql", version: "10.11.6-MariaDB", resolved: "mariadb"},
+		{name: "a PostgreSQL banner outranks mysql", dialect: "mysql", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
+		{name: "a PostgreSQL banner outranks sqlite", dialect: "sqlite", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
+		{name: "the replication prefix outranks mysql", dialect: "mysql", version: "5.5.5-10.11.6-MariaDB", resolved: "mariadb"},
+		{name: "a CockroachDB banner outranks sqlite", dialect: "sqlite", version: "CockroachDB CCL v25.4.5", resolved: "cockroachdb"},
+		{name: "a YugabyteDB banner outranks postgres", dialect: "postgres", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", resolved: "yugabytedb"},
+		{name: "a Spanner banner outranks postgres", dialect: "postgres", version: "Cloud Spanner PostgreSQL", resolved: "spanner"},
+		{name: "a PostgreSQL banner agrees with postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
+		{name: "a dotted version keeps the declared mysql", dialect: "mysql", version: "8.0.42-log", resolved: "mysql"},
+		{name: "a dotted version keeps the declared mariadb", dialect: "mariadb", version: "10.11.6", resolved: "mariadb"},
+		{name: "a laddered alias normalizes", dialect: "postgresql", version: "16.3", resolved: "postgres"},
+		{name: "a dialect with no ladder keeps its own name", dialect: "clickhouse", version: "24.8.4.13", resolved: "clickhouse"},
+		{name: "an unreadable string keeps the declared dialect", dialect: "postgres", version: "not-a-version", resolved: "postgres"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+		})
+	}
+}
+
+// TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne is the
+// ordering control for the PostgreSQL branch.
+//
+// Three of the four product banners contain the word "postgres": CockroachDB
+// speaks the PostgreSQL wire protocol, YugabyteDB reports its engine version as
+// "PostgreSQL 11.2-YB-…" and Spanner as "Cloud Spanner PostgreSQL". If the
+// PostgreSQL branch were checked first, all three would resolve to a PostgreSQL
+// preset and every live connection to those engines would be planned as
+// PostgreSQL.
+func TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne(t *testing.T) {
+	tests := []struct {
+		name     string
+		version  string
+		resolved string
+		want     capability.Capabilities
+	}{
+		{
+			name:     "CockroachDB speaks the PostgreSQL wire protocol",
+			version:  "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
+			resolved: "cockroachdb",
+			want:     capability.CockroachDB25(),
+		},
+		{
+			name:     "YugabyteDB reports a PostgreSQL engine version",
+			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+			resolved: "yugabytedb",
+			want:     capability.YugabyteDB25(),
+		},
+		{
+			name:     "Spanner names PostgreSQL in its own banner",
+			version:  "Cloud Spanner PostgreSQL",
+			resolved: "spanner",
+			want:     capability.SpannerPostgres(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion("postgres", test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestResolveServerVersionCockroachDBLadderTakesADottedVersion closes the gap
+// between the two spellings of the same server.
+//
+// The CockroachDB ladder was reachable only through a string containing
+// "cockroachdb". A dotted "25.4.5" — the documented shape on every other
+// dialect — fell through to the unladdered default and received ForDialect's
+// CockroachDB26, which differs from the measured CockroachDB25 preset on
+// create_or_replace_trigger, drop_constraint_generic and
+// drop_constraint_if_exists. It also reported NewestMeasured "" and
+// VersionSpecific false, so a caller was told CockroachDB has no ladder while
+// one was sitting right there.
+func TestResolveServerVersionCockroachDBLadderTakesADottedVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		dotted   string
+		banner   string
+		specific bool
+	}{
+		{
+			name:     "a measured line",
+			dotted:   "25.4.5",
+			banner:   "CockroachDB CCL v25.4.5",
+			specific: true,
+		},
+		{
+			name:     "a line below the newest measurement",
+			dotted:   "23.1.0",
+			banner:   "CockroachDB CCL v23.1.0",
+			specific: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dotted := capability.ResolveServerVersion("cockroachdb", test.dotted)
+			banner := capability.ResolveServerVersion("cockroachdb", test.banner)
+
+			c.Assert(dotted.Capabilities, qt.DeepEquals, banner.Capabilities)
+			c.Assert(dotted.VersionSpecific, qt.Equals, test.specific)
+			c.Assert(dotted.VersionSpecific, qt.Equals, banner.VersionSpecific)
+			c.Assert(dotted.NewestMeasured, qt.Equals, banner.NewestMeasured)
+			c.Assert(dotted.NewestMeasured, qt.Not(qt.Equals), "")
+		})
+	}
+}
+
+// TestResolveServerVersionCockroachDB25IsNotTheDialectDefault is the
+// non-vacuity control for the test above.
+//
+// If the two presets were the same set, routing the dotted form through the
+// ladder would be unobservable and the test would be measuring nothing.
+func TestResolveServerVersionCockroachDB25IsNotTheDialectDefault(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.ForDialect("cockroachdb"), qt.DeepEquals, capability.CockroachDB26())
+	c.Assert(capability.CockroachDB25(), qt.Not(qt.DeepEquals), capability.CockroachDB26())
+	c.Assert(capability.ResolveServerVersion("cockroachdb", "25.4.5").Capabilities,
+		qt.DeepEquals, capability.CockroachDB25())
+}
+
+// TestBannerPlatform pins the one ordered table of product tokens, including
+// the empty answer.
+//
+// The order is the part that can silently rot: three of the products announce
+// the PostgreSQL engine in their own banner, so PostgreSQL has to be claimed
+// after all three. The tokens below it name no engine but their own, so their
+// position is free. A bare version names no product at all, which is what lets
+// a caller holding operator input tell "8.0.42 on mysql" from "PostgreSQL 16.3
+// on mysql" — and the rows that answer "" are as load-bearing as the rows that
+// answer a product: they are what keeps the table from claiming servers whose
+// version surface never names itself.
+func TestBannerPlatform(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "a CockroachDB banner", version: "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", want: "cockroachdb"},
+		{name: "a YugabyteDB banner names PostgreSQL first", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", want: "yugabytedb"},
+		{name: "a Spanner banner names PostgreSQL first", version: "Cloud Spanner PostgreSQL interface", want: "spanner"},
+		{name: "a plain PostgreSQL banner", version: "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)", want: "postgres"},
+		{name: "a MariaDB banner", version: "10.11.6-MariaDB-1:10.11.6+maria~ubu2204", want: "mariadb"},
+		{name: "the MariaDB replication prefix", version: "5.5.5-10.11.6-MariaDB", want: "mariadb"},
+		{name: "a SQL Server @@VERSION banner", version: sqlServer2025Banner, want: "sqlserver"},
+		{name: "the SQL Server banner already in this file", version: sqlServer2022Banner, want: "sqlserver"},
+		{name: "a ClickHouse VERSION_FULL row", version: clickHouseVersionFull, want: "clickhouse"},
+		{name: "a ClickHouse binary banner", version: clickHouseBinaryBanner, want: "clickhouse"},
+		{name: "ClickHouse SELECT version() names no product", version: "26.7.3.19", want: ""},
+		{name: "a dotted version names no product", version: "8.0.42", want: ""},
+		{name: "a dotted version with a suffix names no product", version: "8.0.42-log", want: ""},
+		{name: "a MySQL server names no product", version: "9.7.1", want: ""},
+		{name: "a SQLite server names no product", version: "3.53.0", want: ""},
+		{name: "the MySQL client banner names MariaDB, not MySQL", version: mySQLClientBannerOnMariaDB, want: "mariadb"},
+		{name: "an unreadable string names no product", version: "not-a-version", want: ""},
+		{name: "the empty string names no product", version: "", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(capability.BannerPlatform(test.version), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName pins
+// the two products the token table learned to read.
+//
+// Neither SQL Server nor ClickHouse has a version ladder, so the answer that
+// matters is not which release line was selected — there is none — but which
+// PRODUCT the resolution claims. Before these tokens existed both banners named
+// nothing, and the shared parser spent the first number it found on the
+// DECLARED dialect's ladder: a SQL Server @@VERSION opens with its marketing
+// year, so ResolveServerVersion("postgres", <banner>) answered Postgres17 and
+// reported itself saturated past release line 18, for a PostgreSQL 2025 that
+// does not exist.
+//
+// The two "on another dialect" rows are the ones with teeth. The two rows on
+// each product's own dialect are the control: adding a token must not change
+// the answer a matching pair already got.
+func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		resolved string
+		want     capability.Capabilities
+	}{
+		{
+			name:     "a SQL Server banner on its own dialect",
+			dialect:  platform.SQLServer,
+			version:  sqlServer2025Banner,
+			resolved: platform.SQLServer,
+			want:     capability.SQLServer2022(),
+		},
+		{
+			name:     "a SQL Server banner on postgres",
+			dialect:  platform.Postgres,
+			version:  sqlServer2025Banner,
+			resolved: platform.SQLServer,
+			want:     capability.SQLServer2022(),
+		},
+		{
+			name:     "a ClickHouse banner on its own dialect",
+			dialect:  platform.ClickHouse,
+			version:  clickHouseVersionFull,
+			resolved: platform.ClickHouse,
+			want:     capability.ClickHouse24(),
+		},
+		{
+			name:     "a ClickHouse banner on mysql",
+			dialect:  platform.MySQL,
+			version:  clickHouseBinaryBanner,
+			resolved: platform.ClickHouse,
+			want:     capability.ClickHouse24(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
+			// The banner named a server, so the string was read — the same
+			// reason the YugabyteDB and Spanner arms report Recognized true
+			// without parsing a number. No measured release line was selected,
+			// because neither product has one.
+			c.Assert(resolution.Recognized, qt.IsTrue)
+			c.Assert(resolution.VersionSpecific, qt.IsFalse)
+			c.Assert(resolution.Saturated, qt.IsFalse)
+			c.Assert(resolution.NewestMeasured, qt.Equals, "")
+		})
+	}
+}
+
+// TestResolveServerVersionUnladderedProductsAreNotTheirMismatchedDialects is
+// the non-vacuity control for the two "on another dialect" rows above.
+//
+// If SQLServer2022 happened to equal Postgres17, or ClickHouse24 to equal
+// MySQL84, those rows would pass whether or not the banner was claimed and
+// would be measuring nothing.
+func TestResolveServerVersionUnladderedProductsAreNotTheirMismatchedDialects(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.SQLServer2022(), qt.Not(qt.DeepEquals), capability.ForDialect(platform.Postgres))
+	c.Assert(capability.ClickHouse24(), qt.Not(qt.DeepEquals), capability.ForDialect(platform.MySQL))
+}
+
+// TestResolveServerVersionUnreadableStringsAnswerFromTheDialectTheyName pins
+// the invariant behind VersionResolution.ResolvedDialect.
+//
+// When Recognized is false nothing was read out of the string, so the preset
+// that came back was chosen without consulting it — a dialect DEFAULT. It has
+// to be the default of the dialect the resolution claims, or the field says one
+// engine while the capabilities describe another.
+//
+// The PostgreSQL banner arm broke exactly that pairing. A banner naming
+// PostgreSQL with no number in it is claimed for any dialect outside the
+// PostgreSQL family, and the fallback returned the DECLARED dialect's preset
+// while the dispatch stamped ResolvedDialect as postgres — so
+// ResolveServerVersion("mysql", "PostgreSQL server") answered MySQL84() under a
+// postgres label, and a caller trusting the field planned with capabilities
+// from a different engine.
+//
+// The table is a cross product rather than a list because the defect was one
+// arm out of five, and a hand-written list is how the sixth arm gets missed:
+// every dialect this package has a default for is crossed with every shape of
+// string that resolves nothing.
+func TestResolveServerVersionUnreadableStringsAnswerFromTheDialectTheyName(t *testing.T) {
+	unresolvable := []struct {
+		name    string
+		version string
+	}{
+		{name: "a PostgreSQL banner carrying no version", version: "PostgreSQL server"},
+		{name: "a MariaDB banner carrying no version", version: "MariaDB"},
+		{name: "a CockroachDB banner carrying no version", version: "CockroachDB CCL"},
+		{name: "a string naming no server at all", version: "not-a-version"},
+		{name: "the empty string", version: ""},
+	}
+
+	for _, dialect := range capability.DefaultDialects() {
+		for _, test := range unresolvable {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				resolution := capability.ResolveServerVersion(dialect, test.version)
+
+				comment := qt.Commentf("dialect=%s version=%q resolved=%s",
+					dialect, test.version, resolution.ResolvedDialect)
+				c.Assert(resolution.Recognized, qt.IsFalse, comment)
+				c.Assert(resolution.VersionSpecific, qt.IsFalse, comment)
+				c.Assert(resolution.Capabilities, qt.DeepEquals,
+					capability.ForDialect(resolution.ResolvedDialect), comment)
+			})
+		}
+	}
+}
+
+// TestResolveServerVersionUnreadablePostgresBannerNamesPostgres is the row the
+// test above generalizes, spelled out with the presets named.
+//
+// The cross product asserts a relation between two of the resolution's own
+// fields, which stays true if both move together. This one pins the absolute
+// answer for the exact pair the finding named, so a future change that made
+// ResolvedDialect follow the declared dialect could not satisfy both.
+func TestResolveServerVersionUnreadablePostgresBannerNamesPostgres(t *testing.T) {
+	c := qt.New(t)
+
+	resolution := capability.ResolveServerVersion(platform.MySQL, "PostgreSQL server")
+
+	c.Assert(resolution.ResolvedDialect, qt.Equals, platform.Postgres)
+	c.Assert(resolution.Capabilities, qt.DeepEquals, capability.Postgres17())
+	c.Assert(resolution.Capabilities, qt.Not(qt.DeepEquals), capability.MySQL84())
+	c.Assert(resolution.Recognized, qt.IsFalse)
+}
+
+// TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner is the
+// live-connection half of the PostgreSQL banner rule.
+//
+// CockroachDB, YugabyteDB and Spanner are all reached over the PostgreSQL wire
+// protocol, and a deployment of any of them may report a banner carrying no
+// token of its own. dbschema.getDatabaseInfo answers that case by keeping the
+// dialect the operator connected with — the decision
+// TestDetectPostgresWireDialect's "explicit cockroach survives generic banner"
+// row pins — and then hands this resolver that dialect together with the same
+// banner. Claiming the banner as PostgreSQL here overrules that decision at the
+// layer that picks what DDL may be emitted: measured, "spanner" plus
+// "PostgreSQL 14.1" turned SpannerPostgres into Postgres14 across 19 keys,
+// among them materialized_views, functions and triggers, which exist to stop
+// Ptah emitting DDL Spanner refuses.
+func TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		want    capability.Capabilities
+	}{
+		{
+			name:    "a generic banner with a version on cockroachdb",
+			dialect: "cockroachdb",
+			version: "PostgreSQL-compatible server 25.4",
+			want:    capability.CockroachDB25(),
+		},
+		{
+			name:    "a generic banner with no version on cockroachdb",
+			dialect: "cockroachdb",
+			version: "PostgreSQL-compatible server",
+			want:    capability.CockroachDB26(),
+		},
+		{
+			name:    "a PostgreSQL engine banner on yugabytedb",
+			dialect: "yugabytedb",
+			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
+			want:    capability.YugabyteDB25(),
+		},
+		{
+			name:    "a PostgreSQL banner on spanner",
+			dialect: "spanner",
+			version: "PostgreSQL 14.1",
+			want:    capability.SpannerPostgres(),
+		},
+		{
+			name:    "a PostgreSQL banner on postgres itself",
+			dialect: "postgres",
+			version: "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)",
+			want:    capability.Postgres16(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, platform.NormalizeDialect(test.dialect))
+			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestResolveServerVersionClaimsAGenericBannerOutsideThePostgresFamily is the
+// non-vacuity control for the test above: the rule is scoped to the family that
+// speaks this protocol, not a blanket surrender of PostgreSQL detection. A
+// dialect outside the family cannot be a less specific spelling of a PostgreSQL
+// server, so the banner there is a genuine contradiction and is still claimed —
+// "PostgreSQL 16.3 (Debian)" on --dialect mysql read as MySQL 16.3 and answered
+// MySQL84 before it was.
+func TestResolveServerVersionClaimsAGenericBannerOutsideThePostgresFamily(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: "mysql"},
+		{name: "mariadb", dialect: "mariadb"},
+		{name: "sqlite", dialect: "sqlite"},
+		{name: "clickhouse", dialect: "clickhouse"},
+		{name: "sqlserver", dialect: "sqlserver"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, "PostgreSQL 16.3 (Debian)")
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, "postgres")
+			c.Assert(resolution.Capabilities, qt.DeepEquals, capability.Postgres16())
+		})
+	}
+}
+
+// TestResolveServerVersionPostgresFamilyPresetsAreNotOnePreset is the
+// non-vacuity control for both tests above. If the family shared one preset,
+// keeping the declared dialect would be unobservable and neither test would
+// measure anything.
+func TestResolveServerVersionPostgresFamilyPresetsAreNotOnePreset(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.SpannerPostgres(), qt.Not(qt.DeepEquals), capability.Postgres16())
+	c.Assert(capability.YugabyteDB25(), qt.Not(qt.DeepEquals), capability.Postgres16())
+	c.Assert(capability.CockroachDB25(), qt.Not(qt.DeepEquals), capability.Postgres16())
+	c.Assert(capability.SpannerPostgres().Has(capability.Triggers), qt.IsFalse)
+	c.Assert(capability.Postgres16().Has(capability.Triggers), qt.IsTrue)
 }
