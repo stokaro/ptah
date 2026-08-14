@@ -80,18 +80,28 @@ while IFS=: read -r file line _; do
 			version_key="file"
 			version_line="$hit_line"
 			version_value="${hit_text#*go-version-file:}"
+			# go-version-file is the authoritative key for this gate, so it
+			# always wins: a step may legitimately carry both, and reading the
+			# first key alone would let the other go unexamined.
 			break
 			;;
 		*go-version:*)
-			version_key="literal"
-			version_line="$hit_line"
 			# `go-version:` forwarding an expression is how the composite
 			# action passes its caller's choice through; that is derivation,
-			# not a pin.
+			# not a pin. Do NOT stop scanning on it -- the same step still
+			# carries the go-version-file that decides what happens when the
+			# input is empty, and stopping here would leave it unread.
 			case "$hit_text" in
-			*'${{'*) version_key="expression" ;;
+			*'${{'*)
+				version_key="expression"
+				version_line="$hit_line"
+				;;
+			*)
+				version_key="literal"
+				version_line="$hit_line"
+				break
+				;;
 			esac
-			break
 			;;
 		esac
 	done < <(awk -v start="$line" 'NR > start && NR <= start + 8 {print NR ":" $0}' "$file")
@@ -153,6 +163,38 @@ while IFS= read -r action_file; do
 			value = $0
 			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
 			print NR ":" input ":" value
+		}
+	' "$action_file")
+
+	# D2b: a go-version-file input must default to the module that declares the
+	# toolchain.
+	#
+	# The step in the manifest reads this input through an expression, and an
+	# expression is opaque to D1 -- it can only see that the value is derived,
+	# never from what. So the default is the last place the module can still be
+	# named, and pointing it at a module without a `toolchain` directive would
+	# put the action back on the compatibility floor with every detector green.
+	while IFS=: read -r line value; do
+		clean="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+		case "$clean" in
+		go.mod | ./go.mod) ;;
+		*)
+			fail "$action_file" "$line" \
+				"the go-version-file input defaults to '$clean', which is not the module that declares the toolchain. Default it to 'go.mod' so the caller's own root module is read."
+			;;
+		esac
+	done < <(awk '
+		/^inputs:/ { in_inputs = 1; next }
+		/^[^[:space:]#]/ { in_inputs = 0 }
+		in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+			input = $1
+			sub(/:$/, "", input)
+			next
+		}
+		in_inputs && input == "go-version-file" && /^[[:space:]]+default:/ {
+			value = $0
+			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
+			print NR ":" value
 		}
 	' "$action_file")
 done < <(git ls-files '.github/actions/*/action.yml' '.github/actions/*/action.yaml')
