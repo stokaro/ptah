@@ -716,6 +716,12 @@ and the header is read the widest way any target would, so loading a file never
 refuses a correctly placed directive as misplaced. The migrator resolves the
 effective timeouts with the execution dialect before validation and execution.
 
+The same grammar decides where a `--` comment begins. MySQL and MariaDB start
+one only when a whitespace or control character follows the second dash, so a
+`-- ` separator line stays in the header — including its `-- \r\n` form and a
+`--` line carrying nothing but its line terminator — while `--x`, which those
+two read as SQL rather than as a comment, ends the header there.
+
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
 ### Transaction Modes

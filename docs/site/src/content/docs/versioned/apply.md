@@ -208,6 +208,12 @@ people and pipelines share a directory:
   that follow it. On SQL Server `#` is not a comment, so a directive below one
   really does sit below the first non-comment line and Ptah reports it.
 
+  The same grammar decides where a `--` comment begins. MySQL and MariaDB start
+  one only when a whitespace or control character follows the second dash, so a
+  `-- ` separator line stays in the header — including its `-- \r\n` form and a
+  `--` line carrying nothing but its line terminator — while `--x`, which those
+  two read as SQL rather than as a comment, ends the header there.
+
   Before a connection exists the dialect is unresolved, and there Ptah reads
   the header the widest way any target would. That direction is deliberate:
   loading a file happens first and its verdict is final, so a header cut short

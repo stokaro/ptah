@@ -11,8 +11,10 @@ package migrator
 // neighbor in the first place.
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -433,6 +435,121 @@ func TestUnresolvedDirectiveHeaderIsTheLongestAnyTargetWouldRead(t *testing.T) {
 			}
 
 			c.Check(directiveHeaderLength(test.sql, ""), qt.Equals, longest, qt.Commentf("source:\n%s", test.sql))
+		})
+	}
+}
+
+// TestCommentTerminatorSurvivesTheHeaderScan is the trailing half of the rule
+// the hash table above covers on the leading half.
+//
+// MySQL and MariaDB start a `--` comment only when a whitespace or control
+// character follows the second dash, and on a separator line -- `-- `, `-- \r\n`,
+// `--\t`, or `--` with nothing but its newline -- the character that satisfies
+// that rule IS the trailing whitespace or the line terminator itself. The scan
+// splits lines on `\n`, so it has already removed the terminator; trimming the
+// right-hand side as well handed those two dialects a bare `--`, which their own
+// lexer options classify as SQL. The header ended on line 1, and the
+// `no_transaction` and `lock_timeout` written under it were reported as
+// misplaced and never honored -- nothing failed, and the migration ran without
+// the transaction mode and the lock timeout its author wrote.
+//
+// Every target is asked, not only the two with the rule, because the boundary
+// must not move for the seven that read `--` as a comment unconditionally.
+func TestCommentTerminatorSurvivesTheHeaderScan(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "a trailing space",
+			sql:  "-- \n-- +ptah no_transaction\n-- +ptah lock_timeout=5s\n\n" + directiveStatement,
+		},
+		{
+			name: "carriage return line endings",
+			sql:  "-- \r\n-- +ptah no_transaction\r\n-- +ptah lock_timeout=5s\r\n\r\n" + directiveStatement,
+		},
+		{
+			name: "a trailing tab",
+			sql:  "--\t\n-- +ptah no_transaction\n-- +ptah lock_timeout=5s\n\n" + directiveStatement,
+		},
+		{
+			// The terminator alone satisfies the boundary: a newline is a
+			// control character, so MySQL reads `--\n` as an empty comment.
+			name: "the line terminator alone",
+			sql:  "--\n-- +ptah no_transaction\n-- +ptah lock_timeout=5s\n\n" + directiveStatement,
+		},
+	}
+
+	targets := append(slices.Clone(headerScanDialects), "")
+
+	c := qt.New(t)
+	c.Assert(targets, qt.HasLen, len(headerScanDialects)+1, qt.Commentf(
+		"the unresolved dialect decides the load-time verdict and needs a column of its own"))
+
+	for _, test := range tests {
+		for _, dialect := range targets {
+			t.Run(test.name+" in dialect "+dialect, func(t *testing.T) {
+				c := qt.New(t)
+
+				parsed := parseMigrationFileTxModeForDialect("1_x.sql", test.sql, dialect)
+				timeouts, err := parseMigrationTimeoutDirectivesForDialect(test.sql, dialect)
+
+				c.Assert(err, qt.IsNil)
+				c.Check(directiveHeaderLength(test.sql, dialect), qt.Equals, len(test.sql)-len(directiveStatement),
+					qt.Commentf("everything above the statement is header"))
+				c.Check(parsed.err, qt.IsNil)
+				c.Check(parsed.mode, qt.Equals, MigrationFileTxModeNone)
+				c.Check(timeouts.HasLockTimeout, qt.IsTrue)
+				c.Check(timeouts.LockTimeout, qt.Equals, 5*time.Second)
+				c.Check(misplacedLines(misplacedDirectives(test.sql, dialect)), qt.IsNil)
+			})
+		}
+	}
+}
+
+// TestDashDashWithNoBoundaryStillEndsTheMySQLHeader is the control for the test
+// above, and the reason the fix is not "a `--` prefix opens the header".
+//
+// `--x` has no whitespace or control character after the second dash, so MySQL
+// and MariaDB read it as two minus operators rather than a comment, and the
+// header genuinely ends there. Restoring the terminator must not blunt that:
+// the boundary still comes from the lexer options the file will be split with,
+// which is what makes the two dialects answer differently from the other seven
+// on the very same bytes.
+func TestDashDashWithNoBoundaryStillEndsTheMySQLHeader(t *testing.T) {
+	sql := "--x\n-- +ptah lock_timeout=5s\n\n" + directiveStatement
+	wholeHeader := len(sql) - len(directiveStatement)
+
+	tests := []struct {
+		name       string
+		dialect    string
+		wantHeader int
+	}{
+		{name: "unresolved dialect", dialect: "", wantHeader: wholeHeader},
+		{name: "postgres", dialect: platform.Postgres, wantHeader: wholeHeader},
+		{name: "mysql", dialect: platform.MySQL, wantHeader: 0},
+		{name: "mariadb", dialect: platform.MariaDB, wantHeader: 0},
+		{name: "sqlite", dialect: platform.SQLite, wantHeader: wholeHeader},
+		{name: "clickhouse", dialect: platform.ClickHouse, wantHeader: wholeHeader},
+		{name: "cockroachdb", dialect: platform.CockroachDB, wantHeader: wholeHeader},
+		{name: "yugabytedb", dialect: platform.YugabyteDB, wantHeader: wholeHeader},
+		{name: "sqlserver", dialect: platform.SQLServer, wantHeader: wholeHeader},
+		{name: "spanner", dialect: platform.Spanner, wantHeader: wholeHeader},
+	}
+
+	c := qt.New(t)
+	c.Assert(tests, qt.HasLen, len(headerScanDialects)+1, qt.Commentf(
+		"every target plus the unresolved dialect needs a row; a missing one reads as agreement"))
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			timeouts, err := parseMigrationTimeoutDirectivesForDialect(sql, test.dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Check(directiveHeaderLength(sql, test.dialect), qt.Equals, test.wantHeader)
+			c.Check(timeouts.HasLockTimeout, qt.Equals, test.wantHeader > 0)
 		})
 	}
 }

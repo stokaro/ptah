@@ -5,6 +5,7 @@ import (
 	"iter"
 	"slices"
 	"strings"
+	"unicode"
 
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
@@ -69,20 +70,24 @@ func directiveHeaderLength(sql, dialect string) int {
 	offset := 0
 	for rest := sql; rest != ""; {
 		line, tail, hasNewline := strings.Cut(rest, "\n")
-		if !directiveHeaderLine(line, dialect) {
+		length := len(line)
+		if hasNewline {
+			length++
+		}
+		// The line is handed on WITH the terminator Cut removed, because in
+		// MySQL and MariaDB that byte can be what makes the line a comment.
+		if !directiveHeaderLine(rest[:length], dialect) {
 			return offset
 		}
-		offset += len(line)
-		if hasNewline {
-			offset++
-		}
+		offset += length
 		rest = tail
 	}
 	return len(sql)
 }
 
 // directiveHeaderLine reports whether line is blank or an ordinary line comment
-// in dialect.
+// in dialect. It is the physical line INCLUDING its terminator, for the reason
+// spelled out at the end of this comment.
 //
 // Which openers a comment may use is decided by exactly one authority --
 // [dialectlexer.Options], the options the lexer this file will be split with is
@@ -106,11 +111,23 @@ func directiveHeaderLength(sql, dialect string) int {
 // Only LINE comments extend the header, and that test stays a prefix check
 // rather than a lexer question: a line-based scan cannot see where a block
 // comment ends, so a file opening with one keeps its zero-length header.
+//
+// The lexer is handed the line with its TRAILING bytes intact, terminator
+// included, and that is not tidiness. MySQL and MariaDB start a `--` comment
+// only when a whitespace or control character follows the second dash, so on a
+// separator line -- `-- `, `-- \r\n`, `--\t`, or `--` with nothing but its
+// newline -- the character that makes the line a comment at all is exactly the
+// one a right-hand trim removes. Trimming both sides, as this once did, handed
+// those two dialects a bare `--`, which their own options classify as SQL: the
+// header ended on line 1, and the `no_transaction` or timeout written under it
+// was reported as misplaced and silently never honored. Only the LEFT side is
+// trimmed, because indentation is allowed before a header comment and the lexer
+// would otherwise answer about the leading whitespace token.
 func directiveHeaderLine(line, dialect string) bool {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
+	if strings.TrimSpace(line) == "" {
 		return true
 	}
+	trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return false
 	}
