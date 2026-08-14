@@ -75,6 +75,20 @@ func TestParseAcceptsTheURLFormsTheCommunityBinaryProvisions(t *testing.T) {
 			wantDialect:  "postgres",
 		},
 		{
+			// A TRAILING space is not whitespace around the URL, it is an
+			// ordinary character in the last path segment. Measured on the
+			// pinned binary v1.3.0, exit status read from an unpiped
+			// `schema inspect -u file://schema.sql --dev-url` invocation:
+			// `docker://postgres/16/dev ` exits 0, and it provisions a database
+			// whose name ends in a space. Trimming the value renamed that
+			// database to `dev` -- a different database, silently.
+			name:         "a trailing space is part of the database name",
+			rawURL:       "docker://postgres/16/dev ",
+			wantImage:    "postgres:16",
+			wantDatabase: "dev ",
+			wantDialect:  "postgres",
+		},
+		{
 			name:         "mysql",
 			rawURL:       "docker://mysql/8/dev",
 			wantImage:    "mysql:8",
@@ -728,7 +742,20 @@ func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
 			rawURL: "docker:///dev",
 			want:   true,
 		},
-		{name: "leading space", rawURL: "  docker://postgres", want: true},
+		{
+			// A LEADING space is not the same URL with whitespace on it. The
+			// pinned binary v1.3.0 parses ` docker://postgres/16/dev` as a
+			// relative path whose first segment is `docker:` and exits 1 with
+			// `sql/sqlclient: parse open url: first path segment in URL cannot
+			// contain colon`, having started nothing. This row wanted `true`
+			// while this package trimmed, and that trim is what made
+			// `ptah-compat schema inspect --dev-url " docker://postgres/16/dev"`
+			// exit 0 with a container started, where the pinned binary exits 1
+			// -- the one direction compatibility rule (a) forbids outright.
+			name:   "leading space is not a docker URL",
+			rawURL: "  docker://postgres",
+			want:   false,
+		},
 		{name: "postgres", rawURL: "postgres://localhost/db", want: false},
 		{name: "empty", rawURL: "", want: false},
 		{name: "docker in the path", rawURL: "sqlite://docker://x", want: false},

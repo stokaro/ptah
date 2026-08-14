@@ -90,9 +90,10 @@ const passwordBytes = 24
 // It answers on the scheme alone, so a malformed docker URL is still routed
 // here and refused with the diagnostic that names what is wrong with it, rather
 // than falling through to a connector that would report an unknown dialect.
+//
+// It reads the bytes AS WRITTEN and normalizes nothing; see [Parse].
 func IsURL(rawURL string) bool {
-	trimmed := strings.TrimSpace(rawURL)
-	return strings.HasPrefix(trimmed, Scheme+"://")
+	return strings.HasPrefix(rawURL, Scheme+"://")
 }
 
 // engine describes one database this package can start.
@@ -341,9 +342,35 @@ func unsupportedImageError(host string) error {
 // not a port to strip, because the pinned binary refuses `docker://postgres:16`
 // outright rather than reading `16` as a tag. Splitting it would make Ptah
 // provision a database for a URL the pinned binary rejects.
+//
+// # The bytes are read as written
+//
+// This function normalizes NOTHING. It used to trim surrounding whitespace, and
+// that made it accept a value the pinned binary cannot parse at all. Measured on
+// the pinned community binary v1.3.0, exit statuses read from unpiped
+// `schema inspect -u file://schema.sql --dev-url <value>` invocations:
+//
+//	<value>                          exit  what it says
+//	"docker://postgres/16/dev"          0  provisions and inspects
+//	" docker://postgres/16/dev"         1  sql/sqlclient: parse open url:
+//	                                       first path segment in URL cannot
+//	                                       contain colon
+//	"docker://postgres/16/dev "         0  provisions, database "dev "
+//
+// The rule is not "whitespace is rejected" -- it is plain [url.Parse]. A LEADING
+// space makes the whole value a relative path whose first segment is `docker:`,
+// so there is no scheme and no docker URL; a TRAILING one is an ordinary
+// character in the last path segment and names a database that ends in a space.
+// Trimming got both wrong in the same breath, and the first of them in the one
+// direction compatibility policy (a) forbids: `ptah-compat schema inspect` exited
+// 0, having started a container, where the pinned binary exits 1.
+//
+// A surface that wants to be lenient about whitespace normalizes ONCE at its own
+// boundary and says so -- `ptah schema inspect` does exactly that, deliberately,
+// for every `--dev-url` value it takes. What it must not do, and what this
+// function must not do for it, is normalize a value into a container.
 func Parse(rawURL string) (Spec, error) {
-	trimmed := strings.TrimSpace(rawURL)
-	parsed, err := url.Parse(trimmed)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return Spec{}, fmt.Errorf("parse docker --dev-url: %w", err)
 	}

@@ -93,8 +93,7 @@ func RehearsePlanStatements(
 	if desired == nil {
 		return errors.New("plan rehearsal requires the desired schema state")
 	}
-	devURL := strings.TrimSpace(opts.DevURL)
-	if devURL == "" {
+	if strings.TrimSpace(opts.DevURL) == "" {
 		return errors.New("plan rehearsal requires a dev database URL")
 	}
 	// The escape lint runs again inside rehearseStatementsOnDev, which is the
@@ -116,7 +115,7 @@ func RehearsePlanStatements(
 		return fmt.Errorf("apply plan exclude patterns to current schema: %w", err)
 	}
 
-	devConn, releaseDev, err := connectSimulationDev(ctx, devURL, conn, opts.TargetURL, opts.DesiredURLs)
+	devConn, releaseDev, err := connectSimulationDev(ctx, opts.DevURL, conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}

@@ -83,6 +83,10 @@ type compatDockerRow struct {
 	// genuinely differ: some are refused by the provisioner, some never consult
 	// the dev URL at all, and a shared assertion would have to branch.
 	check func(c *qt.C, stdout, stderr string, err error)
+	// checkWhitespace asserts the same verb's answer when the identical probe
+	// URL is written with ONE LEADING SPACE. See
+	// TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse.
+	checkWhitespace func(c *qt.C, stdout, stderr string, err error)
 }
 
 // compatDockerFixture is the file state the rows share.
@@ -131,6 +135,20 @@ func devURLNotConsulted(c *qt.C, stdout, stderr string, err error) {
 	c.Check(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
 
+// notADockerURL asserts the verb refused a dev URL written with a leading
+// space, and refused it WITHOUT having reached the provisioner.
+//
+// The absence of the provisioner's wording is the whole assertion. A build that
+// normalizes before deciding answers these rows `unsupported docker image
+// "sqlite"` -- proof that it recognized a docker URL, resolved an image and was
+// one valid engine name away from starting a container for a value the pinned
+// binary cannot parse at all.
+func notADockerURL(c *qt.C, stdout, stderr string, err error) {
+	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Check(stderr, qt.Not(qt.Contains), compatDockerImageRefusal,
+		qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+}
+
 func compatDockerRows() []compatDockerRow {
 	return []compatDockerRow{
 		{
@@ -139,7 +157,8 @@ func compatDockerRows() []compatDockerRow {
 			args: func(fx compatDockerFixture) []string {
 				return []string{"migrate", "diff", "m2", "--dir", "file://" + fx.dir, "--to", "file://" + fx.schema}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			name: "migrate lint reaches the provisioner",
@@ -147,7 +166,8 @@ func compatDockerRows() []compatDockerRow {
 			args: func(fx compatDockerFixture) []string {
 				return []string{"migrate", "lint", "--dir", "file://" + fx.dir, "--latest", "1"}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			// The forwarded verb. It has no RunE of its own on this surface, so
@@ -158,7 +178,8 @@ func compatDockerRows() []compatDockerRow {
 			args: func(fx compatDockerFixture) []string {
 				return []string{"migrate", "validate", "--dir", "file://" + fx.dir}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			name: "schema inspect reaches the provisioner",
@@ -166,7 +187,8 @@ func compatDockerRows() []compatDockerRow {
 			args: func(fx compatDockerFixture) []string {
 				return []string{"schema", "inspect", "-u", "file://" + fx.schema}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			// The apply rehearsal. Its two alias checks -- is the dev database
@@ -181,7 +203,8 @@ func compatDockerRows() []compatDockerRow {
 					"--to", "file://" + fx.schema, "--dry-run",
 				}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			name: "schema diff from a migration directory reaches the provisioner",
@@ -189,7 +212,8 @@ func compatDockerRows() []compatDockerRow {
 			args: func(fx compatDockerFixture) []string {
 				return []string{"schema", "diff", "--from", "file://" + fx.dir, "--to", "file://" + fx.schema}
 			},
-			check: refusedByProvisioner,
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
 		},
 		{
 			name: "schema diff between two local files never opens a dev database",
@@ -198,6 +222,9 @@ func compatDockerRows() []compatDockerRow {
 				return []string{"schema", "diff", "--from", "file://" + fx.schema, "--to", "file://" + fx.schema}
 			},
 			check: devURLNotConsulted,
+			// Unchanged: this row never opens a dev database, so the
+			// spelling of the URL cannot reach anything that would.
+			checkWhitespace: devURLNotConsulted,
 		},
 	}
 }
@@ -212,6 +239,45 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 			args := append(slices.Clone(tt.args(fx)), "--dev-url", "docker://sqlite/dev")
 			stdout, stderr, err := runCompat(args...)
 			tt.check(c, stdout, stderr, err)
+		})
+	}
+}
+
+// TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse drives every
+// row above with the identical probe URL written with ONE LEADING SPACE.
+//
+// A leading space is not whitespace around a docker URL. Measured on the pinned
+// community binary v1.3.0, exit statuses read from unpiped `schema inspect -u
+// file://schema.sql --dev-url <value>` invocations:
+//
+//	<value>                        exit  what it says
+//	"docker://postgres/16/dev"        0  provisions and inspects
+//	" docker://postgres/16/dev"       1  sql/sqlclient: parse open url: first
+//	                                     path segment in URL cannot contain colon
+//
+// The binary parses the second as a relative path whose first segment is
+// `docker:`, so there is no scheme and no docker URL, and nothing is started.
+//
+// Ptah normalized it into one. `internal/devdocker` trimmed the value before
+// deciding, and four of the five consumers trimmed again before handing it over,
+// so ` docker://postgres/16/dev` reached the provisioner as a docker URL and
+// `ptah-compat schema inspect` exited **0** with a container started, where the
+// pinned binary exits 1. That is the one direction compatibility rule (a)
+// forbids outright, and it was reachable on every verb wired here.
+//
+// The rows deliberately reuse the same `docker://sqlite/dev` probe rather than a
+// valid engine: the assertion is about which LAYER answers, and the probe's
+// refusal is a sentence only the provisioner produces.
+func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testing.T) {
+	c := qt.New(t)
+	fx := newCompatDockerFixture(c)
+
+	for _, tt := range compatDockerRows() {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Chdir(c.TempDir())
+			args := append(slices.Clone(tt.args(fx)), "--dev-url", " docker://sqlite/dev")
+			stdout, stderr, err := runCompat(args...)
+			tt.checkWhitespace(c, stdout, stderr, err)
 		})
 	}
 }

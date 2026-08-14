@@ -198,20 +198,44 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 // caller can supply that last one, because the two surfaces owe different
 // sentences for the same value; see [InspectSourceOptions.DevURLDiagnostic].
 //
-// A `docker://` value used to be refused here. It is now provisioned instead,
-// by [devdocker.Resolve] further down, and the refusals that remain for one --
-// an image no engine table names, a form the pinned community binary rejects --
-// are that package's, in the pinned binary's own words.
+// A `docker://` value used to be refused here outright. It is now provisioned
+// instead, by [devdocker.Resolve] further down, and the refusals that remain for
+// one -- an image no engine table names, a form the pinned community binary
+// rejects -- are that package's, in the pinned binary's own words.
+//
+// Those refusals are read from the URL TEXT, so they belong here, in front of
+// everything, and not only where the container is started. `ptah schema inspect`
+// pulls an `oci://` --schema-file from a registry before it can classify the
+// source, and it runs this function first precisely so a local argument error
+// never costs a network round trip. Leaving the docker verdicts at the
+// provisioning seam put them behind that pull: a plain typo in the engine name
+// was reported as `fetch OCI manifest: ... connection refused`, which is the
+// defect stokaro/ptah#1496 fixed, reached through a different door.
+// devURL is the operator's spelling. The docker verdict is read from those
+// bytes, because they are what decides whether a container is started at all; a
+// value normalized first would be judged here and provisioned there, which is
+// the disagreement stokaro/ptah#1496 was about. Everything else keeps the
+// normalized copy it has always had.
 func refuseInspectDevURL(devURL string, surfaceDiagnostic func(string) error) error {
-	if devURL == "" {
+	trimmed := strings.TrimSpace(devURL)
+	if trimmed == "" {
 		// Atlas parity: `atlas schema inspect -u file://...` without a dev
 		// database fails with exactly this message.
 		return errors.New("--dev-url cannot be empty")
 	}
+	if devdocker.IsURL(devURL) {
+		// Parse is pure: it reads the text and contacts no daemon, so this
+		// costs nothing on the URLs it accepts. It is also the same function
+		// the provisioner calls, so the two cannot come to disagree about
+		// which docker URLs exist.
+		if _, err := devdocker.Parse(devURL); err != nil {
+			return err
+		}
+	}
 	if surfaceDiagnostic == nil {
 		return nil
 	}
-	return surfaceDiagnostic(devURL)
+	return surfaceDiagnostic(trimmed)
 }
 
 // inspectOnDev evaluates a local-file or migration-directory inspection
@@ -222,10 +246,10 @@ func inspectOnDev(
 	opts InspectSourceOptions,
 	inspectOpts InspectOptions,
 ) (string, error) {
-	devURL := strings.TrimSpace(opts.DevURL)
-	if err := refuseInspectDevURL(devURL, opts.DevURLDiagnostic); err != nil {
+	if err := refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic); err != nil {
 		return "", err
 	}
+	devURL := strings.TrimSpace(opts.DevURL)
 	dialect, _, err := atlassource.PinDialect(devURL, set)
 	if err != nil {
 		return "", err
@@ -282,11 +306,20 @@ func inspectOnDev(
 	// refusal above is answerable from the URL text and the sources alone, and
 	// paying two seconds of container start for a run that fails on a bad
 	// schema file would be a worse answer to the same question.
-	devURL, releaseDev, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	//
+	// The value handed over is the operator's, not the trimmed copy above. A
+	// leading space is not whitespace around a docker URL, it is a value with no
+	// scheme at all, and the pinned binary answers it `parse open url: first
+	// path segment in URL cannot contain colon` at exit 1. Normalizing first
+	// promoted exactly that into a started container and an exit 0 -- the one
+	// direction compatibility policy (a) forbids. The normalization this path
+	// wants still happens; it happens to the answer.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
 	if err != nil {
 		return "", err
 	}
 	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout)
 	if err != nil {

@@ -255,11 +255,16 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
-	devURL, releaseDev, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	// The operator's spelling decides whether this is a docker URL at all; the
+	// normalization above is this path's, and it applies to the answer. See
+	// [devdocker.Parse]: a leading space is not a docker URL with whitespace on
+	// it, it is a value the pinned binary cannot parse.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
 	if err != nil {
 		return State{}, err
 	}
 	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 	snapshot := s.migrationSnapshot
 	if snapshot == nil {
 		snapshot, err = CaptureVerifiedMigrationDir(source.Path)

@@ -162,9 +162,25 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 		{
 			// The same disagreement on the other dev-URL verdict: a leading
 			// space stopped the docker:// form being recognized.
+			//
+			// The engine name is the observable now, and it had to become one.
+			// This row used to assert the blanket refusal of every `docker://`
+			// value, and stokaro/ptah#844 made them provisionable, so a valid
+			// one is no longer a local error at all -- it is a container this
+			// verb starts. What the row is FOR survives that: a leading space
+			// must not stop the docker form being recognized, and the verdict
+			// must still be reached without a registry.
+			//
+			// An engine no image table names is that verdict. It is read from
+			// the URL text alone, so it is answerable here, and it goes on
+			// discriminating both ways: a preflight judging the raw flag would
+			// not see `docker://` at all and would pull first, and a preflight
+			// that stopped reading the docker text would pull first too. Both
+			// were true of this branch before the fix, and both reported the
+			// typo as `fetch OCI manifest: ... connection refused`.
 			name:  "whitespace-prefixed docker --dev-url",
-			extra: []string{"--dev-url", " docker://postgres/16/dev"},
-			want:  "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL",
+			extra: []string{"--dev-url", " docker://nosuchengine/16/dev"},
+			want:  `unsupported docker image "nosuchengine"`,
 		},
 	}
 

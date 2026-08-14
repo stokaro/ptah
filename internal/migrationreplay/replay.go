@@ -52,11 +52,16 @@ func Replay(ctx context.Context, opts Options) error {
 	// A docker:// value is provisioned into a real database here rather than
 	// refused. The release runs on every exit path below, including the panic
 	// path, which is why it is deferred immediately and not at the end.
-	devURL, releaseDev, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	//
+	// The operator's spelling is what decides, not the trimmed copy above:
+	// see [devdocker.Parse] for why a leading space is a different value and
+	// not the same one with whitespace on it.
+	resolved, releaseDev, err := devdocker.Resolve(ctx, opts.DevURL, devdocker.Options{})
 	if err != nil {
 		return err
 	}
 	defer releaseDev()
+	devURL = strings.TrimSpace(resolved)
 
 	sourceFS := opts.FS
 	if sourceFS == nil {

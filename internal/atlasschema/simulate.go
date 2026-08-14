@@ -79,8 +79,7 @@ type SimulateOptions struct {
 // *SimulationError and the caller must refuse the target apply; the target
 // database has not been modified. Empty DevURL and empty plans are no-ops.
 func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOptions) error {
-	devURL := strings.TrimSpace(opts.DevURL)
-	if devURL == "" {
+	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}
 	statements := opts.Statements
@@ -94,7 +93,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 		return errors.New("schema apply simulation requires database connection")
 	}
 
-	devConn, releaseDev, err := connectSimulationDev(ctx, devURL, p.conn, opts.TargetURL, opts.DesiredURLs)
+	devConn, releaseDev, err := connectSimulationDev(ctx, opts.DevURL, p.conn, opts.TargetURL, opts.DesiredURLs)
 	if err != nil {
 		return err
 	}
@@ -142,6 +141,11 @@ func discardDevRehearsalArtifacts(ctx context.Context, devConn *dbschema.Databas
 // connectSimulationDev validates the dev database URL against the target and
 // opens the dev connection used to rehearse a plan.
 //
+// devURL is the operator's spelling, not a normalized copy: whether a value is
+// a `docker://` URL at all is decided from those bytes, and normalizing first
+// promoted a value the pinned binary cannot parse into a started container.
+// See [devdocker.Parse]. The callers have already answered an empty one.
+//
 // The caller owns both returned values: the connection must be closed, and the
 // release must be called to remove a container this call may have started. The
 // release is always non-nil, including on the error return, so a caller can
@@ -187,12 +191,12 @@ func connectSimulationDev(
 		}
 	}
 
-	devURL, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	resolved, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
 	if err != nil {
 		return nil, noRelease, err
 	}
 
-	devConn, err := dbschema.ConnectToDatabase(ctx, devURL)
+	devConn, err := dbschema.ConnectToDatabase(ctx, strings.TrimSpace(resolved))
 	if err != nil {
 		release()
 		return nil, noRelease, fmt.Errorf("connect to --dev-url: %w", err)
