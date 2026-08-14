@@ -454,19 +454,21 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // carries no configuration on CE either, so matching it is a refusal and not an
 // unimplemented setting. See [atlasStructAttributeRule].
 //
-// One name the probe has caught that IS a holding-pen case, and is not in the
-// map yet: env.migration.baseline. `migration { baseline = [1,2] }` under
-// `schema inspect --env local` answers `value of attr "baseline" cannot be read
-// as string`, exit 1, on the pinned binary and exit 0 on Ptah -- while
-// skip_report and a frobnicate9 control in the SAME block under the SAME command
-// both answer 0 on the binary, which is what makes baseline's refusal
-// meaningful. It is left out because the honest resolution is a parser arm
-// rather than a refusal: --baseline already exists on `migrate apply`, so the
-// value has a meaning Ptah can carry out, and refusing a well-formed
-// `baseline = "20240101000000"` would exit 1 where the binary exits 0. That
-// wiring is stokaro/ptah#934 item 5a; `migrate apply` parses --baseline into
-// runOpts before project config is merged, so it needs a change in that command
-// and not only here.
+// env.migration.baseline was the one name the probe had caught that read as a
+// holding-pen case, and it turned out to be neither a holding-pen case nor a
+// refusal. `migration { baseline = [1,2] }` under `schema inspect --env local`
+// answers `value of attr "baseline" cannot be read as string`, exit 1, on the
+// pinned binary -- while skip_report and a frobnicate9 control in the SAME
+// block under the SAME command both answer 0, which is what makes baseline's
+// refusal meaningful. A map entry here would have been wrong: it refuses the
+// name outright, and a well-formed `baseline = "20240101000000"` exits 0 on
+// that binary. The answer is [atlasDecodedLeafAttributes], which refuses the
+// value the binary refuses and tolerates the value it takes.
+//
+// That closes the rule (a) exposure and not stokaro/ptah#934 item 5a. Acting on
+// a well-formed baseline still needs `migrate apply`, which reads --baseline
+// into its run options before project config is merged, so the value is carried
+// out nowhere yet and the ignored-name warning says so.
 var ceEnforcedConstructs = map[string]struct{}{}
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
@@ -506,6 +508,11 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 		if err := checkAtlasStructAttribute(name, attr, value); err != nil {
 			return err
 		}
+	}
+	// The scalar counterpart of the rule above, and the same reasoning about
+	// where it runs. See [atlasDecodedLeafAttributes].
+	if err := checkAtlasDecodedLeafAttribute(scope, name, attr, value); err != nil {
+		return err
 	}
 	p.noteIgnored("attribute", name, attr.NameRange)
 	return nil
@@ -1069,10 +1076,68 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 		}
 	}
+	if err := p.parseMigrationBlocks(block); err != nil {
+		return err
+	}
+	cfg.Migration = migration
+	return nil
+}
+
+// parseMigrationBlocks handles the nested blocks of env.migration, which used
+// to be refused wholesale. The pinned community binary v1.3.0 accepts every one
+// of them -- see the `migration` entry in [atlasEnvBodyStructure] for the
+// measurement -- so the whole set is tolerated and only `repo` is decoded.
+func (p atlasParser) parseMigrationBlocks(block *hclsyntax.Block) error {
+	seen := map[string]struct{}{}
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "repo" {
+			// Not a `return` on the tolerated path: that would end the loop and
+			// silently skip every later block.
+			if err := p.tolerateUnknownBlock("env.migration", nested); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, duplicate := seen[nested.Type]; duplicate {
+			return unsupportedBlock(nested)
+		}
+		seen[nested.Type] = struct{}{}
+		if err := p.parseMigrationRepo(nested); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseMigrationRepo type-checks env.migration.repo, whose only decoded
+// attribute is a string `name`, and records the block as carrying no effect.
+//
+// It mirrors [atlasParser.parseSchemaRepo] deliberately, down to refusing a
+// nested block and a null `name`: the two blocks are the same construct in two
+// scopes, and the pinned community binary treats them the same way. Nothing is
+// stored, because unlike env.schema.repo there is no field for it and the
+// community binary does nothing with the value either -- recording the name as
+// ignored tells the user that plainly, where a silently kept value would not.
+func (p atlasParser) parseMigrationRepo(block *hclsyntax.Block) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
+		if attrName != "name" {
+			if err := p.tolerateUnknownAttr("env.migration.repo", attrName, attr); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := p.stringAttr(attrName, attr); err != nil {
+			return err
+		}
+		p.noteIgnored("attribute", attrName, attr.NameRange)
+	}
 	if len(block.Body.Blocks) > 0 {
 		return unsupportedBlock(block.Body.Blocks[0])
 	}
-	cfg.Migration = migration
 	return nil
 }
 
@@ -1357,7 +1422,7 @@ func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
 }
 
 func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) error {
-	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+	return p.parseFormatAttributes(block, "format.migrate", &cfg.presence, map[string]atlasFormatField{
 		"apply":  {destination: &cfg.Format.Migrate.Apply, presence: fieldFormatMigrateApply},
 		"diff":   {destination: &cfg.Format.Migrate.Diff, presence: fieldFormatMigrateDiff},
 		"lint":   {destination: &cfg.Format.Migrate.Lint, presence: fieldFormatMigrateLint},
@@ -1366,7 +1431,7 @@ func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) err
 }
 
 func (p atlasParser) parseSchemaFormat(block *hclsyntax.Block, cfg *Config) error {
-	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+	return p.parseFormatAttributes(block, "format.schema", &cfg.presence, map[string]atlasFormatField{
 		"apply":   {destination: &cfg.Format.Schema.Apply, presence: fieldFormatSchemaApply},
 		"clean":   {destination: &cfg.Format.Schema.Clean, presence: fieldFormatSchemaClean},
 		"diff":    {destination: &cfg.Format.Schema.Diff, presence: fieldFormatSchemaDiff},
@@ -1379,18 +1444,33 @@ type atlasFormatField struct {
 	presence    configField
 }
 
+// parseFormatAttributes decodes the four template names of one format.* block.
+//
+// Every other name goes to the tolerance path rather than being refused. The
+// pinned community binary v1.3.0 decodes only the four each block lists and
+// ignores the rest, including nested blocks -- measured in the `format` entry
+// of [atlasEnvBodyStructure] -- so refusing them turned a project file that
+// binary reads into an exit 1.
 func (p atlasParser) parseFormatAttributes(
 	block *hclsyntax.Block,
+	scope string,
 	presence *configPresence,
 	fields map[string]atlasFormatField,
 ) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	for attrName, attr := range block.Body.Attributes {
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
 		field, ok := fields[attrName]
 		if !ok {
-			return unsupportedAttr(attrName, attr)
+			// Not a `return` on the tolerated path: that would end the loop and
+			// silently skip every later name, which map iteration order would
+			// make intermittent.
+			if err := p.tolerateUnknownAttr(scope, attrName, attr); err != nil {
+				return err
+			}
+			continue
 		}
 		value, err := p.nonEmptyStringAttr(attrName, attr)
 		if err != nil {
@@ -1399,8 +1479,10 @@ func (p atlasParser) parseFormatAttributes(
 		*field.destination = value
 		presence.mark(field.presence)
 	}
-	if len(block.Body.Blocks) > 0 {
-		return unsupportedBlock(block.Body.Blocks[0])
+	for _, nested := range block.Body.Blocks {
+		if err := p.tolerateUnknownBlock(scope, nested); err != nil {
+			return err
+		}
 	}
 	return nil
 }

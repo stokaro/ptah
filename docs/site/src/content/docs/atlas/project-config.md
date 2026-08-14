@@ -542,6 +542,7 @@ block name" nor scope-independent:
 | `diff` and `env.diff` | `skip` | `concurrent_index` |
 | `lint` and `env.lint` | `git` | `concurrent_index`, `condrop`, `data_depend`, `destructive`, `incompatible`, `nestedtx` |
 | `env.format` | `migrate`, `schema` | — |
+| `env.migration` | `repo` | `skip_report` |
 | `env.schema` | `repo` | `mode` |
 
 `diff` and `lint` are the two blocks that may sit at the top level as well as
@@ -549,13 +550,48 @@ inside `env`, and their nested names behave the same in both places: top-level
 `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are refused, the
 same as their `env` spellings.
 
-The `format` and `schema` rows stay `env`-only, and that is measured rather than
-assumed. A top-level `format` or `schema` block is not decoded into those
-structures by the community binary, so top-level `format { schema = { k = "v" } }`
-and `schema { repo = { k = "v" } }` both exit 0 — Ptah drops the whole block with
-an ignored-block warning and exits 0 too.
+The `format`, `migration` and `schema` rows stay `env`-only, and that is measured
+rather than assumed. A top-level `format`, `migration` or `schema` block is not
+decoded into those structures by the community binary, so top-level
+`format { schema = { k = "v" } }`, `migration { repo = { k = "v" } }` and
+`schema { repo = { k = "v" } }` all exit 0 — Ptah drops the whole block with an
+ignored-block warning and exits 0 too.
 
 Writing any of these as a block is unaffected.
+
+### Scalar settings Ptah does not act on are still type-checked
+
+A handful of names are decoded by Atlas CE into a plain string or bool field
+that Ptah has no equivalent for. Ptah accepts the name and reports it as having
+no effect, but the **value** still has to be the kind the community binary
+requires, because that binary refuses a wrong-typed value before any command
+runs:
+
+```text
+Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
+```
+
+| Scope | Name | Required value |
+| --- | --- | --- |
+| `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
+| `lint` and `env.lint` | `review` | a string |
+| `env.migration` | `baseline` | a string |
+
+`null` is accepted for every one of them, as it is on the community binary.
+`drop_schema` and `drop_table` are absent from the table because Ptah acts on
+them, so they are ordinary supported names rather than ignored ones.
+
+`env.migration.baseline` is type-checked and still not acted on: `migrate apply`
+reads `--baseline` before project config is merged, so the `atlas.hcl` spelling
+has no effect yet and is reported as having none. The scope matters — a
+`baseline` written at `env` level, inside `lint`, or in a top-level `migration`
+block is not decoded by the community binary, so any value is accepted there.
+
+The membership is measured name by name and is not "every change kind":
+`add_view`, `drop_func`, `modify_trigger`, `add_type`, `drop_sequence`,
+`add_check`, `drop_role`, `add_policy`, `add_extension` and `drop_domain` are
+among the names the community binary does not decode inside `skip`, so any value
+is accepted for them.
 
 This refusal is a value rule, not a structural one, so it follows the same
 selection boundary as every other value: it applies to the environment the

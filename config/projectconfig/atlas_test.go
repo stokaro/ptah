@@ -1441,10 +1441,13 @@ func TestParseAtlasProjectConfigEnforcedNamesAreScopeQualified(t *testing.T) {
 	}
 	c.Assert(decodedNames, qt.Not(qt.Contains), "repo")
 
+	// `diff`, not `migration`. Both env.schema and env.migration decode `repo`
+	// into a struct on the pinned community binary v1.3.0 -- `migration { repo =
+	// "x" }` exits 1 there -- so `migration` no longer separates the scopes.
+	// `env.diff` does: `diff { repo = "x" }` exits 0 on that binary.
 	elsewhere := `env "local" {
   url = "sqlite://s.db"
-  migration {
-    dir  = "file://m"
+  diff {
     repo = "x"
   }
 }

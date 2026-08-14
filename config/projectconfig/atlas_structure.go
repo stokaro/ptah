@@ -50,11 +50,36 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 					allowUnknownAttributes: true,
 					allowUnknownBlocks:     true,
 					blocks: map[string]atlasBlockStructure{
+						// The two nested bodies tolerate unknown names for the same
+						// reason every other body here does: the pinned community
+						// binary v1.3.0 decodes only the four template names each
+						// one lists and ignores the rest. Measured with
+						// `schema inspect --env local`, exit codes read directly
+						// from unpiped invocations:
+						//
+						//	format { migrate { new = "{{ .Name }}" } }  -> 0
+						//	format { migrate { hash = { k = "v" } } }   -> 0
+						//	format { migrate { frobnicate9 { … } } }    -> 0
+						//	format { schema  { fmt = "{{ .Name }}" } }  -> 0
+						//	format { migrate { apply = { k = "v" } } }  -> 1  (the control:
+						//	                                                 a listed name
+						//	                                                 IS decoded)
+						//
+						// Ptah answered 1 on every tolerated row above, refusing a
+						// project file the community binary reads.
 						"migrate": {
-							body: atlasBodyStructure{attributes: []string{"apply", "diff", "lint", "status"}},
+							body: atlasBodyStructure{
+								attributes:             []string{"apply", "diff", "lint", "status"},
+								allowUnknownAttributes: true,
+								allowUnknownBlocks:     true,
+							},
 						},
 						"schema": {
-							body: atlasBodyStructure{attributes: []string{"apply", "clean", "diff", "inspect"}},
+							body: atlasBodyStructure{
+								attributes:             []string{"apply", "clean", "diff", "inspect"},
+								allowUnknownAttributes: true,
+								allowUnknownBlocks:     true,
+							},
 						},
 					},
 				},
@@ -75,15 +100,37 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 					},
 				},
 			},
+			// `migration` mirrors `schema` below rather than being a tolerant
+			// leaf. It was the leaf spelling that made every nested block under
+			// it a refusal, because atlasTolerantLeafStructure leaves
+			// allowUnknownBlocks false and carries no blocks map at all.
+			// Measured with `schema inspect --env local`:
+			//
+			//	migration { repo { name = "myrepo" } }   binary 0, Ptah 1
+			//	migration { repo { frobnicate9 = "x" } } binary 0, Ptah 1
+			//	migration { frobnicate9 { k = "v" } }    binary 0, Ptah 1
+			//	migration { repo { name = 1 } }          binary 1  -- `repo` IS
+			//	                                         decoded, so the block
+			//	                                         needs a parser arm and
+			//	                                         not just tolerance
 			"migration": {
-				body: atlasTolerantLeafStructure(
-					"dir",
-					"exec_order",
-					"format",
-					"lock_timeout",
-					"revisions_schema",
-					"tx_mode",
-				),
+				body: atlasBodyStructure{
+					attributes: []string{
+						"dir",
+						"exec_order",
+						"format",
+						"lock_timeout",
+						"revisions_schema",
+						"tx_mode",
+					},
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
+					blocks: map[string]atlasBlockStructure{
+						"repo": {
+							body: atlasTolerantLeafStructure("name"),
+						},
+					},
+				},
 			},
 			"schema": {
 				body: atlasBodyStructure{
@@ -184,13 +231,164 @@ func atlasTolerantLeafStructure(attributes ...string) atlasBodyStructure {
 //
 // Labelling every nested row "top level and env alike" would therefore
 // over-claim by two scopes.
+//
+// `env.migration` carries `repo` for the same reason `env.schema` does, and it
+// was measured the same way. `env.migration` is the scope, not `migration`: a
+// TOP-LEVEL `migration` block is not decoded into that structure by the pinned
+// binary and is not collected by collectAtlasTopBlock either, so the bare key
+// would over-claim exactly as a bare `format` or `schema` key would:
+//
+//	env { migration { repo = { k = "v" } } }  -> 1  set field "repo": converting
+//	                                                cty.Value to *cmdapi.Repo
+//	env { migration { repo = {} } }           -> 0
+//	env { migration { repo = null } }         -> 0
+//	env { migration { frobnicate9 = {…} } }   -> 0  (control, same block)
+//	migration { repo = { k = "v" } }  (top level)  -> 0
 var atlasStructAttributes = map[string][]string{
 	atlasTopLevelScope: {"diff", "lint", "test"},
 	"env":              {"diff", "format", "lint", "migration", "schema", "test"},
 	"diff":             {"skip"},
 	"format":           {"migrate", "schema"},
 	"lint":             {"git"},
+	"env.migration":    {"repo"},
 	"env.schema":       {"repo"},
+}
+
+// atlasLeafValueKind is the cty type a name in [atlasDecodedLeafAttributes]
+// requires.
+type atlasLeafValueKind uint8
+
+const (
+	atlasLeafBool atlasLeafValueKind = iota
+	atlasLeafString
+)
+
+func (k atlasLeafValueKind) ctyType() cty.Type {
+	if k == atlasLeafString {
+		return cty.String
+	}
+	return cty.Bool
+}
+
+// want is the phrasing [wrongValueType] appends, kept identical to the wording
+// the acted-on siblings already produce -- `drop_schema` answers "must be a
+// bool" and `log` answers "must be a string", so a tolerated name in the same
+// block reads the same way.
+func (k atlasLeafValueKind) want() string {
+	if k == atlasLeafString {
+		return "a string"
+	}
+	return "a bool"
+}
+
+// atlasDecodedLeafAttributes maps a tolerance-path scope to the names Atlas CE
+// decodes into a SCALAR field of its project type -- names Ptah does not act
+// on, so they reach the tolerance path, but whose value the pinned community
+// binary v1.3.0 still type-checks before any command runs. Tolerating the name
+// is right; tolerating any value for it is a rule (a) violation, and that is
+// what this table closes.
+//
+// It is the scalar counterpart of [atlasStructAttributes] and is consulted from
+// the same place, so a name is answered once for every scope that reaches it
+// rather than once per parser arm.
+//
+// Measured on the pinned binary with `schema inspect --env local`, exit codes
+// read directly from unpiped invocations:
+//
+//	diff { skip { drop_column = true } }        -> 0
+//	diff { skip { drop_column = null } }        -> 0
+//	diff { skip { drop_column = "true" } }      -> 1  value of attr "drop_column"
+//	                                                  cannot be read as bool
+//	diff { skip { drop_column = 1 } }           -> 1  same message
+//	diff { skip { drop_column = [true] } }      -> 1  same message
+//	diff { skip { drop_column = { k = "v" } } } -> 1  same message
+//	diff { skip { frobnicate9 = { k = "v" } } } -> 0  (control, same block)
+//	lint { review = "ALWAYS" }                  -> 0
+//	lint { review = null }                      -> 0
+//	lint { review = 1 }                         -> 1  value of attr "review"
+//	                                                  cannot be read as string
+//	lint { frobnicate9 = { k = "v" } }          -> 0  (control, same block)
+//
+// null is accepted for both kinds, which is why the check below returns before
+// comparing types on a null value.
+//
+// The `diff.skip` membership is exactly {add,modify,drop} x {schema, table,
+// column, index, foreign_key}. That is measured name by name and is NOT "every
+// object kind": add/modify/drop probed against view, func, trigger, proc, type,
+// sequence, check, comment, role, policy, extension and domain all answer 0 on
+// the pinned binary, alongside the frobnicate9 control that also answers 0 --
+// which is what keeps those silences meaningful. `drop_schema` and `drop_table`
+// are absent here because Ptah acts on them, so they never reach the tolerance
+// path; they are the in-block positive control that the probe fires at all.
+//
+// The keys are bare rather than env-prefixed because parseDiffSkip and
+// parseLintAttr each serve a top-level block and an env block, and both
+// spellings were measured to refuse:
+//
+//	diff { skip { drop_column = { k = "v" } } }  (top level)  -> 1
+//	lint { review = 1 }                          (top level)  -> 1
+var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
+	"diff.skip": {
+		"add_column":         atlasLeafBool,
+		"add_foreign_key":    atlasLeafBool,
+		"add_index":          atlasLeafBool,
+		"add_schema":         atlasLeafBool,
+		"add_table":          atlasLeafBool,
+		"drop_column":        atlasLeafBool,
+		"drop_foreign_key":   atlasLeafBool,
+		"drop_index":         atlasLeafBool,
+		"modify_column":      atlasLeafBool,
+		"modify_foreign_key": atlasLeafBool,
+		"modify_index":       atlasLeafBool,
+		"modify_schema":      atlasLeafBool,
+		"modify_table":       atlasLeafBool,
+	},
+	"lint": {
+		"review": atlasLeafString,
+	},
+	// `baseline` is the type half of stokaro/ptah#934 item 5a and nothing more.
+	// The pinned binary decodes it as a string, so a malformed value has to be
+	// refused here or Ptah exits 0 where that binary exits 1; a well-formed one
+	// is still only tolerated, because ACTING on it needs `migrate apply`, which
+	// reads --baseline into its run options before project config is merged.
+	// Type-checking it now does not stand in the way of that wiring.
+	//
+	//	migration { baseline = [1,2] }              (env)        -> 1  value of attr
+	//	                                                              "baseline" cannot
+	//	                                                              be read as string
+	//	migration { baseline = "20240101000000" }   (env)        -> 0
+	//	migration { baseline = null }               (env)        -> 0
+	//	migration { skip_report = [1,2] }           (env)        -> 0  (in-block control)
+	//	migration { baseline = [1,2] }              (top level)  -> 0  }
+	//	lint       { baseline = [1,2] }                          -> 0  } scope controls
+	//	env        { baseline = [1,2] }                          -> 0  }
+	//
+	// The three scope controls are why the key is `env.migration` and not
+	// `migration` or a bare name: `baseline` is a real name in other scopes of
+	// this file and the binary decodes none of them.
+	"env.migration": {
+		"baseline": atlasLeafString,
+	},
+}
+
+// checkAtlasDecodedLeafAttribute applies the rule on
+// [atlasDecodedLeafAttributes] to an already-evaluated value, for the same
+// reason [checkAtlasStructAttribute] takes one: the check has to run on the
+// tolerance path, per selected env, after `var`, `local` and `data` are in the
+// evaluation context.
+func checkAtlasDecodedLeafAttribute(
+	scope, name string,
+	attr *hclsyntax.Attribute,
+	value cty.Value,
+) error {
+	kind, decoded := atlasDecodedLeafAttributes[scope][name]
+	if !decoded || value.IsNull() {
+		return nil
+	}
+	if value.Type() == kind.ctyType() {
+		return nil
+	}
+	return wrongValueType(name, attr, kind.want())
 }
 
 // atlasTopLevelScope is the scope of the project file's own body. It is not ""
