@@ -41,6 +41,18 @@ set -euo pipefail
 
 RULES=(-require-qt-c-receiver)
 
+# --fix applies the rules' suggested fixes instead of only reporting. The fix
+# pass has to cover exactly what the reporting pass covers: `make lint-fix`
+# previously ran `go tool qtlint -fix ./...`, which knew neither the rule nor
+# the other contours, so it left violations in place and `make lint` then
+# failed on them.
+FIX=()
+case "${1:-}" in
+	--fix) FIX=(-fix) ;;
+	"") ;;
+	*) echo "usage: $(basename "$0") [--fix]" >&2; exit 2 ;;
+esac
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
@@ -54,7 +66,10 @@ run_contour() {
 	local moddir="$1" label="$2"
 	shift 2
 	echo "qtlint: ${moddir} (${label})"
-	if ! (cd "$moddir" && go vet "$@" -vettool="$vettool_dir/qtlint" "${RULES[@]}" ./...); then
+	# ${FIX[@]+…} rather than a bare "${FIX[@]}": under set -u, bash 3.2 —
+	# still what /bin/bash is on macOS — treats an empty array as unbound and
+	# aborts. CI runs bash 5 and would never have shown it.
+	if ! (cd "$moddir" && go vet "$@" -vettool="$vettool_dir/qtlint" ${FIX[@]+"${FIX[@]}"} "${RULES[@]}" ./...); then
 		status=1
 	fi
 }

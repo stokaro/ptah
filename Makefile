@@ -171,7 +171,7 @@ lint-qtlint:
 
 lint-fix:
 	@echo "Running auto-fixable linters..."
-	go tool qtlint -fix ./...
+	scripts/check-qtlint.sh --fix
 	golangci-lint run --fix ./...
 	$(MAKE) lint
 
