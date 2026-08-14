@@ -1075,8 +1075,9 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 //     "26.7.3.19" — but system.build_options reports VERSION_FULL
 //     "ClickHouse 26.7.3.19" and VERSION_NAME "ClickHouse" (measured on
 //     clickhouse/clickhouse-server:26.7), and that is the server naming itself.
-//   - mysql and sqlite are deliberately absent. SELECT VERSION() on MySQL 9.7.2
-//     answers "9.7.2" and sqlite_version() answers "3.53.0"; neither server has
+//   - mysql and sqlite are deliberately absent. Measured, SELECT VERSION() on a
+//     live mysql:9.7 answers "9.7.2" and sqlite_version() answers a bare dotted
+//     version ("3.51.0" on the SQLite this was run against); neither server has
 //     a version surface that names its product, so the empty answer is the
 //     correct one and any token would have to come from a client banner
 //     instead — and the MySQL client's is shared with MariaDB's

@@ -339,12 +339,12 @@ the nine dialects qualify:
 | `sqlserver` | `@@VERSION` — `Microsoft SQL Server 2025 (RTM-CU7) … - 17.0.4065.4 …` |
 | `clickhouse` | `system.build_options` `VERSION_FULL` — `ClickHouse 26.7.3.19` |
 
-`mysql` and `sqlite` are deliberately absent: `SELECT VERSION()` answers
-`9.7.2` and `sqlite_version()` answers `3.53.0`, so neither server names its own
-product anywhere a version string is read, and `BannerPlatform` correctly
-returns `""` for both. A token would have to come from a client banner instead,
-and the MySQL client's is shared with MariaDB's
-(`mysql  Ver 15.1 Distrib 10.11.6-MariaDB`), so it names no server.
+`mysql` and `sqlite` are deliberately absent. Measured, a live `mysql:9.7`
+answers `SELECT VERSION()` with `9.7.2`, and `sqlite_version()` answers a bare
+dotted version. Neither server names its own product anywhere a version string
+is read, so `BannerPlatform` correctly returns `""` for both. A token would have
+to come from a client banner instead, and the MySQL client's is shared with
+MariaDB's (`mysql  Ver 15.1 Distrib 10.11.6-MariaDB`), so it names no server.
 
 SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
 so a resolver that reads the first number out of it reads `2025`; before the
