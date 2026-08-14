@@ -37,12 +37,23 @@ fail() {
 	status=1
 }
 
-# D0: the source exists.
+# D0: the source exists AND names a version.
 #
 # Without this, deleting the directive is a silent regression: actions/setup-go
 # falls back to the `go` directive, CI quietly builds with the compatibility
 # floor again, and every other detector still passes because every setup-go step
 # is still deriving -- from a source that no longer says what it used to.
+#
+# Counting the directive is not enough, because `toolchain default` is valid Go
+# and means "no pin": it is the deletion spelled as a declaration. Measured, on
+# this module, with everything else unchanged:
+#
+#   toolchain go1.26.6 -> go env GOVERSION = go1.26.6
+#   toolchain default  -> go env GOVERSION = go1.26.5
+#
+# That second line is the drift this whole gate exists to stop, reached without
+# removing a single line. So the directive has to NAME a toolchain, not merely
+# be present.
 toolchain_count="$(awk '/^toolchain /{n++} END{print n+0}' go.mod)"
 if ((toolchain_count != 1)); then
 	printf 'go toolchain check: go.mod declares %d `toolchain` directives; it must declare exactly 1\n' \
@@ -51,6 +62,15 @@ if ((toolchain_count != 1)); then
 	exit 1
 fi
 toolchain="$(awk '/^toolchain /{print $2; exit}' go.mod)"
+case "$toolchain" in
+go[0-9]*.[0-9]*) ;;
+*)
+	printf 'go toolchain check: go.mod declares `toolchain %s`, which names no toolchain\n' "$toolchain" >&2
+	printf 'go toolchain check: `toolchain default` is the deletion spelled as a declaration -- it drops CI back to the `go` directive, the compatibility floor\n' >&2
+	printf 'go toolchain check: declare a concrete toolchain, e.g. `toolchain go1.26.6`\n' >&2
+	exit 1
+	;;
+esac
 
 # The composite action manifests. D1 and D2 share the list so the one place an
 # opaque expression is tolerated and the place its value is pinned are talking
