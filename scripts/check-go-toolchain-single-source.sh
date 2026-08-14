@@ -52,92 +52,179 @@ if ((toolchain_count != 1)); then
 fi
 toolchain="$(awk '/^toolchain /{print $2; exit}' go.mod)"
 
+# The composite action manifests. D1 and D2 share the list so the one place an
+# opaque expression is tolerated and the place its value is pinned are talking
+# about the same set of files.
+action_manifests="$(git ls-files '.github/actions/*/action.yml' '.github/actions/*/action.yaml')"
+
+is_action_manifest() {
+	printf '%s\n' "$action_manifests" | grep -qxF -- "$1"
+}
+
+# The exact forwarding shape: a whole-value expression naming one of the action's
+# OWN inputs. `${{ env.GO_VERSION }}` and `${{ vars.GO_VERSION }}` are not it --
+# they name a literal declared somewhere else in the same repository, which is
+# this gate's own failure mode wearing a different hat.
+is_forwarded_input() {
+	case "$1" in
+	'${{'*'}}')
+		case "$1" in
+		*inputs.*) return 0 ;;
+		esac
+		;;
+	esac
+	return 1
+}
+
+# Strip surrounding whitespace and quotes so 'go.mod', "go.mod" and go.mod are
+# judged the same way.
+strip_value() {
+	printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//'
+}
+
 # D1: every setup-go step derives its version, and derives it from THE source.
 #
-# The version key is read from the lines following `uses: actions/setup-go@`
-# until the step ends, so a third or fourth setup-go step in one file is seen --
-# the old check read one per file and was blind to the rest.
+# The step is read from `uses: actions/setup-go@` down to the first later line
+# that starts further left, so a third or fourth setup-go step in one file is
+# seen -- the old check read one per file and was blind to the rest.
 #
-# Naming the file is not enough on its own: `go-version-file: testkit/go.mod`
+# BOTH version keys are judged, never whichever appears first. setup-go accepts
+# `go-version` and `go-version-file` on the same step, so stopping at one leaves
+# the other unread, and the unread one is the one that decides what happens when
+# the first resolves to empty. Judging each key on its own also makes this
+# detector independent of which key setup-go prefers: the step passes only when
+# NEITHER key can select a module other than the root go.mod.
+#
+# Naming a file is not enough on its own: `go-version-file: testkit/go.mod`
 # derives honestly and still selects the wrong toolchain, because testkit is a
 # separately released module that carries a compatibility floor and no
 # `toolchain` directive, so setup-go would fall back to its `go` line. The job
 # would quietly build a patch release behind, which is the exact drift this gate
 # exists to stop. Only the root go.mod carries the toolchain, so only the root
 # go.mod is accepted.
+#
+# A `${{ }}` expression is opaque: it can show that a value is derived, never
+# from what. It is accepted in exactly one place -- a composite action manifest
+# forwarding one of its own inputs -- because a composite action runs in the
+# CALLER's workspace and must not be pinned to this repository's go.mod. Every
+# other expression, in any other file, is refused. What the one accepted
+# expression resolves to is pinned separately, by D2b.
 setup_go_steps=0
 derived_steps=0
+forwarding_steps=0
 
 while IFS=: read -r file line _; do
 	setup_go_steps=$((setup_go_steps + 1))
 
-	version_key=""
-	version_line=""
-	version_value=""
-	while IFS=: read -r hit_line hit_text; do
-		case "$hit_text" in
-		*go-version-file:*)
-			version_key="file"
-			version_line="$hit_line"
-			version_value="${hit_text#*go-version-file:}"
-			# go-version-file is the authoritative key for this gate, so it
-			# always wins: a step may legitimately carry both, and reading the
-			# first key alone would let the other go unexamined.
-			break
+	gv_seen=0
+	gv_line=""
+	gv_value=""
+	gvf_seen=0
+	gvf_line=""
+	gvf_value=""
+	while IFS=: read -r hit_key hit_line hit_text; do
+		case "$hit_key" in
+		version)
+			gv_seen=1
+			gv_line="$hit_line"
+			gv_value="$(strip_value "$hit_text")"
 			;;
-		*go-version:*)
-			# `go-version:` forwarding an expression is how the composite
-			# action passes its caller's choice through; that is derivation,
-			# not a pin. Do NOT stop scanning on it -- the same step still
-			# carries the go-version-file that decides what happens when the
-			# input is empty, and stopping here would leave it unread.
-			case "$hit_text" in
-			*'${{'*)
-				version_key="expression"
-				version_line="$hit_line"
-				;;
-			*)
-				version_key="literal"
-				version_line="$hit_line"
-				break
-				;;
-			esac
+		file)
+			gvf_seen=1
+			gvf_line="$hit_line"
+			gvf_value="$(strip_value "$hit_text")"
 			;;
 		esac
-	done < <(awk -v start="$line" 'NR > start && NR <= start + 8 {print NR ":" $0}' "$file")
+	done < <(awk -v start="$line" '
+		NR == start {
+			# The step runs from `uses:` down to the first later non-blank line
+			# that starts further left: the next list item, or the end of the
+			# block. A fixed line budget would either stop inside a long step or
+			# run on into the following one.
+			key_indent = index($0, "uses:") - 1
+			next
+		}
+		NR < start { next }
+		/^[[:space:]]*$/ { next }
+		{
+			indent = match($0, /[^[:space:]]/) - 1
+			if (indent < key_indent) { exit }
+		}
+		/^[[:space:]]*go-version-file:/ {
+			value = $0
+			sub(/^[[:space:]]*go-version-file:/, "", value)
+			print "file:" NR ":" value
+			next
+		}
+		/^[[:space:]]*go-version:/ {
+			value = $0
+			sub(/^[[:space:]]*go-version:/, "", value)
+			print "version:" NR ":" value
+			next
+		}
+	' "$file")
 
-	# Strip surrounding whitespace and quotes so 'go.mod', "go.mod" and go.mod
-	# are judged the same way.
-	version_value="$(printf '%s' "$version_value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
+	step_ok=1
+	step_forwards=0
 
-	case "$version_key" in
-	expression)
-		derived_steps=$((derived_steps + 1))
-		;;
-	file)
-		case "$version_value" in
-		go.mod | ./go.mod)
-			derived_steps=$((derived_steps + 1))
-			;;
-		*'${{'*)
-			# A composite action forwarding its caller's input.
-			derived_steps=$((derived_steps + 1))
-			;;
+	if ((gv_seen == 1)) && [[ -n $gv_value ]]; then
+		if is_forwarded_input "$gv_value"; then
+			if is_action_manifest "$file"; then
+				step_forwards=1
+			else
+				step_ok=0
+				fail "$file" "$gv_line" \
+					"setup-go step takes its Go version from the expression '$gv_value'. Only a composite action manifest may forward its own input; a workflow must write 'go-version-file: go.mod' so the toolchain is read from the single source (toolchain $toolchain)."
+			fi
+		else
+			step_ok=0
+			fail "$file" "$gv_line" \
+				"setup-go step pins a Go version literal ('$gv_value'). Use 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
+		fi
+	fi
+
+	if ((gvf_seen == 1)); then
+		case "$gvf_value" in
+		go.mod | ./go.mod) ;;
 		*)
-			fail "$file" "$version_line" \
-				"setup-go step reads '$version_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+			if is_forwarded_input "$gvf_value"; then
+				if is_action_manifest "$file"; then
+					step_forwards=1
+				else
+					step_ok=0
+					fail "$file" "$gvf_line" \
+						"setup-go step takes its module file from the expression '$gvf_value'. Only a composite action manifest may forward its own input; a workflow must name the module: 'go-version-file: go.mod'."
+				fi
+			else
+				step_ok=0
+				fail "$file" "$gvf_line" \
+					"setup-go step reads '$gvf_value', which is not the module that declares the toolchain. Use 'go-version-file: go.mod'; only the root go.mod carries 'toolchain $toolchain'."
+			fi
 			;;
 		esac
-		;;
-	literal)
-		fail "$file" "$version_line" \
-			"setup-go step pins a Go version literal. Use 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
-		;;
-	"")
+	fi
+
+	if ((gvf_seen == 0)) && [[ -z $gv_value ]]; then
+		step_ok=0
 		fail "$file" "$line" \
 			"setup-go step declares no Go version. Use 'go-version-file: go.mod'; the toolchain is declared once, in go.mod (toolchain $toolchain)."
-		;;
-	esac
+	fi
+
+	# A forwarded input may resolve to empty, and then nothing has named a
+	# module. The go-version-file beside it is the declaration that answers that
+	# case, so the exemption is only granted when it is there to be judged.
+	if ((step_forwards == 1)) && ((gvf_seen == 0)); then
+		step_ok=0
+		fail "$file" "$gv_line" \
+			"setup-go step forwards '$gv_value' with no 'go-version-file' beside it. A forwarded input may resolve to empty; add 'go-version-file' so the fallback is still a declaration."
+	fi
+
+	if ((step_ok == 1)); then
+		derived_steps=$((derived_steps + 1))
+	fi
+	if ((step_forwards == 1)); then
+		forwarding_steps=$((forwarding_steps + 1))
+	fi
 done < <(git grep -n 'uses: actions/setup-go@' -- .github)
 
 # D2: no version-shaped default in a composite action.
@@ -147,6 +234,9 @@ done < <(git grep -n 'uses: actions/setup-go@' -- .github)
 # of its own and let the caller's module decide.
 action_files=0
 while IFS= read -r action_file; do
+	# printf on an empty list still emits one line; an empty name must not be
+	# counted, or the vacuity guard below would read it as a manifest.
+	[[ -n $action_file ]] || continue
 	action_files=$((action_files + 1))
 	while IFS=: read -r line input text; do
 		fail "$action_file" "$line" \
@@ -217,7 +307,7 @@ while IFS= read -r action_file; do
 			esac
 		fi
 	fi
-done < <(git ls-files '.github/actions/*/action.yml' '.github/actions/*/action.yaml')
+done < <(printf '%s\n' "$action_manifests")
 
 if ((action_files == 0)); then
 	printf 'go toolchain check: no composite action manifests found under .github/actions; detector D2 would pass vacuously\n' >&2
@@ -290,5 +380,5 @@ if ((status != 0)); then
 	exit "$status"
 fi
 
-printf 'go toolchain check: go.mod declares toolchain %s; scanned %d setup-go steps, all deriving (%d via go-version-file or an input expression)\n' \
-	"$toolchain" "$setup_go_steps" "$derived_steps"
+printf 'go toolchain check: go.mod declares toolchain %s; scanned %d setup-go steps, all deriving (%d, of which %d forward a composite action input)\n' \
+	"$toolchain" "$setup_go_steps" "$derived_steps" "$forwarding_steps"
