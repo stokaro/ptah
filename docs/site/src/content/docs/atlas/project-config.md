@@ -544,6 +544,7 @@ block name" nor scope-independent:
 | `env.format` | `migrate`, `schema` | — |
 | `env.migration` | `repo` | `skip_report` |
 | `env.schema` | `repo` | `mode` |
+| `test` and `env.test` | `migrate`, `schema` | everything else |
 
 `diff` and `lint` are the two blocks that may sit at the top level as well as
 inside `env`, and their nested names behave the same in both places: top-level
@@ -556,6 +557,13 @@ decoded into those structures by the community binary, so top-level
 `format { schema = { k = "v" } }`, `migration { repo = { k = "v" } }` and
 `schema { repo = { k = "v" } }` all exit 0 — Ptah drops the whole block with an
 ignored-block warning and exits 0 too.
+
+The `test` row is the one that applies inside a block with no effect at all.
+Neither binary implements `test`: it is dropped whole and reported as ignored.
+The community binary still runs its object decoder on `migrate` and `schema`
+within it, so `test { schema = { q = "v" } }` fails on both while
+`test { schema = {} }` and `test { schema "s" { src = ["file://t.hcl"] } }` do
+not.
 
 Writing any of these as a block is unaffected.
 

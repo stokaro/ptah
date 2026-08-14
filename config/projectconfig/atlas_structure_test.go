@@ -505,6 +505,44 @@ env "local" {
 			wantErr: `atlas\.hcl "env" at atlas\.hcl:1 must be a block`,
 		},
 		{
+			// `test` is dropped whole by both binaries, and the community
+			// binary still decodes `schema` and `migrate` inside it. A name
+			// under an ignored block is the third place a value rule has to
+			// reach.
+			name: "top level test schema written as a non-empty object",
+			raw: `test {
+  schema = { q = "v" }
+}
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			wantErr: `atlas\.hcl "schema" at atlas\.hcl:2 must be a block, or an empty object`,
+		},
+		{
+			name: "env test schema written as a string",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  test {
+    schema = "x"
+  }
+}
+`,
+			wantErr: `atlas\.hcl "schema" at atlas\.hcl:4 must be a block, or an empty object`,
+		},
+		{
+			name: "env test migrate written as a non-empty object",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  test {
+    migrate = { q = "v" }
+  }
+}
+`,
+			wantErr: `atlas\.hcl "migrate" at atlas\.hcl:4 must be a block, or an empty object`,
+		},
+		{
 			// The control for the format tolerance widened alongside these
 			// rules: the four template names each format block decodes are
 			// still decoded, so a non-string value for one is still refused.
@@ -870,6 +908,53 @@ env "local" {
 }
 `,
 			ignored: "env",
+		},
+		{
+			// The ignored name is the `test` block itself: the value rule runs
+			// inside a body whose own name carries no effect, so nothing new is
+			// reported for the members.
+			name: "top level test schema written as an empty object",
+			raw: `test {
+  schema = {}
+}
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			ignored: "test",
+		},
+		{
+			name: "env test schema written as null",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  test {
+    schema = null
+  }
+}
+`,
+			ignored: "test",
+		},
+		{
+			name: "env test nonsense name given an object",
+			raw: `env "local" {
+  url = "sqlite://s.db"
+  test {
+    frobnicate9 = { q = "v" }
+  }
+}
+`,
+			ignored: "test",
+		},
+		{
+			name: "schema outside the test scope",
+			raw: `schema = { q = "v" }
+
+env "local" {
+  url = "sqlite://s.db"
+}
+`,
+			ignored: "schema",
 		},
 	}
 

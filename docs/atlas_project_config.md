@@ -701,6 +701,14 @@ either spelling of `diff`; `git` under either spelling of `lint`; and
 `env`. Each was measured against the pinned community binary individually — the
 set is not "every block name", and it is not the same at every scope.
 
+`migrate` and `schema` under `test` obey the same rule at both spellings, and
+they are the one case where it applies inside a block that has no effect at all.
+Neither binary implements `test`: it is dropped whole and reported as ignored.
+The community binary still runs its object decoder on those two names within it,
+so `test { schema = { q = "v" } }` is exit 1 on both while
+`test { schema = {} }`, `test { schema = null }` and
+`test { schema "s" { src = ["file://t.hcl"] } }` are exit 0 on both.
+
 `diff` and `lint` are the two blocks that may sit at the top level as well as
 inside `env`, and Ptah routes both spellings through the same parser, so
 top-level `diff { skip = { k = "v" } }` and `lint { git = { k = "v" } }` are

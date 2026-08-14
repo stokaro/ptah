@@ -517,7 +517,7 @@ func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) 
 	if err := rejectEnforcedConstruct(scope, block.Type, block.TypeRange); err != nil {
 		return err
 	}
-	if err := p.evaluateIgnoredBody(block.Body); err != nil {
+	if err := p.evaluateIgnoredBody(scope+"."+block.Type, block.Body); err != nil {
 		return err
 	}
 	p.noteIgnored("block", block.Type, block.TypeRange)
@@ -568,7 +568,7 @@ func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 }
 
 // evaluateIgnoredBody evaluates every expression inside a construct whose NAME
-// is being ignored, discarding the values and returning the first failure.
+// is being ignored, returning the first failure.
 //
 // This is what makes the tolerance name-level rather than subtree-level, which
 // is how Atlas CE behaves: it drops the decoded result of an unrecognized name
@@ -580,18 +580,29 @@ func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 //
 // Skipping the subtree instead would accept the second file, which CE rejects,
 // making this implementation LOOSER than CE -- the more dangerous direction.
-func (p atlasParser) evaluateIgnoredBody(body *hclsyntax.Body) error {
+//
+// The value rules run here too, for the same reason and one step further: an
+// ignored block can CONTAIN a name CE decodes. `test` is the measured case --
+// the block is dropped whole by both binaries, and CE still decodes `schema`
+// and `migrate` inside it. Scope is threaded rather than dropped so those rules
+// can be keyed by where the name sits, exactly as they are on the attribute
+// path.
+func (p atlasParser) evaluateIgnoredBody(scope string, body *hclsyntax.Body) error {
 	if body == nil {
 		return nil
 	}
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
-		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+		value, diags := attr.Expr.Value(p.ctx)
+		if diags.HasErrors() {
 			return p.evaluationFailed(name, attr, diags)
+		}
+		if err := checkAtlasToleratedValue(scope, name, attr, value); err != nil {
+			return err
 		}
 	}
 	for _, block := range body.Blocks {
-		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+		if err := p.evaluateIgnoredBody(scope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
 	}
@@ -627,7 +638,7 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 	default:
 		// Atlas CE accepts an unrecognized top-level name and drops it. The
 		// body is still evaluated -- see evaluateIgnoredBody.
-		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+		if err := p.evaluateIgnoredBody(atlasTopLevelScope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
 		p.noteIgnored("block", block.Type, block.TypeRange)

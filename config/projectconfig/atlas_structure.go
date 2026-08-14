@@ -244,14 +244,36 @@ func atlasTolerantLeafStructure(attributes ...string) atlasBodyStructure {
 //	env { migration { repo = null } }         -> 0
 //	env { migration { frobnicate9 = {…} } }   -> 0  (control, same block)
 //	migration { repo = { k = "v" } }  (top level)  -> 0
+//
+// The two `test` rows are the names CE decodes INSIDE a block both binaries
+// drop whole. `test` is not implemented by either side -- the pinned binary
+// ignores the block and so does Ptah -- but CE still runs its object decoder on
+// `schema` and `migrate` within it, so a malformed value is exit 1 there while
+// the block around it has no effect at all:
+//
+//	test { schema = { q = "v" } }   (top level and env alike)  -> 1
+//	test { schema = {} }                                       -> 0
+//	test { schema = null }                                     -> 0
+//	test { schema = "x" / 17 / [1,2] }                         -> 1
+//	test { migrate = { q = "v" } }                             -> 1
+//	test { schema "s" { src = ["file://t.hcl"] } }             -> 0  (the block
+//	                                                                 spelling)
+//	test { frobnicate9 = { q = "v" } }                         -> 0  (control)
+//	schema = { q = "v" }  (top level, outside `test`)          -> 0  (control)
+//
+// Both spellings are listed rather than folded into one bare `test` key,
+// because the scope a dropped block reaches this table with is the path it
+// actually sits at.
 var atlasStructAttributes = map[string][]string{
-	atlasTopLevelScope: {"diff", "lint", "test"},
-	"env":              {"diff", "format", "lint", "migration", "schema", "test"},
-	"diff":             {"skip"},
-	"format":           {"migrate", "schema"},
-	"lint":             {"git"},
-	"env.migration":    {"repo"},
-	"env.schema":       {"repo"},
+	atlasTopLevelScope:           {"diff", "lint", "test"},
+	"env":                        {"diff", "format", "lint", "migration", "schema", "test"},
+	"diff":                       {"skip"},
+	"format":                     {"migrate", "schema"},
+	"lint":                       {"git"},
+	"env.migration":              {"repo"},
+	"env.schema":                 {"repo"},
+	atlasTopLevelScope + ".test": {"migrate", "schema"},
+	"env.test":                   {"migrate", "schema"},
 }
 
 // atlasLeafValueKind is the value shape a name in [atlasDecodedLeafAttributes]
