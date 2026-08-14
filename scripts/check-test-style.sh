@@ -16,39 +16,25 @@ case "${1-}" in
 	;;
 esac
 
+# The library is resolved from this script's own location, never from the
+# repository the script is pointed at. internal/teststyleguard runs this script
+# with its working directory inside a throwaway fixture repository, so
+# `git rev-parse --show-toplevel` answers with that fixture -- which has no
+# scripts/ directory at all, and sourcing through it made the gate fail with
+# "No such file or directory" for every fixture row.
+script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+
+# select_test_files is shared with scripts/check-quicktest-shape.sh, which needs
+# exactly the same answer to exactly the same question and must not grow a second,
+# divergent idea of which files belong to this checkout. The reasoning behind the
+# git-based selection -- and the linked-worktree failure it exists to prevent --
+# is recorded there.
+#
+# shellcheck source=scripts/lib/select-test-files.sh
+. "$script_dir/lib/select-test-files.sh"
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
-
-# select_test_files prints every test file this gate is allowed to judge, one per
-# line, relative to the repository root.
-#
-# The scanner is never handed a directory to walk. `teststyle -root .` walks the
-# filesystem and prunes by directory *name* only (.git, vendor, node_modules,
-# testdata), and the root of a linked git worktree is an ordinary directory whose
-# `.git` is a regular *file* holding a `gitdir:` pointer -- nothing prunes it. The
-# walk therefore descended into every checkout parked under the repo and reported
-# its tests as violations of this repo's baseline, so the gate was red for code
-# that is not in the working tree at all, and `-write-baseline` captured those
-# foreign paths into the tracked baseline.
-#
-# git is the authority on what belongs to this checkout: it refuses to descend
-# past a nested `.git` marker, so no worktree path can appear here regardless of
-# ignore rules. This mirrors the testify check below, which searches tracked
-# files only for the same reason.
-#
-#   --cached                    tracked files
-#   --others --exclude-standard brand-new local test files, so the gate still
-#                               fires before `git add`. Dropping these would make
-#                               the gate green on the very file the author is
-#                               about to commit.
-#   core.quotePath=false        emit non-ASCII paths raw instead of C-quoted, so
-#                               they survive the line-based read below
-#
-# A future submodule would appear here as a gitlink rather than as its files; it
-# would need a scan of its own.
-select_test_files() {
-	git -c core.quotePath=false ls-files --cached --others --exclude-standard -- '*_test.go'
-}
 
 if [ "$mode" = list ]; then
 	select_test_files

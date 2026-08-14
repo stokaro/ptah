@@ -1,0 +1,31 @@
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestViolations(t *testing.T) {
+	qt.Assert(t, 1, qt.Equals, 1)
+	qt.Check(
+		t,
+		2,
+		qt.Equals,
+		2,
+	)
+	qt .Assert(t, 3, qt.Equals, 3)
+
+	c := qt.New(t)
+	c.Run("receiver named c", func(c *qt.C) {
+		c.Assert(4, qt.Equals, 4)
+	})
+
+	outer := qt.New(t)
+	outer.Run("neither identifier is c", func(inner *qt.C) {
+		inner.Assert(5, qt.Equals, 5)
+	})
+	qt.New(t).Run("receiver is not an identifier at all", func(c *qt.C) {
+		c.Assert(6, qt.Equals, 6)
+	})
+}

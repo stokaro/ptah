@@ -1,0 +1,51 @@
+// This fixture is the target shape for both rules and must produce zero
+// findings. It is named .go.txt rather than _test.go on purpose: the whole-tree
+// gate selects `git ls-files -- '*_test.go'`, which matches at any depth, so a
+// fixture named _test.go here would be scanned as production test code and the
+// violating half of this pair would keep the gate red forever.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestConformingTable(t *testing.T) {
+	tests := []struct {
+		name string
+		want int
+	}{
+		{name: "one", want: 1},
+		{name: "two", want: 2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.want, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestConformingHelperTakingT(t *testing.T) {
+	assertOne(t)
+}
+
+func assertOne(t *testing.T) {
+	t.Helper()
+	c := qt.New(t)
+	c.Check(1, qt.Equals, 1)
+}
+
+// A helper that genuinely belongs to the caller's checker keeps taking a *qt.C.
+// There are more than a thousand of these in the tree and neither rule touches
+// them.
+func assertTwo(c *qt.C) {
+	c.Check(2, qt.Equals, 2)
+}
+
+func TestConformingHelperTakingC(t *testing.T) {
+	c := qt.New(t)
+	assertTwo(c)
+}

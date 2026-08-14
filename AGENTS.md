@@ -850,8 +850,8 @@ guideline. Keep loop bodies simple and do not use loops to encode branching
 logic.
 
 Go 1.22 and newer makes range variables per-iteration, so the historical
-`test := test` workaround is not needed when using `c.Run()` closures in
-table-driven tests unless intentionally taking the address of a loop variable.
+`test := test` workaround is not needed in table-driven subtests unless you
+intentionally take the address of a loop variable.
 
 Run the test-style baseline before finishing test changes:
 
@@ -884,12 +884,91 @@ along with every other finding. It is not a text scan: a comment that ends a
 sentence with the word `assert` or `require` is not a violation, and `pkg`
 matches by prefix so every testify subpackage is covered by the one entry.
 
+### Assert Through A `*qt.C`, Never Through `qt.Assert`
+
+The package-level `qt.Assert` and `qt.Check` are forbidden. Every assertion
+goes through a checker created from the `testing.TB` that owns the scope:
+
+```go
+c := qt.New(t)
+c.Assert(err, qt.IsNil)
+c.Check(got, qt.Equals, want)
+```
+
+Never:
+
+```go
+qt.Assert(t, err, qt.IsNil)
+qt.Check(t, got, qt.Equals, want)
+```
+
+`qt.Assert(t, …)` is `qt.New(t).Assert(…)` — it builds a throwaway checker on
+every line. Naming it once makes the scope it belongs to visible, which is what
+the subtest rule below depends on.
+
+A helper that takes `t *testing.T` creates its own `c := qt.New(t)`. It never
+takes a `c` from its caller as a way of avoiding the line. A helper that
+genuinely belongs to the caller's checker takes `c *qt.C` as its parameter and
+says so in its signature.
+
+### Subtests Use `t.Run` With A Fresh `qt.New`
+
+`c.Run` is forbidden. Subtests are `t.Run(name, func(t *testing.T) { … })`, and
+the closure opens with its own `c := qt.New(t)`:
+
+```go
+for _, test := range tests {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
+		got, err := atlasurl.DialectFromURL(test.rawURL)
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.Equals, test.want)
+	})
+}
+```
+
+Never:
+
+```go
+for _, test := range tests {
+	c.Run(test.name, func(c *qt.C) {
+		...
+	})
+}
+```
+
+The fresh `qt.New` is not a downgrade and must not be "simplified" back.
+`(*qt.C).Run` constructs the child checker itself —
+`c2 := New(subtestTB); defer c2.Done(); c2.SetFormat(parentFormat); f(c2)` —
+so the object the closure receives is the same object `qt.New(t)` builds from
+the same subtest `t`. `c.TempDir`, `c.Cleanup`, `c.Context`, `c.Setenv` and
+`c.Logf` are promoted `testing.TB` methods on that subtest either way, and
+`c.Patch`, `c.Mkdir` and `c.Unsetenv` register through `TB.Cleanup` on that
+subtest either way. The two things `c.Run` adds are an inherited format
+function, which nothing in this repository sets, and a `Done` call, which
+matters only to the deprecated `c.Defer`. Use `c.Cleanup`, not `c.Defer`.
+
+Writing the subtest as `t.Run` also makes the shadowing explicit. Under
+`c.Run(name, func(c *qt.C))` the parameter silently shadows the enclosing `c`,
+and a reader cannot tell which one a line uses. Under `t.Run` the new `c` is a
+declaration on its own line, in the scope it belongs to.
+
+Run the shape gate before finishing test changes:
+
+```bash
+scripts/check-quicktest-shape.sh
+```
+
+It enforces both rules and has no baseline, on purpose. `check-test-style.sh`
+carries one only because issue #541 is still being cleaned up; these two rules
+were applied to the whole tree in the change that added the gate, so a baseline
+here would have nothing legitimate to record and would only grandfather the next
+violation.
+
 Bad:
 
 ```go
 func TestDialectFromURL(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -901,7 +980,8 @@ func TestDialectFromURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			if test.wantErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -918,8 +998,6 @@ Good:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -929,7 +1007,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -938,9 +1017,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unsupported", func(c *qt.C) {
+	t.Run("unsupported", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 		c.Assert(got, qt.Equals, "")
@@ -975,13 +1053,15 @@ func checkError(c *qt.C, err error, wantIs error, wantLike string) {
 Good:
 
 ```go
-c.Run("unsupported dev url dialect", func(c *qt.C) {
+t.Run("unsupported dev url dialect", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 	c.Assert(got, qt.Equals, "")
 })
 
-c.Run("postgres dev url", func(c *qt.C) {
+t.Run("postgres dev url", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "postgres")
@@ -993,7 +1073,7 @@ c.Run("postgres dev url", func(c *qt.C) {
 Do not mix success and error cases in the same table. Prefer either:
 
 - `TestXxx_HappyPath` and `TestXxx_FailurePath`.
-- Separate `c.Run("happy ...")` and `c.Run("failure ...")` groups with distinct
+- Separate `t.Run("happy ...")` and `t.Run("failure ...")` groups with distinct
   tables.
 
 Bad:
@@ -1010,7 +1090,8 @@ tests := []struct {
 }
 
 for _, test := range tests {
-	c.Run(test.name, func(c *qt.C) {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL(test.rawURL)
 		if test.wantErr != "" {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -1024,12 +1105,10 @@ for _, test := range tests {
 
 Good:
 
-Use table-driven tests with `c.Run()` for multiple test cases:
+Use table-driven tests with `t.Run()` for multiple test cases:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -1039,7 +1118,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -1048,8 +1128,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -1063,7 +1141,8 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, "")

@@ -1,0 +1,17 @@
+package fixture
+
+import (
+	"testing"
+
+	quicktest "github.com/frankban/quicktest"
+)
+
+// Under this alias the identifier `qt` never appears, so R1 and R2 would both go
+// quiet across the whole file. R0 exists so that silence is itself a finding.
+func TestRenamedAlias(t *testing.T) {
+	c := quicktest.New(t)
+	quicktest.Assert(t, 1, quicktest.Equals, 1)
+	c.Run("sub", func(c *quicktest.C) {
+		c.Assert(2, quicktest.Equals, 2)
+	})
+}

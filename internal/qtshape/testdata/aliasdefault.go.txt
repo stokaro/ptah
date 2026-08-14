@@ -1,0 +1,15 @@
+package fixture
+
+import (
+	"testing"
+
+	"github.com/frankban/quicktest"
+)
+
+// The package clause of github.com/frankban/quicktest is `package quicktest`, so
+// an unaliased import binds `quicktest` and is a violation just like a renamed
+// one. A rule that only looked at explicit aliases would pass this file.
+func TestDefaultBinding(t *testing.T) {
+	c := quicktest.New(t)
+	c.Assert(1, quicktest.Equals, 1)
+}

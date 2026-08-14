@@ -1,0 +1,18 @@
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+// Neither call passes the identifier `t`. A rule that required one would report
+// zero findings here and would have missed both.
+func TestNonTFirstArgument(t *testing.T) {
+	t.Run("sub", func(subT *testing.T) {
+		qt.Assert(subT, 1, qt.Equals, 1)
+	})
+
+	c := qt.New(t)
+	qt.Check(c.TB, 2, qt.Equals, 2)
+}

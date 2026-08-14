@@ -1,0 +1,29 @@
+package fixture
+
+import "testing"
+
+// qt.Assert(t, got, qt.IsNil) is prose about a violation, not a violation.
+// c.Run(test.name, func(c *qt.C) { ... }) used to be the house style, and saying
+// so in a comment must not be reported.
+const sample = `
+qt.Assert(t, got, qt.IsNil)
+qt.Check(t, got, qt.Equals, want)
+c.Run("x", func(c *qt.C) {})
+`
+
+// runner has nothing to do with quicktest. Its Run method exists so a rule keyed
+// on the method name alone, or on a receiver name, is measurably wrong here.
+type runner struct{}
+
+func (runner) Run(name string, f func(int)) {}
+
+func TestDecoys(t *testing.T) {
+	t.Log(sample)
+
+	var c runner
+	c.Run("x", func(int) {})
+
+	t.Run("a real subtest is not a violation", func(t *testing.T) {
+		t.Log("fine")
+	})
+}
