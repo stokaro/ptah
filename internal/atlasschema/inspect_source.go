@@ -100,6 +100,50 @@ type InspectSourceOptions struct {
 	DevURLDiagnostic func(string) error
 }
 
+// ValidateInspectOptions runs every check [InspectSource] performs before it
+// looks at the source at all: the output format, then the --exclude selectors,
+// then the --include ones, in that order.
+//
+// It is exported so a caller that must do work BEFORE handing the source over
+// can run these first and keep the argument error the operator would otherwise
+// have got. `ptah schema inspect` is that caller: an `oci://` --schema-file is
+// pulled from a registry before the source can be classified, and without this
+// an invalid --format or a missing --dev-url would be reported as a registry
+// dial failure after an authenticated network round trip — or after a timeout,
+// on a registry that is merely slow. Local argument errors should not depend on
+// a network.
+//
+// The order is part of the contract, not an implementation detail: it decides
+// which message an invocation wrong in two ways receives, and the compat
+// surface is measured against the pinned binary on exactly that.
+func ValidateInspectOptions(opts InspectSourceOptions) error {
+	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
+		return err
+	}
+	if err := atlasfilter.ValidateExcludeSelectors(opts.Exclude); err != nil {
+		return err
+	}
+	// Malformed or unsupported --include selectors fail before any database is
+	// contacted and before the dev database is reset.
+	return atlasfilter.ValidateIncludeSelectors(opts.Include)
+}
+
+// ValidateNonDatabaseInspectPreconditions is [ValidateInspectOptions] plus the
+// dev-database requirement, for a source already known not to be a database
+// URL.
+//
+// A non-database source is materialized on --dev-url, so an absent one is an
+// argument error rather than something to discover later. Callers that must
+// fetch the source before it can be classified use this to answer that error
+// without fetching anything. [InspectSource] reaches the same predicate through
+// its own path, so the two cannot disagree about the message.
+func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
+	if err := ValidateInspectOptions(opts); err != nil {
+		return err
+	}
+	return refuseInspectDevURL(opts.DevURL, opts.DevURLDiagnostic)
+}
+
 // InspectSource classifies the --url inspection source and renders it with
 // Atlas-compatible formatting. Database URLs are introspected directly. Local
 // schema files and migration directories are evaluated on the --dev-url dev
@@ -108,15 +152,7 @@ type InspectSourceOptions struct {
 // and the result is introspected so the output is normalized by a real
 // database of the target dialect.
 func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, error) {
-	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
-		return "", err
-	}
-	if err := atlasfilter.ValidateExcludeSelectors(opts.Exclude); err != nil {
-		return "", err
-	}
-	// Malformed or unsupported --include selectors fail before any database is
-	// contacted and before the dev database is reset.
-	if err := atlasfilter.ValidateIncludeSelectors(opts.Include); err != nil {
+	if err := ValidateInspectOptions(opts); err != nil {
 		return "", err
 	}
 	set, err := atlassource.ClassifySet("--url", []string{opts.URL}, opts.ProjectEnv)

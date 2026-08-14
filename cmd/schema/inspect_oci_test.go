@@ -106,6 +106,65 @@ func TestSchemaInspect_WithoutPlainHTTPUsesTLS(t *testing.T) {
 	c.Check(combined, qt.Contains, "https://", qt.Commentf("output:\n%s", combined))
 }
 
+// TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry is the
+// review finding on stokaro/ptah#1496, pinned.
+//
+// Resolving the artifact before the source can be classified put the pull in
+// front of every local argument check, so `--format garbage` and a missing
+// `--dev-url` were answered with a registry dial failure instead of the message
+// the identical local-file invocation receives. On a slow or unreachable
+// registry the operator waited for a timeout to be told about a typo, and on a
+// reachable one an authenticated round trip happened for a command that could
+// never have run.
+//
+// The rows use a closed port, so a probe that DID reach the registry reports
+// `connection refused` — which is what each row asserts absent. The local
+// control alongside each is the message the same mistake produces without an
+// oci:// source, so the rows pin agreement between the two spellings rather
+// than merely pinning some error.
+func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *testing.T) {
+	tests := []struct {
+		name string
+		// extra are the arguments that make the invocation locally wrong.
+		extra []string
+		want  string
+	}{
+		{
+			name:  "unsupported --format",
+			extra: []string{"--dev-url", "sqlite://:memory:", "--format", "garbage"},
+			want:  `unsupported --format "garbage": expected hcl, sql, or json`,
+		},
+		{
+			name:  "absent --dev-url",
+			extra: nil,
+			want:  "--dev-url cannot be empty",
+		},
+		{
+			name:  "unsupported --include selector",
+			extra: []string{"--dev-url", "sqlite://:memory:", "--include", "[type=column]"},
+			want:  `unsupported Atlas include selector "[type=column]"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			reference := closedRegistryReference(c)
+
+			out, err := runCommand(schema.NewSchemaCommand(), append([]string{
+				"inspect", "--schema-file", reference, "--plain-http",
+			}, tt.extra...)...)
+			combined := out + errorText(err)
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
+			c.Check(combined, qt.Contains, tt.want, qt.Commentf("output:\n%s", combined))
+			// Nothing was dialed: the local error came first.
+			c.Check(combined, qt.Not(qt.Contains), "connection refused")
+			c.Check(combined, qt.Not(qt.Contains), "fetch OCI manifest")
+		})
+	}
+}
+
 // TestCompatSchemaInspect_StillRefusesOCI is the guard that makes the decision
 // above load-bearing rather than a preference.
 //

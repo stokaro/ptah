@@ -226,6 +226,36 @@ func materializeOCISchemaFile(cmd *cobra.Command, opts schemaInspectOptions) (st
 	if !strings.HasPrefix(reference, ociartifact.Scheme) {
 		return "", nil, nil
 	}
+
+	// Every purely local argument error is answered before the registry is
+	// contacted. Without this the pull happens first, so `--format garbage` or
+	// a missing --dev-url would be reported as a dial failure after an
+	// authenticated network round trip — and on a slow or unreachable registry,
+	// after the wait. An artifact is a remote resource; a typo is not, and the
+	// operator should not need a working network to be told about one.
+	//
+	// An oci:// reference is never a database URL, so the dev-database
+	// requirement applies unconditionally here. Both checks come from
+	// atlasschema rather than being restated, so the message and the order stay
+	// the ones InspectSource would have produced.
+	//
+	// resolveInspectFormat is called here as well as at its usual place below.
+	// It is pure, so calling it twice costs nothing, and calling it here rather
+	// than hoisting it keeps the order every non-OCI invocation already had:
+	// hoisting would change which message a local source wrong in two ways
+	// receives, which is a behavior change this defect does not license.
+	if _, err := resolveInspectFormat(opts); err != nil {
+		return "", nil, err
+	}
+	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(atlasschema.InspectSourceOptions{
+		Format:  opts.format,
+		Include: opts.include,
+		Exclude: opts.exclude,
+		DevURL:  opts.devURL,
+	}); err != nil {
+		return "", nil, err
+	}
+
 	dir, err := os.MkdirTemp("", "ptah-inspect-oci-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
