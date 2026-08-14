@@ -119,10 +119,19 @@ const SchemaScopedEnumsEnvVar = "PTAH_HCL_SCHEMA_SCOPED_ENUMS"
 
 // The declarations of the three variables, made once, in the package that owns
 // them. See [go.5x5.cz/ptah/internal/envbool].
+//
+// Two are gated and one is retained, and the split follows the pinned community
+// binary rather than the shape of the setting. Merging a redeclared object and
+// keying enums by their qualified name are both readings that binary does not
+// have -- it exits 1 on the first document and answers `duplicate enum "mood"`
+// on the second -- so an enabled value moves ptah-compat off the surface strict
+// mode measures. Refusing a repeated `view`, `materialized`, `role` or `unique`
+// block is the other direction: the binary reads those at exit 0, so the
+// variable only refuses earlier and withholds nothing.
 var (
-	mergeRedeclarationsVar  = envbool.New(MergeRedeclarationsEnvVar, false)
-	strictRedeclarationsVar = envbool.New(StrictRedeclarationsEnvVar, false)
-	schemaScopedEnumsVar    = envbool.New(SchemaScopedEnumsEnvVar, false)
+	mergeRedeclarationsVar  = envbool.New(MergeRedeclarationsEnvVar, false, envbool.Gated)
+	strictRedeclarationsVar = envbool.New(StrictRedeclarationsEnvVar, false, envbool.Retained)
+	schemaScopedEnumsVar    = envbool.New(SchemaScopedEnumsEnvVar, false, envbool.Gated)
 )
 
 // redeclarationPolicy is the three variables resolved once per parse, so one

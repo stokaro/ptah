@@ -87,8 +87,9 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
 			c.Assert(out.text(), qt.Contains, "out-of-order pending migrations for current version")
 			for _, source := range sourceVersions {
-				c.Assert(out.text(), qt.Contains, `(source version "`+source+`")`)
+				c.Assert(out.text(), qt.Contains, `"`+source+`"`)
 			}
+			c.Assert(out.text(), qt.Not(qt.Contains), "461168")
 			c.Assert(userTables(c, dbPath), qt.DeepEquals, tables)
 		}
 	}
@@ -181,7 +182,8 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			added:   []string{"V3__sq3.sql"},
 			assert: func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
 				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
-				c.Assert(out.text(), qt.Contains, `(source version "3")`)
+				c.Assert(out.text(), qt.Contains, `"3"`)
+				c.Assert(out.text(), qt.Not(qt.Contains), "461168")
 				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq10", "sq2"})
 			},
 		},

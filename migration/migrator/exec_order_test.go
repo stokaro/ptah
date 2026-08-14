@@ -46,6 +46,69 @@ func TestPendingMigrationVersionsUsesAppliedSet(t *testing.T) {
 	c.Assert(outOfOrderMigrationVersions(pending, 5), qt.DeepEquals, []int64{3})
 }
 
+func TestMigrationIdentitySetOnlyRequiresExactMatchForMappedIdentities(t *testing.T) {
+	c := qt.New(t)
+	revisions := []MigrationRevision{{
+		Version:         1,
+		AtlasVersion:    "00001",
+		State:           migrationStateApplied,
+		hasAtlasVersion: true,
+	}}
+	applied := newMigrationIdentitySet([]int64{1}, revisions)
+	ordinary := &Migration{
+		Version:                 1,
+		atlasRevisionVersion:    "1",
+		hasAtlasRevisionVersion: true,
+	}
+	mapped := &Migration{
+		Version:                    1,
+		atlasRevisionVersion:       "1",
+		hasAtlasRevisionVersion:    true,
+		atlasRevisionVersionMapped: true,
+	}
+
+	c.Assert(applied.containsMigration(ordinary), qt.IsTrue)
+	c.Assert(applied.containsMigration(mapped), qt.IsFalse)
+}
+
+func TestOutOfOrderErrorUsesExactSourceIdentityWithoutLeakingRuntimeKey(t *testing.T) {
+	c := qt.New(t)
+	const currentRuntime = int64(4611686018427510315)
+	const pendingRuntime = int64(4611686018427836747)
+
+	mapped := NewOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
+		currentRuntime: "2",
+		pendingRuntime: "10",
+	})
+	c.Assert(mapped.Error(), qt.Equals,
+		`out-of-order pending migrations for current version "2": "10" `+
+			`(use --exec-order=non-linear to apply or --exec-order=linear-skip to ignore)`)
+	c.Assert(mapped.Error(), qt.Not(qt.Contains), "461168")
+
+	fallback := NewOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
+		currentRuntime: "2",
+	})
+	c.Assert(fallback.Error(), qt.Contains, "4611686018427836747")
+}
+
+func TestOutOfOrderSourceVersionsIncludesRetiredExactHistory(t *testing.T) {
+	c := qt.New(t)
+	const pendingRuntime = int64(4611686018427469511)
+	sourceVersions := map[int64]string{pendingRuntime: "a"}
+
+	out := outOfOrderSourceVersions(
+		[]int64{pendingRuntime},
+		[]int64{0},
+		[]string{"foo"},
+		sourceVersions,
+	)
+	c.Assert(out, qt.DeepEquals, []int64{pendingRuntime})
+
+	highest, ok := highestAppliedSourceVersion([]int64{0}, []string{"foo"}, sourceVersions)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(highest, qt.Equals, "foo")
+}
+
 func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	c := qt.New(t)
 

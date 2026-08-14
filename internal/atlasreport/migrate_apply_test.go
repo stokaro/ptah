@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,86 @@ func TestWriteMigrateApplyFormat_CustomTemplate(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "sqlite|file://migrations|1|1|1|CREATE TABLE")
 }
 
+func TestWriteMigrateApplyFormat_ConvertedFilesUseExactSelectedIdentities(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "converted-format.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	fsys := fstest.MapFS{
+		"10_dotted.sql": {Data: []byte("CREATE TABLE dotted_report (id INTEGER PRIMARY KEY);")},
+		"20_repeat.sql": {Data: []byte("CREATE TABLE repeat_report (id INTEGER PRIMARY KEY);")},
+	}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5", 20: ""}),
+	)
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = atlasreport.WriteMigrateApplyFormat(
+		&out,
+		`{{ range .Applied }}{{ printf "%q:%s;" .Version .Name }}{{ end }}`,
+		atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               fsys,
+			Status:           &migrator.MigrationStatus{},
+			Migrations:       provider.Migrations(),
+			SelectedVersions: []int64{10, 20},
+			SelectedKeys:     []string{"1.5", ""},
+			Applied:          true,
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, `"1.5":10_dotted.sql;"":20_repeat.sql;`)
+}
+
+func TestWriteMigrateApplyFormat_ConvertedFailureAttachesToExactIdentity(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "converted-failure.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	fsys := fstest.MapFS{
+		"10_dotted.sql": {Data: []byte("INVALID SQL;")},
+	}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5"}),
+	)
+	c.Assert(err, qt.IsNil)
+	applyErr := fmt.Errorf("failed to apply migration 10: %w", &migrator.MigrationExecutionError{
+		Err:            errors.New("syntax error"),
+		Statement:      "INVALID SQL",
+		StatementIndex: 1,
+		Total:          1,
+	})
+	var out bytes.Buffer
+
+	err = atlasreport.WriteMigrateApplyFormat(
+		&out,
+		`{{ range .Applied }}{{ printf "%q:%s" .Version .Error.Text }}{{ end }}`,
+		atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               fsys,
+			Status:           &migrator.MigrationStatus{},
+			Migrations:       provider.Migrations(),
+			SelectedVersions: []int64{10},
+			SelectedKeys:     []string{"1.5"},
+			ApplyError:       applyErr,
+			Applied:          true,
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, `"1.5":syntax error`)
+}
+
 func TestWriteMigrateApplyFormat_JSONNoopMessage(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "noop.db")
@@ -91,6 +172,88 @@ func TestWriteMigrateApplyFormat_JSONNoopMessage(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, `"Message":"No migration files to execute"`)
 	c.Assert(out.String(), qt.Contains, `"Driver":"sqlite"`)
+}
+
+func TestWriteMigrateApplyFormat_JSONPreservesExactEmptyCurrentAndTarget(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "empty-identity.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	var out bytes.Buffer
+	err = atlasreport.WriteMigrateApplyFormat(
+		&out,
+		`{{ json . }}`,
+		atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               fstest.MapFS{"10_only.sql": {Data: []byte("SELECT 1;")}},
+			SelectedVersions: []int64{10},
+			SelectedKeys:     []string{""},
+			CurrentKeySet:    true,
+			Applied:          true,
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	var got struct {
+		Current *string
+		Target  *string
+		Pending []struct{ Version *string }
+		Applied []struct{ Version *string }
+	}
+	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+	c.Assert(got.Current, qt.IsNotNil)
+	c.Assert(*got.Current, qt.Equals, "")
+	c.Assert(got.Target, qt.IsNotNil)
+	c.Assert(*got.Target, qt.Equals, "")
+	c.Assert(got.Pending, qt.HasLen, 1)
+	c.Assert(got.Pending[0].Version, qt.IsNotNil)
+	c.Assert(*got.Pending[0].Version, qt.Equals, "")
+	c.Assert(got.Applied, qt.HasLen, 1)
+	c.Assert(got.Applied[0].Version, qt.IsNotNil)
+	c.Assert(*got.Applied[0].Version, qt.Equals, "")
+}
+
+func TestWriteMigrateApplyFormat_JSONCurrentPresenceIsAuthoritative(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "current-presence.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	render := func(opts atlasreport.MigrateApplyResultOptions) map[string]json.RawMessage {
+		var out bytes.Buffer
+		opts.Conn = conn
+		opts.FS = fstest.MapFS{}
+		opts.Status = &migrator.MigrationStatus{}
+		c.Assert(atlasreport.WriteMigrateApplyFormat(&out, `{{ json . }}`, opts), qt.IsNil)
+		var got map[string]json.RawMessage
+		c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+		return got
+	}
+
+	absent := render(atlasreport.MigrateApplyResultOptions{})
+	c.Assert(absent["Current"], qt.IsNil)
+	c.Assert(absent["Target"], qt.IsNil)
+
+	stale := render(atlasreport.MigrateApplyResultOptions{CurrentKey: "stale"})
+	c.Assert(stale["Current"], qt.IsNil)
+	c.Assert(stale["Target"], qt.IsNil)
+
+	targetOnly := render(atlasreport.MigrateApplyResultOptions{
+		SelectedVersions: []int64{10},
+		SelectedKeys:     []string{""},
+	})
+	c.Assert(targetOnly["Current"], qt.IsNil)
+	c.Assert(string(targetOnly["Target"]), qt.Equals, `""`)
+
+	nonempty := render(atlasreport.MigrateApplyResultOptions{
+		CurrentKey:    "1.5",
+		CurrentKeySet: true,
+	})
+	c.Assert(string(nonempty["Current"]), qt.Equals, `"1.5"`)
+	c.Assert(string(nonempty["Target"]), qt.Equals, `"1.5"`)
 }
 
 func TestWriteMigrateApplyFormat_JSONShape(t *testing.T) {

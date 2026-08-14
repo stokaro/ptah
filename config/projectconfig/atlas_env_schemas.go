@@ -31,4 +31,14 @@ const IgnoreEnvSchemasEnvVar = "PTAH_ATLAS_IGNORE_ENV_SCHEMAS"
 
 // ignoreEnvSchemas is the declaration of the variable, made once, in the
 // package that owns the atlas.hcl parse. See [go.5x5.cz/ptah/internal/envbool].
-var ignoreEnvSchemas = envbool.New(IgnoreEnvSchemasEnvVar, false)
+//
+// It is [go.5x5.cz/ptah/internal/envbool.Gated], and the direction is what
+// decides it. The pinned community binary HONORS `env { schemas }`: measured on
+// v1.3.0 against a PostgreSQL database holding `one`, `two` and `public`,
+// `schemas = ["one"]` describes `one` alone. A true value here restores the
+// realm-wide description Ptah emitted before the attribute got a parser arm,
+// which is strictly MORE than the binary describes -- so it is a capability the
+// binary does not have, and strict mode, whose whole job is to be measurable
+// against that binary, has to refuse it. Retaining it would let a conformance
+// run describe schemas the oracle excluded and call the difference parity.
+var ignoreEnvSchemas = envbool.New(IgnoreEnvSchemasEnvVar, false, envbool.Gated)

@@ -105,7 +105,15 @@ const AllowUnverifiedEnvVar = "PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR"
 // The default is false, which is the strict side. Every boolean `PTAH_*` in
 // this tree opts IN to the more permissive behavior, so a typo lands on the
 // strict default and fails closed.
-var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false)
+//
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]. The pinned community binary
+// has no spelling that executes a hashed directory whose integrity file does
+// not match: `atlas.sum` mismatch is a refusal there with `migrate hash` as the
+// only way out. A true value therefore runs migrations that binary would not
+// have run, which is a capability it lacks rather than one Ptah is restoring,
+// and a conformance run that executed under it would be measuring a different
+// program. Strict mode refuses it; the default surface keeps the escape hatch.
+var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false, envbool.Gated)
 
 // Options selects how strict one gate call is.
 type Options struct {

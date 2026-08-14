@@ -39,7 +39,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 	if opts.Analysis == nil {
 		return fmt.Errorf("migration lint analysis is required")
 	}
-	model := buildMigrateLintText(*opts.Analysis)
+	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions)
 	if model.analyzedCount == 0 {
 		// No analyzed versions means there is no report to render.
 		return nil
@@ -248,7 +248,10 @@ type migrateLintTextFix struct {
 // buildMigrateLintText derives the intermediate text-report model from the lint
 // analysis. It reuses the analysis's Selected flag and [File.Changes] count; it
 // never re-parses SQL.
-func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
+func buildMigrateLintText(
+	analysis migrationlint.Analysis,
+	revisionVersions map[int64]string,
+) migrateLintText {
 	upFiles := sortedUpFiles(analysis.Files())
 	diagsByFile := diagnosticsByFile(analysis.Findings())
 
@@ -265,7 +268,7 @@ func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
 		model.analyzedCount++
 		model.changes += len(file.Changes)
 
-		version := migrateLintTextVersion{version: migrateLintVersionKey(file)}
+		version := migrateLintTextVersion{version: migrateLintVersionKey(file, revisionVersions)}
 		version.groups = groupDiagnostics(diagsByFile[path.Clean(file.Path)])
 		hasError, hasWarning, count := versionSeverity(version.groups)
 		model.diagnostics += count
@@ -285,10 +288,13 @@ func buildMigrateLintText(analysis migrationlint.Analysis) migrateLintText {
 
 	last := model.versions[len(model.versions)-1].version
 	migrations := pluralize(model.analyzedCount, "migration", "migrations")
-	if firstSelected > 0 {
-		base := migrateLintVersionKey(upFiles[firstSelected-1])
+	switch {
+	case last == "":
+		model.header = fmt.Sprintf("Analyzing changes (%s in total):", migrations)
+	case firstSelected > 0:
+		base := migrateLintVersionKey(upFiles[firstSelected-1], revisionVersions)
 		model.header = fmt.Sprintf("Analyzing changes from version %s to %s (%s in total):", base, last, migrations)
-	} else {
+	default:
 		model.header = fmt.Sprintf("Analyzing changes until version %s (%s in total):", last, migrations)
 	}
 	return model

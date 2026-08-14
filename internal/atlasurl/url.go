@@ -376,6 +376,28 @@ func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
 	return filepath.Clean(path), false, nil
 }
 
+// dockerEngineAliases are docker image names the pinned community binary
+// provisions that are not also dialect spellings.
+//
+// `maria` is the whole set today. It is a measured community spelling --
+// `docker://maria/11/dev` and `docker://mariadb/11/dev` both resolve to that
+// binary's MariaDB image -- and [go.5x5.cz/ptah/internal/devdocker] starts a
+// container for either. [platform.NormalizeDialect] knows only `mariadb`,
+// because `maria` is not a dialect anyone writes as a URL scheme, so without
+// this the dialect preflight refused `docker://maria/11/dev` with `unsupported
+// docker --dev-url engine "maria"` and no container was ever started: a
+// capability the pinned binary has, removed.
+//
+// This duplicates one row of devdocker's engine table, which is the wrong shape
+// and is deliberate for now: devdocker imports dbschema (for the readiness
+// probe) and dbschema depends on this package, so atlasurl cannot ask devdocker
+// what a docker engine name means without an import cycle. The single-source
+// fix is to lift the engine table below both, and it is a refactor rather than
+// a defect repair.
+var dockerEngineAliases = map[string]string{
+	"maria": platform.MariaDB,
+}
+
 func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	engine := parsed.Host
 	if engine == "" {
@@ -386,6 +408,9 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	}
 	if before, _, found := strings.Cut(engine, ":"); found {
 		engine = before
+	}
+	if dialect, ok := dockerEngineAliases[strings.ToLower(engine)]; ok {
+		return dialect, nil
 	}
 	dialect := platform.NormalizeDialect(engine)
 	if dialect == "" {

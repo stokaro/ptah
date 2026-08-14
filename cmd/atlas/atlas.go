@@ -31,6 +31,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/devdocker"
 )
 
 type atlasVerb struct {
@@ -643,8 +644,28 @@ func atlasTestDevURLFlag() atlasargs.Flag {
 // atlasTestDevURLValue refuses a docker:// dev database URL on the test verbs.
 // Every directly connectable URL passes through untouched, so a dialect Ptah
 // does not support still reports itself at the connector.
+//
+// The question "is this a docker URL" is asked of [devdocker.IsURL], which is
+// the one place in the binary that answers it, rather than restated here as a
+// prefix match. A prefix match over a trimmed copy disagreed with it in both
+// directions, and both were measured on a build of this branch:
+//
+//   - `DOCKER://postgres/16/dev` is a docker URL to net/url's Parse, which
+//     lowercases a scheme, and to the pinned community binary v1.3.0, which
+//     routes it to its own provisioner (`failed to connect to the docker API`,
+//     byte-identical to the lowercase spelling, where `notascheme://` answers
+//     `unknown driver`). It was NOT one to the prefix match, so it slipped past
+//     this refusal and reached the connector, which answered
+//     `connect to test database: unsupported database dialect: docker` --
+//     exactly the internal classification this function exists to replace, on
+//     both `migrate test` and `schema test`.
+//   - ` docker://postgres/16/dev` is NOT a docker URL to that Parse, which
+//     reads a leading space as making the whole value a relative path, but was
+//     one to the prefix match over a trimmed copy. It now falls through to the
+//     connector, which names the parse failure -- the same verdict
+//     `migrate diff` already gives that value.
 func atlasTestDevURLValue(value string) (string, error) {
-	if strings.HasPrefix(strings.TrimSpace(value), "docker://") {
+	if devdocker.IsURL(value) {
 		return "", errors.New(
 			"docker --dev-url values are accepted by Atlas, but Ptah requires" +
 				" a directly connectable dev database URL for test cases",

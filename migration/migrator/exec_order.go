@@ -90,16 +90,20 @@ func outOfOrderExempt(versions, exempt []int64) []int64 {
 // the highest applied version — the two differ exactly when the tokens disagree
 // with the ordering, which is the whole case this exists for.
 //
-// A version with no token is skipped rather than assumed. Tokens come from the
-// directory as it stands now, so an applied migration whose file a baseline has
-// since squashed away contributes none, and the numeric comparison is left to
-// answer for it alone. That is the conservative direction: it can only fail to
-// flag, never flag something the source tool would execute.
-func outOfOrderSourceVersions(pending, applied []int64, sourceVersions map[int64]string) []int64 {
+// Recorded exact keys are included even when their source files have rotated
+// out of the current directory. Their conversion-time numeric tie slot is no
+// longer reconstructable, but the source tool's linearity decision is defined
+// on these tokens, so dropping them would execute an older migration the source
+// tool refuses.
+func outOfOrderSourceVersions(
+	pending, applied []int64,
+	appliedKeys []string,
+	sourceVersions map[int64]string,
+) []int64 {
 	if len(sourceVersions) == 0 {
 		return nil
 	}
-	highest, ok := highestAppliedSourceVersion(applied, sourceVersions)
+	highest, ok := highestAppliedSourceVersion(applied, appliedKeys, sourceVersions)
 	if !ok {
 		return nil
 	}
@@ -115,7 +119,11 @@ func outOfOrderSourceVersions(pending, applied []int64, sourceVersions map[int64
 	return out
 }
 
-func highestAppliedSourceVersion(applied []int64, sourceVersions map[int64]string) (string, bool) {
+func highestAppliedSourceVersion(
+	applied []int64,
+	appliedKeys []string,
+	sourceVersions map[int64]string,
+) (string, bool) {
 	var highest string
 	found := false
 	for _, version := range applied {
@@ -123,6 +131,11 @@ func highestAppliedSourceVersion(applied []int64, sourceVersions map[int64]strin
 		if !ok {
 			continue
 		}
+		if !found || source > highest {
+			highest, found = source, true
+		}
+	}
+	for _, source := range appliedKeys {
 		if !found || source > highest {
 			highest, found = source, true
 		}
@@ -158,10 +171,12 @@ type OutOfOrderError struct {
 	// current version and for every version listed, for a directory read
 	// through a foreign layout. It is empty for a native Atlas directory.
 	//
-	// It is reported because the int64 is not a name anyone can look up: it
-	// appears in no file name and in no Atlas output, so a refusal that only
-	// prints 4611686018427836747 does not tell an operator which file to move.
-	SourceVersions map[int64]string
+	// It replaces the numeric projection in user-facing diagnostics because the
+	// int64 is not a name anyone can look up: it appears in no file name and in
+	// no Atlas output.
+	SourceVersions          map[int64]string
+	currentSourceVersion    string
+	currentSourceVersionSet bool
 }
 
 func (e *OutOfOrderError) Error() string {
@@ -182,9 +197,13 @@ func (e *OutOfOrderError) Error() string {
 	for _, version := range e.Versions {
 		listed = append(listed, e.describe(version))
 	}
+	current := e.describe(e.CurrentVersion)
+	if e.currentSourceVersionSet {
+		current = fmt.Sprintf("%q", e.currentSourceVersion)
+	}
 	return fmt.Sprintf(
 		"out-of-order pending migrations for current version %s: %s %s",
-		e.describe(e.CurrentVersion),
+		current,
 		strings.Join(listed, ", "),
 		escape,
 	)
@@ -195,7 +214,7 @@ func (e *OutOfOrderError) describe(version int64) string {
 	if !ok {
 		return strconv.FormatInt(version, 10)
 	}
-	return fmt.Sprintf("%d (source version %q)", version, source)
+	return fmt.Sprintf("%q", source)
 }
 
 // NewOutOfOrderError builds the typed error returned for linear execution when

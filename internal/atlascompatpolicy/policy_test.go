@@ -42,11 +42,7 @@ func TestResolveRejectsMalformedStrictSelector(t *testing.T) {
 }
 
 func TestResolveStrictCERejectsEnabledExtensionEnvironment(t *testing.T) {
-	for _, name := range []string{
-		projectconfig.IgnoreEnvSchemasEnvVar,
-		"PTAH_ATLAS_INSPECT_ALL_BLOCKS",
-		"PTAH_SKIP_CHECKS",
-	} {
+	for _, name := range []string{"PTAH_ATLAS_INSPECT_ALL_BLOCKS", "PTAH_SKIP_CHECKS"} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
 			t.Setenv(name, "true")
@@ -60,37 +56,23 @@ func TestResolveStrictCERejectsEnabledExtensionEnvironment(t *testing.T) {
 }
 
 func TestResolveStrictCEAllowsExplicitlyDisabledExtensionEnvironment(t *testing.T) {
-	for _, name := range []string{
-		projectconfig.IgnoreEnvSchemasEnvVar,
-		"PTAH_ATLAS_INSPECT_ALL_BLOCKS",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
-			t.Setenv(name, "false")
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "false")
 
-			policy, err := atlascompatpolicy.Resolve()
+	policy, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
-		})
-	}
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, policy.IsStrictCE(), qt.IsTrue)
 }
 
 func TestResolveStrictCERejectsMalformedExtensionEnvironment(t *testing.T) {
-	for _, name := range []string{
-		projectconfig.IgnoreEnvSchemasEnvVar,
-		"PTAH_ATLAS_INSPECT_ALL_BLOCKS",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
-			t.Setenv(name, "yes")
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "yes")
 
-			_, err := atlascompatpolicy.Resolve()
+	_, err := atlascompatpolicy.Resolve()
 
-			qt.Assert(t, err, qt.ErrorMatches,
-				`invalid boolean value "yes" for `+name)
-		})
-	}
+	qt.Assert(t, err, qt.ErrorMatches,
+		`invalid boolean value "yes" for PTAH_ATLAS_INSPECT_ALL_BLOCKS`)
 }
 
 func TestResolveStrictCERejectsPtahLogEnvironment(t *testing.T) {

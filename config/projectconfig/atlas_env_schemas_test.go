@@ -250,6 +250,15 @@ func TestParseAtlasEnvSchemasOptOut(t *testing.T) {
 	}
 }
 
+// TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute pins WHEN the
+// value is read, which the rows above cannot see.
+//
+// Every row in [TestParseAtlasEnvSchemasOptOut] spells `schemas` in the
+// selected environment, so all of them reach the parser arm that used to do the
+// resolving. A malformed value was therefore refused on a config that names the
+// attribute and honored as its default on one that does not — the same broken
+// environment, two answers, chosen by the file under parse. Resolving when the
+// parser is built is what makes the answer the environment's alone.
 func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
 	tests := []struct {
 		name string
@@ -273,7 +282,7 @@ func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv(projectconfig.IgnoreEnvSchemasEnvVar, "")
+			envbooltest.Set(projectconfig.IgnoreEnvSchemasEnvVar, "")(t)
 
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", test.env)
 
@@ -283,9 +292,17 @@ func TestParseAtlasEnvSchemasOptOutValidatesWithoutTheAttribute(t *testing.T) {
 	}
 }
 
+// TestLoadAtlasEnvSchemasOptOutValidatesWithoutAConfigFile covers the load path
+// that never builds a parser at all.
+//
+// A project with no atlas.hcl is the common case, and it returns an empty
+// config before any parse, so the construction-time resolve is unreachable
+// there. Without the resolve the loader itself makes, a typo in the variable
+// would be reported by whichever project happened to carry a config file and by
+// no other.
 func TestLoadAtlasEnvSchemasOptOutValidatesWithoutAConfigFile(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(projectconfig.IgnoreEnvSchemasEnvVar, "")
+	envbooltest.Set(projectconfig.IgnoreEnvSchemasEnvVar, "")(t)
 
 	_, err := projectconfig.LoadAtlasFileCollectionWithOptions(
 		filepath.Join(t.TempDir(), projectconfig.AtlasFileName),
