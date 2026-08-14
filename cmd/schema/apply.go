@@ -20,8 +20,10 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -133,6 +135,9 @@ func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
 }
 
 func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -153,6 +158,11 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+	}
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if strings.TrimSpace(opts.planPath) != "" {
 		return runSchemaApplyPlanFile(cmd, opts)

@@ -12,7 +12,9 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -83,6 +85,9 @@ document without saving it.`,
 }
 
 func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -103,6 +108,11 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+	}
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if len(opts.rootDirs) == 0 && len(opts.schemaFiles) == 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf(

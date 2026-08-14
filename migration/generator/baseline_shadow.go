@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -33,8 +34,22 @@ type BaselineShadowVerifyOptions struct {
 // VerifyBaselineShadow replays migrations up to Version on the shadow database
 // and compares the resulting schema with the target database. Failures support
 // errors.As with [ShadowVerificationError], including the complete structured
-// mismatch list for schema drift.
+// mismatch list for schema drift. For SQLite, malformed
+// PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused before target
+// validation, shadow connection, or replay.
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error {
+	dialect := opts.Dialect
+	if opts.TargetConn != nil {
+		dialect = opts.TargetConn.Info().Dialect
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return baselineShadowError(
+			"configuration",
+			"invalid_sqlite_virtual_table_drop_toggle",
+			"validate SQLite virtual-table drop toggle",
+			err,
+		)
+	}
 	if err := targetConnectionRequiredError(opts.TargetConn, "target database connection is required"); err != nil {
 		return wrapBaselineShadowError(err)
 	}

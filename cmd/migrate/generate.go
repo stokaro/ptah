@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -126,6 +127,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	replay, err := cmd.Flags().GetBool(generateReplayFlag)
+	if err != nil {
+		return err
+	}
+	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
+	if err != nil {
+		return err
+	}
 	migrationsDir, err := cmd.Flags().GetString(generateMigrationsDirFlag)
 	if err != nil {
 		return err
@@ -140,6 +149,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
 	if err != nil {
+		return err
+	}
+	explicitTargetURL := dbURL
+	if replay {
+		explicitTargetURL = devURL
+	}
+	if err := sqlitevirtual.ValidateExplicitURLToggle(explicitTargetURL); err != nil {
 		return err
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
@@ -170,14 +186,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	connectTimeoutValue, err := cmd.Flags().GetString(dbcli.ConnectTimeoutFlagName)
-	if err != nil {
-		return err
-	}
-	replay, err := cmd.Flags().GetBool(generateReplayFlag)
-	if err != nil {
-		return err
-	}
-	devURL, err := cmd.Flags().GetString(generateDevURLFlag)
 	if err != nil {
 		return err
 	}
@@ -228,16 +236,19 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("database URL is required")
 		}
 	}
+	dialect, err := atlasurl.DialectFromURL(targetURL)
+	if err != nil {
+		return err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return err
+	}
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
 	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
-	}
-	dialect, err := atlasurl.DialectFromURL(targetURL)
-	if err != nil {
-		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {
