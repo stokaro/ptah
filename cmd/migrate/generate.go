@@ -337,6 +337,15 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
+// generateTarget carries what [resolveGenerateTarget] established, so the caller
+// takes one value rather than three positional results nobody can read at a
+// glance.
+type generateTarget struct {
+	dialect        string
+	migrationsDir  string
+	connectTimeout time.Duration
+}
+
 // resolveGenerateTarget turns the raw target URL, migrations directory and
 // connect-timeout text into the values the generation run needs, refusing each
 // one at the point it is read rather than letting a later step fail on it.
@@ -346,15 +355,12 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 // virtual-table toggle added a validation, and the two together pushed the
 // caller past the length the linter enforces. Splitting on "resolve the target"
 // keeps the reads beside the checks that reject them.
-// generateTarget carries what resolveGenerateTarget established, so the caller
-// takes one value rather than four positional results nobody can read at a
-// glance.
-type generateTarget struct {
-	dialect        string
-	migrationsDir  string
-	connectTimeout time.Duration
-}
-
+//
+// stokaro/ptah#1509 shortened the same function on master and chose a different
+// cut: it extracted the reporting tail only, as writeGeneratedMigrationFiles.
+// That body is byte-identical to reportGeneratedFiles below, so the merge keeps
+// one of the two rather than both under two names, and keeps this cut as well
+// because it is the one this command's caller reads through.
 func resolveGenerateTarget(targetURL, migrationsDir, connectTimeoutValue string) (generateTarget, error) {
 	dialect, err := atlasurl.DialectFromURL(targetURL)
 	if err != nil {
