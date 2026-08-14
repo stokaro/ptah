@@ -479,9 +479,10 @@ func MaterializedViewsWithSemantics(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
-	semantics = semantics.Normalize("")
+	semantics = semantics.Normalize(dialect)
 	generatedViews := make(map[tableIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
 	generatedNames := make(map[tableIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
@@ -504,7 +505,7 @@ func MaterializedViewsWithSemantics(
 			diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, generatedNames[identity])
 			continue
 		}
-		viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
+		viewDiff := MaterializedViewDefinitionsWithDialect(generatedView, databaseView, dialect)
 		if len(viewDiff.Changes) > 0 {
 			diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
 		}
@@ -686,12 +687,34 @@ func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dial
 // MaterializedViewDefinitions performs detailed comparison between generated
 // and database materialized view definitions.
 func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types.DBMatView) difftypes.MaterializedViewDiff {
+	return MaterializedViewDefinitionsWithDialect(genView, dbView, "")
+}
+
+// MaterializedViewDefinitionsWithDialect performs detailed comparison between
+// generated and database materialized view definitions with dialect-aware
+// catalog readback normalization.
+//
+// The body normalization is the same one ordinary views get, and it is the same
+// one for the same reason: a server records the definition it resolved, not the
+// text the author wrote. Measured on PostgreSQL 18.4, `pg_get_viewdef` reports a
+// body authored as `FROM users` as `FROM analytics.users` for a materialized
+// view exactly as it does for a plain one; measured on ClickHouse 26.7.3.19,
+// `system.tables.as_select` reports the same body as `FROM mvqual.users`. Both
+// spellings mean the object the declaration named, so the schema the catalog
+// added is stripped before the two are compared. Without it a no-op comparison
+// reported a body change and the planner answered with a drop and a create,
+// which on ClickHouse destroys the accumulated rows of a view nobody changed.
+func MaterializedViewDefinitionsWithDialect(
+	genView goschema.MaterializedView,
+	dbView types.DBMatView,
+	dialect string,
+) difftypes.MaterializedViewDiff {
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, "", "") {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 

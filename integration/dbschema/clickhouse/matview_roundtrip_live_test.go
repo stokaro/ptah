@@ -167,6 +167,87 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(emptyReadback.Tables[0].Name, qt.Equals, "users")
 }
 
+// TestMaterializedViewUnqualifiedBodyRoundTripsLive is the acceptance for a
+// declaration that names its source without a database qualifier.
+//
+// Every other live test here writes the source table fully qualified, which is
+// the one spelling that cannot see this: ClickHouse resolves the query at CREATE
+// time and records what it resolved, so an authored `FROM users` comes back from
+// system.tables.as_select as `FROM <db>.users`. Measured on server 26.7.3.19:
+//
+//	CREATE MATERIALIZED VIEW user_counts ... AS SELECT count() AS c FROM users
+//	-> as_select = SELECT count() AS c FROM mvqual.users
+//
+// Nothing about the declaration changed, so the comparison after the apply must
+// report no change. Reporting one would plan a DROP and a CREATE, and on
+// ClickHouse the drop takes the inner storage and every accumulated row with it.
+//
+// The plain view beside it is the control: that half normalized the readback
+// already, so a run where only the materialized half moves is the whole finding.
+func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
+	c := qt.New(t)
+	db, database := openLiveClickHouseRealmDatabase(t, "PTAH_CLICKHOUSE_REALM_TEST_URL")
+	sourceTable := sqlident.Qualified(platform.ClickHouse, database, "users")
+	executeClickHouseViewPlan(t, db, []string{
+		"CREATE TABLE " + sourceTable + " (id UInt64, active Bool) ENGINE = MergeTree ORDER BY id",
+	})
+
+	// Unqualified on purpose: the connection's database is the realm database,
+	// so this is what an author writes and what the server has to resolve.
+	declared := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserCounts",
+			Name:       database + ".user_counts",
+			Body:       "SELECT count() AS c FROM users",
+		}},
+		Views: []goschema.View{{
+			StructName: "ActiveUsers",
+			Name:       database + ".active_users",
+			Body:       "SELECT id FROM users",
+		}},
+	}
+	creationDiff := schemadiff.CompareWithDialect(
+		declared,
+		readClickHouseViewLikes(t, db, database),
+		platform.ClickHouse,
+	)
+	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
+		creationDiff,
+		declared,
+		platform.ClickHouse,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(createStatements, qt.HasLen, 2)
+	executeClickHouseViewPlan(t, db, createStatements)
+
+	// The readback is the qualified spelling the server resolved, for both
+	// kinds, which is what makes the comparison below a real question.
+	readback := readClickHouseViewLikes(t, db, database)
+	c.Assert(readback.MatViews, qt.HasLen, 1)
+	c.Assert(readback.MatViews[0].Body, qt.Contains, database+".users")
+	c.Assert(readback.Views, qt.HasLen, 1)
+	c.Assert(readback.Views[0].Body, qt.Contains, database+".users")
+
+	settledDiff := schemadiff.CompareWithDialect(declared, readback, platform.ClickHouse)
+	c.Assert(settledDiff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.ViewsModified, qt.HasLen, 0)
+	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
+
+	// A body that really did change is still a change: the normalization removes
+	// the qualifier the server added, not the difference the author made.
+	changed := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserCounts",
+			Name:       database + ".user_counts",
+			Body:       "SELECT count() AS c FROM users WHERE active = true",
+		}},
+		Views: declared.Views,
+	}
+	changeDiff := schemadiff.CompareWithDialect(changed, readback, platform.ClickHouse)
+	c.Assert(changeDiff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(changeDiff.ViewsModified, qt.HasLen, 0)
+}
+
 // TestDropAllTablesResetIsReplayableLive is the acceptance for the reset
 // contract every caller of DropAllTables depends on.
 //

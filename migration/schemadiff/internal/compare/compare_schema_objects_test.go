@@ -205,6 +205,73 @@ func TestMaterializedViews_IgnoresPostgreSQLDefaultAggregateAlias(t *testing.T) 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
 }
 
+// TestMaterializedViews_IgnoresCatalogAddedSchemaQualifier pins the readback
+// normalization a materialized view gets against the one an ordinary view
+// already got.
+//
+// A server records the definition it resolved rather than the text the author
+// wrote: measured on PostgreSQL 18.4 an authored `FROM users` comes back from
+// pg_get_viewdef as `FROM analytics.users`, and measured on ClickHouse 26.7.3.19
+// system.tables.as_select answers `FROM mvqual.users` for the same authored
+// body. The plain view beside it is the control -- it round-tripped before this
+// change and must keep doing so.
+func TestMaterializedViews_IgnoresCatalogAddedSchemaQualifier(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.MaterializedViews(&goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "analytics.user_counts",
+			Body: "SELECT count(*) AS c FROM users",
+		}},
+		Views: []goschema.View{{
+			Name: "analytics.user_counts_plain",
+			Body: "SELECT count(*) AS c FROM users",
+		}},
+	}, &dbschematypes.DBSchema{
+		MatViews: []dbschematypes.DBMatView{{
+			Name:   "user_counts",
+			Schema: "analytics",
+			Body:   "SELECT count(*) AS c FROM analytics.users",
+		}},
+		Views: []dbschematypes.DBView{{
+			Name:   "user_counts_plain",
+			Schema: "analytics",
+			Body:   "SELECT count(*) AS c FROM analytics.users",
+		}},
+	}, diff)
+
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(diff.MaterializedViewsAdded, qt.HasLen, 0)
+	c.Assert(diff.MaterializedViewsRemoved, qt.HasLen, 0)
+}
+
+// TestMaterializedViews_DetectsAuthoredSchemaQualifierChange is the inverse
+// control for the normalization above: a qualifier the author wrote is part of
+// the declaration, so a body naming a different schema is still a change. A
+// normalization that stripped every qualifier rather than only the one the
+// object's own schema adds would report no change here.
+func TestMaterializedViews_DetectsAuthoredSchemaQualifierChange(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.MaterializedViews(&goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "analytics.user_counts",
+			Body: "SELECT count(*) AS c FROM archive.users",
+		}},
+	}, &dbschematypes.DBSchema{
+		MatViews: []dbschematypes.DBMatView{{
+			Name:   "user_counts",
+			Schema: "analytics",
+			Body:   "SELECT count(*) AS c FROM analytics.users",
+		}},
+	}, diff)
+
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
 func TestTriggers_KeyedByTableAndDetectsBodyChange(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

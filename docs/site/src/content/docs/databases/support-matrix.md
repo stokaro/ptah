@@ -276,6 +276,14 @@ knowing before adopting them:
   `POPULATE` is a one-shot argument that leaves no trace in the catalog, so
   nothing Ptah reads back could diff it. Backfill existing rows yourself if you
   need them.
+- A query written without a database qualifier is read back carrying one.
+  ClickHouse resolves the query when the view is created and records what it
+  resolved, so `SELECT count() AS c FROM users` comes back from
+  `system.tables.as_select` as `SELECT count() AS c FROM <database>.users`.
+  Comparison removes the qualifier the object's own database added, the same way
+  it does for an ordinary view, so an unchanged declaration is not reported as
+  drift and is never planned as a drop and a create. A qualifier naming some
+  other database is a real difference and is still reported.
 
 The `TO <target table>` form and refreshable materialized views are not emitted:
 the shared schema model carries a name and a query, so it cannot name a separate

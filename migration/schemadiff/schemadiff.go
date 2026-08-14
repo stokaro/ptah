@@ -248,7 +248,7 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
-	compare.MaterializedViewsWithSemantics(generated, database, diff, identifierSemantics)
+	compare.MaterializedViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 	compare.TriggersWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
