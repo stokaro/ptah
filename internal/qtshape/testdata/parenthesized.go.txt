@@ -1,0 +1,83 @@
+// Parentheses are a node in the syntax tree, not whitespace. Every
+// classification in this package type-asserts on the expression it is handed,
+// so one pair of them around a checker was the difference between a violation
+// and a clean gate, with nothing in the source to show which one it was.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+// stepper has nothing to do with quicktest. Its Run is written with the same
+// parentheses below and is not a violation.
+type stepper struct{}
+
+func (stepper) Run(name string, step func(int)) {}
+
+// callbacks holds a subtest callback in a form this package cannot resolve
+// without types, so the two rows that use it can only be reported through their
+// receiver.
+var callbacks = []func(*qt.C){func(c *qt.C) {}}
+
+func TestParenthesizedReceiverBoundToAName(t *testing.T) {
+	c := qt.New(t)
+
+	run := (c).Run
+	run("the method value is the same subtest", func(c *qt.C) {
+		c.Assert(1, qt.Equals, 1)
+	})
+}
+
+func TestParenthesizedReceiverCalled(t *testing.T) {
+	c := qt.New(t)
+
+	(c).Run("the parenthesized receiver is the same subtest", callbacks[0])
+}
+
+func TestParenthesizedAliasOfAChecker(t *testing.T) {
+	c := qt.New(t)
+
+	alias := (c)
+	alias.Run("an alias written in parentheses is the same checker", callbacks[0])
+}
+
+func TestParenthesizedSubtestCallback(t *testing.T) {
+	c := qt.New(t)
+
+	t.Run("the borrowed checker is inside a parenthesized closure", (func(t *testing.T) {
+		c.Assert(2, qt.Equals, 2)
+	}))
+}
+
+// Two things a pair of parentheses must not turn into a violation: an unrelated
+// runner, and a conforming subtest that writes its own parameter in them.
+func TestParenthesesAreNotThemselvesAViolation(t *testing.T) {
+	var steps stepper
+
+	(steps).Run("an unrelated runner is not a subtest", func(int) {})
+
+	t.Run("the closure builds from its own parameter", func(t *testing.T) {
+		c := qt.New((t))
+		c.Assert(3, qt.Equals, 3)
+	})
+}
+
+// A type written in parentheses is the same type, and gofmt keeps them in a
+// declaration. Neither of these has an initializer for the classification to
+// fall back on, so the parentheses were the whole of it.
+var held (*qt.C)
+
+func TestParenthesizedCheckerType(t *testing.T) {
+	held.Run("a checker declared with a parenthesized type is still a checker", callbacks[0])
+}
+
+func TestParenthesizedTBType(t *testing.T) {
+	var parent (testing.TB)
+	parent = t
+
+	t.Run("the enclosing TB's type is parenthesized", func(t *testing.T) {
+		parent.Log("work")
+	})
+}

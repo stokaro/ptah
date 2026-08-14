@@ -86,6 +86,12 @@ type nameDecl struct {
 	// cannot run until the table is built.
 	typ   ast.Expr
 	value ast.Expr
+	// handed is set when the name is bound by a signature -- a parameter or a
+	// method receiver -- rather than by a statement inside the body. R3 asks it
+	// because a parameter is the only thing a function is given by its caller:
+	// every other local declaration holds whatever the body put in it, which may
+	// well be the enclosing test's TB.
+	handed bool
 	// checker and tb are filled in by classifyBindings once the file's imports
 	// are resolved: the name denotes a *qt.C, or a testing.T, B, F or TB.
 	checker bool
@@ -269,12 +275,12 @@ func blockOf(node ast.Node) (span, bool) {
 func (b *bindings) declareIn(node ast.Node, sc span) {
 	switch typed := node.(type) {
 	case *ast.FuncDecl:
-		b.declareFields(typed.Recv, sc)
-		b.declareFields(typed.Type.Params, sc)
-		b.declareFields(typed.Type.Results, sc)
+		b.declareFields(typed.Recv, sc, handedIn)
+		b.declareFields(typed.Type.Params, sc, handedIn)
+		b.declareFields(typed.Type.Results, sc, declaredLocally)
 	case *ast.FuncLit:
-		b.declareFields(typed.Type.Params, sc)
-		b.declareFields(typed.Type.Results, sc)
+		b.declareFields(typed.Type.Params, sc, handedIn)
+		b.declareFields(typed.Type.Results, sc, declaredLocally)
 	case *ast.AssignStmt:
 		b.declareAssign(typed, sc)
 	case *ast.ValueSpec:
@@ -286,14 +292,29 @@ func (b *bindings) declareIn(node ast.Node, sc span) {
 	}
 }
 
+// handedIn and declaredLocally name the two kinds of signature field for
+// declareFields, so its call sites say which one they are recording. A named
+// result is written in the signature but is not something the caller supplies,
+// so it is declared locally.
+const (
+	handedIn        = true
+	declaredLocally = false
+)
+
 // declareFields records a signature's parameter, result or receiver names.
-func (b *bindings) declareFields(list *ast.FieldList, sc span) {
+func (b *bindings) declareFields(list *ast.FieldList, sc span, handed bool) {
 	if list == nil {
 		return
 	}
 	for _, field := range list.List {
 		for _, name := range field.Names {
-			b.declare(name.Name, &nameDecl{from: sc.start, scope: sc, sig: functionType(field.Type), typ: field.Type})
+			b.declare(name.Name, &nameDecl{
+				from:   sc.start,
+				scope:  sc,
+				sig:    functionType(field.Type),
+				typ:    field.Type,
+				handed: handed,
+			})
 		}
 	}
 }

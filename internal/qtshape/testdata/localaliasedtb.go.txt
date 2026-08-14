@@ -1,0 +1,69 @@
+// A name declared inside the subtest closure is not automatically the
+// testing.TB the closure was handed. `parent := held.tb` is a local
+// declaration holding the enclosing test's TB, and the qt.New built from it
+// reports its failures against the parent test exactly as `qt.New(held.tb)`
+// does. Nothing else in the file gives it away: the closure's own parameter is
+// never touched, and the enclosing-scope walk sees only `held`, which is
+// neither a checker nor a testing.TB.
+package fixture
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+type fixtureTB struct {
+	tb testing.TB
+}
+
+func TestCheckerFromALocalCopyOfAFieldTB(t *testing.T) {
+	held := fixtureTB{tb: t}
+
+	t.Run("the local name holds the parent's TB", func(t *testing.T) {
+		parent := held.tb
+		c := qt.New(parent)
+		c.Assert(1, qt.Equals, 1)
+	})
+}
+
+func TestCheckerFromALocalCopyTwoStepsOn(t *testing.T) {
+	held := fixtureTB{tb: t}
+
+	t.Run("the copy is one name further away", func(t *testing.T) {
+		first := held.tb
+		second := first
+		c := qt.New(second)
+		c.Assert(2, qt.Equals, 2)
+	})
+}
+
+// The four local spellings that are the TB this closure was handed, and must
+// stay silent: the parameter itself, a copy of it, a var with the type written
+// out, and the parameter of a helper closure written inside the subtest.
+func TestConformingLocalTBSources(t *testing.T) {
+	t.Run("the closure's own parameter", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(3, qt.Equals, 3)
+	})
+
+	t.Run("a copy of the closure's own parameter", func(t *testing.T) {
+		own := t
+		c := qt.New(own)
+		c.Assert(4, qt.Equals, 4)
+	})
+
+	t.Run("a var whose type is written out", func(t *testing.T) {
+		var own testing.TB = t
+		c := qt.New(own)
+		c.Assert(5, qt.Equals, 5)
+	})
+
+	t.Run("a helper closure builds from the TB it was handed", func(t *testing.T) {
+		nested := func(tb testing.TB) {
+			inner := qt.New(tb)
+			inner.Assert(6, qt.Equals, 6)
+		}
+		nested(t)
+	})
+}

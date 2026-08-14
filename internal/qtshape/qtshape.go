@@ -253,7 +253,7 @@ func (a *analysis) propagateAliases() {
 // aliasSource resolves the declaration an initializer names when the
 // initializer is a bare identifier, at the position that identifier is written.
 func (a *analysis) aliasSource(d *nameDecl) (*nameDecl, bool) {
-	ident, ok := d.value.(*ast.Ident)
+	ident, ok := ast.Unparen(d.value).(*ast.Ident)
 	if !ok {
 		return nil, false
 	}
@@ -316,11 +316,11 @@ func (a *analysis) isImported(expr ast.Expr, spec *ast.ImportSpec, pkgName, name
 	if spec == nil {
 		return false
 	}
-	sel, ok := expr.(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(expr).(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != name {
 		return false
 	}
-	ident, ok := sel.X.(*ast.Ident)
+	ident, ok := ast.Unparen(sel.X).(*ast.Ident)
 	if !ok || ident.Name != pkgName {
 		return false
 	}
@@ -436,7 +436,7 @@ func (a *analysis) subtestFindings() []Finding {
 // form and used to pass. Keying on the receiver alone would miss a checker held
 // in a struct field, so both are asked and either one is enough.
 func (a *analysis) checkerSubtestFinding(call *ast.CallExpr) (Finding, bool) {
-	sel, ok := call.Fun.(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Run" || len(call.Args) < 2 {
 		return Finding{}, false
 	}
@@ -454,6 +454,7 @@ func (a *analysis) checkerSubtestFinding(call *ast.CallExpr) (Finding, bool) {
 // checkerSubtestReason names which of the three spellings matched, so the
 // message tells the reader what the gate saw rather than only that it objected.
 func (a *analysis) checkerSubtestReason(callback, receiver ast.Expr) (string, bool) {
+	callback = ast.Unparen(callback)
 	if lit, ok := callback.(*ast.FuncLit); ok && a.signatureTakesChecker(lit.Type) {
 		return "with a func(*qt.C) closure is forbidden", true
 	}
@@ -612,16 +613,44 @@ func (a *analysis) foreignCheckerFindings(lit *ast.FuncLit, closure span) []Find
 	return findings
 }
 
-// ownedTB reports whether expr names something the closure declared itself,
-// which for the argument of qt.New is the testing.TB it was handed.
+// ownedTB reports whether expr denotes a testing.TB the closure was handed.
+//
+// Being declared inside the closure does not prove that. `parent := fixture.tb`
+// is a local declaration holding the enclosing test's TB, so `qt.New(parent)`
+// produces exactly the parent-FailNow failure this rule exists to prevent while
+// satisfying a check that only asks where the name was written. The
+// enclosing-scope walk does not reach it either: what it borrows is `fixture`,
+// which is neither a checker nor a testing.TB.
+//
+// What is asked is where the value came from. A parameter is the only thing a
+// closure is handed, so the argument must be a parameter of this closure or of
+// a function literal written inside it, or a name whose initializer chain leads
+// back to one. Everything else -- a field, a call result, a range variable, a
+// name copied from outside -- is a testing.TB from somewhere this closure does
+// not own.
+//
+// The walk terminates because every step moves to a declaration written
+// strictly earlier: an initializer is written before the point at which the
+// name it initializes starts to denote that declaration, and a name resolves
+// only to a declaration already in scope where it is read.
 func (a *analysis) ownedTB(expr ast.Expr, closure span) bool {
-	ident, ok := expr.(*ast.Ident)
-	if !ok {
-		return false
+	for {
+		ident, ok := ast.Unparen(expr).(*ast.Ident)
+		if !ok {
+			return false
+		}
+		decl, ok := a.names.lookup(ident.Name, ident.Pos())
+		if !ok || !decl.declaredWithin(closure) {
+			return false
+		}
+		if decl.handed {
+			return true
+		}
+		if decl.value == nil {
+			return false
+		}
+		expr = decl.value
 	}
-	decl, ok := a.names.lookup(ident.Name, ident.Pos())
-
-	return ok && decl.declaredWithin(closure)
 }
 
 // subtestClosure returns the callback of a subtest-shaped call whose parameter
@@ -632,7 +661,7 @@ func (a *analysis) ownedTB(expr ast.Expr, closure span) bool {
 // is deliberately not a check on the receiver, because a receiver named `sub` or
 // reached through a field is the same subtest.
 func (a *analysis) subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
-	sel, ok := call.Fun.(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
 		return nil, false
 	}
@@ -664,6 +693,7 @@ func (a *analysis) subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
 // `t.Run(name, callback)` produces exactly the parent-FailNow failure R3 exists
 // to prevent, and reading only the inline spelling let it through.
 func (a *analysis) callbackLiteral(expr ast.Expr) (*ast.FuncLit, bool) {
+	expr = ast.Unparen(expr)
 	if lit, ok := expr.(*ast.FuncLit); ok {
 		return lit, true
 	}
@@ -792,7 +822,7 @@ func signatureTakes(sig *ast.FuncType, match func(ast.Expr) bool) bool {
 // isCheckerType reports whether expr is written *qt.C, with qt resolving to this
 // file's quicktest import.
 func (a *analysis) isCheckerType(expr ast.Expr) bool {
-	star, ok := expr.(*ast.StarExpr)
+	star, ok := ast.Unparen(expr).(*ast.StarExpr)
 	if !ok {
 		return false
 	}
@@ -806,7 +836,7 @@ func (a *analysis) isTBType(expr ast.Expr) bool {
 	if a.isTesting(expr, "TB") {
 		return true
 	}
-	star, ok := expr.(*ast.StarExpr)
+	star, ok := ast.Unparen(expr).(*ast.StarExpr)
 	if !ok {
 		return false
 	}
@@ -821,7 +851,7 @@ func (a *analysis) isTBType(expr ast.Expr) bool {
 
 // isCheckerConstructor reports whether expr is a qt.New(...) call.
 func (a *analysis) isCheckerConstructor(expr ast.Expr) bool {
-	call, ok := expr.(*ast.CallExpr)
+	call, ok := ast.Unparen(expr).(*ast.CallExpr)
 	if !ok {
 		return false
 	}
@@ -837,11 +867,16 @@ func (a *analysis) isCheckerConstructor(expr ast.Expr) bool {
 // enclosing function declares reports `c := runner{}; c.Run("x", f)` in an inner
 // block as a quicktest subtest, because the function also has a `c` that is one.
 // A repository-wide gate that rejects that code rejects correct code.
+//
+// Parentheses are a node in the tree, not whitespace, so `(c).Run` handed this
+// function an *ast.ParenExpr and the name branch below saw nothing to resolve.
+// Every classification in this package unwraps them for that reason: one pair of
+// parentheses may not be the difference between a violation and a clean gate.
 func (a *analysis) isCheckerExpr(expr ast.Expr) bool {
-	if a.isCheckerConstructor(expr) || a.isCheckerType(ast.Unparen(expr)) {
+	if a.isCheckerConstructor(expr) || a.isCheckerType(expr) {
 		return true
 	}
-	ident, ok := expr.(*ast.Ident)
+	ident, ok := ast.Unparen(expr).(*ast.Ident)
 	if !ok {
 		return false
 	}
@@ -853,7 +888,7 @@ func (a *analysis) isCheckerExpr(expr ast.Expr) bool {
 // receiverName names the receiver in a message so the reader can find the call,
 // falling back to a placeholder when the receiver is not a bare identifier.
 func receiverName(expr ast.Expr) string {
-	ident, ok := expr.(*ast.Ident)
+	ident, ok := ast.Unparen(expr).(*ast.Ident)
 	if !ok {
 		return "<expr>"
 	}

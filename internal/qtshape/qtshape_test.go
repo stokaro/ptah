@@ -208,6 +208,34 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 				{line: 50, rule: qtshape.RuleCheckerSubtest},
 			},
 		},
+		{
+			// Parentheses are a node, so every type assertion in this package
+			// used to stop at them. All six violations here were silent, and
+			// the only thing the gate did report was the conforming
+			// `qt.New((t))` at line 62, which it called a borrowed TB.
+			name:    "a parenthesized checker, callback or type is still what it is",
+			fixture: "parenthesized.go.txt",
+			want: []wantFinding{
+				{line: 27, rule: qtshape.RuleCheckerSubtest},
+				{line: 36, rule: qtshape.RuleCheckerSubtest},
+				{line: 43, rule: qtshape.RuleCheckerSubtest},
+				{line: 50, rule: qtshape.RuleBorrowedChecker},
+				{line: 73, rule: qtshape.RuleCheckerSubtest},
+				{line: 81, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
+		{
+			// Where the name was written is not where the value came from. Both
+			// of these copy the parent's TB into a name the closure declares,
+			// which satisfied a check that only asked whether the declaration
+			// was local.
+			name:    "a TB copied into a local name is still not the one the closure was handed",
+			fixture: "localaliasedtb.go.txt",
+			want: []wantFinding{
+				{line: 25, rule: qtshape.RuleBorrowedChecker},
+				{line: 36, rule: qtshape.RuleBorrowedChecker},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -355,6 +383,60 @@ func TestScanFileNamesTheRunReferenceItFound(t *testing.T) {
 	c.Check(got[0].Col, qt.Equals, 9)
 	c.Check(got[1].Message, qt.Contains, "<expr>.Run")
 	c.Check(got[2].Col, qt.Equals, 11)
+}
+
+// TestScanFileNamesWhatWasParenthesized pins which branch each finding in
+// parenthesized.go.txt comes from. The count alone cannot separate them: a
+// change that unwrapped only the receiver would report the first two and could
+// satisfy six by reporting one of them three times over, and each of the other
+// four is the only row that reaches the assertion it is about.
+func TestScanFileNamesWhatWasParenthesized(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "parenthesized.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 6, qt.Commentf("findings: %v", got))
+
+	// A method value on a parenthesized receiver: the selector is the finding,
+	// and its column is the `(` the receiver opens with.
+	c.Check(got[0].Message, qt.Contains, "c.Run is a (*qt.C).Run subtest")
+	c.Check(got[0].Col, qt.Equals, 9)
+	// A call whose callback this package cannot resolve, so only the receiver
+	// can have reported it.
+	c.Check(got[1].Message, qt.Contains, "c.Run is a (*qt.C).Run subtest")
+	// The alias carries the checker across the parentheses in its initializer.
+	c.Check(got[2].Message, qt.Contains, "alias.Run is a (*qt.C).Run subtest")
+	// The parentheses around the closure no longer hide the subtest from R3.
+	c.Check(got[3].Message, qt.Contains, "asserts through c, a *qt.C declared outside this subtest")
+	// A checker whose declared type is parenthesized and that has no qt.New to
+	// be classified by instead.
+	c.Check(got[4].Message, qt.Contains, "held.Run is a (*qt.C).Run subtest")
+	// And the same for a testing.TB, which is the other half of the name table.
+	c.Check(got[5].Message, qt.Contains, "uses parent, a testing.TB from the enclosing scope")
+}
+
+// TestScanFileNamesTheLocalTBItRejected pins that R3 rejects each of the two
+// local copies by name. Without it, a rule that stopped accepting every local
+// declaration and started rejecting every one of them would report both of
+// these and satisfy the count, while reporting the four conforming subtests in
+// the same fixture too -- which the count assertion above is what catches.
+func TestScanFileNamesTheLocalTBItRejected(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join("testdata", "localaliasedtb.go.txt")
+	src, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	got, err := qtshape.ScanFile(path, src)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 2, qt.Commentf("findings: %v", got))
+
+	c.Check(got[0].Message, qt.Contains, "builds its checker from parent")
+	c.Check(got[1].Message, qt.Contains, "builds its checker from second")
 }
 
 func TestScanFilesRefusesAnEmptySelection(t *testing.T) {
