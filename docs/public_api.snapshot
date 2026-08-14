@@ -4983,10 +4983,15 @@ type VersionResolution struct {
     // A product banner outranks the declared dialect here — that is deliberate
     // and correct on a live connection, where MariaDB announces itself over
     // the MySQL protocol and CockroachDB over the PostgreSQL one, so the
-    // string is better evidence than the driver name. It is a trap for a
-    // string a person typed: "mysql" plus a MariaDB banner is a contradiction,
-    // and without this field the contradiction is unobservable, because the
-    // returned Capabilities carry no record of which platform produced them.
+    // string is better evidence than the driver name. Without this field that
+    // override is unobservable, because the returned Capabilities carry no
+    // record of which platform produced them.
+    //
+    // This is NOT the answer to "which product does the string name" — that is
+    // BannerPlatform, and a caller refusing a contradiction between two typed
+    // values must ask it instead. The two disagree for a banner naming only
+    // PostgreSQL on a dialect already in the PostgreSQL wire family, which
+    // keeps its own preset and so reports its own name here.
     //
     // It is the normalized dialect name, empty only when the dialect itself
     // normalized to nothing.
