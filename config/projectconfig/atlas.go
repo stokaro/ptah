@@ -298,19 +298,17 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	//
 	// The tolerance is not universal at this scope either: three top-level names
 	// are decoded into a struct and refuse an object body. See
-	// [atlasTopLevelStructAttributes].
-	topLevelStructs := atlasTopLevelStructAttributes()
+	// [atlasStructAttributes].
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
-		if slices.Contains(topLevelStructs, name) {
-			if err := p.checkAtlasStructAttribute(name, attr); err != nil {
+		value, diags := attr.Expr.Value(p.ctx)
+		if diags.HasErrors() {
+			return nil, p.evaluationFailed(name, attr, diags)
+		}
+		if atlasStructAttribute(atlasTopLevelScope, name) {
+			if err := checkAtlasStructAttribute(name, attr, value); err != nil {
 				return nil, err
 			}
-			p.noteIgnored("attribute", name, attr.NameRange)
-			continue
-		}
-		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
-			return nil, p.evaluationFailed(name, attr, diags)
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
@@ -496,8 +494,18 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 	if err := rejectEnforcedConstruct(scope, name, attr.NameRange); err != nil {
 		return err
 	}
-	if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
 		return p.evaluationFailed(name, attr, diags)
+	}
+	// A name CE decodes into a struct is not tolerable in every shape. This is
+	// the right place for that check rather than the structure validator: it
+	// runs once per SELECTED env with `var`, `local` and `data` already in the
+	// context. See [atlasStructAttributes].
+	if atlasStructAttribute(scope, name) {
+		if err := checkAtlasStructAttribute(name, attr, value); err != nil {
+			return err
+		}
 	}
 	p.noteIgnored("attribute", name, attr.NameRange)
 	return nil

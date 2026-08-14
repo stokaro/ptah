@@ -546,6 +546,13 @@ block name" nor scope-independent:
 
 Writing any of these as a block is unaffected.
 
+This refusal is a value rule, not a structural one, so it follows the same
+selection boundary as every other value: it applies to the environment the
+command selects. An `env "prod"` carrying `lint = { k = "v" }` does not fail a
+command run with `--env dev`, because Atlas CE does not decode an unselected
+environment either. The value is read after `var`, `local` and `data` are
+available, so `lint = local.nothing` resolves normally.
+
 Structural validation covers every `env` block, including environments that
 are not selected for the current command. An unsupported attribute, nested
 block, label, or duplicate therefore fails even when it appears in another

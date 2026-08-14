@@ -578,6 +578,99 @@ env "local" {
 	}
 }
 
+// TestParseAtlasStructAttributeWaitsForTheEvaluationContext pins where the shape
+// check runs.
+//
+// It has to run on the tolerance path, which the parser reaches once per
+// SELECTED env with `var`, `local` and `data` already in the evaluation context.
+// Running it in the structure validator instead -- which walks every env before
+// that context is built -- refuses configurations the pinned binary accepts at
+// exit 0, in the direction that breaks working project files:
+//
+//	env "local" { lint = local.nothing }                  binary 0
+//	env "dev" {} env "prod" { lint = missing.value }      binary 0, selecting dev
+//	env "dev" {} env "prod" { lint = { k = "v" } }        binary 0, selecting dev
+//
+// The third row is the one that shows the binary does not decode an unselected
+// env at all: the same object body refuses at exit 1 when its env IS selected.
+func TestParseAtlasStructAttributeWaitsForTheEvaluationContext(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		raw  string
+	}{
+		{
+			name: "a local resolves in the selected env",
+			env:  "local",
+			raw: `locals {
+  nothing = {}
+}
+env "local" {
+  url  = "sqlite://file.db"
+  lint = local.nothing
+}
+`,
+		},
+		{
+			name: "an unresolvable reference in an unselected env is not reached",
+			env:  "dev",
+			raw: `env "dev" {
+  url = "sqlite://file.db"
+}
+env "prod" {
+  url  = "sqlite://file.db"
+  lint = missing.value
+}
+`,
+		},
+		{
+			name: "an object body in an unselected env is not reached",
+			env:  "dev",
+			raw: `env "dev" {
+  url = "sqlite://file.db"
+}
+env "prod" {
+  url = "sqlite://file.db"
+  lint = {
+    k = "v"
+  }
+}
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", test.env)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestParseAtlasStructAttributeStillRefusesInTheSelectedEnv is the other half of
+// the row above, and what stops that fix from being a blanket exemption: the
+// same two-env file refuses when the offending env is the one selected.
+func TestParseAtlasStructAttributeStillRefusesInTheSelectedEnv(t *testing.T) {
+	c := qt.New(t)
+	const raw = `env "dev" {
+  url = "sqlite://file.db"
+}
+env "prod" {
+  url = "sqlite://file.db"
+  lint = {
+    k = "v"
+  }
+}
+`
+
+	_, err := projectconfig.ParseAtlas([]byte(raw), "atlas.hcl", "prod")
+
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl "lint" at atlas\.hcl:6 must be a block, or an empty object`)
+}
+
 // TestParseAtlasStructAttributeReportsAnUnevaluableValueAsSuch keeps the two
 // failure kinds apart.
 //

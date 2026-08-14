@@ -674,6 +674,11 @@ The affected names are `diff`, `lint` and `test` at the top level; `diff`,
 was measured against the pinned community binary individually — the set is not
 "every block name", and it is not the same at every scope.
 
+Because this is a value rule rather than a structural one, it applies to the
+selected environment only, and it reads the value after `var`, `local` and `data`
+are available. An unselected `env` carrying the attribute spelling does not fail
+the command, which is what Atlas CE does as well.
+
 `PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
 runs. The strict policy refuses an ignored construct before command work, and
 it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,
