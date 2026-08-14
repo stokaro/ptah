@@ -1050,11 +1050,37 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 // substrings, because a second copy is how a live connection and an offline
 // resolution come to disagree about which server a banner describes.
 //
-// The order is load-bearing: three of the products announce the PostgreSQL
-// engine in their own banner — CockroachDB speaks the PostgreSQL wire
-// protocol, YugabyteDB reports "PostgreSQL 11.2-YB-…" and Spanner
-// "Cloud Spanner PostgreSQL" — so PostgreSQL is claimed last, after every
-// token that is more specific than it.
+// The order is load-bearing inside the PostgreSQL wire family: three of those
+// products announce the PostgreSQL engine in their own banner — CockroachDB
+// speaks the PostgreSQL wire protocol, YugabyteDB reports
+// "PostgreSQL 11.2-YB-…" and Spanner "Cloud Spanner PostgreSQL" — so
+// PostgreSQL is claimed after every token that is more specific than it. The
+// products below it announce no engine but their own, so their order among
+// themselves is free.
+//
+// Membership rule: a product belongs here when the SERVER's own version
+// surface names it. That is the string this function is handed, live or typed,
+// and it is the only evidence a mismatch guard can act on. Measured across the
+// nine dialects platform names:
+//
+//   - postgres, mariadb, cockroachdb, yugabytedb and spanner put the product in
+//     the version string itself, and are claimed above.
+//   - sqlserver puts it in @@VERSION: "Microsoft SQL Server 2025 (RTM-CU7) … -
+//     17.0.4065.4 …", the banner capability_internal_test.go pins verbatim from
+//     a live container. It is the one that had teeth: the generic parser reads
+//     the marketing year 2025 out of it, so before this token existed
+//     `schema render --dialect postgres --server-version '<that banner>'`
+//     exited 0 planning it as a PostgreSQL 2025 that does not exist.
+//   - clickhouse has no product token in SELECT version(), which answers a bare
+//     "26.7.3.19" — but system.build_options reports VERSION_FULL
+//     "ClickHouse 26.7.3.19" and VERSION_NAME "ClickHouse" (measured on
+//     clickhouse/clickhouse-server:26.7), and that is the server naming itself.
+//   - mysql and sqlite are deliberately absent. SELECT VERSION() on MySQL 9.7.2
+//     answers "9.7.2" and sqlite_version() answers "3.53.0"; neither server has
+//     a version surface that names its product, so the empty answer is the
+//     correct one and any token would have to come from a client banner
+//     instead — and the MySQL client's is shared with MariaDB's
+//     ("mysql  Ver 15.1 Distrib 10.11.6-MariaDB"), so it names no server.
 func BannerPlatform(version string) string {
 	versionLower := strings.ToLower(version)
 	switch {
@@ -1070,6 +1096,10 @@ func BannerPlatform(version string) string {
 		return platform.Postgres
 	case strings.Contains(versionLower, "mariadb"):
 		return platform.MariaDB
+	case strings.Contains(versionLower, "sql server"):
+		return platform.SQLServer
+	case strings.Contains(versionLower, "clickhouse"):
+		return platform.ClickHouse
 	default:
 		return ""
 	}
@@ -1084,7 +1114,7 @@ func BannerPlatform(version string) string {
 func ResolveServerVersion(dialect, version string) VersionResolution {
 	normalized := platform.NormalizeDialect(dialect)
 
-	switch BannerPlatform(version) {
+	switch banner := BannerPlatform(version); banner {
 	case platform.CockroachDB:
 		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
 	case platform.YugabyteDB:
@@ -1124,7 +1154,26 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// internal/servertarget, which asks BannerPlatform directly and so
 		// still refuses a PostgreSQL banner paired with --dialect cockroachdb.
 		if !platform.IsPostgresFamily(normalized) {
-			return resolvedAs(postgresBannerResolution(version, dialect), platform.Postgres)
+			return resolvedAs(postgresBannerResolution(version), platform.Postgres)
+		}
+	case platform.SQLServer, platform.ClickHouse:
+		// Neither product has a version ladder, so the banner's own name is the
+		// whole answer and the number in it is never spent: the preset is that
+		// product's default either way. Answering from the banner rather than
+		// falling through to parseVersion is what keeps the SQL Server marketing
+		// year out of a PostgreSQL ladder — "Microsoft SQL Server 2025 … -
+		// 17.0.4065.4" parses as major 2025, and on --dialect postgres that used
+		// to select Postgres17 and report itself saturated past release line 18.
+		//
+		// Recognized is true for the same reason it is on the YugabyteDB and
+		// Spanner arms: the string named a server, even though nothing in it was
+		// read as a number. VersionSpecific stays false because no measured
+		// release line was selected — the same answer the unladdered arm at the
+		// bottom of this function gives.
+		return VersionResolution{
+			Capabilities:    ForDialect(banner),
+			Recognized:      true,
+			ResolvedDialect: banner,
 		}
 	case platform.MariaDB:
 		// MariaDB announces itself in the version string even when connected
@@ -1241,14 +1290,22 @@ func measuredMinorLineResolution(
 
 // postgresBannerResolution answers a string that named PostgreSQL.
 //
-// The dialect is still needed for the one case the banner cannot answer: a
-// banner carrying no readable version resolves nothing, so the preset falls
-// back to the declared dialect's default and Recognized stays false — the same
-// shape mariaDBResolution uses for "MariaDB something".
-func postgresBannerResolution(version, dialect string) VersionResolution {
+// A banner carrying no readable version selects no release line, so the preset
+// is PostgreSQL's own default and Recognized stays false — the same shape
+// mariaDBResolution uses for "MariaDB something" and cockroachDBResolution for
+// a CockroachDB banner with no number in it.
+//
+// It deliberately does not take the declared dialect. This branch is reached
+// only for a dialect OUTSIDE the PostgreSQL family, and the dispatch stamps
+// ResolvedDialect as postgres on whatever comes back; falling back to the
+// declared dialect's default there returned MySQL84() under a postgres stamp,
+// so ResolveServerVersion("mysql", "PostgreSQL server") handed a caller that
+// trusts the field a preset from a different engine. Every other product-banner
+// arm answers from the product the banner named, and this one now does too.
+func postgresBannerResolution(version string) VersionResolution {
 	v, ok := parseVersion(version)
 	if !ok {
-		return VersionResolution{Capabilities: ForDialect(dialect)}
+		return VersionResolution{Capabilities: ForDialect(platform.Postgres)}
 	}
 	return postgresResolution(v)
 }

@@ -221,6 +221,26 @@ func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing
 			version: "PostgreSQL 14.1",
 			names:   "postgres",
 		},
+		{
+			// The second half of the same finding. @@VERSION opens with the
+			// marketing year, so before SQL Server was a product token this
+			// banner named nothing, parsed as the numeric version 2022 and
+			// rendered against a PostgreSQL preset the flag reported as
+			// saturated past release line 18.
+			name:    "a SQL Server banner on postgres",
+			dialect: "postgres",
+			version: "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5",
+			names:   "sqlserver",
+		},
+		{
+			// ClickHouse names itself only outside SELECT version(): this is
+			// system.build_options VERSION_FULL, measured on
+			// clickhouse/clickhouse-server:26.7.
+			name:    "a ClickHouse banner on mysql",
+			dialect: "mysql",
+			version: "ClickHouse 26.7.3.19",
+			names:   "clickhouse",
+		},
 	}
 
 	for _, test := range tests {
@@ -258,6 +278,13 @@ func TestGenerateCommand_ServerVersionAcceptsAMatchingBanner(t *testing.T) {
 		{name: "PostgreSQL banner on postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)"},
 		{name: "a plain dotted version on mysql", dialect: "mysql", version: "8.0.42"},
 		{name: "a plain dotted version on cockroachdb", dialect: "cockroachdb", version: "25.4.5"},
+		{
+			name:    "SQL Server banner on sqlserver",
+			dialect: "sqlserver",
+			version: "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5",
+		},
+		{name: "ClickHouse banner on clickhouse", dialect: "clickhouse", version: "ClickHouse 26.7.3.19"},
+		{name: "a plain dotted version on clickhouse", dialect: "clickhouse", version: "26.7.3.19"},
 	}
 
 	for _, test := range tests {

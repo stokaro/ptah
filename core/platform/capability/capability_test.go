@@ -11,6 +11,42 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
+// The version strings below are what four servers answer about themselves.
+// They are literals rather than a shared fixture because BannerPlatform's whole
+// job is reading these bytes: a helper that produced them would be a second
+// spelling of the thing under test.
+const (
+	// sqlServer2025Banner is @@VERSION from a live
+	// mcr.microsoft.com/mssql/server:2025-latest container, the same bytes
+	// capability_internal_test.go pins (an external test package cannot read
+	// that file's unexported const). The marketing year in front of the product
+	// version is why this banner needs a product token at all: the shared
+	// parser reads it as major 2025.
+	sqlServer2025Banner = "Microsoft SQL Server 2025 (RTM-CU7) (KB5096981) - 17.0.4065.4 (X64) \n" +
+		"\tJul  8 2026 23:26:08 \n" +
+		"\tCopyright (C) 2025 Microsoft Corporation\n" +
+		"\tEnterprise Developer Edition (64-bit) on Linux (Ubuntu 24.04.4 LTS) <X64>"
+
+	// sqlServer2022Banner is the shorter shape this file already resolves in
+	// TestResolveServerVersion, kept here so both are read by one table.
+	sqlServer2022Banner = "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5"
+
+	// clickHouseVersionFull is system.build_options VERSION_FULL, measured on
+	// clickhouse/clickhouse-server:26.7. It is the ClickHouse surface that
+	// names the product: SELECT version() answers a bare "26.7.3.19".
+	clickHouseVersionFull = "ClickHouse 26.7.3.19"
+
+	// clickHouseBinaryBanner is `clickhouse-server --version` from the same
+	// container — the string an operator is most likely to paste, since the
+	// in-band one carries no name.
+	clickHouseBinaryBanner = "ClickHouse server version 26.7.3.19 (official build)."
+
+	// mySQLClientBannerOnMariaDB is what `mysql --version` prints on a MariaDB
+	// installation. It is the reason "mysql" is not a product token: the client
+	// name is shared, and the server it names here is MariaDB.
+	mySQLClientBannerOnMariaDB = "mysql  Ver 15.1 Distrib 10.11.6-MariaDB, for debian-linux-gnu (x86_64)"
+)
+
 func TestCapabilities_Has_NilSafe(t *testing.T) {
 	c := qt.New(t)
 
@@ -896,9 +932,16 @@ func TestBannerPlatform(t *testing.T) {
 		{name: "a plain PostgreSQL banner", version: "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)", want: "postgres"},
 		{name: "a MariaDB banner", version: "10.11.6-MariaDB-1:10.11.6+maria~ubu2204", want: "mariadb"},
 		{name: "the MariaDB replication prefix", version: "5.5.5-10.11.6-MariaDB", want: "mariadb"},
+		{name: "a SQL Server @@VERSION banner", version: sqlServer2025Banner, want: "sqlserver"},
+		{name: "the SQL Server banner already in this file", version: sqlServer2022Banner, want: "sqlserver"},
+		{name: "a ClickHouse VERSION_FULL row", version: clickHouseVersionFull, want: "clickhouse"},
+		{name: "a ClickHouse binary banner", version: clickHouseBinaryBanner, want: "clickhouse"},
+		{name: "ClickHouse SELECT version() names no product", version: "26.7.3.19", want: ""},
 		{name: "a dotted version names no product", version: "8.0.42", want: ""},
 		{name: "a dotted version with a suffix names no product", version: "8.0.42-log", want: ""},
 		{name: "a MySQL server names no product", version: "9.7.1", want: ""},
+		{name: "a SQLite server names no product", version: "3.53.0", want: ""},
+		{name: "the MySQL client banner names MariaDB, not MySQL", version: mySQLClientBannerOnMariaDB, want: "mariadb"},
 		{name: "an unreadable string names no product", version: "not-a-version", want: ""},
 		{name: "the empty string names no product", version: "", want: ""},
 	}
@@ -910,6 +953,160 @@ func TestBannerPlatform(t *testing.T) {
 			c.Assert(capability.BannerPlatform(test.version), qt.Equals, test.want)
 		})
 	}
+}
+
+// TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName pins
+// the two products the token table learned to read.
+//
+// Neither SQL Server nor ClickHouse has a version ladder, so the answer that
+// matters is not which release line was selected — there is none — but which
+// PRODUCT the resolution claims. Before these tokens existed both banners named
+// nothing, and the shared parser spent the first number it found on the
+// DECLARED dialect's ladder: a SQL Server @@VERSION opens with its marketing
+// year, so ResolveServerVersion("postgres", <banner>) answered Postgres17 and
+// reported itself saturated past release line 18, for a PostgreSQL 2025 that
+// does not exist.
+//
+// The two "on another dialect" rows are the ones with teeth. The two rows on
+// each product's own dialect are the control: adding a token must not change
+// the answer a matching pair already got.
+func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		resolved string
+		want     capability.Capabilities
+	}{
+		{
+			name:     "a SQL Server banner on its own dialect",
+			dialect:  platform.SQLServer,
+			version:  sqlServer2025Banner,
+			resolved: platform.SQLServer,
+			want:     capability.SQLServer2022(),
+		},
+		{
+			name:     "a SQL Server banner on postgres",
+			dialect:  platform.Postgres,
+			version:  sqlServer2025Banner,
+			resolved: platform.SQLServer,
+			want:     capability.SQLServer2022(),
+		},
+		{
+			name:     "a ClickHouse banner on its own dialect",
+			dialect:  platform.ClickHouse,
+			version:  clickHouseVersionFull,
+			resolved: platform.ClickHouse,
+			want:     capability.ClickHouse24(),
+		},
+		{
+			name:     "a ClickHouse banner on mysql",
+			dialect:  platform.MySQL,
+			version:  clickHouseBinaryBanner,
+			resolved: platform.ClickHouse,
+			want:     capability.ClickHouse24(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+			c.Assert(resolution.Capabilities, qt.DeepEquals, test.want)
+			// The banner named a server, so the string was read — the same
+			// reason the YugabyteDB and Spanner arms report Recognized true
+			// without parsing a number. No measured release line was selected,
+			// because neither product has one.
+			c.Assert(resolution.Recognized, qt.IsTrue)
+			c.Assert(resolution.VersionSpecific, qt.IsFalse)
+			c.Assert(resolution.Saturated, qt.IsFalse)
+			c.Assert(resolution.NewestMeasured, qt.Equals, "")
+		})
+	}
+}
+
+// TestResolveServerVersionUnladderedProductsAreNotTheirMismatchedDialects is
+// the non-vacuity control for the two "on another dialect" rows above.
+//
+// If SQLServer2022 happened to equal Postgres17, or ClickHouse24 to equal
+// MySQL84, those rows would pass whether or not the banner was claimed and
+// would be measuring nothing.
+func TestResolveServerVersionUnladderedProductsAreNotTheirMismatchedDialects(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capability.SQLServer2022(), qt.Not(qt.DeepEquals), capability.ForDialect(platform.Postgres))
+	c.Assert(capability.ClickHouse24(), qt.Not(qt.DeepEquals), capability.ForDialect(platform.MySQL))
+}
+
+// TestResolveServerVersionUnreadableStringsAnswerFromTheDialectTheyName pins
+// the invariant behind VersionResolution.ResolvedDialect.
+//
+// When Recognized is false nothing was read out of the string, so the preset
+// that came back was chosen without consulting it — a dialect DEFAULT. It has
+// to be the default of the dialect the resolution claims, or the field says one
+// engine while the capabilities describe another.
+//
+// The PostgreSQL banner arm broke exactly that pairing. A banner naming
+// PostgreSQL with no number in it is claimed for any dialect outside the
+// PostgreSQL family, and the fallback returned the DECLARED dialect's preset
+// while the dispatch stamped ResolvedDialect as postgres — so
+// ResolveServerVersion("mysql", "PostgreSQL server") answered MySQL84() under a
+// postgres label, and a caller trusting the field planned with capabilities
+// from a different engine.
+//
+// The table is a cross product rather than a list because the defect was one
+// arm out of five, and a hand-written list is how the sixth arm gets missed:
+// every dialect this package has a default for is crossed with every shape of
+// string that resolves nothing.
+func TestResolveServerVersionUnreadableStringsAnswerFromTheDialectTheyName(t *testing.T) {
+	unresolvable := []struct {
+		name    string
+		version string
+	}{
+		{name: "a PostgreSQL banner carrying no version", version: "PostgreSQL server"},
+		{name: "a MariaDB banner carrying no version", version: "MariaDB"},
+		{name: "a CockroachDB banner carrying no version", version: "CockroachDB CCL"},
+		{name: "a string naming no server at all", version: "not-a-version"},
+		{name: "the empty string", version: ""},
+	}
+
+	for _, dialect := range capability.DefaultDialects() {
+		for _, test := range unresolvable {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				resolution := capability.ResolveServerVersion(dialect, test.version)
+
+				comment := qt.Commentf("dialect=%s version=%q resolved=%s",
+					dialect, test.version, resolution.ResolvedDialect)
+				c.Assert(resolution.Recognized, qt.IsFalse, comment)
+				c.Assert(resolution.VersionSpecific, qt.IsFalse, comment)
+				c.Assert(resolution.Capabilities, qt.DeepEquals,
+					capability.ForDialect(resolution.ResolvedDialect), comment)
+			})
+		}
+	}
+}
+
+// TestResolveServerVersionUnreadablePostgresBannerNamesPostgres is the row the
+// test above generalizes, spelled out with the presets named.
+//
+// The cross product asserts a relation between two of the resolution's own
+// fields, which stays true if both move together. This one pins the absolute
+// answer for the exact pair the finding named, so a future change that made
+// ResolvedDialect follow the declared dialect could not satisfy both.
+func TestResolveServerVersionUnreadablePostgresBannerNamesPostgres(t *testing.T) {
+	c := qt.New(t)
+
+	resolution := capability.ResolveServerVersion(platform.MySQL, "PostgreSQL server")
+
+	c.Assert(resolution.ResolvedDialect, qt.Equals, platform.Postgres)
+	c.Assert(resolution.Capabilities, qt.DeepEquals, capability.Postgres17())
+	c.Assert(resolution.Capabilities, qt.Not(qt.DeepEquals), capability.MySQL84())
+	c.Assert(resolution.Recognized, qt.IsFalse)
 }
 
 // TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner is the

@@ -318,12 +318,41 @@ the dialect it was given with still resolves.
 `BannerPlatform` is the only ordered table of product tokens in the tree —
 `ResolveServerVersion` dispatches on it and `dbschema`'s wire-dialect detection
 reads it, because a second copy is how a live connection and an offline
-resolution come to disagree about which server a banner describes. Five
-products are detected, and the PostgreSQL one is detected last because three of
-the others contain the word: CockroachDB speaks the PostgreSQL wire protocol,
-YugabyteDB reports `PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner
-PostgreSQL`. Checking PostgreSQL first would plan every one of those engines as
-PostgreSQL.
+resolution come to disagree about which server a banner describes. Within the
+PostgreSQL wire family the order is load-bearing: PostgreSQL is detected after
+CockroachDB, YugabyteDB and Spanner, because all three contain the word —
+CockroachDB speaks the PostgreSQL wire protocol, YugabyteDB reports
+`PostgreSQL 11.2-YB-…` and Spanner `Cloud Spanner PostgreSQL`. Checking
+PostgreSQL first would plan every one of those engines as PostgreSQL.
+
+A product belongs in the table when the **server's own version surface names
+it**, because that string is the only evidence the refusal can act on. Seven of
+the nine dialects qualify:
+
+| dialect | surface that names the product |
+| --- | --- |
+| `postgres` | `SELECT version()` — `PostgreSQL 16.3 (Debian …)` |
+| `mariadb` | `SELECT VERSION()` — `10.11.6-MariaDB-…`, including the `5.5.5-` replication prefix |
+| `cockroachdb` | `SELECT version()` — `CockroachDB CCL v25.4.5 …` |
+| `yugabytedb` | `SELECT version()` — `PostgreSQL 15.12-YB-…` |
+| `spanner` | `SELECT version()` — `Cloud Spanner PostgreSQL …` |
+| `sqlserver` | `@@VERSION` — `Microsoft SQL Server 2025 (RTM-CU7) … - 17.0.4065.4 …` |
+| `clickhouse` | `system.build_options` `VERSION_FULL` — `ClickHouse 26.7.3.19` |
+
+`mysql` and `sqlite` are deliberately absent: `SELECT VERSION()` answers
+`9.7.2` and `sqlite_version()` answers `3.53.0`, so neither server names its own
+product anywhere a version string is read, and `BannerPlatform` correctly
+returns `""` for both. A token would have to come from a client banner instead,
+and the MySQL client's is shared with MariaDB's
+(`mysql  Ver 15.1 Distrib 10.11.6-MariaDB`), so it names no server.
+
+SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
+so a resolver that reads the first number out of it reads `2025`; before the
+token existed, `ptah schema render --dialect postgres --server-version '<that
+banner>'` exited `0` and announced that it had planned a PostgreSQL saturated
+past release line `18.x`. Neither SQL Server nor ClickHouse has a version
+ladder, so `ResolveServerVersion` answers those two banners from the product
+alone and never spends the number in them.
 
 A banner naming **only** PostgreSQL names the family and not the product, so it
 does not displace a declared dialect already in that family. CockroachDB,
@@ -409,7 +438,12 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   (MariaDB over the mysql driver resolves to the MariaDB preset), and
   `PostgreSQL 16.3 (…)`. PostgreSQL-wire banners containing `CockroachDB`,
   `YugabyteDB`/`Yugabyte`, or `Spanner` resolve to their distributed-SQL
-  presets. `dbschema.ConnectToDatabase` stores this resolved set in
+  presets, and a `Microsoft SQL Server …` or `ClickHouse …` banner resolves to
+  that product's default preset — neither has a version ladder, so the number
+  in the banner is never spent. Whenever the resolution reports
+  `Recognized == false`, the preset it carries is the default of the dialect
+  named by `ResolvedDialect`, never some other engine's.
+  `dbschema.ConnectToDatabase` stores this resolved set in
   `conn.Info().Capabilities`, and live migration generation passes that same
   set through planning, rendering, and safety assessment. Root MySQL 8.4+
   connections keep the conservative unique-key policy because a session value

@@ -106,36 +106,48 @@ func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
 	}
 }
 
-// TestParseVersion_TheSharedParserReallyMisreadsTheSQLServerBanner runs the
+// TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion runs the
 // shared code on the SQL Server banner instead of describing what it would do.
 //
-// capability.parseVersion is unexported, so the executable surface is
-// capability.ResolveServerVersion on the postgres dialect: it saturates exactly
-// when the parsed major is above the newest measured PostgreSQL line. A banner
-// the shared parser reads as 2025 therefore saturates and the product version
-// it should have read, 17.0.4065.4, does not — one call each, opposite answers,
-// no equivalence taken on trust.
+// It used to execute the misread directly: capability.ResolveServerVersion on
+// the postgres dialect SATURATED for this banner, which is possible only if the
+// shared parser took the marketing year 2025 out of it. That route is closed —
+// capability.BannerPlatform claims "sql server", so the resolver answers from
+// the product and parses no number at all. The misread still exists inside the
+// parser; capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners
+// executes it white-box, which is the only place that can, since parseVersion
+// is unexported.
 //
-// YugabyteDB cannot be exercised the same way and that is the finding rather
-// than a gap: ResolveServerVersion matches "-yb-" before it parses anything, so
-// no exported surface routes that banner through the shared parser at all.
-// capability.TestResolveServerVersion_MasksTheYugabyteMisread executes the
-// masking, and capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners
-// executes the misread underneath it.
-func TestParseVersion_TheSharedParserReallyMisreadsTheSQLServerBanner(t *testing.T) {
+// What remains here is the reason this package keeps its own per-dialect
+// extractor: the shared resolver now yields SQL Server's default preset and NO
+// version, so a matrix cell that must be labeled 17.0.4065.4 can get that
+// number only from ParseVersion.
+//
+// YugabyteDB cannot be exercised through an exported surface either, and for
+// the same reason it never could: ResolveServerVersion matches "-yb-" before it
+// parses anything. capability.TestResolveServerVersion_MasksTheYugabyteMisread
+// executes that masking.
+func TestParseVersion_TheSharedResolverProducesNoSQLServerProductVersion(t *testing.T) {
 	c := qt.New(t)
 
 	shared := capability.ResolveServerVersion(platform.Postgres, sqlServer2025Banner)
-	c.Assert(shared.Saturated, qt.IsTrue,
-		qt.Commentf("the shared parser must have read a major above the newest measured PostgreSQL line "+
-			"(%s) out of this banner, which is only possible if it took the marketing year", shared.NewestMeasured))
+	c.Assert(shared.ResolvedDialect, qt.Equals, platform.SQLServer,
+		qt.Commentf("the banner names its product, so the resolver must not plan it as PostgreSQL"))
+	c.Assert(shared.Saturated, qt.IsFalse,
+		qt.Commentf("saturation here would mean the marketing year reached the PostgreSQL ladder"))
+	c.Assert(shared.NewestMeasured, qt.Equals, "",
+		qt.Commentf("SQL Server has no ladder, so the resolver names no measured line and no version"))
 
 	corrected, err := capabilityprobe.ParseVersion(platform.SQLServer, sqlServer2025Banner, "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(corrected.String(), qt.Equals, "17.0.4065.4")
-	c.Assert(capability.ResolveServerVersion(platform.Postgres, corrected.String()).Saturated, qt.IsFalse,
-		qt.Commentf("the version the sqlserver rule recovers is below that line, so the assertion above is "+
-			"about which number the shared parser picked and not about the banner being long"))
+
+	// The control, so the assertions above are about the banner being claimed
+	// by product and not about 2025 having stopped being a large number: handed
+	// the marketing year alone, the PostgreSQL ladder still saturates, and
+	// handed the product version this extractor recovers, it does not.
+	c.Assert(capability.ResolveServerVersion(platform.Postgres, "2025").Saturated, qt.IsTrue)
+	c.Assert(capability.ResolveServerVersion(platform.Postgres, corrected.String()).Saturated, qt.IsFalse)
 }
 
 func TestParseVersion_RefusesABannerWithNoDigits(t *testing.T) {

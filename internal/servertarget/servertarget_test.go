@@ -11,6 +11,18 @@ import (
 	"go.5x5.cz/ptah/internal/servertarget"
 )
 
+const (
+	// sqlServerBanner is the @@VERSION shape this repository already records
+	// for SQL Server. The marketing year sits in front of the product version,
+	// so a resolver that reads the first number out of it reads 2022.
+	sqlServerBanner = "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5"
+
+	// clickHouseBanner is system.build_options VERSION_FULL, measured on
+	// clickhouse/clickhouse-server:26.7. It is the ClickHouse surface that
+	// names the product at all: SELECT version() answers a bare "26.7.3.19".
+	clickHouseBanner = "ClickHouse 26.7.3.19"
+)
+
 // TestResolve covers the four outcomes an operator-supplied version can have,
 // because they are four different things to tell the person who typed it and
 // only one of them is silence.
@@ -463,6 +475,42 @@ func TestResolve_MatchesTheDocumentedBannerPlatformRecipe(t *testing.T) {
 			version:               "PostgreSQL 16.3 (Debian)",
 			banner:                platform.Postgres,
 			normalized:            platform.Postgres,
+			refused:               false,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "a SQL Server banner on postgres",
+			dialect:               platform.Postgres,
+			version:               sqlServerBanner,
+			banner:                platform.SQLServer,
+			normalized:            platform.Postgres,
+			refused:               true,
+			resolvedDialectAgrees: false,
+		},
+		{
+			name:                  "a SQL Server banner on the mssql alias",
+			dialect:               "mssql",
+			version:               sqlServerBanner,
+			banner:                platform.SQLServer,
+			normalized:            platform.SQLServer,
+			refused:               false,
+			resolvedDialectAgrees: true,
+		},
+		{
+			name:                  "a ClickHouse banner on mysql",
+			dialect:               platform.MySQL,
+			version:               clickHouseBanner,
+			banner:                platform.ClickHouse,
+			normalized:            platform.MySQL,
+			refused:               true,
+			resolvedDialectAgrees: false,
+		},
+		{
+			name:                  "a ClickHouse banner on the ch alias",
+			dialect:               "ch",
+			version:               clickHouseBanner,
+			banner:                platform.ClickHouse,
+			normalized:            platform.ClickHouse,
 			refused:               false,
 			resolvedDialectAgrees: true,
 		},
