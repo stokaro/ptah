@@ -497,7 +497,11 @@ func errExternalSchemaDisabled() error {
 // flag's environment twin, which cmd/internal/cmdflags already parses under the
 // same grammar and the same error, so one name means one thing on both
 // binaries.
-var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: evaluating
+// `data "external_schema"` runs a repository-controlled program, which the
+// pinned community binary reaches only behind its own opt-in flag that the
+// strict command tree does not register.
+var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false, envbool.Gated)
 
 // externalSchemaAllowed reports whether executing an atlas.hcl
 // data.external_schema program is allowed.

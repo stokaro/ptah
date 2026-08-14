@@ -46,7 +46,10 @@ const KeepAtlasRefusedBlocksEnvVar = "PTAH_ATLAS_INSPECT_ALL_BLOCKS"
 
 // keepAtlasRefusedBlocks is the declaration of the variable, made once, in the
 // package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var keepAtlasRefusedBlocks = envbool.New(KeepAtlasRefusedBlocksEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: emitting every block Ptah
+// models produces a document the pinned community binary refuses, which is
+// output that binary cannot produce.
+var keepAtlasRefusedBlocks = envbool.New(KeepAtlasRefusedBlocksEnvVar, false, envbool.Gated)
 
 // KeepAtlasRefusedBlocks reports whether the opt-in restores every block Ptah
 // models.
