@@ -544,6 +544,58 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			// The exclusion is an identity question, not a string one.
+			// TablesAdded carries the comparator's spelling while a
+			// constraint's TableName comes from the declaration or the catalog,
+			// so one can say `main.audit` where the other says `audit`. A raw
+			// lookup answers "different object" for one object -- the shape
+			// stokaro/ptah#1351 came from -- and the cost is refusing a safe
+			// addition.
+			name:     "an added table spelled with its schema is still not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesAdded: []string{"main.audit"},
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// SQLite folds ASCII case, so these two name one table too.
+			name:     "an added table spelled in another case is still not counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesAdded: []string{"AUDIT"},
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// The control for both: a constraint on a table the plan does NOT
+			// add is still counted, so the identity-aware lookup has not turned
+			// the exclusion into "never refuse".
+			name:     "a constraint on a table the plan does not add is still counted",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			database: holdingFTS4,
+			diff: &difftypes.SchemaDiff{
+				TablesAdded: []string{"main.audit"},
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
+				},
+			},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`the plan changes "docs_content"`},
+		},
+		{
 			name:            "a removed table in an unclassifiable database is refused",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),

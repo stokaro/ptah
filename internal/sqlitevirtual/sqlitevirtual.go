@@ -105,6 +105,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -568,10 +569,14 @@ func ValidatePlannedChanges(
 // refuse the ordinary case of adding a table with a constraint beside an index
 // Ptah cannot classify.
 func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
-	added := make(map[string]struct{}, len(diff.TablesAdded))
-	for _, name := range diff.TablesAdded {
-		added[name] = struct{}{}
-	}
+	// The exclusion is an identity question, not a string one. TablesAdded
+	// carries the comparator's spelling while a constraint's TableName comes
+	// from the declaration or the catalog, so one may say `main.t` where the
+	// other says `t`, and SQLite folds ASCII case besides. A raw lookup answers
+	// "different object" for one object -- the shape stokaro/ptah#1351 came
+	// from -- and the cost here is a false refusal of a safe addition. The
+	// planner asks the same question through the same helper.
+	semantics := diffSemantics(diff)
 
 	touched := slices.Clone(diff.TablesRemoved)
 	for _, table := range diff.TablesModified {
@@ -586,13 +591,26 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff) []string {
 
 	kept := touched[:0]
 	for _, name := range touched {
-		if _, ok := added[name]; ok {
+		if objectlookup.Contains(diff.TablesAdded, name, semantics) {
 			continue
 		}
 		kept = append(kept, name)
 	}
 	slices.Sort(kept)
 	return slices.Compact(kept)
+}
+
+// diffSemantics is the identifier rule the diff was produced under, falling
+// back to SQLite's own when the comparison recorded none.
+//
+// [difftypes.SchemaDiff.IdentifierSemantics] is absent for a dialect-only
+// comparison. This gate only runs on SQLite, so the fallback is the dialect's
+// rule rather than a conservative guess.
+func diffSemantics(diff *difftypes.SchemaDiff) identifier.Semantics {
+	if diff.IdentifierSemantics != nil {
+		return *diff.IdentifierSemantics
+	}
+	return identifier.ForDialect(platform.SQLite)
 }
 
 func quotedStrings(values []string) string {
