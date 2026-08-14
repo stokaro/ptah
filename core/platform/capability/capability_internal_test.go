@@ -31,12 +31,15 @@ const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-lin
 //
 // It is a characterization test, not a wish: both rows below record what this
 // parser does today, and both are wrong about the product. The SQL Server row
-// is the one with teeth — the marketing year 2025 would select a preset for a
-// version that does not exist the day a `case platform.SQLServer:` is added to
-// the resolver's switch. The PostgreSQL and MySQL rows are the control that
-// makes the other two mean something: the same rule reads those banners
-// correctly, so the defect is in what these two banners put first, not in the
-// parser being broken for everything.
+// is the one with teeth — the marketing year 2025 selected a PostgreSQL preset
+// for a version that does not exist, for as long as a SQL Server banner named
+// no product and fell through to this parser on another dialect. BannerPlatform
+// claims it now and ResolveServerVersion answers from the product, so nothing
+// exported routes the banner here any more; this test is the only thing left
+// that executes the misread, which is why it stays. The PostgreSQL and MySQL
+// rows are the control that makes the other two mean something: the same rule
+// reads those banners correctly, so the defect is in what these two banners put
+// first, not in the parser being broken for everything.
 func TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

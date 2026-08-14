@@ -186,9 +186,18 @@ func TestCompareFlywayRevisionOrder(t *testing.T) {
 			right: flywayVersionedOrderIdentity("10"),
 		},
 		{
-			name:  "two distinct baselines lack a stable pairwise order",
-			left:  flywayBaselineOrderIdentity("20"),
-			right: flywayBaselineOrderIdentity("10"),
+			name:      "retired baseline below target baseline uses raw token order",
+			left:      flywayBaselineOrderIdentity("2"),
+			right:     flywayBaselineOrderIdentity("3"),
+			wantOrder: -1,
+			wantOK:    true,
+		},
+		{
+			name:      "retired baseline above target baseline uses raw token order",
+			left:      flywayBaselineOrderIdentity("20"),
+			right:     flywayBaselineOrderIdentity("10"),
+			wantOrder: 1,
+			wantOK:    true,
 		},
 	}
 

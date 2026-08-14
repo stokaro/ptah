@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strconv"
@@ -26,6 +27,11 @@ type Options struct {
 	// MigrationsDir is the directory containing migration files. It is required
 	// only when a case has a migrate_to step.
 	MigrationsDir string
+	// MigrationsFS is the immutable migration history used by every migrate_to
+	// step. When nil, MigrationsDir is opened for compatibility with existing
+	// embedders. Command callers should capture once, authorize that snapshot,
+	// and pass it here so test steps cannot reopen different bytes.
+	MigrationsFS fs.FS
 	// RootDir is a directory of Go entity annotations describing the desired
 	// schema. It is required only when a case has an apply_schema step.
 	RootDir string
@@ -272,6 +278,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 		r := &runner{
 			conn:            conn,
 			migrationsDir:   opts.MigrationsDir,
+			migrationsFS:    opts.MigrationsFS,
 			dirFormat:       dirFormat,
 			desiredSchema:   desiredSchema,
 			seedDir:         opts.SeedDir,
@@ -403,6 +410,7 @@ func runEphemeralCase(ctx context.Context, c Case, provision provisionFunc, run 
 type runner struct {
 	conn          *dbschema.DatabaseConnection
 	migrationsDir string
+	migrationsFS  fs.FS
 	dirFormat     migrator.MigrationDirFormat
 	desiredSchema *goschema.Database
 	seedDir       string
@@ -507,7 +515,11 @@ func (r *runner) runMigrateTo(ctx context.Context, target string) (passed bool, 
 }
 
 func (r *runner) newMigrator() (*migrator.Migrator, error) {
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(r.migrationsDir), migrator.WithMigrationDirFormat(r.dirFormat))
+	fsys := r.migrationsFS
+	if fsys == nil {
+		fsys = os.DirFS(r.migrationsDir)
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(r.dirFormat))
 	if err != nil {
 		return nil, err
 	}

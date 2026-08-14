@@ -3,6 +3,7 @@ package generator
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -22,13 +23,16 @@ type BaselineShadowVerifyOptions struct {
 	ShadowDatabaseURL string
 	TargetConn        *dbschema.DatabaseConnection
 	MigrationsDir     string
-	Version           int64
-	Dialect           string
-	Capabilities      capability.Capabilities
-	CompareOptions    *config.CompareOptions
-	Schemas           []string
-	ProviderOptions   []migrator.FSProviderOption
-	ConnectTimeout    time.Duration
+	// MigrationsFS is the immutable migration history to replay. When nil,
+	// MigrationsDir is opened for compatibility with existing embedders.
+	MigrationsFS    fs.FS
+	Version         int64
+	Dialect         string
+	Capabilities    capability.Capabilities
+	CompareOptions  *config.CompareOptions
+	Schemas         []string
+	ProviderOptions []migrator.FSProviderOption
+	ConnectTimeout  time.Duration
 }
 
 // VerifyBaselineShadow replays migrations up to Version on the shadow database
@@ -87,7 +91,7 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		return err
 	}
 
-	migrations, err := loadPriorMigrations(opts.MigrationsDir, opts.ProviderOptions...)
+	migrations, err := loadPriorMigrationsFS(opts.MigrationsFS, opts.MigrationsDir, opts.ProviderOptions...)
 	if err != nil {
 		return baselineShadowError("load-prior", "load_prior_error", "load migrations", err)
 	}

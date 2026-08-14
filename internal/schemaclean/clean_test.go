@@ -51,9 +51,11 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's
 // plan coverage to what that dialect's SchemaWriter.DropAllTables really drops.
 //
-// The sqlserver and clickhouse rows are the control: their readers do surface
-// views, and their writers do not drop them, so a change that simply listed
-// everything the reader returns would fail those two rows.
+// The sqlserver row is the control: its reader does surface views, and its
+// writer does not drop them, so a change that simply listed everything the
+// reader returns would fail that row. The clickhouse row is the opposite
+// control: its writer drops views and materialized views but no types,
+// routines or foreign keys, so a row copied from postgres would fail too.
 func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -139,11 +141,13 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 			},
 		},
 		{
-			name:    "clickhouse drops base tables only",
+			name:    "clickhouse drops tables, views and materialized views",
 			dialect: "clickhouse",
 			want: []schemaclean.Object{
+				{Type: "materialized_view", Schema: "public", Name: "mv_users"},
 				{Type: "table", Schema: "public", Name: "posts"},
 				{Type: "table", Schema: "public", Name: "users"},
+				{Type: "view", Schema: "public", Name: "v_users"},
 			},
 		},
 	}
@@ -272,6 +276,21 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 			dialect: "sqlite",
 			object:  schemaclean.Object{Type: "view", Name: "v_const"},
 			want:    `DROP VIEW IF EXISTS "v_const"`,
+		},
+		{
+			name:    "clickhouse view drops synchronously",
+			dialect: "clickhouse",
+			object:  schemaclean.Object{Type: "view", Name: "v_users"},
+			want:    "DROP VIEW IF EXISTS `v_users` SYNC",
+		},
+		{
+			// ClickHouse has no DROP MATERIALIZED VIEW statement at all: that
+			// spelling is a syntax error on the server, and DROP VIEW is what
+			// removes the view together with the storage table it owns.
+			name:    "clickhouse materialized view uses the DROP VIEW spelling",
+			dialect: "clickhouse",
+			object:  schemaclean.Object{Type: "materialized_view", Name: "mv_users"},
+			want:    "DROP VIEW IF EXISTS `mv_users` SYNC",
 		},
 		{
 			name:    "sqlserver foreign key keeps DROP CONSTRAINT",

@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/dbtest"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -98,6 +99,10 @@ The command exits non-zero if any case fails.`,
 }
 
 func run(ctx context.Context, out, notice io.Writer, opts options) error {
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return err
+	}
 	if opts.report != "" && !slices.Contains(reportFormats, opts.report) {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
@@ -118,7 +123,13 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	// verb keeps working on directories nobody hashed, which is the common case
 	// while migrations are being written; it refuses only a directory that
 	// carries a checksum its files no longer match.
-	if _, err := migrationintegrity.Gate(notice, os.DirFS(opts.migrationsDir), dirFormat); err != nil {
+	migrationsFS, err := migrationsnapshot.CaptureDirectory(opts.migrationsDir)
+	if err != nil {
+		return fmt.Errorf("capture migration directory: %w", err)
+	}
+	if _, err := migrationintegrity.GateWithPolicy(
+		notice, migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+	); err != nil {
 		return err
 	}
 
@@ -137,9 +148,21 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return fmt.Errorf("no test cases found in %s", opts.dir)
 	}
 
+	// A snapshot cannot tell an empty directory from an absent one, and the
+	// difference decides whether the run means anything: `migrations test`
+	// never creates --migrations-dir, so a path that is not there is a typo,
+	// and a migrate_to step over the empty history it would otherwise produce
+	// reports PASS having executed no migrations at all. The check is here,
+	// after the cases are known, because the flag has a default and a suite of
+	// apply_schema cases legitimately never reads the directory.
+	if err := requireMigrationsDirForCases(cases, opts.migrationsDir); err != nil {
+		return err
+	}
+
 	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{
 		Cases:           cases,
 		MigrationsDir:   opts.migrationsDir,
+		MigrationsFS:    migrationsFS,
 		RootDir:         opts.rootDir,
 		SeedDir:         opts.seedDir,
 		DBURL:           opts.dbURL,
@@ -161,4 +184,22 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return exitcode.New(1, fmt.Errorf("migration tests failed"))
 	}
 	return nil
+}
+
+// requireMigrationsDirForCases refuses a missing --migrations-dir when one of
+// the cases about to run reads it.
+//
+// The predicate is a migrate_to step, which is exactly what dbtest builds a
+// migrator for; every other step kind touches the desired schema, raw SQL or
+// the seed directory instead.
+func requireMigrationsDirForCases(cases []dbtest.Case, migrationsDir string) error {
+	needsMigrations := slices.ContainsFunc(cases, func(testCase dbtest.Case) bool {
+		return slices.ContainsFunc(testCase.Steps, func(step dbtest.Step) bool {
+			return strings.TrimSpace(step.MigrateTo) != ""
+		})
+	})
+	if !needsMigrations {
+		return nil
+	}
+	return migrationsnapshot.RequireExistingDirectory(migrationsDir)
 }

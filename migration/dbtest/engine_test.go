@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -169,6 +170,50 @@ func TestRunMigrationTest_MigrateToLatest(t *testing.T) {
 	c.Assert(report.Cases, qt.HasLen, 1)
 	c.Assert(report.Cases[0].Passed, qt.IsTrue)
 	c.Assert(report.Cases[0].Steps, qt.HasLen, 4)
+}
+
+func TestRunMigrationTest_MigrateToUsesProvidedSnapshotInsteadOfPath(t *testing.T) {
+	c := qt.New(t)
+	reopenedDir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.up.sql"),
+		[]byte("CREATE TABLE changed_after_verification (id INTEGER PRIMARY KEY);"),
+		0o600,
+	), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(reopenedDir, "0000000001_changed.down.sql"),
+		[]byte("DROP TABLE changed_after_verification;"),
+		0o600,
+	), qt.IsNil)
+	authorized := fstest.MapFS{
+		"0000000001_authorized.up.sql": {Data: []byte(
+			"CREATE TABLE authorized_snapshot (id INTEGER PRIMARY KEY);",
+		)},
+		"0000000001_authorized.down.sql": {Data: []byte(
+			"DROP TABLE authorized_snapshot;",
+		)},
+	}
+
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
+		Cases: []dbtest.Case{{
+			Name: "snapshot is execution source",
+			Steps: []dbtest.Step{
+				{Name: "migrate", MigrateTo: "latest"},
+				{Name: "authorized table exists", Assert: &dbtest.Assertion{
+					Query: "SELECT id FROM authorized_snapshot", RowCount: new(0),
+				}},
+				{Name: "changed path did not execute", Assert: &dbtest.Assertion{
+					Query: "SELECT * FROM changed_after_verification", ErrorContains: "changed_after_verification",
+				}},
+			},
+		}},
+		MigrationsDir: reopenedDir,
+		MigrationsFS:  authorized,
+		DirFormat:     migrator.MigrationDirFormatPtah,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
 }
 
 func TestRunMigrationTest_ApplySchema(t *testing.T) {

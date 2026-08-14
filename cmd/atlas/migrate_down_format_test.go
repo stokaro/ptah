@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
 )
 
 // failingRollbackSQL is a down migration that cannot succeed, used by the tests
@@ -163,6 +164,40 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	c.Assert(out.String(), qt.Equals, "2|0|2|")
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-override.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "2_add_audit.down.sql"),
+		[]byte("DROP TABLE down_fmt_audit;\n-- reviewed emergency edit\n"),
+		0o600,
+	), qt.IsNil)
+	t.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "true")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", `{{ len .Planned }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(out.String(), qt.Equals, "2")
+	c.Assert(errOut.String(), qt.Contains, migrationintegrity.AllowUnverifiedEnvVar)
+	c.Assert(errOut.String(), qt.Contains, "verification was SKIPPED")
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *testing.T) {

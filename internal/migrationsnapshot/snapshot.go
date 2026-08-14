@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 
@@ -45,6 +46,57 @@ func Capture(fsys fs.FS) (fsnapshot.Snapshot, error) {
 		return fsnapshot.Snapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// CaptureDirectory captures dir, treating a missing directory as an empty
+// migration history. Generators accept an absent output directory and create
+// it on publication, so their pre-replay snapshot needs the same zero-history
+// meaning without weakening errors for an existing unreadable path.
+//
+// Use it ONLY where an absent directory is a legitimate starting state. A verb
+// that READS a directory it never creates wants [CaptureExistingDirectory]
+// instead: for those, "not there" is a typo in the path, and answering it with
+// an empty history turns a run that executed nothing into a passing one.
+func CaptureDirectory(dir string) (fsnapshot.Snapshot, error) {
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return fsnapshot.Snapshot{}, nil
+	} else if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return Capture(os.DirFS(dir))
+}
+
+// CaptureExistingDirectory captures dir and refuses a missing one, naming the
+// path it could not read.
+//
+// It is the capture for every verb that consumes an existing migration history
+// — `migrations test`, `baseline` and `checkpoint` — where the directory is an
+// input rather than an output. Before this split those verbs opened
+// os.DirFS(dir) directly, so a path that was not there failed when the provider
+// scanned it; routing them through the generator's tolerant [CaptureDirectory]
+// silently converted that failure into a valid empty history, and a
+// `migrate_to: latest` step then reported success having run no migrations at
+// all.
+func CaptureExistingDirectory(dir string) (fsnapshot.Snapshot, error) {
+	if err := RequireExistingDirectory(dir); err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return Capture(os.DirFS(dir))
+}
+
+// RequireExistingDirectory refuses a migration directory that is not there,
+// naming the path it could not read.
+//
+// It is the same refusal [CaptureExistingDirectory] makes, separated for the
+// caller whose directory is only conditionally required: `migrations test`
+// gates the directory on every run but reads it only for a case carrying a
+// migrate_to step, so it captures tolerantly and asks this once it knows the
+// cases it is about to run.
+func RequireExistingDirectory(dir string) error {
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("read migration directory %s: %w", dir, err)
+	}
+	return nil
 }
 
 // CaptureStable returns the second of two matching snapshots. This is

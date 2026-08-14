@@ -10,13 +10,16 @@ import (
 
 // Engines we consider "real data tables" for table introspection. The
 // MergeTree family covers production workloads; Memory/Log/TinyLog/StripeLog
-// cover the common non-replicated developer/test workloads. Materialized
-// views and Distributed engines are intentionally excluded because they are
-// not part of the schema-as-data-shape Ptah's diff layer reasons about.
+// cover the common non-replicated developer/test workloads. View-style and
+// Distributed engines are excluded from the table read: views and materialized
+// views are read as their own object kinds below, and Distributed is not part
+// of the schema-as-data-shape Ptah's diff layer reasons about.
 //
 // We use a positive allowlist and ALSO keep `NOT LIKE '%View'` as a guard so
 // that any unanticipated view-style engine still gets filtered out even if it
-// somehow matches a MergeTree pattern.
+// somehow matches a MergeTree pattern. The allowlist alone is not enough for
+// materialized views, whose own storage table is a real MergeTree table; see
+// materializedViewInnerTablesSubquery.
 
 // Reader reads schema information from a ClickHouse server.
 //
@@ -35,9 +38,10 @@ func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
 	return &Reader{db: db, schema: schema}
 }
 
-// ReadSchema returns tables, columns, data-skipping indexes, and plain views
-// for the configured database. Constraints, RLS, functions, and other shapes
-// with no direct equivalent in Ptah's ClickHouse model remain empty.
+// ReadSchema returns tables, columns, data-skipping indexes, plain views and
+// materialized views for the configured database. Constraints, RLS, functions,
+// and other shapes with no direct equivalent in Ptah's ClickHouse model remain
+// empty.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	dbName, err := r.resolveDatabaseName()
 	if err != nil {
@@ -56,12 +60,86 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read views: %w", err)
 	}
+	matViews, err := r.readMaterializedViews(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
+	}
 	return &types.DBSchema{
-		Tables:  tables,
-		Indexes: indexes,
-		Views:   views,
+		Tables:   tables,
+		Indexes:  indexes,
+		Views:    views,
+		MatViews: matViews,
 	}, nil
 }
+
+// materializedViewInnerTablesSubquery names the storage tables ClickHouse
+// creates for the materialized views in one database.
+//
+// A materialized view declared with a storage clause rather than a TO target
+// owns a real MergeTree table, and that table is in the same database with the
+// same engine as a table the user declared. Measured on server 26.7.3.19,
+// creating two materialized views left system.tables reporting
+// ".inner_id.<uuid>" MergeTree rows next to "users", so the table read has to
+// subtract them by name or every materialized view arrives as a table nobody
+// declared -- and, once planning followed, as a DROP TABLE for the storage of a
+// view the desired schema still asks for.
+//
+// Which spelling the storage has is decided per view, by the view's own row,
+// not by emitting both. A database engine of Atomic gives every table a UUID and
+// names the storage ".inner_id.<the view's uuid>"; an Ordinary database leaves
+// the UUID at all zeros and names it ".inner.<view name>". Measured on both ends
+// of the range this preset covers, 26.7.3.19 and 24.10.4.191:
+//
+//	database engine   system.tables rows for a view named "mv"
+//	Atomic            mv (uuid a5bb…)  .inner_id.a5bb…  (uuid of its own)
+//	Ordinary          mv (uuid 0000…)  .inner.mv        (uuid 0000…)
+//
+// Subtracting both spellings unconditionally deletes a real table from the read.
+// A leading dot is legal in a quoted ClickHouse name, and on the same servers
+//
+//	CREATE TABLE `.inner.mv` (x UInt64) ENGINE = MergeTree ORDER BY x
+//
+// succeeds in an Atomic database alongside the view "mv" whose storage is
+// ".inner_id.<uuid>". The union arm invented ".inner.mv" and filtered that
+// user table out of both the table read and the index read.
+//
+// The set stays derived from the materialized views themselves rather than from
+// a leading-dot name pattern, so a declared table is never dropped from the read
+// merely for how it is spelled.
+//
+// One case this still cannot separate, and it is a derivation rather than an
+// answer: in an ORDINARY database a materialized view "mv" created with
+// TO <target> owns no storage, and ".inner.mv" is nevertheless exactly what a
+// storage-owning view of that name would be called. Measured on 26.7.3.19, both
+// statements are accepted and the target may even be that table:
+//
+//	CREATE TABLE wf9d_ord2.`.inner.mv` (c UInt64) ENGINE = MergeTree ORDER BY tuple()
+//	CREATE MATERIALIZED VIEW wf9d_ord2.mv TO wf9d_ord2.`.inner.mv` AS SELECT …
+//
+// so a real table spelled that way is subtracted from the table and index reads.
+// system.tables on 26.7.3.19 answers this exactly, with target_database and
+// target_table, and the read cannot use them: 24.10.4.191's system.tables has 34
+// columns and neither of those two, and naming a column a supported server does
+// not have turns a working read into an error. An Atomic database is unaffected
+// -- the derived name carries the view's own UUID.
+//
+// DropAllTables no longer derives anything: it takes its table inventory after
+// the views are dropped, so the guess above cannot make the reset leave a table
+// behind.
+const materializedViewInnerTablesSubquery = `
+		SELECT ` + innerTableNameExpression + `
+		FROM system.tables
+		WHERE database = ? AND engine = 'MaterializedView'
+`
+
+// innerTableNameExpression names the storage table of the materialized-view row
+// it is evaluated over, choosing the spelling the row's own database engine
+// uses.
+const innerTableNameExpression = `if(
+		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
+		         concat('.inner.', name),
+		         concat('.inner_id.', toString(uuid))
+		       )`
 
 func (r *Reader) resolveDatabaseName() (string, error) {
 	if r.schema != "" {
@@ -93,8 +171,9 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		    OR engine = 'StripeLog'
 		  )
 		  AND engine NOT LIKE '%View'
+		  AND name NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY name
-	`, dbName)
+	`, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +212,65 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 	var views []types.DBView
 	for rows.Next() {
 		view := types.DBView{Schema: dbName, CheckOption: "NONE"}
+		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return views, nil
+}
+
+// readMaterializedViews reads the materialized views of one database.
+//
+// The definition comes from system.tables.as_select, the same column the plain
+// view read uses. Measured on server 26.7.3.19, as_select carries the SELECT
+// alone -- no storage clause and no POPULATE -- and a body written with
+// qualified names comes back byte for byte, so the desired body and the read
+// body compare directly.
+//
+// RefreshStrategy is reported as "manual" to match the PostgreSQL reader's
+// default. ClickHouse has no refresh statement at all, so no read could report
+// anything narrower, and the comparator does not diff the field.
+//
+// What this read cannot tell apart, stated rather than hidden: a view created
+// with `TO <target table>` routes its rows into a table the user owns and has no
+// inner storage of its own, and system.tables reports it with the same engine
+// and the same as_select as a view that does own its storage. Measured on
+// 26.7.3.19:
+//
+//	name    engine            as_select
+//	mv_to   MaterializedView  SELECT count() AS c FROM wf9d_alias.users
+//	create_table_query: CREATE MATERIALIZED VIEW wf9d_alias.mv_to
+//	                    TO wf9d_alias.mv_target (`c` UInt64) AS SELECT ...
+//
+// The target survives only in create_table_query, and types.DBMatView has
+// nowhere to put it, so such a view is reported as an ordinary one: it compares
+// as synchronized against a declaration of the same query, and a body change
+// would be planned as a drop and a create that recreates it without the target.
+// Representing the shape would be a model change (a target on the shared node,
+// the renderer emitting `TO`, the comparator diffing it); refusing the read
+// outright would take away a read that works today. Neither is decided here --
+// the support matrix says plainly not to manage a `TO` view with Ptah.
+func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error) {
+	rows, err := r.db.Query(`
+		SELECT name, as_select, comment
+		FROM system.tables
+		WHERE database = ?
+		  AND is_temporary = 0
+		  AND engine = 'MaterializedView'
+		ORDER BY name
+	`, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []types.DBMatView
+	for rows.Next() {
+		view := types.DBMatView{Schema: dbName, RefreshStrategy: "manual"}
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
 			return nil, err
 		}
@@ -236,12 +374,17 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 	// system.data_skipping_indices exposes `granularity` as UInt64. The
 	// driver decodes that into uint64 by default, so scan into that type
 	// explicitly and cast on the way out.
+	// The same inner-table subtraction the table read applies: an index on a
+	// materialized view's storage belongs to a table this reader does not
+	// report, and an index whose TableName names nothing in the schema is a
+	// change the comparator cannot resolve.
 	rows, err := r.db.Query(`
 		SELECT table, name, expr, type, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
+		  AND table NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY table, name
-	`, dbName)
+	`, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}

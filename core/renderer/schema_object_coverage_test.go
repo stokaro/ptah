@@ -333,7 +333,6 @@ func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "chk_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "chk_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "chk_f" is not supported`},
-		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "chk_mv" is not supported`},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "chk_trg" is not supported`},
 	}
 
@@ -344,6 +343,11 @@ func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		})
 	}
 	c.Assert(rendered, qt.Contains, "CREATE VIEW `chk_v` AS\nSELECT id FROM t")
+	c.Assert(
+		rendered,
+		qt.Contains,
+		"CREATE MATERIALIZED VIEW `chk_mv` ENGINE = MergeTree ORDER BY tuple() AS\nSELECT id FROM t",
+	)
 }
 
 // TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint pins that a column

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,11 +16,12 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dblock"
-	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
@@ -105,6 +107,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
+	integrityPolicy, err := migrationintegrity.Resolve()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	if err := sqlitevirtual.ValidateToggle(opts.dialect); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -155,7 +161,13 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	// the directory reports no drift. That is the laundering shape
 	// stokaro/ptah#1095 closed on the compat surface, where `migrate import`
 	// rewrote a directory `migrate apply` refuses.
-	if _, err := migrationintegrity.Gate(cmd.ErrOrStderr(), os.DirFS(opts.migrationsDir), dirFormat); err != nil {
+	migrationsFS, err := migrationsnapshot.CaptureExistingDirectory(opts.migrationsDir)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("capture migration directory: %w", err))
+	}
+	if _, err := migrationintegrity.GateWithPolicy(
+		cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+	); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
@@ -182,6 +194,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	upSQL, downSQL, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
 		ShadowDatabaseURL:    opts.shadowDB,
 		MigrationsDir:        opts.migrationsDir,
+		MigrationsFS:         migrationsFS,
 		Dialect:              opts.dialect,
 		Schemas:              dbcli.ParseSchemas(opts.schemas),
 		ProviderOptions:      []migrator.FSProviderOption{migrator.WithMigrationDirFormat(dirFormat)},
@@ -194,7 +207,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	}
 
 	if dirFormat == migrator.MigrationDirFormatAtlas {
-		return writeAtlasCheckpoint(cmd, out, opts, version, upSQL)
+		return writeAtlasCheckpoint(cmd, out, opts, version, upSQL, migrationsFS)
 	}
 
 	if opts.dryRun {
@@ -205,11 +218,18 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		return nil
 	}
 
-	upPath, downPath, err := generator.WriteCheckpointFiles(opts.migrationsDir, version, opts.description, upSQL, downSQL)
+	upPath, downPath, err := generator.WriteCheckpointFilesWithOptions(
+		opts.migrationsDir,
+		version,
+		opts.description,
+		upSQL,
+		downSQL,
+		generator.CheckpointWriteOptions{AuthorizedMigrationsFS: migrationsFS},
+	)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := editWrittenCheckpoint(cmd, opts, dirFormat, upPath, downPath); err != nil {
+	if err := editWrittenCheckpoint(cmd, opts, dirFormat, migrationsFS, upPath, downPath); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n  %s\n", version, upPath, downPath)
@@ -284,15 +304,35 @@ func editWrittenCheckpoint(
 	cmd *cobra.Command,
 	opts *options,
 	dirFormat migrator.MigrationDirFormat,
+	authorizedMigrations fs.FS,
 	paths ...string,
 ) error {
 	if !opts.edit {
 		return nil
 	}
+	writer, err := atlasmigrate.OpenMigrationWriter(nil, opts.migrationsDir)
+	if err != nil {
+		return fmt.Errorf("open migration directory before editing checkpoint: %w", err)
+	}
+	defer func() { _ = writer.Close() }()
+	authorization, err := migrationintegrity.AuthorizeCheckpointEdit(
+		cmd.Context(),
+		writer,
+		dirFormat,
+		authorizedMigrations,
+		paths...,
+	)
+	if err != nil {
+		return fmt.Errorf("authorize checkpoint edit: %w", err)
+	}
 	if err := editor.Open(cmd.Context(), opts.editor, paths...); err != nil {
 		return err
 	}
-	if _, err := migrateops.Rehash(opts.migrationsDir, dirFormat); err != nil {
+	if err := migrationintegrity.RefreshEditedCheckpointIntegrity(
+		cmd.Context(),
+		writer,
+		authorization,
+	); err != nil {
 		return fmt.Errorf("refresh %s after editing: %w", integrityFileName(dirFormat), err)
 	}
 	return nil
@@ -309,18 +349,31 @@ func integrityFileName(dirFormat migrator.MigrationDirFormat) string {
 // down body the generator produced is deliberately discarded: the Atlas format
 // is up-only and measured Atlas checkpoints have no down file, so writing one
 // would put a file in the directory that Atlas cannot read.
-func writeAtlasCheckpoint(cmd *cobra.Command, out io.Writer, opts *options, version int64, upSQL string) error {
+func writeAtlasCheckpoint(
+	cmd *cobra.Command,
+	out io.Writer,
+	opts *options,
+	version int64,
+	upSQL string,
+	migrationsFS fs.FS,
+) error {
 	if opts.dryRun {
 		name, contents := generator.AtlasCheckpointArtifact(version, opts.description, upSQL)
 		fmt.Fprintf(out, "-- checkpoint version %d (dry run, no files written)\n\n-- %s\n%s", version, name, contents)
 		return nil
 	}
 
-	path, err := generator.WriteAtlasCheckpointFile(opts.migrationsDir, version, opts.description, upSQL)
+	path, err := generator.WriteAtlasCheckpointFileWithOptions(
+		opts.migrationsDir,
+		version,
+		opts.description,
+		upSQL,
+		generator.CheckpointWriteOptions{AuthorizedMigrationsFS: migrationsFS},
+	)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := editWrittenCheckpoint(cmd, opts, migrator.MigrationDirFormatAtlas, path); err != nil {
+	if err := editWrittenCheckpoint(cmd, opts, migrator.MigrationDirFormatAtlas, migrationsFS, path); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, path)

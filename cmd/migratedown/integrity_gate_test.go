@@ -294,3 +294,13 @@ func TestMigrateDown_EscapeHatchRejectsAnUnparseableValue(t *testing.T) {
 	// The clean directory was never the reason: nothing was rolled back.
 	c.Assert(tableCensus(c, dbPath), qt.Contains, "widgets")
 }
+
+func TestMigrateDown_EscapeHatchRejectsAnUnparseableValueBeforeArguments(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "yes")
+
+	_, err := runDown()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "yes" for PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR`)
+}

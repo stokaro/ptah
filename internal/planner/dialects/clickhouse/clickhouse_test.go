@@ -318,6 +318,310 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	c.Assert(table.Name, qt.Equals, "tenant.data")
 }
 
+// TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody pins the
+// planner arm rather than the renderer: on master the diff produced a
+// CreateMaterializedViewNode carrying identity only, which rendered as a
+// diagnostic no matter what the renderer could emit. The body assertion is what
+// separates a planned object from a named one.
+func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+		StructName: "UserCounts",
+		Name:       "analytics.user_counts",
+		Body:       "SELECT count() AS c FROM analytics.users",
+	}}}
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
+		generated,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	view, ok := nodes[0].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected CreateMaterializedViewNode, got %T", nodes[0]))
+	c.Assert(view.Name, qt.Equals, "analytics.user_counts")
+	c.Assert(view.Body, qt.Equals, "SELECT count() AS c FROM analytics.users")
+}
+
+// TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating
+// pins the order and the count. A plan that emitted the create alone would be
+// refused by the server, which answers "Table ... already exists" while the old
+// object still owns the name, so the old query would stay in place.
+//
+// The one in-place edit ClickHouse does have is not usable here: measured on
+// 26.7.3.19 and 24.10.4.191, `ALTER TABLE <mv> MODIFY QUERY` keeps the stored
+// rows but refuses any select whose output columns differ, and a
+// goschema.MaterializedView carries no column list for the planner to compare.
+// See the comment on reportViewLikes.
+func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+		StructName: "UserCounts",
+		Name:       "analytics.user_counts",
+		Body:       "SELECT count() AS c FROM analytics.users WHERE active",
+	}}}
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+			ViewName: "analytics.user_counts",
+			Changes:  map[string]string{"body": "old -> new"},
+		}}},
+		generated,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	drop, ok := nodes[0].(*ast.DropMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected DropMaterializedViewNode first, got %T", nodes[0]))
+	c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
+	c.Assert(drop.IfExists, qt.IsTrue)
+	create, ok := nodes[1].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected CreateMaterializedViewNode second, got %T", nodes[1]))
+	c.Assert(create.Body, qt.Equals, "SELECT count() AS c FROM analytics.users WHERE active")
+}
+
+// TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterIt
+// pins that the two kinds share one dependency order rather than being planned
+// one kind at a time.
+//
+// The diff lists the plain view first, so a planner that walked views and then
+// materialized views would emit the reader before the object it reads, and
+// ClickHouse refuses that: it resolves the query at CREATE time with
+// "Unknown table expression identifier ... (UNKNOWN_TABLE)".
+func TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterIt(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			StructName: "Reader",
+			Name:       "analytics.reader",
+			Body:       "SELECT c FROM analytics.user_counts",
+		}},
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "UserCounts",
+			Name:       "analytics.user_counts",
+			Body:       "SELECT count() AS c FROM analytics.users",
+		}},
+	}
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{
+			ViewsAdded:             []string{"analytics.reader"},
+			MaterializedViewsAdded: []string{"analytics.user_counts"},
+		},
+		generated,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	base, ok := nodes[0].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected the materialized view first, got %T", nodes[0]))
+	c.Assert(base.Name, qt.Equals, "analytics.user_counts")
+	reader, ok := nodes[1].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected the reading view second, got %T", nodes[1]))
+	c.Assert(reader.Name, qt.Equals, "analytics.reader")
+}
+
+func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing.T) {
+	c := qt.New(t)
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{MaterializedViewsRemoved: []string{"analytics.user_counts"}},
+		&goschema.Database{},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	drop, ok := nodes[0].(*ast.DropMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected DropMaterializedViewNode, got %T", nodes[0]))
+	c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
+	c.Assert(drop.IfExists, qt.IsTrue)
+}
+
+func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *types.SchemaDiff
+	}{
+		{
+			name: "addition",
+			diff: &types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
+		},
+		{
+			name: "modification",
+			diff: &types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+				ViewName: "analytics.missing",
+			}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration
+// keeps the diagnostic branch reachable: a capability set without
+// materialized_views still names the object instead of failing on a desired
+// declaration it was never going to read.
+func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(t *testing.T) {
+	planner := clickhouse.NewWithCapabilities(
+		capability.ClickHouse24().With(capability.MaterializedViews, false),
+	)
+	tests := []struct {
+		name string
+		diff *types.SchemaDiff
+	}{
+		{
+			name: "addition",
+			diff: &types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
+		},
+		{
+			name: "modification",
+			diff: &types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+				ViewName: "analytics.missing",
+			}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+			view, ok := nodes[0].(*ast.CreateMaterializedViewNode)
+			c.Assert(ok, qt.IsTrue, qt.Commentf("expected CreateMaterializedViewNode, got %T", nodes[0]))
+			c.Assert(view.Name, qt.Equals, "analytics.missing")
+			c.Assert(view.Body, qt.Equals, "")
+		})
+	}
+}
+
+// TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst pins the
+// order for a name that changes kind without changing its name.
+//
+// The plain-view and materialized-view comparators are independent, so the same
+// name arrives as an addition of the desired kind next to a removal of the live
+// kind. ClickHouse resolves both against one namespace: measured on server
+// 26.7.3.19, CREATE VIEW x with a materialized view named x already present
+// answers "Code: 57. DB::Exception: Table ptah_test.x already exists.
+// (TABLE_ALREADY_EXISTS)", and the materialized-over-plain direction answers
+// the same. A plan that emitted the create first would therefore not apply.
+//
+// The two sides also spell the name differently, because the removal carries
+// the catalog's qualified spelling while the addition carries the declaration's
+// bare one. That pairing is what migration/schemadiff really produces here, so
+// exact string matching would find no replacement at all.
+func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
+	viewDesired := &goschema.Database{Views: []goschema.View{{
+		StructName: "UserCounts",
+		Name:       "user_counts",
+		Body:       "SELECT count() AS c FROM analytics.users",
+	}}}
+	materializedDesired := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+		StructName: "UserCounts",
+		Name:       "user_counts",
+		Body:       "SELECT count() AS c FROM analytics.users",
+	}}}
+
+	tests := []struct {
+		name      string
+		diff      *types.SchemaDiff
+		generated *goschema.Database
+		assert    func(c *qt.C, nodes []ast.Node)
+	}{
+		{
+			name: "materialized view becomes a plain view",
+			diff: &types.SchemaDiff{
+				ViewsAdded:               []string{"user_counts"},
+				MaterializedViewsRemoved: []string{"analytics.user_counts"},
+			},
+			generated: viewDesired,
+			assert: func(c *qt.C, nodes []ast.Node) {
+				drop, ok := nodes[0].(*ast.DropMaterializedViewNode)
+				c.Assert(ok, qt.IsTrue, qt.Commentf("expected the drop first, got %T", nodes[0]))
+				c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
+				c.Assert(drop.IfExists, qt.IsTrue)
+				create, ok := nodes[1].(*ast.CreateViewNode)
+				c.Assert(ok, qt.IsTrue, qt.Commentf("expected the create second, got %T", nodes[1]))
+				c.Assert(create.Name, qt.Equals, "user_counts")
+			},
+		},
+		{
+			name: "plain view becomes a materialized view",
+			diff: &types.SchemaDiff{
+				MaterializedViewsAdded: []string{"user_counts"},
+				ViewsRemoved:           []string{"analytics.user_counts"},
+			},
+			generated: materializedDesired,
+			assert: func(c *qt.C, nodes []ast.Node) {
+				drop, ok := nodes[0].(*ast.DropViewNode)
+				c.Assert(ok, qt.IsTrue, qt.Commentf("expected the drop first, got %T", nodes[0]))
+				c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
+				c.Assert(drop.IfExists, qt.IsTrue)
+				create, ok := nodes[1].(*ast.CreateMaterializedViewNode)
+				c.Assert(ok, qt.IsTrue, qt.Commentf("expected the create second, got %T", nodes[1]))
+				c.Assert(create.Name, qt.Equals, "user_counts")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, test.generated)
+
+			c.Assert(err, qt.IsNil)
+			// Exactly two: the replacement is one drop moved in front of the
+			// create, never a second statement naming the same object.
+			c.Assert(nodes, qt.HasLen, 2)
+			test.assert(c, nodes)
+		})
+	}
+}
+
+// TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates is the
+// non-interference control for the kind-change reordering above.
+//
+// A removal whose name no addition claims keeps its place after the create
+// pass, so the reordering cannot be satisfied by hoisting every drop.
+func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{Views: []goschema.View{{
+		StructName: "Reader",
+		Name:       "analytics.reader",
+		Body:       "SELECT id FROM analytics.users",
+	}}}
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{
+			ViewsAdded:               []string{"analytics.reader"},
+			MaterializedViewsRemoved: []string{"analytics.user_counts"},
+		},
+		generated,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	create, ok := nodes[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected the create first, got %T", nodes[0]))
+	c.Assert(create.Name, qt.Equals, "analytics.reader")
+	drop, ok := nodes[1].(*ast.DropMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected the drop second, got %T", nodes[1]))
+	c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
+}
+
 func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 	p := clickhouse.New()
 	tests := []struct {
