@@ -18,9 +18,13 @@ boundary of the `ptah-compat` binary.
 | Apply directly from OCI | `ptah migrations up --migrations-dir <oci-reference>` |
 | Inspect or roll back against OCI migrations | `ptah migrations status` / `down --migrations-dir <oci-reference>` |
 | Lint and optionally attach the report | `ptah migrations lint --dir <oci-reference> [--attach]` |
+| Verify artifact integrity without a database | `ptah migrations validate --dir <oci-reference>` |
 | Publish a desired-schema artifact | `ptah schema push <oci-reference>` |
 | Write a canonical schema file | `ptah schema pull <oci-reference> --out schema.hcl` |
 | Compare or check drift from OCI | `ptah schema compare` / `drift --schema-file <oci-reference>` |
+| Render, export, or inspect an OCI schema | `ptah schema render` / `export` / `inspect --schema-file <oci-reference>` |
+| Plan or apply a schema from OCI | `ptah schema plan` / `apply --schema-file <oci-reference>` |
+| Generate a migration toward an OCI schema | `ptah migrations generate --schema-file <oci-reference>` |
 | Plan and optionally attach the report | `ptah migrations plan --schema-file <oci-reference> [--attach]` |
 | Attach a deployment report | Best-effort after a successful OCI-backed `migrations up` |
 | List direct referrer metadata | `ptah oci referrers <oci-reference>` |
@@ -145,8 +149,13 @@ embedded user information.
 HTTPS is the default. `--plain-http` disables transport encryption and must be
 limited to an explicitly trusted local registry, such as a disposable
 `localhost` registry used by tests. Do not use it for GHCR, ECR, GAR, Harbor,
-Docker Hub, or a production registry. The flag is available on all listed
-OCI-aware commands, including lint, plan, and `oci referrers`.
+Docker Hub, or a production registry. The flag is available on every command
+that resolves an `oci://` source, including lint, plan, `schema inspect`, and
+`oci referrers`. That is not maintained by hand: a test walks the built command
+tree and requires each command whose `--schema-file` reaches the OCI loader to
+register `--plain-http`, then drives it against a registry, because a flag that
+parses and is dropped would satisfy a registration check while leaving the
+command exactly as unreachable as before.
 
 Registry operations and Docker credential-helper lookups have a two-minute
 default deadline, with shorter dial, TLS-handshake, and response-header

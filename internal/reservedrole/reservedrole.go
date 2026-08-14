@@ -117,7 +117,10 @@ func likePattern() string {
 
 // allow is the declaration of the variable, made once, in the package that owns
 // it. See [go.5x5.cz/ptah/internal/envbool].
-var allow = envbool.New(AllowEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: planning a reserved role is
+// role management, which the pinned community binary does not model at all, and
+// strict mode already refuses roles in a desired schema.
+var allow = envbool.New(AllowEnvVar, false, envbool.Gated)
 
 // Allowed reports whether the opt-in lifts the refusal.
 //

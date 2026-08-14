@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/drift"
 	"go.5x5.cz/ptah/cmd/generate"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/schemapull"
 	"go.5x5.cz/ptah/cmd/schemapush"
 	"go.5x5.cz/ptah/core/goschema"
@@ -165,6 +166,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var cleanupAnnotations bool
 	var cleanupDryRun bool
 	var cleanupDiff bool
+	var plainHTTP bool
 	var protoPackage string
 	var protoGoPackage string
 	var protoTypeRemoval string
@@ -239,6 +241,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				cleanupAnnotations:        cleanupAnnotations,
 				cleanupDryRun:             cleanupDryRun,
 				cleanupDiff:               cleanupDiff,
+				plainHTTP:                 plainHTTP,
 				protoPackage:              protoPackage,
 				protoGoPackage:            protoGoPackage,
 				protoTypeRemoval:          protoTypeRemoval,
@@ -269,6 +272,7 @@ part of the compatibility state, so all of them must be committed together.`,
 	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations after a lossless HCL export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
+	dbcli.RegisterPlainHTTPFlag(flags, &plainHTTP)
 	flags.StringVar(&protoPackage, protoPackageFlag, "", "Protobuf package for the generated file (required for protobuf)")
 	flags.StringVar(&protoGoPackage, protoGoPackageFlag, "", "Emit option go_package with this value (protobuf only)")
 	flags.StringVar(&protoTypeRemoval, protoTypeRemovalFlag, string(protobufrender.RemovalError),
@@ -308,6 +312,7 @@ type exportOptions struct {
 	cleanupAnnotations bool
 	cleanupDryRun      bool
 	cleanupDiff        bool
+	plainHTTP          bool
 
 	protoPackage              string
 	protoGoPackage            string

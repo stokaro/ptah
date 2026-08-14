@@ -61,11 +61,17 @@ import (
 // refusals below therefore read the MERGED value and ask the Changed bit only to
 // separate "never given" from "given empty".
 //
-// `docker://` values are passed through untouched. Ptah refuses them with a
-// message that names what the operator has to change -- a directly connectable
-// dev database URL -- and that refusal is a measured retained divergence with
-// its own tests; answering it here as an unknown driver would replace a clear
-// diagnostic with a vague one.
+// `docker://` values are passed through untouched, and what happens to them
+// afterwards changed with stokaro/ptah#1468: they are now PROVISIONED into a
+// real container rather than refused. Answering them here as an unknown driver
+// would therefore not merely replace a clear diagnostic with a vague one, it
+// would delete the capability, which is compatibility rule (c). The refusals
+// that remain for a `docker://` value are the ones decidable from the URL text
+// -- an image no engine table names, a form the pinned community binary rejects
+// -- and they are internal/devdocker's, in that binary's own words. The one
+// verb family that still refuses the scheme outright is `migrate test` and
+// `schema test`, in [atlasTestDevURLValue]; those two are not wired to the
+// provisioner.
 //
 // None of this reaches native Ptah. `ptah schema inspect`, `ptah migrations
 // lint` and the rest keep `unsupported --dev-url dialect "notadriver://x"`,

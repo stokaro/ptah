@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -67,6 +68,12 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.Dialect = info.Dialect
+	// Resolved before any of the validations below can return, so a malformed
+	// drop toggle is reported on every SQLite comparison rather than only the
+	// ones that get far enough to classify a virtual table (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
+		return nil, nil, err
+	}
 	// A reserved PostgreSQL role is in neither DBSchema.Roles nor
 	// DBSchema.RolesOutOfScope, so comparing it would read it as absent and
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration
@@ -81,6 +88,14 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		); err != nil {
 			return nil, nil, err
 		}
+	}
+	// A SQLite virtual table cannot appear on the desired side of any
+	// comparison, so its absence there is not deletion intent and its presence
+	// there is a different kind of object. Refuse both before anything is
+	// compared, rather than planning a DROP the operator never asked for
+	// (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database); err != nil {
+		return nil, nil, err
 	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
@@ -104,6 +119,15 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	merged.IdentifierSemantics = &semantics
 	diff, undecided := CompareReportingUndecidedAdditions(generated, database, merged)
+	if err := compare.ValidateMySQLFunctionDefinerReplacements(
+		generated,
+		database,
+		diff,
+		info.Dialect,
+		semantics,
+	); err != nil {
+		return nil, nil, err
+	}
 	return diff, undecided, nil
 }
 

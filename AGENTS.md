@@ -228,6 +228,51 @@ invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
 `MARIADB_TEST_DSN` unconditionally, which makes its `unit` mode depend on
 databases listening on those exact ports.
 
+### The Go toolchain
+
+`go.mod` carries two Go versions and they are different facts with different
+lifecycles. Do not collapse them.
+
+- `go 1.26.5` is the published compatibility floor. `go.5x5.cz/ptah` and
+  `go.5x5.cz/ptah/testkit` are separately released import paths, so raising this
+  forces every consumer of both onto the newer language version. It moves on a
+  human decision.
+- `toolchain go1.26.6` is what CI builds and scans with. It moves on every patch
+  release and Renovate's built-in gomod manager proposes those bumps without
+  configuration. A dependency's `toolchain` line does not propagate to its
+  consumers, so this one is free to move.
+
+Every `actions/setup-go` step reads `go-version-file: go.mod`, which honors the
+`toolchain` directive in preference to the `go` directive. Never write a
+`go-version:` literal into a workflow, never restate the version in
+`.golangci.yml` (its `run.go` already defaults to the go directive), and never
+raise the `go` directive to clear a standard-library advisory — that is a
+consumer contract break for a reason that has nothing to do with the language.
+Raise `toolchain` instead.
+
+A `${{ }}` expression is not an escape from that rule. It shows only that a
+value is derived, never from what, so `go-version: ${{ env.GO_VERSION }}` in a
+workflow is a literal declared a few lines higher. The single exemption is
+`.github/actions/ptah/action.yml`, which forwards its own `inputs.go-version`
+and `inputs.go-version-file` because a composite action runs in the **caller's**
+workspace and must not be pinned to this repository's `go.mod`. What that
+forwarding resolves to is pinned by the `go-version-file` input's default, which
+has to exist and to name `go.mod`: the forwarded value is opaque, so that
+default is the only place left where the module is named.
+
+If you raise the `go` directive, raise `testkit/go.mod`'s in the same change.
+`testkit` both requires and replaces the root module, so under `testkit/` it is
+the **main** module and the root module is its dependency; Go requires a main
+module's `go` directive to be at least every dependency's, and a root floor
+above testkit's fails the testkit build outright with `go: module .. requires go
+>= <root floor>`. The reverse — testkit deliberately ahead — is legal and is
+testkit's own decision.
+
+```bash
+# Fail when the toolchain grows a second declaration
+scripts/check-go-toolchain-single-source.sh
+```
+
 ## Compatibility Policy
 
 Ptah aims to be a drop-in replacement for the Atlas CLI. That goal has two
@@ -304,12 +349,31 @@ default; use `os.LookupEnv`, and treat an exported empty value as the
 configuration error it is.
 
 In practice that means: declare the variable once with
-`envbool.New(name, defaultValue)` in the package that owns it, resolve it through
-`Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a feature
-call site. `internal/envbool` holds the one grammar (exactly
+`envbool.New(name, defaultValue, class)` in the package that owns it, resolve it
+through `Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a
+feature call site. `internal/envbool` holds the one grammar (exactly
 `strconv.ParseBool`'s spellings, nothing trimmed) and the one error shape
 (`invalid boolean value %q for %s`); `cmd/internal/envboolguard` refuses a new
 tree that reintroduces the pattern.
+
+`class` is the strict Atlas Community Edition classification, and it is stated
+at the declaration because that is the only place that cannot drift from the
+name:
+
+- `envbool.Gated` — the variable adds behavior the pinned community binary does
+  not have. Strict mode refuses an enabled value.
+- `envbool.Retained` — the variable restores or tightens something that binary
+  already does, so it adds no Atlas capability. Strict mode keeps it reachable.
+- `envbool.Selector` — reserved for `PTAH_ATLAS_STRICT_COMPAT` itself.
+
+Say in a comment at the declaration which capability the pinned binary does or
+does not have; the class alone is an answer without its reasoning.
+`internal/atlascompatpolicy` derives its refusals from `envbool.Registered()`, so
+a variable is validated by the act of declaring it and there is no second list to
+edit. A declaration that states no class fails closed — strict mode refuses it —
+and `cmd/internal/envboolguard` refuses the tree, so an unclassified variable
+cannot ship. Retained variables are also named in the configuration reference,
+and a test requires that prose to match the registry.
 
 Resolve the variables a command owns **before** its early returns. A malformed
 value must not stay dormant because this invocation did not reach the branch

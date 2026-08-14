@@ -19,8 +19,9 @@ dialect capability key in `core/platform/capability`.
 
 - **Bring-your-own OCI registry** — native migration and desired-schema push/pull against OCI-compliant registries, authenticated through the Docker credential store.
 - **Reference semantics** — unqualified references resolve to `latest`; tags are movable; `@sha256:` digest pins are immutable; a `:tag@sha256:` reference is accepted and resolves by the digest while keeping the tag in the canonical form; pushes to any digest-carrying reference are rejected.
-- **Direct migration consumption** — `ptah migrations up`, `status`, and `down` accept `oci://` through `--migrations-dir`; `up --verify-sum` verifies the pulled directory against the sum that traveled inside it, and `up` prints the resolved digest and its `@sha256:` pin whenever that check ran over a movable tag.
-- **Direct schema consumption** — `ptah schema compare` and `drift` accept `oci://` through `--schema-file`.
+- **Direct migration consumption** — `ptah migrations up`, `status`, and `down` accept `oci://` through `--migrations-dir`. `--verify-sum` on those three verifies the *pulled* directory against the sum that traveled inside the artifact, so over a movable tag it proves internal consistency only, and each of the three prints the resolved digest together with the `@sha256:` reference that pins those exact bytes. Pinning that digest fixes which bytes a later pull gets; it does not establish who published them — see [Identity, integrity, and authenticity](./oci_registry.md#identity-integrity-and-authenticity) for the controls that do.
+- **Integrity before publication** — `--verify-sum` on `ptah migrations push` requires the *local* directory to carry a sum and to match it before the upload. It is the same requirement on a different subject, and it publishes rather than consumes: the output reports the tag it pushed and the resulting digest as separate fields, and constructs no pinned reference.
+- **Direct schema consumption** — `ptah schema render`, `export`, `inspect`, `compare`, `drift`, `plan`, `apply` and `push`, and `ptah migrations plan` and `generate`, accept `oci://` through `--schema-file`, and every one of them exposes `--plain-http`.
 - **Canonical desired schema** — schema publication emits exactly one lossless canonical `schema.hcl` and fails closed on managed data, lossy diagnostics, or unstable HCL round trips.
 - **Deployment reporting** — successful, non-dry-run OCI-backed `migrations up` runs that add committed revisions attach a best-effort, redacted deployment report unless `--skip-report` is set. No-op runs do not publish a report.
 - **OCI referrers** — deployment, lint, and plan reports attach to exact source digests. Native Referrers API discovery is preferred; Ptah merges the standard tag-schema fallback with per-attachment durable tags for concurrent Ptah writers. `ptah oci referrers` lists direct descriptor metadata with type and output-format filters; payload download and consumption are not implemented.
@@ -607,6 +608,15 @@ remaining resolver refinement work.
   defaults an omitted `language=` to `plpgsql`, so an ordinary annotation
   reaches it. The predicate the renderer and the planner share lives in one
   place so the two cannot drift apart again.
+
+  **A foreign definer is not adopted silently.** MySQL and MariaDB execute a
+  `SQL SECURITY DEFINER` routine as its catalog `DEFINER`, not necessarily as
+  the account connected to Ptah. The reader captures both that owner and
+  `CURRENT_USER()`. If a modified routine would be dropped and recreated by a
+  different account, comparison refuses before any migration SQL is planned.
+  Connect as the existing definer, declare `SQL SECURITY INVOKER` explicitly,
+  or leave the foreign routine unchanged. Missing ownership facts also fail
+  closed for a modified definer routine.
 
   What is generated also depends on the declared `language`, not on the target
   alone. MySQL and MariaDB run exactly one routine language, SQL, so a function

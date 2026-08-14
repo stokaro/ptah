@@ -26,9 +26,11 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -334,8 +336,18 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		return cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve")
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to"))
+	cmdutil.ConfigureCommandArgs(cmd, atlasSchemaApplyArgs(&opts.url))
 	return cmd
+}
+
+func atlasSchemaApplyArgs(url *string) cobra.PositionalArgs {
+	positionalArgs := cmdutil.NoPositionalArgsHint("name the database with -u/--url and the desired schema with --to")
+	return func(cmd *cobra.Command, args []string) error {
+		if err := sqlitevirtual.ValidateExplicitURLToggle(*url); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		return positionalArgs(cmd, args)
+	}
 }
 
 func strictAtlasSchemaApplyLong() string {
@@ -353,6 +365,9 @@ capabilities.`
 }
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	mode := ignoreMissingEnvSelection
@@ -392,6 +407,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		opts.lintPolicy = projectCfg.Lint
 	}
 	opts.formatOutput = formatOutput
+	// The toggle belongs to every SQLite apply invocation. Resolve it as soon
+	// as the effective target URL is known, before classifying or executing a
+	// desired source. Invalid non-SQLite URLs retain their Atlas-compatible
+	// diagnostics below.
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.url); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if strings.TrimSpace(opts.planURL) != "" {
 		return runAtlasSchemaApplyPlanFile(cmd, opts)
 	}
@@ -1234,7 +1258,9 @@ func ensureAtlasSchemaApplyDevURL(
 
 // atlasApplyWithoutDevURL is the declaration of the variable, made once, on the
 // verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: applying with no dev database
+// is behavior the pinned binary does not offer on this verb.
+var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false, envbool.Gated)
 
 // atlasApplyWithoutDevURLAllowed reports whether a non-database desired state
 // may be applied with no dev database. Unset keeps the refusal and a valid false

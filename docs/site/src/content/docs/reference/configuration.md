@@ -115,12 +115,24 @@ convert, or replay migration bodies refuse Atlas txtar, every Ptah directive,
 and SQL templates; checksum-only reads preserve those bytes. All inputs remain
 available in the default, complete compatibility profile.
 
-Four opt-in correctness controls remain available because they do not add an
-Atlas capability: `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`,
-`PTAH_HCL_STRICT_REDECLARATIONS`, `PTAH_STRICT_DIR_QUERY`, and
-`PTAH_ALLOW_NONINTERACTIVE_EDIT`. The last one permits a scripted editor in a
-non-interactive process; it does not add an editor or migration capability.
-Native `ptah` does not read `PTAH_ATLAS_STRICT_COMPAT`.
+Which variables strict mode gates is derived from Ptah's boolean-variable
+registry, not from a list kept beside it. Each variable states at its single
+declaration site whether strict mode gates it or retains it, so a variable
+added without stating anything is refused rather than ignored, and there is no
+second list to forget.
+
+These opt-in correctness controls remain available because they do not add an
+Atlas capability: `PTAH_ALLOW_NONINTERACTIVE_EDIT`,
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_HCL_STRICT_REDECLARATIONS`,
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
+
+`PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
+process; it does not add an editor or migration capability.
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned
+community binary plans for a SQLite virtual table anyway. Every other declared
+boolean is gated, and a malformed value for any of them fails the process
+whatever its classification. Native `ptah` does not read
+`PTAH_ATLAS_STRICT_COMPAT`.
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being
@@ -283,4 +295,6 @@ Continue with [Atlas project config](../../atlas/project-config/) for the suppor
 Ptah config parsing is intentionally explicit. Unknown `ptah.yaml` keys and structurally unsupported `atlas.hcl` constructs fail with their source location. Names that Atlas CE accepts without acting on are the exception: Ptah accepts them for compatibility and warns that they have no effect. A rejected `ptah.yaml` key is reported by name, with its line and the keys that section accepts — never by the Go type the decoder was filling.
 
 A name earns that exception only by measurement, never by not having been implemented yet. The test is to give the attribute a value its field cannot hold and run the community binary: a binary that refuses on the field's TYPE has decoded the field, and a name it truly ignores cannot produce that refusal. `env { schemas }` failed that test — it was warned about as having no effect while the community binary was acting on it — and it is now parsed and honored. See [Atlas project config](../../atlas/project-config/#envschemas).
+
+The exception is also spelling-sensitive. A name the community binary decodes into a structured setting — `lint`, `diff`, `migration`, `schema`, `format`, `test` and their nested settings — takes a **block** body. Written as an **attribute** with an object value it reaches the binary's object decoder, which refuses every member name, including the members the block spelling accepts. `lint { latest = 1 }` is a policy; `lint = { latest = 1 }` is an error on the community binary and is now an error in Ptah too. The only attribute values accepted are an empty object and `null`, because those carry no configuration. Which names are affected was measured one at a time and does not follow from the block names: `lint { git = { … } }` is refused while `lint { condrop = { … } }` is tolerated, and `format`, `migration` and `schema` are refused under `env` but tolerated at the top level.
 :::

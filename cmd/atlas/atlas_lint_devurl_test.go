@@ -42,7 +42,18 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	assertAtlasLintDevURLSQLiteTableCount(c, devDBPath, "atlas_lint_dev_url", 0)
 }
 
-func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
+// TestCompatCommand_MigrateLintRoutesADockerDevURLToTheProvisioner replaced a
+// test asserting that `migrate lint` refused every docker:// dev URL. Since
+// stokaro/ptah#844 it provisions one, and measured against the pinned community
+// binary v1.3.0 on 2026-08-13 both now exit 0 on `--dev-url
+// docker://postgres/16/dev`.
+//
+// The URL below is a docker one this build will not start, so the row measures
+// the routing without a container runtime. That refusal is itself measured:
+// `docker://sqlite/3/dev` makes the pinned binary answer `unsupported docker
+// image "sqlite"` and exit 1, so provisioning it would be exiting 0 where that
+// binary exits 1.
+func TestCompatCommand_MigrateLintRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	writeAtlasLintDevURLFile(c, migrationsDir, "1_create_atlas_lint_dev_url.sql",
@@ -55,14 +66,14 @@ func TestCompatCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--dir", "file://" + migrationsDir,
-		"--dev-url", "docker://postgres/16/dev",
+		"--dev-url", "docker://sqlite/3/dev",
 		"--latest", "1",
 	})
 
 	err := executeAtlasTestCommand(cmd)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
+	c.Assert(out.String(), qt.Contains, `unsupported docker image "sqlite"`)
 }
 
 // The opt-in is set because this fixture lints a destructive migration with no

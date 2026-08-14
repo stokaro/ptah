@@ -16,14 +16,28 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-func TestReplayRejectsDockerDevURL(t *testing.T) {
+// TestReplayRoutesADockerDevURLToTheProvisioner replaced a test that asserted
+// replay REFUSED every docker:// dev URL. It no longer does: it provisions one
+// (stokaro/ptah#844).
+//
+// The URL is a docker one this build will not start, so the assertion needs no
+// container runtime and starts nothing. That is not a convenience -- measured on
+// the pinned community binary v1.3.0 on 2026-08-13, `docker://sqlite/latest/dev`
+// answers `unsupported docker image "sqlite"` and exits 1, so provisioning it
+// would be exiting 0 where that binary exits 1. The message therefore proves two
+// things at once: the value reached the provisioning layer, and the layer
+// refused the one form it must.
+//
+// The old fixture named `docker://postgres/16/dev`, which this build now starts.
+// Left as it was, this unit test would pull an image and run a container.
+func TestReplayRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	c := qt.New(t)
 
 	err := migrationreplay.Replay(context.Background(), migrationreplay.Options{
-		DevURL: "docker://postgres/16/dev",
+		DevURL: "docker://sqlite/latest/dev",
 	})
 
-	c.Assert(err, qt.ErrorMatches, "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
+	c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 }
 
 func TestReplayCleansDevDatabaseAndIgnoresExistingRevisionRows(t *testing.T) {
@@ -88,6 +102,22 @@ CREATE TABLE wrong_template_branch (id INTEGER PRIMARY KEY);
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	assertSQLiteRealmObjectCount(c, conn, 0)
+}
+
+func TestReplayFailureNamesExactEmptyRevision(t *testing.T) {
+	c := qt.New(t)
+	devDBPath := filepath.Join(t.TempDir(), "empty-revision.db")
+
+	err := migrationreplay.Replay(t.Context(), migrationreplay.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		DevURL:    "sqlite://" + devDBPath,
+		FS: fstest.MapFS{
+			"10_broken.sql": {Data: []byte("INSERT INTO missing_replay_table VALUES (1);\n")},
+		},
+		RevisionVersions: map[int64]string{10: ""},
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)replay migration "" on dev database: .*`)
 }
 
 func TestReplayProviderFailurePreservesDevDatabase(t *testing.T) {

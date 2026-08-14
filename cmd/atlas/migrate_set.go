@@ -113,6 +113,11 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
+	linearity, err := flywayLinearityOperands(captured.gateFS(), prepared.format)
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
+	}
+	sourceVersions := linearity.sourceVersions
 
 	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
 		return failAtlasCommand(cmd, err)
@@ -136,18 +141,31 @@ func runAtlasMigrateSet(
 		return failAtlasCommand(cmd, err)
 	}
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
-		Dir:             source.Display,
-		FS:              migrationFS,
-		AtlasEnv:        opts.atlasEnv,
-		RevisionsSchema: opts.revisionsSchema,
+		Dir:                       source.Display,
+		FS:                        migrationFS,
+		AtlasEnv:                  opts.atlasEnv,
+		RevisionsSchema:           opts.revisionsSchema,
+		RevisionVersions:          sourceVersions,
+		RevisionTypes:             linearity.revisionTypes,
+		RepeatableVersions:        linearity.repeatableVersions,
+		RevisionVersionComparator: atlasMigrateSetRevisionVersionComparator(prepared.format),
 	})
 	if err != nil {
-		return failAtlasCommand(cmd, err)
+		return failAtlasCommand(cmd, remapAtlasExactIdentityError(err, sourceVersions))
 	}
-	if err := writeAtlasMigrateSetResult(cmd, tokens, result); err != nil {
+	if err := writeAtlasMigrateSetResult(cmd, tokens.withHistory(sourceVersions), result); err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	return nil
+}
+
+func atlasMigrateSetRevisionVersionComparator(
+	format atlasmigrateimport.Format,
+) migrator.AtlasRevisionVersionComparator {
+	if format != atlasmigrateimport.FormatFlyway {
+		return nil
+	}
+	return atlasmigrateimport.CompareFlywayRevisionOrder
 }
 
 func prepareAtlasMigrateSet(
@@ -315,7 +333,7 @@ func writeAtlasMigrateSetResult(
 	if _, err := fmt.Fprintf(
 		out,
 		"Current version is %s (%s):\n\n",
-		tokens.render(result.CurrentVersion),
+		atlasExactIdentityLabel(tokens.render(result.CurrentVersion)),
 		strings.Join(changes, ", "),
 	); err != nil {
 		return fmt.Errorf("write migrate set summary: %w", err)
@@ -342,7 +360,11 @@ func writeAtlasMigrateSetRevision(
 	action string,
 	revision migrator.AtlasRevisionChange,
 ) error {
-	version := tokens.render(revision.Version)
+	version := revision.RevisionVersion
+	if version == "" {
+		version = tokens.render(revision.Version)
+	}
+	version = atlasExactIdentityLabel(version)
 	if revision.Description == "" {
 		if _, err := fmt.Fprintf(out, "  %s %s\n", action, version); err != nil {
 			return fmt.Errorf("write migrate set revision: %w", err)

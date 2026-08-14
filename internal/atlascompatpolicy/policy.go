@@ -38,7 +38,10 @@ type Policy struct {
 	strictCE bool
 }
 
-var strictCompat = envbool.New(StrictCompatEnvVar, false)
+// It is [envbool.Selector]: it is the variable that chooses the policy, so it
+// is parsed by the same rule as every other declared boolean and never refused
+// by the policy it selects.
+var strictCompat = envbool.New(StrictCompatEnvVar, false, envbool.Selector)
 
 // Full returns the default policy. It retains every Atlas Pro-like and
 // best-effort capability Ptah exposes on the compatibility surface.
@@ -171,6 +174,41 @@ func (p Policy) validateSchemaObjects(database *goschema.Database, source string
 		}
 	}
 	return nil
+}
+
+// ValidateRenderedVirtualTables refuses an inspection whose rendering dropped a
+// SQLite virtual table's module declaration.
+//
+// The rendered HCL and JSON have no virtual-table construct, so a virtual table
+// becomes `table "docs" { schema = schema.main }` -- an empty block that names
+// an ordinary table which, replayed, is not a full-text index. That is what the
+// pinned community binary emits too, and outside strict mode Ptah matches it
+// and says so on the diagnostics stream. Strict mode owns the process output
+// contract, so it refuses rather than handing a pipeline a lossy document that
+// looks complete.
+//
+// It is format-specific by construction: the caller only asks when the module
+// declaration is actually missing from the output, so `--format '{{ sql . }}'`,
+// which renders CREATE VIRTUAL TABLE, is never refused.
+func (p Policy) ValidateRenderedVirtualTables(names []string) error {
+	if !p.strictCE || len(names) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"Atlas Community Edition strict compatibility does not support rendering SQLite virtual %s %s"+
+			" in a format that cannot carry the module declaration;"+
+			" use --format '{{ sql . }}', or exclude the %s from the inspection",
+		strictVirtualNoun(len(names)),
+		strings.Join(names, ", "),
+		strictVirtualNoun(len(names)),
+	)
+}
+
+func strictVirtualNoun(count int) string {
+	if count == 1 {
+		return "table"
+	}
+	return "tables"
 }
 
 // LiveSchemaObject describes the live catalog identity relevant to Atlas
@@ -570,62 +608,38 @@ func Resolve() (Policy, error) {
 	return StrictCE(), nil
 }
 
-// gatedBooleanEnvVars are direct opt-in compatibility extensions. Flag-bound
-// booleans are discovered from the full command tree by
-// [ValidateStrictCompatFlagEnvironment]. False spellings do not enable an
-// extension and remain valid in strict mode; true spellings are refused.
-// Malformed values retain envbool's one repository-wide error shape.
-var gatedBooleanEnvVars = []string{
-	"PTAH_ALLOW_EXTERNAL_SCHEMA",
-	"PTAH_ALLOW_RESERVED_ROLE_NAMES",
-	"PTAH_ATLAS_APPLY_WITHOUT_DEV_URL",
-	"PTAH_ATLAS_INSPECT_ALL_BLOCKS",
-	"PTAH_ATLAS_LINT_ALL_VERSIONS",
-	"PTAH_ATLAS_LINT_WITHOUT_DEV_URL",
-	"PTAH_HCL_MERGE_REDECLARATIONS",
-	"PTAH_HCL_SCHEMA_SCOPED_ENUMS",
-	"PTAH_POSTGRES_INSPECT_ALL_ROLES",
-	"PTAH_SKIP_CHECKS",
-}
-
-// retainedBooleanEnvVars are correctness and safety controls that do not add
-// an Atlas capability. Strict mode keeps them available, but still parses
-// every present value at the process boundary so malformed configuration is
-// refused before command construction or any external work.
-var retainedBooleanEnvVars = []string{
-	"PTAH_ALLOW_NONINTERACTIVE_EDIT",
-	"PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE",
-	"PTAH_HCL_STRICT_REDECLARATIONS",
-	"PTAH_STRICT_DIR_QUERY",
-}
-
 // gatedPresenceEnvVars select Ptah-only adapter behavior outside the generic
 // flag binding. Their presence changes the process contract, so strict mode
 // rejects them even when the raw value is empty.
+//
+// This list stays hand-written because it names variables that are NOT
+// booleans, and [envbool] governs booleans only: there is no registry to derive
+// it from. cmd/internal/envboolguard is what keeps it honest -- a `PTAH_*` name
+// the tree mentions has to be either a declared boolean or a written-down
+// non-boolean, and a name in both classifications fails there.
 var gatedPresenceEnvVars = []string{
 	"PTAH_LOG_FORMAT",
 }
 
+// validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`
+// variable the process declares, DERIVED from [envbool.Registered] rather than
+// listed here.
+//
+// The lists this replaced were maintained by hand next to a registry that
+// already knew the answer, so the two could drift and the drift was silent: a
+// variable declared correctly, and therefore invisible to cmd/internal/envboolguard,
+// could still be missing from the strict lists, and a malformed value for it was
+// ignored under strict mode instead of refused. Deriving from the registry means
+// a variable is validated by the act of declaring it. See [envbool.Class] for
+// where each variable states which side it is on.
+//
+// Every present value is parsed, whatever its class. That is deliberate and it
+// is the half a "gated variables only" reading would drop: a malformed value on
+// a retained variable would otherwise lie dormant until the run that happens to
+// reach the behavior it controls.
 func validateStrictEnvironment() error {
-	for _, name := range gatedBooleanEnvVars {
-		value, present := os.LookupEnv(name)
-		if !present {
-			continue
-		}
-		enabled, err := envbool.Parse(name, value)
-		if err != nil {
-			return err
-		}
-		if enabled {
-			return strictEnvironmentError(name)
-		}
-	}
-	for _, name := range retainedBooleanEnvVars {
-		value, present := os.LookupEnv(name)
-		if !present {
-			continue
-		}
-		if _, err := envbool.Parse(name, value); err != nil {
+	for _, variable := range envbool.Registered() {
+		if err := validateStrictBooleanEnvironment(variable); err != nil {
 			return err
 		}
 	}
@@ -635,6 +649,35 @@ func validateStrictEnvironment() error {
 		}
 	}
 	return nil
+}
+
+// validateStrictBooleanEnvironment applies the rule to one declared variable.
+func validateStrictBooleanEnvironment(variable envbool.Var) error {
+	name := variable.Name()
+	value, present := os.LookupEnv(name)
+	if !present {
+		return nil
+	}
+	enabled, err := envbool.Parse(name, value)
+	if err != nil {
+		return err
+	}
+	if enabled && strictRefusesEnabled(variable.Class()) {
+		return strictEnvironmentError(name)
+	}
+	return nil
+}
+
+// strictRefusesEnabled reports whether an enabled value is refused.
+//
+// The default is refusal, and only [envbool.Retained] and [envbool.Selector]
+// opt out of it. A variable whose declaration states nothing therefore fails
+// CLOSED: it is refused loudly, on the first run that sets it, naming itself.
+// The other default would be the silent one -- a gated variable somebody forgot
+// to classify would be honored under strict mode, which is exactly the defect
+// this derivation exists to close.
+func strictRefusesEnabled(class envbool.Class) bool {
+	return class != envbool.Retained && class != envbool.Selector
 }
 
 // ValidateFlagEnvironment rejects a Ptah flag environment twin that strict CE

@@ -319,7 +319,8 @@ External `golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate` formats 
 - implements `--qualifier` with Atlas's single-schema custom-qualifier semantics on PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB dev databases (invalid values, unsupported dialects, multi-schema plans, and not-yet-qualifiable statement kinds fail before any file or checksum is written);
 - uses `--schema` to scope the desired schema plus the replayed dev database state.
 
-Docker dev databases remain a gap.
+A `docker://` dev database is provisioned: the container is started, used and
+removed by the command.
 
 `ptah-compat migrate new --edit` opens the created migration file in the same editor and refreshes `atlas.sum`. `ptah-compat migrate edit`, `rebase`, and `rm` forward to the native `ptah migrations edit`, `rebase`, and `rm` directory-maintenance commands with Atlas-shaped `--dir`/`--dir-format` flags and `{name | version}` positionals.
 
@@ -512,7 +513,7 @@ These are compatibility boundaries, not implemented Ptah features. `migrate test
 
 Atlas Go-template `--format` output is supported over `.Env`, `.Steps`, and `.Files`, including `{{ json .Files }}`. `atlas.hcl` can configure the lint changeset selectors, `format.migrate.lint`, and the supported analyzer severity policy for `destructive`, `concurrent_index`, `data_depend`, `incompatible`, and `nestedtx` where those analyzers map to Ptah rule families.
 
-Atlas check-level policy, custom rules, analyzer force/allow-list options, Docker dev databases, and Atlas web reports remain gaps. See [Atlas Pro analyzer coverage](#atlas-pro-analyzer-coverage) for the code-by-code audit of Pro-marked analyzer checks.
+Atlas check-level policy, custom rules, analyzer force/allow-list options, and Atlas web reports remain gaps; a `docker://` dev database is provisioned. See [Atlas Pro analyzer coverage](#atlas-pro-analyzer-coverage) for the code-by-code audit of Pro-marked analyzer checks.
 
 **Atlas OSS.** Current Atlas docs mark the official migration linting CLI feature as Pro while the feature availability page also lists a basic Open lint-rule set. Atlas documents latest, Git-base, dev-database changeset linting, analyzer blocks, custom policy rules, and Go-template output.
 
@@ -823,7 +824,7 @@ Atlas's external migration-tool `--dir-format` values are read directly by `hash
 
 A `--dir` query key other than `format` is ignored on the eight verbs that accept a `--dir` query — `apply`, `diff`, `hash`, `lint`, `new`, `set`, `status` and `validate` — as Atlas ignores it, and named on standard error so a misspelled one is not silent; `PTAH_STRICT_DIR_QUERY=1` refuses it instead. `checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` still refuse a `--dir` query outright. This is stricter than a CLI with no contract on those verbs rather than a parity gap: the pinned community binary answers `unknown flag: --dir` on all of them.
 
-`ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; Docker dev databases and web reports remain gaps.
+`ptah-compat migrate lint --dev-url` now infers dialect and cleans and replays migrations on directly connectable dev databases; `--latest`, `--git-base`, and `--git-dir` select the linted changeset; `--format` renders Atlas Go-template output over `.Env`, `.Steps`, and `.Files`; a `docker://` dev database is provisioned, and Atlas web reports remain a gap.
 
 `ptah-compat migrate status --format` renders Atlas Go-template output over `.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, `.Status`, and, on a half-applied migration, `.Count`, `.Total`, `.SQL`, and `.Error`. Its default report mirrors the Atlas shape (`Migration Status: OK` with `  -- Current Version:` / `  -- Next Version:` / `  -- Executed Files:` / `  -- Pending Files:` lines), because `migrate status` is the verb pipelines parse with a machine ([#1102](https://github.com/stokaro/ptah/issues/1102)); native `ptah migrations status` keeps its own block.
 
@@ -837,8 +838,9 @@ reference, with desired/dev database aliases rejected before connection.
 - `--lock-timeout` bounds Ptah's local migration-directory lock for checksum/write safety
 - `--format` renders generated migration SQL with `sql` and `.MarshalSQL`
 
-`atlas.sum` updates only after every generated file was written. Docker dev
-databases remain a follow-up gap.
+`atlas.sum` updates only after every generated file was written. A `docker://`
+dev database is provisioned: the container is started, used and removed by the
+command.
 
 `ptah-compat migrate apply` now supports positional `amount`, `--baseline`, `--allow-dirty`, `--tx-mode`, `--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`, `--skip-lock`, `--to-version`, `--dry-run`, `--format`, and matching `atlas.hcl` env defaults against Atlas-format migration directories and Atlas revision metadata; the pinned community binary does not register `migrate apply --dir-format`, and Ptah rejects it there.
 

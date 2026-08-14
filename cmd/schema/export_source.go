@@ -31,6 +31,7 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*goschema.Databas
 	return schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
 		SchemaFiles: opts.schemaFiles,
+		PlainHTTP:   opts.plainHTTP,
 	})
 }
 

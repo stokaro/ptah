@@ -10,6 +10,57 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
+func TestExcludeDatabaseWithDefaultSchema_BareSchemaPreservesCatalogCase(t *testing.T) {
+	tests := []string{"Sales", "Sales[type=schema]", "S*"}
+	for _, pattern := range tests {
+		t.Run(pattern, func(t *testing.T) {
+			c := qt.New(t)
+			database := &dbschematypes.DBSchema{
+				Schemas: []dbschematypes.DBSchemaInfo{{Name: "Sales"}, {Name: "sales"}},
+				Tables: []dbschematypes.DBTable{
+					{Schema: "Sales", Name: "orders"},
+					{Schema: "sales", Name: "orders"},
+				},
+			}
+
+			got, report, err := atlasfilter.ExcludeDatabaseReport(database, []string{pattern}, "dbo")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(report.Unmatched, qt.IsNil)
+			c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: "sales"}})
+			c.Assert(got.Tables, qt.HasLen, 1)
+			c.Assert(got.Tables[0].Schema, qt.Equals, "sales")
+			c.Assert(got.Tables[0].Name, qt.Equals, "orders")
+		})
+	}
+}
+
+func TestExcludeGeneratedWithDefaultSchema_BareSchemaPreservesCatalogCase(t *testing.T) {
+	tests := []string{"Sales", "Sales[type=schema]", "S*"}
+	for _, pattern := range tests {
+		t.Run(pattern, func(t *testing.T) {
+			c := qt.New(t)
+			database := &goschema.Database{
+				Schemas: []goschema.Schema{{Name: "Sales"}, {Name: "sales"}},
+				Tables: []goschema.Table{
+					{Schema: "Sales", Name: "orders", StructName: "UpperOrders"},
+					{Schema: "sales", Name: "orders", StructName: "LowerOrders"},
+				},
+			}
+
+			got, report, err := atlasfilter.ExcludeGeneratedReport(database, []string{pattern}, "dbo")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(report.Unmatched, qt.IsNil)
+			c.Assert(got.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "sales"}})
+			c.Assert(got.Tables, qt.HasLen, 1)
+			c.Assert(got.Tables[0].Schema, qt.Equals, "sales")
+			c.Assert(got.Tables[0].Name, qt.Equals, "orders")
+			c.Assert(got.Tables[0].StructName, qt.Equals, "LowerOrders")
+		})
+	}
+}
+
 func TestExcludeDatabaseWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *testing.T) {
 	c := qt.New(t)
 	database := &dbschematypes.DBSchema{

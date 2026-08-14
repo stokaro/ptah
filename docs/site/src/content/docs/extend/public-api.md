@@ -86,6 +86,15 @@ it when copying a finalized `Database` that will be finalized or merged again;
 discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
+MySQL-family readers populate the JSON-hidden
+`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
+a modified `SQL SECURITY DEFINER` routine when recreating it would change the
+executing account. Custom readers that supply a modified definer routine must
+preserve both fields; missing facts fail closed with
+`ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
+and is not the safety boundary for applying such a replacement.
+
 The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
 module (`go.5x5.cz/ptah/testkit`) is an opt-in helper for tests that
 need real databases. It keeps `testcontainers-go` out of Ptah's main module
@@ -271,6 +280,16 @@ offline rules.
 migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
 rejects changed history with `generator.ErrMigrationDirectoryChanged` under
 the shared cross-process publication lock.
+
+When its URL or connection selects SQLite, `PlanMigration` validates
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before resolving `OutputDir`. A malformed
+value therefore fails before filesystem work; non-SQLite plans do not consult
+the variable.
+
+`GenerateCheckpointFromShadow` and `VerifyBaselineShadow` apply the same
+SQLite-only validation before connecting to or mutating a shadow database.
+The checkpoint path therefore cannot drop and replay a shadow database before
+reporting a malformed value.
 
 Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with

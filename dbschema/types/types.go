@@ -100,6 +100,18 @@ type DBTable struct {
 	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
 	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
 	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+	// VirtualModule is the SQLite module that owns this table, from the USING
+	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
+	// `rtree`, `geopoly`, or any other module a build registers. It is empty
+	// for an ordinary table, and a non-empty value means the table cannot be
+	// described by CREATE TABLE at all: it has no column list of its own, and
+	// a plain table of the same name is a different object. See
+	// stokaro/ptah#1028.
+	VirtualModule string `json:"virtual_module,omitempty"`
+	// VirtualArguments is the text between the module's parentheses, verbatim.
+	// Module arguments are not SQL -- only the module interprets them -- so
+	// they are carried unparsed and reproduced byte for byte.
+	VirtualArguments string `json:"virtual_arguments,omitempty"`
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.
@@ -642,7 +654,7 @@ type SchemaTransaction interface {
 	Rollback() error
 }
 
-// DBFunction represents a PostgreSQL custom function read from the database
+// DBFunction represents a custom function read from the database.
 type DBFunction struct {
 	Name string `json:"name"` // Function name
 	// Schema owns the function. Readers blank it for the connection's own
@@ -660,12 +672,21 @@ type DBFunction struct {
 	// string is the valid identity of a zero-input or OUT-only function. This
 	// reader-only execution fact is not part of serialized schema descriptions.
 	IdentityArguments *string `json:"-"`
-	Returns           string  `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
-	Language          string  `json:"language"`   // Function language (e.g., "plpgsql", "sql")
-	Security          string  `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
-	Volatility        string  `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	Body              string  `json:"body"`       // Function body/implementation
-	Comment           string  `json:"comment"`    // Function comment/description
+	// Definer is the MySQL-family account that owns the routine. It is a
+	// reader-only execution fact: replacing a foreign SQL SECURITY DEFINER
+	// routine without preserving this account silently changes the principal
+	// under which its body runs.
+	Definer string `json:"-"`
+	// CurrentAccount is the MySQL-family CURRENT_USER() value for the connection
+	// that read this routine. Together with Definer it lets database-aware
+	// comparison distinguish a same-owner replacement from a principal change.
+	CurrentAccount string `json:"-"`
+	Returns        string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+	Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+	Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Body           string `json:"body"`       // Function body/implementation
+	Comment        string `json:"comment"`    // Function comment/description
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

@@ -214,10 +214,10 @@ make conformance
 
 Ptah's own CI also rebuilds the pinned Atlas CE oracle from an immutable source
 archive on every run. It verifies the release tag's locked commit, the archive
-SHA-256, and exact version output. It then runs the migration-directory query
-contract and migrate-apply interoperability controls through both command-line
-processes, runs differential migration-sum tests, regenerates the recorded
-corpus, and fails if the committed corpus changes. This is a black-box
+SHA-256, and exact version output. It then runs the migration-directory query,
+migrate-apply interoperability, and Flyway revision-identity controls through
+both command-line processes, runs differential migration-sum tests, regenerates
+the recorded corpus, and fails if the committed corpus changes. This is a black-box
 executable used only by tests; Atlas source and compiled code are not imported,
 vendored, or linked into Ptah.
 
@@ -233,6 +233,10 @@ GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   go test -tags=integration -count=1 \
   ./integration/atlasoracle/migrateapply
+GOWORK=off \
+  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  go test -tags=integration -count=1 \
+  ./integration/atlasoracle/flywayrevision
 GOWORK=off \
   PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
   PTAH_ATLAS_FUZZ_N=200 \

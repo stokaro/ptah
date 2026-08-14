@@ -22,7 +22,10 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -91,8 +94,11 @@ CONCURRENTLY; files carrying such statements are tagged with the Atlas
 transactional statements are split into a transactional file followed by a
 concurrent-index file. atlas.sum is updated only after every migration file
 was written. With --edit the generated migration files open in $VISUAL or
-$EDITOR before the directory checksum is finalized. Docker dev databases
-remain an explicit follow-up gap. When --env is set, the selected atlas.hcl env
+$EDITOR before the directory checksum is finalized. A docker:// --dev-url
+starts a throwaway PostgreSQL, MySQL or MariaDB container for the run and
+removes it afterwards; it needs a reachable container runtime, and it is
+refused for an engine the Atlas community CLI does not start either.
+When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
 diff policy values.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -134,6 +140,9 @@ func runAtlasMigrateDiff(
 	name string,
 	run atlasMigrateDiffRunner,
 ) (runErr error) {
+	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.devURL); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	// dirURLSpelled is --dir as the command line, its environment twin and the
 	// flag default left it, captured before the atlas.hcl merge below can
@@ -178,6 +187,14 @@ func runAtlasMigrateDiff(
 	// as having given the flag: the pinned binary runs such an invocation rather
 	// than refusing it.
 	opts.devURLGiven = atlasDevURLGiven(cmd, opts.devURL)
+	// Resolve the comparison-owned toggle once the effective dev dialect is
+	// known, before resolving the migration directory, desired source, or dev
+	// database. Invalid non-SQLite URLs retain their measured diagnostics below.
+	if dialect, dialectErr := atlasurl.DialectFromURL(opts.devURL); dialectErr == nil {
+		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	// This verb creates the directory it was pointed at, so it requires the
 	// scheme the community binary requires: `migrate diff demo --dir mig2` exits
 	// 1 there with `missing scheme for dir url. Did you mean "file://mig2"?` and
@@ -278,9 +295,20 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, err)
 	}
 
+	// The dev database is provisioned here, after every refusal this verb can
+	// answer from its flags and its directory. The release is deferred before
+	// the connection is opened so it runs after the connection is closed.
+	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), opts.devURL, devdocker.Options{})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseDev()
+
+	// The provisioning wait has its own budget, so the connect timeout below
+	// starts once a server is already listening.
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.devURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --dev-url: %w", err))
 	}
@@ -534,9 +562,11 @@ func prepareAtlasMigrateDiffSource(
 	if opts.edit && opts.dryRun {
 		return atlassource.Set{}, fmt.Errorf("atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit")
 	}
-	if strings.HasPrefix(strings.TrimSpace(opts.devURL), "docker://") {
-		return atlassource.Set{}, fmt.Errorf("atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL")
-	}
+	// A `docker://` value is no longer refused here. It names its own dialect,
+	// so every check below -- and the isolation check in particular, which asks
+	// whether the dev database and `--to` are the same database -- answers the
+	// same way for it as for the URL it will be provisioned into. The container
+	// itself is started later, next to the connection that uses it.
 	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
 	if err != nil {
 		return atlassource.Set{}, err
