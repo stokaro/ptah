@@ -148,11 +148,110 @@ func TestGenerateCommand_ServerVersionRefusesAValueThatNamesNoServer(t *testing.
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-			c.Assert(err.Error(), qt.Contains, `invalid --server-version value "`+test.version+`"`)
+			c.Assert(err.Error(), qt.Contains, "invalid --server-version: ")
+			c.Assert(err.Error(), qt.Contains, `"`+test.version+`" is not a recognized mariadb server version`)
 			c.Assert(err.Error(), qt.Contains, "8.0.42")
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}
+}
+
+// TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer is the
+// finding a reviewer raised on this change, reproduced and then closed.
+//
+// capability.ResolveServerVersion lets a product banner outrank the declared
+// dialect, which is right on a live connection — MariaDB announces itself over
+// the MySQL protocol and CockroachDB over the PostgreSQL one — and wrong for
+// two values a person typed. Measured before the refusal existed:
+//
+//	--dialect mysql                                   -> exit 2, "declared unique"
+//	--dialect mysql --server-version 10.11.6-MariaDB  -> exit 0, MySQL DDL
+//
+// So the flag could lift a refusal by naming a server the render was never
+// going to target, and the SQL it emitted was attributed to the wrong engine.
+func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		names   string
+	}{
+		{
+			name:    "a MariaDB banner on mysql",
+			dialect: "mysql",
+			version: "10.11.6-MariaDB",
+			names:   "mariadb",
+		},
+		{
+			name:    "a CockroachDB banner on sqlite",
+			dialect: "sqlite",
+			version: "CockroachDB CCL v25.4.5",
+			names:   "cockroachdb",
+		},
+		{
+			name:    "a YugabyteDB banner on postgres",
+			dialect: "postgres",
+			version: "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+			names:   "yugabytedb",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := unevenlyReferencedFixture(c)
+
+			stdout, _, err := renderFixture(c,
+				"--root-dir", dir, "--dialect", test.dialect, "--server-version", test.version)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(err.Error(), qt.Contains,
+				`"`+test.version+`" names a `+test.names+` server, but the target dialect is `+test.dialect)
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
+}
+
+// TestGenerateCommand_ServerVersionAcceptsAMatchingBanner is the control for
+// the test above: the refusal is about a contradiction, not about banners.
+//
+// Each of these is the same product named twice, and each must still resolve.
+// A refusal that also caught these would make the documented banner shapes
+// unusable on the flag that documents them.
+func TestGenerateCommand_ServerVersionAcceptsAMatchingBanner(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+	}{
+		{name: "MariaDB banner on mariadb", dialect: "mariadb", version: "10.11.6-MariaDB"},
+		{name: "CockroachDB banner on cockroachdb", dialect: "cockroachdb", version: "CockroachDB CCL v25.4.5"},
+		{name: "YugabyteDB banner on yugabytedb", dialect: "yugabytedb", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0"},
+		{name: "PostgreSQL banner on postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)"},
+		{name: "a plain dotted version on mysql", dialect: "mysql", version: "8.0.42"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := unevenlyReferencedFixture(c)
+
+			_, _, err := renderFixture(c,
+				"--root-dir", dir, "--dialect", test.dialect, "--server-version", test.version)
+
+			c.Assert(errorText(err), qt.Not(qt.Contains), "invalid --server-version")
+		})
+	}
+}
+
+// errorText renders an error for a Contains assertion without branching in a
+// test body: a nil error contributes the empty string, which contains nothing.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // TestGenerateCommand_ServerVersionIsRefusedBeforeAnySchemaIsRead pins the
@@ -171,7 +270,7 @@ func TestGenerateCommand_ServerVersionIsRefusedBeforeAnySchemaIsRead(t *testing.
 		"--root-dir", missing, "--dialect", "mysql", "--server-version", "not-a-version")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "invalid --server-version value")
+	c.Assert(err.Error(), qt.Contains, "invalid --server-version: ")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "no-such-directory")
 }
 

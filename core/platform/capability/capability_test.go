@@ -718,3 +718,44 @@ func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
 	c.Assert(unreadable.Recognized, qt.IsFalse)
 	c.Assert(unladdered.Recognized, qt.IsTrue)
 }
+
+// TestResolveServerVersionReportsTheDialectItAnsweredFrom pins the field that
+// makes the banner precedence observable.
+//
+// A product banner outranks the declared dialect on purpose: MariaDB announces
+// itself over the MySQL protocol and CockroachDB over the PostgreSQL one, so on
+// a live connection the string is better evidence than the driver name. The
+// returned Capabilities carry no record of that override, which is fine for a
+// connection and a trap for two values a person typed — "mysql" plus a MariaDB
+// banner is a contradiction that resolved silently before ResolvedDialect
+// existed. internal/servertarget reads this field and refuses.
+func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		resolved string
+	}{
+		{name: "a MariaDB banner outranks mysql", dialect: "mysql", version: "10.11.6-MariaDB", resolved: "mariadb"},
+		{name: "the replication prefix outranks mysql", dialect: "mysql", version: "5.5.5-10.11.6-MariaDB", resolved: "mariadb"},
+		{name: "a CockroachDB banner outranks sqlite", dialect: "sqlite", version: "CockroachDB CCL v25.4.5", resolved: "cockroachdb"},
+		{name: "a YugabyteDB banner outranks postgres", dialect: "postgres", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", resolved: "yugabytedb"},
+		{name: "a Spanner banner outranks postgres", dialect: "postgres", version: "Cloud Spanner PostgreSQL", resolved: "spanner"},
+		{name: "a PostgreSQL banner agrees with postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
+		{name: "a dotted version keeps the declared mysql", dialect: "mysql", version: "8.0.42-log", resolved: "mysql"},
+		{name: "a dotted version keeps the declared mariadb", dialect: "mariadb", version: "10.11.6", resolved: "mariadb"},
+		{name: "a laddered alias normalizes", dialect: "postgresql", version: "16.3", resolved: "postgres"},
+		{name: "a dialect with no ladder keeps its own name", dialect: "clickhouse", version: "24.8.4.13", resolved: "clickhouse"},
+		{name: "an unreadable string keeps the declared dialect", dialect: "postgres", version: "not-a-version", resolved: "postgres"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(test.dialect, test.version)
+
+			c.Assert(resolution.ResolvedDialect, qt.Equals, test.resolved)
+		})
+	}
+}

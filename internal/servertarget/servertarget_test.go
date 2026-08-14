@@ -112,3 +112,137 @@ func TestResolve(t *testing.T) {
 		})
 	}
 }
+
+// TestResolve_RefusesABannerFromAnotherServer covers the contradiction the
+// resolver cannot see on its own.
+//
+// capability.ResolveServerVersion answers a product banner before it consults
+// the declared dialect, and that precedence is correct: MariaDB announces
+// itself over the MySQL protocol and CockroachDB over the PostgreSQL one, so on
+// a live connection the banner is the better evidence. Between two values a
+// person typed there is no better evidence, only a contradiction — and the
+// returned Capabilities carry no record of which product produced them, which
+// is why capability.VersionResolution.ResolvedDialect had to be published
+// before this could be refused at all.
+func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		resolved string
+	}{
+		{
+			name:     "MariaDB banner on mysql",
+			dialect:  platform.MySQL,
+			version:  "10.11.6-MariaDB",
+			resolved: platform.MariaDB,
+		},
+		{
+			name:     "the replication-protocol MariaDB prefix on mysql",
+			dialect:  platform.MySQL,
+			version:  "5.5.5-10.11.6-MariaDB",
+			resolved: platform.MariaDB,
+		},
+		{
+			name:     "CockroachDB banner on sqlite",
+			dialect:  platform.SQLite,
+			version:  "CockroachDB CCL v25.4.5",
+			resolved: platform.CockroachDB,
+		},
+		{
+			name:     "YugabyteDB banner on postgres",
+			dialect:  platform.Postgres,
+			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+			resolved: platform.YugabyteDB,
+		},
+		{
+			name:     "Spanner banner on postgres",
+			dialect:  platform.Postgres,
+			version:  "Cloud Spanner PostgreSQL",
+			resolved: platform.Spanner,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			target, err := servertarget.Resolve(tt.dialect, tt.version)
+
+			c.Assert(target.Capabilities, qt.IsNil)
+			var mismatch *servertarget.DialectMismatchError
+			c.Assert(err, qt.ErrorAs, &mismatch)
+			c.Assert(mismatch.Dialect, qt.Equals, tt.dialect)
+			c.Assert(mismatch.ResolvedDialect, qt.Equals, tt.resolved)
+			c.Assert(mismatch.Version, qt.Equals, tt.version)
+			c.Assert(err.Error(), qt.Contains, "names a "+tt.resolved+" server")
+		})
+	}
+}
+
+// TestResolve_AcceptsAMatchingBanner is the control: the refusal above is about
+// a contradiction, not about banners. Every documented banner shape has to keep
+// resolving against the dialect it names, or the refusal would have made the
+// shapes RecognizedVersionShapes advertises unusable.
+func TestResolve_AcceptsAMatchingBanner(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+		want    capability.Capabilities
+	}{
+		{
+			name:    "MariaDB banner on mariadb",
+			dialect: platform.MariaDB,
+			version: "10.11.6-MariaDB",
+			want:    capability.MariaDB1011(),
+		},
+		{
+			name:    "the replication-protocol MariaDB prefix on mariadb",
+			dialect: platform.MariaDB,
+			version: "5.5.5-10.11.6-MariaDB",
+			want:    capability.MariaDB1011(),
+		},
+		{
+			name:    "CockroachDB banner on cockroachdb",
+			dialect: platform.CockroachDB,
+			version: "CockroachDB CCL v25.4.5",
+			want:    capability.CockroachDB25(),
+		},
+		{
+			name:    "YugabyteDB banner on yugabytedb",
+			dialect: platform.YugabyteDB,
+			version: "PostgreSQL 15.2-YB-2026.1.0.0-b0",
+			want:    capability.YugabyteDB25(),
+		},
+		{
+			name:    "Spanner banner on spanner",
+			dialect: platform.Spanner,
+			version: "Cloud Spanner PostgreSQL",
+			want:    capability.SpannerPostgres(),
+		},
+		{
+			name:    "PostgreSQL banner on postgres",
+			dialect: platform.Postgres,
+			version: "PostgreSQL 16.3 (Debian)",
+			want:    capability.Postgres16(),
+		},
+		{
+			name:    "a plain dotted version on mysql",
+			dialect: platform.MySQL,
+			version: "8.4.0",
+			want:    capability.MySQL84(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			target, err := servertarget.Resolve(tt.dialect, tt.version)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(target.Capabilities, qt.DeepEquals, tt.want)
+		})
+	}
+}

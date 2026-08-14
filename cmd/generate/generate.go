@@ -193,8 +193,10 @@ func resolveServerTarget(opts *options) (servertarget.Target, error) {
 	}
 	target, err := servertarget.Resolve(dialect, opts.serverVersion)
 	if err != nil {
-		return servertarget.Target{}, fmt.Errorf("invalid --%s value %q: expected %s",
-			serverversion.FlagName, opts.serverVersion, servertarget.RecognizedVersionShapes)
+		// The resolver's own sentence names the value, the dialect and the
+		// remedy, and there are two of them; re-stating one here is how the
+		// other comes to be reported as the wrong thing.
+		return servertarget.Target{}, fmt.Errorf("invalid --%s: %w", serverversion.FlagName, err)
 	}
 	return target, nil
 }

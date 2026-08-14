@@ -300,6 +300,18 @@ is reserved for an exact measured-line match. This is criterion 6 of issue #916
 for those commands; every surface that reads a live `SELECT version()` banner
 still degrades silently by design, because a server does not typo its own name.
 
+Both also refuse a version that names a **different server product** than the
+dialect it was supplied with. `ResolveServerVersion` lets a product banner
+outrank the declared dialect, which is right on a live connection — MariaDB
+announces itself over the MySQL protocol and CockroachDB over the PostgreSQL
+one — and a silent contradiction between two values a person typed:
+`--dialect mysql --server-version 10.11.6-MariaDB` rendered MySQL DDL against
+MariaDB capabilities at exit `0` where the same command without a version
+exited `2`. `VersionResolution.ResolvedDialect` publishes the platform the
+preset came from, which is what makes the contradiction observable at all;
+`internal/servertarget` reads it and refuses. A banner naming the dialect it was
+given with still resolves.
+
 The two spellings differ because `sql lint --version` predates the flag having
 a name. `cmd/internal/serverversion` registers both and marks them with one
 annotation, so `cmd/root`'s flag-surface walk can tell them from the two
@@ -332,10 +344,11 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   `ysql`/`yugabytedb`, and `cloudspanner`/`spanner` normalize first). Used by
   `GetPlanner` and the renderers.
 - `capability.ResolveServerVersion("mysql", version)` — the full answer:
-  the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`, and
-  `Recognized`. Callers acting on a version string a person supplied must use
-  this and refuse `Recognized == false`; `ForServerVersion` throws that signal
-  away and cannot report it.
+  the preset plus `VersionSpecific`, `Saturated`, `NewestMeasured`,
+  `Recognized`, and `ResolvedDialect`. Callers acting on a version string a
+  person supplied must use this and refuse `Recognized == false`, and refuse a
+  `ResolvedDialect` other than the dialect they asked for;
+  `ForServerVersion` throws both signals away and cannot report either.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix

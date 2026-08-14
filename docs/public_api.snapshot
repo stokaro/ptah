@@ -4976,6 +4976,20 @@ type VersionResolution struct {
     // holding a live banner should keep ignoring it: SELECT version() is not
     // a typo, and degrading quietly is right there.
     Recognized bool
+    // ResolvedDialect names the platform the returned preset belongs to,
+    // which is NOT always the dialect that was asked for.
+    //
+    // A product banner outranks the declared dialect here — that is deliberate
+    // and correct on a live connection, where MariaDB announces itself over
+    // the MySQL protocol and CockroachDB over the PostgreSQL one, so the
+    // string is better evidence than the driver name. It is a trap for a
+    // string a person typed: "mysql" plus a MariaDB banner is a contradiction,
+    // and without this field the contradiction is unobservable, because the
+    // returned Capabilities carry no record of which platform produced them.
+    //
+    // It is the normalized dialect name, empty only when the dialect itself
+    // normalized to nothing.
+    ResolvedDialect string
 }
     VersionResolution reports how a server version string was mapped onto a
     capability preset.

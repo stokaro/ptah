@@ -121,8 +121,12 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 	normalizedDialect := platform.NormalizeDialect(opts.dialect)
 	target, err := servertarget.Resolve(normalizedDialect, opts.version)
 	if err != nil {
+		// The resolver's own sentence names the value, the dialect and the
+		// remedy, and there are two of them — a value naming no server and a
+		// value naming a different server than --dialect. Re-stating one here
+		// is how the other comes to be reported as the wrong thing.
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format,
-			fmt.Sprintf("invalid --version value %q: expected %s", opts.version, servertarget.RecognizedVersionShapes))
+			fmt.Sprintf("invalid --version: %s", err))
 	}
 
 	sources, err := readSQLLintSources(cmd.InOrStdin(), opts)

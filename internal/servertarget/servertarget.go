@@ -9,6 +9,7 @@ package servertarget
 import (
 	"fmt"
 
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
@@ -41,6 +42,32 @@ func (e *UnrecognizedVersionError) Error() string {
 		e.Version, e.Dialect, RecognizedVersionShapes)
 }
 
+// DialectMismatchError reports a version string that names a different server
+// product than the dialect it was supplied with.
+//
+// capability.ResolveServerVersion lets a product banner outrank the declared
+// dialect, which is right on a live connection: MariaDB announces itself over
+// the MySQL protocol and CockroachDB over the PostgreSQL one, so the banner is
+// better evidence than the driver name. Applied to two values a person typed it
+// is a silent contradiction instead. Measured before this refusal existed,
+// `ptah schema render --dialect mysql --server-version 10.11.6-MariaDB` exited
+// 0 rendering MySQL DDL against MariaDB capabilities, where the same command
+// without a version exited 2 — so the flag could relax a refusal by naming a
+// server the render was never going to target.
+type DialectMismatchError struct {
+	// Dialect is the normalized dialect the caller asked for.
+	Dialect string
+	// ResolvedDialect is the platform the version string named instead.
+	ResolvedDialect string
+	// Version is the string that named it.
+	Version string
+}
+
+func (e *DialectMismatchError) Error() string {
+	return fmt.Sprintf("%q names a %s server, but the target dialect is %s",
+		e.Version, e.ResolvedDialect, e.Dialect)
+}
+
 // Target is the outcome of applying an operator-supplied server version to a
 // dialect.
 type Target struct {
@@ -59,15 +86,25 @@ type Target struct {
 //
 // An empty version is not a mistake — it means the caller wants the dialect
 // default — so it resolves silently to ForDialect. A non-empty version that
-// names no server is refused with an *UnrecognizedVersionError.
+// names no server is refused with an *UnrecognizedVersionError, and one that
+// names a different server product than the dialect with a
+// *DialectMismatchError.
 func Resolve(dialect, version string) (Target, error) {
 	if version == "" {
 		return Target{Capabilities: capability.ForDialect(dialect)}, nil
 	}
 
+	normalized := platform.NormalizeDialect(dialect)
 	resolution := capability.ResolveServerVersion(dialect, version)
 	if !resolution.Recognized {
 		return Target{}, &UnrecognizedVersionError{Dialect: dialect, Version: version}
+	}
+	if resolution.ResolvedDialect != normalized {
+		return Target{}, &DialectMismatchError{
+			Dialect:         normalized,
+			ResolvedDialect: resolution.ResolvedDialect,
+			Version:         version,
+		}
 	}
 	return Target{
 		Capabilities: resolution.Capabilities,

@@ -50,6 +50,12 @@ ignored, and a value that resolves to something other than an exact measured
 release line is applied and announced on stderr as a `warning:` line. Accepted
 shapes are a dotted version such as `17` or `8.0.42` and a server banner such as
 `PostgreSQL 16.3 (Debian)`, `10.11.6-MariaDB`, or `CockroachDB CCL v25.4.0`.
+
+A banner naming a different server product than `--dialect` is refused too:
+`--dialect mysql --server-version 10.11.6-MariaDB` is a contradiction, not a
+request, and it would otherwise render MySQL DDL against MariaDB capabilities.
+Pass the banner with the dialect it names.
+
 `ptah sql lint` spells the same contract `--version`.
 
 ### Schema file paths

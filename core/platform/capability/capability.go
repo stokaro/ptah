@@ -982,6 +982,20 @@ type VersionResolution struct {
 	// holding a live banner should keep ignoring it: SELECT version() is not
 	// a typo, and degrading quietly is right there.
 	Recognized bool
+	// ResolvedDialect names the platform the returned preset belongs to,
+	// which is NOT always the dialect that was asked for.
+	//
+	// A product banner outranks the declared dialect here — that is deliberate
+	// and correct on a live connection, where MariaDB announces itself over
+	// the MySQL protocol and CockroachDB over the PostgreSQL one, so the
+	// string is better evidence than the driver name. It is a trap for a
+	// string a person typed: "mysql" plus a MariaDB banner is a contradiction,
+	// and without this field the contradiction is unobservable, because the
+	// returned Capabilities carry no record of which platform produced them.
+	//
+	// It is the normalized dialect name, empty only when the dialect itself
+	// normalized to nothing.
+	ResolvedDialect string
 }
 
 // ForServerVersion refines ForDialect using a live server version string —
@@ -1026,41 +1040,61 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 
 	switch {
 	case strings.Contains(versionLower, "cockroachdb"):
-		return cockroachDBResolution(version)
+		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
 		// The banner alone is the whole answer for these two: no version is
 		// consulted, so the string was recognized even though nothing in it
 		// was parsed as a number.
-		return VersionResolution{Capabilities: YugabyteDB25(), VersionSpecific: true, Recognized: true}
+		return VersionResolution{
+			Capabilities:    YugabyteDB25(),
+			VersionSpecific: true,
+			Recognized:      true,
+			ResolvedDialect: platform.YugabyteDB,
+		}
 	case strings.Contains(versionLower, "spanner"):
-		return VersionResolution{Capabilities: SpannerPostgres(), VersionSpecific: true, Recognized: true}
+		return VersionResolution{
+			Capabilities:    SpannerPostgres(),
+			VersionSpecific: true,
+			Recognized:      true,
+			ResolvedDialect: platform.Spanner,
+		}
 	}
 
 	// MariaDB announces itself in the version string even when connected via
 	// the mysql dialect/driver; trust the string over the declared dialect.
 	if strings.Contains(versionLower, "mariadb") {
-		return mariaDBResolution(version)
+		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
 	}
 
 	v, ok := parseVersion(version)
 	if !ok {
 		// Recognized stays false: the preset below is ForDialect's, picked
 		// without reading anything out of the string.
-		return VersionResolution{Capabilities: ForDialect(dialect)}
+		return VersionResolution{Capabilities: ForDialect(dialect), ResolvedDialect: normalized}
 	}
 
 	switch normalized {
 	case platform.MySQL:
-		return mysqlResolution(v)
+		return resolvedAs(mysqlResolution(v), platform.MySQL)
 	case platform.MariaDB:
-		return mariaDBResolution(version)
+		return resolvedAs(mariaDBResolution(version), platform.MariaDB)
 	case platform.Postgres:
-		return postgresResolution(v)
+		return resolvedAs(postgresResolution(v), platform.Postgres)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
-		return VersionResolution{Capabilities: ForDialect(dialect), Recognized: true}
+		return VersionResolution{Capabilities: ForDialect(dialect), Recognized: true, ResolvedDialect: normalized}
 	}
+}
+
+// resolvedAs stamps the platform a per-dialect resolution answered from.
+//
+// It is applied at the dispatch rather than inside each resolver because the
+// dispatch is the only place that knows a banner outranked the declared
+// dialect, and that overriding is the whole reason the field exists.
+func resolvedAs(resolution VersionResolution, dialect string) VersionResolution {
+	resolution.ResolvedDialect = dialect
+	return resolution
 }
 
 // measuredLine renders a major version number as the version line label
