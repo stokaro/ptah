@@ -917,9 +917,12 @@ func TestResolveServerVersionCockroachDB25IsNotTheDialectDefault(t *testing.T) {
 //
 // The order is the part that can silently rot: three of the products announce
 // the PostgreSQL engine in their own banner, so PostgreSQL has to be claimed
-// last. A bare version names no product at all, which is what lets a caller
-// holding operator input tell "8.0.42 on mysql" from "PostgreSQL 16.3 on
-// mysql".
+// after all three. The tokens below it name no engine but their own, so their
+// position is free. A bare version names no product at all, which is what lets
+// a caller holding operator input tell "8.0.42 on mysql" from "PostgreSQL 16.3
+// on mysql" — and the rows that answer "" are as load-bearing as the rows that
+// answer a product: they are what keeps the table from claiming servers whose
+// version surface never names itself.
 func TestBannerPlatform(t *testing.T) {
 	tests := []struct {
 		name    string
