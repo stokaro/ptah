@@ -122,7 +122,6 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
-		{name: "materialized view", want: `-- CLICKHOUSE: CREATE MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls enable", want: `-- CLICKHOUSE: ALTER TABLE ENABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: CREATE POLICY "p1" is not supported`},
 		{name: "grant", want: `-- CLICKHOUSE: GRANT "app_role" is not supported`},
@@ -135,6 +134,11 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		})
 	}
 	c.Assert(planned, qt.Contains, "CREATE VIEW `v1` AS\nSELECT id FROM t")
+	c.Assert(
+		planned,
+		qt.Contains,
+		"CREATE MATERIALIZED VIEW `mv1` ENGINE = MergeTree ORDER BY tuple() AS\nSELECT id FROM t",
+	)
 }
 
 // TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer states the governing rule
@@ -151,7 +155,7 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	c.Assert(rendered, qt.HasLen, 9)
+	c.Assert(rendered, qt.HasLen, 8)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
@@ -202,7 +206,6 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: `-- CLICKHOUSE: DROP ROLE "app_role" is not supported`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
-		{name: "materialized view", want: `-- CLICKHOUSE: DROP MATERIALIZED VIEW "mv1" is not supported`},
 		{name: "rls disable", want: `-- CLICKHOUSE: ALTER TABLE DISABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: DROP POLICY "p1" is not supported`},
 		{name: "grant", want: `-- CLICKHOUSE: REVOKE "app_role" is not supported`},
@@ -215,6 +218,9 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		})
 	}
 	c.Assert(planned, qt.Contains, "DROP VIEW IF EXISTS `v1`")
+	// ClickHouse drops a materialized view with DROP VIEW as well, so the
+	// removal is planned rather than named.
+	c.Assert(planned, qt.Contains, "DROP VIEW IF EXISTS `mv1`")
 }
 
 // TestPlan_PostgreSQLStillPlansTheObjects is the non-interference control for

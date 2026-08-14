@@ -629,11 +629,31 @@ func Postgres13() Capabilities {
 // the same reason ClickHouse's row policies read as absent from
 // RowLevelSecurity.
 //
-// Ptah renders, plans, and introspects plain views. MaterializedViews still
-// records the engine rather than Ptah's current model: ClickHouse materialized
-// views need TO, ENGINE, and refresh semantics that the shared materialized-view
-// node cannot represent, so the renderer names them as unsupported instead of
-// emitting an incomplete object.
+// Ptah renders, plans, and introspects plain views and materialized views
+// alike, so MaterializedViews describes the generator and not only the engine.
+// The three parts differ from the PostgreSQL spelling and were measured on
+// server 26.7.3.19, the image docker-compose.yaml pins:
+//
+//   - CREATE writes ENGINE = MergeTree ORDER BY tuple(), which is what the
+//     server records for a materialized view created without a storage clause.
+//     POPULATE is never written: it backfills existing rows once, and two views
+//     created with and without it report identical as_select, so no read could
+//     tell them apart.
+//   - DROP is spelled DROP VIEW. DROP MATERIALIZED VIEW is a syntax error, and
+//     the server's own list of what DROP accepts has VIEW and not MATERIALIZED
+//     VIEW.
+//   - REFRESH has no statement at all, so RefreshMaterializedViewNode stays a
+//     named diagnostic. A ClickHouse materialized view is kept current by
+//     inserts into its source rather than by a refresh command.
+//
+// Stored rather than recomputed, the reading this key names: a plain view and a
+// materialized view over the same "SELECT count(*) AS c FROM users" both moved
+// to 1 on an INSERT, and a following TRUNCATE TABLE users left the materialized
+// view at 1 while the plain view fell back to 0.
+//
+// The TO target form is not emitted. The shared materialized-view node carries
+// a name and a body, so a target table it does not name cannot be planned; the
+// storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
 		DropConstraintGeneric:              false,

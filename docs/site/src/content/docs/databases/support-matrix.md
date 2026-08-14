@@ -248,9 +248,32 @@ Plain views participate in the complete render, plan, and introspection cycle.
 Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
 qualified names and query bodies, and reads ordinary views from
 `system.tables`. An empty query body, `WITH CHECK OPTION`, or
-`DROP VIEW ... CASCADE` fails instead of being ignored. Materialized views remain named as
-unsupported because the shared schema model cannot preserve ClickHouse `TO`,
-`ENGINE`, or refresh semantics safely.
+`DROP VIEW ... CASCADE` fails instead of being ignored.
+
+Materialized views do too. Ptah emits
+`CREATE MATERIALIZED VIEW <name> ENGINE = MergeTree ORDER BY tuple() AS <query>`,
+reads the object back from `system.tables`, and plans a changed query as a drop
+followed by a create, because ClickHouse has no statement that edits the query
+of an existing materialized view. Three ClickHouse-specific points are worth
+knowing before adopting them:
+
+- The storage clause is written explicitly rather than left to the server.
+  ClickHouse 25.x and later accept a materialized view with no storage clause
+  and supply `MergeTree ORDER BY tuple()` themselves; 24.x rejects it with
+  `ORDER BY or PRIMARY KEY clause is missing`.
+- The drop is spelled `DROP VIEW`. `DROP MATERIALIZED VIEW` is a syntax error on
+  ClickHouse, and `DROP VIEW` removes the view together with the inner table
+  that stores its result.
+- `POPULATE` is never emitted, so a materialized view starts empty and fills
+  from inserts into its source rather than from the rows already there.
+  `POPULATE` is a one-shot argument that leaves no trace in the catalog, so
+  nothing Ptah reads back could diff it. Backfill existing rows yourself if you
+  need them.
+
+The `TO <target table>` form and refreshable materialized views are not emitted:
+the shared schema model carries a name and a query, so it cannot name a separate
+target table, and `REFRESH MATERIALIZED VIEW` remains a named diagnostic because
+ClickHouse has no such statement.
 
 ### Atlas revision metadata on ClickHouse
 

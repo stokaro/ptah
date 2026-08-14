@@ -10,13 +10,16 @@ import (
 
 // Engines we consider "real data tables" for table introspection. The
 // MergeTree family covers production workloads; Memory/Log/TinyLog/StripeLog
-// cover the common non-replicated developer/test workloads. Materialized
-// views and Distributed engines are intentionally excluded because they are
-// not part of the schema-as-data-shape Ptah's diff layer reasons about.
+// cover the common non-replicated developer/test workloads. View-style and
+// Distributed engines are excluded from the table read: views and materialized
+// views are read as their own object kinds below, and Distributed is not part
+// of the schema-as-data-shape Ptah's diff layer reasons about.
 //
 // We use a positive allowlist and ALSO keep `NOT LIKE '%View'` as a guard so
 // that any unanticipated view-style engine still gets filtered out even if it
-// somehow matches a MergeTree pattern.
+// somehow matches a MergeTree pattern. The allowlist alone is not enough for
+// materialized views, whose own storage table is a real MergeTree table; see
+// materializedViewInnerTablesSubquery.
 
 // Reader reads schema information from a ClickHouse server.
 //
@@ -35,9 +38,10 @@ func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
 	return &Reader{db: db, schema: schema}
 }
 
-// ReadSchema returns tables, columns, data-skipping indexes, and plain views
-// for the configured database. Constraints, RLS, functions, and other shapes
-// with no direct equivalent in Ptah's ClickHouse model remain empty.
+// ReadSchema returns tables, columns, data-skipping indexes, plain views and
+// materialized views for the configured database. Constraints, RLS, functions,
+// and other shapes with no direct equivalent in Ptah's ClickHouse model remain
+// empty.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	dbName, err := r.resolveDatabaseName()
 	if err != nil {
@@ -56,12 +60,44 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read views: %w", err)
 	}
+	matViews, err := r.readMaterializedViews(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
+	}
 	return &types.DBSchema{
-		Tables:  tables,
-		Indexes: indexes,
-		Views:   views,
+		Tables:   tables,
+		Indexes:  indexes,
+		Views:    views,
+		MatViews: matViews,
 	}, nil
 }
+
+// materializedViewInnerTablesSubquery names the storage tables ClickHouse
+// creates for the materialized views in one database.
+//
+// A materialized view declared with a storage clause rather than a TO target
+// owns a real MergeTree table, and that table is in the same database with the
+// same engine as a table the user declared. Measured on server 26.7.3.19,
+// creating two materialized views left system.tables reporting
+// ".inner_id.<uuid>" MergeTree rows next to "users", so the table read has to
+// subtract them by name or every materialized view arrives as a table nobody
+// declared -- and, once planning followed, as a DROP TABLE for the storage of a
+// view the desired schema still asks for.
+//
+// Both spellings are subtracted: ".inner_id.<uuid>" is what an Atomic database
+// names the storage, and ".inner.<view name>" is the older Ordinary spelling.
+// The set is derived from the materialized views themselves rather than from a
+// leading-dot name pattern, so a declared table is never dropped from the read
+// merely for how it is spelled.
+const materializedViewInnerTablesSubquery = `
+		SELECT concat('.inner_id.', toString(uuid))
+		FROM system.tables
+		WHERE database = ? AND engine = 'MaterializedView'
+		UNION ALL
+		SELECT concat('.inner.', name)
+		FROM system.tables
+		WHERE database = ? AND engine = 'MaterializedView'
+`
 
 func (r *Reader) resolveDatabaseName() (string, error) {
 	if r.schema != "" {
@@ -93,8 +129,9 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		    OR engine = 'StripeLog'
 		  )
 		  AND engine NOT LIKE '%View'
+		  AND name NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY name
-	`, dbName)
+	`, dbName, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +170,45 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 	var views []types.DBView
 	for rows.Next() {
 		view := types.DBView{Schema: dbName, CheckOption: "NONE"}
+		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return views, nil
+}
+
+// readMaterializedViews reads the materialized views of one database.
+//
+// The definition comes from system.tables.as_select, the same column the plain
+// view read uses. Measured on server 26.7.3.19, as_select carries the SELECT
+// alone -- no storage clause and no POPULATE -- and a body written with
+// qualified names comes back byte for byte, so the desired body and the read
+// body compare directly.
+//
+// RefreshStrategy is reported as "manual" to match the PostgreSQL reader's
+// default. ClickHouse has no refresh statement at all, so no read could report
+// anything narrower, and the comparator does not diff the field.
+func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error) {
+	rows, err := r.db.Query(`
+		SELECT name, as_select, comment
+		FROM system.tables
+		WHERE database = ?
+		  AND is_temporary = 0
+		  AND engine = 'MaterializedView'
+		ORDER BY name
+	`, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []types.DBMatView
+	for rows.Next() {
+		view := types.DBMatView{Schema: dbName, RefreshStrategy: "manual"}
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
 			return nil, err
 		}
@@ -236,12 +312,17 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 	// system.data_skipping_indices exposes `granularity` as UInt64. The
 	// driver decodes that into uint64 by default, so scan into that type
 	// explicitly and cast on the way out.
+	// The same inner-table subtraction the table read applies: an index on a
+	// materialized view's storage belongs to a table this reader does not
+	// report, and an index whose TableName names nothing in the schema is a
+	// change the comparator cannot resolve.
 	rows, err := r.db.Query(`
 		SELECT table, name, expr, type, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
+		  AND table NOT IN (`+materializedViewInnerTablesSubquery+`)
 		ORDER BY table, name
-	`, dbName)
+	`, dbName, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
