@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -34,6 +35,77 @@ func TestGenerateMigration_HappyPath(t *testing.T) {
 	// but we can verify the error is reasonable
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "error")
+}
+
+func TestPlanMigrationRejectsMalformedSQLiteVirtualDropToggleBeforeDesiredSchema(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
+		GoEntitiesDir: filepath.Join(t.TempDir(), "missing"),
+		DatabaseURL:   "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
+		MigrationName: "toggle-order",
+		OutputDir:     t.TempDir(),
+	})
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "parse")
+}
+
+func TestPlanMigrationRejectsMalformedSQLiteVirtualDropToggleBeforeOutputPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	root := t.TempDir()
+
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
+		DatabaseURL:       "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
+		MigrationName:     "toggle-order",
+		OutputDir:         filepath.Join(root, "..", "outside"),
+		AllowedOutputRoot: root,
+	})
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "output directory")
+}
+
+func TestPlanMigrationRejectsMalformedSQLiteConnectionToggleBeforeOutputPath(t *testing.T) {
+	c := qt.New(t)
+	connection, err := dbschema.ConnectToDatabase(
+		context.Background(),
+		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(connection)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	root := t.TempDir()
+
+	_, err = generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
+		DBConn:            connection,
+		MigrationName:     "toggle-order",
+		OutputDir:         filepath.Join(root, "..", "outside"),
+		AllowedOutputRoot: root,
+	})
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "output directory")
+}
+
+func TestPlanMigrationDoesNotApplySQLiteToggleToPostgresOutputPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	root := t.TempDir()
+
+	_, err := generator.PlanMigration(context.Background(), generator.GenerateMigrationOptions{
+		DatabaseURL:       "postgres://localhost/database",
+		MigrationName:     "toggle-isolation",
+		OutputDir:         filepath.Join(root, "..", "outside"),
+		AllowedOutputRoot: root,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `error validating output directory: .*outside allowed root.*`)
 }
 
 func TestGenerateStructName(t *testing.T) {

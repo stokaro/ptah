@@ -28,6 +28,40 @@ func TestMigrateBaselineCommandCreation(t *testing.T) {
 	c.Assert(cmd.Flag("migration-lock-timeout"), qt.IsNotNil)
 }
 
+func TestMigrateBaselineRejectsMalformedSQLiteToggleBeforeDirectoryAndDryRun(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	cmd := migratebaseline.NewMigrateBaselineCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://" + filepath.Join(t.TempDir(), "target.db"),
+		"--migrations-dir", "",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "migrations directory")
+}
+
+func TestMigrateBaselineDoesNotApplySQLiteToggleToPostgres(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	cmd := migratebaseline.NewMigrateBaselineCommand()
+	cmd.SetArgs([]string{
+		"--db-url", "postgres://localhost/database",
+		"--migrations-dir", "",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `migrations directory is required`)
+}
+
 func TestMigrateBaselineCommand_PreservesStructuredShadowFailure(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()

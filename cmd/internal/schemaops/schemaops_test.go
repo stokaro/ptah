@@ -11,6 +11,8 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/schemasource"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const sqlServerDatabaseURL = "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable"
@@ -30,6 +32,18 @@ func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
 		ConnectTimeout: time.Nanosecond,
 	})
 	c.Assert(err, qt.ErrorMatches, `error connecting to database: .*`)
+}
+
+func TestCompare_ValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	_, err := schemaops.Compare(t.Context(), schemaops.CompareOptions{
+		Commands:    []schemasource.Command{{Args: []string{"/path/that/does/not/exist"}}},
+		DatabaseURL: "sqlite://test.db",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
 }
 
 func TestFilterGeneratedTables_RemovesTableScopedObjects(t *testing.T) {

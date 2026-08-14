@@ -66,6 +66,9 @@ type InspectSourceOptions struct {
 	// migration-directory inspection are descriptions, not authored desired
 	// schema documents, and do not use this hook.
 	ValidateDesiredSchema func(*goschema.Database) error
+	// ValidateRenderedVirtualTables applies to the SQLite virtual tables whose
+	// module declaration the chosen rendering dropped.
+	ValidateRenderedVirtualTables func(names []string) error
 	// ValidateInspectedSchema applies after live or dev-database introspection,
 	// before output or file exports.
 	ValidateInspectedSchema func(*goschema.Database) error
@@ -137,6 +140,8 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (string, erro
 		PrepareSchema:            opts.PrepareInspectedSchema,
 		ValidateSchema:           opts.ValidateInspectedSchema,
 		ValidateLiveObject:       opts.ValidateLiveObject,
+
+		ValidateRenderedVirtualTables: opts.ValidateRenderedVirtualTables,
 	}
 	if set.Kind == atlassource.KindDatabase {
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout)

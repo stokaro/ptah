@@ -9,6 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/compare"
+	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -80,6 +82,23 @@ func TestCompareCommandValidatesConnectTimeoutBeforeExternalSchema(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `invalid --connect-timeout value "invalid": .*`)
+}
+
+func TestCompareCommandValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe")(t)
+
+	cmd := compare.NewCompareCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--schema-cmd", "/path/that/does/not/exist",
+		"--db-url", "sqlite://test.db",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "maybe" for `+sqlitevirtual.AllowDropEnvVar)
 }
 
 func TestCompareCommandPlansNewSQLiteTablesWithForeignKey(t *testing.T) {

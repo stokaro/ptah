@@ -114,6 +114,26 @@ func TestSchemaDiffExternalSchemaSource(t *testing.T) {
 	c.Assert(out, qt.Contains, "ext_users")
 }
 
+func TestSchemaDiffRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	configPath := writeExternalSchemaAtlasHCL(t, "fail")
+	targetPath := filepath.Join(t.TempDir(), "target.db")
+
+	out, err := runCompatCommand(t,
+		"schema", "diff",
+		"--from", "sqlite://"+targetPath,
+		"--config", "file://"+configPath,
+		"--env", "dev",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "external loader blew up")
+}
+
 func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset("PTAH_ALLOW_EXTERNAL_SCHEMA")(t)
@@ -155,6 +175,26 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 	c.Assert(out, qt.Contains, "CREATE TABLE")
 	c.Assert(out, qt.Contains, "ext_users")
 	c.Assert(sqliteHasTable(t, targetPath, "ext_users"), qt.IsFalse)
+}
+
+func TestSchemaApplyRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+	configPath := writeExternalSchemaAtlasHCL(t, "fail")
+	targetPath := filepath.Join(t.TempDir(), "target.db")
+
+	out, err := runCompatCommand(t,
+		"schema", "apply",
+		"--url", "sqlite://"+targetPath,
+		"--config", "file://"+configPath,
+		"--env", "dev",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "external loader blew up")
 }
 
 func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {

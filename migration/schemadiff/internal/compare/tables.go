@@ -132,6 +132,27 @@ func TablesAndColumnsWithSemantics(
 	// Find modified tables (compare columns)
 	for identity, genTable := range genTables {
 		if dbTable, exists := dbTables[identity]; exists {
+			// A SQLite virtual table has no column list of its own: its
+			// columns are the module's answer, and when the module is not
+			// registered in this build the catalog reports none at all.
+			// Comparing them against a desired table's columns plans
+			// `ALTER TABLE ... ADD COLUMN` against an object ALTER TABLE
+			// cannot touch.
+			//
+			// This is the fail-safe, not the report. Reaching it means the
+			// desired state declares an ordinary table whose live counterpart
+			// is virtual, and two different kinds of object have collided;
+			// silently reporting no difference would leave the incompatible
+			// object in place while every surface said the schema was synced.
+			// [go.5x5.cz/ptah/internal/sqlitevirtual.ValidateComparison]
+			// refuses that collision by name at the seams that can return an
+			// error, which is every verb comparing a live database. What
+			// remains here is the direct library API, which has no error to
+			// return and must still not emit an unrunnable ALTER.
+			// See stokaro/ptah#1028.
+			if dbTable.VirtualModule != "" {
+				continue
+			}
 			tableDiff := tableColumnsWithSemantics(
 				genTable,
 				dbTable,

@@ -151,6 +151,18 @@ func TestSchemaApplyRequiresDesiredSource(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "a desired schema source is required: .*", qt.Commentf("%s", out))
 }
 
+func TestSchemaApplyRejectsMalformedSQLiteVirtualDropToggleBeforeSourceWork(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
+
+	out, err := runSchema("", "apply", "--db-url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"))
+
+	c.Assert(err, qt.ErrorMatches,
+		`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
+		qt.Commentf("%s", out))
+	c.Assert(err.Error(), qt.Not(qt.Contains), "desired schema source")
+}
+
 func TestSchemaApplyRefusesDevURLPointingAtTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

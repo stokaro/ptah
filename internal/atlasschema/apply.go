@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -245,18 +246,9 @@ func computeApplyPlan(
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
 ) (applyComputation, error) {
-	if conn == nil {
-		return applyComputation{}, errors.New("schema apply planning requires database connection")
+	if err := validateApplyPlanningInputs(conn, opts); err != nil {
+		return applyComputation{}, err
 	}
-	if len(opts.ToURLs) == 0 && opts.Desired == nil {
-		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
-	}
-	// Resolved here, before the desired state is loaded and before the target is
-	// read, so a malformed value refuses the run with nothing planned, nothing
-	// executed and nothing written. Resolving it beside the refusal below would
-	// hide the typo on every run whose --exclude selectors all matched -- the
-	// healthy pipeline -- and surface it only on the run it was set to govern.
-	// See stokaro/ptah#1334.
 	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
 	if err != nil {
 		return applyComputation{}, err
@@ -337,6 +329,18 @@ func computeApplyPlan(
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return computation, nil
+}
+
+func validateApplyPlanningInputs(conn *dbschema.DatabaseConnection, opts ApplyOptions) error {
+	if conn == nil {
+		return errors.New("schema apply planning requires database connection")
+	}
+	if len(opts.ToURLs) == 0 && opts.Desired == nil {
+		return errors.New("schema apply planning requires desired schema URLs")
+	}
+	// Resolve this before the desired state is loaded and before the target is
+	// read. A malformed value therefore runs nothing and writes nothing.
+	return sqlitevirtual.ValidateToggle(conn.Info().Dialect)
 }
 
 type scopedApplyStates struct {

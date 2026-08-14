@@ -75,3 +75,40 @@ func TestQualified(t *testing.T) {
 		})
 	}
 }
+
+// TestBareOrQuoted pins the spelling two callers have to agree about: the
+// SQLite renderer writes a virtual table's module with it, and the inspection
+// check looks for exactly what the renderer wrote. When they disagreed, a SQL
+// document carrying `USING "fts-5"` was reported as lossy and refused under
+// strict compatibility. See stokaro/ptah#1028.
+func TestBareOrQuoted(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		input   string
+		want    string
+	}{
+		{name: "a plain lowercase name stays bare", dialect: "sqlite", input: "fts5", want: "fts5"},
+		{name: "digits after the first byte are plain", dialect: "sqlite", input: "rtree_i32", want: "rtree_i32"},
+		{name: "a leading underscore is plain", dialect: "sqlite", input: "_mod", want: "_mod"},
+		{name: "mixed case stays bare", dialect: "sqlite", input: "VirtualShape", want: "VirtualShape"},
+		{name: "a SQLite keyword is quoted", dialect: "sqlite", input: "select", want: `"select"`},
+		{name: "a mixed-case SQLite keyword is quoted", dialect: "sqlite", input: "SeLeCt", want: `"SeLeCt"`},
+		{name: "another SQLite keyword is quoted", dialect: "sqlite", input: "table", want: `"table"`},
+		{name: "a plain name on another dialect stays bare", dialect: "mysql", input: "select", want: "select"},
+		{name: "a hyphen forces quoting", dialect: "sqlite", input: "fts-5", want: `"fts-5"`},
+		{name: "a space forces quoting", dialect: "sqlite", input: "my module", want: `"my module"`},
+		{name: "a leading digit forces quoting", dialect: "sqlite", input: "5fts", want: `"5fts"`},
+		{name: "a dot forces quoting", dialect: "sqlite", input: "a.b", want: `"a.b"`},
+		{name: "non-ASCII forces quoting", dialect: "sqlite", input: "modü", want: `"modü"`},
+		{name: "an embedded quote is doubled", dialect: "sqlite", input: `a"b`, want: `"a""b"`},
+		{name: "the empty name is quoted", dialect: "sqlite", input: "", want: `""`},
+		{name: "the dialect selects the quote style", dialect: "mysql", input: "fts-5", want: "`fts-5`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			qt.Assert(t, sqlident.BareOrQuoted(tt.dialect, tt.input), qt.Equals, tt.want)
+		})
+	}
+}
