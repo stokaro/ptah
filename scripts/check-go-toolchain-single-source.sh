@@ -251,10 +251,19 @@ while IFS= read -r action_file; do
 			sub(/:$/, "", input)
 			next
 		}
-		in_inputs && input ~ /[Gg][Oo]|[Tt]oolchain/ && /^[[:space:]]+default:[[:space:]]*"?[0-9]+\.[0-9]+/ {
+		# The quoting is stripped BEFORE the value is judged, never matched as
+		# part of the pattern. YAML spells the same scalar `1.26.5`, "1.26.5"
+		# and '"'"'1.26.5'"'"', so a pattern that admits only one of them lets a
+		# version through under either of the others -- and a pinned, non-empty
+		# go-version makes setup-go ignore go-version-file entirely, which puts
+		# the action back on a literal with this gate still green.
+		in_inputs && input ~ /[Gg][Oo]|[Tt]oolchain/ && /^[[:space:]]+default:/ {
 			value = $0
 			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
-			print NR ":" input ":" value
+			gsub(/^["'"'"']|["'"'"']$/, "", value)
+			if (value ~ /^[0-9]+\.[0-9]+/) {
+				print NR ":" input ":" value
+			}
 		}
 	' "$action_file")
 
