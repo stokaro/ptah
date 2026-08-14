@@ -14,9 +14,16 @@ type VerifyOptions struct {
 	// RequireSum is the `--verify-sum` contract: a MISSING integrity file is
 	// an error rather than a pass. See [migrationintegrity.Options].
 	RequireSum bool
-	// Verbose prints the positive confirmation that a directory verified.
-	// Without it a successful verification says nothing, which is the right
-	// default for a verb whose output is consumed by another tool.
+	// Verbose prints the positive confirmation that a directory verified,
+	// and only alongside RequireSum.
+	//
+	// The pairing is deliberate rather than incidental. The confirmation
+	// answers a question the operator asked: they passed --verify-sum, so
+	// telling them which file verified completes the exchange. The always-on
+	// gate asked nothing, and a verb that started announcing it on every
+	// --verbose run would be a behavior change to `migrations up --verbose`
+	// output that has nothing to do with the flag work this option exists for.
+	// An earlier revision of this code did exactly that.
 	Verbose bool
 }
 
@@ -54,7 +61,7 @@ func Verify(
 	if err != nil {
 		return err
 	}
-	if opts.Verbose && verifiedSumFile != "" {
+	if opts.RequireSum && opts.Verbose && verifiedSumFile != "" {
 		emit.Printf("%s verified: migrations directory is intact\n", verifiedSumFile)
 	}
 	// Every error path returned above, so a run that refused never reaches

@@ -222,3 +222,63 @@ func TestStatus_StaysUsableOnADriftedDirectoryWithoutTheFlag(t *testing.T) {
 	c.Check(out, qt.Not(qt.Contains), "migration sum verification failed")
 	c.Check(errorText(runErr), qt.Not(qt.Contains), "migration sum verification failed")
 }
+
+// TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate pins the output
+// boundary between the two contracts.
+//
+// The confirmation answers a question the operator asked. Moving the gate into
+// one shared predicate made it easy to print it whenever anything verified,
+// which would have added a line to `migrations up --verbose` on every hashed
+// directory — a behavior change to a widely used verb, arriving as a side
+// effect of flag work. An earlier revision of this change did exactly that and
+// no existing test noticed, which is why this one exists.
+//
+// The fixture is hashed and clean, so the always-on gate really does verify in
+// the first row: the assertion is about what is SAID, not about what ran.
+func TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate(t *testing.T) {
+	const confirmation = "verified: migrations directory is intact"
+
+	tests := []struct {
+		name  string
+		extra []string
+		check func(c *qt.C, out string)
+	}{
+		{
+			name:  "always-on gate stays quiet under --verbose",
+			extra: []string{"--verbose"},
+			check: func(c *qt.C, out string) {
+				c.Check(out, qt.Not(qt.Contains), confirmation)
+			},
+		},
+		{
+			name:  "--verify-sum --verbose names the file that verified",
+			extra: []string{"--verbose", "--verify-sum"},
+			check: func(c *qt.C, out string) {
+				c.Check(out, qt.Contains, "ptah.sum "+confirmation)
+			},
+		},
+		{
+			name:  "--verify-sum alone stays quiet",
+			extra: []string{"--verify-sum"},
+			check: func(c *qt.C, out string) {
+				c.Check(out, qt.Not(qt.Contains), confirmation)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newUnhashedFixture(c)
+			_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
+			c.Assert(err, qt.IsNil)
+
+			out, runErr := runClassCommand(migrateup.NewMigrateUpCommand(), append([]string{
+				"--db-url", f.db("verbose"), "--migrations-dir", f.dir, "--skip-report",
+			}, tt.extra...)...)
+
+			c.Assert(runErr, qt.IsNil, qt.Commentf("stdout+stderr:\n%s", out))
+			tt.check(c, out)
+		})
+	}
+}
