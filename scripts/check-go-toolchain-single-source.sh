@@ -157,6 +157,10 @@ setup_go_steps=0
 derived_steps=0
 forwarding_steps=0
 
+# "manifest:input" for every input a setup-go step forwards. D1c judges their
+# defaults; D1 is the only place that knows which inputs those are.
+forwarded_inputs=""
+
 while IFS=: read -r file line _; do
 	setup_go_steps=$((setup_go_steps + 1))
 
@@ -179,7 +183,7 @@ while IFS=: read -r file line _; do
 			gvf_value="$(strip_value "$hit_text")"
 			;;
 		esac
-	done < <(awk -v start="$line" '
+	done < <(awk -v start="$line" -v q="'" '
 		NR == start {
 			# The step runs from `uses:` down to the first later non-blank line
 			# that starts further left: the next list item, or the end of the
@@ -194,17 +198,20 @@ while IFS=: read -r file line _; do
 			indent = match($0, /[^[:space:]]/) - 1
 			if (indent < key_indent) { exit }
 		}
-		/^[[:space:]]*go-version-file:/ {
-			value = $0
-			sub(/^[[:space:]]*go-version-file:/, "", value)
-			print "file:" NR ":" value
-			next
-		}
-		/^[[:space:]]*go-version:/ {
-			value = $0
-			sub(/^[[:space:]]*go-version:/, "", value)
-			print "version:" NR ":" value
-			next
+		{
+			# The key is taken by splitting on the first colon and unquoting what
+			# is left of it, not by matching `go-version:` as text. YAML lets a
+			# mapping key be quoted -- `"go-version": "1.25.0"` is the same key --
+			# and a pattern that only reads the bare spelling never sets the flag,
+			# so the pin sits in a step the gate has already called compliant.
+			colon = index($0, ":")
+			if (colon == 0) { next }
+			key = substr($0, 1, colon - 1)
+			value = substr($0, colon + 1)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+			gsub("^[\"" q "]|[\"" q "]$", "", key)
+			if (key == "go-version-file") { print "file:" NR ":" value; next }
+			if (key == "go-version") { print "version:" NR ":" value; next }
 		}
 	' "$file")
 
@@ -270,6 +277,12 @@ while IFS=: read -r file line _; do
 	fi
 	if ((step_forwards == 1)); then
 		forwarding_steps=$((forwarding_steps + 1))
+		# Record which inputs this step forwards, so D1c can judge their
+		# defaults. The step is what earns the exemption, so the step is what
+		# selects the defaults to look at.
+		forwarded_inputs="${forwarded_inputs}$(printf '%s\n%s\n' "$gv_value" "$gvf_value" |
+			grep -oE 'inputs\.[A-Za-z0-9_-]+' |
+			sed -e "s|^inputs\.|${file}:|" || true)"$'\n'
 	fi
 	# The reference is matched with optional YAML quoting. `uses:` accepts
 	# actions/setup-go@v7, "actions/setup-go@v7" and 'actions/setup-go@v7'
@@ -298,6 +311,47 @@ if ((setup_go_mentions != setup_go_steps)); then
 		"$setup_go_mentions" "$setup_go_steps" >&2
 	exit 1
 fi
+
+# D1c: an input a step forwards carries no version of its own.
+#
+# D2 selects the defaults it judges BY NAME -- inputs whose name mentions go or
+# toolchain -- and a forwarded input can be called anything. Renaming
+# `go-version` to `runtime`, defaulting it to 1.25.0 and forwarding
+# `inputs.runtime` therefore pinned setup-go with every detector green: the
+# expression is a genuine forward, and the default sat outside D2's reach purely
+# because of what it was called.
+#
+# What earns the exemption is that a setup-go step forwards this input, so that
+# is what selects the default to judge. The name it was given decides nothing.
+# An input with no default at all is fine and is not a finding: GitHub hands an
+# unset input to the step as the empty string, which is the intended value here.
+# D2b separately requires the go-version-file input to declare one.
+while IFS=: read -r forwarding_manifest forwarded_input; do
+	[[ -n $forwarding_manifest && -n $forwarded_input ]] || continue
+	default_row="$(awk -v want="$forwarded_input" '
+		/^inputs:/ { in_inputs = 1; next }
+		/^[^[:space:]#]/ { in_inputs = 0 }
+		in_inputs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+			input = $1
+			sub(/:$/, "", input)
+			next
+		}
+		in_inputs && input == want && /^[[:space:]]+default:/ {
+			value = $0
+			sub(/^[[:space:]]*default:[[:space:]]*/, "", value)
+			print NR ":" value
+			exit
+		}
+	' "$forwarding_manifest")"
+	[[ -n $default_row ]] || continue
+	default_clean="$(strip_value "${default_row#*:}")"
+	case "$default_clean" in
+	[0-9]*.[0-9]*)
+		fail "$forwarding_manifest" "${default_row%%:*}" \
+			"input '$forwarded_input' is forwarded to setup-go and defaults to the Go version literal '$default_clean'. A forwarded input must carry no version of its own; leave it empty and let the go-version-file input name the module."
+		;;
+	esac
+done < <(printf '%s' "$forwarded_inputs" | sort -u)
 
 # D2: no version-shaped default in a composite action.
 #
