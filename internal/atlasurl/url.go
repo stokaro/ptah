@@ -66,8 +66,14 @@ func Parse(rawURL string) (*url.URL, error) {
 		// makes every other error acceptable: a malformed escape admitted here
 		// is one url.Values silently drops, so an attempted mode=ro
 		// restriction would disappear and the database open writable.
+		//
+		// The refusal names the query rather than passing on the parse error
+		// that got us here. That one says the port is invalid, because it read
+		// the drive letter's colon as one -- handing it to an operator whose
+		// address has no port at all is the misleading diagnostic this whole
+		// path exists to remove.
 		if _, queryErr := url.ParseQuery(query); queryErr != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse the query of %s: %w", rawURL, queryErr)
 		}
 		return &url.URL{Scheme: scheme, Opaque: path, RawQuery: query}, nil
 	}

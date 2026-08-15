@@ -1320,4 +1320,9 @@ func TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath(t *testing.T) {
 	_, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=%zz`)
 
 	c.Assert(err, qt.IsNotNil)
+	// The refusal has to name the query. Passing on the parse error that got
+	// here would tell an operator whose address has no port that the port is
+	// invalid, which is the diagnostic this whole path exists to remove.
+	c.Assert(err.Error(), qt.Contains, "query")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "port")
 }
