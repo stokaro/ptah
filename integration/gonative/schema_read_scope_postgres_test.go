@@ -32,12 +32,12 @@
 // The plain URL is the fixture and not a default: it is the URL form that hid
 // #1257 and #1275, and a suite that always pins a schema cannot fail on it.
 //
-// The last row is the control that keeps the fix from becoming a worse defect.
-// A desired state that genuinely describes one schema of a two-schema database
-// still removes what it does not describe -- the goal is to stop UNOWNED
-// silence from becoming a removal, not to stop removals -- and a fix that made
-// an unnamed schema globally unmanaged would turn that row red while leaving
-// the two above it green.
+// The second test is the control that keeps the fix from becoming a worse
+// defect. A desired state that genuinely describes one schema of a two-schema
+// database still removes what it does not describe -- the goal is to stop
+// UNOWNED silence from becoming a removal, not to stop removals -- and a fix
+// that made an unnamed schema globally unmanaged would turn it red while
+// leaving the two directions above it green.
 
 package gonative_test
 
@@ -60,7 +60,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
-// readScopeSeed is the two-schema database every row below is measured on.
+// readScopeSeed is the two-schema database both tests below are measured on.
 var readScopeSeed = []string{
 	"CREATE SCHEMA extra",
 	"CREATE TABLE public.a (id integer PRIMARY KEY)",
@@ -85,42 +85,26 @@ table "a" {
 }
 `
 
-func TestPostgreSQLDiffReadScopeMatchesTheDescribedScopeIntegration(t *testing.T) {
+func TestPostgreSQLDiffAgainstTheDatabasesOwnDescriptionPlansNothingIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 
 	tests := []struct {
 		name string
-		// document produces the desired-state file this row compares against.
-		document func(c *qt.C, sourceURL string) string
 		// sides orders the two states: which one is --from and which is --to.
+		// Both orders are measured because a scope the reader missed fails
+		// differently in each, and only one of the two failures is destructive.
 		sides func(sourceURL, documentURL string) (from, to []string)
-		want  []string
 	}{
 		{
-			name:     "the database's own description as the desired state plans nothing",
-			document: readScopeInspected,
+			name: "the description as the desired state",
 			sides: func(sourceURL, documentURL string) ([]string, []string) {
 				return []string{sourceURL}, []string{documentURL}
 			},
-			want: nil,
 		},
 		{
-			name:     "the database's own description as the current state plans nothing",
-			document: readScopeInspected,
+			name: "the description as the current state",
 			sides: func(sourceURL, documentURL string) ([]string, []string) {
 				return []string{documentURL}, []string{sourceURL}
-			},
-			want: nil,
-		},
-		{
-			name:     "a document describing one schema still removes what it does not describe",
-			document: readScopeLiteral(readScopePublicOnly),
-			sides: func(sourceURL, documentURL string) ([]string, []string) {
-				return []string{sourceURL}, []string{documentURL}
-			},
-			want: []string{
-				`ALTER TABLE "extra"."b" DROP CONSTRAINT IF EXISTS "b_pkey"`,
-				`DROP TABLE IF EXISTS "extra"."b" CASCADE`,
 			},
 		},
 	}
@@ -129,32 +113,68 @@ func TestPostgreSQLDiffReadScopeMatchesTheDescribedScopeIntegration(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sourceURL := newReadScopeDatabase(c, dsn, "src", readScopeSeed)
-			devURL := newReadScopeDatabase(c, dsn, "dev", nil)
-			documentURL := "file://" + readScopeDocumentFile(c, test.document(c, sourceURL))
+			sourceURL, devURL := readScopeDatabases(c, dsn)
+			documentURL := readScopeDocumentURL(c, readScopeInspected(c, sourceURL))
 
 			from, to := test.sides(sourceURL, documentURL)
-			diff, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
-				FromURLs: from,
-				ToURLs:   to,
-				DevURL:   devURL,
-				// The document is a compatibility projection in two of the
-				// three rows, so the loader has to accept the same names
-				// `ptah-compat` accepts. The comparison is the measurement, not
-				// the parse.
-				IgnoreUnknownHCLNames: true,
-				Diagnostics:           io.Discard,
-			})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(boundaryStripComments(readScopeStatements(diff.Changes)), qt.DeepEquals, test.want)
+			c.Assert(readScopePlan(c, devURL, from, to), qt.DeepEquals, []string(nil))
 		})
 	}
 }
 
+func TestPostgreSQLDiffAgainstADescribedScopeStillRemovesWhatItOmitsIntegration(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+
+	c := qt.New(t)
+
+	sourceURL, devURL := readScopeDatabases(c, dsn)
+	documentURL := readScopeDocumentURL(c, readScopePublicOnly)
+
+	c.Assert(
+		readScopePlan(c, devURL, []string{sourceURL}, []string{documentURL}),
+		qt.DeepEquals,
+		[]string{
+			`ALTER TABLE "extra"."b" DROP CONSTRAINT IF EXISTS "b_pkey"`,
+			`DROP TABLE IF EXISTS "extra"."b" CASCADE`,
+		},
+	)
+}
+
+// readScopeDatabases provisions the seeded two-schema database a test measures
+// and the scratch database the comparison normalizes through. Each test owns
+// its own pair, because the server is shared with other suites and other
+// agents and one comparison must not be able to see another's objects.
+func readScopeDatabases(c *qt.C, dsn string) (sourceURL, devURL string) {
+	c.Helper()
+
+	sourceURL = newReadScopeDatabase(c, dsn, "src", readScopeSeed)
+	devURL = newReadScopeDatabase(c, dsn, "dev", nil)
+	return sourceURL, devURL
+}
+
+// readScopePlan compares the two states through the same entry point
+// cmd/atlas/schema_diff.go and cmd/schema/diff.go both call, and returns the
+// statements it planned.
+func readScopePlan(c *qt.C, devURL string, from, to []string) []string {
+	c.Helper()
+
+	diff, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+		FromURLs: from,
+		ToURLs:   to,
+		DevURL:   devURL,
+		// One caller's document is a compatibility projection, so the loader
+		// has to accept the same names `ptah-compat` accepts. The comparison is
+		// the measurement, not the parse.
+		IgnoreUnknownHCLNames: true,
+		Diagnostics:           io.Discard,
+	})
+	c.Assert(err, qt.IsNil)
+	return boundaryStripComments(readScopeStatements(diff.Changes))
+}
+
 // readScopeInspected is the database's own description, rendered by the
 // compatibility surface. That surface is the one whose document declares
-// coverage limits, so a row using it exercises the record as well as the scope.
+// coverage limits, so a test using it exercises the record as well as the scope.
 func readScopeInspected(c *qt.C, sourceURL string) string {
 	c.Helper()
 
@@ -169,11 +189,6 @@ func readScopeInspected(c *qt.C, sourceURL string) string {
 	return rendered
 }
 
-// readScopeLiteral is a desired state written by hand rather than inspected.
-func readScopeLiteral(document string) func(*qt.C, string) string {
-	return func(*qt.C, string) string { return document }
-}
-
 func readScopeStatements(changes []atlasreport.SchemaDiffChange) []string {
 	statements := make([]string, 0, len(changes))
 	for _, change := range changes {
@@ -182,12 +197,12 @@ func readScopeStatements(changes []atlasreport.SchemaDiffChange) []string {
 	return statements
 }
 
-func readScopeDocumentFile(c *qt.C, document string) string {
+func readScopeDocumentURL(c *qt.C, document string) string {
 	c.Helper()
 
 	path := filepath.Join(c.TempDir(), "desired.hcl")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
-	return path
+	return "file://" + path
 }
 
 // newReadScopeDatabase creates and seeds a throwaway database and returns its

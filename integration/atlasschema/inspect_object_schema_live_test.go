@@ -45,7 +45,6 @@ import (
 // the table row's answer, and both are additionally suppressed on the
 // Atlas-compatible surface.
 func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -59,8 +58,9 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 		// row about one of those kinds turns it off, or there is no block to
 		// carry a schema.
 		omitRefused bool
-		// probe reads the catalog of the database the document was applied to.
-		probe func(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) []string
+		// probe is the catalog read that answers where this kind's objects
+		// ended up, against the database the document was applied to.
+		probe objectSchemaProbe
 		want  []string
 	}{
 		{
@@ -230,7 +230,8 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			document, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
@@ -270,7 +271,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 				qt.Commentf("document:\n%s\nplan:\n%s", document, plan.SQL()),
 			)
 
-			c.Assert(test.probe(c, ctx, target), qt.DeepEquals, test.want,
+			c.Assert(readObjectSchemas(c, ctx, target, test.probe), qt.DeepEquals, test.want,
 				qt.Commentf("document:\n%s", document))
 		})
 	}
@@ -349,24 +350,37 @@ func columnTypeProbe() objectSchemaProbe {
 		ORDER BY 1`)
 }
 
-// objectSchemaProbe reads one kind's (schema, name) pairs out of a live
-// catalog.
-type objectSchemaProbe func(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) []string
+// objectSchemaProbe is the catalog read that reports one kind's (schema, name)
+// pairs: the query, and the arguments that narrow it to the names a row created.
+type objectSchemaProbe struct {
+	query string
+	args  []any
+}
 
 func catalogProbe(query string, args ...any) objectSchemaProbe {
-	return func(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) []string {
-		c.Helper()
-		rows, err := conn.QueryContext(ctx, query, args...)
-		c.Assert(err, qt.IsNil)
-		defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	return objectSchemaProbe{query: query, args: args}
+}
 
-		found := []string{}
-		for rows.Next() {
-			var value string
-			c.Assert(rows.Scan(&value), qt.IsNil)
-			found = append(found, value)
-		}
-		c.Assert(rows.Err(), qt.IsNil)
-		return found
+// readObjectSchemas returns what the probe found, asserting only that the read
+// itself ran: a probe that cannot reach the catalog answers nothing about the
+// schema an object landed in, and an empty result would otherwise read as one.
+func readObjectSchemas(
+	c *qt.C,
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	probe objectSchemaProbe,
+) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(ctx, probe.query, probe.args...)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+
+	found := []string{}
+	for rows.Next() {
+		var value string
+		c.Assert(rows.Scan(&value), qt.IsNil)
+		found = append(found, value)
 	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return found
 }
