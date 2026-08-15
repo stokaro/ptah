@@ -27,7 +27,7 @@ func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
       pre_down_hook: "echo snapshot-hook; exit 8"
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "project.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -72,7 +72,7 @@ func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
       pre_down_hook: "echo ptah-path-hook; exit 8"
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "project.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
 }
 `), 0o600), qt.IsNil)
 
@@ -111,7 +111,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
       pre_down_hook: "echo snapshot-hook; exit 8"
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -153,10 +153,10 @@ func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testi
 	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
-    dev: "sqlite://`+filepath.Join(dir, "shadow.db")+`"
+    dev: "sqlite://`+filepath.ToSlash(filepath.Join(dir, "shadow.db"))+`"
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -188,7 +188,7 @@ func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPat
 	dbPath := filepath.Join(dir, "explicit-directory.db")
 	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = ["postgres://unused/schema"]
   }
@@ -230,7 +230,7 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
       pre_down_hook: "echo native-directory-hook; exit 8"
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = ["postgres://unused/schema"]
   }

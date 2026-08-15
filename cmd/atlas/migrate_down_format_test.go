@@ -590,7 +590,7 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url     = "sqlite://`+dbPath+`"
+  url     = "sqlite://`+filepath.ToSlash(dbPath)+`"
   project = "ignored"
   migration {
     dir = "file://migrations"

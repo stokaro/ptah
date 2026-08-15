@@ -437,7 +437,7 @@ func TestStrictCompatMatchesCommunityDynamicEnvTypeBoundary(t *testing.T) {
 	databasePath := filepath.Join(dir, "database.db")
 	c.Assert(os.WriteFile(configPath, []byte(`variable "targets" {
   type    = list(string)
-  default = ["sqlite://`+databasePath+`"]
+  default = ["sqlite://`+filepath.ToSlash(databasePath)+`"]
 }
 
 env {
@@ -491,7 +491,7 @@ func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
     src = [each.key == 0 ? "file://schema.hcl" : "file://schema.yaml"]
   }
   migration {
-    dir = "file://`+migrationsDir+`"
+    dir = "file://`+filepath.ToSlash(migrationsDir)+`"
   }
 }
 `), 0o600), qt.IsNil)
@@ -942,10 +942,10 @@ func TestStrictCompatRefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
 	c.Assert(os.WriteFile(desiredPath,
 		[]byte("CREATE TABLE keep_me (id integer PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(configPath, []byte(`env "local" {
-  url = "sqlite://`+targetPath+`"
-  dev = "sqlite://`+devPath+`"
+  url = "sqlite://`+filepath.ToSlash(targetPath)+`"
+  dev = "sqlite://`+filepath.ToSlash(devPath)+`"
   schema {
-    src = ["file://`+desiredPath+`"]
+    src = ["file://`+filepath.ToSlash(desiredPath)+`"]
   }
   lint {
     destructive {
@@ -1582,7 +1582,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(code, qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
-			`Error: load --from schema: --from "file://`+migrationDir+`": `+
+			`Error: load --from schema: --from "file://`+filepath.ToSlash(migrationDir)+`": `+
 				`Atlas Community Edition strict compatibility does not support inspecting live schema collation "`+
 				collationName+`"`+"\n")
 

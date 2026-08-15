@@ -25,7 +25,7 @@ func TestCompatCommandMigrateDownRejectsProjectDirectorySymlinkEscapeBeforeOpeni
 	c.Assert(os.Symlink(outsideDir, filepath.Join(projectDir, "migrations")), qt.IsNil)
 	dbPath := filepath.Join(projectDir, "must-not-exist.db")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }

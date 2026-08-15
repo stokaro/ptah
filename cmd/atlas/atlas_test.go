@@ -1401,7 +1401,7 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	dbPath := filepath.Join(dir, "inspect-env.db")
 	createAtlasInspectSQLiteSchema(c, dbPath)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     mode {
       tables = false
@@ -1662,7 +1662,7 @@ func TestCompatCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -3075,7 +3075,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testi
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 	writeAtlasApplyMigration(c, migrationsDir, "1_apply_env.sql", "CREATE TABLE apply_env_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -3955,7 +3955,7 @@ func TestCompatCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testin
 	dbPath := filepath.Join(dir, "apply-relative.db")
 	writeAtlasApplyMigration(c, migrationsDir, "1_apply_relative.sql", "CREATE TABLE apply_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -3990,7 +3990,7 @@ func TestCompatCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testi
 	dbPath := filepath.Join(dir, "status-relative.db")
 	writeAtlasApplyMigration(c, migrationsDir, "1_status_relative.sql", "CREATE TABLE status_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -4128,7 +4128,7 @@ func TestCompatCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -4164,7 +4164,7 @@ func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testin
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "atlas://remote"
   }
@@ -4204,7 +4204,7 @@ func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://migrations"
   }
@@ -4255,7 +4255,7 @@ func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjec
 	t.Chdir(outsideDir)
 	dbPath := filepath.Join(dir, "status-override-relative.db")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "atlas://remote"
   }
@@ -4289,7 +4289,7 @@ func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *test
 	t.Chdir(outsideDir)
 	dbPath := filepath.Join(dir, "status-unsupported-relative.db")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "atlas://remote"
   }
@@ -4323,7 +4323,7 @@ func TestCompatCommand_MigrateStatusRejectsParentRelativeProjectDir(t *testing.T
 	t.Chdir(outsideDir)
 	dbPath := filepath.Join(dir, "status-parent-relative.db")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   migration {
     dir = "file://../shared-migrations"
   }
@@ -4359,7 +4359,7 @@ func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T)
 	dbPath := filepath.Join(dir, "schema-apply-relative.db")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "schema.sql"), []byte(`CREATE TABLE schema_apply_relative (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   dev = "sqlite://dev.db"
   schema {
     src = "file://schema.sql"

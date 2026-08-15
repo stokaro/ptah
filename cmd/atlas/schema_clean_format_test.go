@@ -224,7 +224,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 	dbPath := filepath.Join(dir, "clean-project-format.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "project_users")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   format {
     schema {
       clean = "{{ .Env.Driver }}:{{ len .Changes }}"
