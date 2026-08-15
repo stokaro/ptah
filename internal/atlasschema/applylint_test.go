@@ -34,10 +34,10 @@ func codesOf(findings []lint.Finding) []string {
 	return slices.Compact(codes)
 }
 
-// TestLintPlan_RunsOnlyTheRulesThePolicyNames walks the three policy shapes an
+// TestLintPlan_RunsOnlyTheRulesThePolicyNames walks the four policy shapes an
 // atlas.hcl can present. The first row is the one that proves the plan is
-// lintable at all: without it, the two empty rows would agree with a build that
-// had stopped linting entirely.
+// lintable at all: without it, the three empty rows would agree just as well
+// with a build that had stopped linting entirely.
 func TestLintPlan_RunsOnlyTheRulesThePolicyNames(t *testing.T) {
 	rows := []struct {
 		name    string
