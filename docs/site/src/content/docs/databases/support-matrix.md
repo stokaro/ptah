@@ -268,6 +268,11 @@ reads the object back from `system.tables`, and plans a changed query as a drop
 followed by a create. Several ClickHouse-specific points are worth knowing
 before adopting them:
 
+- `refresh_strategy` accepts only `manual`, which means Ptah emits no separate
+  refresh operation. It does not change ClickHouse's insert-driven materialized
+  view maintenance. Any other value is refused before rendering or comparison,
+  with the dialect, materialized view, and value in the error.
+
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
   and supply `MergeTree ORDER BY tuple()` themselves; 24.x rejects it with

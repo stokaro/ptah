@@ -82,7 +82,7 @@ type LookupUser struct{}
 //ptah:schema:view name="app.active_users" body="SELECT id FROM app.users WHERE status = 'active'" with_check="true" comment="Active users"
 type ActiveUsers struct{}
 
-//ptah:schema:matview name="app.user_stats" body="SELECT count(*) FROM app.users" refresh_strategy="concurrently" comment="User statistics"
+//ptah:schema:matview name="app.user_stats" body="SELECT count(*) FROM app.users" refresh_strategy="manual" comment="User statistics"
 type UserStats struct{}
 
 //ptah:schema:trigger name="users_touch" table="app.users" timing="BEFORE" event="UPDATE" for="STATEMENT" body="RETURN NEW;" comment="Touch users"

@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -139,6 +140,12 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, toSide.err
 	}
 	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
+	if err := matviewrefresh.ValidateDeclared(dialect, from.MaterializedViews); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
+	if err := matviewrefresh.ValidateDeclared(dialect, to.MaterializedViews); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
 	applyExtensionSupportCoverage(to, fromSide.selection, toSide.selection)
 	// One empty side is how a create or a drop looks. A selection that matched
 	// neither side cannot answer the requested comparison, so fail instead of

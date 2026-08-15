@@ -746,7 +746,7 @@ type DBMatView struct {
 	Name            string `json:"name"`             // Materialized view name
 	Schema          string `json:"schema"`           // Schema where the materialized view is defined
 	Body            string `json:"body"`             // SELECT query used as the materialized view definition
-	RefreshStrategy string `json:"refresh_strategy"` // Ptah-managed refresh policy; database introspection defaults to manual
+	RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
 	Comment         string `json:"comment"`          // Materialized view comment/description
 }
 

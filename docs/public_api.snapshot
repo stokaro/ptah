@@ -4466,7 +4466,7 @@ type MaterializedView struct {
     StructName      string // Name of the Go struct this materialized view is associated with
     Name            string // Materialized view name
     Body            string // SELECT query used as the materialized view body
-    RefreshStrategy string // manual, concurrently, or future scheduled variants
+    RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
     Comment         string // Optional comment for documentation
 }
     MaterializedView represents a database materialized view definition parsed
@@ -6086,7 +6086,7 @@ type DBMatView struct {
     Name            string `json:"name"`             // Materialized view name
     Schema          string `json:"schema"`           // Schema where the materialized view is defined
     Body            string `json:"body"`             // SELECT query used as the materialized view definition
-    RefreshStrategy string `json:"refresh_strategy"` // Ptah-managed refresh policy; database introspection defaults to manual
+    RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
     Comment         string `json:"comment"`          // Materialized view comment/description
 }
     DBMatView represents a PostgreSQL materialized view read from the database.

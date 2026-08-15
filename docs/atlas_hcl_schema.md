@@ -73,8 +73,7 @@ current schema IR:
   extension preserves parameter declarations that cannot be decomposed into
   Atlas-style `arg` blocks without changing their text
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
-- PostgreSQL `materialized` blocks with `schema`, `as`, `refresh_strategy`, and
-  `comment`
+- `materialized` blocks with `schema`, `as`, `refresh_strategy`, and `comment`
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
@@ -89,6 +88,13 @@ current schema IR:
 - PostgreSQL `range` blocks with `subtype`, `subtype_opclass`, `collation`,
   `canonical`, `subtype_diff`, and `comment`
 - Ptah `data` blocks with a table reference, key columns, and a data-file path
+
+`refresh_strategy` defaults to `manual`, which means Ptah emits no separate
+refresh operation. It is the only currently supported value. After a target
+dialect is selected, another value is refused before rendering or comparison;
+the error names the dialect, materialized view, and value. The source codec
+still preserves the attribute so it can diagnose unsupported declarations
+instead of silently dropping them.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is
@@ -579,7 +585,7 @@ view "active_users" {
 materialized "user_stats" {
   schema           = schema.public
   as               = "SELECT count(*) FROM users"
-  refresh_strategy = "concurrently"
+  refresh_strategy = "manual"
 }
 
 trigger "users_set_updated_at" {
