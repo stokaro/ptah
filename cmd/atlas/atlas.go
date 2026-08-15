@@ -852,13 +852,39 @@ func atlasMigrateVersionValue(value string) (string, error) {
 // it as a repeatable `strings` flag (atlasgo.io/cli-reference); the arg mapper
 // rewrites every occurrence, and the native flag is a string array, so repeated
 // values accumulate instead of the last one winning.
+// atlasSchemaTestNativeCommand builds the native `schema test` this verb
+// forwards to, with --var made explicit-only on the target.
+//
+// PTAH_VAR belongs to this surface. refreshAtlasProjectFlagEnvironment lifts it
+// into the adapter's own --var before the verb runs, and what the native
+// command receives afterwards is whatever the adapter decided from it: the
+// run's values, the values of the data block that scoped the desired schema, or
+// none at all. The forwarded target has the same env binding installed, so
+// leaving it in place turns that last answer back into the first -- with no
+// explicit --var to mark the flag as set, the target reads PTAH_VAR itself, and
+// a scope declaring no vars silently inherits the run-wide value it exists to
+// refuse. The test then passes against a schema nobody asked for.
+//
+// The opt-out loses nothing, because a run the adapter did not scope has
+// already had the variable's value forwarded explicitly. It is scoped to this
+// verb because this is the only one that decides a native flag's whole value
+// and can decide it to be empty; a verb that grows the same shape needs the
+// same opt-out, and for the same reason.
+func atlasSchemaTestNativeCommand() *cobra.Command {
+	cmd := schema.NewSchemaTestCommand()
+	if err := cmdflags.DisableEnvBinding(cmd.Flags(), atlasVarFlagName); err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
 func atlasSchemaTestVerb() atlasVerb {
 	return atlasVerb{
 		use:                "test",
 		displayUse:         "test [flags] [paths]",
 		short:              "Run declarative schema tests against a dev database",
 		native:             "schema test",
-		factory:            schema.NewSchemaTestCommand,
+		factory:            atlasSchemaTestNativeCommand,
 		positionals:        []atlasPositionalArg{{name: "paths", nativeName: "dir"}},
 		positionalOptional: true,
 		projectConfig:      applyAtlasSchemaTestProjectConfig,

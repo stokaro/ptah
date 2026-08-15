@@ -112,6 +112,54 @@ env "local" {
 	c.Assert(out, qt.Contains, `PASS  case "HCL variable reaches desired schema"`)
 }
 
+// TestCompatCommand_SchemaTestEmptyDataSourceScopeRejectsEnvironmentVariable is
+// the same refusal reached through the environment rather than the command
+// line, because `--var` is not the only way a run-wide value arrives:
+// refreshAtlasProjectFlagEnvironment lifts PTAH_VAR into the flag before the
+// verb runs. A scope that closes against the flag and not against the variable
+// that filled it would be no scope at all, and the leak would be invisible --
+// the run still passes, against a schema nobody asked for.
+func TestCompatCommand_SchemaTestEmptyDataSourceScopeRejectsEnvironmentVariable(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("PTAH_VAR", "tenant=must-not-leak")
+	writeCompatSchemaTestHCLVariableFixture(c, dir)
+	testsDir := writeCompatSchemaTestHCLVariableCase(c, dir, "fallback")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`data "hcl_schema" "app" {
+  paths = ["schema.hcl"]
+}
+
+env "local" {
+  src = data.hcl_schema.app.url
+  dev = "sqlite://dev.db"
+}
+`), 0o600), qt.IsNil)
+
+	out, err := runCompatSchemaTestWithArgs("schema", "test", testsDir, "--env", "local")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "HCL variable reaches desired schema"`)
+}
+
+// TestCompatCommand_SchemaTestForwardsEnvironmentVariableWithoutAProjectFile is
+// the control for the refusal above. PTAH_VAR still has to reach a run nobody
+// scoped, and it reaches it because the compat surface lifts the variable into
+// its own --var and forwards the value explicitly. A "fix" that stopped the
+// leak by dropping the variable entirely would leave this red.
+func TestCompatCommand_SchemaTestForwardsEnvironmentVariableWithoutAProjectFile(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Setenv("PTAH_VAR", "tenant=from-environment")
+	schemaFile := writeCompatSchemaTestHCLVariableFixture(c, dir)
+	testsDir := writeCompatSchemaTestHCLVariableCase(c, dir, "from-environment")
+
+	out, err := runCompatSchemaTestWithArgs("schema", "test", testsDir, "--url", "file://"+schemaFile)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "HCL variable reaches desired schema"`)
+}
+
 func TestCompatCommand_SchemaTestLiteralProjectSourceUsesRunVariable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

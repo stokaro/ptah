@@ -527,6 +527,14 @@ the same check:
 Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
 ```
 
+It also carries the same scope. `schema test` forwards to a native runner, and
+a `data.hcl_schema` block that declares no `vars` refuses the run's values
+whether they were spelled `--var` or `PTAH_VAR` — the variable is read once, by
+this surface, and the native command receives only what the scope decided. A
+scope closed against the flag but open to the environment would be no scope at
+all, and the leak would be silent: the run still passes, against a schema
+nobody asked for.
+
 Variable blocks accept the `type` constraints `string`, `number`, `bool`,
 `list(string)`, and `map(string)`. `--var` overrides convert to scalar types,
 and repeated flags fill a `list(string)` variable. `map(string)` values come

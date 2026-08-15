@@ -163,7 +163,10 @@ history.
 
 The Atlas-compatible `schema test` adapter forwards an explicit source's
 `--var` values. A project source selected through `data.hcl_schema` uses that
-block's `vars` instead, including an explicitly empty scope.
+block's `vars` instead, including an explicitly empty scope. `PTAH_VAR` is
+inside that scope rather than around it: the adapter reads the variable itself
+and forwards only what the scope decided, so an empty scope refuses an
+environment value exactly as it refuses a flag.
 
 ## Database Isolation
 
