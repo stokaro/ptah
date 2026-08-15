@@ -214,6 +214,32 @@ func TestSchemaPlanValidateScopesHCLSchemaVarsToProjectSources(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
 }
 
+// TestSchemaApplyPlanFileScopesHCLSchemaVarsToProjectSources is the saved-plan
+// path, which verifies a plan against the desired state and so loads it a
+// second time.
+//
+// The plan is computed from the data source's `acme`; the verification reloaded
+// the same env as the file's own `fallback` and reported the correct plan as
+// non-converging. Measured on a ptah-compat built from this branch, exit codes
+// read directly from unpiped invocations: `schema apply --env local --plan
+// file://plan.hcl --dry-run` was exit 1, `pre-planned migration does not
+// converge to the desired state`, with the drift naming `DEFAULT 'fallback'`;
+// it is exit 0 now.
+func TestSchemaApplyPlanFileScopesHCLSchemaVarsToProjectSources(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeAtlasSchemaVarsProjectWithDefault(t)
+	planOutput, err := executeAtlasProjectCommand(
+		"schema", "plan", "--env", "local", "--name", "p1", "--auto-approve", "--output", "plan.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", planOutput))
+
+	output, err := executeAtlasProjectCommand(
+		"schema", "apply", "--env", "local", "--plan", "file://plan.hcl", "--dry-run")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+	c.Check(output, qt.Contains, "DEFAULT 'acme'")
+}
+
 // writeAtlasSchemaVarsProject writes the fixture the scope tests share into the
 // current directory: one schema file whose column default is a required
 // variable, and an atlas.hcl whose env selects that file through a data source
