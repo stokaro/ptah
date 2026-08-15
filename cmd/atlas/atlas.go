@@ -1151,6 +1151,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			return nil, nil, err
 		}
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
+		mapped = append(mapped, project.nativeArgs...)
 		return append(mapped, nativeTail...), project.context, nil
 	}
 }
@@ -1163,6 +1164,10 @@ type atlasVerbArgs struct {
 	// removed and the project's values appended: exactly what atlasargs.Map
 	// receives.
 	args []string
+	// nativeArgs bypass the Atlas flag mapper and are appended directly to the
+	// forwarded native command. They carry adapter-derived values without
+	// registering a duplicate Atlas-facing flag.
+	nativeArgs []string
 	// context carries the project's rooted migration directory and, for verbs
 	// that ask for it, the merged native project config.
 	context context.Context
@@ -1231,6 +1236,18 @@ func resolveAtlasVerbProject(
 		return atlasVerbArgs{}, err
 	}
 	if !selected.loaded {
+		if verb.projectConfig == nil {
+			return resolved, nil
+		}
+		resolved.args, resolved.nativeArgs, err = verb.projectConfig(
+			verb.flags,
+			resolved.args,
+			atlasProject{},
+			project.flags,
+		)
+		if err != nil {
+			return atlasVerbArgs{}, err
+		}
 		return resolved, nil
 	}
 	loadedProject, targetCfg := selected.project, selected.targetConfig
@@ -1246,7 +1263,12 @@ func resolveAtlasVerbProject(
 	if applyProjectConfig == nil {
 		applyProjectConfig = applyAtlasProjectConfigToArgs
 	}
-	resolved.args, err = applyProjectConfig(verb.flags, resolved.args, loadedProject, project.flags)
+	resolved.args, resolved.nativeArgs, err = applyProjectConfig(
+		verb.flags,
+		resolved.args,
+		loadedProject,
+		project.flags,
+	)
 	if err != nil {
 		return atlasVerbArgs{}, err
 	}

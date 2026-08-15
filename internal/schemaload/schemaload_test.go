@@ -72,6 +72,32 @@ table "users" {
 	c.Assert(db.Fields[0].Primary, qt.IsTrue)
 }
 
+func TestLoad_AtlasHCLSchemaFileVariables(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(`variable "tenant" {
+  type    = string
+  default = "fallback"
+}
+
+table "users" {
+  column "tenant" {
+    type    = text
+    default = var.tenant
+  }
+}
+`), 0o600), qt.IsNil)
+
+	db, err := schemaload.Load(schemaload.Options{
+		SchemaFiles: []string{path},
+		Vars:        []string{"tenant=selected"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].Default, qt.Equals, "selected")
+}
+
 func TestLoad_SQLSchemaFile(t *testing.T) {
 	c := qt.New(t)
 

@@ -33,6 +33,9 @@ type Options struct {
 	Commands []schemasource.Command
 	// Dialect is an optional dialect hint used when parsing SQL schema files.
 	Dialect string
+	// Vars supplies values for HCL schema variable blocks, as --var spells
+	// them. Other source kinds ignore the values.
+	Vars []string
 	// PlainHTTP explicitly permits an unencrypted local OCI registry.
 	PlainHTTP bool
 	// Logf, when non-nil, receives human-readable progress messages. Commands
@@ -289,7 +292,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	// destination through that identical guard. absPath is a display and
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
-	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{Dialect: o.Dialect})
+	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
+		Dialect: o.Dialect,
+		Vars:    o.Vars,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}

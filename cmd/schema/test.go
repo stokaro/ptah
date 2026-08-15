@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -45,6 +46,7 @@ type testOptions struct {
 	report  string
 	run     string
 	schemas []string
+	vars    []string
 }
 
 // NewSchemaTestCommand returns the "test" command for the schema namespace. It
@@ -106,6 +108,12 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.run, testRunFlag, "", "Run only case names matching this Go regular expression")
 	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
+	flags.StringArrayVar(
+		&opts.vars,
+		dbcli.ProjectVarFlagName,
+		nil,
+		"Value for an HCL schema variable, as name=value (repeatable)",
+	)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -206,7 +214,10 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		}
 		return scopeTestDesiredSchema(parsed, selection, "")
 	}
-	database, err := schemaload.LoadContext(ctx, schemaload.Options{SchemaFiles: []string{opts.rootDir}})
+	database, err := schemaload.LoadContext(ctx, schemaload.Options{
+		SchemaFiles: []string{opts.rootDir},
+		Vars:        opts.vars,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}

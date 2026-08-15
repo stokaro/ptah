@@ -11,8 +11,8 @@ Two commands share one test-case format:
 
 - `ptah migrations test` applies a migration directory (to a version, or all the
   way up) and asserts against the migrated database.
-- `ptah schema test` applies a desired schema — rendered from Go annotations —
-  once, then asserts against it.
+- `ptah schema test` applies a desired schema from Go annotations, a SQL or HCL
+  file, or a live database once, then asserts against it.
 
 Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
 Atlas account and the closed-source binary). Ptah provides both as MIT, local,
@@ -64,6 +64,9 @@ ptah migrations test --dir ./tests --migrations-dir ./migrations --root-dir ./mo
 
 # Schema tests: apply the desired schema from Go annotations, then assert.
 ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
+
+# HCL variables reach an HCL desired schema through repeatable --var values.
+ptah schema test --dir ./tests --root-dir ./schema.hcl --var tenant=test
 ```
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
@@ -73,6 +76,10 @@ gate. `--run` accepts a Go regular expression and selects matching case names.
 `--report` selects the output format: `text` (default), `json` (for CI tooling),
 or `html`. A `migrate_to` step is rejected in a schema test (there are no
 migrations), and reported as a failed step rather than silently skipped.
+
+On `ptah-compat schema test`, an explicit `--url` uses the run's `--var`
+values. A source selected through `data.hcl_schema` uses only that block's
+`vars`; even an empty block scope prevents the run-wide values from leaking in.
 
 ## Database isolation
 

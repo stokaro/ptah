@@ -165,11 +165,16 @@ are triaged in the comparison gap register rather than measured here.
 
 **Native Ptah.** `ptah migrations test` and `ptah schema test`
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate test` and `ptah-compat schema test` forward to the native runners with Atlas-shaped flags and exit codes
+**Atlas-compatible Ptah surface.** `ptah-compat migrate test` and
+`ptah-compat schema test` forward to the native runners with Atlas-shaped flags
+and exit codes. Schema-file variables come from an explicit `--var` or from the
+selected `data.hcl_schema` source's isolated `vars` scope.
 
 **Atlas CE.** Cannot run either command; the framework is outside the open-source core
 
-**Evidence.** Unit coverage (including the Atlas-compatible forwards) plus integration-tagged live PostgreSQL runner tests; not counted as a schema-object fixture
+**Evidence.** Unit coverage includes explicit and project-scoped HCL variables
+through the Atlas-compatible forward. Integration-tagged PostgreSQL tests cover
+the live runners. This workflow is not counted as a schema-object fixture.
 
 
 ### Migration directory maintenance
