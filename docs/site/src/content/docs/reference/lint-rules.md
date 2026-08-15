@@ -18,13 +18,13 @@ this page, or when a row here names a rule that no longer exists.
 | `ptah migrations lint` | native | every migration lint rule |
 | `ptah migrations up` | native | blocking `DS` findings only |
 | `ptah sql lint` | native | every SQL lint rule |
-| `ptah-compat migrate lint` | compatibility | every migration lint rule |
+| `ptah-compat migrate lint` | compatibility | every rule marked `both` |
 | `ptah-compat schema apply` | compatibility | only what `atlas.hcl` names |
 
-Both surfaces read one registry, so a rule reaches both unless its row says
-otherwise. Native may carry rules the compatibility surface does not; the
-reverse would mean a rule that exists only to match another tool, and there are
-none.
+Both surfaces read one registry, so a rule reaches both unless the Surface
+column in the tables below marks it `native only`. Native may carry rules the
+compatibility surface does not; the reverse would mean a rule that exists only
+to match another tool, and there are none.
 
 The two apply gates are the rows to read carefully. Neither runs the whole rule
 set, so a rule appearing in the tables below is not by itself a check standing
@@ -77,7 +77,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-42 rules, registered in `migration/lint`. `ptah migrations lint` and `ptah-compat migrate lint` report the whole registry. Neither apply gate does, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+42 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -154,7 +154,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 32 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family.
+14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 32 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001` and `SQL002` report.
 
 ## What ptah-compat prints
 
@@ -258,8 +258,13 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 
 ## Changing what a rule does
 
-Severity and per-path exclusions are configured per rule; see
-[Configuration](../configuration/) for `.ptah-lint.yaml` and the `lint` block
-of an Atlas-compatible project file. A single statement is silenced with a
-`ptah:nolint` comment, and the compatibility surface accepts `atlas:nolint`
-with the analyzer names and codes it prints.
+This section is about migration lint. Severity and per-path exclusions are
+configured per rule; see [Configuration](../configuration/) for
+`.ptah-lint.yaml` and the `lint` block of an Atlas-compatible project file. A
+single statement is silenced with a `ptah:nolint` comment, and the
+compatibility surface accepts `atlas:nolint` with the analyzer names and codes
+it prints.
+
+`ptah sql lint` takes none of that. It reads no policy file, honors no
+`nolint` comment, and offers one control: `--disable`, repeatable, taking a
+code or a family prefix. Its severities are the defaults listed above.

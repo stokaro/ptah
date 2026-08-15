@@ -126,6 +126,13 @@ func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
 // and compares the finding it produces against the catalog row. The catalog is
 // a declaration; without this it would be a claim about the code rather than a
 // reading of it.
+//
+// It also asserts that the rows cover the catalog exactly. The source scan
+// above only proves an identifier is written down somewhere in the package: an
+// unused constant satisfies it, so a catalog entry plus a dead constant would
+// put a rule on the documentation page that no LintSource path can produce.
+// Requiring an emission fixture per entry is what makes a phantom rule fail
+// instead of publish.
 func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 	rows := []struct {
 		name    string
@@ -161,6 +168,19 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			code: "CAP001",
 		},
 	}
+
+	driven := make([]string, 0, len(rows))
+	for _, row := range rows {
+		driven = append(driven, row.code)
+	}
+	slices.Sort(driven)
+
+	catalogued := sqllint.CatalogIDs()
+	slices.Sort(catalogued)
+
+	c := qt.New(t)
+	c.Assert(slices.Compact(driven), qt.DeepEquals, catalogued,
+		qt.Commentf("every catalogued identifier needs a fixture that makes the linter emit it"))
 
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

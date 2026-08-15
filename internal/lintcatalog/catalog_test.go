@@ -230,23 +230,29 @@ func TestGeneratedBlockMatchesThePublishedPage(t *testing.T) {
 		qt.Commentf("run scripts/check-lint-rules.sh --write"))
 }
 
-// TestCommandTableNamesTheFamilyTheApplyGateReports covers the one claim about
-// scope the page makes outside the generated block.
+// TestCommandTableMatchesTheScopesTheCodeDefines covers the claims about scope
+// the page makes outside the generated block.
 //
 // The "Which commands lint" table is prose a reader meets before the rule
-// tables, and its `ptah migrations up` row names the family that gate reports.
-// Nothing regenerates that row, so without this the gate could narrow to
-// another family and leave the summary promising the old one -- the same drift
-// the generated block exists to prevent, one section higher up the page.
-func TestCommandTableNamesTheFamilyTheApplyGateReports(t *testing.T) {
+// tables. Nothing regenerates it, so without this the gate could narrow to
+// another family, or the surface label could be renamed, and the summary would
+// go on promising the old one -- the same drift the generated block exists to
+// prevent, one section higher up the page.
+func TestCommandTableMatchesTheScopesTheCodeDefines(t *testing.T) {
 	c := qt.New(t)
 
 	source, err := os.ReadFile(pagePath)
 	c.Assert(err, qt.IsNil)
+	page := string(source)
 
-	c.Assert(string(source), qt.Contains,
+	c.Assert(page, qt.Contains,
 		"| `ptah migrations up` | native | blocking `"+migrationlintgate.ReportedFamily+"` findings only |",
 		qt.Commentf("the command table on %s no longer names the family the apply gate reports", pagePath))
+
+	bothLabel := lintcatalog.Entry{Native: true, Compat: true}.SurfaceLabel()
+	c.Assert(page, qt.Contains,
+		"| `ptah-compat migrate lint` | compatibility | every rule marked `"+bothLabel+"` |",
+		qt.Commentf("the command table on %s no longer points at the Surface column's own label", pagePath))
 }
 
 // TestSurfaceColumnMatchesWhatEachProfileReports measures the claim the surface

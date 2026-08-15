@@ -68,15 +68,16 @@ func writeMigrationRules(w io.Writer, entries []Entry) error {
 	var out strings.Builder
 	out.WriteString("## Migration lint rules\n\n")
 	fmt.Fprintf(&out,
-		"%d rules, registered in `migration/lint`. `ptah migrations lint` and "+
-			"`ptah-compat migrate lint` report the whole registry. Neither apply gate does, so a "+
-			"rule listed below is not by itself a check that stands between an apply and a "+
-			"database: `ptah migrations up` disables the %s families and refuses only on "+
-			"blocking `%s` findings, and `ptah-compat schema apply` runs only the rules an "+
-			"`atlas.hcl` `lint` block names, which means a project without such a block gets no "+
-			"lint pass there at all. The tables are grouped by the dialects each rule applies "+
-			"to, which is why they carry no dialect column.\n\n",
+		"%d rules, registered in `migration/lint`. `ptah migrations lint` reports the whole "+
+			"registry%s. Neither apply gate reports even that much, so a rule listed below is "+
+			"not by itself a check that stands between an apply and a database: "+
+			"`ptah migrations up` disables the %s families and refuses only on blocking `%s` "+
+			"findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` "+
+			"block names, which means a project without such a block gets no lint pass there at "+
+			"all. The tables are grouped by the dialects each rule applies to, which is why they "+
+			"carry no dialect column.\n\n",
 		len(rules),
+		compatRegistryNote(entries),
 		codeList(migrationlintgate.DisabledFamilies()),
 		migrationlintgate.ReportedFamily)
 	for _, group := range groupByDialects(rules) {
@@ -179,8 +180,11 @@ func writeSeverities(w io.Writer, entries []Entry) error {
 	out.WriteString("## Default severities\n\n")
 	fmt.Fprintf(&out,
 		"%d rules report at error severity by default: %s. The other %d default to warning. "+
-			"A committed `.ptah-lint.yaml` replaces either, per rule or per family.\n\n",
-		len(errors), strings.Join(errors, ", "), warnings)
+			"A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule "+
+			"or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file "+
+			"and takes only `--disable`, so the severities above are the ones %s report.\n\n",
+		len(errors), strings.Join(errors, ", "), warnings,
+		codeList(codesOfKind(entries, KindSQL)))
 	_, err := io.WriteString(w, out.String())
 	return err
 }
@@ -293,6 +297,45 @@ func everyRuleReachesCompat(codes []string, compat map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+// compatRegistryNote says how much of the migration registry the compatibility
+// surface reports.
+//
+// Both lint commands read one registry, which is why it is tempting to write
+// that both report all of it. They do not: the compatibility profile classifies
+// a rename as a destructive change and never emits BC101, so the sentence has
+// to carry whatever the Surface column carries, derived from the same flag.
+func compatRegistryNote(entries []Entry) string {
+	nativeOnly := nativeOnlyCodes(entries, KindMigration)
+	if len(nativeOnly) == 0 {
+		return ", and so does `ptah-compat migrate lint`"
+	}
+	return fmt.Sprintf(
+		", and `ptah-compat migrate lint` reports all of it but %s, which only native `ptah` emits",
+		codeList(nativeOnly))
+}
+
+// codesOfKind returns the identifiers one linter registers, in catalog order.
+func codesOfKind(entries []Entry, kind Kind) []string {
+	codes := make([]string, 0, len(entries))
+	for _, entry := range entriesOfKind(entries, kind) {
+		codes = append(codes, entry.Code)
+	}
+	return codes
+}
+
+// nativeOnlyCodes returns the identifiers of one kind that the compatibility
+// surface never reports. It is what keeps a sentence about "the whole registry"
+// from outrunning the Surface column two tables below it.
+func nativeOnlyCodes(entries []Entry, kind Kind) []string {
+	var codes []string
+	for _, entry := range entriesOfKind(entries, kind) {
+		if !entry.Compat {
+			codes = append(codes, entry.Code)
+		}
+	}
+	return codes
 }
 
 // codeList renders identifiers as prose: "`MF`, `BC`, `PG` and `MY`".
