@@ -36,9 +36,9 @@ func TestSarifArtifactURI_NeverMakesADriveLetterAHostname(t *testing.T) {
 			wantURI: "file:///C:/a/b.sql",
 		},
 		{
-			name:    "a unix path is unchanged",
-			slashed: "/home/u/b.sql",
-			wantURI: "file:///home/u/b.sql",
+			name:    "an absolute unix path is unchanged",
+			slashed: "/srv/app/b.sql",
+			wantURI: "file:///srv/app/b.sql",
 		},
 		{
 			name:    "a UNC-looking path does not gain a second slash",

@@ -2,7 +2,6 @@ package generator_test
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -289,8 +288,7 @@ type TestTable struct {
 	// "GetFileAttributesEx" on Windows, so matching one name asserts only the
 	// platform it runs on. Asking whether the error is a *fs.PathError at all
 	// is the same question without a spelling in it.
-	var pathErr *fs.PathError
-	c.Assert(errors.As(err, &pathErr), qt.IsFalse,
+	c.Assert(err, qt.Not(qt.ErrorAs), new(*fs.PathError),
 		qt.Commentf("Should not have filesystem path errors, got: %s", errMsg))
 
 	// The error should be about database or parsing issues instead
@@ -362,7 +360,6 @@ type TestTable struct {
 	// "GetFileAttributesEx" on Windows, so matching one name asserts only the
 	// platform it runs on. Asking whether the error is a *fs.PathError at all
 	// is the same question without a spelling in it.
-	var pathErr *fs.PathError
-	c.Assert(errors.As(err, &pathErr), qt.IsFalse,
+	c.Assert(err, qt.Not(qt.ErrorAs), new(*fs.PathError),
 		qt.Commentf("Should not have filesystem path errors, got: %s", errMsg))
 }
