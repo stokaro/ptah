@@ -129,7 +129,7 @@ func TestArtifactWriteToDir_HappyPath(t *testing.T) {
 	c.Assert(string(sum), qt.Equals, "h1:example\n")
 	info, err := os.Stat(filepath.Join(output, "ptah.sum"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, fs.FileMode(0o600))
+	assertExtractedMode(c, info.Mode())
 }
 
 func TestArtifactWriteToDir_FailurePath(t *testing.T) {
