@@ -33,4 +33,3 @@ docker-compose.override.yaml
 integration/reports
 test-reports
 integration-test
-bin/

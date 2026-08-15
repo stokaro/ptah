@@ -165,37 +165,40 @@ lint: lint-qtlint
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 
-# qtlint runs once per module and once per build contour. Neither loop is
-# optional: `./...` covers the default contour of one module only, so files
-# behind //go:build integration and everything under testkit/ and
-# examples/orm-loaders/gorm/ (separate modules) are excluded before the
-# analyzer sees them.
+# Both invocations are required, and neither is redundant.
 #
-# The binary is built once from the root module rather than invoked with
-# `go run` per module, because only the root go.mod declares the tool. Building
-# it here keeps the version declared in exactly one place; a `go run` per module
-# would let the three resolve different versions of the same rule.
-QTLINT_MODULES := . testkit examples/orm-loaders/gorm
+# -multi-module discovers the modules under the directory operands, so testkit/
+# and examples/orm-loaders/gorm/ are covered from here. `go list` otherwise
+# resolves patterns against the module holding the working directory, and
+# ./testkit/... answers "directory prefix testkit does not contain main module
+# or its selected dependencies".
+#
+# The two contours are two different builds, not a subset and a superset:
+# satisfying `integration` also drops every file a constraint excludes from
+# that contour.
+#
+# lint-qtlint-fix runs the rules in separate passes. Applied together with
+# -fix they can collide: one rule deletes a receiver declaration the other
+# rule's rewrite still references. See go-extras/qtlint#65.
+#
+# -require-testing-run is not in this set yet. 70 sites across 49 files still
+# hold a table row whose function field is typed func(c *qt.C, ...), where the
+# type is written somewhere neither the rule nor -require-testing-handle
+# reaches. A gate carrying known violations is either red or lying, so the rule
+# joins this list when those are converted rather than before.
 QTLINT_RULES := -require-qt-c-receiver
-QTLINT_BIN := $(CURDIR)/bin/qtlint
 
-$(QTLINT_BIN):
-	@mkdir -p $(dir $@)
-	go build -o $@ github.com/go-extras/qtlint/cmd/qtlint
-
-lint-qtlint: $(QTLINT_BIN)
+lint-qtlint:
 	@echo "Running qtlint..."
-	@for module in $(QTLINT_MODULES); do \
-		echo "  $$module (default contour)"; \
-		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) ./...) || exit 1; \
-		echo "  $$module (integration contour)"; \
-		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -tags integration ./...) || exit 1; \
+	go tool qtlint -multi-module $(QTLINT_RULES) ./...
+	go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
+
+lint-qtlint-fix:
+	@for rule in $(QTLINT_RULES); do \
+		go tool qtlint -multi-module $$rule -fix ./... || exit 1; \
+		go tool qtlint -multi-module $$rule -fix -tags integration ./... || exit 1; \
 	done
 
-lint-qtlint-fix: $(QTLINT_BIN)
-	@for module in $(QTLINT_MODULES); do \
-		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -fix ./...) || exit 1; \
-		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -fix -tags integration ./...) || exit 1; \
 	done
 
 lint-fix:
