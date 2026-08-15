@@ -34,7 +34,8 @@ func TestDroppedBodyScopeHoldsOnlyKnownOpaqueValues(t *testing.T) {
 
 	c.Assert(droppedBodyScope, qt.HasLen, 3)
 	for name, value := range droppedBodyScope {
-		c.Run(name, func(c *qt.C) {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(value.IsKnown(), qt.IsTrue)
 			c.Assert(value.IsNull(), qt.IsFalse)
 			c.Assert(value.Type().Equals(cty.DynamicPseudoType), qt.IsFalse)

@@ -103,8 +103,6 @@ func TestCompatMigrateImportRejectsTheFixtureUnderGoose(t *testing.T) {
 // report and can just as easily break the row above it, where the format value
 // still has to win — so both directions are rows, not one.
 func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// want is derived from the fixture because the community binary echoes
@@ -182,7 +180,8 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			fx := newImportFixture(c)
 			want := tt.want(fx)
 
@@ -213,8 +212,6 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 // wrote the target would be the laundering half of the same defect: the caller
 // sees a failure and the directory is on disk anyway.
 func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		want string
@@ -278,7 +275,8 @@ func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			fx := newImportFixture(c)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "import"}, tt.args(fx)...)...)
@@ -306,8 +304,6 @@ func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
 // precisely because the fixture is unreadable as Goose, so "first wins" is
 // what the exit code measures.
 func TestCompatMigrateImportKeepsAcceptingWhatTheOracleAccepts(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args func(fx importFixture) []string
@@ -352,7 +348,8 @@ func TestCompatMigrateImportKeepsAcceptingWhatTheOracleAccepts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			fx := newImportFixture(c)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "import"}, tt.args(fx)...)...)

@@ -280,7 +280,6 @@ func TestCompareWithDatabaseInfo_SQLServerCaseSensitiveVariantsRemainDistinct(t 
 }
 
 func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
-	c := qt.New(t)
 	generated := &goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
@@ -292,7 +291,8 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 		},
 	}
 
-	c.Run("catalog-equivalent table has no drift", func(c *qt.C) {
+	t.Run("catalog-equivalent table has no drift", func(t *testing.T) {
+		c := qt.New(t)
 		semantics := resolvedSQLServerSemantics(
 			"SQL_Latin1_General_CP1_CI_AS",
 			[]string{"dbo"},
@@ -306,7 +306,8 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 		c.Assert(diff.HasChanges(), qt.IsFalse)
 	})
 
-	c.Run("catalog-distinct table remains independent", func(c *qt.C) {
+	t.Run("catalog-distinct table remains independent", func(t *testing.T) {
+		c := qt.New(t)
 		semantics := resolvedSQLServerSemantics(
 			"SQL_Latin1_General_CP1_CS_AS",
 			[]string{"dbo"},

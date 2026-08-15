@@ -8,7 +8,6 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,13 +20,18 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	mysqlschema "go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
 type mySQLMigrateDiffCase struct {
-	name            string
-	adminDSNEnv     string
-	adminURLEnv     string
+	name string
+	// adminEngine names the server these cases provision on, so the variable
+	// that carries its address is internal/dbtarget's business rather than
+	// this file's. Spelling the variables here meant a checkout configured
+	// with the canonical MYSQL_ADMIN_TEST_URL alone skipped every case and
+	// reported a pass.
+	adminEngine     dbtarget.Engine
 	expectedDialect string
 	staleDDL        []string
 }
@@ -67,8 +71,7 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 	tests := []mySQLMigrateDiffCase{
 		{
 			name:            "mysql",
-			adminDSNEnv:     "MYSQL_ADMIN_TEST_DSN",
-			adminURLEnv:     "MYSQL_ADMIN_TEST_URL",
+			adminEngine:     dbtarget.MySQLAdmin,
 			expectedDialect: platform.MySQL,
 			staleDDL: []string{
 				"CREATE VIEW `%s`.`stale_dev_view` AS SELECT 1 AS id",
@@ -79,8 +82,7 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 		},
 		{
 			name:            "mariadb",
-			adminDSNEnv:     "MARIADB_ADMIN_TEST_DSN",
-			adminURLEnv:     "MARIADB_ADMIN_TEST_URL",
+			adminEngine:     dbtarget.MariaDBAdmin,
 			expectedDialect: platform.MariaDB,
 			staleDDL: []string{
 				"CREATE VIEW `%s`.`stale_dev_view` AS SELECT 1 AS id",
@@ -106,7 +108,6 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 }
 
 func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -117,7 +118,7 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 		{
 			config: mySQLMigrateDiffCase{
 				name:        "mysql",
-				adminDSNEnv: "MYSQL_ADMIN_TEST_DSN",
+				adminEngine: dbtarget.MySQLAdmin,
 			},
 			races: []mySQLCleanupRaceCase{
 				{
@@ -139,7 +140,7 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 		{
 			config: mySQLMigrateDiffCase{
 				name:        "mariadb",
-				adminDSNEnv: "MARIADB_ADMIN_TEST_DSN",
+				adminEngine: dbtarget.MariaDBAdmin,
 			},
 			races: []mySQLCleanupRaceCase{
 				{
@@ -153,7 +154,8 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 	}
 
 	for _, engine := range engines {
-		c.Run(engine.config.name, func(c *qt.C) {
+		t.Run(engine.config.name, func(t *testing.T) {
+			c := qt.New(t)
 			for _, race := range engine.races {
 				c.Run(race.name, func(c *qt.C) {
 					runMySQLLockedDropRace(c, ctx, engine.config, race)
@@ -179,11 +181,11 @@ func TestMySQLFamilyDropViewUnderExplicitLockIsRejectedE2E(t *testing.T) {
 	engines := []mySQLMigrateDiffCase{
 		{
 			name:        "mysql",
-			adminDSNEnv: "MYSQL_ADMIN_TEST_DSN",
+			adminEngine: dbtarget.MySQLAdmin,
 		},
 		{
 			name:        "mariadb",
-			adminDSNEnv: "MARIADB_ADMIN_TEST_DSN",
+			adminEngine: dbtarget.MariaDBAdmin,
 		},
 	}
 
@@ -202,12 +204,12 @@ func TestMySQLFamilyProtectedViewDropWinsMetadataLockHandoffE2E(t *testing.T) {
 	engines := []mySQLMigrateDiffCase{
 		{
 			name:            "mysql",
-			adminDSNEnv:     "MYSQL_ADMIN_TEST_DSN",
+			adminEngine:     dbtarget.MySQLAdmin,
 			expectedDialect: platform.MySQL,
 		},
 		{
 			name:            "mariadb",
-			adminDSNEnv:     "MARIADB_ADMIN_TEST_DSN",
+			adminEngine:     dbtarget.MariaDBAdmin,
 			expectedDialect: platform.MariaDB,
 		},
 	}
@@ -226,7 +228,7 @@ func runMySQLLockedDropRace(
 	race mySQLCleanupRaceCase,
 ) {
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := dbtarget.DriverDSN(c, engine.adminEngine)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -282,7 +284,7 @@ func runMySQLLockedViewDrop(
 	engine mySQLMigrateDiffCase,
 ) {
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := dbtarget.DriverDSN(c, engine.adminEngine)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -328,7 +330,7 @@ func runMySQLProtectedViewDropHandoff(
 	engine mySQLMigrateDiffCase,
 ) {
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := dbtarget.DriverDSN(c, engine.adminEngine)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -397,7 +399,7 @@ func runMySQLProtectedViewDropHandoff(
 
 func runMariaDBLockedDropForeignKeyFailClosed(c *qt.C, ctx context.Context) {
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, "MARIADB_ADMIN_TEST_DSN")
+	adminDSN := dbtarget.DriverDSN(c, dbtarget.MariaDBAdmin)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -551,8 +553,8 @@ func runMySQLMigrateDiffCase(
 	test mySQLMigrateDiffCase,
 ) {
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, test.adminDSNEnv)
-	adminURL := requireIntegrationEnvironment(c, test.adminURLEnv)
+	adminDSN := dbtarget.DriverDSN(c, test.adminEngine)
+	adminURL := dbtarget.URL(c, test.adminEngine)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -726,15 +728,6 @@ CREATE TABLE %[1]s.external_child (
 func asMySQLURL(rawURL string) string {
 	withoutScheme := strings.TrimPrefix(strings.TrimPrefix(rawURL, "mysql://"), "mariadb://")
 	return "mysql://" + withoutScheme
-}
-
-func requireIntegrationEnvironment(c *qt.C, name string) string {
-	c.Helper()
-	value := os.Getenv(name)
-	if value == "" {
-		c.Skipf("%s is not set", name)
-	}
-	return value
 }
 
 func replaceMySQLDatabaseName(c *qt.C, rawURL, database string) string {

@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -166,44 +167,47 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
-		check  func(c *qt.C, dir string, names []string)
+		// forward and rollback are the globs the layout's two halves land
+		// under. They are the same glob for the three layouts that keep both
+		// halves in one file, and opener is then the marker that separates
+		// them; the two layouts whose rollback is a file of its own leave
+		// opener empty, because there the file IS the container.
+		forward  string
+		rollback string
+		opener   string
 	}{
 		{
-			name:   "golang-migrate writes a pair",
-			format: "golang-migrate",
-			check: func(c *qt.C, dir string, names []string) {
-				c.Assert(compatNamesWithSuffix(names, ".up.sql"), qt.HasLen, 1)
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, ".down.sql"), "")
-			},
+			name:     "golang-migrate writes a pair",
+			format:   "golang-migrate",
+			forward:  "*.up.sql",
+			rollback: "*.down.sql",
 		},
 		{
-			name:   "flyway writes a V and a U file",
-			format: "flyway",
-			check: func(c *qt.C, dir string, names []string) {
-				c.Assert(compatNamesWithPrefix(names, "V"), qt.HasLen, 1)
-				assertCompatRollbackSection(c, dir, compatNewestNameWithPrefix(c, names, "U"), "")
-			},
+			name:     "flyway writes a V and a U file",
+			format:   "flyway",
+			forward:  "V*.sql",
+			rollback: "U*.sql",
 		},
 		{
-			name:   "goose writes both halves under its directives",
-			format: "goose",
-			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "-- +goose Down")
-			},
+			name:     "goose writes both halves under its directives",
+			format:   "goose",
+			forward:  "*_demo.sql",
+			rollback: "*_demo.sql",
+			opener:   "-- +goose Down",
 		},
 		{
-			name:   "dbmate writes both halves under its directives",
-			format: "dbmate",
-			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "-- migrate:down")
-			},
+			name:     "dbmate writes both halves under its directives",
+			format:   "dbmate",
+			forward:  "*_demo.sql",
+			rollback: "*_demo.sql",
+			opener:   "-- migrate:down",
 		},
 		{
-			name:   "liquibase attaches the rollback to a changeset",
-			format: "liquibase",
-			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "--rollback: ")
-			},
+			name:     "liquibase attaches the rollback to a changeset",
+			format:   "liquibase",
+			forward:  "*_demo.sql",
+			rollback: "*_demo.sql",
+			opener:   "--rollback: ",
 		},
 	}
 
@@ -225,7 +229,9 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 				"--to", "file://"+target)
 
 			c.Assert(err, qt.IsNil)
-			tt.check(c, dir, atlasDirEntryNames(c, dir))
+			names := atlasDirEntryNames(c, dir)
+			c.Assert(compatNamesMatching(c, names, tt.forward), qt.HasLen, 1)
+			assertCompatRollbackSection(c, dir, compatNewestNameMatching(c, names, tt.rollback), tt.opener)
 		})
 	}
 }
@@ -260,9 +266,17 @@ func compatNamesWithSuffix(names []string, suffix string) []string {
 	})
 }
 
-func compatNamesWithPrefix(names []string, prefix string) []string {
+// compatNamesMatching keeps the entry names a layout's glob selects.
+//
+// The pattern is validated rather than swallowed: path.Match answers false for
+// a malformed one, so a typo would read as a layout that wrote no file at all.
+func compatNamesMatching(c *qt.C, names []string, pattern string) []string {
+	c.Helper()
+	_, err := path.Match(pattern, "")
+	c.Assert(err, qt.IsNil, qt.Commentf("pattern %q", pattern))
 	return compatFilterNames(names, func(name string) bool {
-		return strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".sql")
+		matched, _ := path.Match(pattern, name)
+		return matched
 	})
 }
 
@@ -279,9 +293,9 @@ func compatNewestNameWithSuffix(c *qt.C, names []string, suffix string) string {
 	return matched[len(matched)-1]
 }
 
-func compatNewestNameWithPrefix(c *qt.C, names []string, prefix string) string {
+func compatNewestNameMatching(c *qt.C, names []string, pattern string) string {
 	c.Helper()
-	matched := compatNamesWithPrefix(names, prefix)
-	c.Assert(len(matched) > 0, qt.IsTrue, qt.Commentf("no file starting %q in %v", prefix, names))
+	matched := compatNamesMatching(c, names, pattern)
+	c.Assert(len(matched) > 0, qt.IsTrue, qt.Commentf("no file matching %q in %v", pattern, names))
 	return matched[len(matched)-1]
 }

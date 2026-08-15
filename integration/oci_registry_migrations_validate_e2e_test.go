@@ -13,7 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// TestOCIRegistryMigrationsValidateE2E is the live acceptance for
+// TestOCIRegistryMigrationsValidateHashedArtifactE2E is the live acceptance for
 // stokaro/ptah#1499 against a real registry over plain HTTP.
 //
 // The defect it closes is not a wrong answer but a missing one: `migrations
@@ -22,87 +22,121 @@ import (
 // source. Only `up --verify-sum` and `down --verify-sum` could ask it, and both
 // answer by writing to a database.
 //
-// Each row is measured TWICE — once against the local directory the artifact
-// was built from, once against the pushed artifact — and the two must agree on
-// the exit status and on the sentence. That pairing is what makes the row a
-// result rather than a smoke test: an artifact path that resolved the scheme
-// but validated something else (an empty snapshot, say) would exit 2 on all
-// three rows while the local control kept reporting 0, 1 and 2.
-func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
+// The directory is measured TWICE — once against the local directory the
+// artifact was built from, once against the pushed artifact — and the two must
+// agree on the exit status and on the sentence. That pairing is what makes this
+// a result rather than a smoke test, and its discrimination is completed by
+// TestOCIRegistryMigrationsValidateFailurePathE2E: an artifact path that
+// resolved the scheme but validated something else — an empty snapshot, say —
+// would exit 2 whatever it was handed, which the 0 demanded here and the 1
+// demanded there both refuse while their local controls keep reporting 0, 1
+// and 2.
+func TestOCIRegistryMigrationsValidateHashedArtifactE2E(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := ociValidateBinary(c, ctx, repoRoot)
+	dir := hashedOCIMigrationsDir(c)
+
+	localOutput, localErr := runPtahInDir(
+		ctx, repoRoot, binaryPath,
+		"migrations", "validate",
+		"--dir", dir,
+	)
+	c.Assert(exitStatusOf(c, localErr), qt.Equals, 0,
+		qt.Commentf("local output:\n%s", localOutput))
+	c.Assert(localOutput, qt.Contains, "OK: migrations directory matches ptah.sum")
+	// The local control carries no reference at all, so it can never be
+	// qualified — which is also what makes the artifact assertions below a
+	// statement about the tag rather than about validate in general.
+	c.Assert(localOutput, qt.Not(qt.Contains), "is a movable tag")
+
+	reference := fmt.Sprintf("oci://%s/ptah/oci-validate-hashed-%d:latest", registry, time.Now().UnixNano())
+	pushOCIMigrations(c, ctx, repoRoot, binaryPath, reference, dir)
+
+	artifactOutput, artifactErr := runPtahInDir(
+		ctx, repoRoot, binaryPath,
+		"migrations", "validate",
+		"--dir", reference,
+		"--plain-http",
+	)
+	c.Assert(exitStatusOf(c, artifactErr), qt.Equals, 0,
+		qt.Commentf("artifact output:\n%s", artifactOutput))
+	c.Assert(artifactOutput, qt.Contains, "OK: migrations directory matches ptah.sum")
+	// The path-shaped failure the issue reported. It is asserted separately
+	// from the exit status because the failure-path rows next door would
+	// otherwise pass on it: `stat oci://…: no such file or directory` was
+	// itself an exit 2.
+	c.Assert(artifactOutput, qt.Not(qt.Contains), "no such file or directory")
+	// A sum that travels inside the artifact proves the pulled files are
+	// internally consistent, not that they are the reviewed ones. `up`, `down`
+	// and `status` already say so; a `validate` that printed a bare OK would be
+	// the one verb over-claiming.
+	c.Assert(artifactOutput, qt.Contains, "is a movable tag")
+	c.Assert(artifactOutput, qt.Contains, "@sha256:")
+}
+
+// TestOCIRegistryMigrationsValidateFailurePathE2E covers the two ways an
+// operator arrives at a directory whose sum no longer describes it: files that
+// changed under a sum still listing them, and no sum at all. Each is measured
+// twice, once against the local directory and once against the pushed
+// artifact, and the two must agree on the exit status and on the sentence.
+//
+// Neither run verifies anything, so neither has a claim to qualify. The tag
+// warning belongs to TestOCIRegistryMigrationsValidateHashedArtifactE2E, and
+// printing it here would be `validate` narrating a provenance it never
+// established.
+func TestOCIRegistryMigrationsValidateFailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	registry := requiredOCIRegistry(t)
+	repoRoot := e2eRepoRoot(t)
+	binaryPath := ociValidateBinary(c, ctx, repoRoot)
 	suffix := time.Now().UnixNano()
 
 	tests := []struct {
 		name string
-		// prepare mutates the freshly hashed directory before it is pushed.
-		// It carries the branch so the test body does not: an untouched
-		// directory is the clean row, and the other two are the ways an
-		// operator arrives at a directory whose sum no longer describes it.
-		prepare func(c *qt.C, dir string)
-		// wantExit is the documented contract: 0 matches, 1 drift, 2 the sum
-		// is missing or unreadable.
+		// corrupt is this row's route to a directory whose sum no longer
+		// describes it. It reports rather than asserts, so the row stays data
+		// and the one assertion about the arrangement stays in the body.
+		corrupt func(dir string) error
+		// wantExit is the documented contract: 1 drift, 2 the sum is missing or
+		// unreadable.
 		wantExit   int
 		wantOutput string
-		// checkProvenance states what the run may claim about a tag-resolved
-		// artifact. It is a func rather than a bool because the repository's
-		// test style keeps branches in the table and out of the body.
-		checkProvenance func(c *qt.C, output string)
 	}{
 		{
-			name:       "hashed artifact validates",
-			prepare:    func(*qt.C, string) {},
-			wantExit:   0,
-			wantOutput: "OK: migrations directory matches ptah.sum",
-			// A sum that travels inside the artifact proves the pulled files
-			// are internally consistent, not that they are the reviewed ones.
-			// `up`, `down` and `status` already say so; a `validate` that
-			// printed a bare OK would be the one verb over-claiming.
-			checkProvenance: func(c *qt.C, output string) {
-				c.Assert(output, qt.Contains, "is a movable tag")
-				c.Assert(output, qt.Contains, "@sha256:")
-			},
-		},
-		{
 			name: "tampered artifact reports drift",
-			prepare: func(c *qt.C, dir string) {
-				c.Assert(os.WriteFile(
+			corrupt: func(dir string) error {
+				return os.WriteFile(
 					filepath.Join(dir, fmt.Sprintf("%010d_create_widgets.up.sql", ociMigrationVersion)),
 					[]byte("CREATE TABLE widgets (id TEXT PRIMARY KEY);\n"),
 					0o600,
-				), qt.IsNil)
+				)
 			},
 			wantExit:   1,
 			wantOutput: "changed:",
-			// Nothing verified, so there is no claim to qualify.
-			checkProvenance: func(c *qt.C, output string) {
-				c.Assert(output, qt.Not(qt.Contains), "is a movable tag")
-			},
 		},
 		{
 			name: "unhashed artifact reports no sum at all",
-			prepare: func(c *qt.C, dir string) {
-				c.Assert(os.Remove(filepath.Join(dir, "ptah.sum")), qt.IsNil)
+			corrupt: func(dir string) error {
+				return os.Remove(filepath.Join(dir, "ptah.sum"))
 			},
 			wantExit:   2,
 			wantOutput: "ptah.sum not found",
-			checkProvenance: func(c *qt.C, output string) {
-				c.Assert(output, qt.Not(qt.Contains), "is a movable tag")
-			},
 		},
 	}
 
 	for index, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			dir := filepath.Join(c.TempDir(), "migrations")
-			writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
-			test.prepare(c, dir)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hashedOCIMigrationsDir(c)
+			c.Assert(test.corrupt(dir), qt.IsNil)
 
 			localOutput, localErr := runPtahInDir(
 				ctx, repoRoot, binaryPath,
@@ -114,13 +148,7 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 			c.Assert(localOutput, qt.Contains, test.wantOutput)
 
 			reference := fmt.Sprintf("oci://%s/ptah/oci-validate-%d-%d:latest", registry, suffix, index)
-			pushOutput, pushErr := runPtahInDir(
-				ctx, repoRoot, binaryPath,
-				"migrations", "push", reference,
-				"--migrations-dir", dir,
-				"--plain-http",
-			)
-			c.Assert(pushErr, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
+			pushOCIMigrations(c, ctx, repoRoot, binaryPath, reference, dir)
 
 			artifactOutput, artifactErr := runPtahInDir(
 				ctx, repoRoot, binaryPath,
@@ -132,22 +160,21 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 				qt.Commentf("artifact output:\n%s", artifactOutput))
 			c.Assert(artifactOutput, qt.Contains, test.wantOutput)
 			// The path-shaped failure the issue reported. It is asserted
-			// separately from the exit status because the two rows that expect
-			// a non-zero status would otherwise pass on it: `stat oci://…: no
+			// separately from the exit status because both rows expect a
+			// non-zero status and would otherwise pass on it: `stat oci://…: no
 			// such file or directory` was itself an exit 2.
 			c.Assert(artifactOutput, qt.Not(qt.Contains), "no such file or directory")
-			test.checkProvenance(c, artifactOutput)
-			// The local control carries no reference at all, so it can never
-			// be qualified — which is also what makes the tag row above a
-			// statement about the tag rather than about validate in general.
+			c.Assert(artifactOutput, qt.Not(qt.Contains), "is a movable tag")
+			// The local control carries no reference at all, so it can never be
+			// qualified.
 			c.Assert(localOutput, qt.Not(qt.Contains), "is a movable tag")
 		})
 	}
 }
 
 // TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E is the
-// inverse of the tag row above, and it is what stops the qualifier from being
-// a sentence this verb prints for every artifact.
+// inverse of the hashed-artifact acceptance above, and it is what stops the
+// qualifier from being a sentence this verb prints for every artifact.
 //
 // A digest names exact bytes, so there is no movable pointer left to warn
 // about. A build that printed the warning here would be telling an operator
@@ -159,20 +186,12 @@ func TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E(t *testing.T
 
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := ociValidateBinary(c, ctx, repoRoot)
 
-	dir := filepath.Join(c.TempDir(), "migrations")
-	writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
+	dir := hashedOCIMigrationsDir(c)
 	reference := fmt.Sprintf("oci://%s/ptah/oci-validate-digest-%d:latest", registry, time.Now().UnixNano())
 
-	pushOutput, pushErr := runPtahInDir(
-		ctx, repoRoot, binaryPath,
-		"migrations", "push", reference,
-		"--migrations-dir", dir,
-		"--plain-http",
-	)
-	c.Assert(pushErr, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
+	pushOutput := pushOCIMigrations(c, ctx, repoRoot, binaryPath, reference, dir)
 	pinned := digestReference(reference, digestFromPushOutput(c, pushOutput))
 
 	output, err := runPtahInDir(
@@ -193,7 +212,7 @@ func TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E(t *testing.T
 // silently succeeding.
 //
 // Without this, a build whose OCI client had stopped defaulting to TLS would
-// pass every row above.
+// pass every acceptance above.
 func TestOCIRegistryMigrationsValidateWithoutPlainHTTPE2E(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -201,20 +220,12 @@ func TestOCIRegistryMigrationsValidateWithoutPlainHTTPE2E(t *testing.T) {
 
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := ociValidateBinary(c, ctx, repoRoot)
 
-	dir := filepath.Join(c.TempDir(), "migrations")
-	writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
+	dir := hashedOCIMigrationsDir(c)
 	reference := fmt.Sprintf("oci://%s/ptah/oci-validate-tls-%d:latest", registry, time.Now().UnixNano())
 
-	pushOutput, pushErr := runPtahInDir(
-		ctx, repoRoot, binaryPath,
-		"migrations", "push", reference,
-		"--migrations-dir", dir,
-		"--plain-http",
-	)
-	c.Assert(pushErr, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
+	pushOCIMigrations(c, ctx, repoRoot, binaryPath, reference, dir)
 
 	output, err := runPtahInDir(
 		ctx, repoRoot, binaryPath,
@@ -224,4 +235,34 @@ func TestOCIRegistryMigrationsValidateWithoutPlainHTTPE2E(t *testing.T) {
 
 	c.Assert(exitStatusOf(c, err), qt.Not(qt.Equals), 0, qt.Commentf("output:\n%s", output))
 	c.Assert(output, qt.Contains, "https://", qt.Commentf("output:\n%s", output))
+}
+
+// ociValidateBinary builds ptah into a directory of its own and returns the
+// path, asserting only that the build succeeded.
+func ociValidateBinary(c *qt.C, ctx context.Context, repoRoot string) string {
+	binaryPath := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, repoRoot, binaryPath)
+	return binaryPath
+}
+
+// hashedOCIMigrationsDir provisions a one-migration directory with a matching
+// ptah.sum and returns it, asserting only that the files were written.
+func hashedOCIMigrationsDir(c *qt.C) string {
+	dir := filepath.Join(c.TempDir(), "migrations")
+	writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
+	return dir
+}
+
+// pushOCIMigrations publishes dir at reference over plain HTTP and returns the
+// push output. It asserts only that its own push succeeded; what the artifact
+// then reports about itself is the caller's question.
+func pushOCIMigrations(c *qt.C, ctx context.Context, repoRoot, binaryPath, reference, dir string) string {
+	output, err := runPtahInDir(
+		ctx, repoRoot, binaryPath,
+		"migrations", "push", reference,
+		"--migrations-dir", dir,
+		"--plain-http",
+	)
+	c.Assert(err, qt.IsNil, qt.Commentf("push output:\n%s", output))
+	return output
 }

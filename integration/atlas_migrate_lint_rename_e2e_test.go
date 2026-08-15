@@ -13,6 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // exitStatusOf reports the process exit code a run finished with. The exit code
@@ -51,7 +53,7 @@ func exitStatusOf(c *qt.C, err error) int {
 // either tool, so a change that classified renames destructively regardless of
 // provenance would fail there while the first two still passed.
 func TestAtlasMigrateLintRenameE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

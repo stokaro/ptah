@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // Sanitize redacts secrets discoverable from the effective environment and
@@ -131,7 +133,7 @@ func addURLSecrets(values map[string]struct{}, raw string) {
 	if !strings.Contains(raw, "://") {
 		return
 	}
-	parsed, err := url.Parse(raw)
+	parsed, err := atlasurl.Parse(raw)
 	if err == nil && parsed.Scheme != "" && parsed.User != nil {
 		if password, ok := parsed.User.Password(); ok {
 			addSecret(values, password)

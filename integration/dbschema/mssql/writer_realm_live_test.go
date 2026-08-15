@@ -16,7 +16,7 @@ func TestWriterDropDatabaseRealm_Live(t *testing.T) {
 	db := openLiveSQLServerRealmDatabase(t)
 	writer := mssql.NewSQLServerWriter(db, "dbo")
 	t.Cleanup(func() {
-		qt.Check(t, writer.DropDatabaseRealm(context.Background()), qt.IsNil)
+		c.Check(writer.DropDatabaseRealm(context.Background()), qt.IsNil)
 	})
 	err := writer.DropDatabaseRealm(t.Context())
 	c.Assert(err, qt.IsNil)
@@ -109,8 +109,8 @@ func TestWriterDropDatabaseRealm_RejectsDatabaseScopedArtifactLive(t *testing.T)
 			context.Background(),
 			"DROP TRIGGER IF EXISTS [realm]]guard] ON DATABASE",
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, writer.DropDatabaseRealm(context.Background()), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(writer.DropDatabaseRealm(context.Background()), qt.IsNil)
 	})
 
 	_, err = db.ExecContext(t.Context(), "CREATE TABLE [dbo].[kept_until_safe] ([id] bigint NOT NULL)")
@@ -154,8 +154,8 @@ func TestWriterDropDatabaseRealm_RejectsPreservedSchemaPermissionLive(t *testing
 			context.Background(),
 			"REVOKE SELECT ON SCHEMA::[dbo] FROM [public]",
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, writer.DropDatabaseRealm(context.Background()), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(writer.DropDatabaseRealm(context.Background()), qt.IsNil)
 	})
 
 	_, err = db.ExecContext(t.Context(), "GRANT SELECT ON SCHEMA::[dbo] TO [public]")

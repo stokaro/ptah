@@ -5,7 +5,6 @@ package devlock_test
 import (
 	"context"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -14,12 +13,13 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/devlock"
 )
 
 func TestSameRealm_PostgresDriverURLOverridesLive(t *testing.T) {
 	c := qt.New(t)
-	targetURL := requireLiveRealmURL(c, "POSTGRES_TEST_DSN")
+	targetURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	overrideURL := postgresDriverOverrideURL(c, targetURL)
 	targetConn, err := dbschema.ConnectToDatabase(c.Context(), targetURL)
 	c.Assert(err, qt.IsNil)
@@ -38,21 +38,21 @@ func TestSameRealm_NetworkDatabasesLive(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
-		name           string
-		environmentKey string
+		name   string
+		engine dbtarget.Engine
 	}{
-		{name: "postgres", environmentKey: "POSTGRES_TEST_DSN"},
-		{name: "cockroachdb", environmentKey: "COCKROACHDB_URL"},
-		{name: "yugabytedb", environmentKey: "YUGABYTEDB_URL"},
-		{name: "mysql", environmentKey: "MYSQL_TEST_URL"},
-		{name: "mariadb", environmentKey: "MARIADB_TEST_URL"},
-		{name: "clickhouse", environmentKey: "CLICKHOUSE_URL"},
-		{name: "sqlserver", environmentKey: "PTAH_SQLSERVER_TEST_URL"},
+		{name: "postgres", engine: dbtarget.PostgreSQL},
+		{name: "cockroachdb", engine: dbtarget.CockroachDB},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB},
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
+		{name: "clickhouse", engine: dbtarget.ClickHouse},
+		{name: "sqlserver", engine: dbtarget.SQLServer},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			databaseURL := requireLiveRealmURL(c, test.environmentKey)
+			databaseURL := dbtarget.URL(c, test.engine)
 			firstConn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() {
@@ -74,7 +74,7 @@ func TestSameRealm_NetworkDatabasesLive(t *testing.T) {
 
 func TestAcquire_CockroachDBSerializesSameRealmLive(t *testing.T) {
 	c := qt.New(t)
-	databaseURL := requireCockroachDBURL(c)
+	databaseURL := dbtarget.URL(c, dbtarget.CockroachDB)
 	firstConn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(firstConn)
@@ -97,19 +97,6 @@ func TestAcquire_CockroachDBSerializesSameRealmLive(t *testing.T) {
 	c.Assert(secondLock.Release(), qt.IsNil)
 }
 
-func requireCockroachDBURL(c *qt.C) string {
-	return requireLiveRealmURL(c, "COCKROACHDB_URL")
-}
-
-func requireLiveRealmURL(c *qt.C, environmentKey string) string {
-	c.Helper()
-	databaseURL := os.Getenv(environmentKey)
-	if databaseURL == "" {
-		c.Skip(environmentKey + " is not set")
-	}
-	return databaseURL
-}
-
 func postgresDriverOverrideURL(c *qt.C, rawURL string) string {
 	c.Helper()
 	config, err := pgx.ParseConfig(rawURL)
@@ -117,7 +104,10 @@ func postgresDriverOverrideURL(c *qt.C, rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	c.Assert(err, qt.IsNil)
 	if parsed.Scheme == "" {
-		c.Skip("POSTGRES_TEST_DSN is not a URL")
+		// dbtarget accepts a scheme-less driver DSN, because that is a legitimate
+		// shape for several engines. This test rewrites the address as a URL, so
+		// it still has to refuse one that is not.
+		c.Skip("the configured PostgreSQL address is a driver DSN, not a URL")
 	}
 	parsed.Host = "guard.invalid:1"
 	parsed.Path = "/ignored"

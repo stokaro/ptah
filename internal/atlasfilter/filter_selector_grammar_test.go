@@ -143,6 +143,58 @@ func grammarCensus(schema *dbschematypes.DBSchema) []string {
 	return out
 }
 
+// grammarFieldCensus renders every field the exclude filter can subtract from
+// an object it keeps, as "<kind> <name>.<field>", for the objects that carry
+// one. An empty field is absent from the census, so pairing it with
+// grammarRemoved states which fields a pattern subtracted -- the whole set, so
+// a selector that also emptied a neighbour's comment is a diff rather than an
+// assertion nobody thought to write.
+func grammarFieldCensus(schema *dbschematypes.DBSchema) []string {
+	var out []string
+	add := func(kind, name, field, value string) {
+		if value == "" {
+			return
+		}
+		out = append(out, kind+" "+name+"."+field)
+	}
+	for _, value := range schema.Tables {
+		add("table", value.QualifiedName(), "comment", value.Comment)
+	}
+	for _, value := range schema.Views {
+		add("view", value.QualifiedName(), "comment", value.Comment)
+	}
+	for _, value := range schema.MatViews {
+		add("materialized_view", value.QualifiedName(), "comment", value.Comment)
+	}
+	for _, value := range schema.Extensions {
+		add("extension", value.Name, "version", value.Version)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// grammarGeneratedFieldCensus is the desired-schema half of the same census.
+func grammarGeneratedFieldCensus(db *goschema.Database) []string {
+	var out []string
+	add := func(kind, name, field, value string) {
+		if value == "" {
+			return
+		}
+		out = append(out, kind+" "+name+"."+field)
+	}
+	for _, value := range db.Tables {
+		add("table", value.QualifiedName(), "comment", value.Comment)
+	}
+	for _, value := range db.Views {
+		add("view", value.Name, "comment", value.Comment)
+	}
+	for _, value := range db.MaterializedViews {
+		add("materialized_view", value.Name, "comment", value.Comment)
+	}
+	slices.Sort(out)
+	return out
+}
+
 // grammarRemoved reports what the filter subtracted, sorted, so a row states
 // only its own effect and any collateral removal shows up as a diff.
 func grammarRemoved(before, after []string) []string {
@@ -239,30 +291,29 @@ func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
 	tests := []struct {
 		name     string
 		patterns []string
-		assert   func(*qt.C, *goschema.Database)
+		// wantTables and wantEnums are what survives, both stated on every row:
+		// the failure a type selector risks is subtracting the kind it did not
+		// name, and only the untouched half can report that.
+		wantTables []string
+		wantEnums  []string
 	}{
 		{
-			name:     "every table in every schema",
-			patterns: []string{"*[type=schema].*[type=table]"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(grammarGeneratedTableNames(got.Tables), qt.DeepEquals, []string{})
-				c.Assert(grammarGeneratedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
+			name:       "every table in every schema",
+			patterns:   []string{"*[type=schema].*[type=table]"},
+			wantTables: []string{},
+			wantEnums:  []string{"mood", "app.color"},
 		},
 		{
-			name:     "narrowed to one schema",
-			patterns: []string{"app[type=schema].*[type=table]"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(grammarGeneratedTableNames(got.Tables), qt.DeepEquals, []string{"users"})
-			},
+			name:       "narrowed to one schema",
+			patterns:   []string{"app[type=schema].*[type=table]"},
+			wantTables: []string{"users"},
+			wantEnums:  []string{"mood", "app.color"},
 		},
 		{
-			name:     "another kind entirely",
-			patterns: []string{"*[type=schema].*[type=enum]"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(grammarGeneratedEnumNames(got.Enums), qt.DeepEquals, []string{})
-				c.Assert(grammarGeneratedTableNames(got.Tables), qt.DeepEquals, []string{"app.orders", "users"})
-			},
+			name:       "another kind entirely",
+			patterns:   []string{"*[type=schema].*[type=enum]"},
+			wantTables: []string{"app.orders", "users"},
+			wantEnums:  []string{},
 		},
 	}
 
@@ -273,7 +324,8 @@ func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
 			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(fixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(grammarGeneratedTableNames(got.Tables), qt.DeepEquals, test.wantTables)
+			c.Assert(grammarGeneratedEnumNames(got.Enums), qt.DeepEquals, test.wantEnums)
 		})
 	}
 }
@@ -293,16 +345,16 @@ func TestExcludeDatabase_FieldSelectorsSubtractFields(t *testing.T) {
 	tests := []struct {
 		name     string
 		patterns []string
-		assert   func(*qt.C, *dbschematypes.DBSchema)
+		// wantSubtracted is every field the pattern took away. Each row also
+		// asserts that no OBJECT moved, which is the property a field selector
+		// owes whatever it names: subtracting a comment must never be spelled
+		// as removing the table that carried it.
+		wantSubtracted []string
 	}{
 		{
-			name:     "table comment is subtracted and the table stays",
-			patterns: []string{"*[type=table].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(grammarTableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-				c.Assert(got.Tables[0].Comment, qt.Equals, "")
-				c.Assert(got.Tables[1].Comment, qt.Equals, "")
-			},
+			name:           "table comment is subtracted and the table stays",
+			patterns:       []string{"*[type=table].comment"},
+			wantSubtracted: []string{"table app.orders.comment", "table users.comment"},
 		},
 		{
 			// A glob narrows which object loses the field. The
@@ -310,60 +362,44 @@ func TestExcludeDatabase_FieldSelectorsSubtractFields(t *testing.T) {
 			// `app.*[type=table].comment`, is a pattern-depth error rather than
 			// a field one; see
 			// TestExcludeDatabase_QualifiedFieldSelectorStaysADepthError.
-			name:     "a glob narrows which table loses its comment",
-			patterns: []string{"orders[type=table].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(got.Tables[0].Comment, qt.Equals, "a users comment")
-				c.Assert(got.Tables[1].Comment, qt.Equals, "")
-			},
+			name:           "a glob narrows which table loses its comment",
+			patterns:       []string{"orders[type=table].comment"},
+			wantSubtracted: []string{"table app.orders.comment"},
 		},
 		{
-			name:     "star names every subtractable field of the selected kind",
-			patterns: []string{"*[type=table].*"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(grammarTableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-				c.Assert(got.Tables[0].Comment, qt.Equals, "")
-				c.Assert(got.Tables[1].Comment, qt.Equals, "")
-			},
+			name:           "star names every subtractable field of the selected kind",
+			patterns:       []string{"*[type=table].*"},
+			wantSubtracted: []string{"table app.orders.comment", "table users.comment"},
 		},
 		{
-			name:     "view comment",
-			patterns: []string{"*[type=view].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(grammarViewNames(got.Views), qt.DeepEquals, []string{"v_users", "app.v_orders"})
-				c.Assert(got.Views[0].Comment, qt.Equals, "")
-				c.Assert(got.Views[1].Comment, qt.Equals, "")
-			},
+			name:           "view comment",
+			patterns:       []string{"*[type=view].comment"},
+			wantSubtracted: []string{"view app.v_orders.comment", "view v_users.comment"},
 		},
 		{
-			name:     "materialized view comment",
-			patterns: []string{"*[type=materialized_view].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(got.MatViews, qt.HasLen, 2)
-				c.Assert(got.MatViews[0].Comment, qt.Equals, "")
-			},
+			name:           "materialized view comment",
+			patterns:       []string{"*[type=materialized_view].comment"},
+			wantSubtracted: []string{"materialized_view mv_users.comment"},
 		},
 		{
-			name:     "extension version stays supported",
-			patterns: []string{"*[type=extension].version"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(got.Extensions[0].Version, qt.Equals, "")
-				c.Assert(got.Extensions[1].Version, qt.Equals, "")
-			},
+			name:           "extension version stays supported",
+			patterns:       []string{"*[type=extension].version"},
+			wantSubtracted: []string{"extension hstore.version", "extension pgcrypto.version"},
 		},
 		{
 			name:     "two kinds in one selector",
 			patterns: []string{"*[type=table|view].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(got.Tables[0].Comment, qt.Equals, "")
-				c.Assert(got.Views[0].Comment, qt.Equals, "")
+			wantSubtracted: []string{
+				"table app.orders.comment", "table users.comment",
+				"view app.v_orders.comment", "view v_users.comment",
 			},
 		},
 		{
-			name:     "a field selector never removes the object it names",
+			name:     "two selectors in one run",
 			patterns: []string{"*[type=table].comment", "*[type=view].comment"},
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(grammarRemoved(grammarCensus(grammarFixture()), grammarCensus(got)), qt.DeepEquals, []string{})
+			wantSubtracted: []string{
+				"table app.orders.comment", "table users.comment",
+				"view app.v_orders.comment", "view v_users.comment",
 			},
 		},
 	}
@@ -375,7 +411,10 @@ func TestExcludeDatabase_FieldSelectorsSubtractFields(t *testing.T) {
 			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(grammarFixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(grammarRemoved(grammarFieldCensus(grammarFixture()), grammarFieldCensus(got)),
+				qt.DeepEquals, test.wantSubtracted)
+			c.Assert(grammarRemoved(grammarCensus(grammarFixture()), grammarCensus(got)),
+				qt.DeepEquals, []string{})
 		})
 	}
 }
@@ -387,47 +426,49 @@ func TestExcludeGenerated_FieldSelectorsSubtractFields(t *testing.T) {
 	tests := []struct {
 		name     string
 		patterns []string
-		assert   func(*qt.C, *goschema.Database)
+		// wantSubtracted is every field the pattern took away, and the three
+		// objects it left behind are asserted on every row: a selector that
+		// removed the object instead of its comment would plan a DROP where the
+		// introspected side planned nothing at all.
+		wantSubtracted []string
 	}{
 		{
-			name:     "table comment",
-			patterns: []string{"*[type=table].comment"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(got.Tables, qt.HasLen, 1)
-				c.Assert(got.Tables[0].Comment, qt.Equals, "")
-			},
+			name:           "table comment",
+			patterns:       []string{"*[type=table].comment"},
+			wantSubtracted: []string{"table users.comment"},
 		},
 		{
-			name:     "view comment",
-			patterns: []string{"*[type=view].comment"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(got.Views, qt.HasLen, 1)
-				c.Assert(got.Views[0].Comment, qt.Equals, "")
-			},
+			name:           "view comment",
+			patterns:       []string{"*[type=view].comment"},
+			wantSubtracted: []string{"view v_users.comment"},
 		},
 		{
-			name:     "materialized view comment",
-			patterns: []string{"*[type=materialized_view].comment"},
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(got.MaterializedViews, qt.HasLen, 1)
-				c.Assert(got.MaterializedViews[0].Comment, qt.Equals, "")
-			},
+			name:           "materialized view comment",
+			patterns:       []string{"*[type=materialized_view].comment"},
+			wantSubtracted: []string{"materialized_view mv_users.comment"},
 		},
+	}
+
+	fixture := func() *goschema.Database {
+		return &goschema.Database{
+			Tables:            []goschema.Table{{StructName: "User", Name: "users", Comment: "a users comment"}},
+			Views:             []goschema.View{{StructName: "VUser", Name: "v_users", Comment: "a view comment"}},
+			MaterializedViews: []goschema.MaterializedView{{StructName: "MVUser", Name: "mv_users", Comment: "a matview comment"}},
+		}
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := &goschema.Database{
-				Tables:            []goschema.Table{{StructName: "User", Name: "users", Comment: "a users comment"}},
-				Views:             []goschema.View{{StructName: "VUser", Name: "v_users", Comment: "a view comment"}},
-				MaterializedViews: []goschema.MaterializedView{{StructName: "MVUser", Name: "mv_users", Comment: "a matview comment"}},
-			}
 
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(fixture, test.patterns, "public")
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(fixture(), test.patterns, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(grammarRemoved(grammarGeneratedFieldCensus(fixture()), grammarGeneratedFieldCensus(got)),
+				qt.DeepEquals, test.wantSubtracted)
+			c.Assert(got.Tables, qt.HasLen, 1)
+			c.Assert(got.Views, qt.HasLen, 1)
+			c.Assert(got.MaterializedViews, qt.HasLen, 1)
 		})
 	}
 }
@@ -536,22 +577,6 @@ func TestExcludeDatabase_LeadingSchemaSegmentIsNotCountedTwice(t *testing.T) {
 		grammarFixture(), []string{"*[type=schema].*[type=table]"}, "public")
 
 	c.Assert(err, qt.IsNil)
-}
-
-func grammarTableNames(tables []dbschematypes.DBTable) []string {
-	out := make([]string, 0, len(tables))
-	for _, value := range tables {
-		out = append(out, value.QualifiedName())
-	}
-	return out
-}
-
-func grammarViewNames(views []dbschematypes.DBView) []string {
-	out := make([]string, 0, len(views))
-	for _, value := range views {
-		out = append(out, value.QualifiedName())
-	}
-	return out
 }
 
 func grammarGeneratedTableNames(tables []goschema.Table) []string {

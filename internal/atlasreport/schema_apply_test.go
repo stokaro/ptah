@@ -70,23 +70,21 @@ func TestSchemaApplyJSONDocumentShape(t *testing.T) {
 	tests := []struct {
 		name   string
 		dryRun bool
-		assert func(c *qt.C, doc schemaApplyJSONDocument)
+		// The list the run does not fill is left unset, which is what the
+		// document itself carries: both entries are omitted when empty, so the
+		// absent one has to be asserted absent rather than merely short.
+		wantApplied []string
+		wantPending []string
 	}{
 		{
-			name:   "a real apply reports the statements as applied",
-			dryRun: false,
-			assert: func(c *qt.C, doc schemaApplyJSONDocument) {
-				c.Assert(doc.Changes.Applied, qt.DeepEquals, rendered)
-				c.Assert(doc.Changes.Pending, qt.HasLen, 0)
-			},
+			name:        "a real apply reports the statements as applied",
+			dryRun:      false,
+			wantApplied: rendered,
 		},
 		{
-			name:   "a dry run reports the statements as pending",
-			dryRun: true,
-			assert: func(c *qt.C, doc schemaApplyJSONDocument) {
-				c.Assert(doc.Changes.Pending, qt.DeepEquals, rendered)
-				c.Assert(doc.Changes.Applied, qt.HasLen, 0)
-			},
+			name:        "a dry run reports the statements as pending",
+			dryRun:      true,
+			wantPending: rendered,
 		},
 	}
 
@@ -110,7 +108,8 @@ func TestSchemaApplyJSONDocumentShape(t *testing.T) {
 			c.Assert(doc.URL.Scheme, qt.Equals, "sqlite")
 			c.Assert(doc.URL.Host, qt.Equals, "apply.db")
 			c.Assert(doc.URL.Schema, qt.Equals, "main")
-			test.assert(c, doc)
+			c.Assert(doc.Changes.Applied, qt.DeepEquals, test.wantApplied)
+			c.Assert(doc.Changes.Pending, qt.DeepEquals, test.wantPending)
 		})
 	}
 }

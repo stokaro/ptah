@@ -74,10 +74,11 @@ func issue261Migrator(conn *dbschema.DatabaseConnection, migrations ...*migrator
 }
 
 func applyIssue261Migrations(t *testing.T, conn *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
 
 	err := issue261Migrator(conn, issue261AppliedMigrations()...).MigrateUp(context.Background())
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func issue261AppliedMigrations() []*migrator.Migration {
@@ -116,6 +117,7 @@ func cleanupIssue261(t *testing.T, conn *dbschema.DatabaseConnection) {
 }
 
 func tableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var exists bool
@@ -124,6 +126,6 @@ func tableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName stri
 		"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)",
 		tableName,
 	).Scan(&exists)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return exists
 }

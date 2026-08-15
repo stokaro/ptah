@@ -50,86 +50,102 @@ import (
 // hostile step cannot be performed and there is nothing to measure.
 func TestGenerateDiff_RenamedDirectoryCannotRedirectPublication(t *testing.T) {
 	c := qt.New(t)
-	tests := []struct {
-		name string
-		// swap replaces the migration directory from inside the callback. The
-		// control leaves the tree alone, so the same assertions must hold with
-		// and without the hostile step -- that is what makes "the decoy received
-		// nothing" evidence rather than an artifact of reading the wrong tree.
-		swap func(c *qt.C, migrations, retained, decoy string)
-		// published names the directory that must receive the run's output.
-		published func(migrations, retained string) string
-	}{
-		{
-			name: "directory renamed aside and replaced by a symlink to a live copy",
-			swap: func(c *qt.C, migrations, retained, decoy string) {
-				// The copy carries the staged temporary file along with the
-				// migrations. That is what lets a pathname writer complete its
-				// run against the decoy instead of failing on a staging file it
-				// can no longer find.
-				c.Assert(os.CopyFS(decoy, os.DirFS(migrations)), qt.IsNil)
-				c.Assert(os.Rename(migrations, retained), qt.IsNil)
-				c.Assert(os.Symlink(decoy, migrations), qt.IsNil)
-			},
-			published: func(_, retained string) string { return retained },
-		},
-		{
-			name:      "control: nothing is replaced",
-			swap:      func(*qt.C, string, string, string) {},
-			published: func(migrations, _ string) string { return migrations },
-		},
-	}
 
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			root := c.TempDir()
-			migrations := filepath.Join(root, "migrations")
-			retained := filepath.Join(root, "migrations.moved")
-			decoy := filepath.Join(root, "decoy")
-			c.Assert(os.MkdirAll(migrations, 0o755), qt.IsNil)
-			c.Assert(os.MkdirAll(decoy, 0o755), qt.IsNil)
-			// The directory already holds a migration, so a run that follows the
-			// replacement still passes every version and checksum check on the
-			// way in and fails only where the write lands.
-			c.Assert(os.WriteFile(
-				filepath.Join(migrations, "1_init.sql"),
-				[]byte("CREATE TABLE legacy (id INTEGER PRIMARY KEY);\n"),
-				0o600,
-			), qt.IsNil)
-			schemaPath := filepath.Join(root, "schema.sql")
-			c.Assert(os.WriteFile(schemaPath, []byte(`
+	run := runDiffWithPreparedSwap(c, func(c *qt.C, migrations, retained, decoy string) {
+		// The copy carries the staged temporary file along with the migrations.
+		// That is what lets a pathname writer complete its run against the decoy
+		// instead of failing on a staging file it can no longer find.
+		c.Assert(os.CopyFS(decoy, os.DirFS(migrations)), qt.IsNil)
+		c.Assert(os.Rename(migrations, retained), qt.IsNil)
+		c.Assert(os.Symlink(decoy, migrations), qt.IsNil)
+	})
+
+	// The run published into the object it opened, which the rename carried to
+	// the retained pathname.
+	run.assertPublishedInto(c, run.retained)
+}
+
+// TestGenerateDiff_UnreplacedDirectoryReceivesThePublication is the control for
+// the test above, and it is what makes "the decoy received nothing" evidence
+// rather than an artifact of reading the wrong tree: the same fixture and the
+// same assertions, with the hostile step left out.
+func TestGenerateDiff_UnreplacedDirectoryReceivesThePublication(t *testing.T) {
+	c := qt.New(t)
+
+	run := runDiffWithPreparedSwap(c, func(*qt.C, string, string, string) {})
+
+	run.assertPublishedInto(c, run.migrations)
+}
+
+// preparedSwapRun is what one GenerateDiff run left on disk, named from the
+// outside so both tests above can ask the same questions of it.
+type preparedSwapRun struct {
+	migrations string
+	retained   string
+	decoy      string
+	// decoyAfterSwap is the decoy's content at the moment the swap returned,
+	// which is the baseline the publication must not add to.
+	decoyAfterSwap []string
+	prepared       int
+	result         atlasmigrate.DiffResult
+	err            error
+}
+
+// assertPublishedInto pins the whole outcome of a run: one migration generated,
+// one publication prepared, the migration and its checksum in published, and
+// nothing at all in the decoy.
+func (run preparedSwapRun) assertPublishedInto(c *qt.C, published string) {
+	c.Helper()
+	c.Assert(run.err, qt.IsNil)
+	c.Assert(run.prepared, qt.Equals, 1)
+	c.Assert(run.result.MigrationPaths, qt.HasLen, 1)
+	c.Assert(atlasSQLFiles(c, published), qt.HasLen, 2)
+	c.Assert(fileExists(filepath.Join(published, "atlas.sum")), qt.IsTrue)
+	// The decoy holds exactly what the swap left in it: no migration, no
+	// checksum, no journal and no recovery artifact reached it.
+	c.Assert(dirEntryNames(c, run.decoy), qt.DeepEquals, run.decoyAfterSwap)
+}
+
+// runDiffWithPreparedSwap generates a migration and calls swap from
+// PreparePublication, the last callback before anything is published.
+func runDiffWithPreparedSwap(c *qt.C, swap func(c *qt.C, migrations, retained, decoy string)) preparedSwapRun {
+	c.Helper()
+	root := c.TempDir()
+	run := preparedSwapRun{
+		migrations: filepath.Join(root, "migrations"),
+		retained:   filepath.Join(root, "migrations.moved"),
+		decoy:      filepath.Join(root, "decoy"),
+	}
+	c.Assert(os.MkdirAll(run.migrations, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(run.decoy, 0o755), qt.IsNil)
+	// The directory already holds a migration, so a run that follows the
+	// replacement still passes every version and checksum check on the way in
+	// and fails only where the write lands.
+	c.Assert(os.WriteFile(
+		filepath.Join(run.migrations, "1_init.sql"),
+		[]byte("CREATE TABLE legacy (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	schemaPath := filepath.Join(root, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE legacy (id INTEGER PRIMARY KEY);
 CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL DEFAULT '');
 `), 0o600), qt.IsNil)
-			conn := connectSQLite(c, filepath.Join(root, "dev.db"))
-			defer dbschema.CloseAndWarn(conn)
+	conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
 
-			prepared := 0
-			var decoyAfterSwap []string
-			result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
-				Dir:         migrations,
-				Root:        openDiffProjectRoot(c, root),
-				Desired:     localDesiredSet(c, "file://"+schemaPath),
-				Name:        "add_users",
-				LockTimeout: time.Second,
-				PreparePublication: func([]string) error {
-					prepared++
-					test.swap(c, migrations, retained, decoy)
-					decoyAfterSwap = dirEntryNames(c, decoy)
-					return nil
-				},
-			})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(prepared, qt.Equals, 1)
-			c.Assert(result.MigrationPaths, qt.HasLen, 1)
-			// The run published into the object it opened.
-			published := test.published(migrations, retained)
-			c.Assert(atlasSQLFiles(c, published), qt.HasLen, 2)
-			c.Assert(fileExists(filepath.Join(published, "atlas.sum")), qt.IsTrue)
-			// The decoy holds exactly what the swap left in it: no migration, no
-			// checksum, no journal and no recovery artifact reached it.
-			c.Assert(dirEntryNames(c, decoy), qt.DeepEquals, decoyAfterSwap)
-		})
-	}
+	run.result, run.err = atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         run.migrations,
+		Root:        openDiffProjectRoot(c, root),
+		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Name:        "add_users",
+		LockTimeout: time.Second,
+		PreparePublication: func([]string) error {
+			run.prepared++
+			swap(c, run.migrations, run.retained, run.decoy)
+			run.decoyAfterSwap = dirEntryNames(c, run.decoy)
+			return nil
+		},
+	})
+	return run
 }

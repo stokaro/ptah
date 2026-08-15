@@ -26,6 +26,11 @@ const (
 	statusIntegrityMigration = "20260101000000_init.sql"
 	statusIntegritySecond    = "20260102000000_two.sql"
 
+	// statusIntegrityEdit is the rewritten body of statusIntegrityMigration. It
+	// has one definition because the edited state is reached from two places:
+	// the shared drift set, and writeStatusIntegrityEdited.
+	statusIntegrityEdit = "CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n"
+
 	// atlasChecksumGuidance is the guidance block the community binary writes to
 	// STDOUT for a directory carrying no atlas.sum. Its counterpart with a drift
 	// pointer is built by atlasChecksumGuidanceWith.
@@ -63,81 +68,90 @@ func writeStatusIntegrityHashed(c *qt.C, dir string) {
 func writeStatusIntegrityEdited(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
-	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration,
-		"CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n")
+	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration, statusIntegrityEdit)
 }
 
-// writeStatusIntegrityAdded hashes the directory and then adds a migration the
-// sum does not cover.
-func writeStatusIntegrityAdded(c *qt.C, dir string) {
-	c.Helper()
-	writeStatusIntegrityHashed(c, dir)
-	writeAtlasApplyProjectMigration(c, dir, statusIntegritySecond,
-		"CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n")
+// statusIntegrityFile is one migration file a fixture writes.
+type statusIntegrityFile struct {
+	name string
+	sql  string
 }
 
-// writeStatusIntegrityRemoved hashes the directory and then deletes the only
-// migration. This is the state pre-change status reported as "Database is up to
-// date", which is why it is in the table rather than represented by the edited
-// row alone.
-func writeStatusIntegrityRemoved(c *qt.C, dir string) {
+// statusIntegrityDrift is one way a hashed directory stops matching its
+// atlas.sum, with the drift pointer the community binary prints for it.
+type statusIntegrityDrift struct {
+	name string
+	// write and remove are applied AFTER the directory is hashed, which is what
+	// leaves atlas.sum stale rather than absent.
+	write      []statusIntegrityFile
+	remove     []string
+	wantStdout string
+}
+
+// statusIntegrityDrifts returns the drift states both gated verbs are measured
+// on. They are shared for the reason the fixture writers are: status and set
+// run one gate, so a state one of them refuses and the other reports on would
+// be the drift this file exists to catch.
+func statusIntegrityDrifts() []statusIntegrityDrift {
+	return []statusIntegrityDrift{
+		{
+			name:       "hashed then edited",
+			write:      []statusIntegrityFile{{name: statusIntegrityMigration, sql: statusIntegrityEdit}},
+			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was edited"),
+		},
+		{
+			name:       "hashed then added",
+			write:      []statusIntegrityFile{{name: statusIntegritySecond, sql: "CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n"}},
+			wantStdout: atlasChecksumGuidanceWith("L3: " + statusIntegritySecond + " was added"),
+		},
+		{
+			// Deleting the only migration is the state pre-change status
+			// reported as "Database is up to date", which is why it is measured
+			// rather than represented by the edited state alone.
+			name:       "hashed then removed",
+			remove:     []string{statusIntegrityMigration},
+			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was removed"),
+		},
+	}
+}
+
+// writeStatusIntegrityDrifted hashes the directory and then applies drift,
+// leaving atlas.sum stale.
+func writeStatusIntegrityDrifted(c *qt.C, dir string, drift statusIntegrityDrift) {
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
-	c.Assert(os.Remove(filepath.Join(dir, statusIntegrityMigration)), qt.IsNil)
+	for _, file := range drift.write {
+		writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+	}
+	for _, name := range drift.remove {
+		c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)
+	}
+}
+
+// assertIntegrityTargetUntouched pins that the refusal preceded the connection:
+// the database file the run named was never created.
+func assertIntegrityTargetUntouched(c *qt.C, dbPath string) {
+	c.Helper()
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 // TestCompatMigrateStatus_DriftedDirRefuses is the discriminator for #974.
 //
-// Without the gate every row here exits 0 and reports normally; the removed row
-// additionally reports the database up to date for a directory whose migration
-// is gone. With it, every row exits 1 with output byte-identical to the pinned
-// community binary v1.3.0. (The normal report was `=== MIGRATION STATUS ===`
-// when #974 landed and is the mirrored Atlas block since #1102; the gate is
-// indifferent to which, because it refuses before the report is reached.)
+// Without the gate every state here exits 0 and reports normally; the removed
+// state additionally reports the database up to date for a directory whose
+// migration is gone. With it, every state exits 1 with output byte-identical to
+// the pinned community binary v1.3.0. (The normal report was
+// `=== MIGRATION STATUS ===` when #974 landed and is the mirrored Atlas block
+// since #1102; the gate is indifferent to which, because it refuses before the
+// report is reached.)
 func TestCompatMigrateStatus_DriftedDirRefuses(t *testing.T) {
-	tests := []struct {
-		name       string
-		writeDir   func(*qt.C, string)
-		wantStdout string
-		wantStderr string
-		wantErr    string
-	}{
-		{
-			name:       "never hashed",
-			writeDir:   writeStatusIntegrityUnhashed,
-			wantStdout: atlasChecksumGuidance,
-			wantStderr: atlasChecksumNotFoundErr,
-			wantErr:    "checksum file not found",
-		},
-		{
-			name:       "hashed then edited",
-			writeDir:   writeStatusIntegrityEdited,
-			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was edited"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-		{
-			name:       "hashed then added",
-			writeDir:   writeStatusIntegrityAdded,
-			wantStdout: atlasChecksumGuidanceWith("L3: " + statusIntegritySecond + " was added"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-		{
-			name:       "hashed then removed",
-			writeDir:   writeStatusIntegrityRemoved,
-			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was removed"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, drift := range statusIntegrityDrifts() {
+		t.Run(drift.name, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
-			tt.writeDir(c, dir)
+			writeStatusIntegrityDrifted(c, dir, drift)
 			dbPath := filepath.Join(tempDir, "status.db")
 
 			stdout, stderr, err := runCompat(
@@ -147,14 +161,38 @@ func TestCompatMigrateStatus_DriftedDirRefuses(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(err.Error(), qt.Equals, tt.wantErr)
-			c.Assert(stdout, qt.Equals, tt.wantStdout)
-			c.Assert(stderr, qt.Equals, tt.wantStderr)
-			// The gate precedes the connection, so the target was never opened.
-			_, statErr := os.Stat(dbPath)
-			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+			c.Assert(err.Error(), qt.Equals, "checksum mismatch")
+			c.Assert(stdout, qt.Equals, drift.wantStdout)
+			c.Assert(stderr, qt.Equals, atlasChecksumMismatchErr)
+			assertIntegrityTargetUntouched(c, dbPath)
 		})
 	}
+}
+
+// TestCompatMigrateStatus_NeverHashedDirRefuses is the same gate reached
+// through a directory carrying no atlas.sum at all.
+//
+// It is separate from the drift states above because it is a different refusal:
+// the sum is missing rather than stale, so there is no drift pointer to print
+// and the message names a file that was never written.
+func TestCompatMigrateStatus_NeverHashedDirRefuses(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m")
+	writeStatusIntegrityUnhashed(c, dir)
+	dbPath := filepath.Join(tempDir, "status.db")
+
+	stdout, stderr, err := runCompat(
+		"migrate", "status",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+dir,
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, "checksum file not found")
+	c.Assert(stdout, qt.Equals, atlasChecksumGuidance)
+	c.Assert(stderr, qt.Equals, atlasChecksumNotFoundErr)
+	assertIntegrityTargetUntouched(c, dbPath)
 }
 
 // TestCompatMigrateStatus_RefusalPrecedesConnection pins the gate's position
@@ -243,48 +281,22 @@ func TestCompatMigrateStatus_FormatTemplateRefuses(t *testing.T) {
 	c.Assert(stderr, qt.Equals, atlasChecksumNotFoundErr)
 }
 
-// TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally holds the three
-// states that already agreed with the community binary before this change.
+// TestCompatMigrateStatus_AntiRegressionNothingToVerifyReportsNormally holds the
+// two directories that carry no migration to verify.
 //
-// They are ANTI-REGRESSION rows, not discriminators: each exits 0 both before
-// and after, and none of them would fail if the gate were never wired in. They
-// exist to catch a gate that over-refuses — in particular the empty-directory
+// They are ANTI-REGRESSION cases, not discriminators: each exits 0 both before
+// and after, and neither would fail if the gate were never wired in. They exist
+// to catch a gate that over-refuses — in particular the empty-directory
 // bootstrap that #970 established must keep working.
-func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T) {
+func TestCompatMigrateStatus_AntiRegressionNothingToVerifyReportsNormally(t *testing.T) {
 	tests := []struct {
-		name       string
-		writeDir   func(*qt.C, string)
-		wantStdout string
+		name  string
+		files []statusIntegrityFile
 	}{
+		{name: "anti-regression: empty directory"},
 		{
-			name:     "anti-regression: empty directory",
-			writeDir: func(c *qt.C, dir string) { c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil) },
-			wantStdout: "Migration Status: OK\n" +
-				"  -- Current Version: No migration applied yet\n" +
-				"  -- Next Version:    Already at latest version\n" +
-				"  -- Executed Files:  0\n" +
-				"  -- Pending Files:   0\n",
-		},
-		{
-			name: "anti-regression: no SQL files",
-			writeDir: func(c *qt.C, dir string) {
-				c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-				c.Assert(os.WriteFile(filepath.Join(dir, "README.md"), []byte("migrations live here\n"), 0o600), qt.IsNil)
-			},
-			wantStdout: "Migration Status: OK\n" +
-				"  -- Current Version: No migration applied yet\n" +
-				"  -- Next Version:    Already at latest version\n" +
-				"  -- Executed Files:  0\n" +
-				"  -- Pending Files:   0\n",
-		},
-		{
-			name:     "anti-regression: hashed clean directory",
-			writeDir: writeStatusIntegrityHashed,
-			wantStdout: "Migration Status: PENDING\n" +
-				"  -- Current Version: No migration applied yet\n" +
-				"  -- Next Version:    20260101000000\n" +
-				"  -- Executed Files:  0\n" +
-				"  -- Pending Files:   1\n",
+			name:  "anti-regression: no SQL files",
+			files: []statusIntegrityFile{{name: "README.md", sql: "migrations live here\n"}},
 		},
 	}
 
@@ -293,7 +305,10 @@ func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T)
 			c := qt.New(t)
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
-			tt.writeDir(c, dir)
+			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+			for _, file := range tt.files {
+				writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+			}
 
 			stdout, stderr, err := runCompat(
 				"migrate", "status",
@@ -302,10 +317,41 @@ func TestCompatMigrateStatus_AntiRegressionCleanDirsReportNormally(t *testing.T)
 			)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Equals, tt.wantStdout)
+			c.Assert(stdout, qt.Equals, "Migration Status: OK\n"+
+				"  -- Current Version: No migration applied yet\n"+
+				"  -- Next Version:    Already at latest version\n"+
+				"  -- Executed Files:  0\n"+
+				"  -- Pending Files:   0\n")
 			c.Assert(stderr, qt.Equals, "")
 		})
 	}
+}
+
+// TestCompatMigrateStatus_AntiRegressionHashedCleanDirReportsPending is the
+// third state that already agreed with the community binary: a directory whose
+// atlas.sum holds still reports its pending migration.
+//
+// It is separate from the two above because it is the only one with a migration
+// to report, so the report it must produce is a different one.
+func TestCompatMigrateStatus_AntiRegressionHashedCleanDirReportsPending(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m")
+	writeStatusIntegrityHashed(c, dir)
+
+	stdout, stderr, err := runCompat(
+		"migrate", "status",
+		"--url", "sqlite://"+filepath.Join(tempDir, "clean.db"),
+		"--dir", "file://"+dir,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, "Migration Status: PENDING\n"+
+		"  -- Current Version: No migration applied yet\n"+
+		"  -- Next Version:    20260101000000\n"+
+		"  -- Executed Files:  0\n"+
+		"  -- Pending Files:   1\n")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 // TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending replaces the
@@ -346,34 +392,43 @@ func TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending(t *testing.T
 // TestCompatMigrateStatus_MatchesValidateOutput proves status shares one code
 // path with `migrate validate`, so the two cannot drift in wording, stream, or
 // exit value on the same directory.
+//
+// Both refusals are measured, because a missing atlas.sum and a stale one are
+// answered by different messages and either could drift on its own.
 func TestCompatMigrateStatus_MatchesValidateOutput(t *testing.T) {
-	tests := []struct {
-		name     string
-		writeDir func(*qt.C, string)
-	}{
-		{name: "never hashed", writeDir: writeStatusIntegrityUnhashed},
-		{name: "hashed then edited", writeDir: writeStatusIntegrityEdited},
-	}
+	t.Run("never hashed", func(t *testing.T) {
+		c := qt.New(t)
+		tempDir := c.TempDir()
+		dir := filepath.Join(tempDir, "m")
+		writeStatusIntegrityUnhashed(c, dir)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			tempDir := c.TempDir()
-			dir := filepath.Join(tempDir, "m")
-			tt.writeDir(c, dir)
+		assertStatusMatchesValidate(c, tempDir, dir)
+	})
 
-			statusOut, statusErrOut, statusErr := runCompat(
-				"migrate", "status",
-				"--url", "sqlite://"+filepath.Join(tempDir, "parity.db"),
-				"--dir", "file://"+dir,
-			)
-			validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
+	t.Run("hashed then edited", func(t *testing.T) {
+		c := qt.New(t)
+		tempDir := c.TempDir()
+		dir := filepath.Join(tempDir, "m")
+		writeStatusIntegrityEdited(c, dir)
 
-			c.Assert(statusErr, qt.IsNotNil)
-			c.Assert(validateErr, qt.IsNotNil)
-			c.Assert(statusOut, qt.Equals, validateOut)
-			c.Assert(statusErrOut, qt.Equals, validateErrOut)
-			c.Assert(statusErr.Error(), qt.Equals, validateErr.Error())
-		})
-	}
+		assertStatusMatchesValidate(c, tempDir, dir)
+	})
+}
+
+// assertStatusMatchesValidate runs both verbs on dir and pins that they refuse
+// it identically, down to the stream each byte was written to.
+func assertStatusMatchesValidate(c *qt.C, tempDir, dir string) {
+	c.Helper()
+	statusOut, statusErrOut, statusErr := runCompat(
+		"migrate", "status",
+		"--url", "sqlite://"+filepath.Join(tempDir, "parity.db"),
+		"--dir", "file://"+dir,
+	)
+	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
+
+	c.Assert(statusErr, qt.IsNotNil)
+	c.Assert(validateErr, qt.IsNotNil)
+	c.Assert(statusOut, qt.Equals, validateOut)
+	c.Assert(statusErrOut, qt.Equals, validateErrOut)
+	c.Assert(statusErr.Error(), qt.Equals, validateErr.Error())
 }

@@ -14,8 +14,6 @@ import (
 )
 
 func TestNormalizeSchemaInspectFormat_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		format string
@@ -29,7 +27,8 @@ func TestNormalizeSchemaInspectFormat_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasreport.NormalizeSchemaInspectFormat(test.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -59,13 +58,14 @@ func TestValidateSchemaInspectTemplate_FailurePath(t *testing.T) {
 }
 
 func TestSchemaInspectTemplateFunctionsFindsOnlyCallableIdentifiers(t *testing.T) {
+	c := qt.New(t)
 	functions, err := atlasreport.SchemaInspectTemplateFunctions(
 		`literal hcl {{ "split" }} {{ if sql . }}{{ write (hcl .) }}{{ end }}` +
 			`{{ define "nested" }}{{ split (hcl .) }}{{ end }}{{ template "nested" . }}`,
 	)
 
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, functions, qt.DeepEquals, []string{"hcl", "split", "sql", "write"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(functions, qt.DeepEquals, []string{"hcl", "split", "sql", "write"})
 }
 
 func TestRenderSchemaInspect_SQLTemplateRemainsStringCompatible(t *testing.T) {
@@ -252,7 +252,6 @@ func TestRenderSchemaInspect_SplitRejectsUnsupportedMode(t *testing.T) {
 }
 
 func TestRenderSchemaInspect_SplitRejectsUnsafeExtension(t *testing.T) {
-	c := qt.New(t)
 	report := sampleSchemaInspectReport()
 
 	tests := []struct {
@@ -266,7 +265,8 @@ func TestRenderSchemaInspect_SplitRejectsUnsafeExtension(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			format := fmt.Sprintf(`{{ sql . | split "type" %q }}`, test.extension)
 
 			output, err := atlasreport.RenderSchemaInspect(format, report)
@@ -311,7 +311,6 @@ func TestRenderSchemaInspect_WriteDefaultsToCurrentDirectory(t *testing.T) {
 }
 
 func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
-	c := qt.New(t)
 	report := sampleSchemaInspectReport()
 
 	tests := []struct {
@@ -324,7 +323,8 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			output, err := atlasreport.RenderSchemaInspect(test.format, report)
 
 			c.Assert(err, qt.ErrorMatches, `execute --format template: .*split requires hcl or sql schema output`)
@@ -349,8 +349,6 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 // "character varying(100)[]" there and trade one disagreement for another.
 // See stokaro/ptah#1242.
 func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		column types.DBColumn
@@ -395,7 +393,8 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
 				&goschema.Database{},
 				&types.DBSchema{

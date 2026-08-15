@@ -42,7 +42,7 @@ func indexAttributeSeed() []string {
 			"id integer PRIMARY KEY, doc jsonb, code text, name text, " +
 			"created_at timestamptz, score integer, a integer, b integer, c integer, " +
 			"tsv tsvector, tsv2 tsvector, tsv3 tsvector, ts timestamptz)",
-		// The table's own comment. It is here so the index-comment row below
+		// The table's own comment. It is here so the index-comment test below
 		// is measuring the index's object and not whichever comment the query
 		// happened to reach: obj_description(t.oid, 'pg_class') is the same
 		// function on the same catalog, and against a table with no comment it
@@ -71,19 +71,12 @@ func indexAttributeSeed() []string {
 	}
 }
 
-// TestPostgreSQLIndexAttributes_SurviveTheRead is the enumeration #1242 asks
-// for, one row per attribute the reader collects, read off a live server.
-//
-// The two rows the issue's list did not have are the last two. An operator
-// class can be the key type's DEFAULT and still carry parameters -- measured
-// here, tsvector_ops under gist with siglen=64 reports opcdefault true -- so a
-// reader that names a class only when it is not the default drops the
-// parameters with it, and the index it rebuilds has the 124-byte default
-// signature. Neither loss is an error at replay time: psql accepts both at exit
-// 0 and the wrong index is simply there.
-func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
-	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
+// readIndexAttributeIndexes provisions a database holding the whole fixture and
+// returns every index the reader found in it. It asserts that its own
+// arrangement succeeded and nothing else, so a failure inside it is the
+// arrangement and never the attribute the caller is about to measure.
+func readIndexAttributeIndexes(c *qt.C, dsn string) []dbschematypes.DBIndex {
+	c.Helper()
 
 	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 		name:  "index_attributes",
@@ -97,91 +90,143 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	c.Assert(err, qt.IsNil)
 
+	return live.Indexes
+}
+
+// The tests below are the enumeration #1242 asks for, read off a live server:
+// one test per shape of claim the reader has to satisfy, and one row per index
+// that carries it. Each test asserts exactly the attributes its name states, so
+// a failure names the attribute that moved as well as the index it moved on.
+
+// TestPostgreSQLIndexAttributes_PlainBtreeControlCarriesNothingExtra is the
+// control. An index that varies in none of the attributes the other tests
+// measure has to come back clean of all of them, so an attribute that leaks off
+// the index it belongs to has somewhere to be seen.
+func TestPostgreSQLIndexAttributes_PlainBtreeControlCarriesNothingExtra(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_plain")
+
+	c.Assert(index.Method, qt.Equals, "btree")
+	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{{Name: "name"}})
+	c.Assert(index.IncludeColumns, qt.IsNil)
+	c.Assert(index.StorageParams, qt.IsNil)
+	c.Assert(index.Comment, qt.Equals, "",
+		qt.Commentf("the table's comment must not arrive on an index that has none"))
+}
+
+// TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead covers the attributes
+// that live inside a key rather than beside it. An operator class, an
+// expression, a sort direction, a nulls ordering and a per-key operator class
+// parameter are all fields of one DBIndexPart, so the key vector is the whole
+// claim each row makes.
+func TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	indexes := readIndexAttributeIndexes(c, dsn)
+
 	tests := []struct {
 		name  string
 		index string
-		// assert states what the reader must report for this index. Every row
-		// asserts the WHOLE Parts slice rather than one field of it, so an
+		// wantParts is the WHOLE Parts slice rather than one field of it, so an
 		// attribute that leaks onto a key it does not belong to reddens the row
 		// that owns the key as well as the row that owns the attribute.
-		assert func(c *qt.C, index dbschematypes.DBIndex)
+		wantParts []dbschematypes.DBIndexPart
 	}{
-		{
-			name:  "plain btree control carries nothing extra",
-			index: "i_plain",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "btree")
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{{Name: "name"}})
-				c.Assert(index.IncludeColumns, qt.IsNil)
-				c.Assert(index.StorageParams, qt.IsNil)
-				c.Assert(index.Comment, qt.Equals, "",
-					qt.Commentf("the table's comment must not arrive on an index that has none"))
-			},
-		},
-		{
-			name:  "access method",
-			index: "i_gin",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "gin")
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{{Name: "doc"}})
-			},
-		},
 		{
 			name:  "operator class",
 			index: "i_opclass",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "code", Operator: "text_pattern_ops"},
-				})
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "code", Operator: "text_pattern_ops"},
 			},
 		},
 		{
 			name:  "expression key",
 			index: "i_expr",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Expr: "lower(name)"},
-				})
+			wantParts: []dbschematypes.DBIndexPart{
+				{Expr: "lower(name)"},
 			},
 		},
 		{
 			name:  "sort direction and nulls ordering",
 			index: "i_desc",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "created_at", Desc: true, NullsOrder: dbschematypes.NullsOrderLast},
-				})
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "created_at", Desc: true, NullsOrder: dbschematypes.NullsOrderLast},
 			},
 		},
 		{
 			name:  "nulls first on an ascending key",
 			index: "i_nullsfirst",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "score", NullsOrder: dbschematypes.NullsOrderFirst},
-				})
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "score", NullsOrder: dbschematypes.NullsOrderFirst},
 			},
 		},
 		{
-			name:  "include payload",
-			index: "i_include",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "a"}, {Name: "b"},
-				})
+			// Both keys are parameterised and the two values differ, so no
+			// constant attribute number and no reordering of the keys reports
+			// this row.
+			name:  "each key keeps its own operator class parameters",
+			index: "i_opclass_params_perkey",
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "tsv2", Operator: "tsvector_ops(siglen=32)"},
+				{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
 			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index := findLiveIndex(c, indexes, test.index)
+
+			c.Assert(index.Parts, qt.DeepEquals, test.wantParts)
+		})
+	}
+}
+
+// TestPostgreSQLIndexAttributes_AccessMethodAndKeyVectorSurviveTheRead pins the
+// method beside the keys. An operator class parameter exists only under a
+// method that defines one, so a report that names these keys without naming the
+// method they were read under has not said what is in the catalog.
+//
+// An operator class can be the key type's DEFAULT and still carry parameters --
+// measured here, tsvector_ops under gist with siglen=64 reports opcdefault true
+// -- so a reader that names a class only when it is not the default drops the
+// parameters with it, and the index it rebuilds has the 124-byte default
+// signature. Neither loss is an error at replay time: psql accepts both at exit
+// 0 and the wrong index is simply there.
+func TestPostgreSQLIndexAttributes_AccessMethodAndKeyVectorSurviveTheRead(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	indexes := readIndexAttributeIndexes(c, dsn)
+
+	tests := []struct {
+		name       string
+		index      string
+		wantMethod string
+		// wantParts is the WHOLE Parts slice rather than one field of it, so an
+		// attribute that leaks onto a key it does not belong to reddens the row
+		// that owns the key as well as the row that owns the attribute.
+		wantParts []dbschematypes.DBIndexPart
+	}{
+		{
+			name:       "access method",
+			index:      "i_gin",
+			wantMethod: "gin",
+			wantParts:  []dbschematypes.DBIndexPart{{Name: "doc"}},
 		},
 		{
 			// The parameters come from the INDEX relation's pg_attribute row,
 			// not the table's.
-			name:  "operator class parameters",
-			index: "i_opclass_params",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "gist")
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
-				})
+			name:       "operator class parameters",
+			index:      "i_opclass_params",
+			wantMethod: "gist",
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
 			},
 		},
 		{
@@ -191,68 +236,83 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 			// presence check and the wrong-relation check -- and reports this
 			// index as USING gist ("tsv2", "tsv3"), which psql accepts at exit
 			// 0 and which gives the second key the 124-byte default signature.
-			name:  "operator class parameters on a key that is not the first",
-			index: "i_opclass_params_multikey",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "gist")
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "tsv2"},
-					{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
-				})
-			},
-		},
-		{
-			// Both keys are parameterised and the two values differ, so no
-			// constant attribute number and no reordering of the keys reports
-			// this row.
-			name:  "each key keeps its own operator class parameters",
-			index: "i_opclass_params_perkey",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-					{Name: "tsv2", Operator: "tsvector_ops(siglen=32)"},
-					{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
-				})
-			},
-		},
-		{
-			// The index's own object comment, which the pinned community
-			// binary v1.3.0 reads and Ptah dropped. The table carries a
-			// different comment, so this row fails rather than passing by
-			// coincidence if the query reaches the table relation.
-			name:  "index comment",
-			index: "i_comment",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Comment, qt.Equals, "keep me")
-			},
-		},
-		{
-			name:  "storage parameters",
-			index: "i_storage",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "brin")
-				c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
-					"pages_per_range": "32",
-				})
-			},
-		},
-		{
-			// fillfactor has no slot on any surface downstream, so recording it
-			// would make this index differ from its own inspected document on
-			// every run. Dropping it is the decision, and this row is where it
-			// is written down rather than merely happening.
-			name:  "a storage parameter no surface downstream can write",
-			index: "i_storage_unrepresentable",
-			assert: func(c *qt.C, index dbschematypes.DBIndex) {
-				c.Assert(index.StorageParams, qt.IsNil)
+			name:       "operator class parameters on a key that is not the first",
+			index:      "i_opclass_params_multikey",
+			wantMethod: "gist",
+			wantParts: []dbschematypes.DBIndexPart{
+				{Name: "tsv2"},
+				{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
 			},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			test.assert(c, findLiveIndex(c, live.Indexes, test.index))
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index := findLiveIndex(c, indexes, test.index)
+
+			c.Assert(index.Method, qt.Equals, test.wantMethod)
+			c.Assert(index.Parts, qt.DeepEquals, test.wantParts)
 		})
 	}
+}
+
+// TestPostgreSQLIndexAttributes_IncludePayloadSurvivesTheRead reads the payload
+// and the keys of one index together: an INCLUDE column is not a key, and a
+// reader that reports it as one rebuilds a different index.
+func TestPostgreSQLIndexAttributes_IncludePayloadSurvivesTheRead(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_include")
+
+	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
+	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+		{Name: "a"}, {Name: "b"},
+	})
+}
+
+// TestPostgreSQLIndexAttributes_CommentSurvivesTheRead measures the index's own
+// object comment, which the pinned community binary v1.3.0 reads and Ptah
+// dropped. The table carries a different comment, so this test fails rather
+// than passing by coincidence if the query reaches the table relation.
+func TestPostgreSQLIndexAttributes_CommentSurvivesTheRead(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_comment")
+
+	c.Assert(index.Comment, qt.Equals, "keep me")
+}
+
+// TestPostgreSQLIndexAttributes_StorageParametersSurviveTheRead reads an
+// index's WITH (...) parameters, one of the two members of this family the
+// issue's own list did not reach.
+func TestPostgreSQLIndexAttributes_StorageParametersSurviveTheRead(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_storage")
+
+	c.Assert(index.Method, qt.Equals, "brin")
+	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
+		"pages_per_range": "32",
+	})
+}
+
+// TestPostgreSQLIndexAttributes_UnrepresentableStorageParameterIsDropped is the
+// other side of the decision. fillfactor has no slot on any surface downstream,
+// so recording it would make this index differ from its own inspected document
+// on every run. Dropping it is the decision, and this test is where it is
+// written down rather than merely happening.
+func TestPostgreSQLIndexAttributes_UnrepresentableStorageParameterIsDropped(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+
+	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_storage_unrepresentable")
+
+	c.Assert(index.StorageParams, qt.IsNil)
 }
 
 // TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing closes

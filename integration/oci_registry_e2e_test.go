@@ -23,6 +23,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/ocireferrers"
@@ -554,10 +555,11 @@ func requiredOCIRegistry(t *testing.T) string {
 
 func requiredPostgresE2EURL(t *testing.T) string {
 	t.Helper()
-	databaseURL := postgresE2EDatabaseURL(t)
-	if databaseURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
+	databaseURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	// dbtarget refuses an address carrying another engine's scheme, but it
+	// admits a schemeless driver DSN on purpose. These tests rewrite the
+	// database name through net/url, so the URL shape is still their own
+	// requirement and the check stays.
 	if !strings.HasPrefix(databaseURL, "postgres://") &&
 		!strings.HasPrefix(databaseURL, "postgresql://") {
 		t.Skip("PostgreSQL URL required for OCI registry e2e tests")

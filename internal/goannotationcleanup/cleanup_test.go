@@ -407,7 +407,6 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 }
 
 func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name         string
 		original     string
@@ -426,7 +425,8 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			path := filepath.Join(dir, "model.go")
 			c.Assert(os.WriteFile(path, []byte(tt.original), 0o600), qt.IsNil)

@@ -12,7 +12,6 @@ import (
 )
 
 func TestViewDDL_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	viewBody := "SELECT id, name\nFROM `analytics`.`users`\nWHERE active = true"
 	tests := []struct {
 		name string
@@ -37,7 +36,8 @@ func TestViewDDL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			rendered, err := clickhouse.NewWithCapabilities(capability.ClickHouse24()).Render(test.node)
 
 			c.Assert(err, qt.IsNil)
@@ -47,7 +47,6 @@ func TestViewDDL_HappyPath(t *testing.T) {
 }
 
 func TestViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) {
-	c := qt.New(t)
 	caps := capability.ClickHouse24().
 		With(capability.MaterializedViews, false).
 		With(capability.Views, false)
@@ -74,7 +73,8 @@ func TestViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			rendered, err := clickhouse.NewWithCapabilities(caps).Render(test.node)
 
 			c.Assert(err, qt.IsNil)
@@ -98,10 +98,10 @@ func TestViewDDL_NilCapabilitySetIsConservative(t *testing.T) {
 }
 
 func TestCreateViewDDL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	renderer := clickhouse.NewWithCapabilities(capability.ClickHouse24())
 
-	c.Run("empty body", func(c *qt.C) {
+	t.Run("empty body", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := renderer.Render(ast.NewCreateView("empty_view"))
 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -109,7 +109,8 @@ func TestCreateViewDDL_FailurePath(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("with check option", func(c *qt.C) {
+	t.Run("with check option", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := renderer.Render(
 			ast.NewCreateView("checked_view").SetBody("SELECT 1").SetWithCheck(true),
 		)
@@ -141,7 +142,6 @@ func TestDropViewDDL_FailurePath(t *testing.T) {
 //     server answers with a syntax error;
 //   - the refresh stays a named diagnostic even though create and drop emit.
 func TestMaterializedViewDDL_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	viewBody := "SELECT count() AS c\nFROM `analytics`.`users`"
 	tests := []struct {
 		name string
@@ -182,7 +182,8 @@ func TestMaterializedViewDDL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			rendered, err := clickhouse.NewWithCapabilities(capability.ClickHouse24()).Render(test.node)
 
 			c.Assert(err, qt.IsNil)
@@ -192,7 +193,6 @@ func TestMaterializedViewDDL_HappyPath(t *testing.T) {
 }
 
 func TestMaterializedViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) {
-	c := qt.New(t)
 	caps := capability.ClickHouse24().With(capability.MaterializedViews, false)
 	tests := []struct {
 		name string
@@ -214,7 +214,8 @@ func TestMaterializedViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			rendered, err := clickhouse.NewWithCapabilities(caps).Render(test.node)
 
 			c.Assert(err, qt.IsNil)
@@ -224,10 +225,10 @@ func TestMaterializedViewDDL_CapabilityDisabledNamesSkippedObject(t *testing.T) 
 }
 
 func TestMaterializedViewDDL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	renderer := clickhouse.NewWithCapabilities(capability.ClickHouse24())
 
-	c.Run("empty body", func(c *qt.C) {
+	t.Run("empty body", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := renderer.Render(ast.NewCreateMaterializedView("empty_mv"))
 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -235,7 +236,8 @@ func TestMaterializedViewDDL_FailurePath(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("cascade drop", func(c *qt.C) {
+	t.Run("cascade drop", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := renderer.Render(
 			ast.NewDropMaterializedView("dependent_mv").SetCascade(),
 		)

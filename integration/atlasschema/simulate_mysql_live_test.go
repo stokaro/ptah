@@ -30,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -201,20 +202,8 @@ table "sim_added" {
 // requiring a separate administrative connection for scratch provisioning.
 func liveMySQLURLsForSimulation(t *testing.T) (restrictedURL, adminURL string) {
 	t.Helper()
-	restrictedURL = os.Getenv("MYSQL_TEST_URL")
-	if restrictedURL == "" {
-		restrictedURL = os.Getenv("MYSQL_TEST_DSN")
-	}
-	if restrictedURL == "" {
-		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
-	}
-	adminURL = os.Getenv("MYSQL_ADMIN_TEST_URL")
-	if adminURL == "" {
-		adminURL = os.Getenv("MYSQL_ADMIN_TEST_DSN")
-	}
-	if adminURL == "" {
-		t.Skip("MYSQL_ADMIN_TEST_DSN or MYSQL_ADMIN_TEST_URL not set")
-	}
+	restrictedURL = dbtarget.URL(t, dbtarget.MySQL)
+	adminURL = dbtarget.URL(t, dbtarget.MySQLAdmin)
 	return normalizeMySQLTestURL(restrictedURL), normalizeMySQLTestURL(adminURL)
 }
 

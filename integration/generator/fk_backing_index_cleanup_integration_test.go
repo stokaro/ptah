@@ -11,20 +11,21 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestMySQLFamilyForeignKeyBackingIndexDownRoundTripIntegration(t *testing.T) {
 	engines := []struct {
 		name   string
-		envKey string
+		engine dbtarget.Engine
 	}{
-		{name: "mysql", envKey: "MYSQL_URL"},
-		{name: "mariadb", envKey: "MARIADB_URL"},
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
 	}
 
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {
-			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
+			conn := requireGeneratorDatabaseConnection(t, engine.engine)
 			tests := []struct {
 				name      string
 				indexName string
@@ -47,16 +48,16 @@ func TestMySQLFamilyForeignKeyBackingIndexDownRoundTripIntegration(t *testing.T)
 func TestMySQLFamilySameNamedNonCoveringIndexRefusesForeignKeyIntegration(t *testing.T) {
 	engines := []struct {
 		name   string
-		envKey string
+		engine dbtarget.Engine
 	}{
-		{name: "mysql", envKey: "MYSQL_URL"},
-		{name: "mariadb", envKey: "MARIADB_URL"},
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
 	}
 
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
+			conn := requireGeneratorDatabaseConnection(t, engine.engine)
 			assertSameNamedNonCoveringIndexRefusesForeignKey(c, conn)
 		})
 	}
@@ -88,7 +89,7 @@ func assertSameNamedNonCoveringIndexRefusesForeignKey(
 	c.Assert(err, qt.IsNil)
 	_, err = conn.Exec("ALTER TABLE " + childTable + " ADD CONSTRAINT " + foreignKey +
 		" FOREIGN KEY (parent_id) REFERENCES " + parentTable + " (id)")
-	c.Assert(err, qt.Not(qt.IsNil))
+	c.Assert(err, qt.IsNotNil)
 
 	after, readErr := conn.Reader().ReadSchema()
 	c.Assert(readErr, qt.IsNil)
@@ -99,16 +100,16 @@ func assertSameNamedNonCoveringIndexRefusesForeignKey(
 func TestMySQLFamilyAddedForeignKeyColumnDownRoundTripIntegration(t *testing.T) {
 	engines := []struct {
 		name   string
-		envKey string
+		engine dbtarget.Engine
 	}{
-		{name: "mysql", envKey: "MYSQL_URL"},
-		{name: "mariadb", envKey: "MARIADB_URL"},
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
 	}
 
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
+			conn := requireGeneratorDatabaseConnection(t, engine.engine)
 			runAddedForeignKeyColumnRoundTrip(c, conn)
 		})
 	}
@@ -117,16 +118,16 @@ func TestMySQLFamilyAddedForeignKeyColumnDownRoundTripIntegration(t *testing.T) 
 func TestMySQLFamilyAddedReferencedColumnDownRoundTripIntegration(t *testing.T) {
 	engines := []struct {
 		name   string
-		envKey string
+		engine dbtarget.Engine
 	}{
-		{name: "mysql", envKey: "MYSQL_URL"},
-		{name: "mariadb", envKey: "MARIADB_URL"},
+		{name: "mysql", engine: dbtarget.MySQL},
+		{name: "mariadb", engine: dbtarget.MariaDB},
 	}
 
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
+			conn := requireGeneratorDatabaseConnection(t, engine.engine)
 			runAddedReferencedColumnRoundTrip(c, conn)
 		})
 	}

@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -48,12 +49,12 @@ func TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry(t *testing.T
 }
 
 func TestDirtyMigrationState_MySQLRepairReachesHead(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runIssue265MySQLFamilyRepair(t, dbURL, "mysql")
 }
 
 func TestDirtyMigrationState_MariaDBRepairReachesHead(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runIssue265MySQLFamilyRepair(t, dbURL, "mariadb")
 }
 
@@ -196,6 +197,7 @@ func runIssue265MySQLFamilyRepair(t *testing.T, dbURL, dialect string) {
 }
 
 func issue265ColumnExists(t *testing.T, conn *dbschema.DatabaseConnection, table, column string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
@@ -205,11 +207,12 @@ func issue265ColumnExists(t *testing.T, conn *dbschema.DatabaseConnection, table
 		table,
 		column,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 
 func issue265TableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
@@ -218,7 +221,7 @@ func issue265TableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableN
 		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
 		tableName,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 

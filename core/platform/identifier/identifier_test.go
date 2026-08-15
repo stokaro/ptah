@@ -9,7 +9,6 @@ import (
 )
 
 func TestForDialect(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -51,7 +50,8 @@ func TestForDialect(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := identifier.ForDialect(test.dialect)
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -59,9 +59,8 @@ func TestForDialect(t *testing.T) {
 }
 
 func TestForSQLServerCatalog(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("catalog comparison requires resolved keys", func(c *qt.C) {
+	t.Run("catalog comparison requires resolved keys", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("Turkish_100_CI_AS")
 		c.Assert(got.IndexNames, qt.Equals, identifier.ComparisonCatalogResolved)
 		c.Assert(got.TableNames, qt.Equals, identifier.ComparisonCatalogResolved)
@@ -69,7 +68,8 @@ func TestForSQLServerCatalog(t *testing.T) {
 		c.Assert(got.CatalogCollation, qt.Equals, "Turkish_100_CI_AS")
 	})
 
-	c.Run("server-resolved equivalence overrides Go casing", func(c *qt.C) {
+	t.Run("server-resolved equivalence overrides Go casing", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("Turkish_100_CI_AS").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "I", Key: "I"},
@@ -80,7 +80,8 @@ func TestForSQLServerCatalog(t *testing.T) {
 		c.Assert(got.IndexIdentityKey("I"), qt.Not(qt.Equals), got.IndexIdentityKey("i"))
 	})
 
-	c.Run("resolved names are sorted deterministically", func(c *qt.C) {
+	t.Run("resolved names are sorted deterministically", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "users", Key: "users"},
@@ -94,9 +95,8 @@ func TestForSQLServerCatalog(t *testing.T) {
 }
 
 func TestSemanticsNormalize(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("partial public value falls back conservatively", func(c *qt.C) {
+	t.Run("partial public value falls back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := (identifier.Semantics{
 			CatalogCollation: "SQL_Latin1_General_CP1_CI_AS",
 		}).Normalize("sqlserver")
@@ -104,7 +104,8 @@ func TestSemanticsNormalize(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, want)
 	})
 
-	c.Run("invalid enum falls back conservatively", func(c *qt.C) {
+	t.Run("invalid enum falls back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := (identifier.Semantics{
 			DefaultSchema:  "dbo",
 			IndexNamespace: identifier.IndexNamespaceTable,
@@ -116,7 +117,8 @@ func TestSemanticsNormalize(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, want)
 	})
 
-	c.Run("complete catalog value is retained", func(c *qt.C) {
+	t.Run("complete catalog value is retained", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "dbo", Key: "dbo"},
@@ -125,13 +127,15 @@ func TestSemanticsNormalize(t *testing.T) {
 		c.Assert(got.CatalogCollation, qt.Equals, "SQL_Latin1_General_CP1_CI_AS")
 	})
 
-	c.Run("unresolved catalog template falls back conservatively", func(c *qt.C) {
+	t.Run("unresolved catalog template falls back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 			Normalize("sqlserver")
 		c.Assert(got, qt.DeepEquals, identifier.ForDialect("sqlserver"))
 	})
 
-	c.Run("missing equivalence key falls back conservatively", func(c *qt.C) {
+	t.Run("missing equivalence key falls back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "users", Key: "missing"},
@@ -140,7 +144,8 @@ func TestSemanticsNormalize(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, identifier.ForDialect("sqlserver"))
 	})
 
-	c.Run("noncanonical equivalence key falls back conservatively", func(c *qt.C) {
+	t.Run("noncanonical equivalence key falls back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "Users", Key: "users"},
@@ -150,7 +155,8 @@ func TestSemanticsNormalize(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, identifier.ForDialect("sqlserver"))
 	})
 
-	c.Run("resolved names on static semantics fall back conservatively", func(c *qt.C) {
+	t.Run("resolved names on static semantics fall back conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		got := identifier.ForDialect("postgres").
 			WithResolvedNames([]identifier.ResolvedName{
 				{Name: "users", Key: "users"},
@@ -191,7 +197,6 @@ func TestSemanticsEqual_IgnoresDiagnosticCatalogLabel(t *testing.T) {
 }
 
 func TestComparisonKeys(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name         string
 		comparison   identifier.Comparison
@@ -223,13 +228,15 @@ func TestComparisonKeys(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.comparison.IdentityKey(test.value), qt.Equals, test.wantIdentity)
 			c.Assert(test.comparison.ConflictKey(test.value), qt.Equals, test.wantConflict)
 		})
 	}
 
-	c.Run("unknown catalog preserves identity and conflicts conservatively", func(c *qt.C) {
+	t.Run("unknown catalog preserves identity and conflicts conservatively", func(t *testing.T) {
+		c := qt.New(t)
 		comparison := identifier.ComparisonCatalogUnknown
 		c.Assert(comparison.IdentityKey("IDX_Email"), qt.Equals, "IDX_Email")
 		c.Assert(

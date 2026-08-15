@@ -189,8 +189,6 @@ func queryReadsCatalogColumn(query, column string) (bool, error) {
 // against the source with the pinned binary v1.3.0 then reports
 // `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive_int;`.
 func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		catalog func() pgColumnCatalog
@@ -237,7 +235,8 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			catalog := test.catalog()
 			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 				return serveColumnQuery(catalog, query)

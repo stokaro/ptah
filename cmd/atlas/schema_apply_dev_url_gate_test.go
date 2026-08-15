@@ -36,55 +36,51 @@ func runSchemaApply(c *qt.C, args ...string) (string, error) {
 	return out.String(), err
 }
 
-// TestSchemaApplyDryRunRehearsesOnDevDatabase is the regression test for
-// stokaro/ptah#940 item A: `schema apply --dry-run` returned the plan and exited
-// 0 with a dev database the real apply refuses, so a CI job gating on the dry
-// run was a false green.
+// TestSchemaApplyDryRunRefusesAnUnreachableDevDatabase is the regression test
+// for stokaro/ptah#940 item A: `schema apply --dry-run` returned the plan and
+// exited 0 with a dev database the real apply refuses, so a CI job gating on the
+// dry run was a false green.
 //
-// The reachable row is the control that keeps the failing row honest: it proves
-// the probe separates the two dev URLs rather than failing every dry run.
-func TestSchemaApplyDryRunRehearsesOnDevDatabase(t *testing.T) {
-	tests := []struct {
-		name   string
-		devURL func(dir string) string
-		assert func(c *qt.C, out string, err error)
-	}{
-		{
-			name:   "an unreachable dev database refuses the dry run",
-			devURL: func(string) string { return unreachableDevURL },
-			assert: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-				c.Assert(err, qt.ErrorMatches, `(?s).*--dev-url.*`)
-			},
-		},
-		{
-			name:   "a reachable dev database passes the dry run",
-			devURL: func(dir string) string { return "sqlite://" + filepath.Join(dir, "dev.db") },
-			assert: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-				c.Assert(out, qt.Contains, "Planned schema changes:")
-			},
-		},
-	}
+// TestSchemaApplyDryRunPlansOnAReachableDevDatabase is the control that keeps
+// this one honest: it proves the probe separates the two dev URLs rather than
+// failing every dry run.
+func TestSchemaApplyDryRunRefusesAnUnreachableDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	schemaPath := writeSchemaApplyGateFixture(c, dir, "rehearsal_users")
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir := t.TempDir()
-			dbPath := filepath.Join(dir, "target.db")
-			schemaPath := writeSchemaApplyGateFixture(c, dir, "rehearsal_users")
+	out, err := runSchemaApply(c,
+		"--url", "sqlite://"+dbPath,
+		"--to", "file://"+schemaPath,
+		"--dev-url", unreachableDevURL,
+		"--dry-run",
+	)
 
-			out, err := runSchemaApply(c,
-				"--url", "sqlite://"+dbPath,
-				"--to", "file://"+schemaPath,
-				"--dev-url", test.devURL(dir),
-				"--dry-run",
-			)
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches, `(?s).*--dev-url.*`)
+	c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
+}
 
-			test.assert(c, out, err)
-			c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
-		})
-	}
+// TestSchemaApplyDryRunPlansOnAReachableDevDatabase is the control for the
+// refusal above. The dry run still has to reach a plan on a dev database that
+// opens, and it still has to leave the target untouched while doing so.
+func TestSchemaApplyDryRunPlansOnAReachableDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	schemaPath := writeSchemaApplyGateFixture(c, dir, "rehearsal_users")
+
+	out, err := runSchemaApply(c,
+		"--url", "sqlite://"+dbPath,
+		"--to", "file://"+schemaPath,
+		"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase states item A's contract

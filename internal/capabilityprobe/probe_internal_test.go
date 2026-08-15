@@ -41,15 +41,14 @@ var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaD
 // them apart is what lets
 // TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
-	c := qt.New(t)
-
 	registered := map[capability.Capability]bool{}
 	for _, key := range capability.All() {
 		registered[key] = true
 	}
 
 	for _, dialect := range probedDialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 
@@ -97,8 +96,6 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // Each entry is the set plans.go argues for in a comment at the point of
 // declaration. Postgres argues for none: everything it registers, it measures.
 func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		dialect string
 		want    []capability.Capability
@@ -112,7 +109,8 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		dialect: platform.MariaDB,
 		want:    []capability.Capability{capability.RoleManagement, capability.Sequences},
 	}} {
-		c.Run(tc.dialect, func(c *qt.C) {
+		t.Run(tc.dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(tc.dialect)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(slices.Sorted(maps.Keys(dialectPlan.undecided)), qt.DeepEquals, tc.want,
@@ -123,8 +121,6 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 }
 
 func TestIndexIncludeSPGiSTObservation(t *testing.T) {
-	c := qt.New(t)
-
 	accepted := Attempt{Statement: "CREATE INDEX", Accepted: true}
 	inspected := Attempt{Statement: "SELECT index metadata", Accepted: true}
 	for _, tc := range []struct {
@@ -177,7 +173,8 @@ func TestIndexIncludeSPGiSTObservation(t *testing.T) {
 			),
 		},
 	} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := indexIncludeSPGiSTObservation(tc.created, tc.inspected, tc.matches)
 			c.Assert(got, qt.Equals, tc.want)
 		})
@@ -185,8 +182,6 @@ func TestIndexIncludeSPGiSTObservation(t *testing.T) {
 }
 
 func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name    string
 		created Attempt
@@ -206,7 +201,8 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 			),
 		},
 	} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := uninspectableIndexIncludeSPGiSTObservation(tc.created)
 			c.Assert(got, qt.Equals, tc.want)
 		})
@@ -218,8 +214,6 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 // owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
 // 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
-	c := qt.New(t)
-
 	registered := len(capability.All())
 	for _, tc := range []struct {
 		name string
@@ -286,7 +280,8 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.MySQL84(),
 		want: 0,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(tc.cell.Dialect)
 			c.Assert(ok, qt.IsTrue)
 			report := reportOn(tc.cell, true, tc.caps)
@@ -298,10 +293,9 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 // TestPlans_DeclaredUndecidablesCarryAReason pins the shape that makes
 // undecidable an answer rather than a shrug.
 func TestPlans_DeclaredUndecidablesCarryAReason(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range probedDialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 			for key, reason := range dialectPlan.undecided {
@@ -332,44 +326,48 @@ var measuredCell = Cell{
 // TestAssemble_ThreeOutcomes pins the whole verdict table, including the one
 // row a cheaper implementation folds into agreement.
 func TestAssemble_ThreeOutcomes(t *testing.T) {
-	c := qt.New(t)
-
 	const key = capability.XMLType // Postgres17 says true.
 
 	for _, tc := range []struct {
-		name   string
-		obs    observation
-		assert func(c *qt.C, row Row)
+		name        string
+		obs         observation
+		wantOutcome Outcome
+		// wantObserved is false for a row the run never decided: such a row must
+		// not carry a server answer it never obtained.
+		wantObserved   bool
+		wantServerDoes bool
+		wantReason     string
+		wantMismatch   bool
 	}{{
-		name: "the server does what the preset says",
-		obs:  decided(true),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Agrees)
-			c.Assert(row.Observed, qt.IsTrue)
-			c.Assert(row.Reason, qt.Equals, "")
-		},
+		name:           "the server does what the preset says",
+		obs:            decided(true),
+		wantOutcome:    Agrees,
+		wantObserved:   true,
+		wantServerDoes: true,
 	}, {
-		name: "the server does not, which is a disagreement and not a warning",
-		obs:  decided(false),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Disagrees)
-			c.Assert(row.Mismatch(), qt.IsTrue)
-		},
+		name:         "the server does not, which is a disagreement and not a warning",
+		obs:          decided(false),
+		wantOutcome:  Disagrees,
+		wantObserved: true,
+		wantMismatch: true,
 	}, {
-		name: "an undecided key stays undecidable and never becomes agreement",
-		obs:  cannotDecide("the precondition was refused"),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Undecidable)
-			c.Assert(row.Observed, qt.IsFalse,
-				qt.Commentf("an undecided row must not carry a server answer it never obtained"))
-			c.Assert(row.Reason, qt.Equals, "the precondition was refused")
-			c.Assert(row.Mismatch(), qt.IsFalse)
-		},
+		name:        "an undecided key stays undecidable and never becomes agreement",
+		obs:         cannotDecide("the precondition was refused"),
+		wantOutcome: Undecidable,
+		wantReason:  "the precondition was refused",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			report := reportOn(measuredCell, true, capability.Postgres17())
 			rows := assemble(report, map[capability.Capability]observation{key: tc.obs}, nil)
-			tc.assert(c, rowFor(c, rows, key))
+
+			row := rowFor(c, rows, key)
+			c.Assert(row.Outcome, qt.Equals, tc.wantOutcome)
+			c.Assert(row.Observed, qt.Equals, tc.wantObserved)
+			c.Assert(row.ServerDoes, qt.Equals, tc.wantServerDoes)
+			c.Assert(row.Reason, qt.Equals, tc.wantReason)
+			c.Assert(row.Mismatch(), qt.Equals, tc.wantMismatch)
 		})
 	}
 }
@@ -442,8 +440,6 @@ func TestAssemble_AnUnattributableLineKeepsTheObservation(t *testing.T) {
 
 // TestReportErr covers the ways a run must refuse to report success.
 func TestReportErr(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name  string
 		build func() *Report
@@ -508,7 +504,8 @@ func TestReportErr(t *testing.T) {
 		},
 		want: `(?s).*no statement table for the postgres dialect.*`,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertErrMatches(c, tc.build().Err(), tc.want)
 		})
 	}
@@ -522,8 +519,6 @@ func TestReportErr(t *testing.T) {
 // decided count around a fixed promise, so the boundary is exercised from both
 // sides rather than only from the failing one.
 func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
-	c := qt.New(t)
-
 	registered := len(capability.All())
 	for _, tc := range []struct {
 		name  string
@@ -563,7 +558,8 @@ func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
 			registered,
 		),
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertErrMatches(c, tc.build().Err(), tc.want)
 		})
 	}
@@ -622,8 +618,6 @@ func TestRun_RefusesAnEmptyMatrix(t *testing.T) {
 // refused for the missing clause, so scoring the guard false would answer a
 // question the run never asked.
 func TestUnmetRequirement(t *testing.T) {
-	c := qt.New(t)
-
 	guardExperiment := experiment{
 		decides:  []capability.Capability{capability.DropConstraintIfExists},
 		requires: []capability.Capability{capability.DropConstraintGeneric},
@@ -649,7 +643,8 @@ func TestUnmetRequirement(t *testing.T) {
 		observations: map[capability.Capability]observation{},
 		wantMet:      false,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, met := unmetRequirement(guardExperiment, tc.observations)
 			c.Assert(met, qt.Equals, tc.wantMet)
 		})

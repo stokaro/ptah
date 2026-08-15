@@ -31,8 +31,11 @@ const compatOutsideMarker = "PTAH-1042-COMPAT-SECRET"
 
 func TestCompatCommand_AtlasHCLFileSandbox(t *testing.T) {
 	tests := []struct {
-		name     string
-		argument func(c *qt.C, dir, outside string) string
+		name string
+		// argument builds the file() operand the config will carry. It asserts
+		// nothing: the escape shapes differ in how they are spelled, not in what
+		// the command is expected to do with them.
+		argument func(dir, outside string) (string, error)
 		err      string
 	}{
 		{
@@ -61,7 +64,9 @@ func TestCompatCommand_AtlasHCLFileSandbox(t *testing.T) {
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 			outside := filepath.Join(base, "compat-secret.txt")
 			c.Assert(os.WriteFile(outside, []byte(compatOutsideMarker), 0o600), qt.IsNil)
-			writeCompatSandboxConfig(c, dir, tt.argument(c, dir, outside))
+			argument, argumentErr := tt.argument(dir, outside)
+			c.Assert(argumentErr, qt.IsNil)
+			writeCompatSandboxConfig(c, dir, argument)
 			t.Chdir(dir)
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -114,21 +119,14 @@ func writeCompatSandboxConfig(c *qt.C, dir, argument string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(body), 0o600), qt.IsNil)
 }
 
-func compatAbsoluteArgument(c *qt.C, _, outside string) string {
-	c.Helper()
-
-	return outside
+func compatAbsoluteArgument(_, outside string) (string, error) {
+	return outside, nil
 }
 
-func compatTraversalArgument(c *qt.C, _, outside string) string {
-	c.Helper()
-
-	return "../" + filepath.Base(outside)
+func compatTraversalArgument(_, outside string) (string, error) {
+	return "../" + filepath.Base(outside), nil
 }
 
-func compatSymlinkArgument(c *qt.C, dir, outside string) string {
-	c.Helper()
-
-	c.Assert(os.Symlink(outside, filepath.Join(dir, "secret.link")), qt.IsNil)
-	return "secret.link"
+func compatSymlinkArgument(dir, outside string) (string, error) {
+	return "secret.link", os.Symlink(outside, filepath.Join(dir, "secret.link"))
 }

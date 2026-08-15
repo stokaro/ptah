@@ -9,8 +9,6 @@ import (
 )
 
 func TestQuote(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -46,15 +44,14 @@ func TestQuote(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(sqlident.Quote(tt.dialect, tt.ident), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestQualified(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -70,7 +67,8 @@ func TestQualified(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(sqlident.Qualified(tt.dialect, tt.schema, tt.ident), qt.Equals, tt.want)
 		})
 	}
@@ -108,7 +106,8 @@ func TestBareOrQuoted(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qt.Assert(t, sqlident.BareOrQuoted(tt.dialect, tt.input), qt.Equals, tt.want)
+			c := qt.New(t)
+			c.Assert(sqlident.BareOrQuoted(tt.dialect, tt.input), qt.Equals, tt.want)
 		})
 	}
 }

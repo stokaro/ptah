@@ -195,64 +195,83 @@ func runUpInternal(args ...string) (string, error) {
 	return out.String(), err
 }
 
-// TestMigrateUp_OCISumProvenance runs the real apply path against an
-// in-process registry. It is the wiring half of stokaro/ptah#944: measurement
-// showed `ptah.sum verified: migrations directory is intact` printed
-// byte-identically for a tag whose content had been swapped and for the digest
-// that pinned the reviewed bytes, so the tag row must gain provenance and the
-// digest row must not.
-func TestMigrateUp_OCISumProvenance(t *testing.T) {
-	c := qt.New(t)
+// provenanceReferences is one pushed artifact named the two ways a caller can
+// name it: the movable tag, and the digest that tag resolved to.
+type provenanceReferences struct {
+	tag      string
+	digest   string
+	resolved string
+}
+
+// pushProvenanceReferences serves one artifact from an in-process registry and
+// returns both spellings of it. Both tests below start here, so the tag row and
+// the digest row are measured against the SAME bytes — which is what makes the
+// difference between their outputs a property of the reference and not of the
+// content.
+func pushProvenanceReferences(c *qt.C) provenanceReferences {
+	c.Helper()
 	const repository = "ptah/provenance"
 	store := newOCIMemoryStore()
 	host := startOCITestRegistry(c, store, repository)
 	resolved := pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "widgets"), "release")
-	tagReference := "oci://" + host + "/" + repository + ":release"
-	digestReference := "oci://" + host + "/" + repository + "@" + resolved
-
-	tests := []struct {
-		name      string
-		reference func() string
-		verify    func(c *qt.C, out string)
-	}{
-		{
-			name:      "movable tag carries provenance",
-			reference: func() string { return tagReference },
-			verify: func(c *qt.C, out string) {
-				c.Assert(out, qt.Contains, "Warning: "+tagReference+" is a movable tag: ptah.sum travels inside the artifact")
-				c.Assert(out, qt.Contains, "This tag resolved to "+resolved)
-				c.Assert(out, qt.Contains, "pass oci://"+host+"/"+repository+"@"+resolved+" to pin these exact bytes.")
-			},
-		},
-		{
-			name:      "digest pin stays silent",
-			reference: func() string { return digestReference },
-			verify: func(c *qt.C, out string) {
-				c.Assert(out, qt.Not(qt.Contains), "movable tag")
-				c.Assert(out, qt.Not(qt.Contains), "Warning:")
-			},
-		},
+	return provenanceReferences{
+		tag:      "oci://" + host + "/" + repository + ":release",
+		digest:   "oci://" + host + "/" + repository + "@" + resolved,
+		resolved: resolved,
 	}
+}
 
-	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			dbPath := filepath.Join(c.TempDir(), "provenance.db")
+// applyProvenanceReference runs the real apply path against reference and
+// returns its output, having asserted what every reference owes regardless of
+// its spelling: the run succeeds, the sum claim is printed, and the database
+// moved. A warning qualifies that claim; it never replaces it and never changes
+// the exit status.
+func applyProvenanceReference(c *qt.C, reference string) string {
+	c.Helper()
+	dbPath := filepath.Join(c.TempDir(), "provenance.db")
 
-			out, err := runUpInternal(
-				"--db-url", "sqlite://"+dbPath,
-				"--migrations-dir", tt.reference(),
-				"--verify-sum",
-				"--plain-http",
-				"--skip-report",
-				"--verbose",
-			)
+	out, err := runUpInternal(
+		"--db-url", "sqlite://"+dbPath,
+		"--migrations-dir", reference,
+		"--verify-sum",
+		"--plain-http",
+		"--skip-report",
+		"--verbose",
+	)
 
-			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			// The warning qualifies the claim; it never replaces it and never
-			// changes the exit status.
-			c.Assert(out, qt.Contains, "ptah.sum verified: migrations directory is intact")
-			c.Assert(out, qt.Contains, "Database is now at version: 1")
-			tt.verify(c, out)
-		})
-	}
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "ptah.sum verified: migrations directory is intact")
+	c.Assert(out, qt.Contains, "Database is now at version: 1")
+	return out
+}
+
+// TestMigrateUp_OCISumProvenanceWarnsOnAMovableTag runs the real apply path
+// against an in-process registry. It is the wiring half of stokaro/ptah#944:
+// measurement showed `ptah.sum verified: migrations directory is intact`
+// printed byte-identically for a tag whose content had been swapped and for the
+// digest that pinned the reviewed bytes, so a tag must say what its sum does
+// and does not prove.
+func TestMigrateUp_OCISumProvenanceWarnsOnAMovableTag(t *testing.T) {
+	c := qt.New(t)
+	references := pushProvenanceReferences(c)
+
+	out := applyProvenanceReference(c, references.tag)
+
+	c.Assert(out, qt.Contains, "Warning: "+references.tag+" is a movable tag: ptah.sum travels inside the artifact")
+	c.Assert(out, qt.Contains, "This tag resolved to "+references.resolved)
+	c.Assert(out, qt.Contains, "pass "+references.digest+" to pin these exact bytes.")
+}
+
+// TestMigrateUp_OCISumProvenanceStaysSilentOnADigestPin is the control for the
+// warning above: the same artifact named by the digest already pins the bytes,
+// so there is nothing left to qualify. Without this half a run that warned on
+// every reference would satisfy the test above.
+func TestMigrateUp_OCISumProvenanceStaysSilentOnADigestPin(t *testing.T) {
+	c := qt.New(t)
+	references := pushProvenanceReferences(c)
+
+	out := applyProvenanceReference(c, references.digest)
+
+	c.Assert(out, qt.Not(qt.Contains), "movable tag")
+	c.Assert(out, qt.Not(qt.Contains), "Warning:")
 }

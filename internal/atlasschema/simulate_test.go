@@ -46,9 +46,8 @@ CREATE TABLE sim_existing (
 }
 
 func TestSimulateOnDev_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("plan rehearses on the reset dev database and hands it back empty", func(c *qt.C) {
+	t.Run("plan rehearses on the reset dev database and hands it back empty", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -79,7 +78,8 @@ CREATE TABLE sim_stale (
 		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 	})
 
-	c.Run("the baseline and the plan really execute on the dev database", func(c *qt.C) {
+	t.Run("the baseline and the plan really execute on the dev database", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -104,14 +104,16 @@ CREATE TABLE sim_stale (
 		c.Assert(sqliteTableExists(c, dbPath, "sim_added"), qt.IsFalse)
 	})
 
-	c.Run("empty dev URL skips simulation", func(c *qt.C) {
+	t.Run("empty dev URL skips simulation", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 
 		c.Assert(plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{}), qt.IsNil)
 	})
 
-	c.Run("edited statements are rehearsed instead of the plan", func(c *qt.C) {
+	t.Run("edited statements are rehearsed instead of the plan", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -192,8 +194,6 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 }
 
 func TestSimulateOnDev_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	// The rehearsal used to refuse every docker:// dev URL here. It now
 	// provisions one (stokaro/ptah#844), so the row asserts that the value
 	// reached the provisioning layer.
@@ -207,7 +207,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 	//
 	// `docker://sqlite/3/dev` starts nothing: measured, the pinned community
 	// binary v1.3.0 answers `unsupported docker image "sqlite"` and exits 1.
-	c.Run("docker dev URL reaches the provisioner", func(c *qt.C) {
+	t.Run("docker dev URL reaches the provisioner", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 
@@ -217,7 +218,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	})
 
-	c.Run("dev URL dialect mismatch rejected before connecting", func(c *qt.C) {
+	t.Run("dev URL dialect mismatch rejected before connecting", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 
@@ -227,7 +229,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 	})
 
-	c.Run("dev URL must not equal the target URL", func(c *qt.C) {
+	t.Run("dev URL must not equal the target URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		plan := prepareSimulationPlan(c, dbPath)
@@ -240,7 +243,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
 	})
 
-	c.Run("dev URL must not alias the target URL", func(c *qt.C) {
+	t.Run("dev URL must not alias the target URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		plan := prepareSimulationPlan(c, dbPath)
@@ -255,7 +259,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
 	})
 
-	c.Run("percent-encoded dev URL must not alias the target URL", func(c *qt.C) {
+	t.Run("percent-encoded dev URL must not alias the target URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		plan := prepareSimulationPlan(c, dbPath)
@@ -269,7 +274,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, dbPath, "sim_existing"), qt.IsTrue)
 	})
 
-	c.Run("dev URL must not equal a database desired-state URL", func(c *qt.C) {
+	t.Run("dev URL must not equal a database desired-state URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "desired.db")
@@ -283,7 +289,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
 	})
 
-	c.Run("dev URL must not alias a database desired-state URL", func(c *qt.C) {
+	t.Run("dev URL must not alias a database desired-state URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		desiredPath := filepath.Join(dir, "desired.db")
@@ -297,7 +304,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the --to desired-state database ".*desired\.db": the dev database is reset destructively before the plan is rehearsed on it`)
 	})
 
-	c.Run("percent-encoded dev URL must not alias a database desired-state URL", func(c *qt.C) {
+	t.Run("percent-encoded dev URL must not alias a database desired-state URL", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		desiredPath := filepath.Join(dir, "desired.db")
@@ -316,7 +324,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, desiredPath, "desired_kept"), qt.IsTrue)
 	})
 
-	c.Run("malformed target URL fails closed before resetting dev", func(c *qt.C) {
+	t.Run("malformed target URL fails closed before resetting dev", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -334,7 +343,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, devPath, "dev_kept"), qt.IsTrue)
 	})
 
-	c.Run("malformed desired URL fails closed before resetting dev", func(c *qt.C) {
+	t.Run("malformed desired URL fails closed before resetting dev", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		dbPath := filepath.Join(dir, "target.db")
 		devPath := filepath.Join(dir, "dev.db")
@@ -353,7 +363,8 @@ func TestSimulateOnDev_FailurePath(t *testing.T) {
 		c.Assert(sqliteTableExists(c, devPath, "dev_kept"), qt.IsTrue)
 	})
 
-	c.Run("unreachable dev database", func(c *qt.C) {
+	t.Run("unreachable dev database", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TB.TempDir()
 		plan := prepareSimulationPlan(c, filepath.Join(dir, "target.db"))
 

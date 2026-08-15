@@ -5,7 +5,6 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -41,7 +41,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 	defer cancel()
-	conn, schemaName := prepareMaterializedViewReadbackFixture(c, ctx, "POSTGRES_URL")
+	conn, schemaName := prepareMaterializedViewReadbackFixture(c, ctx, dbtarget.PostgreSQL)
 
 	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
@@ -95,13 +95,10 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 func prepareMaterializedViewReadbackFixture(
 	c *qt.C,
 	ctx context.Context,
-	environmentKey string,
+	engine dbtarget.Engine,
 ) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
-	rawURL := os.Getenv(environmentKey)
-	if rawURL == "" {
-		c.Skipf("%s is not set", environmentKey)
-	}
+	rawURL := dbtarget.URL(c, engine)
 
 	schemaName := fmt.Sprintf("ptah_matview_readback_%d", time.Now().UnixNano())
 	schemaIdent := pgx.Identifier{schemaName}.Sanitize()

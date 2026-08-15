@@ -18,6 +18,30 @@ import (
 // no query at all. Ptah refused any non-empty query on all eight, through two
 // different chokepoints and with two different messages.
 
+// The desired states `migrate diff` is pointed at. The first adds a table the
+// fixture directory does not have, so the verb has something to write; the
+// second matches the fixture, because the row that uses it is refused before
+// any comparison happens.
+const (
+	queryDiffTargetSQL = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n" +
+		"CREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n"
+	queryUnchangedTargetSQL = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
+)
+
+// newQueryScratchDir returns a directory for whatever a verb writes outside the
+// migration directory -- a throwaway database, the desired-state file -- with
+// target.sql already in it.
+//
+// A fresh directory per invocation is what keeps a run and its control apart:
+// sharing one would let the first run's `migrate apply` leave a database the
+// second run finds already migrated.
+func newQueryScratchDir(c *qt.C, desired string) string {
+	c.Helper()
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "target.sql"), []byte(desired), 0o600), qt.IsNil)
+	return dir
+}
+
 // writeQueryFixtureDir writes a hashed native Atlas migration directory and
 // returns its path. The sum is written with `migrate hash` so the directory is
 // one the integrity gate accepts, which is what lets the query rows below turn
@@ -48,60 +72,55 @@ func writeQueryFixtureDir(c *qt.C) string {
 func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 	tests := []struct {
 		name string
-		// run invokes the verb against dir, with query appended to the --dir
-		// URL. Each verb needs different companion flags, so the invocation is
+		// args is the invocation against dir, with query appended to the --dir
+		// URL and everything the verb writes elsewhere placed under scratch.
+		// Each verb needs different companion flags, so the argument list is
 		// per-row wiring rather than a branch in the body.
-		run func(c *qt.C, dir, query string) error
+		args func(dir, scratch, query string) []string
 	}{
 		{
 			name: "apply",
-			run: func(c *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "apply",
-					"--dir", "file://"+dir+query,
-					"--url", "sqlite://"+filepath.Join(c.TempDir(), "apply.db"))
-				return err
+			args: func(dir, scratch, query string) []string {
+				return []string{"migrate", "apply",
+					"--dir", "file://" + dir + query,
+					"--url", "sqlite://" + filepath.Join(scratch, "apply.db")}
 			},
 		},
 		{
 			name: "hash",
-			run: func(_ *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir+query)
-				return err
+			args: func(dir, _, query string) []string {
+				return []string{"migrate", "hash", "--dir", "file://" + dir + query}
 			},
 		},
 		{
 			name: "validate",
-			run: func(_ *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "validate", "--dir", "file://"+dir+query)
-				return err
+			args: func(dir, _, query string) []string {
+				return []string{"migrate", "validate", "--dir", "file://" + dir + query}
 			},
 		},
 		{
 			name: "lint",
-			run: func(c *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "lint",
-					"--dir", "file://"+dir+query,
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--latest", "1")
-				return err
+			args: func(dir, scratch, query string) []string {
+				return []string{"migrate", "lint",
+					"--dir", "file://" + dir + query,
+					"--dev-url", "sqlite://" + filepath.Join(scratch, "dev.db"),
+					"--latest", "1"}
 			},
 		},
 		{
 			name: "status",
-			run: func(c *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "status",
-					"--dir", "file://"+dir+query,
-					"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
-				return err
+			args: func(dir, scratch, query string) []string {
+				return []string{"migrate", "status",
+					"--dir", "file://" + dir + query,
+					"--url", "sqlite://" + filepath.Join(scratch, "status.db")}
 			},
 		},
 		{
 			name: "set",
-			run: func(c *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "set", "20240101000000",
-					"--dir", "file://"+dir+query,
-					"--url", "sqlite://"+filepath.Join(c.TempDir(), "set.db"))
-				return err
+			args: func(dir, scratch, query string) []string {
+				return []string{"migrate", "set", "20240101000000",
+					"--dir", "file://" + dir + query,
+					"--url", "sqlite://" + filepath.Join(scratch, "set.db")}
 			},
 		},
 		// new and diff joined the table in stokaro/ptah#1086, once they ran the
@@ -112,25 +131,17 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 		// gate.
 		{
 			name: "new",
-			run: func(_ *qt.C, dir, query string) error {
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+query)
-				return err
+			args: func(dir, _, query string) []string {
+				return []string{"migrate", "new", "demo", "--dir", "file://" + dir + query}
 			},
 		},
 		{
 			name: "diff",
-			run: func(c *qt.C, dir, query string) error {
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(
-					target,
-					[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\nCREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n"),
-					0o600,
-				), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "dd",
-					"--dir", "file://"+dir+query,
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return err
+			args: func(dir, scratch, query string) []string {
+				return []string{"migrate", "diff", "dd",
+					"--dir", "file://" + dir + query,
+					"--dev-url", "sqlite://" + filepath.Join(scratch, "dev.db"),
+					"--to", "file://" + filepath.Join(scratch, "target.sql")}
 			},
 		},
 	}
@@ -139,11 +150,14 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			withQuery := tt.run(c, writeQueryFixtureDir(c), "?nonsense=1")
-			control := tt.run(c, writeQueryFixtureDir(c), "")
+			queryOut, withQuery := runCompatArgs(
+				tt.args(writeQueryFixtureDir(c), newQueryScratchDir(c, queryDiffTargetSQL), "?nonsense=1"))
+			controlOut, control := runCompatArgs(
+				tt.args(writeQueryFixtureDir(c), newQueryScratchDir(c, queryDiffTargetSQL), ""))
 
-			c.Assert(control, qt.IsNil, qt.Commentf("control run without a query must succeed"))
-			c.Assert(withQuery, qt.IsNil)
+			c.Assert(control, qt.IsNil,
+				qt.Commentf("control run without a query must succeed:\n%s", controlOut))
+			c.Assert(withQuery, qt.IsNil, qt.Commentf("%s", queryOut))
 		})
 	}
 }
@@ -177,25 +191,23 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 
 	tests := []struct {
 		name string
-		run  func(c *qt.C, dir string) error
+		args func(dir, scratch string) []string
 	}{
 		{
 			name: "lint",
-			run: func(c *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "lint",
-					"--dir", "file://"+dir+"?format=totally-bogus",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--latest", "1")
-				return err
+			args: func(dir, scratch string) []string {
+				return []string{"migrate", "lint",
+					"--dir", "file://" + dir + "?format=totally-bogus",
+					"--dev-url", "sqlite://" + filepath.Join(scratch, "dev.db"),
+					"--latest", "1"}
 			},
 		},
 		{
 			name: "status",
-			run: func(c *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "status",
-					"--dir", "file://"+dir+"?format=totally-bogus",
-					"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
-				return err
+			args: func(dir, scratch string) []string {
+				return []string{"migrate", "status",
+					"--dir", "file://" + dir + "?format=totally-bogus",
+					"--url", "sqlite://" + filepath.Join(scratch, "status.db")}
 			},
 		},
 	}
@@ -204,7 +216,7 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := tt.run(c, writeQueryFixtureDir(c))
+			_, err := runCompatArgs(tt.args(writeQueryFixtureDir(c), c.TempDir()))
 
 			c.Assert(err, qt.ErrorMatches, want)
 		})
@@ -245,25 +257,21 @@ func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *testing.T) {
 	tests := []struct {
 		name string
-		run  func(c *qt.C, dir string) error
+		args func(dir, scratch string) []string
 	}{
 		{
 			name: "new",
-			run: func(_ *qt.C, dir string) error {
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?nonsense=1")
-				return err
+			args: func(dir, _ string) []string {
+				return []string{"migrate", "new", "demo", "--dir", "file://" + dir + "?nonsense=1"}
 			},
 		},
 		{
 			name: "diff",
-			run: func(c *qt.C, dir string) error {
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "dd",
-					"--dir", "file://"+dir+"?nonsense=1",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return err
+			args: func(dir, scratch string) []string {
+				return []string{"migrate", "diff", "dd",
+					"--dir", "file://" + dir + "?nonsense=1",
+					"--dev-url", "sqlite://" + filepath.Join(scratch, "dev.db"),
+					"--to", "file://" + filepath.Join(scratch, "target.sql")}
 			},
 		},
 	}
@@ -275,7 +283,7 @@ func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *
 			c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_init.sql"),
 				[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-			err := tt.run(c, dir)
+			_, err := runCompatArgs(tt.args(dir, newQueryScratchDir(c, queryUnchangedTargetSQL)))
 
 			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
 			c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, []string{"20240101000000_init.sql"})

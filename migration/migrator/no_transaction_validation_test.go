@@ -102,7 +102,6 @@ func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *te
 }
 
 func TestNoTransactionControlValidation_UpLeavesNoRevision(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -116,7 +115,8 @@ func TestNoTransactionControlValidation_UpLeavesNoRevision(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := openNoTransactionValidationSQLite(c)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 			migration := migrator.CreateMigrationFromSQL(

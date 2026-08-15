@@ -307,7 +307,8 @@ func TestPublishFileAt_FailurePath_RejectsPathComponents(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := fsdurable.PublishFileAt(
 				root,
 				test.stagedName,
@@ -370,7 +371,8 @@ func TestFinalizeFileAt_FailurePath_RejectsPathComponents(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := fsdurable.FinalizeFileAt(root, test.stagedName, expectedInfo, 0o600)
 			c.Assert(err, qt.ErrorIs, fs.ErrInvalid)
 		})

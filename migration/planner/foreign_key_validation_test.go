@@ -14,7 +14,6 @@ import (
 )
 
 func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -50,7 +49,8 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.schema, test.dialect)
 			c.Assert(err, qt.ErrorIs, test.wantIs, qt.Commentf("error: %v", err))
 			c.Assert(err, qt.ErrorMatches, `.*`+test.wantErr)

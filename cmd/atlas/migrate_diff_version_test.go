@@ -35,6 +35,24 @@ func hashMigrationDir(c *qt.C, dir string) {
 	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("output:\n%s", out.String()))
 }
 
+// seedMigrationDir creates a migration directory holding files, and returns it.
+//
+// A directory that already holds a migration is refused by the checksum
+// preflight, so anything seeded is hashed; an empty directory has nothing to
+// hash and `migrate hash` on one writes a sum for no files.
+func seedMigrationDir(c *qt.C, files map[string]string) string {
+	c.Helper()
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	for name, content := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	if len(files) > 0 {
+		hashMigrationDir(c, dir)
+	}
+	return dir
+}
+
 // dirEntryNames lists the base names in dir.
 func dirEntryNames(c *qt.C, dir string) []string {
 	c.Helper()
@@ -53,8 +71,8 @@ func dirEntryNames(c *qt.C, dir string) []string {
 func runMigrateDiffInto(c *qt.C, dir string) []string {
 	c.Helper()
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(c.TB.(*testing.T), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
-	devPath := filepath.Join(c.TB.(*testing.T).TempDir(), "dev.db")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	devPath := filepath.Join(c.TempDir(), "dev.db")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -94,22 +112,17 @@ func runMigrateDiffInto(c *qt.C, dir string) []string {
 // it does so even though the result sorts BEFORE the migration already there.
 func TestMigrateDiffStampsTheUTCTimestampVersion(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(c *qt.C, dir string)
+		name string
+		// seeded is what the directory already holds when the run starts.
+		seeded map[string]string
 	}{
 		{
-			name:  "an empty directory",
-			setup: func(*qt.C, string) {},
+			name: "an empty directory",
 		},
 		{
 			name: "a directory holding a future-dated migration",
-			setup: func(c *qt.C, dir string) {
-				c.Assert(os.WriteFile(
-					filepath.Join(dir, futureDatedMigration),
-					[]byte("CREATE TABLE placeholder (id INTEGER);\n"),
-					0o600,
-				), qt.IsNil)
-				hashMigrationDir(c, dir)
+			seeded: map[string]string{
+				futureDatedMigration: "CREATE TABLE placeholder (id INTEGER);\n",
 			},
 		},
 	}
@@ -117,9 +130,7 @@ func TestMigrateDiffStampsTheUTCTimestampVersion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := filepath.Join(t.TempDir(), "migrations")
-			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-			test.setup(c, dir)
+			dir := seedMigrationDir(c, test.seeded)
 			before := time.Now().UTC().Add(-time.Second)
 
 			written := runMigrateDiffInto(c, dir)
@@ -146,15 +157,10 @@ func TestMigrateDiffStampsTheUTCTimestampVersion(t *testing.T) {
 // is the rule `migrate new` already applies.
 func TestMigrateDiffAdvancesPastAnExistingVersionOfThisSecond(t *testing.T) {
 	c := qt.New(t)
-	dir := filepath.Join(t.TempDir(), "migrations")
-	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	taken := time.Now().UTC().Format("20060102150405")
-	c.Assert(os.WriteFile(
-		filepath.Join(dir, taken+"_taken.sql"),
-		[]byte("CREATE TABLE taken (id INTEGER);\n"),
-		0o600,
-	), qt.IsNil)
-	hashMigrationDir(c, dir)
+	dir := seedMigrationDir(c, map[string]string{
+		taken + "_taken.sql": "CREATE TABLE taken (id INTEGER);\n",
+	})
 
 	written := runMigrateDiffInto(c, dir)
 

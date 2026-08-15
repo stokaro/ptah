@@ -22,9 +22,10 @@ func readClickHouseMaterializedViews(
 	db *sql.DB,
 	database string,
 ) *dbschematypes.DBSchema {
+	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{MatViews: schema.MatViews}
 }
 
@@ -36,9 +37,10 @@ func readClickHouseViewLikes(
 	db *sql.DB,
 	database string,
 ) *dbschematypes.DBSchema {
+	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{Views: schema.Views, MatViews: schema.MatViews}
 }
 
@@ -554,7 +556,7 @@ func TestMaterializedViewStoresRatherThanRecomputesLive(t *testing.T) {
 	readSum := func(view string) uint64 {
 		var total uint64
 		err := db.QueryRowContext(t.Context(), "SELECT sum(c) FROM "+view).Scan(&total)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 		return total
 	}
 

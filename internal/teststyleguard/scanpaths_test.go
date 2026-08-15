@@ -34,48 +34,62 @@ func Test%s(t *testing.T) {
 // nothing was left to report.
 func TestScanPathsSelectsTheWorkingTreeOnly(t *testing.T) {
 	tests := []struct {
-		name  string
-		root  func(t *testing.T) string
-		check func(c *qt.C, paths []string)
+		name string
+		root func(t *testing.T) string
+		// wantAtLeast is a floor on the whole selection. Only the real
+		// repository can carry one, and it is what a selection narrowed until
+		// nothing is left to report fails against.
+		wantAtLeast    int
+		wantSelected   []string
+		wantUnselected []string
+		// wantNothingUnder names path prefixes the selection must not reach at
+		// all, which is stricter than naming the files parked under them today.
+		wantNothingUnder []string
 	}{
 		{
-			name: "tracked violation is selected",
-			root: fixtureRepo,
-			check: func(c *qt.C, paths []string) {
-				c.Assert(paths, qt.Contains, "pkg/tracked_bad_test.go")
-			},
+			name:         "tracked violation is selected",
+			root:         fixtureRepo,
+			wantSelected: []string{"pkg/tracked_bad_test.go"},
 		},
 		{
-			name: "linked worktree violation is not selected",
-			root: fixtureRepo,
-			check: func(c *qt.C, paths []string) {
-				c.Assert(paths, qt.Not(qt.Contains), "wt/wt_bad_test.go")
-				c.Assert(pathsUnder(paths, "wt/"), qt.HasLen, 0)
-			},
+			name:             "linked worktree violation is not selected",
+			root:             fixtureRepo,
+			wantUnselected:   []string{"wt/wt_bad_test.go"},
+			wantNothingUnder: []string{"wt/"},
 		},
 		{
-			name: "never-staged new test is still selected",
-			root: fixtureRepo,
-			check: func(c *qt.C, paths []string) {
-				c.Assert(paths, qt.Contains, "fresh/fresh_bad_test.go")
-			},
+			name:         "never-staged new test is still selected",
+			root:         fixtureRepo,
+			wantSelected: []string{"fresh/fresh_bad_test.go"},
 		},
 		{
-			name: "real repository selection is not narrowed",
-			root: moduleRoot,
-			check: func(c *qt.C, paths []string) {
-				c.Assert(len(paths) > 500, qt.IsTrue, qt.Commentf("selected only %d test files", len(paths)))
-				c.Assert(paths, qt.Contains, "internal/apiguard/snapshot_test.go")
-				c.Assert(paths, qt.Contains, "internal/teststyleguard/scanpaths_test.go")
-				c.Assert(pathsUnder(paths, ".claude/worktrees/"), qt.HasLen, 0)
-				c.Assert(pathsUnder(paths, ".codex/"), qt.HasLen, 0)
+			name:        "real repository selection is not narrowed",
+			root:        moduleRoot,
+			wantAtLeast: 501,
+			wantSelected: []string{
+				"internal/apiguard/snapshot_test.go",
+				"internal/teststyleguard/scanpaths_test.go",
 			},
+			wantNothingUnder: []string{".claude/worktrees/", ".codex/"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.check(qt.New(t), listScanPaths(t, tt.root(t)))
+			c := qt.New(t)
+
+			paths := listScanPaths(t, tt.root(t))
+
+			c.Assert(len(paths) >= tt.wantAtLeast, qt.IsTrue, qt.Commentf("selected only %d test files", len(paths)))
+			for _, want := range tt.wantSelected {
+				c.Assert(paths, qt.Contains, want)
+			}
+			for _, unwanted := range tt.wantUnselected {
+				c.Assert(paths, qt.Not(qt.Contains), unwanted)
+			}
+			for _, prefix := range tt.wantNothingUnder {
+				c.Assert(pathsUnder(paths, prefix), qt.HasLen, 0)
+			}
 		})
 	}
 }

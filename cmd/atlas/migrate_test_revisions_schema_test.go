@@ -56,52 +56,44 @@ func writeMigrateTestRevisionsFixture(c *qt.C) (migrationsDir, casesDir string) 
 	return migrationsDir, casesDir
 }
 
-// TestCompatCommand_MigrateTestRevisionsSchema is a discriminating pair rather
-// than a single assertion: the same fixture must PASS with the flag and FAIL
-// without it. Without the pair, a test runner that ignored --revisions-schema
-// and wrote revisions everywhere would look correct.
-//
-// Reverted, the passing row does not merely fail its assertion — the run stops
-// with `unknown flag: --revisions-schema`.
-func TestCompatCommand_MigrateTestRevisionsSchema(t *testing.T) {
-	tests := []struct {
-		name     string
-		flagArgs func() []string
-		wantOut  string
-		wantErr  func(c *qt.C, err error)
-	}{
-		{
-			name:     "with the flag the revision table moves",
-			flagArgs: func() []string { return []string{"--revisions-schema", "alt"} },
-			wantOut:  "1 cases, 1 passed, 0 failed",
-			wantErr: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNil)
-			},
-		},
-		{
-			name:     "without the flag the same case fails",
-			flagArgs: func() []string { return nil },
-			wantOut:  "1 cases, 0 passed, 1 failed",
-			wantErr: func(c *qt.C, err error) {
-				c.Assert(err, qt.ErrorMatches, "migration tests failed")
-			},
-		},
-	}
+// runMigrateTestRevisionsFixture runs `migrate test` over the fixture above with
+// whatever flags the caller adds between the directory and the cases path.
+func runMigrateTestRevisionsFixture(c *qt.C, flags ...string) (stdout string, err error) {
+	c.Helper()
+	migrationsDir, casesDir := writeMigrateTestRevisionsFixture(c)
+	args := append([]string{"migrate", "test", "--dir", "file://" + migrationsDir}, flags...)
+	args = append(args, casesDir)
+	stdout, _, err = runCompatStreams(c, args...)
+	return stdout, err
+}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			migrationsDir, casesDir := writeMigrateTestRevisionsFixture(c)
-			args := append([]string{
-				"migrate", "test",
-				"--dir", "file://" + migrationsDir,
-			}, test.flagArgs()...)
-			args = append(args, casesDir)
+// The two tests below are a discriminating pair rather than a single assertion:
+// the same fixture must PASS with --revisions-schema and FAIL without it.
+// Without the pair, a test runner that ignored the flag and wrote revisions
+// everywhere would look correct.
 
-			stdout, _, err := runCompatStreams(c, args...)
+// TestCompatCommand_MigrateTestRevisionsSchema_HappyPath is the half the flag
+// exists for. With the mapping reverted -- `migrate test` passing an empty
+// revisions schema to the runner, so revisions land in the connection default
+// -- this one reddens with "migration tests failed" while the failure path below
+// stays green, which is the direction that says the flag is what moved them.
+func TestCompatCommand_MigrateTestRevisionsSchema_HappyPath(t *testing.T) {
+	c := qt.New(t)
 
-			test.wantErr(c, err)
-			c.Assert(stdout, qt.Contains, test.wantOut)
-		})
-	}
+	stdout, err := runMigrateTestRevisionsFixture(c, "--revisions-schema", "alt")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+// TestCompatCommand_MigrateTestRevisionsSchema_FailurePath is the half that
+// keeps the happy path from being vacuous: the same case, run without the flag,
+// has to find no revision row in the attached schema and fail.
+func TestCompatCommand_MigrateTestRevisionsSchema_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, err := runMigrateTestRevisionsFixture(c)
+
+	c.Assert(err, qt.ErrorMatches, "migration tests failed")
+	c.Assert(stdout, qt.Contains, "1 cases, 0 passed, 1 failed")
 }

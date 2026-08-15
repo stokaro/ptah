@@ -85,7 +85,8 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 		qt.Commentf("spanner has no live coverage, so this offline half is the only place it is measured"))
 
 	for _, dialect := range dialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			desired := routingFixture()
 
 			renderCensus := surfaceCensus(c, dialect,

@@ -423,7 +423,8 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runSchemaExport(tt.args...)
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(tt.wantErr), qt.Commentf("stdout:\n%s", stdout))

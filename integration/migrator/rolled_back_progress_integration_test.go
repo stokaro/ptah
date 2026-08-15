@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -46,12 +47,12 @@ func (i *issue887StatementInterceptor) ExecuteStatement(
 // count after the retry, not the counter: a resume that skips a statement is
 // indistinguishable from a correct one until the data is counted.
 func TestRolledBackProgress_MySQLDataOnlyBodyResumesFromTheTop(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackDataOnlyBody(t, dbURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBDataOnlyBodyResumesFromTheTop(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackDataOnlyBody(t, dbURL, "mariadb")
 }
 
@@ -60,127 +61,127 @@ func TestRolledBackProgress_MariaDBDataOnlyBodyResumesFromTheTop(t *testing.T) {
 // ordinary failure. The prefix is durable, but the statement outcome remains
 // unknown and automatic retry must stop before it can repeat user SQL.
 func TestRolledBackProgress_MySQLFailingDDLKeepsUnknownOutcome(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackCommittedDDLPrefix(t, dbURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBFailingDDLKeepsUnknownOutcome(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackCommittedDDLPrefix(t, dbURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLDDLThenDMLKeepsTheWholeDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackDDLThenDML(t, dbURL, "mysql", migrator.RevisionTableFormatAtlas)
 }
 
 func TestRolledBackProgress_MariaDBDDLThenDMLKeepsTheWholeDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackDDLThenDML(t, dbURL, "mariadb", migrator.RevisionTableFormatAtlas)
 }
 
 func TestRolledBackProgress_MySQLNativeRevisionKeepsTheWholeDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackDDLThenDML(t, dbURL, "mysql_native", migrator.RevisionTableFormatPtah)
 }
 
 func TestRolledBackProgress_MariaDBNativeRevisionKeepsTheWholeDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackDDLThenDML(t, dbURL, "mariadb_native", migrator.RevisionTableFormatPtah)
 }
 
 func TestRolledBackProgress_MySQLRejectsTransactionControl(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsTransactionControl(t, dbURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBRejectsTransactionControl(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsTransactionControl(t, dbURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLRejectsChangingTargetDatabase(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsChangingTargetDatabase(t, dbURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBRejectsChangingTargetDatabase(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsChangingTargetDatabase(t, dbURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLReplaysCommittedSessionState(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackSessionStateReplay(t, dbURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBReplaysCommittedSessionState(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackSessionStateReplay(t, dbURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLAtlasDownRecordsTheDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackDownProgress(t, dbURL, "mysql_down_atlas", migrator.RevisionTableFormatAtlas)
 }
 
 func TestRolledBackProgress_MariaDBAtlasDownRecordsTheDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackDownProgress(t, dbURL, "mariadb_down_atlas", migrator.RevisionTableFormatAtlas)
 }
 
 func TestRolledBackProgress_MySQLNativeDownRecordsTheDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRolledBackDownProgress(t, dbURL, "mysql_down_native", migrator.RevisionTableFormatPtah)
 }
 
 func TestRolledBackProgress_MariaDBNativeDownRecordsTheDurablePrefix(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRolledBackDownProgress(t, dbURL, "mariadb_down_native", migrator.RevisionTableFormatPtah)
 }
 
 func TestRolledBackProgress_MySQLRejectsNonTransactionalMetadata(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsNonTransactionalMetadata(t, dbURL, "mysql_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsNonTransactionalMetadata(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsNonTransactionalMetadata(t, dbURL, "mariadb_myisam")
 }
 
 func TestRolledBackProgress_MySQLRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t, dbURL, "mysql_native_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsNonTransactionalNativeMetadataBeforeUpgrade(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsNonTransactionalNativeMetadataBeforeUpgrade(t, dbURL, "mariadb_native_myisam")
 }
 
 func TestRolledBackProgress_MySQLRejectsNonTransactionalTargetTable(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsNonTransactionalTargetTable(t, dbURL, "mysql_target_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsNonTransactionalTargetTable(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsNonTransactionalTargetTable(t, dbURL, "mariadb_target_myisam")
 }
 
 func TestRolledBackProgress_MySQLRejectsCreatingNonTransactionalTargetTable(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mysql_create_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsCreatingNonTransactionalTargetTable(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsCreatingNonTransactionalTargetTable(t, dbURL, "mariadb_create_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsMariaDBAlterStorageEngine(
 		t,
 		dbURL,
@@ -191,7 +192,7 @@ func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineMyISAM(t *testing.T)
 }
 
 func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineDefault(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsMariaDBAlterStorageEngine(
 		t,
 		dbURL,
@@ -202,147 +203,147 @@ func TestRolledBackProgress_MariaDBRejectsAlterStorageEngineDefault(t *testing.T
 }
 
 func TestRolledBackProgress_MySQLRejectsDefaultStorageEngineReset(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsDefaultStorageEngineReset(t, dbURL, "mysql_default_engine")
 }
 
 func TestRolledBackProgress_MariaDBRejectsDefaultStorageEngineReset(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsDefaultStorageEngineReset(t, dbURL, "mariadb_default_engine")
 }
 
 func TestRolledBackProgress_MySQLRejectsUnsafeSQLModeChange(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsUnsafeSQLModeChange(t, dbURL, "mysql_unsafe_sql_mode")
 }
 
 func TestRolledBackProgress_MariaDBRejectsUnsafeSQLModeChange(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsUnsafeSQLModeChange(t, dbURL, "mariadb_unsafe_sql_mode")
 }
 
 func TestRolledBackProgress_MySQLRejectsUnsafeInitialSQLMode(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsUnsafeInitialSQLMode(t, dbURL, "mysql_initial_sql_mode")
 }
 
 func TestRolledBackProgress_MariaDBRejectsUnsafeInitialSQLMode(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsUnsafeInitialSQLMode(t, dbURL, "mariadb_initial_sql_mode")
 }
 
 func TestRolledBackProgress_MySQLRejectsANSIQuotesSQLModeChange(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mysql_ansi_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsANSIQuotesSQLModeChange(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsANSIQuotesSQLModeChange(t, dbURL, "mariadb_ansi_myisam")
 }
 
 func TestRolledBackProgress_MariaDBRejectsMSSQLSQLModeChange(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsMSSQLSQLModeChange(t, dbURL, "mariadb_mssql_myisam")
 }
 
 func TestRolledBackProgress_MySQLRejectsANSIQuotesInitialSQLMode(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsInitialSQLMode(t, dbURL, "mysql_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
 }
 
 func TestRolledBackProgress_MariaDBRejectsANSIQuotesInitialSQLMode(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_ansi", "%27ANSI_QUOTES%27", "ANSI_QUOTES")
 }
 
 func TestRolledBackProgress_MariaDBRejectsMSSQLInitialSQLMode(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsInitialSQLMode(t, dbURL, "mariadb_initial_mssql", "%27MSSQL%27", "MSSQL")
 }
 
 func TestRolledBackProgress_MySQLIsolatesTemporaryTablesBetweenAttempts(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runIsolatesTemporaryTablesBetweenAttempts(t, dbURL, "mysql_tmp")
 }
 
 func TestRolledBackProgress_MariaDBIsolatesTemporaryTablesBetweenAttempts(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runIsolatesTemporaryTablesBetweenAttempts(t, dbURL, "mariadb_tmp")
 }
 
 func TestRolledBackProgress_MySQLRejectsTemporaryMetadataShadow(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsTemporaryMetadataShadow(t, dbURL, "mysql_shadow")
 }
 
 func TestRolledBackProgress_MariaDBRejectsTemporaryMetadataShadow(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsTemporaryMetadataShadow(t, dbURL, "mariadb_shadow")
 }
 
 func TestRolledBackProgress_MySQLRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t, dbURL, "mysql_dirty_shadow")
 }
 
 func TestRolledBackProgress_MariaDBRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsStaleTemporaryMetadataShadowBeforeDirtyCheck(t, dbURL, "mariadb_dirty_shadow")
 }
 
 func TestRolledBackProgress_MySQLRejectsStaleTemporaryMetadataShadowBeforePlanning(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsStaleTemporaryMetadataShadowBeforePlanning(t, dbURL, "mysql_stale_shadow")
 }
 
 func TestRolledBackProgress_MariaDBRejectsStaleTemporaryMetadataShadowBeforePlanning(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsStaleTemporaryMetadataShadowBeforePlanning(t, dbURL, "mariadb_stale_shadow")
 }
 
 func TestRolledBackProgress_MySQLRejectsInheritedStorageEngine(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runRejectsInheritedStorageEngine(t, dbURL, "mysql_create_like")
 }
 
 func TestRolledBackProgress_MariaDBRejectsInheritedStorageEngine(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runRejectsInheritedStorageEngine(t, dbURL, "mariadb_create_like")
 }
 
 func TestRolledBackProgress_MySQLRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_scope")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_887_scope")
 	runRejectsUnwitnessedExecutionBoundaries(t, targetURL, targetURL, "mysql")
 }
 
 func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "ptah_887_scope")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", dbtarget.MariaDBAdmin, "ptah_887_scope")
 	runRejectsUnwitnessedExecutionBoundaries(t, targetURL, targetURL, "mariadb")
 }
 
 func TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_privilege")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_887_privilege")
 	runMySQLWithoutTriggerPrivilegeFailsClosed(t, targetURL)
 }
 
 func TestRolledBackProgress_MariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", "MARIADB_ADMIN_TEST_URL", "ptah_887_privilege")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", dbtarget.MariaDBAdmin, "ptah_887_privilege")
 	runMariaDBWithoutTriggerPrivilegeStillRejectsTriggeredRelation(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_role")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_887_role")
 	runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T) {
-	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", "MYSQL_ADMIN_TEST_URL", "ptah_887_files")
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_887_files")
 	runMySQLRejectsFilesystemWritesBeforeSideEffect(t, targetURL)
 }
 
 func TestRolledBackProgress_MySQLEscapedDatabaseGrantIsAccepted(t *testing.T) {
-	adminURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_ADMIN_TEST_URL")
+	adminURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQLAdmin)
 	runMySQLEscapedDatabaseGrantIsAccepted(t, adminURL)
 }
 
@@ -583,7 +584,8 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		}
 
 		for _, test := range cases {
-			c.Run(test.name, func(c *qt.C) {
+			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				migration := migrator.CreateMigrationFromSQL(1, test.name, test.statement, "SELECT 1")
 
 				err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
@@ -2335,12 +2337,13 @@ func issue887Names(prefix string) issue887TestNames {
 }
 
 func issue887ReplaceMySQLCredentials(t *testing.T, rawURL, username, password string) string {
+	c := qt.New(t)
 	t.Helper()
 
 	scheme, remainder, found := strings.Cut(rawURL, "://")
-	qt.Assert(t, found, qt.IsTrue)
+	c.Assert(found, qt.IsTrue)
 	_, endpoint, found := strings.Cut(remainder, "@")
-	qt.Assert(t, found, qt.IsTrue)
+	c.Assert(found, qt.IsTrue)
 	return fmt.Sprintf("%s://%s:%s@%s", scheme, username, password, endpoint)
 }
 
@@ -2391,6 +2394,7 @@ func issue887AppliedCount(t *testing.T, conn *dbschema.DatabaseConnection, names
 }
 
 func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) string {
+	c := qt.New(t)
 	t.Helper()
 
 	var failure string
@@ -2398,7 +2402,7 @@ func issue887RevisionError(t *testing.T, conn *dbschema.DatabaseConnection, name
 		context.Background(),
 		fmt.Sprintf("SELECT error FROM %s WHERE version = '1'", names.revisionsTable),
 	).Scan(&failure)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return failure
 }
 
@@ -2408,6 +2412,7 @@ func issue887MetadataEngine(t *testing.T, conn *dbschema.DatabaseConnection, nam
 }
 
 func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table string) string {
+	c := qt.New(t)
 	t.Helper()
 
 	var engine string
@@ -2417,11 +2422,12 @@ func issue887TableEngine(t *testing.T, conn *dbschema.DatabaseConnection, table 
 		conn.Info().Schema,
 		table,
 	).Scan(&engine)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return engine
 }
 
 func issue887TableCount(t *testing.T, conn *dbschema.DatabaseConnection, table string) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2431,7 +2437,7 @@ func issue887TableCount(t *testing.T, conn *dbschema.DatabaseConnection, table s
 		conn.Info().Schema,
 		table,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2441,6 +2447,7 @@ func issue887ColumnCount(
 	table,
 	column string,
 ) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2452,40 +2459,43 @@ WHERE table_schema = ? AND table_name = ? AND column_name = ?`,
 		table,
 		column,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887ScalarCount(t *testing.T, conn *dbschema.DatabaseConnection, query string) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
 	err := conn.QueryRowContext(context.Background(), query).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) []string {
+	c := qt.New(t)
 	t.Helper()
 
 	rows, err := conn.QueryContext(
 		context.Background(),
 		fmt.Sprintf("SELECT note FROM %s ORDER BY note", names.ledgerTable),
 	)
-	qt.Assert(t, err, qt.IsNil)
-	defer func() { qt.Check(t, rows.Close(), qt.IsNil) }()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
 
 	notes := []string{}
 	for rows.Next() {
 		var note string
-		qt.Assert(t, rows.Scan(&note), qt.IsNil)
+		c.Assert(rows.Scan(&note), qt.IsNil)
 		notes = append(notes, note)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return notes
 }
 
 func issue887CreateUser(t *testing.T, conn *dbschema.DatabaseConnection) (username, password string) {
+	c := qt.New(t)
 	t.Helper()
 
 	username = fmt.Sprintf("p887_%d", time.Now().UnixNano())
@@ -2493,7 +2503,7 @@ func issue887CreateUser(t *testing.T, conn *dbschema.DatabaseConnection) (userna
 	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
 		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password,
 	))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return username, password
 }
 
@@ -2503,6 +2513,7 @@ func issue887GrantBasePrivileges(
 	dialect,
 	username string,
 ) {
+	c := qt.New(t)
 	t.Helper()
 
 	_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
@@ -2510,7 +2521,7 @@ func issue887GrantBasePrivileges(
 		sqlident.Quote(dialect, conn.Info().Schema),
 		username,
 	))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func issue887IndexCount(
@@ -2520,6 +2531,7 @@ func issue887IndexCount(
 	table,
 	index string,
 ) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2531,11 +2543,12 @@ WHERE table_schema = ? AND table_name = ? AND index_name = ?`,
 		table,
 		index,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event string) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2545,16 +2558,17 @@ func issue887EventCount(t *testing.T, conn *dbschema.DatabaseConnection, event s
 		conn.Info().Schema,
 		event,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887FileMissing(t *testing.T, conn *dbschema.DatabaseConnection, path string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var missing bool
 	err := conn.QueryRowContext(context.Background(), "SELECT LOAD_FILE(?) IS NULL", path).Scan(&missing)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return missing
 }
 
@@ -2564,6 +2578,7 @@ func issue887TableCountInSchema(
 	schema,
 	table string,
 ) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2573,7 +2588,7 @@ func issue887TableCountInSchema(
 		schema,
 		table,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2584,6 +2599,7 @@ func issue887SchemaPrivilegeCount(
 	username,
 	privilege string,
 ) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2595,7 +2611,7 @@ WHERE table_schema = ? AND grantee = ? AND privilege_type = ?`,
 		fmt.Sprintf("'%s'@'%%'", username),
 		privilege,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
@@ -2607,6 +2623,7 @@ func issue887RoutinePrivilegeCount(
 	username,
 	privilege string,
 ) int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int64
@@ -2619,13 +2636,14 @@ WHERE Db = ? AND Routine_name = ? AND User = ? AND FIND_IN_SET(?, Proc_priv) > 0
 		username,
 		privilege,
 	).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue887CloseConnection(t *testing.T, conn *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
-	qt.Check(t, conn.Close(), qt.IsNil)
+	c.Check(conn.Close(), qt.IsNil)
 }
 
 func issue887DropDatabase(t *testing.T, conn *dbschema.DatabaseConnection, database string) {
@@ -2659,12 +2677,13 @@ func issue887DropRole(t *testing.T, conn *dbschema.DatabaseConnection, role stri
 }
 
 func issue887CleanupSQL(t *testing.T, conn *dbschema.DatabaseConnection, query string) {
+	c := qt.New(t)
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err := conn.ExecContext(ctx, query)
-	qt.Check(t, err, qt.IsNil, qt.Commentf("cleanup query: %s", query))
+	c.Check(err, qt.IsNil, qt.Commentf("cleanup query: %s", query))
 }
 
 func cleanupIssue887(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) {

@@ -11,8 +11,6 @@ import (
 )
 
 func TestRenderSelect_Distinct(t *testing.T) {
-	c := qt.New(t)
-
 	stmt := &ast.SelectStatement{
 		Distinct: true,
 		Columns:  []ast.ResultColumn{{Name: "status"}},
@@ -30,7 +28,8 @@ func TestRenderSelect_Distinct(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -40,8 +39,6 @@ func TestRenderSelect_Distinct(t *testing.T) {
 }
 
 func TestRenderSelect_GroupBy(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		stmt    *ast.SelectStatement
@@ -72,7 +69,8 @@ func TestRenderSelect_GroupBy(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -107,8 +105,6 @@ func groupedCountQuery() *ast.SelectStatement {
 }
 
 func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
-	c := qt.New(t)
-
 	// A bound WHERE value takes the first placeholder, the HAVING value the second,
 	// and the LIMIT bound the third, proving HAVING binds after WHERE and before
 	// LIMIT and that GROUP BY (a COUNT(*) with no arguments) binds nothing.
@@ -137,7 +133,8 @@ func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(groupedCountQuery(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -147,8 +144,6 @@ func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_AggregateProjection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		expr    ast.Expression
@@ -199,7 +194,8 @@ func TestRenderSelect_AggregateProjection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			col := ast.ResultColumn{Expr: tt.expr, Alias: tt.alias}
 			stmt := &ast.SelectStatement{Columns: []ast.ResultColumn{col}, From: "t"}
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
@@ -211,8 +207,6 @@ func TestRenderSelect_AggregateProjection(t *testing.T) {
 }
 
 func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
-	c := qt.New(t)
-
 	// COUNT("u"."id") and SUM("o"."total") each quote both qualifier parts, mix
 	// with a grouped column, and render in a join query across dialects.
 	stmt := &ast.SelectStatement{
@@ -252,7 +246,8 @@ func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -284,11 +279,10 @@ func TestRenderSelect_AggregateInHavingBindsValue(t *testing.T) {
 }
 
 func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
-	c := qt.New(t)
-
 	// The function name is a keyword emitted verbatim, so a well-formed name is not
 	// quoted even though its column argument is.
-	c.Run("name is not quoted", func(c *qt.C) {
+	t.Run("name is not quoted", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.SelectStatement{
 			Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Name: "id"}}}}},
 			From:    "t",
@@ -300,7 +294,8 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 
 	// An unsafe function name cannot be smuggled through as SQL: because the name
 	// is not quoted, the renderer rejects anything that is not a simple identifier.
-	c.Run("injection name is rejected", func(c *qt.C) {
+	t.Run("injection name is rejected", func(t *testing.T) {
+		c := qt.New(t)
 		stmt := &ast.SelectStatement{
 			Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT(*) FROM secrets; --", Star: true}}},
 			From:    "t",
@@ -313,8 +308,6 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 }
 
 func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		stmt        *ast.SelectStatement
@@ -353,7 +346,8 @@ func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
@@ -428,8 +422,6 @@ func onWhereHavingLimitOffset() *ast.SelectStatement {
 }
 
 func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) {
-	c := qt.New(t)
-
 	// The bound values are numbered strictly by render order: JOIN ON first, then
 	// WHERE, then HAVING, then LIMIT, then OFFSET — regardless of placeholder style.
 	wantArgs := []any{"active", int64(100), int64(5), int64(10), int64(20)}
@@ -457,7 +449,8 @@ func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) 
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(onWhereHavingLimitOffset(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -467,8 +460,6 @@ func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) 
 }
 
 func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
-	c := qt.New(t)
-
 	// A HAVING is valid without GROUP BY: the aggregate spans the whole table. No
 	// GROUP BY clause is emitted, and the HAVING value takes the first placeholder.
 	stmt := &ast.SelectStatement{
@@ -491,7 +482,8 @@ func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -501,8 +493,6 @@ func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
 }
 
 func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
-	c := qt.New(t)
-
 	// A HAVING value binds before the OFFSET value even when there is no LIMIT: the
 	// HAVING takes the first placeholder and the OFFSET the second. On MySQL,
 	// MariaDB, and SQLite the offset-only "no limit" sentinel is a literal between
@@ -545,7 +535,8 @@ func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)

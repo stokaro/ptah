@@ -95,11 +95,11 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	// docker URL passed through.
 	c.Assert(strings.HasPrefix(resolved, "postgres://"), qt.IsTrue,
 		qt.Commentf("resolved=%q", resolved))
-	c.Assert(strings.Contains(resolved, "/ptahdev"), qt.IsTrue,
+	c.Assert(resolved, qt.Contains, "/ptahdev",
 		qt.Commentf("resolved=%q does not name the database from the URL", resolved))
 
 	during := devDockerCensus(c)
-	c.Assert(len(during), qt.Equals, len(before)+1,
+	c.Assert(during, qt.HasLen, len(before)+1,
 		qt.Commentf("before=%v during=%v", before, during))
 
 	// A LOCAL daemon must publish on loopback and nowhere else. This is asserted
@@ -136,7 +136,7 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	// merely speaks the wire protocol.
 	var version string
 	c.Assert(conn.QueryRowContext(ctx, "SELECT version()").Scan(&version), qt.IsNil)
-	c.Assert(strings.Contains(version, "PostgreSQL"), qt.IsTrue, qt.Commentf("version=%q", version))
+	c.Assert(version, qt.Contains, "PostgreSQL", qt.Commentf("version=%q", version))
 
 	_ = conn.Close()
 	release()
@@ -163,7 +163,7 @@ func TestDevDockerRemovesTheContainerWhenTheRunFails(t *testing.T) {
 	})
 	c.Cleanup(release)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(strings.Contains(err.Error(), "did not become ready"), qt.IsTrue,
+	c.Assert(err.Error(), qt.Contains, "did not become ready",
 		qt.Commentf("err=%v", err))
 
 	after := devDockerCensus(c)
@@ -211,7 +211,7 @@ func TestDevDockerParallelInvocationsDoNotCollide(t *testing.T) {
 	c.Assert(unique, qt.HasLen, parallel, qt.Commentf("urls=%v", urls))
 
 	during := devDockerCensus(c)
-	c.Assert(len(during), qt.Equals, len(before)+parallel,
+	c.Assert(during, qt.HasLen, len(before)+parallel,
 		qt.Commentf("before=%v during=%v", before, during))
 
 	for _, release := range releases {

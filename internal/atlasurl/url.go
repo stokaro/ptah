@@ -40,12 +40,65 @@ func SQLiteURLFromPath(path string) string {
 	return "sqlite:file:" + escaped
 }
 
+// Parse parses a database URL, accepting the one shape net/url refuses.
+//
+// A Windows absolute path is not an authority: sqlite://C:\dir\app.db makes
+// net/url read the drive letter's colon as a port separator and refuse the
+// whole address. The path is carried as opaque instead.
+//
+// This is the shared half. What each caller does about a MySQL address is its
+// own, and deliberately so: this package keeps the host because it compares
+// endpoints, while dbschema drops it because it reads the database name from
+// the path. Only the Windows rule is one rule.
+func Parse(rawURL string) (*url.URL, error) {
+	parsed, err := url.Parse(rawURL)
+	if err == nil {
+		return parsed, nil
+	}
+	if scheme, rest, found := strings.Cut(rawURL, "://"); found && IsWindowsPath(rest) {
+		// The query is split off rather than folded into the path. Carrying the
+		// whole remainder as opaque left the options inside the filename, so a
+		// caller appending its own parameter wrote a second "?" and the
+		// requested ones were silently dropped.
+		path, query, _ := strings.Cut(rest, "?")
+		// The query is still validated. This fallback exists because a drive
+		// letter's colon is not a port separator, not because a Windows path
+		// makes every other error acceptable: a malformed escape admitted here
+		// is one url.Values silently drops, so an attempted mode=ro
+		// restriction would disappear and the database open writable.
+		//
+		// The refusal names the query rather than passing on the parse error
+		// that got us here. That one says the port is invalid, because it read
+		// the drive letter's colon as one -- handing it to an operator whose
+		// address has no port at all is the misleading diagnostic this whole
+		// path exists to remove.
+		if _, queryErr := url.ParseQuery(query); queryErr != nil {
+			return nil, fmt.Errorf("parse the query of %s: %w", rawURL, queryErr)
+		}
+		return &url.URL{Scheme: scheme, Opaque: path, RawQuery: query}, nil
+	}
+	return nil, err
+}
+
+// IsWindowsPath reports whether a URL's remainder is a Windows absolute path,
+// which is the one shape whose colon is not a port separator.
+func IsWindowsPath(rest string) bool {
+	if len(rest) < 3 || rest[1] != ':' {
+		return false
+	}
+	drive := rest[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return rest[2] == '\\' || rest[2] == '/'
+}
+
 func DialectFromURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return "", nil
 	}
-	parsed, err := url.Parse(normalizeMySQLTCPURL(rawURL))
+	parsed, err := Parse(normalizeMySQLTCPURL(rawURL))
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
 	}

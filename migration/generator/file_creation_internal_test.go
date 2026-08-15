@@ -14,7 +14,6 @@ import (
 )
 
 func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testing.T) {
-	c := qt.New(t)
 	name := "constraint_drift"
 
 	tests := []struct {
@@ -44,7 +43,8 @@ func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			version, err := nextAvailablePtahVersion(test.names, 42, name)
 			c.Assert(err, qt.IsNil)
 			c.Assert(version, qt.Equals, test.want)

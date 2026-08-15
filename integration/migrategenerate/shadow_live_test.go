@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/generator"
 )
@@ -132,20 +133,12 @@ func requireMigrateGeneratePostgresTestConnection(
 	t *testing.T,
 	ctx context.Context,
 ) (string, *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
-	var dbURL string
-	for _, name := range []string{"TEST_DATABASE_URL", "TEST_DB_URL", "POSTGRES_TEST_DSN", "POSTGRES_URL"} {
-		if value := os.Getenv(name); value != "" {
-			dbURL = value
-			break
-		}
-	}
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
+	dbURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)
 	return dbURL, conn
 }
 

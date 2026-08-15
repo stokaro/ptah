@@ -121,9 +121,8 @@ CREATE TABLE users (
 }
 
 func TestPlanApply_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		plan, err := atlasschema.PlanApply(t.Context(), nil, atlasschema.ApplyOptions{
 			ToURLs: []string{"file:///schema.sql"},
 		})
@@ -132,7 +131,8 @@ func TestPlanApply_FailurePath(t *testing.T) {
 		c.Assert(plan.SQL(), qt.Equals, "")
 	})
 
-	c.Run("empty desired schema URLs", func(c *qt.C) {
+	t.Run("empty desired schema URLs", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(t.TempDir(), "empty-to.db"))
 		defer dbschema.CloseAndWarn(conn)
 
@@ -230,9 +230,8 @@ CREATE TABLE runtime_synced (
 }
 
 func TestPrepareApply_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		plan, err := atlasschema.PrepareApply(t.Context(), nil, atlasschema.ApplyRuntimeOptions{
 			DevURL: "sqlite://dev.db",
 			ToURLs: []string{"file:///schema.sql"},
@@ -243,7 +242,8 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 		c.Assert(plan.SQL(), qt.Equals, "")
 	})
 
-	c.Run("dev URL dialect mismatch", func(c *qt.C) {
+	t.Run("dev URL dialect mismatch", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(t.TempDir(), "runtime-dev-url-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 
@@ -293,9 +293,8 @@ CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 }
 
 func TestApplySQL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		err := atlasschema.ApplySQL(context.Background(), nil, migrator.MigrationTxModeAll, "SELECT 1;")
 		c.Assert(err, qt.ErrorMatches, "schema apply execution requires database connection")
 	})

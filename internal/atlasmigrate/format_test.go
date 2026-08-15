@@ -15,8 +15,6 @@ import (
 )
 
 func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		configured string
@@ -42,7 +40,8 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
 			writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
@@ -65,8 +64,6 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 }
 
 func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		configured string
@@ -162,7 +159,8 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writeFormatFile(c, dir, tt.file, tt.source)
 
@@ -183,8 +181,6 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 }
 
 func TestResolveApplyDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		configured string
@@ -233,7 +229,8 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -249,9 +246,8 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 }
 
 func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("flyway migrations sharing one Atlas version", func(c *qt.C) {
+	t.Run("flyway migrations sharing one Atlas version", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		writeFormatFile(c, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
 		writeFormatFile(c, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
@@ -269,7 +265,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	// here would silently skip a migration rather than diverge loudly. Its twin,
 	// the empty covered set that now converts cleanly, is
 	// TestResolveApplyDir_EmptyCoveredSetConvertsToNothingToExecute.
-	c.Run("non-empty covered set the converter cannot read", func(c *qt.C) {
+	t.Run("non-empty covered set the converter cannot read", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		writeFormatFile(c, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
 
@@ -279,7 +276,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
-	c.Run("Go-based Goose migration", func(c *qt.C) {
+	t.Run("Go-based Goose migration", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
 		writeFormatFile(c, dir, "2_seed.go", "package migrations\n")
@@ -290,7 +288,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
-	c.Run("Liquibase XML changelog", func(c *qt.C) {
+	t.Run("Liquibase XML changelog", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
 		writeFormatFile(c, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
@@ -333,10 +332,9 @@ func applyDirFormatCases() []struct {
 // makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
 // consume this one value.
 func TestResolveApplyDirFormat(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tt := range applyDirFormatCases() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 
 			c.Assert(err, qt.IsNil)
@@ -347,7 +345,8 @@ func TestResolveApplyDirFormat(t *testing.T) {
 		})
 	}
 
-	c.Run("unknown format reports the resolve error", func(c *qt.C) {
+	t.Run("unknown format reports the resolve error", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
 		var unknownFormat *atlasmigrate.UnknownDirFormatError
 
@@ -369,8 +368,6 @@ func TestResolveApplyDirFormat(t *testing.T) {
 // is still a key that selected the layout — first-one-wins loses a VALUE, not
 // the key (stokaro/ptah#990).
 func TestIgnoredDirQueryKeys(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		query url.Values
@@ -407,7 +404,8 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlasmigrate.IgnoredDirQueryKeys(tt.query)
 
 			c.Assert(got, qt.DeepEquals, tt.want)
@@ -428,10 +426,9 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 // the gate ever stops seeing the ?format= override (it would then verify
 // atlas.sum against a converted filesystem that has none and refuse).
 func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tt := range applyDirFormatCases() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			writeSeamFixture(c, dir, tt.format)
 

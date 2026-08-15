@@ -14,10 +14,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
-// TestSchemaTestDatabaseDesiredSourcePostgresE2E covers `ptah schema test` with
-// a live PostgreSQL database as the desired-state source.
+// TestSchemaTestDatabaseDesiredSourcePostgresE2E_TextReport covers `ptah schema
+// test` with a live PostgreSQL database as the desired-state source, pinning the
+// text report.
 //
 // PostgreSQL is required, not incidental. SQLite introspects no roles and no
 // grants, so it can never produce the cluster-scoped state the command has to
@@ -26,76 +28,69 @@ import (
 //
 // The asserted table exists in the source database and in no other input, so a
 // pass can only come from having introspected it.
-func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+func TestSchemaTestDatabaseDesiredSourcePostgresE2E_TextReport(t *testing.T) {
+	c := qt.New(t)
+	stdout, stderr := runSchemaTestAgainstADatabaseSource(c, "text")
 
-	tests := []struct {
-		name   string
-		args   []string
-		verify func(c *qt.C, stdout, stderr string)
-	}{
-		{
-			name: "text report",
-			args: []string{"--report", "text"},
-			verify: func(c *qt.C, stdout, stderr string) {
-				c.Assert(stdout, qt.Contains, `PASS  case "db-sourced table exists"`)
-				c.Assert(stdout, qt.Contains, "1 cases, 1 passed, 0 failed")
-				assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
-			},
-		},
-		{
-			// The whole point of the row: a machine-readable report must be
-			// parseable on its own. A note written to the report stream leaves
-			// a passing run unparseable while still exiting 0.
-			name: "json report parses on stdout alone",
-			args: []string{"--report", "json"},
-			verify: func(c *qt.C, stdout, stderr string) {
-				var report struct {
-					Total  int `json:"total"`
-					Passed int `json:"passed"`
-					Failed int `json:"failed"`
-				}
-				c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
-					qt.Commentf("stdout is not valid JSON:\n%s", stdout))
-				c.Assert(report.Total, qt.Equals, 1)
-				c.Assert(report.Passed, qt.Equals, 1)
-				c.Assert(report.Failed, qt.Equals, 0)
-				assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
-			},
-		},
+	c.Assert(stdout, qt.Contains, `PASS  case "db-sourced table exists"`)
+	c.Assert(stdout, qt.Contains, "1 cases, 1 passed, 0 failed")
+	assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
+}
+
+// TestSchemaTestDatabaseDesiredSourcePostgresE2E_JSONReportParsesAlone requires
+// the whole of stdout to be one JSON document, not merely to carry the expected
+// counts somewhere in it. A note written to the report stream leaves a passing
+// run unparseable while still exiting 0.
+func TestSchemaTestDatabaseDesiredSourcePostgresE2E_JSONReportParsesAlone(t *testing.T) {
+	c := qt.New(t)
+	stdout, stderr := runSchemaTestAgainstADatabaseSource(c, "json")
+
+	var report struct {
+		Total  int `json:"total"`
+		Passed int `json:"passed"`
+		Failed int `json:"failed"`
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
-			defer cancel()
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
+		qt.Commentf("stdout is not valid JSON:\n%s", stdout))
+	c.Assert(report.Total, qt.Equals, 1)
+	c.Assert(report.Passed, qt.Equals, 1)
+	c.Assert(report.Failed, qt.Equals, 0)
+	assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
+}
 
-			adminDB, err := sql.Open("pgx", adminURL)
-			c.Assert(err, qt.IsNil)
-			// Registered before the per-database cleanups so that LIFO order
-			// closes the admin connection last; a deferred Close would run
-			// first and leave the drops with no connection.
-			c.Cleanup(func() { _ = adminDB.Close() })
+// runSchemaTestAgainstADatabaseSource provisions a source and a throwaway
+// database of its own and runs the suite against them, returning the two
+// streams separately.
+//
+// Each caller gets its own pair: the runner does not reset a caller-owned
+// throwaway between invocations, so a shared one would let a later test pass on
+// an earlier test's state.
+func runSchemaTestAgainstADatabaseSource(c *qt.C, report string) (stdout, stderr string) {
+	c.Helper()
+	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	ctx, cancel := context.WithTimeout(c.Context(), 2*time.Minute)
+	c.Cleanup(cancel)
 
-			// Every row gets its own source and throwaway database. The runner
-			// does not reset a caller-owned throwaway between invocations, so a
-			// shared one would let a later row pass on an earlier row's state.
-			sourceURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "src")
-			devURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "dev")
-			seedSchemaTestSourceDatabase(c, ctx, sourceURL)
+	adminDB, err := sql.Open("pgx", adminURL)
+	c.Assert(err, qt.IsNil)
+	// Registered before the per-database cleanups so that LIFO order closes the
+	// admin connection last; a deferred Close would run first and leave the
+	// drops with no connection.
+	c.Cleanup(func() { _ = adminDB.Close() })
 
-			args := append([]string{
-				"schema", "test",
-				"--dir", writeSchemaTestDatabaseSourceCases(c),
-				"--root-dir", sourceURL,
-				"--db-url", devURL,
-			}, tt.args...)
-			stdout, stderr, runErr := runPtahSplitStreams(ctx, args)
+	sourceURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "src")
+	devURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "dev")
+	seedSchemaTestSourceDatabase(c, ctx, sourceURL)
 
-			c.Assert(runErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			tt.verify(c, stdout, stderr)
-		})
-	}
+	stdout, stderr, runErr := runPtahSplitStreams(ctx, []string{
+		"schema", "test",
+		"--dir", writeSchemaTestDatabaseSourceCases(c),
+		"--root-dir", sourceURL,
+		"--db-url", devURL,
+		"--report", report,
+	})
+	c.Assert(runErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	return stdout, stderr
 }
 
 // assertDesiredStateNoteOnStderrOnly pins where the introspected roles/grants

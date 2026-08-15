@@ -1,6 +1,6 @@
 package fsdurable
 
-// White-box testing required: the window these rows enter is a single syscall
+// White-box testing required: the window these tests enter is a single syscall
 // wide. It is reachable only through the unexported publication hook, which
 // fires after every check this package could make and immediately before the
 // platform commit primitive.
@@ -16,84 +16,74 @@ import (
 const windowRivalBytes = "concurrent writer bytes\n"
 
 // Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow
-// is the row that separates a conditional commit primitive from another
+// is the case that separates a conditional commit primitive from another
 // pre-rename Lstat, which is the design #948 rules out.
 //
 // Every other publication test mutates the destination before publishFileAt is
 // entered, so all of them are satisfied by an implementation that stats the
-// target and then commits with an unconditional rename. These rows mutate
+// target and then commits with an unconditional rename. This one mutates
 // through beforeCommit instead, where no earlier check can observe it: only a
-// commit that binds the destination at the instant it takes effect refuses
-// them.
+// commit that binds the destination at the instant it takes effect refuses it.
 //
-// The control row runs the identical sequence with nothing entering the window,
-// so the refusal cannot be satisfied by a primitive that rejects everything.
+// Its control is Test_publishFileAt_HappyPath_PublishesWhenNothingEntersTheCommitWindow
+// below, which runs the identical sequence with nothing entering the window, so
+// the refusal cannot be satisfied by a primitive that rejects everything.
 func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow(t *testing.T) {
 	c := qt.New(t)
-	tests := []struct {
-		name    string
-		prepare func(c *qt.C, publishedPath string) Destination
-		inject  func(c *qt.C, publishedPath string)
-		assert  func(c *qt.C, err error, stagedPath, publishedPath string)
-	}{
-		{
-			name: "absent destination created inside the commit window",
-			prepare: func(*qt.C, string) Destination {
-				return ExpectAbsent()
-			},
-			inject: func(c *qt.C, publishedPath string) {
-				c.Assert(os.WriteFile(publishedPath, []byte(windowRivalBytes), 0o600), qt.IsNil)
-			},
-			assert: func(c *qt.C, err error, stagedPath, publishedPath string) {
-				c.Assert(err, qt.ErrorIs, ErrDestinationChanged)
-				c.Assert(err, qt.Not(qt.ErrorIs), ErrReplacementCommitted)
-				assertWindowBytes(c, publishedPath, windowRivalBytes)
-				assertWindowBytes(c, stagedPath, "new")
-			},
-		},
-		{
-			name: "control: nothing enters the commit window",
-			prepare: func(*qt.C, string) Destination {
-				return ExpectAbsent()
-			},
-			inject: func(*qt.C, string) {},
-			assert: func(c *qt.C, err error, stagedPath, publishedPath string) {
-				c.Assert(err, qt.IsNil)
-				assertWindowBytes(c, publishedPath, "new")
-				assertWindowAbsent(c, stagedPath)
-			},
-		},
-	}
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			dir := c.TempDir()
-			stagedPath := filepath.Join(dir, "staged")
-			publishedPath := filepath.Join(dir, "published")
-			c.Assert(os.WriteFile(stagedPath, []byte("new"), 0o600), qt.IsNil)
-			stagedInfo, err := os.Stat(stagedPath)
-			c.Assert(err, qt.IsNil)
-			dest := test.prepare(c, publishedPath)
-			root, err := os.OpenRoot(dir)
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() {
-				c.Check(root.Close(), qt.IsNil)
-			})
+	dir := c.TempDir()
+	stagedPath := filepath.Join(dir, "staged")
+	publishedPath := filepath.Join(dir, "published")
 
-			err = publishFileAt(
-				root,
-				"staged",
-				"published",
-				stagedInfo,
-				0o600,
-				dest,
-				publicationHooks{beforeCommit: func() {
-					test.inject(c, publishedPath)
-				}},
-			)
+	err := publishAbsentDestinationAt(c, dir, func() {
+		c.Assert(os.WriteFile(publishedPath, []byte(windowRivalBytes), 0o600), qt.IsNil)
+	})
 
-			test.assert(c, err, stagedPath, publishedPath)
-		})
-	}
+	c.Assert(err, qt.ErrorIs, ErrDestinationChanged)
+	c.Assert(err, qt.Not(qt.ErrorIs), ErrReplacementCommitted)
+	assertWindowBytes(c, publishedPath, windowRivalBytes)
+	assertWindowBytes(c, stagedPath, "new")
+}
+
+// Test_publishFileAt_HappyPath_PublishesWhenNothingEntersTheCommitWindow is the
+// control for the refusal above: same sequence, same hook, nothing arriving
+// through it.
+func Test_publishFileAt_HappyPath_PublishesWhenNothingEntersTheCommitWindow(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	stagedPath := filepath.Join(dir, "staged")
+	publishedPath := filepath.Join(dir, "published")
+
+	err := publishAbsentDestinationAt(c, dir, func() {})
+
+	c.Assert(err, qt.IsNil)
+	assertWindowBytes(c, publishedPath, "new")
+	assertWindowAbsent(c, stagedPath)
+}
+
+// publishAbsentDestinationAt stages "new" at dir/staged and publishes it to
+// dir/published under ExpectAbsent, running beforeCommit at the instant the
+// commit primitive is entered.
+func publishAbsentDestinationAt(c *qt.C, dir string, beforeCommit func()) error {
+	c.Helper()
+	stagedPath := filepath.Join(dir, "staged")
+	c.Assert(os.WriteFile(stagedPath, []byte("new"), 0o600), qt.IsNil)
+	stagedInfo, err := os.Stat(stagedPath)
+	c.Assert(err, qt.IsNil)
+	root, err := os.OpenRoot(dir)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(root.Close(), qt.IsNil)
+	})
+
+	return publishFileAt(
+		root,
+		"staged",
+		"published",
+		stagedInfo,
+		0o600,
+		ExpectAbsent(),
+		publicationHooks{beforeCommit: beforeCommit},
+	)
 }
 
 func assertWindowBytes(c *qt.C, path, want string) {

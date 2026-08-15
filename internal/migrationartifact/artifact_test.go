@@ -70,9 +70,8 @@ func TestPushToAndPullFrom_RoundTrip(t *testing.T) {
 }
 
 func TestCapture_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("no migrations", func(c *qt.C) {
+	t.Run("no migrations", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := migrationartifact.Capture(
 			fstest.MapFS{"ptah.sum": {Data: []byte("h1:example\n")}},
 			migrator.MigrationDirFormatPtah,
@@ -80,7 +79,8 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "migration artifact contains no migration files")
 	})
 
-	c.Run("invalid format", func(c *qt.C) {
+	t.Run("invalid format", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := migrationartifact.Capture(
 			fstest.MapFS{"001.sql": {Data: []byte("SELECT 1;\n")}},
 			migrator.MigrationDirFormat("invalid"),
@@ -88,7 +88,8 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unknown migration directory format "invalid".*`)
 	})
 
-	c.Run("symbolic link", func(c *qt.C) {
+	t.Run("symbolic link", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := migrationartifact.Capture(
 			fstest.MapFS{
 				"0000000001_create_users.up.sql": {

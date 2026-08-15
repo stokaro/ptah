@@ -337,7 +337,8 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "protobuf", "--root-dir", dir}, tt.args...)
 
 			stdout, stderr, err := runSchemaExport(args...)
@@ -376,7 +377,8 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "graphql", "--root-dir", dir}, tt.args...)
 			wantErr := tt.flag + " is only supported with --to protobuf"
 
@@ -413,8 +415,6 @@ func TestSchemaExportProtobufWarnsAboutIgnoredTitle(t *testing.T) {
 }
 
 func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// out is the output path relative to the fixture directory, kept as
@@ -449,7 +449,8 @@ func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := resolvedTempDir(c)
 			writeModel(c, dir)
 			outPath := filepath.Join(append([]string{dir}, tt.out...)...)

@@ -4,7 +4,6 @@ package gonative_test
 
 import (
 	"database/sql"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,15 +13,13 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestPgxDriverValidation verifies that the pgx driver is actually being used
 // instead of the old lib/pq driver for PostgreSQL connections.
 func TestPgxDriverValidation(t *testing.T) {
-	dsn := os.Getenv("POSTGRES_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping PostgreSQL driver validation: POSTGRES_TEST_DSN environment variable not set")
-	}
+	dsn := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	t.Run("direct pgx driver usage", func(t *testing.T) {
 		c := qt.New(t)
@@ -144,10 +141,7 @@ func TestPgxDriverValidation(t *testing.T) {
 // TestDriverMigrationCompleteness ensures that no lib/pq references remain
 // in the codebase that could cause driver inconsistencies.
 func TestDriverMigrationCompleteness(t *testing.T) {
-	dsn := os.Getenv("POSTGRES_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping driver migration test: POSTGRES_TEST_DSN environment variable not set")
-	}
+	dsn := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	t.Run("no lib/pq driver registration", func(t *testing.T) {
 		c := qt.New(t)

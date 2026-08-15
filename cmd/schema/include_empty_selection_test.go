@@ -93,7 +93,8 @@ func TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "live.db")
 			seedSQLite(c, dbPath, nativeEmptySelectionDDL)

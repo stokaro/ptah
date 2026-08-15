@@ -134,8 +134,6 @@ func TestExactArgs_HappyPath(t *testing.T) {
 }
 
 func TestExactArgs_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -154,7 +152,8 @@ func TestExactArgs_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			var stderr bytes.Buffer
 			cmd := &cobra.Command{Use: "push"}
 			cmd.SetErr(&stderr)

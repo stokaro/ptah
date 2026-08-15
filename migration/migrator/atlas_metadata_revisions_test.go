@@ -23,6 +23,7 @@ const dotRowVersion = ".atlas_cloud_identifier"
 // description carries a UUID, applied=0, total=0, an empty hash, error/error_stmt and
 // partial_hashes are NULL.
 func insertAtlasMetadataDotRow(t *testing.T, conn *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
 	_, err := conn.Exec(
 		`INSERT INTO atlas_schema_revisions
@@ -30,13 +31,14 @@ func insertAtlasMetadataDotRow(t *testing.T, conn *dbschema.DatabaseConnection) 
 VALUES (?, '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0, 0, '2026-08-01 12:04:21.291103+02:00', 0, NULL, NULL, '', NULL, 'Atlas')`,
 		dotRowVersion,
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 // dotRowLiteral returns the metadata row as one sqlite quote()-rendered tuple,
 // so survival comparisons are byte-precise, including NULL versus empty-string
 // distinctions.
 func dotRowLiteral(t *testing.T, conn *dbschema.DatabaseConnection) string {
+	c := qt.New(t)
 	t.Helper()
 	var literal string
 	err := conn.QueryRow(
@@ -47,15 +49,16 @@ quote(hash) || '|' || quote(partial_hashes) || '|' || quote(operator_version)
 FROM atlas_schema_revisions WHERE version = ?`,
 		dotRowVersion,
 	).Scan(&literal)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return literal
 }
 
 func newSQLiteAtlasFormatMigrator(t *testing.T) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c := qt.New(t)
 	t.Helper()
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "dot-rows.db"))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	m, err := migrator.NewFSMigrator(
@@ -73,7 +76,7 @@ DROP TABLE posts;
 		},
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	return conn, m
 }

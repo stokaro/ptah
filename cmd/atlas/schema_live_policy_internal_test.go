@@ -15,17 +15,19 @@ import (
 
 func TestAtlasLiveSchemaObjectValidator(t *testing.T) {
 	t.Run("full mode performs no supplemental inventory", func(t *testing.T) {
-		qt.Assert(t, atlasLiveSchemaObjectValidator(atlascompatpolicy.Full()), qt.IsNil)
+		c := qt.New(t)
+		c.Assert(atlasLiveSchemaObjectValidator(atlascompatpolicy.Full()), qt.IsNil)
 	})
 
 	t.Run("strict mode translates catalog identity", func(t *testing.T) {
+		c := qt.New(t)
 		validate := atlasLiveSchemaObjectValidator(atlascompatpolicy.StrictCE())
-		qt.Assert(t, validate, qt.IsNotNil)
+		c.Assert(validate, qt.IsNotNil)
 		err := validate(atlasschema.LiveSchemaObject{
 			Kind: "procedure",
 			Name: "refresh_users()",
 		})
-		qt.Assert(t, err, qt.ErrorMatches,
+		c.Assert(err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users\(\)"`)
 	})
 }

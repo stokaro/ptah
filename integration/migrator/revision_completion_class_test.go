@@ -33,7 +33,6 @@ package migrator_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,6 +41,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/ddltx"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -122,7 +122,8 @@ func TestRevisionCompletionClasses_EveryClassIsCovered(t *testing.T) {
 	}
 
 	for _, class := range ddltx.Classes() {
-		c.Run(string(class), func(c *qt.C) {
+		t.Run(string(class), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(covered[class], qt.Not(qt.HasLen), 0)
 		})
 	}
@@ -148,7 +149,8 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, test.class)
 		})
 	}
@@ -161,7 +163,6 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 // target with one would be asserting that signing off a rolled-back body is
 // fine.
 func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testing.T) {
-	c := qt.New(t)
 
 	repaired := map[string]bool{}
 	for _, target := range revisionCompletionRepairTargets() {
@@ -169,7 +170,8 @@ func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testin
 	}
 
 	for _, target := range allRevisionCompletionTargets() {
-		c.Run(target.name, func(c *qt.C) {
+		t.Run(target.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				repaired[target.name],
 				qt.Equals,
@@ -200,14 +202,11 @@ func revisionCompletionRepairTargets() []revisionCompletionTarget {
 }
 
 func mySQLRevisionCompletionTarget() revisionCompletionTarget {
-	return mySQLFamilyRevisionCompletionTarget("mysql", "MYSQL_ADMIN_TEST_URL")
+	return mySQLFamilyRevisionCompletionTarget("mysql", dbtarget.MySQLAdmin)
 }
 
 func mariaDBRevisionCompletionTarget() revisionCompletionTarget {
-	return mySQLFamilyRevisionCompletionTarget(
-		"mariadb",
-		"MARIADB_ADMIN_TEST_URL",
-	)
+	return mySQLFamilyRevisionCompletionTarget("mariadb", dbtarget.MariaDBAdmin)
 }
 
 // revisionCompletionRecovery is one supported way out of a dirty revision left
@@ -358,12 +357,13 @@ func sqliteRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.Transactional,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			conn, err := dbschema.ConnectToDatabase(
 				t.Context(),
 				"sqlite://"+filepath.Join(t.TempDir(), "revision-completion.db"),
 			)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -415,9 +415,10 @@ func postgresRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.Transactional,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
 			conn, err := dbschema.ConnectToDatabase(t.Context(), postgresTestURL(t))
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -482,16 +483,20 @@ WHERE table_schema = current_schema() AND table_name = $1 AND table_type = 'BASE
 	return count > 0
 }
 
-func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompletionTarget {
+func mySQLFamilyRevisionCompletionTarget(
+	dialect string,
+	adminEngine dbtarget.Engine,
+) revisionCompletionTarget {
 	return revisionCompletionTarget{
 		name:      dialect,
 		class:     ddltx.ImplicitCommit,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
-			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEnv, "ptah_rev999")
+			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEngine, "ptah_rev999")
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {
@@ -556,13 +561,10 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		class:     ddltx.NoTransaction,
 		faultConn: reuseMigratorConnection,
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
+			c := qt.New(t)
 			t.Helper()
-			dbURL := os.Getenv("CLICKHOUSE_URL")
-			if dbURL == "" {
-				t.Skip("CLICKHOUSE_URL not set")
-			}
-			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-			qt.Assert(t, err, qt.IsNil)
+			conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(t, dbtarget.ClickHouse))
+			c.Assert(err, qt.IsNil)
 			return conn
 		},
 		createBody: func(names revisionCompletionNames) (string, string) {

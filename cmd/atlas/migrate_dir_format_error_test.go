@@ -89,8 +89,6 @@ func newDirFormatFixture(c *qt.C) dirFormatFixture {
 // this sandbox. The two rows below drive the same command tree in process, and
 // the tagged integration contour independently drives the built process.
 func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		verb string
 		// spelling is the flag the semantic chain blames, which is `--dir`
@@ -258,7 +256,8 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.verb+" "+tt.spelling, func(c *qt.C) {
+		t.Run(tt.verb+" "+tt.spelling, func(t *testing.T) {
+			c := qt.New(t)
 			fx := newDirFormatFixture(c)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 
@@ -288,8 +287,6 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 // only ran on one verb would pass while a per-verb adaptation grew too wide
 // somewhere else.
 func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		want string
@@ -329,7 +326,8 @@ func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			fx := newDirFormatFixture(c)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 

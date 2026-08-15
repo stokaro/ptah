@@ -5,6 +5,7 @@ package goannotationexport
 // public APIs cannot exercise deterministically without filesystem polling.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,21 +17,23 @@ import (
 )
 
 func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
-		name           string
-		mutate         func(c *qt.C, root, source string, original []byte)
+		name string
+		// mutate disturbs the source tree while the output is staged. It
+		// asserts nothing: the rows differ in how the tree moves, not in what
+		// export owes afterwards.
+		mutate         func(root, source string, original []byte) error
 		wantSource     []byte
 		wantEntryNames []string
 	}{
 		{
 			name: "same-size edit",
-			mutate: func(c *qt.C, _ string, source string, _ []byte) {
-				c.Assert(os.WriteFile(
+			mutate: func(_ string, source string, _ []byte) error {
+				return os.WriteFile(
 					source,
 					[]byte("package models\n\n//ptah:schema:table name=\"roles\"\ntype User struct{}\n"),
 					0o600,
-				), qt.IsNil)
+				)
 			},
 			wantSource: []byte(
 				"package models\n\n//ptah:schema:table name=\"roles\"\ntype User struct{}\n",
@@ -39,11 +42,16 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		},
 		{
 			name: "identity replacement",
-			mutate: func(c *qt.C, _ string, source string, original []byte) {
+			mutate: func(_ string, source string, original []byte) error {
 				replacement := source + ".replacement"
-				c.Assert(os.WriteFile(replacement, original, 0o600), qt.IsNil)
-				c.Assert(os.Remove(source), qt.IsNil)
-				c.Assert(os.Rename(replacement, source), qt.IsNil)
+				// Joined rather than chained: every step runs, so a row that
+				// half-completes still reports the step that failed instead of
+				// needing a conditional to pick one.
+				return errors.Join(
+					os.WriteFile(replacement, original, 0o600),
+					os.Remove(source),
+					os.Rename(replacement, source),
+				)
 			},
 			wantSource: []byte(
 				"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
@@ -52,12 +60,12 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		},
 		{
 			name: "source addition",
-			mutate: func(c *qt.C, root, _ string, _ []byte) {
-				c.Assert(os.WriteFile(
+			mutate: func(root, _ string, _ []byte) error {
+				return os.WriteFile(
 					filepath.Join(root, "added.go"),
 					[]byte("package models\n"),
 					0o600,
-				), qt.IsNil)
+				)
 			},
 			wantSource: []byte(
 				"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
@@ -66,7 +74,8 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -82,7 +91,7 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 				OutputPath: output,
 				Cleanup:    true,
 			}, exportHooks{afterOutputStage: func() {
-				test.mutate(c, root, source, original)
+				c.Assert(test.mutate(root, source, original), qt.IsNil)
 			}})
 
 			c.Assert(err, qt.ErrorIs, goannotationsource.ErrChanged)
@@ -97,24 +106,26 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 }
 
 func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
-		name    string
-		prepare func(c *qt.C, output string)
+		name string
+		// prepare puts the destination into the state the row is about, which
+		// is a file with bytes in it or no file at all. It asserts nothing.
+		prepare func(output string) error
 	}{
 		{
 			name: "existing output edited",
-			prepare: func(c *qt.C, output string) {
-				c.Assert(os.WriteFile(output, []byte("previous schema\n"), 0o600), qt.IsNil)
+			prepare: func(output string) error {
+				return os.WriteFile(output, []byte("previous schema\n"), 0o600)
 			},
 		},
 		{
 			name:    "missing output created",
-			prepare: func(*qt.C, string) {},
+			prepare: func(string) error { return nil },
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -123,7 +134,7 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 			)
 			concurrentOutput := []byte("concurrent schema\n")
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
-			test.prepare(c, output)
+			c.Assert(test.prepare(output), qt.IsNil)
 
 			result, err := export(Options{
 				RootDir:    root,
@@ -195,20 +206,23 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 // last barrier: that is what makes this fixture measure the window rather than
 // "any concurrent write".
 func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testing.T) {
-	c := qt.New(t)
 	previousOutput := []byte("previous schema\n")
 	rival := []byte("concurrent writer bytes\n")
-	writePrevious := func(c *qt.C, output string) {
-		c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
+	// prepare and inject move the destination; neither asserts anything, so a
+	// row states which movement it makes and the loop states what export owes.
+	writePrevious := func(output string) error {
+		return os.WriteFile(output, previousOutput, 0o600)
 	}
-	leaveAbsent := func(*qt.C, string) {}
-	editInPlace := func(c *qt.C, output string) {
-		c.Assert(os.WriteFile(output, rival, 0o600), qt.IsNil)
+	leaveAbsent := func(string) error { return nil }
+	editInPlace := func(output string) error {
+		return os.WriteFile(output, rival, 0o600)
 	}
-	replaceByRename := func(c *qt.C, output string) {
+	replaceByRename := func(output string) error {
 		replacement := output + ".rival"
-		c.Assert(os.WriteFile(replacement, rival, 0o600), qt.IsNil)
-		c.Assert(os.Rename(replacement, output), qt.IsNil)
+		return errors.Join(
+			os.WriteFile(replacement, rival, 0o600),
+			os.Rename(replacement, output),
+		)
 	}
 	commitWindow := func(inject func()) exportHooks {
 		return exportHooks{beforeCommit: inject}
@@ -218,8 +232,8 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 	}
 	tests := []struct {
 		name    string
-		prepare func(c *qt.C, output string)
-		inject  func(c *qt.C, output string)
+		prepare func(output string) error
+		inject  func(output string) error
 		hooks   func(inject func()) exportHooks
 	}{
 		{
@@ -254,7 +268,8 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -262,14 +277,14 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 				"package models\n\n//ptah:schema:table name=\"users\"\ntype User struct{}\n",
 			)
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
-			test.prepare(c, output)
+			c.Assert(test.prepare(output), qt.IsNil)
 
 			result, err := export(Options{
 				RootDir:    root,
 				OutputPath: output,
 				Cleanup:    true,
 			}, test.hooks(func() {
-				test.inject(c, output)
+				c.Assert(test.inject(output), qt.IsNil)
 			}))
 
 			c.Assert(err, qt.ErrorIs, ErrOutputChanged)

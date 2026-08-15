@@ -15,6 +15,7 @@ import (
 
 // writeUpMigrations writes a two-migration ptah-format directory.
 func writeUpMigrations(t *testing.T) string {
+	c := qt.New(t)
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -24,7 +25,7 @@ func writeUpMigrations(t *testing.T) string {
 		"0000000002_orders.down.sql": "DROP TABLE orders;\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	return dir
 }

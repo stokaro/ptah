@@ -20,12 +20,13 @@ import (
 // (stokaro/ptah#963) and reported on stokaro/ptah#967.
 
 func openInitializeOnceSQLite(t *testing.T) *dbschema.DatabaseConnection {
+	c := qt.New(t)
 	t.Helper()
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
 		"sqlite://"+filepath.Join(t.TempDir(), "initialize-once.db"),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }

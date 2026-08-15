@@ -143,32 +143,32 @@ func TestCompatMigrateImport_DriftingSourceRefused(t *testing.T) {
 		t.Run(fixture.format, func(t *testing.T) {
 			states := []struct {
 				name string
-				// mutate tampers with the hashed source without re-hashing it.
-				mutate func(c *qt.C, dir string)
-				line   int
-				file   string
-				reason string
+				// The three drift shapes, each spelled as what it does to the
+				// hashed source: appended is text added to the covered file,
+				// added the files written beside it, and removed the entries
+				// deleted. An empty append writes nothing, so one body carries
+				// all three without re-hashing any of them.
+				appended string
+				added    map[string]string
+				removed  []string
+				line     int
+				file     string
+				reason   string
 			}{
 				{
-					name: "edited",
-					mutate: func(c *qt.C, dir string) {
-						appendToFile(c, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
-					},
-					line: 2, file: fixture.covered, reason: "edited",
+					name:     "edited",
+					appended: "\n-- tampered, sum not rehashed\n",
+					line:     2, file: fixture.covered, reason: "edited",
 				},
 				{
-					name: "added",
-					mutate: func(c *qt.C, dir string) {
-						writeConvertedApplyDir(c, dir, map[string]string{fixture.extra: fixture.extraBody})
-					},
-					line: 3, file: fixture.extra, reason: "added",
+					name:  "added",
+					added: map[string]string{fixture.extra: fixture.extraBody},
+					line:  3, file: fixture.extra, reason: "added",
 				},
 				{
-					name: "removed",
-					mutate: func(c *qt.C, dir string) {
-						c.Assert(os.Remove(filepath.Join(dir, fixture.covered)), qt.IsNil)
-					},
-					line: 2, file: fixture.covered, reason: "removed",
+					name:    "removed",
+					removed: []string{fixture.covered},
+					line:    2, file: fixture.covered, reason: "removed",
 				},
 			}
 			for _, state := range states {
@@ -177,7 +177,11 @@ func TestCompatMigrateImport_DriftingSourceRefused(t *testing.T) {
 					source, target := importDirs(c)
 					writeConvertedApplyDir(c, source, fixture.files)
 					hashConvertedApplyDir(c, source, fixture.format)
-					state.mutate(c, source)
+					appendToFile(c, filepath.Join(source, fixture.covered), state.appended)
+					writeConvertedApplyDir(c, source, state.added)
+					for _, name := range state.removed {
+						c.Assert(os.Remove(filepath.Join(source, name)), qt.IsNil)
+					}
 
 					stdout, stderr, err := compatImport(source, target, fixture.format)
 
@@ -292,24 +296,21 @@ func TestCompatMigrateImport_ChecksumRefusalOutranksTheDestinationChecks(t *test
 	fixture := convertedApplyFixtures()[0]
 	tests := []struct {
 		name string
-		// prepare tampers with the hashed source and returns the destination to
-		// import into, so each row carries its own wiring.
-		prepare func(c *qt.C, source, target string) string
+		// Both rows tamper with the hashed source identically; what varies is
+		// which destination check the refusal has to outrank. existing is
+		// written into the destination beforehand, and destination names the
+		// directory --to points at.
+		existing    map[string]string
+		destination func(source, target string) string
 	}{
 		{
-			name: "destination already holds migrations",
-			prepare: func(c *qt.C, source, target string) string {
-				appendToFile(c, filepath.Join(source, fixture.covered), "\n-- tampered\n")
-				writeConvertedApplyDir(c, target, map[string]string{"9_existing.sql": "SELECT 1;\n"})
-				return target
-			},
+			name:        "destination already holds migrations",
+			existing:    map[string]string{"9_existing.sql": "SELECT 1;\n"},
+			destination: func(_, target string) string { return target },
 		},
 		{
-			name: "destination is the source directory",
-			prepare: func(c *qt.C, source, _ string) string {
-				appendToFile(c, filepath.Join(source, fixture.covered), "\n-- tampered\n")
-				return source
-			},
+			name:        "destination is the source directory",
+			destination: func(source, _ string) string { return source },
 		},
 	}
 
@@ -319,8 +320,10 @@ func TestCompatMigrateImport_ChecksumRefusalOutranksTheDestinationChecks(t *test
 			source, target := importDirs(c)
 			writeConvertedApplyDir(c, source, fixture.files)
 			hashConvertedApplyDir(c, source, fixture.format)
+			appendToFile(c, filepath.Join(source, fixture.covered), "\n-- tampered\n")
+			writeConvertedApplyDir(c, target, tt.existing)
 
-			stdout, stderr, err := compatImport(source, tt.prepare(c, source, target), fixture.format)
+			stdout, stderr, err := compatImport(source, tt.destination(source, target), fixture.format)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, "checksum mismatch")
@@ -363,8 +366,8 @@ func TestCompatMigrateImport_MalformedSumRefused(t *testing.T) {
 // set": `2_evil.sql` is not a file the importer would ever convert, and a gate
 // that only checked convertible files would let it through.
 //
-// The UNHASHED row is the one that keeps `verifyAtlasSumWhenPresent` from
-// short-circuiting past the read. Measured, the pinned binary refuses both
+// The row with no atlas.sum is the one that keeps `verifyAtlasSumWhenPresent`
+// from short-circuiting past the read. Measured, the pinned binary refuses both
 // rows identically — membership of the covered set is decided by the name, so
 // the entry is a member whether or not anything recorded a hash for it. An
 // import policy that returned early on `!hashed` would exit 0 here and convert,
@@ -372,22 +375,23 @@ func TestCompatMigrateImport_MalformedSumRefused(t *testing.T) {
 //
 // Reverted, both rows print a nil error, an empty stdout and a written
 // destination. Removing only checkCoveredAtlasEntriesReadable reddens the
-// unhashed row alone.
+// no-sum row alone.
 func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 	fixture := convertedApplyFixtures()[0]
 	tests := []struct {
 		name string
-		// hash decides whether the source carries an atlas.sum at all, which is
-		// the axis this table exists to separate.
-		hash func(c *qt.C, dir string)
+		// removedAfterHash is deleted once `migrate hash` has run. Whether the
+		// source carries an atlas.sum at all is the axis this table separates,
+		// and reaching the empty-handed state by deleting the sum is what lets
+		// both rows share one body.
+		removedAfterHash []string
 	}{
 		{
 			name: "hashed",
-			hash: func(c *qt.C, dir string) { hashConvertedApplyDir(c, dir, fixture.format) },
 		},
 		{
-			name: "never hashed",
-			hash: func(_ *qt.C, _ string) {},
+			name:             "no atlas.sum",
+			removedAfterHash: []string{"atlas.sum"},
 		},
 	}
 
@@ -396,7 +400,10 @@ func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 			c := qt.New(t)
 			source, target := importDirs(c)
 			writeConvertedApplyDir(c, source, fixture.files)
-			tt.hash(c, source)
+			hashConvertedApplyDir(c, source, fixture.format)
+			for _, name := range tt.removedAfterHash {
+				c.Assert(os.Remove(filepath.Join(source, name)), qt.IsNil)
+			}
 			c.Assert(os.MkdirAll(filepath.Join(source, "2_evil.sql"), 0o755), qt.IsNil)
 
 			stdout, stderr, err := compatImport(source, target, fixture.format)

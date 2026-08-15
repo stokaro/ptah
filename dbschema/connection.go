@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/mssql"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
@@ -36,19 +37,7 @@ import (
 // affect the lifetime of the returned *DatabaseConnection; callers are
 // responsible for closing it.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	// Handle MySQL URLs specially since they have a different format
-	var parsedURL *url.URL
-	var err error
-
-	if (strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://")) && strings.Contains(dbURL, "@tcp(") {
-		// For MySQL/MariaDB URLs, create a fake parseable URL for scheme detection
-		fakeURL := strings.Replace(dbURL, "@tcp(", "@", 1)
-		fakeURL = strings.Replace(fakeURL, ")", "", 1)
-		parsedURL, err = url.Parse(fakeURL)
-	} else {
-		parsedURL, err = url.Parse(dbURL)
-	}
-
+	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)
 	}
@@ -164,6 +153,65 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		newWriter:      newWriter,
 		inMemorySQLite: inMemorySQLite,
 	}, nil
+}
+
+// parseDatabaseURL parses a database URL into the form the rest of the
+// connection path reads.
+//
+// Two shapes are not URLs and have to be rewritten before net/url sees them.
+//
+// The MySQL family carries a NETWORK where a URL carries a host:
+// user:pass@tcp(127.0.0.1:3306)/db and user:pass@unix(/tmp/mysql.sock)/db are
+// one grammar with two networks, and neither is an authority. The network and
+// its address are dropped so what remains parses, and the parts the caller
+// reads survive it. It is not only the scheme that is read from the result --
+// getDatabaseInfo takes the MySQL database name from the path -- so recognizing
+// only tcp( left a socket address parsed as a host called "unix(" with the
+// socket path folded into the database name.
+//
+// A Windows absolute path is not an authority either. sqlite://C:\dir\app.db
+// makes net/url read the drive letter's colon as a port separator and refuse
+// the whole URL, which is why every command that provisions a local database
+// failed on Windows: 1014 tests across more than thirty packages, 1382 of them
+// reporting "invalid database URL". The path is carried as opaque instead,
+// which is the shape convertSQLiteURL already reads first.
+func parseDatabaseURL(dbURL string) (*url.URL, error) {
+	if strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://") {
+		if rewritten, ok := withoutMySQLNetwork(dbURL); ok {
+			return url.Parse(rewritten)
+		}
+	}
+
+	// The Windows rule lives in atlasurl, which is where the other database-URL
+	// parser already knew it. What each parser does about a MySQL address is
+	// its own and stays so: that one keeps the host because it compares
+	// endpoints, this one drops it because getDatabaseInfo reads the database
+	// name from the path.
+	return atlasurl.Parse(dbURL)
+}
+
+// withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
+// reporting whether one was there to remove.
+func withoutMySQLNetwork(dbURL string) (string, bool) {
+	// Credentials are optional in the driver's grammar, so tcp(host:port)/db
+	// and unix(/path)/db are valid targets on their own. Matching only the
+	// credential-bearing spellings refused the first as an invalid URL and read
+	// the second with the socket path folded into the database name.
+	for _, network := range []string{"@tcp(", "@unix(", "://tcp(", "://unix("} {
+		start := strings.Index(dbURL, network)
+		if start < 0 {
+			continue
+		}
+		end := strings.Index(dbURL[start:], ")")
+		if end < 0 {
+			continue
+		}
+		// Keep everything up to and including the separator the network
+		// followed -- "@" or "://" -- and drop the network with its address.
+		keep := start + strings.Index(network, "(")
+		return dbURL[:keep] + dbURL[start+end+1:], true
+	}
+	return dbURL, false
 }
 
 func getDatabaseInfoWithCapabilities(
@@ -981,8 +1029,12 @@ func detectMySQLWireDialect(declaredDialect, version string) string {
 
 // convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format
 func convertMySQLURL(dbURL string) string {
-	// If the URL is already in the correct format (contains @tcp), return as-is
-	if strings.Contains(dbURL, "@tcp(") {
+	// Already in the driver's own form, so it is returned with only the scheme
+	// removed. tcp(...) and unix(...) are two spellings of one thing to
+	// go-sql-driver -- the network and the address to reach it on -- and
+	// recognizing only the first parsed a valid socket address as a host called
+	// "unix(" with the socket path folded into the database name.
+	if strings.Contains(dbURL, "@tcp(") || strings.Contains(dbURL, "@unix(") {
 		// Remove the mysql:// or mariadb:// prefix if present
 		if after, ok := strings.CutPrefix(dbURL, "mysql://"); ok {
 			return after
@@ -1053,7 +1105,10 @@ func convertClickHouseURL(dbURL string) string {
 }
 
 func convertSQLiteURL(dbURL string) string {
-	parsed, err := url.Parse(dbURL)
+	// Through parseDatabaseURL rather than url.Parse: a Windows absolute path
+	// is refused by the latter, and returning the URL whole then handed the
+	// driver a string beginning with sqlite:// as though it were a filename.
+	parsed, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return dbURL
 	}

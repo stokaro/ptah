@@ -46,6 +46,14 @@ func sqliteUserTables(c *qt.C, dbPath string) []string {
 	return tables
 }
 
+// coveredSetFile is one file a row lays down below the migration directory,
+// written in row order so a nested name and its top-level twin always arrive
+// the same way round.
+type coveredSetFile struct {
+	name string
+	body string
+}
+
 // writeCoveredSetFile writes one file below dir, creating parents.
 func writeCoveredSetFile(c *qt.C, dir, name, body string) {
 	c.Helper()
@@ -110,50 +118,43 @@ const (
 //     covered set excludes.
 func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 	tests := []struct {
-		name       string
-		write      func(c *qt.C, dir string)
-		wantStdout string
-		wantStderr string
-		wantTables []string
+		name  string
+		files []coveredSetFile
+		// tamperAfterHash is appended once atlas.sum exists, which is the only
+		// way to express an edit no entry in it is derived from.
+		tamperAfterHash []coveredSetFile
+		wantStdout      string
+		wantStderr      string
+		wantTables      []string
 	}{
 		{
 			name: "tampered nested file never runs",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c, dir)
-				appendCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetTamperSQL)
+			files: []coveredSetFile{
+				{name: "1_a.sql", body: coveredSetTopLevelSQL},
+				{name: "sub/2_b.sql", body: coveredSetNestedSQL},
 			},
-			wantStdout: "Migrating to version 1 from 1 pending migrations.",
-			wantStderr: coveredSetNestedWarn,
-			wantTables: []string{"a"},
+			tamperAfterHash: []coveredSetFile{{name: "sub/2_b.sql", body: coveredSetTamperSQL}},
+			wantStdout:      "Migrating to version 1 from 1 pending migrations.",
+			wantStderr:      coveredSetNestedWarn,
+			wantTables:      []string{"a"},
 		},
 		{
-			name: "nested file is the only migration",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c, dir)
-			},
+			name:       "nested file is the only migration",
+			files:      []coveredSetFile{{name: "sub/2_b.sql", body: coveredSetNestedSQL}},
 			wantStdout: "No migration files to execute",
 			wantStderr: coveredSetNestedWarn,
 			wantTables: []string{},
 		},
 		{
-			name: "top-level only is unchanged",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
-				hashCoveredSetDir(c, dir)
-			},
+			name:       "top-level only is unchanged",
+			files:      []coveredSetFile{{name: "1_a.sql", body: coveredSetTopLevelSQL}},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "",
 			wantTables: []string{"a"},
 		},
 		{
-			name: "uppercase-only directory has nothing to execute",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "1_a.SQL", coveredSetTopLevelSQL)
-				hashCoveredSetDir(c, dir)
-			},
+			name:       "uppercase-only directory has nothing to execute",
+			files:      []coveredSetFile{{name: "1_a.SQL", body: coveredSetTopLevelSQL}},
 			wantStdout: "No migration files to execute",
 			wantStderr: "warning: 1_a.SQL is not covered by atlas.sum and will not run; " +
 				"Atlas migrations are top-level files named *.sql\n",
@@ -161,10 +162,9 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		},
 		{
 			name: "uppercase file beside a migration does not refuse the directory",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c, dir, "2_c.SQL", "CREATE TABLE c (id INTEGER PRIMARY KEY);\n")
-				hashCoveredSetDir(c, dir)
+			files: []coveredSetFile{
+				{name: "1_a.sql", body: coveredSetTopLevelSQL},
+				{name: "2_c.SQL", body: "CREATE TABLE c (id INTEGER PRIMARY KEY);\n"},
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "warning: 2_c.SQL is not covered by atlas.sum and will not run; " +
@@ -173,10 +173,9 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		},
 		{
 			name: "duplicate version across depth is not a duplicate",
-			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c, dir, "sub/1_a.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c, dir)
+			files: []coveredSetFile{
+				{name: "1_a.sql", body: coveredSetTopLevelSQL},
+				{name: "sub/1_a.sql", body: coveredSetNestedSQL},
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "warning: sub/1_a.sql is not covered by atlas.sum and will not run; " +
@@ -191,7 +190,13 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-			tt.write(c, dir)
+			for _, file := range tt.files {
+				writeCoveredSetFile(c, dir, file.name, file.body)
+			}
+			hashCoveredSetDir(c, dir)
+			for _, file := range tt.tamperAfterHash {
+				appendCoveredSetFile(c, dir, file.name, file.body)
+			}
 			dbPath := filepath.Join(tempDir, "target.db")
 
 			stdout, stderr, err := compatApply(dir, dbPath)

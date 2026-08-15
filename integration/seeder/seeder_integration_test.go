@@ -3,13 +3,13 @@
 package seeder_test
 
 import (
-	"os"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/seeder"
 )
 
@@ -60,11 +60,7 @@ func TestApply_Integration(t *testing.T) {
 
 func requireSeederDatabaseURL(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 func seedNames(seeds []seeder.SeedFile) []string {

@@ -63,7 +63,6 @@ func TestAtlasTxModeValidation_FirstFileErrorSkipsPreflight(t *testing.T) {
 }
 
 func TestAtlasTxModeValidation_PrecedenceAcrossSelectedFiles(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		globalMode    migrator.MigrationTxMode
@@ -89,7 +88,8 @@ func TestAtlasTxModeValidation_PrecedenceAcrossSelectedFiles(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, mig := newAtlasTxModeSelectionMigrator(c, test.globalMode)
 			err := mig.MigrateUp(c.Context())
 			c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "2_invalid.sql"`)
@@ -191,7 +191,6 @@ DROP TABLE directional;
 }
 
 func TestAtlasTxModeProvider_RejectsMisplacedTxtarDirective(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -222,7 +221,8 @@ CREATE TABLE down_body (id INTEGER PRIMARY KEY);
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "misplaced.sqlite"),
@@ -247,7 +247,6 @@ CREATE TABLE down_body (id INTEGER PRIMARY KEY);
 }
 
 func TestAtlasTxModeProvider_DownValidationPrecedesRollback(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		fsys fstest.MapFS
@@ -289,7 +288,8 @@ DROP TABLE second_table;
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "down-validation.sqlite"),
@@ -321,7 +321,6 @@ DROP TABLE second_table;
 }
 
 func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		globalMode migrator.MigrationTxMode
@@ -351,7 +350,8 @@ func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "constructor-policy.sqlite"),

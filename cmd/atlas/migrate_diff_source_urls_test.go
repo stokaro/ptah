@@ -15,7 +15,7 @@ import (
 
 func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
 	c := qt.New(t)
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
 	cmd := atlas.NewCompatCommand("atlas")
@@ -152,7 +152,7 @@ env "dev" {
 func TestMigrateDiffEnvURLDesiredState(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE env_database_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE env_database_users (id INTEGER PRIMARY KEY)")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "desired_url" {}
 
 env "dev" {
@@ -186,7 +186,7 @@ env "dev" {
 func TestMigrateDiffConfigDefaultDatabaseDesiredState(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE config_database_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE config_database_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(baseDir, "migrations")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "desired_url" {}
@@ -260,7 +260,7 @@ func TestMigrateDiffMigrationDirectoryDesiredState(t *testing.T) {
 func TestMigrateDiffAliasedDesiredDatabaseFailsWithoutMutation(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	databasePath := seedSQLiteDB(t, "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
+	databasePath := seedSQLiteDB(c, "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "database_url" {}
 
 env "dev" {

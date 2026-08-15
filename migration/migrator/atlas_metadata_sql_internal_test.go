@@ -525,110 +525,87 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 		name              string
 		dialect           string
 		wantPartialHashes string
-		assert            func(c *qt.C, ddl string)
+		// wantContains is what else the branch has to spell, and wantAbsent is
+		// what it must never spell. Both are lists rather than one string
+		// because a branch can owe several tokens, and a row that owes none
+		// simply names none.
+		wantContains []string
+		wantAbsent   []string
 	}{
 		{
 			name:              "postgres gets a native JSONB column",
 			dialect:           platform.Postgres,
 			wantPartialHashes: "partial_hashes JSONB NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "executed_at TIMESTAMPTZ NOT NULL")
-			},
+			wantContains:      []string{"executed_at TIMESTAMPTZ NOT NULL"},
 		},
 		{
 			name:              "cockroachdb follows the postgres family",
 			dialect:           platform.CockroachDB,
 			wantPartialHashes: "partial_hashes JSONB NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "executed_at TIMESTAMPTZ NOT NULL")
-			},
+			wantContains:      []string{"executed_at TIMESTAMPTZ NOT NULL"},
 		},
 		{
 			name:              "yugabytedb follows the postgres family",
 			dialect:           platform.YugabyteDB,
 			wantPartialHashes: "partial_hashes JSONB NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "executed_at TIMESTAMPTZ NOT NULL")
-			},
+			wantContains:      []string{"executed_at TIMESTAMPTZ NOT NULL"},
 		},
 		{
 			name:              "mysql keeps the default JSON column and binary revision identity",
 			dialect:           platform.MySQL,
 			wantPartialHashes: "partial_hashes JSON NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable)
-				c.Assert(ddl, qt.Contains, "version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY")
+			wantContains: []string{
+				"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable,
+				"version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY",
 			},
 		},
 		{
 			name:              "mariadb keeps the default JSON column and binary revision identity",
 			dialect:           platform.MariaDB,
 			wantPartialHashes: "partial_hashes JSON NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable)
-				c.Assert(ddl, qt.Contains, "version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY")
+			wantContains: []string{
+				"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable,
+				"version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY",
 			},
 		},
 		{
 			name:              "sqlite keeps the default JSON column",
 			dialect:           platform.SQLite,
 			wantPartialHashes: "partial_hashes JSON NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable)
-			},
+			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
 		},
 		{
 			name:              "spanner keeps the default JSON column",
 			dialect:           platform.Spanner,
 			wantPartialHashes: "partial_hashes JSON NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable)
-			},
+			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
 		},
 		{
 			name:              "sqlserver stores the JSON document as text",
 			dialect:           platform.SQLServer,
 			wantPartialHashes: "partial_hashes NVARCHAR(MAX) NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "IF OBJECT_ID("+atlasRevisionsGuardSQLServerObject+", N'U') IS NULL")
-				c.Assert(ddl, qt.Contains, "version NVARCHAR(255) COLLATE Latin1_General_100_BIN2 PRIMARY KEY")
+			wantContains: []string{
+				"IF OBJECT_ID(" + atlasRevisionsGuardSQLServerObject + ", N'U') IS NULL",
+				"version NVARCHAR(255) COLLATE Latin1_General_100_BIN2 PRIMARY KEY",
 			},
 		},
 		{
-			// ClickHouse reads a trailing NULL as Nullable(T). A JSON column here
-			// is asked for as Nullable(JSON): rejected outright by ClickHouse 24.x
-			// (code 43) and, on later servers, accepted but silently storing `{}`
-			// in place of the JSON null Ptah wrote. Pin the whole statement rather
-			// than one column, so widening any other column has to be deliberate.
+			// ClickHouse reads a trailing NULL as Nullable(T), so any JSON token
+			// in this statement is asked for as Nullable(JSON): rejected outright
+			// by ClickHouse 24.x (code 43) and, on later servers, accepted but
+			// silently storing `{}` in place of the JSON null Ptah wrote.
+			// TestAtlasRevisionsTableDDL_ClickHousePinsTheWholeStatement pins the
+			// rest of the statement for the same reason.
 			name:              "clickhouse stores the JSON document as text",
 			dialect:           platform.ClickHouse,
 			wantPartialHashes: "partial_hashes TEXT NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Not(qt.Contains), "JSON",
-					qt.Commentf("any JSON token here becomes Nullable(JSON) on ClickHouse"))
-				c.Assert(ddl, qt.Equals, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable+` (
-    version VARCHAR(255) PRIMARY KEY,
-    description TEXT NOT NULL,
-    type BIGINT NOT NULL DEFAULT 2,
-    applied BIGINT NOT NULL DEFAULT 0,
-    total BIGINT NOT NULL DEFAULT 0,
-    executed_at TIMESTAMP NOT NULL,
-    execution_time BIGINT NOT NULL,
-    error TEXT NULL,
-    error_stmt TEXT NULL,
-    hash VARCHAR(255) NOT NULL,
-    partial_hashes TEXT NULL,
-    operator_version VARCHAR(255) NOT NULL
-)`)
-			},
+			wantAbsent:        []string{"JSON"},
 		},
 		{
 			name:              "unset dialect falls back to the default branch",
 			dialect:           "",
 			wantPartialHashes: "partial_hashes JSON NULL",
-			assert: func(c *qt.C, ddl string) {
-				c.Assert(ddl, qt.Contains, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable)
-			},
+			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
 		},
 	}
 
@@ -642,9 +619,46 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 				qt.Commentf("dialect %q must declare partial_hashes as %q", tt.dialect, tt.wantPartialHashes))
 			c.Assert(ddl, qt.Contains, "operator_version",
 				qt.Commentf("dialect %q must still carry the full Atlas revision layout", tt.dialect))
-			tt.assert(c, ddl)
+			for _, want := range tt.wantContains {
+				c.Assert(ddl, qt.Contains, want,
+					qt.Commentf("dialect %q must spell %q", tt.dialect, want))
+			}
+			for _, unwanted := range tt.wantAbsent {
+				c.Assert(ddl, qt.Not(qt.Contains), unwanted,
+					qt.Commentf("dialect %q must never spell %q", tt.dialect, unwanted))
+			}
 		})
 	}
+}
+
+// TestAtlasRevisionsTableDDL_ClickHousePinsTheWholeStatement is the one branch
+// where a column at a time is not enough. Every trailing NULL on ClickHouse is
+// a Nullable(T) declaration, so widening any column of this statement can turn
+// it into a type the server refuses or silently substitutes; pinning the whole
+// text makes such a change deliberate rather than incidental.
+func TestAtlasRevisionsTableDDL_ClickHousePinsTheWholeStatement(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := atlasRevisionsTableDDL(
+		platform.ClickHouse,
+		atlasRevisionsGuardTable,
+		atlasRevisionsGuardSQLServerObject,
+	)
+
+	c.Assert(ddl, qt.Equals, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable+` (
+    version VARCHAR(255) PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes TEXT NULL,
+    operator_version VARCHAR(255) NOT NULL
+)`)
 }
 
 // TestCreateAtlasRevisionsTableSQL_ZeroValueMigratorDoesNotPanic pins the

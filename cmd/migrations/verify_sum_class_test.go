@@ -3,6 +3,7 @@ package migrations_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -240,33 +241,26 @@ func TestStatus_StaysUsableOnADriftedDirectoryWithoutTheFlag(t *testing.T) {
 // The fixture is hashed and clean, so the always-on gate really does verify in
 // the first row: the assertion is about what is SAID, not about what ran.
 func TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate(t *testing.T) {
-	const confirmation = "verified: migrations directory is intact"
-
 	tests := []struct {
 		name  string
 		extra []string
-		check func(c *qt.C, out string)
+		// wantConfirmation is the line the run must print, or empty when it must
+		// stay quiet. It carries the file name: a confirmation that named some
+		// other artifact would be answering a different question.
+		wantConfirmation string
 	}{
 		{
 			name:  "always-on gate stays quiet under --verbose",
 			extra: []string{"--verbose"},
-			check: func(c *qt.C, out string) {
-				c.Check(out, qt.Not(qt.Contains), confirmation)
-			},
 		},
 		{
-			name:  "--verify-sum --verbose names the file that verified",
-			extra: []string{"--verbose", "--verify-sum"},
-			check: func(c *qt.C, out string) {
-				c.Check(out, qt.Contains, "ptah.sum "+confirmation)
-			},
+			name:             "--verify-sum --verbose names the file that verified",
+			extra:            []string{"--verbose", "--verify-sum"},
+			wantConfirmation: "ptah.sum verified: migrations directory is intact",
 		},
 		{
 			name:  "--verify-sum alone stays quiet",
 			extra: []string{"--verify-sum"},
-			check: func(c *qt.C, out string) {
-				c.Check(out, qt.Not(qt.Contains), confirmation)
-			},
 		},
 	}
 
@@ -282,7 +276,20 @@ func TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate(t *testing.T) {
 			}, tt.extra...)...)
 
 			c.Assert(runErr, qt.IsNil, qt.Commentf("stdout+stderr:\n%s", out))
-			tt.check(c, out)
+			c.Check(sumConfirmationLine(out), qt.Equals, tt.wantConfirmation,
+				qt.Commentf("stdout+stderr:\n%s", out))
 		})
 	}
 }
+
+// sumConfirmationLine returns the verification confirmation the run printed, or
+// the empty string when it printed none.
+//
+// Reading the whole line rather than a substring is what lets a quiet row and a
+// loud row state the same kind of value: the absence is "", and the presence is
+// the sentence an operator reads, file name included.
+func sumConfirmationLine(out string) string {
+	return sumConfirmationRE.FindString(out)
+}
+
+var sumConfirmationRE = regexp.MustCompile(`(?m)^.*verified: migrations directory is intact.*$`)

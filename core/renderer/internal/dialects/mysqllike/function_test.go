@@ -39,8 +39,6 @@ func newRenderer(dialect string) *mysqllike.Renderer {
 // VisitDropView already quotes this way; this holds the function path to the
 // same rule rather than fixing the instance.
 func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		node *ast.DropFunctionNode
@@ -60,7 +58,8 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				r := newRenderer(dialect)
 
 				c.Assert(r.VisitDropFunction(test.node), qt.IsNil)
@@ -94,8 +93,6 @@ func TestVisitDropFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 // target can run still becomes real DDL, which is what the live round trip in
 // integration/gonative asserts.
 func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		language string
@@ -125,7 +122,8 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				r := newRenderer(dialect)
 
 				err := r.VisitCreateFunction(&ast.CreateFunctionNode{
@@ -154,10 +152,9 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 // it cannot choose for the operator, but it can say which two readings exist
 // and which word settles it.
 func TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			r := newRenderer(dialect)
 
 			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
@@ -181,10 +178,9 @@ func TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault(t *testing.T) {
 // TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers holds the create half to
 // the same rule as the drop half above.
 func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			r := newRenderer(dialect)
 
 			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
@@ -217,10 +213,9 @@ func TestVisitCreateFunction_QualifiedNameIsTwoIdentifiers(t *testing.T) {
 // planner emits; see its own test for that half. Counting semicolons is the
 // cheapest statement of the rule that a mutant restoring the prefix fails.
 func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			r := newRenderer(dialect)
 
 			err := r.VisitCreateFunction(&ast.CreateFunctionNode{
@@ -244,8 +239,6 @@ func TestVisitCreateFunction_RendersExactlyOneStatement(t *testing.T) {
 // same destructive replacement forever. The measurements behind the three
 // clauses are in mysqlroutine.Characteristic; this holds the renderer to them.
 func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		volatility string
@@ -258,7 +251,8 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				r := newRenderer(dialect)
 
 				err := r.VisitCreateFunction(&ast.CreateFunctionNode{
@@ -284,8 +278,6 @@ func TestVisitCreateFunction_VolatilityIsDistinguishableAfterARead(t *testing.T)
 // planner emits a DROP in front of this node, and a CREATE refused after that
 // drop was rendered would leave a migration whose only effect is deletion.
 func TestVisitCreateFunction_RefusesValuesItCannotRepresent(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		node *ast.CreateFunctionNode
@@ -331,7 +323,8 @@ func TestVisitCreateFunction_RefusesValuesItCannotRepresent(t *testing.T) {
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				r := newRenderer(dialect)
 
 				err := r.VisitCreateFunction(test.node)
