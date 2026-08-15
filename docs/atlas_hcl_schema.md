@@ -74,7 +74,10 @@ current schema IR:
   Atlas-style `arg` blocks without changing their text
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
 - PostgreSQL `materialized` blocks with `schema`, `as`, `refresh_strategy`, and
-  `comment`
+  `comment`; `refresh_strategy` round-trips through HCL unchanged, and `manual`
+  is the only value SQL generation can represent — any other is refused when a
+  target is known, naming the dialect and the value (see
+  [YAML schema](yaml_schema.md))
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
@@ -579,7 +582,7 @@ view "active_users" {
 materialized "user_stats" {
   schema           = schema.public
   as               = "SELECT count(*) FROM users"
-  refresh_strategy = "concurrently"
+  refresh_strategy = "manual"
 }
 
 trigger "users_set_updated_at" {

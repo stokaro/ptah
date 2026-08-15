@@ -96,7 +96,7 @@ for the message and the flag it names.
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
-| `view` / `materialized` | SQL body plus schema and comments; `materialized` also supports `refresh_strategy`. |
+| `view` / `materialized` | SQL body plus schema and comments; `materialized` also supports `refresh_strategy`, whose only renderable value is `manual` — any other is refused by name once a target is known. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |

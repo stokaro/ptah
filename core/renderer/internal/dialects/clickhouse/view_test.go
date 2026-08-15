@@ -164,10 +164,13 @@ func TestMaterializedViewDDL_HappyPath(t *testing.T) {
 				"ENGINE = MergeTree ORDER BY tuple() AS\n" + viewBody + "\n;\n",
 		},
 		{
-			name: "create ignores the refresh strategy the target has no statement for",
+			// The manual policy is the only one that reaches this renderer:
+			// core/renderer refuses the rest for every dialect, because
+			// rendering them away is what hid the loss in stokaro/ptah#1523.
+			name: "create carries the manual refresh strategy without writing it",
 			node: ast.NewCreateMaterializedView("analytics.user_counts").
 				SetBody(viewBody).
-				SetRefreshStrategy("concurrently"),
+				SetRefreshStrategy("manual"),
 			want: "CREATE MATERIALIZED VIEW `analytics`.`user_counts` " +
 				"ENGINE = MergeTree ORDER BY tuple() AS\n" + viewBody + "\n;\n",
 		},

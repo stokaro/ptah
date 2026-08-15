@@ -18,6 +18,13 @@ import (
 // docs/atlas_hcl_schema.md, verbatim. Every block in it is one Ptah's HCL
 // frontend fully supports, so whatever it renders is SQL that Ptah itself
 // produced for a schema it can represent.
+//
+// The materialized view declares the manual refresh strategy, and this fixture
+// is why that matters: it used to declare "concurrently", render into DDL that
+// says nothing about it, read back as the manual policy, and re-render
+// identically -- the fixed point held while the declaration was gone. A
+// strategy no target can represent is refused by name now (stokaro/ptah#1523),
+// so a schema this test can render is a schema Ptah can represent whole.
 const postgresObjectsHCL = `schema "public" {}
 
 extension "pg_trgm" {
@@ -96,7 +103,7 @@ view "active_users" {
 materialized "user_stats" {
   schema           = schema.public
   as               = "SELECT count(*) FROM users"
-  refresh_strategy = "concurrently"
+  refresh_strategy = "manual"
 }
 
 trigger "users_set_updated_at" {

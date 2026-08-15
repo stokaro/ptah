@@ -371,7 +371,7 @@ Declares a materialized view.
 | `body` | Yes | Materialized view SELECT body. |
 | `comment` | No | Materialized view comment. |
 | `name` | Yes | Materialized view name. |
-| `refresh_strategy` | No | Refresh strategy; defaults to manual. |
+| `refresh_strategy` | No | Refresh strategy; defaults to manual. `manual` is the only value SQL generation can represent: no engine stores a refresh policy and Ptah plans no `REFRESH`, so any other value is refused by name rather than rendered away. |
 
 ## Security
 

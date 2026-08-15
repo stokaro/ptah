@@ -321,6 +321,24 @@ also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 refresh workflows. It is not drift-compared because PostgreSQL does not persist
 that policy in `pg_class`/`information_schema`.
 
+For the same reason, `manual` is the only value that can be rendered today, and
+every frontend accepts and preserves the others while SQL generation refuses
+them. A strategy no target can represent is reported once, naming the dialect,
+the materialized view and the value, before any statement is produced:
+
+```text
+postgres cannot represent refresh_strategy "concurrently" declared on
+materialized view "user_counts": only "manual" is supported, because the target
+stores no refresh policy and ptah plans no REFRESH statement
+```
+
+Rendering it away instead was silent in both directions: no dialect writes a
+refresh policy into DDL, introspection reports `manual` on the way back in, and
+the comparison therefore saw no drift, so the command reported a synced schema
+and the declared policy was never applied (stokaro/ptah#1523).
+`REFRESH MATERIALIZED VIEW CONCURRENTLY` is a statement an operator runs, not a
+property of the schema, and Ptah plans no `REFRESH` of its own.
+
 ## Validation
 
 The parser is intentionally strict:

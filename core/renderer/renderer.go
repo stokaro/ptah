@@ -348,6 +348,8 @@ func prepareASTNodeForRendering(
 		return prepareIndexNode(dialect, caps, typed)
 	case *ast.ExtensionNode:
 		return prepareExtensionNode(dialect, typed)
+	case *ast.CreateMaterializedViewNode:
+		return prepareCreateMaterializedViewNode(dialect, caps, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
@@ -945,6 +947,17 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
+		return err
+	}
+	// A refresh strategy no target can represent renders into nothing at all,
+	// and the round trip hides the loss: introspection reports `manual`, the
+	// comparator sees no drift, and the operator is told the schema is synced
+	// (stokaro/ptah#1523).
+	if err := validateDeclaredMaterializedViewRefreshStrategies(
+		dialect,
+		caps,
+		database.MaterializedViews,
+	); err != nil {
 		return err
 	}
 	// A reserved PostgreSQL role name renders into a CREATE ROLE the server is

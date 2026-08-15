@@ -1057,7 +1057,11 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 //
 // RefreshStrategy is not read here, exactly as the PostgreSQL renderer does not
 // read it in its own create arm; it describes a REFRESH that ClickHouse has no
-// statement for, and VisitRefreshMaterializedView says so.
+// statement for, and VisitRefreshMaterializedView says so. A strategy other
+// than the manual one no longer reaches this method: the shared validation seam
+// in core/renderer refuses it by name for every dialect, because a declaration
+// rendered away here came back from introspection as `manual` and the
+// comparator then saw no drift (stokaro/ptah#1523).
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)

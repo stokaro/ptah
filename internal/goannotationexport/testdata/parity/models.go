@@ -82,7 +82,14 @@ type LookupUser struct{}
 //ptah:schema:view name="app.active_users" body="SELECT id FROM app.users WHERE status = 'active'" with_check="true" comment="Active users"
 type ActiveUsers struct{}
 
-//ptah:schema:matview name="app.user_stats" body="SELECT count(*) FROM app.users" refresh_strategy="concurrently" comment="User statistics"
+// The refresh strategy is the manual one because this fixture is rendered to
+// SQL by scripts/check-hcl-export-acceptance.sh, and a strategy no target can
+// represent is refused there rather than rendered away (stokaro/ptah#1523).
+// The non-default spelling keeps its own coverage in
+// internal/atlashclrender.TestRenderMaterializedViewRefreshStrategyRoundTrip,
+// which measures the HCL round trip and renders no SQL.
+//
+//ptah:schema:matview name="app.user_stats" body="SELECT count(*) FROM app.users" refresh_strategy="manual" comment="User statistics"
 type UserStats struct{}
 
 //ptah:schema:trigger name="users_touch" table="app.users" timing="BEFORE" event="UPDATE" for="STATEMENT" body="RETURN NEW;" comment="Touch users"

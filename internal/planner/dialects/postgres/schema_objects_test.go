@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -548,7 +549,43 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
 
+// TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAutoRefresh
+// keeps the property its name states -- planning a materialized view emits no
+// REFRESH -- on the one strategy a target can carry.
+//
+// It used to state that property with `concurrently`, which is the declaration
+// stokaro/ptah#1523 reports as silently lost: the plan rendered a create that
+// said nothing about the policy and exited 0. That half of the case is now the
+// refusal below.
 func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAutoRefresh(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	generated := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name:            "user_stats",
+			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
+			RefreshStrategy: "manual",
+		}},
+	}
+	diff := &difftypes.SchemaDiff{
+		MaterializedViewsAdded: []string{"user_stats"},
+	}
+
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
+	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW")
+}
+
+// TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyRefused pins
+// the planned half of the refusal: the node the planner builds carries the
+// declared strategy, so rendering the plan refuses it exactly as rendering the
+// declaration does, and no statement is produced for an operator to apply.
+func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyRefused(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
@@ -566,10 +603,9 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAuto
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
-	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
-	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW CONCURRENTLY")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `refresh_strategy "concurrently"`)
+	c.Assert(sql, qt.Equals, "")
 }
 
 func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T) {
