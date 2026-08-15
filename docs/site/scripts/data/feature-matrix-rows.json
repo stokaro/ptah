@@ -119,11 +119,11 @@
   {
     "area": "Project config",
     "feature": "data \"hcl_schema\" reference",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Takes path or paths and exports .url; the Atlas vars input is rejected by name, and an absolute path or a non-file:// scheme is rejected by its rule rather than as an unsupported construct.",
-    "evidence": "config/projectconfig/atlas.go:1777 (hclSchemaDataSource accepts only path/paths), :2304 atlasLocalPathRule and :2323 atlasLocalFileURL (the two value rules, carried through :2415 invalidValue). Atlas documents path, paths, vars in and url out (https://atlasgo.io/atlas-schema/projects). Repro: vars -> `error: unsupported atlas.hcl construct \"vars\" at atlas.hcl:3`; path = \"/etc/absolute.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: absolute paths are not supported: /etc/absolute.hcl: give a path relative to the directory holding atlas.hcl`; path = \"s3://bucket/x.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl`"
+    "note": "Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule.",
+    "evidence": "config/projectconfig/atlas.go hclSchemaDataSource (path, paths, vars), hclSchemaVarsAttr and schemaSourceVarScopes, atlasLocalPathRule and atlasLocalFileURL (the two value rules, carried through :2415 invalidValue). Atlas documents path, paths, vars in and url out (https://atlasgo.io/atlas-schema/projects). Measured on the pinned community v1.3.0 binary with `schema apply --env local --dry-run` against `s.hcl` declaring `variable \"tenant\" { type = string }` with no default, exit codes read directly from unpiped invocations: vars = { tenant = \"acme\" } -> 0 on both, DEFAULT 'acme'; no vars -> 1 `missing value for required variable \"tenant\"` on both; no vars with --var tenant=acme -> 1 on both (it was exit 0 on ptah-compat before, a rule (a) violation); src = \"file://s.hcl\" with --var tenant=acme -> 0 on both (the control that --var still reaches a file no data source selected). Pinned by TestParseAtlasHCLSchemaVars (config/projectconfig), TestClassifySetCarriesTheProjectVariableScope (internal/atlassource) and TestLoadSourcesScopesVarsPerSource (internal/schemafile). Value shapes: path = \"/etc/absolute.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: absolute paths are not supported: /etc/absolute.hcl: give a path relative to the directory holding atlas.hcl`; path = \"s3://bucket/x.hcl\" -> `error: atlas.hcl \"path\" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl`"
   },
   {
     "area": "Project config",

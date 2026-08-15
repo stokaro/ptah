@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 const (
@@ -1230,6 +1231,45 @@ func atlasSourceProjectEnv(
 		return atlassource.ProjectEnv{}, err
 	}
 	return atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: baseDir}, nil
+}
+
+// atlasProjectSourceURLs records the desired-state URLs a run took from the
+// project's schema sources, under the flag they stand in for.
+//
+// Only these carry an atlas.hcl `data "hcl_schema"` variable scope. A URL the
+// operator typed keeps flag-variable precedence even when it names the same
+// file, because that is what the pinned Atlas community binary v1.3.0 does:
+// `schema apply --env local --to file://s.hcl --dry-run` exits 1 with `missing
+// value for required variable "tenant"` where the same env with no --to exits 0
+// and plans `DEFAULT 'acme'`. See [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+//
+// nil for an empty list, so a run that substituted nothing scopes nothing.
+func atlasProjectSourceURLs(flag string, urls []string) map[string][]string {
+	if len(urls) == 0 {
+		return nil
+	}
+	return map[string][]string{flag: slices.Clone(urls)}
+}
+
+// atlasProjectSchemaFileSources pairs desired-state URLs the run took from the
+// project with the variable scope the project attached to each one.
+//
+// It exists for the loaders that never classify: `schema plan` and
+// `schema plan validate` read local files directly, so
+// [go.5x5.cz/ptah/internal/atlassource.ClassifySet] -- where every other verb
+// picks the scope up -- is not on their path. The caller decides provenance by
+// where it calls this, exactly as it does for [atlasProjectSourceURLs].
+func atlasProjectSchemaFileSources(cfg projectconfig.Config, urls []string) []schemafile.Source {
+	sources := make([]schemafile.Source, 0, len(urls))
+	for _, rawURL := range urls {
+		values, scoped := cfg.SchemaSourceVars(rawURL)
+		sources = append(sources, schemafile.Source{
+			URL:        rawURL,
+			VarValues:  values,
+			VarsScoped: scoped,
+		})
+	}
+	return sources
 }
 
 func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {

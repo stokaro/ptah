@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/sqlsafety"
 	"go.5x5.cz/ptah/migration/risk"
 	"go.5x5.cz/ptah/migration/safety"
@@ -65,10 +66,13 @@ type PlanFileOptions struct {
 	// name is derived from the source and target fingerprints.
 	Name string
 	// DevURL, when set, must match the target connection's dialect.
-	DevURL  string
-	ToURLs  []string
-	Exclude []string
-	Policy  DiffPolicy
+	DevURL string
+	ToURLs []string
+	// ToSources carries the same sources as ToURLs with their atlas.hcl
+	// variable scopes; see [ApplyOptions.ToSources].
+	ToSources []schemafile.Source
+	Exclude   []string
+	Policy    DiffPolicy
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
 	Desired *goschema.Database
@@ -112,9 +116,10 @@ func PreparePlanFile(
 	}
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
-		ToURLs:  opts.ToURLs,
-		Exclude: opts.Exclude,
-		Policy:  opts.Policy,
+		ToURLs:    opts.ToURLs,
+		ToSources: opts.ToSources,
+		Exclude:   opts.Exclude,
+		Policy:    opts.Policy,
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,

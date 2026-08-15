@@ -58,6 +58,16 @@ type Options struct {
 	// silently accepting a value for one there would suggest they do.
 	Vars []string
 
+	// VarValues supplies already-decoded variable values for the load, and is
+	// what an atlas.hcl `data "hcl_schema" { vars }` block reaches this loader
+	// through. See [atlashcl.Options.VarValues] for why the decoded map is not
+	// re-spelled as `--var` text.
+	//
+	// [LoadSources] sets it per source, which is the whole point: the pinned
+	// Atlas community binary v1.3.0 scopes a data source's vars to the files
+	// that data source selects and passes no `--var` into them at all.
+	VarValues map[string]string
+
 	// SchemaScope names the one schema this run is limited to. Empty means the
 	// run is realm-scoped and every schema the source declares is reachable.
 	//
@@ -269,6 +279,7 @@ func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
 			RecordSchemaBlock:  opts.recordSchemaBlock(),
 			Vars:               opts.Vars,
+			VarValues:          opts.VarValues,
 		})
 	case ".yaml", ".yml":
 		return yamlschema.ParseFile(resolved)
@@ -391,10 +402,44 @@ func LoadAll(rawURLs []string, opts Options) (*goschema.Database, error) {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
 
+	sources := make([]Source, 0, len(rawURLs))
+	for _, rawURL := range rawURLs {
+		sources = append(sources, Source{URL: rawURL})
+	}
+	return LoadSources(sources, opts)
+}
+
+// Source is one desired-state schema source URL together with the variable
+// values scoped to it.
+type Source struct {
+	// URL is the plain path or file:// URL to load.
+	URL string
+	// VarValues are the variable values that apply to THIS source alone.
+	// Meaningful only when VarsScoped is set.
+	VarValues map[string]string
+	// VarsScoped reports that the source carries its own variable scope, so the
+	// load-wide [Options.Vars] and [Options.VarValues] must not reach it.
+	//
+	// It is a separate bool rather than a nil check on VarValues because a data
+	// source declaring no `vars` still closes the boundary: measured on the
+	// pinned Atlas community binary v1.3.0, `--var tenant=acme` against an
+	// atlas.hcl whose env src is `data.hcl_schema.app.url` and whose data block
+	// has no `vars` exits 1 with `missing value for required variable "tenant"`,
+	// while the same `--var` against a literal `src = "file://s.hcl"` exits 0.
+	VarsScoped bool
+}
+
+// LoadSources loads every source into one merged schema, applying each source's
+// own variable scope.
+func LoadSources(sources []Source, opts Options) (*goschema.Database, error) {
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("at least one schema file URL is required")
+	}
+
 	return gateSchemaScope(opts, func(opts Options) (*goschema.Database, error) {
 		merged := &goschema.Database{}
-		for _, rawURL := range rawURLs {
-			db, err := Load(rawURL, opts)
+		for _, source := range sources {
+			db, err := Load(source.URL, source.apply(opts))
 			if err != nil {
 				return nil, err
 			}
@@ -403,6 +448,18 @@ func LoadAll(rawURLs []string, opts Options) (*goschema.Database, error) {
 		goschema.Finalize(merged)
 		return merged, nil
 	})
+}
+
+// apply narrows opts to this source's variable scope. An unscoped source keeps
+// the load-wide values untouched, which is what every caller that never met a
+// data source gets.
+func (s Source) apply(opts Options) Options {
+	if !s.VarsScoped {
+		return opts
+	}
+	opts.Vars = nil
+	opts.VarValues = s.VarValues
+	return opts
 }
 
 // ToDBSchema converts Ptah's desired-schema IR into the DB schema shape used by

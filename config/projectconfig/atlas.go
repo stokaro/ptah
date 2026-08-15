@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math/big"
 	"os"
 	pathpkg "path"
@@ -19,6 +20,8 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
 	"github.com/zclconf/go-cty/cty/function/stdlib"
+
+	"go.5x5.cz/ptah/internal/atlasprojectpath"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -254,6 +257,23 @@ type atlasParser struct {
 	// reason as sensitiveValues: the parser is passed by value.
 	ignored     *[]IgnoredAtlasConstruct
 	ignoredSeen map[ignoredAtlasConstructKey]struct{}
+	// hclSchemaScopes records, per data "hcl_schema" name, the variable values
+	// that block scopes to its files and the file:// URLs it minted, so
+	// [atlasParser.schemaSourceVarScopes] can attribute an evaluated `src` list
+	// back to the block it came from. A plain map: the parser is passed by value
+	// but a map header is shared, and every write happens before any env body is
+	// parsed.
+	hclSchemaScopes map[string]hclSchemaVarScope
+}
+
+// hclSchemaVarScope is one data "hcl_schema" block's contribution to the
+// variable scoping rule: the values it declares, and the source URLs it minted.
+type hclSchemaVarScope struct {
+	// values is the decoded `vars` map, nil when the block declares none. A nil
+	// map still scopes: see [Config.SchemaSourceVars].
+	values map[string]string
+	// urls are the file:// URLs this block put into data.hcl_schema.<name>.url.
+	urls []string
 }
 
 type ignoredAtlasConstructKey struct {
@@ -312,6 +332,7 @@ func newAtlasParser(
 		baseDir:              filepath.Dir(filename),
 		rejectListMapForEach: rejectListMapForEach,
 		externalSchemas:      map[string]externalSchemaDataSource{},
+		hclSchemaScopes:      map[string]hclSchemaVarScope{},
 	}, nil
 }
 
@@ -851,12 +872,9 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 	for attrName, attr := range block.Body.Attributes {
 		switch attrName {
 		case "src":
-			values, err := p.stringOrStringListAttr(attrName, attr)
-			if err != nil {
+			if err := p.parseSchemaSources(attr, cfg); err != nil {
 				return err
 			}
-			cfg.SchemaSources = values
-			cfg.presence.mark(fieldSchemaSources)
 		default:
 			if err := p.tolerateUnknownAttr("env.schema", attrName, attr); err != nil {
 				return err
@@ -990,12 +1008,7 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		cfg.DevURL = value
 		cfg.presence.mark(fieldDevURL)
 	case "src":
-		values, err := p.stringOrStringListAttr(attrName, attr)
-		if err != nil {
-			return err
-		}
-		cfg.SchemaSources = values
-		cfg.presence.mark(fieldSchemaSources)
+		return p.parseSchemaSources(attr, cfg)
 	case "exclude":
 		values, err := p.stringListAttr(attrName, attr)
 		if err != nil {
@@ -1046,68 +1059,92 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 	cfg.presence.mark(fieldMigrationRevisionFormat)
 
 	for attrName, attr := range block.Body.Attributes {
-		switch attrName {
-		case "dir":
-			value, err := p.stringAttr(attrName, attr)
-			if err != nil {
-				return err
-			}
-			migration.Dir = normalizeAtlasMigrationDir(value)
-			cfg.presence.mark(fieldMigrationDir)
-		case "format":
-			value, err := p.scopedEnumOrStringAttr(
-				attrName,
-				attr,
-				"atlas",
-				"golang-migrate",
-				"goose",
-				"flyway",
-				"liquibase",
-				"dbmate",
-			)
-			if err != nil {
-				return err
-			}
-			migration.Format = value
-			cfg.presence.mark(fieldMigrationFormat)
-		case "revisions_schema":
-			value, err := p.stringAttr(attrName, attr)
-			if err != nil {
-				return err
-			}
-			migration.RevisionsSchema = value
-			cfg.presence.mark(fieldMigrationRevisionsSchema)
-		case "lock_timeout":
-			value, err := p.stringAttr(attrName, attr)
-			if err != nil {
-				return err
-			}
-			migration.LockTimeout = value
-			cfg.presence.mark(fieldMigrationLockTimeout)
-		case "exec_order":
-			value, err := p.scopedEnumOrStringAttr(attrName, attr, "LINEAR", "LINEAR_SKIP", "NON_LINEAR")
-			if err != nil {
-				return err
-			}
-			migration.ExecOrder = strings.ReplaceAll(strings.ToLower(value), "_", "-")
-			cfg.presence.mark(fieldMigrationExecOrder)
-		case "tx_mode":
-			value, err := p.stringAttr(attrName, attr)
-			if err != nil {
-				return err
-			}
-			migration.TxMode = value
-			cfg.presence.mark(fieldMigrationTxMode)
-		default:
-			if err := p.tolerateUnknownAttr("env.migration", attrName, attr); err != nil {
-				return err
-			}
+		if err := p.parseMigrationAttr(attrName, attr, &migration, cfg); err != nil {
+			return err
 		}
 	}
 	if err := p.parseMigrationBlocks(block); err != nil {
 		return err
 	}
 	cfg.Migration = migration
+	return nil
+}
+
+// parseMigrationAttr decodes one attribute of an env.migration block into
+// migration, marking its presence on cfg. It is split out of
+// [atlasParser.parseMigration] so the block's own bookkeeping -- the format
+// defaults, the nested blocks -- stays readable next to a switch that grows a
+// case every time a documented Atlas name is implemented.
+func (p atlasParser) parseMigrationAttr(
+	attrName string,
+	attr *hclsyntax.Attribute,
+	migration *MigrationConfig,
+	cfg *Config,
+) error {
+	switch attrName {
+	case "dir":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		migration.Dir = normalizeAtlasMigrationDir(value)
+		cfg.presence.mark(fieldMigrationDir)
+	case "format":
+		value, err := p.scopedEnumOrStringAttr(
+			attrName,
+			attr,
+			"atlas",
+			"golang-migrate",
+			"goose",
+			"flyway",
+			"liquibase",
+			"dbmate",
+		)
+		if err != nil {
+			return err
+		}
+		migration.Format = value
+		cfg.presence.mark(fieldMigrationFormat)
+	case "baseline":
+		value, decoded, err := p.nullableStringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		if decoded {
+			migration.Baseline = value
+			cfg.presence.mark(fieldMigrationBaseline)
+		}
+	case "revisions_schema":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		migration.RevisionsSchema = value
+		cfg.presence.mark(fieldMigrationRevisionsSchema)
+	case "lock_timeout":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		migration.LockTimeout = value
+		cfg.presence.mark(fieldMigrationLockTimeout)
+	case "exec_order":
+		value, err := p.scopedEnumOrStringAttr(attrName, attr, "LINEAR", "LINEAR_SKIP", "NON_LINEAR")
+		if err != nil {
+			return err
+		}
+		migration.ExecOrder = strings.ReplaceAll(strings.ToLower(value), "_", "-")
+		cfg.presence.mark(fieldMigrationExecOrder)
+	case "tx_mode":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		migration.TxMode = value
+		cfg.presence.mark(fieldMigrationTxMode)
+	default:
+		return p.tolerateUnknownAttr("env.migration", attrName, attr)
+	}
 	return nil
 }
 
@@ -2199,6 +2236,10 @@ func (p atlasParser) applyExternalSchemaSource(cfg *Config, source externalSchem
 	cfg.presence.mark(fieldExternalSchemaWorkingDir)
 	cfg.presence.mark(fieldExternalSchemaEnv)
 	cfg.SchemaSources = nil
+	// The scope map describes entries of that list, so it goes with it. An
+	// external-schema env has no local schema files for a variable scope to
+	// reach.
+	cfg.schemaSourceVars = nil
 	cfg.presence.unmark(fieldSchemaSources)
 }
 
@@ -2218,48 +2259,355 @@ func (p atlasParser) hclSchemaDataSource(block *hclsyntax.Block) (cty.Value, err
 	}
 	for attrName, attr := range block.Body.Attributes {
 		switch attrName {
-		case "path", "paths":
+		case "path", "paths", "vars":
 		default:
 			return cty.NilVal, unsupportedAttr(attrName, attr)
 		}
 	}
+	values, err := p.hclSchemaVarsAttr(block.Body.Attributes["vars"])
+	if err != nil {
+		return cty.NilVal, err
+	}
+	urls, value, err := p.hclSchemaDataSourceURLs(block)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	p.hclSchemaScopes[block.Labels[1]] = hclSchemaVarScope{values: values, urls: urls}
+	return value, nil
+}
+
+// hclSchemaDataSourceURLs mints the data source's file:// URLs and the `url`
+// object an expression reads them through, returning both so the caller can
+// record the scope without re-deriving the list from the cty value.
+func (p atlasParser) hclSchemaDataSourceURLs(block *hclsyntax.Block) ([]string, cty.Value, error) {
 	pathAttr, hasPath := block.Body.Attributes["path"]
 	pathsAttr, hasPaths := block.Body.Attributes["paths"]
 	switch {
 	case hasPath && hasPaths:
-		return cty.NilVal, unsupportedAttr("paths", pathsAttr)
+		return nil, cty.NilVal, unsupportedAttr("paths", pathsAttr)
 	case hasPath:
 		value, err := p.stringAttr("path", pathAttr)
 		if err != nil {
-			return cty.NilVal, err
+			return nil, cty.NilVal, err
 		}
 		url, err := p.atlasLocalFileURL(value, pathAttr)
 		if err != nil {
-			return cty.NilVal, err
+			return nil, cty.NilVal, err
 		}
-		return cty.ObjectVal(map[string]cty.Value{
+		return []string{url}, cty.ObjectVal(map[string]cty.Value{
 			"url": cty.StringVal(url),
 		}), nil
 	case hasPaths:
 		values, err := p.stringListAttr("paths", pathsAttr)
 		if err != nil {
-			return cty.NilVal, err
+			return nil, cty.NilVal, err
 		}
 		urls := make([]string, 0, len(values))
 		for _, value := range values {
 			url, err := p.atlasLocalFileURL(value, pathsAttr)
 			if err != nil {
-				return cty.NilVal, err
+				return nil, cty.NilVal, err
 			}
 			urls = append(urls, url)
 		}
-		return cty.ObjectVal(map[string]cty.Value{
+		return urls, cty.ObjectVal(map[string]cty.Value{
 			"url": ctyStringList(urls),
 		}), nil
 	default:
-		return cty.NilVal, fmt.Errorf("atlas.hcl data.hcl_schema %q requires path or paths at %s:%d",
+		return nil, cty.NilVal, fmt.Errorf("atlas.hcl data.hcl_schema %q requires path or paths at %s:%d",
 			block.Labels[1], block.TypeRange.Filename, block.TypeRange.Start.Line)
 	}
+}
+
+// parseSchemaSources reads the desired-state sources of an env, from either
+// spelling of the attribute -- `env.src` and `env.schema.src` are the same
+// setting -- together with the variable scope each one carries.
+//
+// One function for both, so the scope cannot be attached on one spelling and
+// forgotten on the other.
+func (p atlasParser) parseSchemaSources(attr *hclsyntax.Attribute, cfg *Config) error {
+	values, err := p.stringOrStringListAttr("src", attr)
+	if err != nil {
+		return err
+	}
+	scopes, err := p.schemaSourceVarScopes(attr, values)
+	if err != nil {
+		return err
+	}
+	cfg.SchemaSources = values
+	cfg.schemaSourceVars = scopes
+	cfg.presence.mark(fieldSchemaSources)
+	return nil
+}
+
+// schemaSourceVarScopes attributes each evaluated `src` URL back to the
+// data "hcl_schema" block that minted it, so the loader can hand that block's
+// `vars` to those files and only those files.
+//
+// Attribution is the intersection of two facts, and needs both:
+//
+//   - which data sources the src EXPRESSION references, read off
+//     `data.hcl_schema.<name>` traversals by [atlasParser.hclSchemaReferences],
+//     which follows the branch a conditional takes rather than both;
+//   - which URLs each of those data sources minted.
+//
+// The expression half is what keeps a declared-but-unreferenced data source out
+// of it. A file with `data "hcl_schema" "app" { paths = ["s.hcl"] vars = {…} }`
+// and `src = "file://s.hcl"` names the same file without going through the data
+// source, and the pinned binary passes it `--var` rather than the block's vars,
+// because nothing selected the block. Matching URLs alone would have handed it
+// the vars.
+//
+// The URL half is what keeps two referenced data sources apart. When two of
+// them mint the SAME url with different values there is no honest answer, so
+// this refuses rather than picking one -- silently choosing would make the
+// desired state depend on map order. That verdict is reached over the URLs the
+// src EVALUATED to and no others: a URL no evaluated source names carries no
+// scope, so two blocks minting it disagree about nothing.
+//
+// One case stays approximate and is called out rather than hidden: a src
+// expression that references a data source AND repeats one of that source's own
+// paths as a literal gets the block's vars for both copies. They are the same
+// file, so the only way to tell them apart would be to track provenance through
+// arbitrary HCL expressions.
+func (p atlasParser) schemaSourceVarScopes(
+	attr *hclsyntax.Attribute,
+	urls []string,
+) (map[string]map[string]string, error) {
+	referenced := p.hclSchemaReferences(attr.Expr)
+	if len(referenced) == 0 {
+		return nil, nil
+	}
+	minted := map[string]string{}
+	scopes := map[string]map[string]string{}
+	// file records one spelling of one URL under the data source that minted
+	// it, and refuses when a block already filed that spelling with different
+	// values. reported is the URL the refusal names, which is always the
+	// project file's own spelling even when the key is the resolved one.
+	file := func(key, reported, owner string, values map[string]string) error {
+		if previous, taken := minted[key]; taken && !maps.Equal(p.hclSchemaScopes[previous].values, values) {
+			return fmt.Errorf(
+				"atlas.hcl data.hcl_schema %q and %q both select %q with different vars at %s:%d",
+				previous, owner, reported, attr.NameRange.Filename, attr.NameRange.Start.Line,
+			)
+		}
+		minted[key] = owner
+		scopes[key] = values
+		return nil
+	}
+	for _, name := range referenced {
+		scope, declared := p.hclSchemaScopes[name]
+		if !declared {
+			continue
+		}
+		for _, url := range scope.urls {
+			// Ambiguity is decided among the URLs this src EVALUATED to, not
+			// among every URL the referenced blocks could mint. A URL no
+			// evaluated source names carries no scope, so two blocks minting it
+			// have nothing to disagree about, and refusing on it would reject a
+			// project whose desired state is perfectly determined.
+			if !slices.Contains(urls, url) {
+				continue
+			}
+			if err := file(url, url, name, scope.values); err != nil {
+				return nil, err
+			}
+			// The same scope is filed a second time under the base-directory
+			// resolved spelling, because two consumers reach it by two different
+			// strings and both are legitimate. `env://src` expansion asks with
+			// the value exactly as this file minted it; `schema apply`,
+			// `schema diff` and `migrate diff` resolve the project's schema
+			// sources against the atlas.hcl directory first and ask with the
+			// absolute URL. Resolving through the SAME function those commands
+			// use is what keeps the two keys from drifting -- an independent
+			// filepath.Join here would answer differently the moment a symlink
+			// or a `..` segment is involved.
+			//
+			// The resolved key goes through the same conflict test as the raw
+			// one, and that is not belt and braces: two blocks can select ONE
+			// file under two spellings -- `path = "s.hcl"` and
+			// `path = "./s.hcl"` -- which the raw keys cannot see, and the
+			// resolved key is the one every command asks with. Filing it
+			// unchecked let the second block's values silently replace the
+			// first's.
+			resolved, err := atlasprojectpath.SchemaFileURL(url, p.baseDir)
+			if err != nil {
+				continue
+			}
+			if err := file(resolved, url, name, scope.values); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(scopes) == 0 {
+		return nil, nil
+	}
+	return scopes, nil
+}
+
+// hclSchemaReferences reports the data "hcl_schema" names an expression reads,
+// in a stable order so a refusal names the same pair on every run.
+//
+// A conditional is read as the branch it takes. [hclsyntax.Expression.Variables]
+// reports both branches of `src = var.use_app ? data.hcl_schema.app.url :
+// data.hcl_schema.other.url`, but the attribute evaluates to exactly one of
+// them, and the pinned Atlas community binary v1.3.0 hands that block's vars to
+// the file it names. Measured with two blocks selecting the same s.hcl with
+// different vars, `schema apply --env local --dry-run`, exit codes read
+// directly from unpiped invocations:
+//
+//	predicate true   0  DEFAULT 'acme'
+//	predicate false  0  DEFAULT 'zzz'
+//
+// Reading both branches made every such project ambiguous, so this side refused
+// both rows at exit 1 where that binary exits 0.
+//
+// The predicate is decided with the very context the attribute is evaluated
+// with, including the `each` of a dynamic env instance, so nothing is settled
+// here that HCL settles differently one step later. An undecidable predicate
+// keeps both branches: that reading can only add a name, never drop one, so an
+// expression this walk does not follow stays as conservative as it was.
+func (p atlasParser) hclSchemaReferences(expr hclsyntax.Expression) []string {
+	names := make([]string, 0, 1)
+	p.appendHCLSchemaReferences(expr, &names)
+	slices.Sort(names)
+	return names
+}
+
+// appendHCLSchemaReferences walks the expression shapes that can select one
+// data source out of several, and falls back to the flat variable list for
+// everything else.
+//
+// The shapes it follows are the ones that carry a selected URL through
+// unchanged: a list, a parenthesized expression, an index into one, and a
+// relative traversal off one. Each can wrap a conditional -- `(var.pick ?
+// data.hcl_schema.app.url : data.hcl_schema.other.url)[0]` is the shape that
+// motivated the index arm -- and the flat variable list would report both
+// branches again from inside them. Anything else lands in the default and stays
+// conservative.
+func (p atlasParser) appendHCLSchemaReferences(expr hclsyntax.Expression, names *[]string) {
+	switch typed := expr.(type) {
+	case *hclsyntax.ConditionalExpr:
+		// The predicate's own references are kept. A data source read there
+		// contributes no URL, but dropping it would narrow a refusal this
+		// change is not measuring.
+		p.appendHCLSchemaReferences(typed.Condition, names)
+		for _, branch := range p.conditionalBranches(typed) {
+			p.appendHCLSchemaReferences(branch, names)
+		}
+	case *hclsyntax.ParenthesesExpr:
+		p.appendHCLSchemaReferences(typed.Expression, names)
+	case *hclsyntax.TupleConsExpr:
+		for _, item := range typed.Exprs {
+			p.appendHCLSchemaReferences(item, names)
+		}
+	case *hclsyntax.IndexExpr:
+		p.appendHCLSchemaReferences(typed.Collection, names)
+		p.appendHCLSchemaReferences(typed.Key, names)
+	case *hclsyntax.RelativeTraversalExpr:
+		p.appendHCLSchemaReferences(typed.Source, names)
+	default:
+		appendHCLSchemaTraversalNames(expr.Variables(), names)
+	}
+}
+
+// conditionalBranches returns the branch a conditional takes, or both branches
+// when the predicate cannot be decided while the project file is parsed.
+func (p atlasParser) conditionalBranches(expr *hclsyntax.ConditionalExpr) []hclsyntax.Expression {
+	both := []hclsyntax.Expression{expr.TrueResult, expr.FalseResult}
+	value, diags := expr.Condition.Value(p.ctx)
+	if diags.HasErrors() {
+		return both
+	}
+	decided, err := convert.Convert(value, cty.Bool)
+	if err != nil || decided.IsNull() || !decided.IsKnown() {
+		return both
+	}
+	if decided.True() {
+		return []hclsyntax.Expression{expr.TrueResult}
+	}
+	return []hclsyntax.Expression{expr.FalseResult}
+}
+
+// appendHCLSchemaTraversalNames collects the data "hcl_schema" names of a flat
+// traversal list, skipping duplicates.
+func appendHCLSchemaTraversalNames(traversals []hcl.Traversal, names *[]string) {
+	for _, traversal := range traversals {
+		if len(traversal) < 3 || traversal.RootName() != "data" {
+			continue
+		}
+		kind, ok := traversal[1].(hcl.TraverseAttr)
+		if !ok || kind.Name != "hcl_schema" {
+			continue
+		}
+		name, ok := traversal[2].(hcl.TraverseAttr)
+		if !ok || slices.Contains(*names, name.Name) {
+			continue
+		}
+		*names = append(*names, name.Name)
+	}
+}
+
+// hclSchemaVarsAttr decodes `data "hcl_schema" { vars }` into the variable
+// values the referenced schema files are parsed with. A nil attr -- the block
+// declares no `vars` -- yields a nil map, which still closes the scope; see
+// [Config.SchemaSourceVars].
+//
+// Measured on the pinned Atlas community binary v1.3.0 with
+// `schema apply --env local --dry-run` against `s.hcl` declaring
+// `variable "tenant" { type = string }` with no default, exit codes read
+// directly from unpiped invocations:
+//
+//	vars = { tenant = "acme" }                -> 0  DEFAULT 'acme'
+//	vars = { tenant = 42 }                    -> 0  DEFAULT '42'
+//	vars = { tenant = true }                  -> 0  DEFAULT 'true'
+//	vars = { tenant = "acme", count = 7 }     -> 0  DEFAULT 'acme'  (mixed member
+//	                                                 types still decode)
+//	vars = { tenant = "acme", frobnicate9 = "x" }
+//	                                          -> 0  (an undeclared name is ignored)
+//	vars = {}                                 -> 1  missing value for required
+//	vars = null                               -> 1  variable "tenant" -- both read
+//	                                                 as "no values given", which is
+//	                                                 the control that the earlier
+//	                                                 rows are carrying a value
+//	vars = "acme"                             -> 1  Unsuitable value: map of any
+//	vars = [1, 2]                             -> 1  single type required
+//	vars = { tenant = [1, 2] }                -> 1  variable "tenant": string
+//	                                                 required
+//
+// The last row is refused HERE rather than by the schema file, because Ptah
+// carries the value as text. That is exit 1 on both binaries for a string-typed
+// variable; for a variable declared `list(string)` the pinned binary may take a
+// list where Ptah does not, which is a narrower surface in the safe direction
+// and is not measured above.
+func (p atlasParser) hclSchemaVarsAttr(attr *hclsyntax.Attribute) (map[string]string, error) {
+	if attr == nil {
+		return nil, nil
+	}
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
+		return nil, p.evaluationFailed("vars", attr, diags)
+	}
+	if value.IsNull() {
+		return nil, nil
+	}
+	valueType := value.Type()
+	if !valueType.IsObjectType() && !valueType.IsMapType() {
+		return nil, wrongValueType("vars", attr, "a map of values")
+	}
+	values := map[string]string{}
+	for it := value.ElementIterator(); it.Next(); {
+		name, member := it.Element()
+		if member.IsNull() {
+			return nil, wrongValueType("vars."+name.AsString(), attr, "a string, a number, or a bool")
+		}
+		text, err := convert.Convert(member, cty.String)
+		if err != nil {
+			return nil, wrongValueType("vars."+name.AsString(), attr, "a string, a number, or a bool")
+		}
+		values[name.AsString()] = text.AsString()
+	}
+	return values, nil
 }
 
 func selectAtlasEnvBlocks(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
@@ -2361,6 +2709,48 @@ func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string,
 		return "", wrongValueType(name, attr, "a string")
 	}
 	return value.AsString(), nil
+}
+
+// nullableStringAttr decodes a string-valued name whose null spelling the
+// pinned community binary v1.3.0 reads as "no value given" rather than as an
+// error. decoded is false for a null, and the caller must leave its field and
+// its presence mark alone.
+//
+// It is separate from [atlasParser.stringAttr] because that helper goes through
+// [atlasParser.decodedAttrValue], which refuses every null. That refusal is
+// deliberate for the eight names it was measured against -- see the comment
+// there -- but it is a divergence in the loud direction, and a name added after
+// the fact should not inherit it. Measured with
+// `migrate apply --env local --dry-run` against a hashed two-migration
+// directory, exit codes read directly from unpiped invocations:
+//
+//	migration { baseline = null }              -> 0  "2 migrations in total"
+//	migration { baseline = "" }                -> 0  "2 migrations in total"
+//	migration { baseline = "20260719010000" }  -> 0  "from 20260719010000
+//	                                                 (1 migrations in total)"
+//	migration { baseline = "20200101000000" }  -> 1  baseline version
+//	                                                 "20200101000000" not found
+//	migration { baseline = [1, 2] }            -> 1  value of attr "baseline"
+//	                                                 cannot be read as string
+//
+// The first row is the one this helper exists for, and the third is the control
+// that keeps it honest: a binary that ignored `baseline` entirely would answer
+// "2 migrations in total" to both.
+func (p atlasParser) nullableStringAttr(
+	name string,
+	attr *hclsyntax.Attribute,
+) (value string, decoded bool, err error) {
+	evaluated, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() {
+		return "", false, p.evaluationFailed(name, attr, diags)
+	}
+	if evaluated.IsNull() {
+		return "", false, nil
+	}
+	if evaluated.Type() != cty.String {
+		return "", false, wrongValueType(name, attr, "a string")
+	}
+	return evaluated.AsString(), true, nil
 }
 
 func (p atlasParser) nonEmptyStringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
