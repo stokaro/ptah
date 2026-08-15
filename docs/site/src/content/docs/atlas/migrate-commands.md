@@ -1407,9 +1407,8 @@ templates, before dropping any objects from the dev database. A malformed
 migration directory therefore leaves the existing dev database state intact;
 cleanup starts only after the replay plan is valid.
 
-For a code-by-code audit of the analyzer checks Atlas marks as Pro against
-Ptah's native lint rules, see
-[Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
+For the code-by-code status of the analyzer checks Atlas marks as Pro against
+Ptah's lint rules, see [Lint rules](../../reference/lint-rules/).
 
 A statement-local `-- atlas:nolint <selector>` suppresses the statement
 directly below it. A blank line between the directive and the statement

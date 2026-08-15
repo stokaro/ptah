@@ -169,19 +169,15 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 The bundle records artifact hashes and the capture metadata that was not preserved. Destructive dev-database guards cover percent-encoded/equivalent paths, query options, symlinks, hard links, driver endpoint/database overrides, and comparison failures instead of comparing raw URLs. This workflow is not counted as a schema-object round-trip fixture.
 
-## Atlas Pro Analyzer Coverage
+## Atlas Analyzer Coverage
 
-Of the 30 analyzer check codes the Atlas analyzers documentation
-(<https://atlasgo.io/lint/analyzers>, fetched 2026-07-28) marks as Atlas Pro,
-Ptah's native lint covers 23 (`CD101`–`CD103`, `PG101`–`PG105` under Ptah codes
-`PG101`/`PG106`/`PG103`/`PG104`/`PG105`, `PG302`/`PG303`/`PG305`–`PG311`,
-`MY131`/`MY132`/`MY134`/`MY135`, `TX101`/`TX201`), flags 5 partially through
-adjacent rules (`PG301` and `MY130` via `DS103`/`MY101`, `PG304` via `PG104`,
-`MY133` via `CD103`, `MY136` via `MY101` for the `CONVERT TO CHARACTER SET`
-form), and records 2 as waivers (`OW101`/`OW102` ownership policy, which binds
-to Atlas Pro schema-ownership annotations and an account model). The
-code-by-code table lives in
-[Atlas Pro analyzer coverage](./site/src/content/docs/atlas/comparison.md#atlas-pro-analyzer-coverage).
+Every analyzer check code the Atlas analyzers documentation
+(<https://atlasgo.io/lint/analyzers>) carries is enumerated with Ptah's status
+on it — covered, partial, not implemented, or waived — in
+[Lint rules](./site/src/content/docs/reference/lint-rules.md), together with
+every rule identifier either binary can report. That page is generated from the
+rule registries and gated by `scripts/check-lint-rules.sh`, so the counts are
+derived rather than restated here.
 
 ## Verbs Beyond the CE Pin
 

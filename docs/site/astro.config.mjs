@@ -184,6 +184,7 @@ export default defineConfig({
             { slug: 'reference/hcl-schema' },
             { slug: 'reference/test-cases' },
             { slug: 'reference/capabilities' },
+            { slug: 'reference/lint-rules' },
             { slug: 'reference/exit-codes' },
           ],
         },
