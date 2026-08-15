@@ -188,7 +188,7 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	if path == "" {
 		path = plan.Name + atlasschema.PlanFileSuffix
 	}
-	if err := os.WriteFile(path, document, 0o644); err != nil { //nolint:gosec // plan files are meant to be reviewed and shared, 0644 like migration files
+	if err := os.WriteFile(path, document, 0o644); err != nil { // #nosec -- plan files are meant to be reviewed and shared, 0644 like migration files
 		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)

@@ -97,7 +97,7 @@ WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name`)
 func readQueryTableRows(c *qt.C, db *sql.DB, table string) []string {
 	c.Helper()
 	identifier := `"` + strings.ReplaceAll(table, `"`, `""`) + `"`
-	rows, err := db.Query("SELECT * FROM " + identifier) //nolint:gosec // table comes from sqlite_master and is quoted above
+	rows, err := db.Query("SELECT * FROM " + identifier) // #nosec -- table comes from sqlite_master and is quoted above
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 	columns, err := rows.Columns()

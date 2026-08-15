@@ -853,7 +853,7 @@ func requireSchemaOracle(t *testing.T) string {
 			oracleEnv, oracleVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() //nolint:gosec // the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(oracle, "version").Output() // #nosec -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
 	}
@@ -891,7 +891,7 @@ func warmUpSchemaOracle(c *qt.C, oracle string) {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
 		//nolint:errcheck // best effort: a failed write still runs the oracle, which is all the warm-up needs
 		_ = os.WriteFile(path, []byte("schema \"main\" {\n}\n"), 0o600)
-		//nolint:gosec // operator-provided oracle path, and path is a test temp dir
+		// #nosec -- operator-provided oracle path, and path is a test temp dir
 		cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", oracleDevURL)
 		//nolint:errcheck // output and status are both discarded; this run exists only to spend the notice
 		_, _ = cmd.CombinedOutput()
@@ -908,7 +908,7 @@ func runSchemaOracle(c *qt.C, oracle, source string) (string, int) {
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	//nolint:gosec // operator-provided oracle path, and path is a test temp dir
+	// #nosec -- operator-provided oracle path, and path is a test temp dir
 	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", oracleDevURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.

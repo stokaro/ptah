@@ -80,7 +80,7 @@ env "dev" {
   src = data.external_schema.app.url
 }
 `, strconv.Quote(os.Args[0]), mode)
-	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) //nolint:gosec // controlled test-only path
+	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) // #nosec -- controlled test-only path
 	return configPath
 }
 

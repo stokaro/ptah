@@ -717,7 +717,7 @@ func (w *PostgreSQLWriter) lockManagedRelations(
 
 	// Identifiers come from the catalog snapshot and are quoted individually;
 	// LOCK TABLE does not support identifier bind parameters.
-	//nolint:gosec // LOCK TABLE cannot bind the individually quoted catalog identifiers.
+	// #nosec -- LOCK TABLE cannot bind the individually quoted catalog identifiers.
 	statement := "LOCK TABLE " + strings.Join(relations, ", ") + " IN ACCESS EXCLUSIVE MODE"
 	if _, err := tx.ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("failed to lock managed relations before cleanup: %w", err)
@@ -1363,7 +1363,7 @@ func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) 
 	for _, schema := range schemas {
 		// Schema names come from pg_namespace and are quoted as identifiers;
 		// PostgreSQL-family DDL does not support identifier bind parameters.
-		//nolint:gosec // The catalog identifier is quoted through sqlident.
+		// #nosec -- The catalog identifier is quoted through sqlident.
 		statement := "DROP SCHEMA IF EXISTS " + quoteIdent(schema) + " RESTRICT"
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf(
@@ -1382,7 +1382,7 @@ func restorePostgresRootSchema(
 	schema string,
 	metadata postgresSchemaMetadata,
 ) error {
-	//nolint:gosec // Schema and owner identifiers are quoted through sqlident.
+	// #nosec -- Schema and owner identifiers are quoted through sqlident.
 	statement := "CREATE SCHEMA " + quoteIdent(schema)
 	if metadata.exists {
 		statement += " AUTHORIZATION " + quoteIdent(metadata.owner)
@@ -1415,7 +1415,7 @@ func restorePostgresSchemaPrivileges(
 		grantees = appendUniqueString(grantees, privilege.grantee)
 	}
 	for _, grantee := range grantees {
-		//nolint:gosec // Schema and role identifiers are quoted through sqlident.
+		// #nosec -- Schema and role identifiers are quoted through sqlident.
 		statement := "REVOKE ALL PRIVILEGES ON SCHEMA " + quoteIdent(schema) +
 			" FROM " + quotePostgresRole(grantee)
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
@@ -1428,7 +1428,7 @@ func restorePostgresSchemaPrivileges(
 		}
 	}
 	for _, privilege := range metadata.privileges {
-		//nolint:gosec // Privilege is allow-listed; identifiers are quoted through sqlident.
+		// #nosec -- Privilege is allow-listed; identifiers are quoted through sqlident.
 		statement := "GRANT " + privilege.privilege + " ON SCHEMA " +
 			quoteIdent(schema) + " TO " + quotePostgresRole(privilege.grantee)
 		if privilege.grantOption {

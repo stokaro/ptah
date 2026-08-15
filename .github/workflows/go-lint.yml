@@ -65,6 +65,12 @@ jobs:
       - name: qtlint
         run: go tool qtlint ./...
 
+      - name: nolintguard
+        run: go vet -vettool="$(go tool -n nolintguard)" -require-justification ./...
+
+      - name: nolintguard (integration)
+        run: go vet -tags=integration -vettool="$(go tool -n nolintguard)" -require-justification ./...
+
       - name: Check test style baseline
         run: scripts/check-test-style.sh
 

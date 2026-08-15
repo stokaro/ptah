@@ -20,7 +20,7 @@ help:
 	@echo "  integration-test   Run integration tests using Docker Compose"
 	@echo "  integration-test-sqlserver"
 	@echo "                     Run SQL Server opt-in integration smoke tests"
-	@echo "  lint               Run golangci-lint and qtlint"
+	@echo "  lint               Run golangci-lint, qtlint, and nolintguard"
 	@echo "  conformance        Show Atlas conformance scoreboard location"
 	@echo "  lint-fix           Run auto-fixable linters"
 	@echo "  install-hooks      Install local Git hooks"
@@ -162,6 +162,9 @@ coverage:
 
 # Lint code
 lint: lint-qtlint
+	@echo "Running nolintguard..."
+	go vet -vettool="$$(go tool -n nolintguard)" -require-justification ./...
+	go vet -tags=integration -vettool="$$(go tool -n nolintguard)" -require-justification ./...
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 

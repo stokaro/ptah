@@ -42,7 +42,7 @@ func writeAppendingEditor(c *qt.C, marker string) string {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
-	c.Assert(os.WriteFile(path, []byte(script), 0o700), qt.IsNil) //nolint:gosec // the test editor must be executable
+	c.Assert(os.WriteFile(path, []byte(script), 0o700), qt.IsNil) // #nosec -- the test editor must be executable
 	return path
 }
 

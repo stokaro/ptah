@@ -2286,7 +2286,7 @@ func (m *Migrator) applyUpMigrationObserved(
 // observesApplyState travels as a parameter rather than as a Migrator field on
 // purpose: every With* builder copies the Migrator by value, so a field would
 // leak one run's position into every derived migrator.
-func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter // see above: a field would leak across derived migrators
+func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter see above: a field would leak across derived migrators
 	ctx context.Context,
 	migration *Migration,
 	observesApplyState bool,

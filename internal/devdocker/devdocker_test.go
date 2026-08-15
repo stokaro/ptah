@@ -442,19 +442,19 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 		rawURL  string
 		wantURL string
 	}{
-		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+		{ // #nosec G101 -- this package's own throwaway dev password, asserted verbatim
 			name:    "no parameters leaves the engine defaults",
 			rawURL:  "docker://postgres/16/dev",
 			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=disable",
 		},
-		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+		{ // #nosec G101 -- this package's own throwaway dev password, asserted verbatim
 			// The row the pinned binary answers exit 1 on. The parameter has to
 			// reach the connection for Ptah to answer it at all.
 			name:    "search_path survives alongside the defaults",
 			rawURL:  "docker://postgres/16/dev?search_path=app",
 			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?search_path=app&sslmode=disable",
 		},
-		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+		{ // #nosec G101 -- this package's own throwaway dev password, asserted verbatim
 			// The operator wins on a key the engine also sets. Defaults exist to
 			// make a throwaway container reachable; an operator who writes one
 			// has a reason the container cannot know.
@@ -462,7 +462,7 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			rawURL:  "docker://postgres/16/dev?sslmode=require",
 			wantURL: "postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=require",
 		},
-		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+		{ // #nosec G101 -- this package's own throwaway dev password, asserted verbatim
 			// Two keys, one of which the engine also sets: the unmentioned
 			// default must survive. A build that used the operator's query
 			// wholesale instead of merging would drop sslmode here.
@@ -478,7 +478,7 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 			rawURL:  "docker://mysql/8/dev",
 			wantURL: "mysql://root:testpw@tcp(127.0.0.1:15432)/dev",
 		},
-		{ //nolint:gosec // G101: this package's own throwaway dev password, asserted verbatim
+		{ // #nosec G101 -- this package's own throwaway dev password, asserted verbatim
 			// url.Parse decodes the path before the formatter sees it, so a
 			// database written `foo%23bar` arrives as `foo#bar` and must be
 			// re-escaped. Measured before this: the URL became

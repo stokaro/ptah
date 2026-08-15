@@ -278,7 +278,7 @@ func (c *CapturedImport) Write() (*Result, error) {
 		target := filepath.Join(c.ToDir, entry.Name)
 		// Migration files are committed and shared, so 0644 matches generated
 		// migration/sum files elsewhere in Ptah.
-		if err := os.WriteFile(target, entry.Data, 0o644); err != nil { //nolint:gosec // migration files are intended to be shared.
+		if err := os.WriteFile(target, entry.Data, 0o644); err != nil { // #nosec -- migration files are intended to be shared.
 			return nil, fmt.Errorf("write imported migration %s: %w", target, err)
 		}
 		files = append(files, target)

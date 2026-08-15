@@ -109,7 +109,7 @@ var helperModes = map[string]func(){
 }
 
 func exitHelper(code int) {
-	os.Exit(code) //nolint:revive // subprocess fixture must terminate before the Go test runner writes to stdout
+	os.Exit(code) //revive:disable-line:deep-exit subprocess fixture must terminate before the Go test runner writes to stdout
 }
 
 func emitWidgetSQL() {
@@ -133,7 +133,7 @@ CREATE INDEX "idx_posts_user_id" ON "posts" ("user_id");
 }
 
 func startSurvivor(stdout, stderr *os.File) {
-	child := exec.Command(os.Args[0], "-test.run=TestHelperProcess") //nolint:gosec // test fixture re-executing this test binary
+	child := exec.Command(os.Args[0], "-test.run=TestHelperProcess") // #nosec -- test fixture re-executing this test binary
 	child.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "SCHEMASOURCE_HELPER_MODE=survivor")
 	child.Stdout = stdout
 	child.Stderr = stderr
@@ -143,7 +143,7 @@ func startSurvivor(stdout, stderr *os.File) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := os.Stat( //nolint:gosec // test fixture path supplied by the parent test process
+		if _, err := os.Stat( // #nosec -- test fixture path supplied by the parent test process
 			os.Getenv("SCHEMASOURCE_STARTED_FILE"),
 		); err == nil {
 			return

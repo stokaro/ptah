@@ -792,6 +792,11 @@ The `modernize` linter is enabled. Prefer current Go idioms when writing or edit
 - Prefer clear early returns and simple control flow that satisfies `revive`, `gocognit`, `gocyclo`, `nestif`, and `funlen`.
 - Keep import aliases compliant with `importas`; for example, `github.com/frankban/quicktest` must be imported as `qt`.
 - Add `//nolint` only when necessary, always with a specific linter name and an explanation.
+  Never write `//nolint:gosec` or `//nolint:revive`: use gosec's native
+  `#nosec RULE -- reason` or revive's native `//revive:disable... reason`
+  directives. Every native suppression also needs a justification. The pinned
+  nolintguard analyzer is enforced through `go vet -vettool` in both the
+  default and `integration` build-tag contours.
 
 When applying automatic lint fixes, run both passes:
 
@@ -879,8 +884,23 @@ guideline. Keep loop bodies simple and do not use loops to encode branching
 logic.
 
 Go 1.22 and newer makes range variables per-iteration, so the historical
-`test := test` workaround is not needed when using `c.Run()` closures in
+`test := test` workaround is not needed when using `t.Run()` closures in
 table-driven tests unless intentionally taking the address of a loop variable.
+
+Always create the quicktest checker inside each `t.Run` closure:
+
+```go
+for _, test := range tests {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
+		// Assertions for this case.
+	})
+}
+```
+
+Do not use `c.Run` or `qt.Run`. The standard-library `t.Run` boundary keeps the
+subtest lifecycle explicit, and `qt.New(t)` inside that boundary binds helpers,
+cleanup, failure location, and parallelism to the correct subtest.
 
 Run the test-style baseline before finishing test changes:
 
@@ -917,8 +937,6 @@ Bad:
 
 ```go
 func TestDialectFromURL(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -930,7 +948,8 @@ func TestDialectFromURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			if test.wantErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -947,8 +966,6 @@ Good:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -958,7 +975,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -967,9 +985,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unsupported", func(c *qt.C) {
+	t.Run("unsupported", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 		c.Assert(got, qt.Equals, "")
@@ -977,11 +994,21 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 }
 ```
 
-### Do Not Hide Conditionals In Helpers
+### Do Not Hide Conditionals In Helpers Or Table Callbacks
 
-Avoid helper functions that mask conditional logic, such as choosing between
+Do not use helper functions that mask conditional logic, such as choosing between
 `qt.ErrorIs`, `qt.ErrorMatches`, and `qt.IsNil` based on fields in a test case.
 This makes tests harder to read and review.
+
+The same prohibition applies when the hidden branch is encoded as data. Do not
+put assertion callbacks, assertion factories, comparator callbacks, or fields
+such as `assertResult func(...)` in a test-case table to choose how a case is
+verified. That is an `if` statement made less visible. If cases have different
+success/error contracts or require different comparison fidelity, split them
+into separate test functions or separate tables whose loop bodies contain one
+direct, uniform assertion sequence. A callback may represent an actual input
+behavior supplied to production code; it must not select the test's assertion
+strategy.
 
 Instead, write explicit assertions per case, even when it is a bit repetitive.
 
@@ -1004,13 +1031,15 @@ func checkError(c *qt.C, err error, wantIs error, wantLike string) {
 Good:
 
 ```go
-c.Run("unsupported dev url dialect", func(c *qt.C) {
+t.Run("unsupported dev url dialect", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
 	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 	c.Assert(got, qt.Equals, "")
 })
 
-c.Run("postgres dev url", func(c *qt.C) {
+t.Run("postgres dev url", func(t *testing.T) {
+	c := qt.New(t)
 	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "postgres")
@@ -1022,7 +1051,7 @@ c.Run("postgres dev url", func(c *qt.C) {
 Do not mix success and error cases in the same table. Prefer either:
 
 - `TestXxx_HappyPath` and `TestXxx_FailurePath`.
-- Separate `c.Run("happy ...")` and `c.Run("failure ...")` groups with distinct
+- Separate `t.Run("happy ...")` and `t.Run("failure ...")` groups with distinct
   tables.
 
 Bad:
@@ -1039,7 +1068,8 @@ tests := []struct {
 }
 
 for _, test := range tests {
-	c.Run(test.name, func(c *qt.C) {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.DialectFromURL(test.rawURL)
 		if test.wantErr != "" {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -1053,12 +1083,10 @@ for _, test := range tests {
 
 Good:
 
-Use table-driven tests with `c.Run()` for multiple test cases:
+Use table-driven tests with `t.Run()` for multiple test cases:
 
 ```go
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -1068,7 +1096,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -1077,8 +1106,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -1092,7 +1119,8 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, "")

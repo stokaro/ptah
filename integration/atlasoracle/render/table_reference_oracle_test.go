@@ -140,7 +140,7 @@ func runReferenceOracle(c *qt.C, oracle, devURL, source string) (string, int) {
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	//nolint:gosec // operator-provided oracle path, and path is a test temp dir
+	// #nosec -- operator-provided oracle path, and path is a test temp dir
 	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.
