@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/integration"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 // Root command flag constants
@@ -118,9 +118,9 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 
 	// Validate report formats
 	for _, reportFormat := range reportFormats {
-		format := integration.ReportFormat(reportFormat)
+		format := integrationharness.ReportFormat(reportFormat)
 		switch format {
-		case integration.FormatStdout, integration.FormatTXT, integration.FormatJSON, integration.FormatHTML:
+		case integrationharness.FormatStdout, integrationharness.FormatTXT, integrationharness.FormatJSON, integrationharness.FormatHTML:
 			// Valid formats
 		default:
 			return fmt.Errorf("invalid report format: %s (must be txt, json, or html)", reportFormat)
@@ -142,7 +142,7 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 	fixturesFS := os.DirFS(fixturesPath)
 
 	// Create test runner
-	runner := integration.NewTestRunner(fixturesFS)
+	runner := integrationharness.NewTestRunner(fixturesFS)
 
 	// Add database connections from environment variables
 	dbConnections := configuredDatabaseConnections()
@@ -166,12 +166,12 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 	}
 
 	// Get all scenarios
-	allScenarios := integration.GetAllScenarios()
+	allScenarios := integrationharness.GetAllScenarios()
 
 	// Filter scenarios if specific ones were requested
-	var scenariosToRun []integration.TestScenario
+	var scenariosToRun []integrationharness.TestScenario
 	if len(opts.scenarios) > 0 {
-		scenarioMap := make(map[string]integration.TestScenario)
+		scenarioMap := make(map[string]integrationharness.TestScenario)
 		for _, scenario := range allScenarios {
 			scenarioMap[scenario.Name] = scenario
 		}
@@ -215,10 +215,10 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 
 	// Generate report
 	report := runner.GetReport()
-	reporter := integration.NewReporter(report)
+	reporter := integrationharness.NewReporter(report)
 
 	for _, reportFormat := range reportFormats {
-		if err := reporter.GenerateReport(integration.ReportFormat(reportFormat), opts.outputDir); err != nil {
+		if err := reporter.GenerateReport(integrationharness.ReportFormat(reportFormat), opts.outputDir); err != nil {
 			return fmt.Errorf("failed to generate report: %w", err)
 		}
 	}
@@ -323,12 +323,12 @@ func requestedDatabaseConnections(
 
 func listScenarios(_ *cobra.Command, _ []string, opts *listOptions) error {
 	// Get all scenarios
-	allScenarios := integration.GetAllScenarios()
+	allScenarios := integrationharness.GetAllScenarios()
 	staticScenarios := getStaticScenarios()
-	dynamicScenarios := integration.GetDynamicScenarios()
+	dynamicScenarios := integrationharness.GetDynamicScenarios()
 
 	// Determine which scenarios to show based on flags
-	var scenariosToShow []integration.TestScenario
+	var scenariosToShow []integrationharness.TestScenario
 	var title string
 
 	// Handle flag combinations
@@ -383,9 +383,9 @@ func listScenarios(_ *cobra.Command, _ []string, opts *listOptions) error {
 }
 
 // getStaticScenarios returns only the static scenarios (non-dynamic ones)
-func getStaticScenarios() []integration.TestScenario {
-	allScenarios := integration.GetAllScenarios()
-	dynamicScenarios := integration.GetDynamicScenarios()
+func getStaticScenarios() []integrationharness.TestScenario {
+	allScenarios := integrationharness.GetAllScenarios()
+	dynamicScenarios := integrationharness.GetDynamicScenarios()
 
 	// Create a map of dynamic scenario names for quick lookup
 	dynamicNames := make(map[string]bool)
@@ -394,7 +394,7 @@ func getStaticScenarios() []integration.TestScenario {
 	}
 
 	// Filter out dynamic scenarios
-	var staticScenarios []integration.TestScenario
+	var staticScenarios []integrationharness.TestScenario
 	for _, scenario := range allScenarios {
 		if !dynamicNames[scenario.Name] {
 			staticScenarios = append(staticScenarios, scenario)
@@ -405,7 +405,7 @@ func getStaticScenarios() []integration.TestScenario {
 }
 
 // printScenarios prints a list of scenarios with formatting
-func printScenarios(scenarios []integration.TestScenario, indent string) {
+func printScenarios(scenarios []integrationharness.TestScenario, indent string) {
 	for i, scenario := range scenarios {
 		// Determine scenario type indicator
 		typeIndicator := "📋"

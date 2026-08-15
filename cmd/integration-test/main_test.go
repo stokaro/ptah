@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/integration"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 func TestGetStaticScenarios(t *testing.T) {
 	c := qt.New(t)
 
 	staticScenarios := getStaticScenarios()
-	dynamicScenarios := integration.GetDynamicScenarios()
-	allScenarios := integration.GetAllScenarios()
+	dynamicScenarios := integrationharness.GetDynamicScenarios()
+	allScenarios := integrationharness.GetAllScenarios()
 
 	// Static scenarios should not be empty
 	c.Assert(len(staticScenarios) > 0, qt.IsTrue, qt.Commentf("Expected static scenarios to exist"))
@@ -58,7 +58,7 @@ func TestStaticScenarioNaming(t *testing.T) {
 func TestDynamicScenarioIdentification(t *testing.T) {
 	c := qt.New(t)
 
-	dynamicScenarios := integration.GetDynamicScenarios()
+	dynamicScenarios := integrationharness.GetDynamicScenarios()
 
 	// All dynamic scenarios should have "dynamic_" prefix
 	for _, scenario := range dynamicScenarios {

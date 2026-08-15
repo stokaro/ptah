@@ -1,21 +1,26 @@
-//go:build !integration
-
-package integration_test
+package integrationharness_test
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	ptahintegration "go.5x5.cz/ptah/integration"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
+
+// fixturesRoot is the repository's integration fixture tree, which stays under
+// integration/ because the live-database tests read it from there too. The
+// harness itself takes the filesystem as a parameter, so this is the only place
+// that has to know where the fixtures live relative to this package.
+var fixturesRoot = filepath.Join("..", "..", "integration")
 
 func TestGetAllScenariosIncludesStaticAndDynamicScenarios(t *testing.T) {
 	c := qt.New(t)
-	names := scenarioNames(ptahintegration.GetAllScenarios())
+	names := scenarioNames(integrationharness.GetAllScenarios())
 	c.Assert(names, qt.Contains, "apply_incremental_migrations")
 	c.Assert(names, qt.Contains, "rollback_migrations")
 	c.Assert(names, qt.Contains, "upgrade_to_specific_version")
@@ -29,7 +34,7 @@ func TestGetAllScenariosIncludesStaticAndDynamicScenarios(t *testing.T) {
 
 func TestGetDynamicScenariosRegistersRunnableMetadata(t *testing.T) {
 	c := qt.New(t)
-	scenarios := ptahintegration.GetDynamicScenarios()
+	scenarios := integrationharness.GetDynamicScenarios()
 	c.Assert(scenarios, qt.HasLen, 45)
 
 	for _, scenario := range scenarios {
@@ -102,7 +107,7 @@ func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
 		"dynamic_circular_dependencies": true,
 		"dynamic_sqlserver_identity_schema_bracket_reserved_words": true,
 	}
-	for _, scenario := range ptahintegration.GetAllScenarios() {
+	for _, scenario := range integrationharness.GetAllScenarios() {
 		c.Assert(
 			scenario.SQLServerCompatible,
 			qt.Equals,
@@ -112,7 +117,7 @@ func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
 	}
 }
 
-func scenarioNames(scenarios []ptahintegration.TestScenario) []string {
+func scenarioNames(scenarios []integrationharness.TestScenario) []string {
 	names := make([]string, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		names = append(names, scenario.Name)
@@ -122,7 +127,7 @@ func scenarioNames(scenarios []ptahintegration.TestScenario) []string {
 
 func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
 	c.Helper()
-	vem, err := ptahintegration.NewVersionedEntityManager(os.DirFS("."))
+	vem, err := integrationharness.NewVersionedEntityManager(os.DirFS(fixturesRoot))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(vem.Cleanup(), qt.IsNil)
