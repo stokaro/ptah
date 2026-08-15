@@ -1,11 +1,11 @@
 package atlasreport
 
 import (
-	"go.5x5.cz/ptah/internal/atlasurl"
-
 	"net/url"
 	"path"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 type atlasEnv struct {

@@ -2,14 +2,14 @@
 package secretdisplay
 
 import (
-	"go.5x5.cz/ptah/internal/atlasurl"
-
 	"fmt"
 	"net/url"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // Sanitize redacts secrets discoverable from the effective environment and

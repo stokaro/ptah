@@ -1,10 +1,10 @@
 package onlineddl
 
 import (
-	"go.5x5.cz/ptah/internal/atlasurl"
-
 	"fmt"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // DSN carries the connection endpoints an external online-DDL tool needs.
