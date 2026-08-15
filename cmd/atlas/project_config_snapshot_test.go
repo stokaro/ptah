@@ -5,12 +5,14 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
@@ -24,7 +26,7 @@ func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
-      pre_down_hook: "echo snapshot-hook; exit 8"
+      pre_down_hook: `+strconv.Quote(testutils.FailingHookCommand("snapshot-hook", 8))+`
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "project.hcl"), []byte(`env "local" {
   url = "sqlite://`+filepath.ToSlash(dbPath)+`"
@@ -69,7 +71,7 @@ func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
   local:
     migration:
       dir: ./migrations
-      pre_down_hook: "echo ptah-path-hook; exit 8"
+      pre_down_hook: `+strconv.Quote(testutils.FailingHookCommand("ptah-path-hook", 8))+`
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "project.hcl"), []byte(`env "local" {
   url = "sqlite://`+filepath.ToSlash(dbPath)+`"
@@ -108,7 +110,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
-      pre_down_hook: "echo snapshot-hook; exit 8"
+      pre_down_hook: `+strconv.Quote(testutils.FailingHookCommand("snapshot-hook", 8))+`
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
   url = "sqlite://`+filepath.ToSlash(dbPath)+`"
@@ -117,7 +119,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
   }
 }
 `), 0o600), qt.IsNil)
-	t.Setenv("PTAH_PRE_DOWN_HOOK", "echo environment-hook; exit 9")
+	t.Setenv("PTAH_PRE_DOWN_HOOK", testutils.FailingHookCommand("environment-hook", 9))
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -227,7 +229,7 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
-      pre_down_hook: "echo native-directory-hook; exit 8"
+      pre_down_hook: `+strconv.Quote(testutils.FailingHookCommand("native-directory-hook", 8))+`
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
   url = "sqlite://`+filepath.ToSlash(dbPath)+`"

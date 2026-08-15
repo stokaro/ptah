@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -54,7 +55,7 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 		"--migrations-dir", tempDir,
 		"--target", "0",
 		"--confirm",
-		"--pre-down-hook", "echo rollback backup refused; exit 8",
+		"--pre-down-hook", testutils.FailingHookCommand("rollback backup refused", 8),
 	})
 
 	err = cmd.Execute()

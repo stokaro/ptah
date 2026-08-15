@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -142,7 +143,7 @@ func TestMigrateUpCommandPreflightHookAbortPreventsMigration(t *testing.T) {
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", dir,
-		"--pre-up-hook", "echo backup refused; exit 7",
+		"--pre-up-hook", testutils.FailingHookCommand("backup refused", 7),
 	})
 
 	err := cmd.Execute()
@@ -170,8 +171,8 @@ func TestMigrateUpCommandReadsPreflightHookFromConfig(t *testing.T) {
 	config := fmt.Appendf(nil, `url: %s
 migration:
   dir: %s
-  pre_up_hook: "echo config backup refused; exit 9"
-`, dbURL, dir)
+  pre_up_hook: %q
+`, dbURL, dir, testutils.FailingHookCommand("config backup refused", 9))
 	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
 
 	cmd := NewMigrateUpCommand()
@@ -257,7 +258,7 @@ func TestMigrateUpCommandDryRunSkipsPreflightSideEffects(t *testing.T) {
 		"--db-url", dbURL,
 		"--migrations-dir", dir,
 		"--dry-run",
-		"--pre-up-hook", "echo should not run; exit 97",
+		"--pre-up-hook", testutils.FailingHookCommand("should not run", 97),
 		"--pg-dump-to", filepath.Join(t.TempDir(), "pg"),
 		"--mysqldump-to", filepath.Join(t.TempDir(), "mysql"),
 		"--webhook", "https://ops.example/hooks/ptah",
