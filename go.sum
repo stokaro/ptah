@@ -43,8 +43,8 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/go-extras/go-kit v1.2.0 h1:Q0v8TIq8uEqTfAiE6VstKUhaiVrpiRLssQZA0qFE62o=
 github.com/go-extras/go-kit v1.2.0/go.mod h1:Fy+eKjteQ6nP6R3raMRXG9SuXQ67egS75OIMn0LgLUk=
-github.com/go-extras/qtlint v1.13.0 h1:0O0PC508zXbOHjuWyT+72Bf++dG2Z1x3GAS9YcRoCc0=
-github.com/go-extras/qtlint v1.13.0/go.mod h1:vwRprOocwf+8hDAwo1ULfsSoMAuzwJfMkHh5uFlL5QE=
+github.com/go-extras/qtlint v1.14.0 h1:tMZ+0JiH8JbqLVe5qiFDAGg+IjaLNttQ1lMpnVe1UCs=
+github.com/go-extras/qtlint v1.14.0/go.mod h1:vwRprOocwf+8hDAwo1ULfsSoMAuzwJfMkHh5uFlL5QE=
 github.com/go-faster/city v1.0.1 h1:4WAxSZ3V2Ws4QRDrscLEDcibJY8uf41H6AhXDrNDcGw=
 github.com/go-faster/city v1.0.1/go.mod h1:jKcUJId49qdW3L1qKHH/3wPeUstCVpVSXTM6vO3VcTw=
 github.com/go-faster/errors v0.8.0 h1:9T9eJrM+72dFk7n4DfhuaDDe6cyuFCSW2oNUkN77Yqc=
