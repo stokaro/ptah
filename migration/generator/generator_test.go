@@ -2,6 +2,8 @@ package generator_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -283,8 +285,13 @@ type TestTable struct {
 	errMsg := err.Error()
 	c.Assert(errMsg, qt.Not(qt.Contains), "invalid argument",
 		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
-	c.Assert(errMsg, qt.Not(qt.Contains), "stat",
-		qt.Commentf("Should not have stat errors, got: %s", errMsg))
+	// Not a substring: a filesystem failure is spelled "stat" on Unix and
+	// "GetFileAttributesEx" on Windows, so matching one name asserts only the
+	// platform it runs on. Asking whether the error is a *fs.PathError at all
+	// is the same question without a spelling in it.
+	var pathErr *fs.PathError
+	c.Assert(errors.As(err, &pathErr), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path errors, got: %s", errMsg))
 
 	// The error should be about database or parsing issues instead
 	c.Assert(strings.Contains(errMsg, "database") || strings.Contains(errMsg, "parsing") || strings.Contains(errMsg, "memory"), qt.IsTrue,
@@ -351,6 +358,11 @@ type TestTable struct {
 	errMsg := err.Error()
 	c.Assert(errMsg, qt.Not(qt.Contains), "invalid argument",
 		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
-	c.Assert(errMsg, qt.Not(qt.Contains), "stat",
-		qt.Commentf("Should not have stat errors, got: %s", errMsg))
+	// Not a substring: a filesystem failure is spelled "stat" on Unix and
+	// "GetFileAttributesEx" on Windows, so matching one name asserts only the
+	// platform it runs on. Asking whether the error is a *fs.PathError at all
+	// is the same question without a spelling in it.
+	var pathErr *fs.PathError
+	c.Assert(errors.As(err, &pathErr), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path errors, got: %s", errMsg))
 }
