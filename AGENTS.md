@@ -940,8 +940,9 @@ matches by prefix so every testify subpackage is covered by the one entry.
 An assertion reports against whichever test its checker was built from, so the
 checker a test uses has to be the one for that test. Three rules follow. Only
 the first is enforced today — `QTLINT_RULES` in the Makefile carries
-`-require-qt-c-receiver` and nothing else, and it is the rule the tree is clean
-against. The other two are review rules for now, and the counts are written
+`-require-qt-c-receiver` and `-require-data-rows`, and the tree is clean against
+both. `-require-testing-run` is a review rule for now, and the counts are
+written
 here rather than left to be rediscovered: `-require-testing-run` reports 27
 sites in the untagged contour and 148 in the tagged one. Adding a rule to the
 gate before the tree is clean against it turns every unrelated change red, so
@@ -1030,9 +1031,9 @@ rows exist to catch, once, and watch the table redden; then restore it. A
 conversion that quietly drops a row's discrimination is worse than the shape it
 replaced, because the shape was visible and the missing coverage is not.
 
-The untagged contour reports 0. What remains is in the tagged one, tracked in
-stokaro/ptah#1536; `-require-data-rows` joins `QTLINT_RULES` when that reaches
-zero too, for the reason the list itself states.
+Both contours report 0, so `-require-data-rows` is in `QTLINT_RULES` and the
+shape cannot come back. Reintroducing a `func(c *qt.C)` field in a table row
+turns `make lint-qtlint` red.
 
 Retiring this shape is what unblocks the other rule, and the chain is measured
 rather than argued. `-require-testing-run` withholds a fix when the checker

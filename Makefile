@@ -186,7 +186,7 @@ lint: lint-qtlint
 # type is written somewhere the rule does not reach
 # reaches. A gate carrying known violations is either red or lying, so the rule
 # joins this list when those are converted rather than before.
-QTLINT_RULES := -require-qt-c-receiver
+QTLINT_RULES := -require-qt-c-receiver -require-data-rows
 
 lint-qtlint:
 	@echo "Running qtlint..."
