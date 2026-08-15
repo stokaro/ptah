@@ -1304,3 +1304,20 @@ func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
 		})
 	}
 }
+
+// TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath keeps the Windows
+// accommodation from turning every parse error into success.
+//
+// The fallback exists for one reason: a drive letter's colon is not a port
+// separator. It is not a licence to accept anything else net/url refused. A
+// malformed escape in the query is a real error, and admitting it means
+// Query() silently drops the pair -- so an attempted mode=ro restriction
+// disappears and the database opens writable, which is the failure this whole
+// area keeps producing when something is dropped instead of refused.
+func TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=%zz`)
+
+	c.Assert(err, qt.IsNotNil)
+}

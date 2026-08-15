@@ -61,6 +61,14 @@ func Parse(rawURL string) (*url.URL, error) {
 		// caller appending its own parameter wrote a second "?" and the
 		// requested ones were silently dropped.
 		path, query, _ := strings.Cut(rest, "?")
+		// The query is still validated. This fallback exists because a drive
+		// letter's colon is not a port separator, not because a Windows path
+		// makes every other error acceptable: a malformed escape admitted here
+		// is one url.Values silently drops, so an attempted mode=ro
+		// restriction would disappear and the database open writable.
+		if _, queryErr := url.ParseQuery(query); queryErr != nil {
+			return nil, err
+		}
 		return &url.URL{Scheme: scheme, Opaque: path, RawQuery: query}, nil
 	}
 	return nil, err

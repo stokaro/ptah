@@ -942,8 +942,8 @@ checker a test uses has to be the one for that test. Three rules follow. Only
 the first is enforced today — `QTLINT_RULES` in the Makefile carries
 `-require-qt-c-receiver` and nothing else, and it is the rule the tree is clean
 against. The other two are review rules for now, and the counts are written
-here rather than left to be rediscovered: `-require-testing-run` reports 70
-sites in the untagged contour and 191 in the tagged one. Adding a rule to the
+here rather than left to be rediscovered: `-require-testing-run` reports 27
+sites in the untagged contour and 148 in the tagged one. Adding a rule to the
 gate before the tree is clean against it turns every unrelated change red, so
 each moves into `QTLINT_RULES` when its own backlog reaches zero, and the
 number above is what says whether that has happened.
@@ -1030,9 +1030,18 @@ rows exist to catch, once, and watch the table redden; then restore it. A
 conversion that quietly drops a row's discrimination is worse than the shape it
 replaced, because the shape was visible and the missing coverage is not.
 
-The backlog is 158 sites across 40 packages, tracked in stokaro/ptah#1536 with
-the per-package counts. `-require-data-rows` joins `QTLINT_RULES` when it
-reaches zero, for the reason the list itself states.
+The untagged contour reports 0. What remains is in the tagged one, tracked in
+stokaro/ptah#1536; `-require-data-rows` joins `QTLINT_RULES` when that reaches
+zero too, for the reason the list itself states.
+
+Retiring this shape is what unblocks the other rule, and the chain is measured
+rather than argued. `-require-testing-run` withholds a fix when the checker
+escapes into a function, because what such a function can do includes
+`(*qt.C).Defer`. A checker handed into a table row's field escapes into
+something with no declaration to read and no statically known value, so the fix
+was withheld for almost every subtest in the untagged contour. Converting the
+rows took that rule from 70 sites to 27 there, and from 191 to 148 in the
+tagged one, without touching a single `c.Run`.
 
 The gate runs two invocations, and neither is redundant:
 
