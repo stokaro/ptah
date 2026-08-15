@@ -6,6 +6,8 @@ package generate
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -144,6 +146,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 
 	var rendered bytes.Buffer
 	for _, d := range dialects {
+		reportDialectScopeOmissions(stderr, result, d)
 		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(result, d, renderCapabilities(d, target))
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
@@ -162,6 +165,22 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	return nil
+}
+
+// reportDialectScopeOmissions names, on stderr, every declared object this
+// target is not rendering because the declaration scoped it elsewhere.
+//
+// An object that is absent from a target's desired state is indistinguishable
+// from one that was never declared, and that is the whole failure this feature
+// removes: silence is what made an operator spend an afternoon looking for a
+// function that was never going to appear. The report goes to stderr rather
+// than into the statement list because stdout is DDL somebody pipes into a
+// database, and a note about a declaration is not a statement.
+func reportDialectScopeOmissions(stderr io.Writer, db *goschema.Database, dialect string) {
+	for _, omitted := range goschema.OmissionsForDialect(db, dialect) {
+		fmt.Fprintf(stderr, "note: %s: %s %s is declared for %s and is not part of this target's schema\n",
+			dialect, omitted.Kind, omitted.Name, strings.Join(omitted.Dialects, ", "))
+	}
 }
 
 // resolveServerTarget maps --server-version onto the capability preset the

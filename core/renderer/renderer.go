@@ -898,6 +898,17 @@ func prepareDatabaseForRendering(
 	dialect string,
 	caps capability.Capabilities,
 ) (goschema.Database, error) {
+	// The declared scope is resolved before anything else looks at the schema.
+	// An object this target was not declared for is not part of the desired
+	// state here, so it must not be validated against this target's
+	// capabilities either: refusing a declaration the operator already excluded
+	// from this dialect is the refusal the scope exists to remove.
+	//
+	// This is the render half of the seam. The compare half is in
+	// [go.5x5.cz/ptah/migration/schemadiff.CompareReportingUndecidedAdditions],
+	// and both go through [goschema.ScopeToDialect] so `schema render` and
+	// `schema apply` cannot disagree about which objects a target has.
+	database = goschema.ScopeToDialect(database, dialect)
 	if err := validateDatabaseDeclarations(dialect, caps, database); err != nil {
 		return goschema.Database{}, err
 	}

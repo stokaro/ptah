@@ -470,6 +470,11 @@ type Extension struct {
 	// Empty means not measured. Annotation and YAML sources have no catalog to
 	// ask and leave it unset.
 	Provides []string
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect] for what an empty scope means and why the JSON tag is
+	// load-bearing.
+	Dialects []string `json:",omitempty"`
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.
@@ -660,6 +665,10 @@ type Domain struct {
 	DefaultExpr string // Optional DEFAULT expression (function call)
 	Check       string // Optional CHECK constraint expression (uses VALUE)
 	Comment     string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize normalizes domain attributes for downstream consumers.
@@ -695,6 +704,10 @@ type CompositeType struct {
 	Schema     string               // Optional schema/namespace (PostgreSQL-style)
 	Fields     []CompositeTypeField // Ordered fields of the composite type
 	Comment    string               // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize normalizes composite-type attributes for downstream consumers.
@@ -725,6 +738,10 @@ type Range struct {
 	Canonical      string // Optional canonicalization function
 	SubtypeDiff    string // Optional subtype difference function
 	Comment        string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize normalizes range-type attributes for downstream consumers.
@@ -778,6 +795,10 @@ type Function struct {
 	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	Body       string // Function body/implementation
 	Comment    string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Sequence represents a standalone PostgreSQL sequence object parsed from Go
@@ -820,6 +841,10 @@ type Sequence struct {
 	OwnedBy     string // Optional "table.column" association (OWNED BY)
 	IfNotExists bool   // Whether to use IF NOT EXISTS clause
 	Comment     string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // sequenceTypeAliases maps accepted spellings of a sequence's underlying
@@ -882,6 +907,10 @@ type View struct {
 	Body       string // SELECT query used as the view body
 	WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
 	Comment    string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // MaterializedView represents a database materialized view definition parsed
@@ -897,6 +926,10 @@ type MaterializedView struct {
 	Body            string // SELECT query used as the materialized view body
 	RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
 	Comment         string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize fills in materialized-view defaults used by the planner and
@@ -932,6 +965,10 @@ type Trigger struct {
 	// alternatives: when ExecuteFunction is set, Ptah does not render a
 	// function definition for the trigger.
 	ExecuteFunction string
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize fills in trigger defaults and case-folds attributes reported in
@@ -1079,6 +1116,10 @@ type RLSPolicy struct {
 	UsingExpression     string // USING clause expression for row filtering
 	WithCheckExpression string // WITH CHECK clause expression (optional)
 	Comment             string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // RLSEnabledTable represents a table that has Row-Level Security enabled.
@@ -1100,6 +1141,10 @@ type RLSEnabledTable struct {
 	StructName string // Name of the Go struct this RLS enablement is associated with
 	Table      string // Table name to enable RLS on (e.g., "users")
 	Comment    string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Role represents a PostgreSQL role definition parsed from Go struct annotations.
@@ -1149,6 +1194,10 @@ type Role struct {
 	Inherit     bool   // Whether role inherits privileges (default: true)
 	Replication bool   // Whether role can initiate replication (default: false)
 	Comment     string // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Grant represents a PostgreSQL privilege grant parsed from Go annotations.
@@ -1172,6 +1221,10 @@ type Grant struct {
 	WithOption bool     // Whether the grant includes WITH GRANT OPTION
 	GrantedBy  string   // Grantor reported by database introspection, if available
 	Comment    string   // Optional comment for documentation
+
+	// Dialects scopes this declaration to the named target dialects. See
+	// [ScopeToDialect].
+	Dialects []string `json:",omitempty"`
 }
 
 // Canonicalize fills in normalized privilege and object names used by renderers

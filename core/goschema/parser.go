@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/dialectscope"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -51,6 +52,42 @@ func validateAttributes(kv map[string]string, ctx annotationErrorContext) error 
 		}
 	}
 	return nil
+}
+
+// parseDialectScope resolves the `dialects=` attribute of a directive that
+// declares a standalone schema object.
+//
+// It is one helper rather than one expression per directive because a scope
+// that is read differently in one place is a scope that omits an object from a
+// target its author named. A value naming no supported dialect is a parse
+// error: the alternative reading -- "belongs to nothing" -- turns a typo into
+// an object silently missing from every target, with every command still
+// exiting 0.
+func parseDialectScope(kv map[string]string, ctx annotationErrorContext) ([]string, error) {
+	raw, ok := kv[dialectscope.Attribute]
+	if !ok {
+		return nil, nil
+	}
+	scope, err := dialectscope.Parse(raw)
+	if err == nil {
+		return scope, nil
+	}
+	slog.Error("invalid annotation dialect scope",
+		"directive", ctx.directive,
+		"attribute", dialectscope.Attribute,
+		"location", ctx.location,
+	)
+	return nil, &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: dialectscope.Attribute,
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message: fmt.Sprintf(
+			"invalid %q value %q on %s at %s: %s",
+			dialectscope.Attribute, raw, ctx.directive, ctx.location, err.Error(),
+		),
+	}
 }
 
 func requireAttributes(kv map[string]string, ctx annotationErrorContext) error {
@@ -393,10 +430,12 @@ func parseBoolPtr(value string) *bool {
 
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:extension", kv["name"]),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:extension", kv["name"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 
@@ -406,6 +445,7 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 		IfNotExists: kv["if_not_exists"] == "true",
 		Version:     kv["version"],
 		Comment:     kv["comment"],
+		Dialects:    scope,
 	})
 	return nil
 }
@@ -927,10 +967,12 @@ func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment, seen 
 
 func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment, seen rlsCommentSet) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:rls:policy", kv["table"]),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:rls:policy", kv["table"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	policyName := kv["name"]
@@ -957,6 +999,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		UsingExpression:     kv["using"],
 		WithCheckExpression: kv["with_check"],
 		Comment:             kv["comment"],
+		Dialects:            scope,
 	})
 	seen.policies[key] = struct{}{}
 	return nil
@@ -964,10 +1007,12 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 
 func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment, seen rlsCommentSet) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:rls:enable", kv["table"]),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:rls:enable", kv["table"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	tableName := kv["table"]
@@ -987,6 +1032,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 		StructName: structName,
 		Table:      tableName,
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	})
 	seen.enabledTables[tableName] = struct{}{}
 	return nil
@@ -994,10 +1040,12 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 
 func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:function", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:function", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 
@@ -1011,6 +1059,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		Volatility: kv["volatility"],
 		Body:       kv["body"],
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	}
 	// Canonicalize so every downstream consumer (planner, renderer,
 	// comparator) sees the same values regardless of how the annotation was
@@ -1029,6 +1078,10 @@ func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
 
 	seq := Sequence{
 		StructName:  structName,
@@ -1039,6 +1092,7 @@ func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName
 		OwnedBy:     kv["owned_by"],
 		IfNotExists: kv["if_not_exists"] == "true",
 		Comment:     kv["comment"],
+		Dialects:    scope,
 	}
 
 	for _, opt := range []struct {
@@ -1105,6 +1159,11 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 		return err
 	}
 
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+
 	domain := Domain{
 		StructName:  structName,
 		Name:        kv["name"],
@@ -1115,6 +1174,7 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 		DefaultExpr: kv["default_expr"],
 		Check:       kv["check"],
 		Comment:     kv["comment"],
+		Dialects:    scope,
 	}
 	domain.Canonicalize()
 	s.domains = append(s.domains, domain)
@@ -1143,12 +1203,18 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 		}
 	}
 
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+
 	composite := CompositeType{
 		StructName: structName,
 		Name:       kv["name"],
 		Schema:     kv["schema"],
 		Fields:     fields,
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	}
 	composite.Canonicalize()
 	s.compositeTypes = append(s.compositeTypes, composite)
@@ -1214,6 +1280,11 @@ func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName st
 		return err
 	}
 
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
+		return err
+	}
+
 	rangeType := Range{
 		StructName:     structName,
 		Name:           kv["name"],
@@ -1224,6 +1295,7 @@ func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName st
 		Canonical:      kv["canonical"],
 		SubtypeDiff:    kv["subtype_diff"],
 		Comment:        kv["comment"],
+		Dialects:       scope,
 	}
 	rangeType.Canonicalize()
 	s.ranges = append(s.ranges, rangeType)
@@ -1232,16 +1304,15 @@ func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName st
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:view", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:view", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
-	if err := requireAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:view", structName),
-	); err != nil {
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	s.views = append(s.views, View{
@@ -1250,22 +1321,22 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		Body:       kv["body"],
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	})
 	return nil
 }
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:matview", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:matview", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
-	if err := requireAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:matview", structName),
-	); err != nil {
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	refreshStrategy := kv["refresh_strategy"]
@@ -1278,6 +1349,7 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 		Body:            kv["body"],
 		RefreshStrategy: strings.ToLower(refreshStrategy),
 		Comment:         kv["comment"],
+		Dialects:        scope,
 	}
 	matView.Canonicalize()
 	s.materializedViews = append(s.materializedViews, matView)
@@ -1286,16 +1358,15 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 
 func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:trigger", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:trigger", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
-	if err := requireAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:trigger", structName),
-	); err != nil {
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	trigger := Trigger{
@@ -1307,6 +1378,7 @@ func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName 
 		ForEach:    kv["for"],
 		Body:       kv["body"],
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	}
 	trigger.Canonicalize()
 	s.triggers = append(s.triggers, trigger)
@@ -1315,10 +1387,12 @@ func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName 
 
 func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:rls:policy", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:rls:policy", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	s.rlsPolicies = append(s.rlsPolicies, RLSPolicy{
@@ -1330,32 +1404,38 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 		UsingExpression:     kv["using"],
 		WithCheckExpression: kv["with_check"],
 		Comment:             kv["comment"],
+		Dialects:            scope,
 	})
 	return nil
 }
 
 func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:rls:enable", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:rls:enable", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	s.rlsEnabledTables = append(s.rlsEnabledTables, RLSEnabledTable{
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	})
 	return nil
 }
 
 func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:role", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:role", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	s.roles = append(s.roles, Role{
@@ -1369,16 +1449,19 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 		Inherit:     kv["inherit"] != "false", // Default to true unless explicitly set to false
 		Replication: kv["replication"] == "true",
 		Comment:     kv["comment"],
+		Dialects:    scope,
 	})
 	return nil
 }
 
 func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:grant", structName),
-	); err != nil {
+	ctx := s.annotationContext(comment, "//ptah:schema:grant", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	scope, err := parseDialectScope(kv, ctx)
+	if err != nil {
 		return err
 	}
 	privileges := splitCommaList(kv["privilege"])
@@ -1394,6 +1477,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 		OnSequence: kv["on_sequence"],
 		WithOption: kv["with_option"] == "true" || kv["grant_option"] == "true",
 		Comment:    kv["comment"],
+		Dialects:   scope,
 	}
 	grant.Canonicalize()
 	s.grants = append(s.grants, grant)

@@ -3688,6 +3688,7 @@ type Database struct{ ... }
     func ParseFile(filename string) (Database, error)
     func ParseFileWithDependencies(filename string) (Database, error)
     func ParseSource(filename string, source any) (Database, error)
+    func ScopeToDialect(db *Database, dialect string) *Database
 type Domain struct{ ... }
 type EmbeddedField struct{ ... }
 type EmbeddedSources struct{ ... }
@@ -3708,6 +3709,9 @@ type RLSPolicy struct{ ... }
 type Range struct{ ... }
 type Role struct{ ... }
 type Schema struct{ ... }
+type ScopedObject struct{ ... }
+    func OmissionsForDialect(db *Database, dialect string) []ScopedObject
+    func ScopedObjects(db *Database) []ScopedObject
 type SelfReferencingFK struct{ ... }
 type Sequence struct{ ... }
 type Table struct{ ... }
@@ -3724,6 +3728,10 @@ type CompositeType struct {
     Schema     string               // Optional schema/namespace (PostgreSQL-style)
     Fields     []CompositeTypeField // Ordered fields of the composite type
     Comment    string               // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     CompositeType represents a PostgreSQL composite type parsed from Go
     annotations.
@@ -3901,6 +3909,7 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error)
 func ParseFile(filename string) (Database, error)
 func ParseFileWithDependencies(filename string) (Database, error)
 func ParseSource(filename string, source any) (Database, error)
+func ScopeToDialect(db *Database, dialect string) *Database
 
 ### go.5x5.cz/ptah/core/goschema.Domain
 
@@ -3916,6 +3925,10 @@ type Domain struct {
     DefaultExpr string // Optional DEFAULT expression (function call)
     Check       string // Optional CHECK constraint expression (uses VALUE)
     Comment     string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Domain represents a PostgreSQL domain type parsed from Go annotations.
 
@@ -4088,6 +4101,11 @@ type Extension struct {
     // Empty means not measured. Annotation and YAML sources have no catalog to
     // ask and leave it unset.
     Provides []string
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect] for what an empty scope means and why the JSON tag is
+    // load-bearing.
+    Dialects []string `json:",omitempty"`
 }
     Extension represents a PostgreSQL extension definition parsed from Go struct
     annotations. Extensions enable additional functionality in PostgreSQL
@@ -4205,6 +4223,10 @@ type Function struct {
     Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
     Body       string // Function body/implementation
     Comment    string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Function represents a PostgreSQL custom function definition parsed from Go
     struct annotations.
@@ -4255,6 +4277,10 @@ type Grant struct {
     WithOption bool     // Whether the grant includes WITH GRANT OPTION
     GrantedBy  string   // Grantor reported by database introspection, if available
     Comment    string   // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Grant represents a PostgreSQL privilege grant parsed from Go annotations.
 
@@ -4473,6 +4499,10 @@ type MaterializedView struct {
     Body            string // SELECT query used as the materialized view body
     RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
     Comment         string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     MaterializedView represents a database materialized view definition parsed
     from Go annotations.
@@ -4526,6 +4556,10 @@ type RLSEnabledTable struct {
     StructName string // Name of the Go struct this RLS enablement is associated with
     Table      string // Table name to enable RLS on (e.g., "users")
     Comment    string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     RLSEnabledTable represents a table that has Row-Level Security enabled.
 
@@ -4557,6 +4591,10 @@ type RLSPolicy struct {
     UsingExpression     string // USING clause expression for row filtering
     WithCheckExpression string // WITH CHECK clause expression (optional)
     Comment             string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     RLSPolicy represents a PostgreSQL Row-Level Security policy definition
     parsed from Go struct annotations.
@@ -4607,6 +4645,10 @@ type Range struct {
     Canonical      string // Optional canonicalization function
     SubtypeDiff    string // Optional subtype difference function
     Comment        string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Range represents a PostgreSQL range type parsed from Go annotations.
 
@@ -4633,6 +4675,10 @@ type Role struct {
     Inherit     bool   // Whether role inherits privileges (default: true)
     Replication bool   // Whether role can initiate replication (default: false)
     Comment     string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Role represents a PostgreSQL role definition parsed from Go struct
     annotations.
@@ -4685,6 +4731,23 @@ type Schema struct {
 }
     Schema represents a database schema/namespace.
 
+
+### go.5x5.cz/ptah/core/goschema.ScopedObject
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type ScopedObject struct {
+    // Kind is the directive-facing object kind, such as "function" or "role".
+    Kind string
+    // Name identifies the object within its kind, as the declaration spells it.
+    Name string
+    // Dialects is the canonical scope the declaration carries.
+    Dialects []string
+}
+    ScopedObject names one declared object and the dialect scope it carries.
+
+func OmissionsForDialect(db *Database, dialect string) []ScopedObject
+func ScopedObjects(db *Database) []ScopedObject
 
 ### go.5x5.cz/ptah/core/goschema.SelfReferencingFK
 
@@ -4748,6 +4811,10 @@ type Sequence struct {
     OwnedBy     string // Optional "table.column" association (OWNED BY)
     IfNotExists bool   // Whether to use IF NOT EXISTS clause
     Comment     string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Sequence represents a standalone PostgreSQL sequence object parsed from Go
     annotations.
@@ -4873,6 +4940,10 @@ type Trigger struct {
     // alternatives: when ExecuteFunction is set, Ptah does not render a
     // function definition for the trigger.
     ExecuteFunction string
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     Trigger represents a database trigger definition parsed from Go annotations.
 
@@ -4894,6 +4965,10 @@ type View struct {
     Body       string // SELECT query used as the view body
     WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
     Comment    string // Optional comment for documentation
+
+    // Dialects scopes this declaration to the named target dialects. See
+    // [ScopeToDialect].
+    Dialects []string `json:",omitempty"`
 }
     View represents a database view definition parsed from Go annotations.
 
