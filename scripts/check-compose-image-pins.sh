@@ -34,6 +34,19 @@ fi
 
 status=0
 checked=0
+workflow_pins="$(mktemp)"
+trap 'rm -f "$workflow_pins"' EXIT
+
+# Only executable workflow image declarations count. Searching the workflow
+# text lets a comment, an echo, or an unused variable keep a stale Compose pin
+# green. The extractor reads job container and service image fields plus the
+# image operand of docker run commands; later command arguments, and the text a
+# heredoc or a quote passes to a command as data, do not count.
+if [[ -n ${PTAH_WORKFLOW_IMAGE_PINS:-} ]]; then
+	"$PTAH_WORKFLOW_IMAGE_PINS" "$workflow_dir" >"$workflow_pins"
+else
+	go run ./internal/cmd/workflowimagepins "$workflow_dir" >"$workflow_pins"
+fi
 
 while IFS= read -r image; do
 	[[ -z $image ]] && continue
@@ -45,12 +58,13 @@ while IFS= read -r image; do
 		continue
 	fi
 
-	# The match must end at a token boundary. A substring match reports
-	# clickhouse/clickhouse-server:26 as present because the workflows pin
-	# :26.7 -- which is precisely the drift this check exists to catch, so a
-	# grep -F here would pass green on the defect that motivated the file.
-	escaped="$(printf '%s' "$image" | sed 's/[][\.^$*+?(){}|\/]/\\&/g')"
-	if ! grep -rqE -- "${escaped}([[:space:]\"']|\$)" "$workflow_dir"; then
+	# The Compose pin must be a whole extracted record. Searching inside one
+	# reports clickhouse/clickhouse-server:26 as present because the workflows
+	# pin :26.7 -- precisely the drift this check exists to catch -- and it also
+	# reports an image expression such as
+	# ${{ false && 'example/database:1.2.3' || 'alpine:3' }} as present because
+	# the tag is one of its quoted branches, though the workflow starts Alpine.
+	if ! grep -qxF -- "$image" "$workflow_pins"; then
 		printf 'compose image pin check: %s is pinned in %s but in no workflow under %s\n' \
 			"$image" "$compose_file" "$workflow_dir" >&2
 		status=1

@@ -41,7 +41,9 @@ jobs:
         run: scripts/check-repository-local-paths.sh
 
       - name: Check developer stack image pins
-        run: scripts/check-compose-image-pins.sh
+        run: |
+          scripts/check-compose-image-pins.sh
+          scripts/check-compose-image-pins-selftest.sh
 
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
