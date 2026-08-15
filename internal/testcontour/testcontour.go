@@ -64,7 +64,6 @@ type testState struct {
 type integrationBuildPolicy struct {
 	positive bool
 	required bool
-	excluded bool
 }
 
 type tagPolarity uint8
@@ -245,13 +244,10 @@ func validateCompleteIntegrationSelection(config Config, packages []packageFiles
 			return fmt.Errorf("integration test file %s has a build constraint that can select it without integration", path)
 		}
 		if !policy.required {
-			if !policy.excluded {
-				return fmt.Errorf(
-					"test file %s under integration/ must require //go:build integration or !integration",
-					path,
-				)
-			}
-			return nil
+			return fmt.Errorf(
+				"test file %s under integration/ must require //go:build integration",
+				path,
+			)
 		}
 		if _, ok := selected[filepath.Clean(path)]; !ok {
 			return fmt.Errorf(
@@ -326,9 +322,9 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 		if policy.required && !allowedPath {
 			return fmt.Errorf("integration test file %s must live under integration/ or testkit/integration/", relativePath)
 		}
-		if allowedPath && !policy.required && !policy.excluded {
+		if allowedPath && !policy.required {
 			return fmt.Errorf(
-				"test file %s under an integration tree must require //go:build integration or !integration",
+				"test file %s under an integration tree must require //go:build integration",
 				relativePath,
 			)
 		}
@@ -374,7 +370,6 @@ func integrationTagPolicy(path string) (integrationBuildPolicy, error) {
 	return integrationBuildPolicy{
 		positive: referencesTag(expression, "integration", tagEnabled),
 		required: !constraintCanMatch(expression, "integration", tagDisabled),
-		excluded: !constraintCanMatch(expression, "integration", tagEnabled),
 	}, nil
 }
 

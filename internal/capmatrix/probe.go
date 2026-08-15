@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.5x5.cz/ptah/integration"
 	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 // RunProbe measures one matrix cell and returns its result.
@@ -136,23 +136,23 @@ func suiteProblem(suite *SuiteOutcome) string {
 // the wall clock, so the directory is searched rather than one path assumed,
 // and two reports in one directory is an error: a leftover from an earlier run
 // would otherwise be read as this run's answer.
-func readSuiteReport(dir string) (integration.TestReport, error) {
+func readSuiteReport(dir string) (integrationharness.TestReport, error) {
 	matches, err := filepath.Glob(filepath.Join(dir, "*-report.json"))
 	if err != nil {
-		return integration.TestReport{}, fmt.Errorf("search %s for the suite report: %w", dir, err)
+		return integrationharness.TestReport{}, fmt.Errorf("search %s for the suite report: %w", dir, err)
 	}
 	if len(matches) != 1 {
-		return integration.TestReport{}, fmt.Errorf(
+		return integrationharness.TestReport{}, fmt.Errorf(
 			"expected exactly one *-report.json under %s and found %d, so the suite's own counts cannot be read",
 			dir, len(matches))
 	}
 	body, err := os.ReadFile(matches[0])
 	if err != nil {
-		return integration.TestReport{}, fmt.Errorf("read %s: %w", matches[0], err)
+		return integrationharness.TestReport{}, fmt.Errorf("read %s: %w", matches[0], err)
 	}
-	var report integration.TestReport
+	var report integrationharness.TestReport
 	if err := json.Unmarshal(body, &report); err != nil {
-		return integration.TestReport{}, fmt.Errorf("decode %s: %w", matches[0], err)
+		return integrationharness.TestReport{}, fmt.Errorf("decode %s: %w", matches[0], err)
 	}
 	return report, nil
 }

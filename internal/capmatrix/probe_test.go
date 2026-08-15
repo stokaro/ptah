@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/integration"
 	"go.5x5.cz/ptah/internal/capmatrix"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 // writeSuiteReport writes the JSON report the integration runner produces,
 // under the timestamped name the runner gives it.
-func writeSuiteReport(c *qt.C, dir string, report integration.TestReport) {
+func writeSuiteReport(c *qt.C, dir string, report integrationharness.TestReport) {
 	c.Helper()
 
 	body, err := json.Marshal(report)
@@ -28,7 +28,7 @@ func TestRecordSuite_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	dir := c.TempDir()
-	writeSuiteReport(c, dir, integration.TestReport{TotalTests: 40, PassedTests: 38, SkippedTests: 2})
+	writeSuiteReport(c, dir, integrationharness.TestReport{TotalTests: 40, PassedTests: 38, SkippedTests: 2})
 
 	recorded, err := capmatrix.RecordSuite(capmatrix.CellResult{
 		Cell: "postgres-17", Probe: capmatrix.ProbeOutcome{OK: true},
@@ -54,33 +54,35 @@ func TestRecordSuite_FailurePath(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		exitCode int
-		report   integration.TestReport
-		write    func(c *qt.C, dir string, report integration.TestReport)
+		report   integrationharness.TestReport
+		write    func(c *qt.C, dir string, report integrationharness.TestReport)
 		expect   string
 	}{{
 		name:     "the runner exited non-zero",
 		exitCode: 1,
-		report:   integration.TestReport{TotalTests: 40, PassedTests: 33, FailedTests: 7},
+		report:   integrationharness.TestReport{TotalTests: 40, PassedTests: 33, FailedTests: 7},
 		write:    writeSuiteReport,
 		expect:   "the integration suite exited 1 with 7 failures out of 40 tests",
 	}, {
 		name:     "the runner exited zero and reported failures anyway",
 		exitCode: 0,
-		report:   integration.TestReport{TotalTests: 40, PassedTests: 39, FailedTests: 1},
+		report:   integrationharness.TestReport{TotalTests: 40, PassedTests: 39, FailedTests: 1},
 		write:    writeSuiteReport,
 		expect:   "the integration suite exited 0 and reported 1 failures out of 40 tests",
 	}, {
 		name:     "every scenario skipped, which the runner calls success",
 		exitCode: 0,
-		report:   integration.TestReport{TotalTests: 12, SkippedTests: 12},
+		report:   integrationharness.TestReport{TotalTests: 12, SkippedTests: 12},
 		write:    writeSuiteReport,
 		expect:   "the integration suite executed no test at all \\(12 skipped of 12\\); .*",
 	}, {
 		name:     "the runner wrote no report, so nothing counted what ran",
 		exitCode: 0,
-		report:   integration.TestReport{},
-		write:    func(c *qt.C, dir string, _ integration.TestReport) { c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil) },
-		expect:   "expected exactly one \\*-report.json under .* and found 0, .*",
+		report:   integrationharness.TestReport{},
+		write: func(c *qt.C, dir string, _ integrationharness.TestReport) {
+			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+		},
+		expect: "expected exactly one \\*-report.json under .* and found 0, .*",
 	}} {
 		c.Run(tc.name, func(c *qt.C) {
 			dir := filepath.Join(c.TempDir(), "reports")

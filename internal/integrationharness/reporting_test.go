@@ -1,6 +1,4 @@
-//go:build !integration
-
-package integration_test
+package integrationharness_test
 
 import (
 	"context"
@@ -13,15 +11,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
-	ptahintegration "go.5x5.cz/ptah/integration"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 func TestTestRunnerSummaryUsesExecutedTestsForSuccessRate(t *testing.T) {
 	c := qt.New(t)
-	runner := ptahintegration.NewTestRunner(nil)
+	runner := integrationharness.NewTestRunner(nil)
 	runner.AddDatabase("sqlite", atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "report.db")))
-	runner.AddScenario(ptahintegration.TestScenario{
+	runner.AddScenario(integrationharness.TestScenario{
 		Name:        "passes",
 		Description: "A successful public runner scenario",
 		TestFunc: func(context.Context, *dbschema.DatabaseConnection, fs.FS) error {
@@ -41,7 +39,7 @@ func TestTestRunnerSummaryUsesExecutedTestsForSuccessRate(t *testing.T) {
 func TestReporterTextOutputShowsSkippedAndExecutedSuccessRate(t *testing.T) {
 	c := qt.New(t)
 	now := time.Now()
-	report := &ptahintegration.TestReport{
+	report := &integrationharness.TestReport{
 		StartTime:    now,
 		EndTime:      now.Add(time.Second),
 		TotalTests:   3,
@@ -49,13 +47,13 @@ func TestReporterTextOutputShowsSkippedAndExecutedSuccessRate(t *testing.T) {
 		FailedTests:  0,
 		SkippedTests: 2,
 		Summary:      "Executed 1 tests in 1s. 1 passed, 0 failed, 2 skipped (100.0% success rate)",
-		Results: []ptahintegration.TestResult{
+		Results: []integrationharness.TestResult{
 			{Name: "runs_postgres", Database: "postgres", Success: true},
 			{Name: "skips_clickhouse", Database: "clickhouse", Skipped: true, SkipReason: "not compatible"},
 		},
 	}
 	outputDir := c.TempDir()
-	c.Assert(ptahintegration.NewReporter(report).GenerateReport(ptahintegration.FormatTXT, outputDir), qt.IsNil)
+	c.Assert(integrationharness.NewReporter(report).GenerateReport(integrationharness.FormatTXT, outputDir), qt.IsNil)
 	files, err := filepath.Glob(filepath.Join(outputDir, "*-report.txt"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)
