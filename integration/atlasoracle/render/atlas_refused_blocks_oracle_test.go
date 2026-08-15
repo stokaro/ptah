@@ -107,7 +107,7 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 			t.Run("base", func(t *testing.T) {
 				c := qt.New(t)
 
-				out, code := runBlockOracle(c.TB, oracle, devURL, dialect, "")
+				out, code := runBlockOracle(c, oracle, devURL, dialect, "")
 				c.Assert(code, qt.Equals, 0,
 					qt.Commentf("the base this run adds one block to is not accepted, so no row below means anything: %s", out))
 			})
@@ -116,7 +116,7 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 				t.Run("refused/"+block, func(t *testing.T) {
 					c := qt.New(t)
 
-					out, code := runBlockOracle(c.TB, oracle, devURL, dialect, block)
+					out, code := runBlockOracle(c, oracle, devURL, dialect, block)
 					c.Assert(code, qt.Not(qt.Equals), 0,
 						qt.Commentf("the binary now reads a %s block on %s; suppressing it withholds a construct the reader could use: %s",
 							block, dialect, out))
@@ -164,7 +164,7 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 					c.Assert(atlashclrender.AtlasRefusesBlock(dialect, block), qt.IsFalse,
 						qt.Commentf("%q is a control: it must stay out of the suppression list for that list to have a boundary", block))
 
-					out, code := runBlockOracle(c.TB, oracle, devURL, dialect, block)
+					out, code := runBlockOracle(c, oracle, devURL, dialect, block)
 					c.Assert(code, qt.Equals, 0,
 						qt.Commentf("the binary now refuses a %s block on %s, so ptah-compat is emitting a file it cannot read: %s",
 							block, dialect, out))
@@ -185,8 +185,7 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 // The column type is a sql() wrap because that is the one spelling
 // TestOracleAcceptsTheWrapItFallsBackTo already measures as readable on every
 // dialect here, so the base cannot fail for a reason this run is not about.
-func runBlockOracle(tb testing.TB, oracle, devURL, dialect, block string) (string, int) {
-	c := qt.New(tb)
+func runBlockOracle(c *qt.C, oracle, devURL, dialect, block string) (string, int) {
 	c.Helper()
 
 	schema := schemaNameByDialect[dialect]

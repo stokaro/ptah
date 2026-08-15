@@ -333,7 +333,7 @@ func TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 func TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling(t *testing.T) {
 	c := qt.New(t)
 
-	family := slices.DeleteFunc(acceptedSpellings(c.TB), func(spelling string) bool {
+	family := slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
 		return !platform.IsPostgresFamily(spelling)
 	})
 

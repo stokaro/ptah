@@ -36,8 +36,7 @@ var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
 
 // acceptedSpellings returns every dialect spelling that appears as a case in
 // platform.NormalizeDialect's switch, read from the switch body itself.
-func acceptedSpellings(tb testing.TB) []string {
-	c := qt.New(tb)
+func acceptedSpellings(c *qt.C) []string {
 	source, err := os.ReadFile(normalizeDialectSource)
 	c.Assert(err, qt.IsNil)
 
@@ -58,9 +57,8 @@ func acceptedSpellings(tb testing.TB) []string {
 
 // canonicalDialects returns the distinct canonical names the accepted spellings
 // resolve to -- one per supported engine.
-func canonicalDialects(tb testing.TB) []string {
-	c := qt.New(tb)
-	spellings := acceptedSpellings(c.TB)
+func canonicalDialects(c *qt.C) []string {
+	spellings := acceptedSpellings(c)
 	canonicals := make([]string, 0, len(spellings))
 	for _, spelling := range spellings {
 		canonicals = append(canonicals, platform.NormalizeDialect(spelling))
@@ -71,10 +69,9 @@ func canonicalDialects(tb testing.TB) []string {
 
 // familyMembers groups the canonical dialects by the family lintdialect.Family
 // assigns them to.
-func familyMembers(tb testing.TB) map[string][]string {
-	c := qt.New(tb)
+func familyMembers(c *qt.C) map[string][]string {
 	members := make(map[string][]string)
-	for _, canonical := range canonicalDialects(c.TB) {
+	for _, canonical := range canonicalDialects(c) {
 		family := lintdialect.Family(canonical)
 		members[family] = append(members[family], canonical)
 	}
@@ -98,7 +95,7 @@ func assertIncompatible(c *qt.C, compatible bool) {
 func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	c := qt.New(t)
 
-	spellings := acceptedSpellings(c.TB)
+	spellings := acceptedSpellings(c)
 
 	// Positive control: aliases that exist only inside the switch, one per
 	// engine family that has one.
@@ -117,7 +114,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "", qt.Commentf("collected %q, which is not an accepted spelling", spelling))
 	}
 	// The engine count is what the exhaustive sweeps below depend on.
-	c.Assert(canonicalDialects(c.TB), qt.HasLen, 9)
+	c.Assert(canonicalDialects(c), qt.HasLen, 9)
 }
 
 // TestValid_HappyPath_AcceptsEveryAcceptedSpelling is the exhaustive alias
@@ -130,7 +127,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 func TestValid_HappyPath_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c.TB) {
+	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lintdialect.Valid(spelling), qt.IsTrue)
@@ -149,9 +146,9 @@ func TestValid_HappyPath_AcceptsEveryAcceptedSpelling(t *testing.T) {
 func TestCanonical_HappyPath_ResolvesEverySpellingToItsEngine(t *testing.T) {
 	c := qt.New(t)
 
-	canonicals := canonicalDialects(c.TB)
+	canonicals := canonicalDialects(c)
 
-	for _, spelling := range acceptedSpellings(c.TB) {
+	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			canonical, ok := lintdialect.Canonical(spelling)
@@ -200,7 +197,7 @@ func TestValid_FailurePath(t *testing.T) {
 func TestCompatible_HappyPath_EverySpellingMatchesItsOwnEngine(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c.TB) {
+	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lintdialect.Compatible(spelling, platform.NormalizeDialect(spelling)), qt.IsTrue)
@@ -337,9 +334,8 @@ type ruleDialectCoverage struct {
 }
 
 // ruleFamilyCoverage measures every built-in rule against every lint family.
-func ruleFamilyCoverage(tb testing.TB) []ruleDialectCoverage {
-	c := qt.New(tb)
-	members := familyMembers(c.TB)
+func ruleFamilyCoverage(c *qt.C) []ruleDialectCoverage {
+	members := familyMembers(c)
 	rules := lint.Rules()
 	c.Assert(len(rules) > 0, qt.IsTrue, qt.Commentf("no built-in rules to measure"))
 
@@ -366,7 +362,7 @@ func ruleFamilyCoverage(tb testing.TB) []ruleDialectCoverage {
 func TestBuiltInRules_NoRuleSplitsTheMySQLFamily(t *testing.T) {
 	c := qt.New(t)
 
-	mysqlFamily := slices.DeleteFunc(ruleFamilyCoverage(c.TB), func(cov ruleDialectCoverage) bool {
+	mysqlFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.MySQL
 	})
 
@@ -403,7 +399,7 @@ func TestBuiltInRules_NoRuleSplitsTheMySQLFamily(t *testing.T) {
 func TestBuiltInRules_PostgresFamilyRulesNameOnlyPostgres(t *testing.T) {
 	c := qt.New(t)
 
-	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c.TB), func(cov ruleDialectCoverage) bool {
+	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.Postgres
 	})
 

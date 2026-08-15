@@ -20,8 +20,7 @@ import (
 // foreign_keys_require_unique_reference and is what ForDialect("mysql")
 // returns, so an offline render refuses a schema half the supported MySQL
 // installed base runs today.
-func unevenlyReferencedFixture(tb testing.TB) string {
-	c := qt.New(tb)
+func unevenlyReferencedFixture(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	source := `package models
@@ -47,12 +46,11 @@ type Child struct {
 	return dir
 }
 
-func renderFixture(tb testing.TB, args ...string) (stdoutText, stderrText string, executeErr error) {
-	c := qt.New(tb)
+func renderFixture(c *qt.C, args ...string) (stdoutText, stderrText string, executeErr error) {
 	c.Helper()
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs(args)
-	return executeGenerate(c.TB, cmd)
+	return executeGenerate(c, cmd)
 }
 
 // TestGenerateCommand_ServerVersionPinsTheCapabilityPreset is the measurement
@@ -116,9 +114,9 @@ func TestGenerateCommand_ServerVersionPinsTheCapabilityPreset(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := unevenlyReferencedFixture(c.TB)
+			dir := unevenlyReferencedFixture(c)
 
-			stdout, _, err := renderFixture(c.TB, test.args(dir)...)
+			stdout, _, err := renderFixture(c, test.args(dir)...)
 
 			test.assert(c, stdout, err)
 		})
@@ -143,9 +141,9 @@ func TestGenerateCommand_ServerVersionRefusesAValueThatNamesNoServer(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := unevenlyReferencedFixture(c.TB)
+			dir := unevenlyReferencedFixture(c)
 
-			stdout, _, err := renderFixture(c.TB,
+			stdout, _, err := renderFixture(c,
 				"--root-dir", dir, "--dialect", "mariadb", "--server-version", test.version)
 
 			c.Assert(err, qt.IsNotNil)
@@ -248,9 +246,9 @@ func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := unevenlyReferencedFixture(c.TB)
+			dir := unevenlyReferencedFixture(c)
 
-			stdout, _, err := renderFixture(c.TB,
+			stdout, _, err := renderFixture(c,
 				"--root-dir", dir, "--dialect", test.dialect, "--server-version", test.version)
 
 			c.Assert(err, qt.IsNotNil)
@@ -292,9 +290,9 @@ func TestGenerateCommand_ServerVersionAcceptsAMatchingBanner(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := unevenlyReferencedFixture(c.TB)
+			dir := unevenlyReferencedFixture(c)
 
-			_, _, err := renderFixture(c.TB,
+			_, _, err := renderFixture(c,
 				"--root-dir", dir, "--dialect", test.dialect, "--server-version", test.version)
 
 			c.Assert(errorText(err), qt.Not(qt.Contains), "invalid --server-version")
@@ -323,7 +321,7 @@ func TestGenerateCommand_ServerVersionIsRefusedBeforeAnySchemaIsRead(t *testing.
 
 	missing := filepath.Join(c.TempDir(), "no-such-directory")
 
-	_, _, err := renderFixture(c.TB,
+	_, _, err := renderFixture(c,
 		"--root-dir", missing, "--dialect", "mysql", "--server-version", "not-a-version")
 
 	c.Assert(err, qt.IsNotNil)
@@ -338,9 +336,9 @@ func TestGenerateCommand_ServerVersionIsRefusedBeforeAnySchemaIsRead(t *testing.
 func TestGenerateCommand_ServerVersionRequiresADialect(t *testing.T) {
 	c := qt.New(t)
 
-	dir := unevenlyReferencedFixture(c.TB)
+	dir := unevenlyReferencedFixture(c)
 
-	stdout, _, err := renderFixture(c.TB, "--root-dir", dir, "--server-version", "8.0.42")
+	stdout, _, err := renderFixture(c, "--root-dir", dir, "--server-version", "8.0.42")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
@@ -363,9 +361,9 @@ func TestGenerateCommand_ServerVersionRequiresADialect(t *testing.T) {
 func TestGenerateCommand_AnUnknownDialectIsReportedBeforeTheVersion(t *testing.T) {
 	c := qt.New(t)
 
-	dir := unevenlyReferencedFixture(c.TB)
+	dir := unevenlyReferencedFixture(c)
 
-	_, _, err := renderFixture(c.TB,
+	_, _, err := renderFixture(c,
 		"--root-dir", dir, "--dialect", "oracle", "--server-version", "not-a-version")
 
 	c.Assert(err, qt.IsNotNil)
@@ -411,9 +409,9 @@ func TestGenerateCommand_ServerVersionAnnouncesWhatItPlannedInstead(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := unevenlyReferencedFixture(c.TB)
+			dir := unevenlyReferencedFixture(c)
 
-			_, stderr, _ := renderFixture(c.TB,
+			_, stderr, _ := renderFixture(c,
 				"--root-dir", dir, "--dialect", test.dialect, "--server-version", test.version)
 
 			c.Assert(stderr, qt.Contains, "warning: ")
@@ -427,9 +425,9 @@ func TestGenerateCommand_ServerVersionAnnouncesWhatItPlannedInstead(t *testing.T
 func TestGenerateCommand_AnExactMeasuredLineSaysNothing(t *testing.T) {
 	c := qt.New(t)
 
-	dir := unevenlyReferencedFixture(c.TB)
+	dir := unevenlyReferencedFixture(c)
 
-	_, stderr, err := renderFixture(c.TB,
+	_, stderr, err := renderFixture(c,
 		"--root-dir", dir, "--dialect", "mariadb", "--server-version", "10.11.6-MariaDB")
 
 	c.Assert(err, qt.IsNil)
@@ -446,12 +444,12 @@ func TestGenerateCommand_AnExactMeasuredLineSaysNothing(t *testing.T) {
 func TestGenerateCommand_WithoutServerVersionRendersExactlyAsBefore(t *testing.T) {
 	c := qt.New(t)
 
-	dir := unevenlyReferencedFixture(c.TB)
+	dir := unevenlyReferencedFixture(c)
 
-	unpinned, _, err := renderFixture(c.TB, "--root-dir", dir, "--dialect", "mariadb")
+	unpinned, _, err := renderFixture(c, "--root-dir", dir, "--dialect", "mariadb")
 	c.Assert(err, qt.IsNil)
 
-	pinned, _, err := renderFixture(c.TB,
+	pinned, _, err := renderFixture(c,
 		"--root-dir", dir, "--dialect", "mariadb", "--server-version", "10.11.6-MariaDB")
 	c.Assert(err, qt.IsNil)
 

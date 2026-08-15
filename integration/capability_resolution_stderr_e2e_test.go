@@ -78,23 +78,23 @@ func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 	c.Run("a clean binary run writes nothing to stderr", func(c *qt.C) {
 		repoRoot := e2eRepoRoot(t)
 		binaryPath := filepath.Join(c.TempDir(), "ptah-compat")
-		buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
+		buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 		adminDB, err := sql.Open("pgx", dbURL)
 		c.Assert(err, qt.IsNil)
 		defer adminDB.Close()
 
 		testDBName := fmt.Sprintf("ptah_caps_stderr_e2e_%d", time.Now().UnixNano())
-		createE2EDatabase(c.TB, ctx, adminDB, testDBName)
-		defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
+		createE2EDatabase(c, ctx, adminDB, testDBName)
+		defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
 		migrationsDir := c.TempDir()
-		writeLintE2EFile(c.TB, migrationsDir, "1.sql", "CREATE TABLE widgets (id int);\n")
+		writeLintE2EFile(c, migrationsDir, "1.sql", "CREATE TABLE widgets (id int);\n")
 
 		stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
 			"migrate", "lint",
 			"--dir", "file://"+migrationsDir,
-			"--dev-url", replaceDatabaseName(c.TB, dbURL, testDBName),
+			"--dev-url", replaceDatabaseName(c, dbURL, testDBName),
 			"--latest", "1",
 		)
 

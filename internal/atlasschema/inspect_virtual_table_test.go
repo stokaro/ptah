@@ -379,7 +379,7 @@ func TestInspectReportsAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := connectSQLite(c.TB, virtualTableFixture(c.TB, t.TempDir(), tt.setup))
+			conn := connectSQLite(c, virtualTableFixture(c, t.TempDir(), tt.setup))
 			defer dbschema.CloseAndWarn(conn)
 			// The split/write rows plan real files against the working
 			// directory, so give every row a throwaway one.
@@ -492,7 +492,7 @@ func TestInspectRefusesAVirtualTableTheRenderingCannotCarry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := connectSQLite(c.TB, virtualTableFixture(c.TB, t.TempDir(), tt.setup))
+			conn := connectSQLite(c, virtualTableFixture(c, t.TempDir(), tt.setup))
 			defer dbschema.CloseAndWarn(conn)
 
 			_, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
@@ -527,8 +527,7 @@ func forgedVirtualTable(name, ddl string) string {
 		`PRAGMA writable_schema = RESET;`
 }
 
-func virtualTableFixture(tb testing.TB, dir string, statements []string) string {
-	c := qt.New(tb)
+func virtualTableFixture(c *qt.C, dir string, statements []string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, "virtual.db")

@@ -135,16 +135,16 @@ const postgresCleanupCensusQuery = `
 func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := c.Context()
-	conn := newPostgresCleanupLiveConnection(c.TB, ctx)
-	applyPostgresCleanupFixture(c.TB, ctx, conn)
+	conn := newPostgresCleanupLiveConnection(c, ctx)
+	applyPostgresCleanupFixture(c, ctx, conn)
 
-	before := postgresCleanupCensus(c.TB, ctx, conn)
+	before := postgresCleanupCensus(c, ctx, conn)
 	plan, err := schemaclean.Inspect(conn)
 	c.Assert(err, qt.IsNil)
 	planned := plannedObjectKeys(plan)
 
 	c.Assert(schemaclean.Apply(ctx, conn), qt.IsNil)
-	after := postgresCleanupCensus(c.TB, ctx, conn)
+	after := postgresCleanupCensus(c, ctx, conn)
 
 	c.Assert(destroyedKeys(before, after), qt.DeepEquals, planned)
 
@@ -204,11 +204,10 @@ func destroyedKeys(before, after []string) []string {
 }
 
 func postgresCleanupCensus(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 ) []string {
-	c := qt.New(tb)
 	c.Helper()
 	rows, err := conn.QueryContext(ctx, postgresCleanupCensusQuery)
 	c.Assert(err, qt.IsNil)
@@ -226,11 +225,10 @@ func postgresCleanupCensus(
 }
 
 func applyPostgresCleanupFixture(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 ) {
-	c := qt.New(tb)
 	c.Helper()
 	for _, statement := range postgresCleanupFixture {
 		_, err := conn.ExecContext(ctx, statement)
@@ -241,10 +239,9 @@ func applyPostgresCleanupFixture(
 // newPostgresCleanupLiveConnection provisions a throwaway database so a test
 // that deliberately destroys a whole schema cannot damage the shared fixture
 // database other live tests in the same job depend on.
-func newPostgresCleanupLiveConnection(tb testing.TB, ctx context.Context) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func newPostgresCleanupLiveConnection(c *qt.C, ctx context.Context) *dbschema.DatabaseConnection {
 	c.Helper()
-	adminURL := requirePostgresCleanupLiveURL(c.TB)
+	adminURL := requirePostgresCleanupLiveURL(c)
 	admin, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(admin.PingContext(ctx), qt.IsNil)
@@ -273,8 +270,7 @@ func newPostgresCleanupLiveConnection(tb testing.TB, ctx context.Context) *dbsch
 	return conn
 }
 
-func requirePostgresCleanupLiveURL(tb testing.TB) string {
-	c := qt.New(tb)
+func requirePostgresCleanupLiveURL(c *qt.C) string {
 	c.Helper()
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
 		raw := os.Getenv(name)

@@ -93,9 +93,9 @@ func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(migrations.MigrateUp(t.Context()), qt.IsNil)
-	c.Assert(gooseImportedTableCount(c.TB, conn, "widgets"), qt.Equals, 1)
+	c.Assert(gooseImportedTableCount(c, conn, "widgets"), qt.Equals, 1)
 	c.Assert(migrations.MigrateDownTo(t.Context(), 0), qt.IsNil)
-	c.Assert(gooseImportedTableCount(c.TB, conn, "widgets"), qt.Equals, 0)
+	c.Assert(gooseImportedTableCount(c, conn, "widgets"), qt.Equals, 0)
 }
 
 func gooseWholeFileNoTransactionPlan(
@@ -123,11 +123,10 @@ func gooseWholeFileNoTransactionPlan(
 }
 
 func gooseImportedTableCount(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	table string,
 ) int {
-	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRow(

@@ -47,8 +47,8 @@ func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow
 			assert: func(c *qt.C, err error, stagedPath, publishedPath string) {
 				c.Assert(err, qt.ErrorIs, ErrDestinationChanged)
 				c.Assert(err, qt.Not(qt.ErrorIs), ErrReplacementCommitted)
-				assertWindowBytes(c.TB, publishedPath, windowRivalBytes)
-				assertWindowBytes(c.TB, stagedPath, "new")
+				assertWindowBytes(c, publishedPath, windowRivalBytes)
+				assertWindowBytes(c, stagedPath, "new")
 			},
 		},
 		{
@@ -59,8 +59,8 @@ func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow
 			inject: func(*qt.C, string) {},
 			assert: func(c *qt.C, err error, stagedPath, publishedPath string) {
 				c.Assert(err, qt.IsNil)
-				assertWindowBytes(c.TB, publishedPath, "new")
-				assertWindowAbsent(c.TB, stagedPath)
+				assertWindowBytes(c, publishedPath, "new")
+				assertWindowAbsent(c, stagedPath)
 			},
 		},
 	}
@@ -96,16 +96,14 @@ func Test_publishFileAt_FailurePath_RefusesDestinationTakenInsideTheCommitWindow
 	}
 }
 
-func assertWindowBytes(tb testing.TB, path, want string) {
-	c := qt.New(tb)
+func assertWindowBytes(c *qt.C, path, want string) {
 	c.Helper()
 	contents, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, want)
 }
 
-func assertWindowAbsent(tb testing.TB, path string) {
-	c := qt.New(tb)
+func assertWindowAbsent(c *qt.C, path string) {
 	c.Helper()
 	_, err := os.Lstat(path)
 	c.Assert(os.IsNotExist(err), qt.IsTrue)

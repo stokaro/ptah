@@ -48,7 +48,7 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 
 	target := yugabyteIndexIdentityTarget()
-	live := readYugabyteIndexIdentitySchema(c.TB, t, dsn)
+	live := readYugabyteIndexIdentitySchema(c, t, dsn)
 	diff := schemadiff.CompareWithDialect(target, live, platform.YugabyteDB)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: yugabyteIndexIdentityName, TableName: yugabyteIndexIdentitySchemaA + ".orders"},
@@ -68,7 +68,7 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("apply YugabyteDB index identity plan: %s", statement))
 	}
 
-	live = readYugabyteIndexIdentitySchema(c.TB, t, dsn)
+	live = readYugabyteIndexIdentitySchema(c, t, dsn)
 	finalDiff := schemadiff.CompareWithDialect(target, live, platform.YugabyteDB)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
@@ -80,8 +80,7 @@ func cleanupYugabyteIndexIdentity(db *sql.DB) {
 	_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + yugabyteIndexIdentitySchemaB + ` CASCADE`)
 }
 
-func readYugabyteIndexIdentitySchema(tb testing.TB, t *testing.T, dsn string) *dbschematypes.DBSchema {
-	c := qt.New(tb)
+func readYugabyteIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

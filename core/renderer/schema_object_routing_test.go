@@ -115,8 +115,7 @@ type routedObjectCell struct {
 
 // routedObjectGrid renders the fixture once per dialect and classifies every
 // declared object in it.
-func routedObjectGrid(tb testing.TB) []routedObjectCell {
-	c := qt.New(tb)
+func routedObjectGrid(c *qt.C) []routedObjectCell {
 	c.Helper()
 
 	cells := make([]routedObjectCell, 0, len(routingDialects)*len(routedObjectRows))
@@ -187,7 +186,7 @@ func cellsAnswering(cells []routedObjectCell, answer string) []string {
 func TestRender_NoDialectLosesADeclaredObject(t *testing.T) {
 	c := qt.New(t)
 
-	cells := routedObjectGrid(c.TB)
+	cells := routedObjectGrid(c)
 
 	// Control: the grid really covers every dialect and every kind. A fixture or
 	// a classifier that produced no cells would satisfy the assertion below while
@@ -211,7 +210,7 @@ func TestRender_NoDialectLosesADeclaredObject(t *testing.T) {
 func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 	c := qt.New(t)
 
-	cells := routedObjectGrid(c.TB)
+	cells := routedObjectGrid(c)
 
 	tests := []struct {
 		name  string

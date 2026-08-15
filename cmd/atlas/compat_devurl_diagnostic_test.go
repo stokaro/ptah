@@ -84,8 +84,7 @@ type compatDevURLFixture struct {
 	desiredURL string
 }
 
-func newCompatDevURLFixture(tb testing.TB) compatDevURLFixture {
-	c := qt.New(tb)
+func newCompatDevURLFixture(c *qt.C) compatDevURLFixture {
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -380,7 +379,7 @@ func compatDevURLPlacementRows() []compatDevURLRow {
 func TestCompatDevURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := qt.New(t)
-	fx := newCompatDevURLFixture(c.TB)
+	fx := newCompatDevURLFixture(c)
 
 	for _, tt := range compatDevURLRows() {
 		t.Run(tt.name, func(t *testing.T) {
@@ -414,7 +413,7 @@ func TestCompatDevURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 func TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := qt.New(t)
-	fx := newCompatDevURLFixture(c.TB)
+	fx := newCompatDevURLFixture(c)
 
 	_, stderr, err := runCompat(
 		"migrate", "lint", "--dir", "file://"+fx.dir, "--latest", "1",

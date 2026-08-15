@@ -166,7 +166,7 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSchemaDir(c.TB, test.files)
+			dir := writeSchemaDir(c, test.files)
 
 			db, err := schemafile.LoadPath(dir, test.opts)
 
@@ -183,7 +183,7 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 // gate that ran per URL would count one block twice instead of two blocks once.
 func TestLoadAllCountsSchemaBlocksAcrossEveryURL(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSchemaDir(c.TB, map[string]string{"a.hcl": oneSchemaHCL, "b.hcl": postsHCL})
+	dir := writeSchemaDir(c, map[string]string{"a.hcl": oneSchemaHCL, "b.hcl": postsHCL})
 
 	limited := schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"}
 	_, err := schemafile.LoadAll([]string{dir + "/a.hcl", dir + "/b.hcl"}, limited)

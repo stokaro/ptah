@@ -38,20 +38,20 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			adminDSN := dbtarget.URL(c, test.engine)
-			adminDB := openMySQLWriterLiveDatabase(c.TB, test.engine)
+			adminDB := openMySQLWriterLiveDatabase(c, test.engine)
 			c.Cleanup(func() { c.Check(adminDB.Close(), qt.IsNil) })
 
 			suffix := time.Now().UnixNano()
 			databaseName := fmt.Sprintf("ptah_definer_%d", suffix)
 			owner := fmt.Sprintf("ptah_owner_%d", suffix)
 			password := fmt.Sprintf("Ptah-owner-%d!", suffix)
-			createMySQLWriterLiveDatabase(c.TB, adminDB, databaseName)
-			c.Cleanup(func() { dropMySQLWriterLiveDatabase(c.TB, adminDB, databaseName) })
-			createMySQLWriterLiveUser(c.TB, adminDB, owner, password)
-			c.Cleanup(func() { dropMySQLWriterLiveUser(c.TB, adminDB, owner) })
-			grantRoutineOwner(c.TB, adminDB, test.dialect, databaseName, owner)
+			createMySQLWriterLiveDatabase(c, adminDB, databaseName)
+			c.Cleanup(func() { dropMySQLWriterLiveDatabase(c, adminDB, databaseName) })
+			createMySQLWriterLiveUser(c, adminDB, owner, password)
+			c.Cleanup(func() { dropMySQLWriterLiveUser(c, adminDB, owner) })
+			grantRoutineOwner(c, adminDB, test.dialect, databaseName, owner)
 
-			ownerDB := openFunctionOwnerDatabase(c.TB, adminDSN, databaseName, owner, password)
+			ownerDB := openFunctionOwnerDatabase(c, adminDSN, databaseName, owner, password)
 			c.Cleanup(func() { c.Check(ownerDB.Close(), qt.IsNil) })
 			_, err := ownerDB.ExecContext(
 				c.Context(),
@@ -59,7 +59,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 
-			adminURL := mysqlFamilyDatabaseURL(c.TB, adminDSN, databaseName, test.dialect)
+			adminURL := mysqlFamilyDatabaseURL(c, adminDSN, databaseName, test.dialect)
 			adminConn, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(adminConn.Close(), qt.IsNil) })
@@ -80,9 +80,9 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `.*cannot safely replace.*execution principal.*`)
 			c.Assert(diff, qt.IsNil)
-			assertRoutineStillOwnedAndUnchanged(c.TB, adminDB, databaseName, owner)
+			assertRoutineStillOwnedAndUnchanged(c, adminDB, databaseName, owner)
 
-			ownerURL := mysqlFamilyDatabaseURL(c.TB, ownerDSN(c.TB, adminDSN, owner, password), databaseName, test.dialect)
+			ownerURL := mysqlFamilyDatabaseURL(c, ownerDSN(c, adminDSN, owner, password), databaseName, test.dialect)
 			ownerConn, err := dbschema.ConnectToDatabase(c.Context(), ownerURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(ownerConn.Close(), qt.IsNil) })
@@ -97,8 +97,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 	}
 }
 
-func grantRoutineOwner(tb testing.TB, db *sql.DB, dialect, databaseName, owner string) {
-	c := qt.New(tb)
+func grantRoutineOwner(c *qt.C, db *sql.DB, dialect, databaseName, owner string) {
 	c.Helper()
 	query := fmt.Sprintf(
 		"GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'",
@@ -118,8 +117,7 @@ func grantRoutineOwner(tb testing.TB, db *sql.DB, dialect, databaseName, owner s
 	c.Assert(err, qt.IsNil)
 }
 
-func openFunctionOwnerDatabase(tb testing.TB, adminDSN, databaseName, owner, password string) *sql.DB {
-	c := qt.New(tb)
+func openFunctionOwnerDatabase(c *qt.C, adminDSN, databaseName, owner, password string) *sql.DB {
 	c.Helper()
 	config, err := mysqldriver.ParseDSN(adminDSN)
 	c.Assert(err, qt.IsNil)
@@ -132,8 +130,7 @@ func openFunctionOwnerDatabase(tb testing.TB, adminDSN, databaseName, owner, pas
 	return db
 }
 
-func ownerDSN(tb testing.TB, adminDSN, owner, password string) string {
-	c := qt.New(tb)
+func ownerDSN(c *qt.C, adminDSN, owner, password string) string {
 	c.Helper()
 	config, err := mysqldriver.ParseDSN(adminDSN)
 	c.Assert(err, qt.IsNil)
@@ -142,8 +139,7 @@ func ownerDSN(tb testing.TB, adminDSN, owner, password string) string {
 	return config.FormatDSN()
 }
 
-func mysqlFamilyDatabaseURL(tb testing.TB, dsn, databaseName, dialect string) string {
-	c := qt.New(tb)
+func mysqlFamilyDatabaseURL(c *qt.C, dsn, databaseName, dialect string) string {
 	c.Helper()
 	config, err := mysqldriver.ParseDSN(dsn)
 	c.Assert(err, qt.IsNil)
@@ -151,8 +147,7 @@ func mysqlFamilyDatabaseURL(tb testing.TB, dsn, databaseName, dialect string) st
 	return fmt.Sprintf("%s://%s", dialect, config.FormatDSN())
 }
 
-func assertRoutineStillOwnedAndUnchanged(tb testing.TB, db *sql.DB, databaseName, owner string) {
-	c := qt.New(tb)
+func assertRoutineStillOwnedAndUnchanged(c *qt.C, db *sql.DB, databaseName, owner string) {
 	c.Helper()
 	var definer, body string
 	err := db.QueryRowContext(

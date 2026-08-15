@@ -25,7 +25,7 @@ table "t" {
 	c.Assert(db.Fields[0].Check, qt.Equals, "age > 0")
 	c.Assert(db.Fields[0].CheckName, qt.Equals, "")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CHECK (age > 0)`)
 }
 
@@ -45,7 +45,7 @@ table "t" {
 	c.Assert(db.Fields, qt.HasLen, 1)
 	c.Assert(db.Fields[0].CheckName, qt.Equals, "age_positive")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CONSTRAINT age_positive CHECK (age > 0)`)
 }
 
@@ -83,6 +83,6 @@ table "t" {
 	c.Assert(db.Fields, qt.HasLen, 1)
 	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "START WITH 100 INCREMENT BY 5")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `AS IDENTITY (START WITH 100 INCREMENT BY 5)`)
 }

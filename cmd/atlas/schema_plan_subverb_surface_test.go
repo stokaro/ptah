@@ -33,8 +33,7 @@ type atlasV13SchemaPlanHelpProvenance struct {
 	Limitations     []string          `json:"limitations"`
 }
 
-func readAtlasV13SchemaPlanHelpProvenance(tb testing.TB) atlasV13SchemaPlanHelpProvenance {
-	c := qt.New(tb)
+func readAtlasV13SchemaPlanHelpProvenance(c *qt.C) atlasV13SchemaPlanHelpProvenance {
 	c.Helper()
 	document, err := os.ReadFile(filepath.Join(atlasV13SchemaPlanHelpDir, "provenance.json"))
 	c.Assert(err, qt.IsNil)
@@ -43,8 +42,7 @@ func readAtlasV13SchemaPlanHelpProvenance(tb testing.TB) atlasV13SchemaPlanHelpP
 	return provenance
 }
 
-func fileSHA256(tb testing.TB, path string) string {
-	c := qt.New(tb)
+func fileSHA256(c *qt.C, path string) string {
 	c.Helper()
 	document, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
@@ -87,7 +85,7 @@ func fileSHA256(tb testing.TB, path string) string {
 
 func TestAtlasSchemaPlanV13HelpOracleProvenance(t *testing.T) {
 	c := qt.New(t)
-	provenance := readAtlasV13SchemaPlanHelpProvenance(c.TB)
+	provenance := readAtlasV13SchemaPlanHelpProvenance(c)
 
 	c.Assert(provenance.AtlasVersion, qt.Equals, "v1.3.0")
 	c.Assert(provenance.AtlasEdition, qt.Equals, "standard")
@@ -115,7 +113,7 @@ func TestAtlasSchemaPlanV13HelpOracleProvenance(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(provenance.ArtifactSHA256[test.name], qt.Equals, test.hash)
-			c.Assert(fileSHA256(c.TB, filepath.Join(atlasV13SchemaPlanHelpDir, test.name)), qt.Equals, test.hash)
+			c.Assert(fileSHA256(c, filepath.Join(atlasV13SchemaPlanHelpDir, test.name)), qt.Equals, test.hash)
 		})
 	}
 }
@@ -178,7 +176,7 @@ func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := findAtlasCommand(c.TB, test.path)
+			cmd := findAtlasCommand(c, test.path)
 
 			c.Assert(localFlagNames(cmd), qt.DeepEquals, test.want)
 		})
@@ -204,7 +202,7 @@ func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := findAtlasCommand(c.TB, test.path)
+			cmd := findAtlasCommand(c, test.path)
 
 			flag := cmd.Flags().Lookup(test.flag)
 
@@ -224,8 +222,8 @@ func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
 	for _, flag := range []string{"--save", "--dry-run", "--push", "--pending", "--skip-lint", "--directive"} {
 		t.Run(flag, func(t *testing.T) {
 			c := qt.New(t)
-			dir := chdirToScratchC(c.TB)
-			fixture := newPlanFixture(c.TB, "parentonly",
+			dir := chdirToScratchC(c)
+			fixture := newPlanFixture(c, "parentonly",
 				`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
 				"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE added (id INTEGER PRIMARY KEY);")
 
@@ -234,7 +232,7 @@ func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Contains, "unknown flag: "+flag)
-			assertNoPlanFileWritten(c.TB, dir)
+			assertNoPlanFileWritten(c, dir)
 		})
 	}
 }
@@ -247,7 +245,7 @@ func TestAtlasSchemaPlanRegistrySubverbsStayStubs(t *testing.T) {
 	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
 
-	plan := findAtlasCommand(c.TB, []string{"schema", "plan"})
+	plan := findAtlasCommand(c, []string{"schema", "plan"})
 	var names []string
 	for _, child := range plan.Commands() {
 		names = append(names, child.Name())
@@ -288,8 +286,7 @@ func runSchemaPlanSubverbStreams(
 }
 
 // chdirToScratchC is chdirToScratch for a quicktest subtest context.
-func chdirToScratchC(tb testing.TB) string {
-	c := qt.New(tb)
+func chdirToScratchC(c *qt.C) string {
 	c.Helper()
 	dir := c.TB.TempDir()
 	c.TB.Chdir(dir)
@@ -297,8 +294,7 @@ func chdirToScratchC(tb testing.TB) string {
 }
 
 // findAtlasCommand walks the compat tree to the command named by path.
-func findAtlasCommand(tb testing.TB, path []string) *cobra.Command {
-	c := qt.New(tb)
+func findAtlasCommand(c *qt.C, path []string) *cobra.Command {
 	c.Helper()
 	cmd, _, err := atlas.NewCompatCommand("atlas").Find(path)
 	c.Assert(err, qt.IsNil)

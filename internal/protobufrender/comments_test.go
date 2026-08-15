@@ -67,8 +67,7 @@ func commentLines(text string) []string {
 // comment list. They live at the foot of the file since #1148: as the file's
 // leading comment they were protoc-gen-go's leading comment too, so every
 // consumer's .pb.go carried Ptah's content digest.
-func assertGeneratedHeader(tb testing.TB, lines []string) {
-	c := qt.New(tb)
+func assertGeneratedHeader(c *qt.C, lines []string) {
 	c.Helper()
 	c.Assert(len(lines) >= 3, qt.IsTrue, qt.Commentf("comment lines: %q", lines))
 	header := lines[len(lines)-3:]
@@ -92,9 +91,9 @@ func assertGeneratedHeader(tb testing.TB, lines []string) {
 func TestCommentsNoneIsTheDefaultAndAllMustBeAskedFor(t *testing.T) {
 	c := qt.New(t)
 
-	byDefault := mustRenderText(c.TB, commentedSchema(), baseOptions())
-	explicitNone := mustRenderText(c.TB, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsNone))
-	explicitAll := mustRenderText(c.TB, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsAll))
+	byDefault := mustRenderText(c, commentedSchema(), baseOptions())
+	explicitNone := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsNone))
+	explicitAll := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsAll))
 
 	// The zero value means "none".
 	c.Assert(byDefault, qt.Equals, explicitNone)
@@ -111,12 +110,12 @@ func TestCommentsNoneIsTheDefaultAndAllMustBeAskedFor(t *testing.T) {
 func TestCommentsNoneOmitsEverySourceComment(t *testing.T) {
 	c := qt.New(t)
 
-	text := mustRenderText(c.TB, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsNone))
+	text := mustRenderText(c, commentedSchema(), commentOptions(baseOptions(), protobufrender.CommentsNone))
 
 	// Only the three generated header lines remain.
 	lines := commentLines(text)
 	c.Assert(lines, qt.HasLen, 3)
-	assertGeneratedHeader(c.TB, lines)
+	assertGeneratedHeader(c, lines)
 
 	// Suppression is all-or-nothing on purpose: the table comment and the column
 	// comment carry the same kind of internal detail, so both go.
@@ -129,11 +128,11 @@ func TestCommentsNoneOmitsEverySourceComment(t *testing.T) {
 func TestCommentsNoneKeepsPtahsOwnAccountOfTheContract(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c.TB, commentedSchema(), baseOptions())
+	baseline := mustRender(c, commentedSchema(), baseOptions())
 
 	opts := commentOptions(withPrevious(baseline.Data), protobufrender.CommentsNone)
 	opts.TypeRemoval = protobufrender.RemovalTombstone
-	text := mustRenderText(c.TB, retiredSchema(), opts)
+	text := mustRenderText(c, retiredSchema(), opts)
 
 	// The tombstone rationale is not source prose. It describes the generated
 	// file itself, and without it a reader meets a bare reserved block with no
@@ -142,7 +141,7 @@ func TestCommentsNoneKeepsPtahsOwnAccountOfTheContract(t *testing.T) {
 		"// Removed from the source schema; retained for wire compatibility.\nmessage User {")
 	lines := commentLines(text)
 	c.Assert(lines, qt.HasLen, 4)
-	assertGeneratedHeader(c.TB, lines)
+	assertGeneratedHeader(c, lines)
 	// The tombstone rationale precedes the generated header, because the header
 	// is the last thing in the file.
 	c.Assert(lines[0], qt.Equals, "// Removed from the source schema; retained for wire compatibility.")
@@ -156,20 +155,20 @@ func TestCommentsNoneKeepsPtahsOwnAccountOfTheContract(t *testing.T) {
 func TestCommentPolicyIsNotPartOfTheCompatibilityState(t *testing.T) {
 	c := qt.New(t)
 
-	withComments := mustRender(c.TB, commentedSchema(), baseOptions())
+	withComments := mustRender(c, commentedSchema(), baseOptions())
 
-	stripped := mustRender(c.TB, commentedSchema(),
+	stripped := mustRender(c, commentedSchema(),
 		commentOptions(withPrevious(withComments.Data), protobufrender.CommentsNone))
 
 	// A second run under the same policy is a no-op, which is what lets the
 	// generated file be committed and checked in CI.
-	again := mustRender(c.TB, commentedSchema(),
+	again := mustRender(c, commentedSchema(),
 		commentOptions(withPrevious(stripped.Data), protobufrender.CommentsNone))
 	c.Assert(string(again.Data), qt.Equals, string(stripped.Data))
 
 	// Dropping the policy restores the prose and moves no number: comments are
 	// not compatibility state, so toggling this can never retire a field.
-	restored := mustRender(c.TB, commentedSchema(), withPrevious(stripped.Data))
+	restored := mustRender(c, commentedSchema(), withPrevious(stripped.Data))
 	c.Assert(string(restored.Data), qt.Equals, string(withComments.Data))
 	c.Assert(section(string(restored.Data), "message User {"), qt.Contains, "  string password_hash = 3;")
 

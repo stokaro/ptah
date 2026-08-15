@@ -524,7 +524,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("path traversal", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, "../escape.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "unsafe")
+		pushManifest(c, ctx, store, "../escape.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "unsafe")
 
 		_, err := ociartifact.PullFrom(ctx, store, "unsafe", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -535,7 +535,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("backslash path", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, `dir\escape.sql`, ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "unsafe")
+		pushManifest(c, ctx, store, `dir\escape.sql`, ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "unsafe")
 
 		_, err := ociartifact.PullFrom(ctx, store, "unsafe", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -546,7 +546,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("unexpected artifact type", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, "schema.sql", ociartifact.FileMediaType, ociartifact.SchemaArtifactType, "schema")
+		pushManifest(c, ctx, store, "schema.sql", ociartifact.FileMediaType, ociartifact.SchemaArtifactType, "schema")
 
 		_, err := ociartifact.PullFrom(ctx, store, "schema", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -557,7 +557,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("unexpected layer type", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, "migration.sql", "application/octet-stream", ociartifact.MigrationArtifactType, "wrong-layer")
+		pushManifest(c, ctx, store, "migration.sql", "application/octet-stream", ociartifact.MigrationArtifactType, "wrong-layer")
 
 		_, err := ociartifact.PullFrom(ctx, store, "wrong-layer", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -568,7 +568,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("file size limit", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, "migration.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "large")
+		pushManifest(c, ctx, store, "migration.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "large")
 
 		_, err := ociartifact.PullFrom(ctx, store, "large", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -580,7 +580,7 @@ func TestPullFrom_RejectsUntrustedManifest(t *testing.T) {
 	t.Run("path length limit", func(t *testing.T) {
 		c := qt.New(t)
 		store := memory.New()
-		pushManifest(c.TB, ctx, store, "migration.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "long-path")
+		pushManifest(c, ctx, store, "migration.sql", ociartifact.FileMediaType, ociartifact.MigrationArtifactType, "long-path")
 
 		_, err := ociartifact.PullFrom(ctx, store, "long-path", ociartifact.PullOptions{
 			ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
@@ -608,7 +608,7 @@ func TestNewRepository_UsesDockerConfigurationAndExplicitPlainHTTP(t *testing.T)
 }
 
 func pushManifest(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	store *memory.Store,
 	title string,
@@ -616,7 +616,6 @@ func pushManifest(
 	artifactType string,
 	tag string,
 ) {
-	c := qt.New(tb)
 	layer, err := oras.PushBytes(ctx, store, layerMediaType, []byte("SELECT 1;"))
 	c.Assert(err, qt.IsNil)
 	layer.Annotations = map[string]string{ocispec.AnnotationTitle: title}

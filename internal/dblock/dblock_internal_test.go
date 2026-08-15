@@ -119,7 +119,7 @@ func TestPostgresLockWaitError_MapsQueryDeadlineToTimeout(t *testing.T) {
 func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("lock response lost")
-	db, tracker := openTrackingDB(c.TB, queryErr)
+	db, tracker := openTrackingDB(c, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -143,7 +143,7 @@ func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 func TestAcquireMySQLLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("GET_LOCK response lost")
-	db, tracker := openTrackingDB(c.TB, queryErr)
+	db, tracker := openTrackingDB(c, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -167,7 +167,7 @@ func TestAcquireMySQLLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 func TestAcquireSQLServerLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("sp_getapplock response lost")
-	db, tracker := openTrackingDB(c.TB, queryErr)
+	db, tracker := openTrackingDB(c, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -189,7 +189,7 @@ func TestAcquireSQLServerLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T)
 
 func TestCloseAfterFailedAcquisition_ReturnsDefiniteFailureSessionToPool(t *testing.T) {
 	c := qt.New(t)
-	db, tracker := openTrackingDB(c.TB, nil)
+	db, tracker := openTrackingDB(c, nil)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	timeoutErr := &TimeoutError{
@@ -209,7 +209,7 @@ func TestCloseAfterFailedAcquisition_ReturnsDefiniteFailureSessionToPool(t *test
 
 func TestLockRelease_DiscardsSessionAfterTimeout(t *testing.T) {
 	c := qt.New(t)
-	db, tracker := openTrackingDB(c.TB, nil)
+	db, tracker := openTrackingDB(c, nil)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	lock := &Lock{
@@ -266,8 +266,7 @@ type trackingConn struct {
 
 var trackingDriverID atomic.Int64
 
-func openTrackingDB(tb testing.TB, queryErr error) (*sql.DB, *trackingDB) {
-	c := qt.New(tb)
+func openTrackingDB(c *qt.C, queryErr error) (*sql.DB, *trackingDB) {
 	c.Helper()
 	tracker := &trackingDB{queryErr: queryErr}
 	driverName := "ptah_dblock_tracking_" + strconv.FormatInt(trackingDriverID.Add(1), 10)

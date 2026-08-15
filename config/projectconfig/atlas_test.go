@@ -101,7 +101,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			raw := readAtlasProjectConfigFixture(c.TB, tt.input)
+			raw := readAtlasProjectConfigFixture(c, tt.input)
 
 			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", tt.envName)
 			c.Assert(err, qt.IsNil)
@@ -110,7 +110,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			got = append(got, '\n')
 
-			want := readAtlasProjectConfigFixture(c.TB, tt.golden)
+			want := readAtlasProjectConfigFixture(c, tt.golden)
 			c.Assert(string(got), qt.Equals, string(want))
 		})
 	}
@@ -121,7 +121,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 // than Atlas. The fixture is kept and asserted from the tolerant side.
 func TestParseAtlasProjectConfigGoldenUnknownAttributeIsIgnored(t *testing.T) {
 	c := qt.New(t)
-	raw := readAtlasProjectConfigFixture(c.TB, "unsupported-attribute.hcl")
+	raw := readAtlasProjectConfigFixture(c, "unsupported-attribute.hcl")
 
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 
@@ -149,7 +149,7 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			raw := readAtlasProjectConfigFixture(c.TB, tt.input)
+			raw := readAtlasProjectConfigFixture(c, tt.input)
 
 			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
@@ -157,8 +157,7 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 	}
 }
 
-func readAtlasProjectConfigFixture(tb testing.TB, name string) []byte {
-	c := qt.New(tb)
+func readAtlasProjectConfigFixture(c *qt.C, name string) []byte {
 	c.Helper()
 
 	data, err := os.ReadFile(filepath.Join("testdata", "atlas", name))
@@ -798,8 +797,7 @@ const typedVariableConsumerHCL = `env "local" {
 }
 `
 
-func assertTypedVariableConfig(tb testing.TB, cfg projectconfig.Config) {
-	c := qt.New(tb)
+func assertTypedVariableConfig(c *qt.C, cfg projectconfig.Config) {
 	c.Helper()
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
 	c.Assert(cfg.Exclude, qt.DeepEquals, []string{"app_*"})
@@ -836,7 +834,7 @@ variable "sources" {
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
 	c.Assert(err, qt.IsNil)
-	assertTypedVariableConfig(c.TB, cfg)
+	assertTypedVariableConfig(c, cfg)
 }
 
 func TestParseAtlasProjectConfigTypedVariableConvertsCompatibleDefault(t *testing.T) {
@@ -892,7 +890,7 @@ variable "sources" {
 	})
 
 	c.Assert(err, qt.IsNil)
-	assertTypedVariableConfig(c.TB, cfg)
+	assertTypedVariableConfig(c, cfg)
 }
 
 func TestParseAtlasProjectConfigTypedListVariableSingleOverride(t *testing.T) {

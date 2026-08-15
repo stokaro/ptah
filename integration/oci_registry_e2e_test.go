@@ -51,7 +51,7 @@ func TestOCIRegistryConcurrentReferrerPublicationE2E(t *testing.T) {
 	subjectReference := digestReference(reference, subject.Descriptor.Digest.String())
 	repoRoot := e2eRepoRoot(t)
 	helperPath := filepath.Join(t.TempDir(), "oci-attach-helper")
-	buildOCIReferrerHelper(c.TB, ctx, repoRoot, helperPath)
+	buildOCIReferrerHelper(c, ctx, repoRoot, helperPath)
 
 	const attachmentCount = 8
 	errs := make([]error, attachmentCount)
@@ -85,12 +85,11 @@ func TestOCIRegistryConcurrentReferrerPublicationE2E(t *testing.T) {
 }
 
 func buildOCIReferrerHelper(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	repoRoot string,
 	binaryPath string,
 ) {
-	c := qt.New(tb)
 	command := exec.CommandContext(
 		ctx,
 		"go", "build",
@@ -111,7 +110,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 	adminURL := requiredPostgresE2EURL(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
@@ -119,13 +118,13 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 
 	suffix := time.Now().UnixNano()
 	databaseName := fmt.Sprintf("ptah_oci_%d", suffix)
-	createE2EDatabase(c.TB, ctx, adminDB, databaseName)
-	defer dropE2EDatabase(c.TB, context.Background(), adminDB, databaseName)
-	databaseURL := replaceDatabaseName(c.TB, adminURL, databaseName)
+	createE2EDatabase(c, ctx, adminDB, databaseName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, databaseName)
+	databaseURL := replaceDatabaseName(c, adminURL, databaseName)
 
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeOCIMigration(c.TB, migrationsDir, ociMigrationVersion, "widgets")
-	firstSnapshot := snapshotDirectory(c.TB, migrationsDir)
+	writeOCIMigration(c, migrationsDir, ociMigrationVersion, "widgets")
+	firstSnapshot := snapshotDirectory(c, migrationsDir)
 	reference := fmt.Sprintf("oci://%s/ptah/oci-migrations-%d:latest", registry, suffix)
 
 	pushOutput, err := runPtahInDir(
@@ -139,7 +138,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
-	firstDigest := digestFromPushOutput(c.TB, pushOutput)
+	firstDigest := digestFromPushOutput(c, pushOutput)
 	firstDigestReference := digestReference(reference, firstDigest)
 
 	firstPullDir := filepath.Join(t.TempDir(), "first-pull")
@@ -152,7 +151,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("pull output:\n%s", pullOutput))
-	c.Assert(snapshotDirectory(c.TB, firstPullDir), qt.DeepEquals, firstSnapshot)
+	c.Assert(snapshotDirectory(c, firstPullDir), qt.DeepEquals, firstSnapshot)
 
 	lintOutput, err := runPtahInDir(
 		ctx,
@@ -165,9 +164,9 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("lint output:\n%s", lintOutput))
-	c.Assert(readStatusField(c.TB, lintOutput, "failed"), qt.Equals, false)
+	c.Assert(readStatusField(c, lintOutput, "failed"), qt.Equals, false)
 	standardLintReports := standardOCIReferrers(
-		c.TB,
+		c,
 		ctx,
 		firstDigestReference,
 		ociartifact.LintArtifactType,
@@ -186,7 +185,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("up output:\n%s", upOutput))
 	c.Assert(upOutput, qt.Contains, "Database is now at version: 1775000101")
-	assertTableExists(c.TB, ctx, databaseURL, "widgets")
+	assertTableExists(c, ctx, databaseURL, "widgets")
 
 	statusOutput, err := runPtahInDir(
 		ctx,
@@ -199,7 +198,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("status output:\n%s", statusOutput))
-	c.Assert(readStatusField(c.TB, statusOutput, "current_version"), qt.Equals, float64(ociMigrationVersion))
+	c.Assert(readStatusField(c, statusOutput, "current_version"), qt.Equals, float64(ociMigrationVersion))
 
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: true})
 	c.Assert(err, qt.IsNil)
@@ -234,7 +233,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("deployment referrers output:\n%s", referrerOutput))
-	referrerRecords := readReferrerRecords(c.TB, referrerOutput)
+	referrerRecords := readReferrerRecords(c, referrerOutput)
 	c.Assert(referrerRecords, qt.HasLen, 1)
 	c.Assert(referrerRecords[0].ArtifactType, qt.Equals, ociartifact.DeploymentArtifactType)
 
@@ -247,7 +246,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("all referrers output:\n%s", allReferrersOutput))
-	allReferrers := readReferrerRecords(c.TB, allReferrersOutput)
+	allReferrers := readReferrerRecords(c, allReferrersOutput)
 	c.Assert(allReferrers, qt.HasLen, 2)
 	c.Assert(allReferrers[0].ArtifactType, qt.Equals, ociartifact.DeploymentArtifactType)
 	c.Assert(allReferrers[1].ArtifactType, qt.Equals, ociartifact.LintArtifactType)
@@ -264,7 +263,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("down output:\n%s", downOutput))
-	assertTableMissing(c.TB, ctx, databaseURL, "widgets")
+	assertTableMissing(c, ctx, databaseURL, "widgets")
 
 	dryRunOutput, err := runPtahInDir(
 		ctx,
@@ -278,7 +277,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("dry-run output:\n%s", dryRunOutput))
-	assertTableMissing(c.TB, ctx, databaseURL, "widgets")
+	assertTableMissing(c, ctx, databaseURL, "widgets")
 	reports, err = client.Referrers(ctx, firstDigestReference, ociartifact.DeploymentArtifactType)
 	c.Assert(err, qt.IsNil)
 	c.Assert(reports, qt.HasLen, 1)
@@ -295,7 +294,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("skip-report output:\n%s", skipReportOutput))
-	assertTableExists(c.TB, ctx, databaseURL, "widgets")
+	assertTableExists(c, ctx, databaseURL, "widgets")
 	reports, err = client.Referrers(ctx, firstDigestReference, ociartifact.DeploymentArtifactType)
 	c.Assert(err, qt.IsNil)
 	c.Assert(reports, qt.HasLen, 1)
@@ -312,10 +311,10 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("second down output:\n%s", secondDownOutput))
-	assertTableMissing(c.TB, ctx, databaseURL, "widgets")
+	assertTableMissing(c, ctx, databaseURL, "widgets")
 
-	writeOCIMigration(c.TB, migrationsDir, 1775000202, "gadgets")
-	secondSnapshot := snapshotDirectory(c.TB, migrationsDir)
+	writeOCIMigration(c, migrationsDir, 1775000202, "gadgets")
+	secondSnapshot := snapshotDirectory(c, migrationsDir)
 	conflictOutput, err := runPtahInDir(
 		ctx,
 		repoRoot,
@@ -338,7 +337,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("post-conflict pull output:\n%s", conflictPullOutput))
-	c.Assert(snapshotDirectory(c.TB, conflictPullDir), qt.DeepEquals, firstSnapshot)
+	c.Assert(snapshotDirectory(c, conflictPullDir), qt.DeepEquals, firstSnapshot)
 
 	secondPushOutput, err := runPtahInDir(
 		ctx,
@@ -351,7 +350,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("second push output:\n%s", secondPushOutput))
-	secondDigest := digestFromPushOutput(c.TB, secondPushOutput)
+	secondDigest := digestFromPushOutput(c, secondPushOutput)
 	c.Assert(secondDigest, qt.Not(qt.Equals), firstDigest)
 
 	pinnedPullDir := filepath.Join(t.TempDir(), "pinned-pull")
@@ -364,7 +363,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("digest-pinned pull output:\n%s", pinnedPullOutput))
-	c.Assert(snapshotDirectory(c.TB, pinnedPullDir), qt.DeepEquals, firstSnapshot)
+	c.Assert(snapshotDirectory(c, pinnedPullDir), qt.DeepEquals, firstSnapshot)
 
 	latestPullDir := filepath.Join(t.TempDir(), "latest-pull")
 	latestPullOutput, err := runPtahInDir(
@@ -376,7 +375,7 @@ func TestOCIRegistryMigrationWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("latest pull output:\n%s", latestPullOutput))
-	c.Assert(snapshotDirectory(c.TB, latestPullDir), qt.DeepEquals, secondSnapshot)
+	c.Assert(snapshotDirectory(c, latestPullDir), qt.DeepEquals, secondSnapshot)
 }
 
 func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
@@ -388,7 +387,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 	adminURL := requiredPostgresE2EURL(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
@@ -396,9 +395,9 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 
 	suffix := time.Now().UnixNano()
 	databaseName := fmt.Sprintf("ptah_oci_schema_%d", suffix)
-	createE2EDatabase(c.TB, ctx, adminDB, databaseName)
-	defer dropE2EDatabase(c.TB, context.Background(), adminDB, databaseName)
-	databaseURL := replaceDatabaseName(c.TB, adminURL, databaseName)
+	createE2EDatabase(c, ctx, adminDB, databaseName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, databaseName)
+	databaseURL := replaceDatabaseName(c, adminURL, databaseName)
 
 	schemaSQL := "CREATE TABLE desired_widgets (id BIGINT NOT NULL PRIMARY KEY);\n"
 	schemaFile := filepath.Join(t.TempDir(), "schema.sql")
@@ -416,7 +415,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("schema push output:\n%s", pushOutput))
-	schemaDigest := digestFromPushOutput(c.TB, pushOutput)
+	schemaDigest := digestFromPushOutput(c, pushOutput)
 	schemaDigestReference := digestReference(reference, schemaDigest)
 
 	pulledSchema := filepath.Join(t.TempDir(), "schema.hcl")
@@ -477,7 +476,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("schema plan output:\n%s", planOutput))
-	c.Assert(readStatusField(c.TB, planOutput, "destructive"), qt.Equals, false)
+	c.Assert(readStatusField(c, planOutput, "destructive"), qt.Equals, false)
 
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: true})
 	c.Assert(err, qt.IsNil)
@@ -495,7 +494,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan referrers output:\n%s", planReferrersOutput))
-	planReferrers := readReferrerRecords(c.TB, planReferrersOutput)
+	planReferrers := readReferrerRecords(c, planReferrersOutput)
 	c.Assert(planReferrers, qt.HasLen, 1)
 	c.Assert(planReferrers[0].ArtifactType, qt.Equals, ociartifact.PlanArtifactType)
 
@@ -518,7 +517,7 @@ func TestOCIRegistrySchemaWorkflowE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("destructive schema push output:\n%s", destructivePushOutput))
 	destructiveDigestReference := digestReference(
 		destructiveReference,
-		digestFromPushOutput(c.TB, destructivePushOutput),
+		digestFromPushOutput(c, destructivePushOutput),
 	)
 
 	destructivePlanOutput, err := runPtahInDir(
@@ -568,8 +567,7 @@ func requiredPostgresE2EURL(t *testing.T) string {
 	return databaseURL
 }
 
-func writeOCIMigration(tb testing.TB, dir string, version int64, table string) {
-	c := qt.New(tb)
+func writeOCIMigration(c *qt.C, dir string, version int64, table string) {
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	prefix := fmt.Sprintf("%010d_create_%s", version, table)
 	up := fmt.Sprintf("CREATE TABLE %s (id BIGINT PRIMARY KEY);\n", table)
@@ -580,8 +578,7 @@ func writeOCIMigration(tb testing.TB, dir string, version int64, table string) {
 	c.Assert(err, qt.IsNil)
 }
 
-func snapshotDirectory(tb testing.TB, dir string) map[string]string {
-	c := qt.New(tb)
+func snapshotDirectory(c *qt.C, dir string) map[string]string {
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
 	snapshot := make(map[string]string, len(entries))
@@ -594,8 +591,7 @@ func snapshotDirectory(tb testing.TB, dir string) map[string]string {
 	return snapshot
 }
 
-func digestFromPushOutput(tb testing.TB, output string) string {
-	c := qt.New(tb)
+func digestFromPushOutput(c *qt.C, output string) string {
 	match := regexp.MustCompile(`(?m)^Digest: (sha256:[a-f0-9]{64})$`).FindStringSubmatch(output)
 	c.Assert(match, qt.HasLen, 2, qt.Commentf("push output:\n%s", output))
 	return match[1]
@@ -608,8 +604,7 @@ func digestReference(reference, digest string) string {
 // tamperOCIMigrationAndRehash injects a statement nobody reviewed and rehashes,
 // which is exactly what a repository writer can do: the sum file travels inside
 // the artifact, so rehashing keeps every self-consistency check green.
-func tamperOCIMigrationAndRehash(tb testing.TB, dir string, version int64, table string) {
-	c := qt.New(tb)
+func tamperOCIMigrationAndRehash(c *qt.C, dir string, version int64, table string) {
 	path := filepath.Join(dir, fmt.Sprintf("%010d_create_%s.up.sql", version, table))
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	c.Assert(err, qt.IsNil)
@@ -620,8 +615,7 @@ func tamperOCIMigrationAndRehash(tb testing.TB, dir string, version int64, table
 	c.Assert(err, qt.IsNil)
 }
 
-func sqliteTableCount(tb testing.TB, ctx context.Context, dbPath, table string) int {
-	c := qt.New(tb)
+func sqliteTableCount(c *qt.C, ctx context.Context, dbPath, table string) int {
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -652,11 +646,11 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	suffix := time.Now().UnixNano()
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeOCIMigration(c.TB, migrationsDir, ociMigrationVersion, "widgets")
+	writeOCIMigration(c, migrationsDir, ociMigrationVersion, "widgets")
 	base := fmt.Sprintf("oci://%s/ptah/oci-provenance-%d", registry, suffix)
 	tagReference := base + ":release"
 
@@ -671,7 +665,7 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
-	firstDigest := digestFromPushOutput(c.TB, pushOutput)
+	firstDigest := digestFromPushOutput(c, pushOutput)
 	firstDigestReference := base + "@" + firstDigest
 
 	reviewedDB := filepath.Join(t.TempDir(), "reviewed.db")
@@ -692,10 +686,10 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 	c.Assert(reviewedOutput, qt.Contains, "Warning: "+tagReference+" is a movable tag")
 	c.Assert(reviewedOutput, qt.Contains, "This tag resolved to "+firstDigest)
 	c.Assert(reviewedOutput, qt.Contains, "pass "+firstDigestReference+" to pin these exact bytes.")
-	c.Assert(sqliteTableCount(c.TB, ctx, reviewedDB, "widgets"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, ctx, reviewedDB, "evil"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, ctx, reviewedDB, "widgets"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, ctx, reviewedDB, "evil"), qt.Equals, 0)
 
-	tamperOCIMigrationAndRehash(c.TB, migrationsDir, ociMigrationVersion, "widgets")
+	tamperOCIMigrationAndRehash(c, migrationsDir, ociMigrationVersion, "widgets")
 	repointOutput, err := runPtahInDir(
 		ctx,
 		repoRoot,
@@ -707,7 +701,7 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 		"--plain-http",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("repoint push output:\n%s", repointOutput))
-	secondDigest := digestFromPushOutput(c.TB, repointOutput)
+	secondDigest := digestFromPushOutput(c, repointOutput)
 	c.Assert(secondDigest, qt.Not(qt.Equals), firstDigest)
 
 	// Byte-identical command, repointed tag. The sum still verifies, because the
@@ -730,7 +724,7 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 	c.Assert(repointedOutput, qt.Contains, "ptah.sum verified: migrations directory is intact")
 	c.Assert(repointedOutput, qt.Contains, "This tag resolved to "+secondDigest)
 	c.Assert(repointedOutput, qt.Not(qt.Contains), firstDigest)
-	c.Assert(sqliteTableCount(c.TB, ctx, repointedDB, "evil"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, ctx, repointedDB, "evil"), qt.Equals, 1)
 
 	// The digest pin selects the reviewed bytes and says nothing extra: there is
 	// no tag left to qualify.
@@ -751,24 +745,22 @@ func TestOCIMigrationTagSumProvenanceE2E(t *testing.T) {
 	c.Assert(pinnedOutput, qt.Contains, "ptah.sum verified: migrations directory is intact")
 	c.Assert(pinnedOutput, qt.Not(qt.Contains), "movable tag")
 	c.Assert(pinnedOutput, qt.Not(qt.Contains), "Warning:")
-	c.Assert(sqliteTableCount(c.TB, ctx, pinnedDB, "widgets"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, ctx, pinnedDB, "evil"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, ctx, pinnedDB, "widgets"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, ctx, pinnedDB, "evil"), qt.Equals, 0)
 }
 
-func readReferrerRecords(tb testing.TB, output string) []ocireferrers.Record {
-	c := qt.New(tb)
+func readReferrerRecords(c *qt.C, output string) []ocireferrers.Record {
 	var records []ocireferrers.Record
 	c.Assert(json.Unmarshal([]byte(output), &records), qt.IsNil, qt.Commentf("referrers output:\n%s", output))
 	return records
 }
 
 func standardOCIReferrers(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	reference string,
 	artifactType string,
 ) []ocispec.Descriptor {
-	c := qt.New(tb)
 	ref, err := ociartifact.ParseRef(reference)
 	c.Assert(err, qt.IsNil)
 	repository, err := ociartifact.NewRepository(ref, ociartifact.ClientOptions{PlainHTTP: true})
@@ -784,8 +776,7 @@ func standardOCIReferrers(
 	return result
 }
 
-func assertTableExists(tb testing.TB, ctx context.Context, databaseURL, table string) {
-	c := qt.New(tb)
+func assertTableExists(c *qt.C, ctx context.Context, databaseURL, table string) {
 	db, err := sql.Open("pgx", databaseURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -800,8 +791,7 @@ func assertTableExists(tb testing.TB, ctx context.Context, databaseURL, table st
 	c.Assert(got, qt.Equals, table)
 }
 
-func assertTableMissing(tb testing.TB, ctx context.Context, databaseURL, table string) {
-	c := qt.New(tb)
+func assertTableMissing(c *qt.C, ctx context.Context, databaseURL, table string) {
 	db, err := sql.Open("pgx", databaseURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()

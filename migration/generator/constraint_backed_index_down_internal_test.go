@@ -142,11 +142,11 @@ func TestGenerateMigration_ConstraintBackedIndexReplacement_DownRestoresTheConst
 
 			up, err := generateUpMigrationSQL(diff, generated, test.name)
 			c.Assert(err, qt.IsNil)
-			assertOrderedPair(c.TB, up, test.upDrop, test.create)
+			assertOrderedPair(c, up, test.upDrop, test.create)
 
 			down, err := generateDownMigrationSQL(diff, generated, database, test.name)
 			c.Assert(err, qt.IsNil)
-			assertOrderedPair(c.TB, down, test.downDro, test.restore)
+			assertOrderedPair(c, down, test.downDro, test.restore)
 		})
 	}
 }
@@ -180,8 +180,7 @@ func TestGenerateMigration_PlainIndexReplacement_DownRebuildsTheIndex(t *testing
 	}
 }
 
-func assertOrderedPair(tb testing.TB, sql, first, second string) {
-	c := qt.New(tb)
+func assertOrderedPair(c *qt.C, sql, first, second string) {
 	c.Helper()
 	c.Assert(strings.Count(sql, first), qt.Equals, 1, qt.Commentf("want one %q in:\n%s", first, sql))
 	c.Assert(strings.Count(sql, second), qt.Equals, 1, qt.Commentf("want one %q in:\n%s", second, sql))

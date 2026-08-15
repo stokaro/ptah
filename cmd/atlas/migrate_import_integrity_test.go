@@ -43,8 +43,7 @@ func compatImport(from, to, format string) (stdout, stderr string, err error) {
 // The destination is a path that does not exist, so "was anything written?" is
 // answerable by a single stat instead of by inspecting an empty directory the
 // test itself created.
-func importDirs(tb testing.TB) (source, target string) {
-	c := qt.New(tb)
+func importDirs(c *qt.C) (source, target string) {
 	c.Helper()
 	root := c.TempDir()
 	return filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -54,8 +53,7 @@ func importDirs(tb testing.TB) (source, target string) {
 // assertion the exit code alone cannot make: a gate that refuses AFTER the
 // conversion has written the destination and hashed it still leaves a clean
 // looking directory behind, which is the laundering half of #1095.
-func assertNothingImported(tb testing.TB, target string) {
-	c := qt.New(tb)
+func assertNothingImported(c *qt.C, target string) {
 	c.Helper()
 	_, err := os.Stat(target)
 	c.Assert(os.IsNotExist(err), qt.IsTrue,
@@ -66,8 +64,7 @@ func assertNothingImported(tb testing.TB, target string) {
 // when nothing was written. The read error is dropped on purpose: its absence
 // IS the expected outcome here, so turning it into a branch would put an `if`
 // in the assertion path instead of in the comparison.
-func destinationSum(tb testing.TB, target string) string {
-	c := qt.New(tb)
+func destinationSum(c *qt.C, target string) string {
 	c.Helper()
 	data, _ := os.ReadFile(filepath.Join(target, "atlas.sum"))
 	return string(data)
@@ -84,9 +81,9 @@ func TestCompatMigrateImport_HashedCleanSourceImports(t *testing.T) {
 	for _, fixture := range convertedApplyFixtures() {
 		t.Run(fixture.format, func(t *testing.T) {
 			c := qt.New(t)
-			source, target := importDirs(c.TB)
-			writeConvertedApplyDir(c.TB, source, fixture.files)
-			hashConvertedApplyDir(c.TB, source, fixture.format)
+			source, target := importDirs(c)
+			writeConvertedApplyDir(c, source, fixture.files)
+			hashConvertedApplyDir(c, source, fixture.format)
 
 			stdout, stderr, err := compatImport(source, target, fixture.format)
 
@@ -115,8 +112,8 @@ func TestCompatMigrateImport_UnhashedSourceStillImports(t *testing.T) {
 	for _, fixture := range convertedApplyFixtures() {
 		t.Run(fixture.format, func(t *testing.T) {
 			c := qt.New(t)
-			source, target := importDirs(c.TB)
-			writeConvertedApplyDir(c.TB, source, fixture.files)
+			source, target := importDirs(c)
+			writeConvertedApplyDir(c, source, fixture.files)
 
 			stdout, stderr, err := compatImport(source, target, fixture.format)
 
@@ -155,14 +152,14 @@ func TestCompatMigrateImport_DriftingSourceRefused(t *testing.T) {
 				{
 					name: "edited",
 					mutate: func(c *qt.C, dir string) {
-						appendToFile(c.TB, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
+						appendToFile(c, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
 					},
 					line: 2, file: fixture.covered, reason: "edited",
 				},
 				{
 					name: "added",
 					mutate: func(c *qt.C, dir string) {
-						writeConvertedApplyDir(c.TB, dir, map[string]string{fixture.extra: fixture.extraBody})
+						writeConvertedApplyDir(c, dir, map[string]string{fixture.extra: fixture.extraBody})
 					},
 					line: 3, file: fixture.extra, reason: "added",
 				},
@@ -177,9 +174,9 @@ func TestCompatMigrateImport_DriftingSourceRefused(t *testing.T) {
 			for _, state := range states {
 				t.Run(state.name, func(t *testing.T) {
 					c := qt.New(t)
-					source, target := importDirs(c.TB)
-					writeConvertedApplyDir(c.TB, source, fixture.files)
-					hashConvertedApplyDir(c.TB, source, fixture.format)
+					source, target := importDirs(c)
+					writeConvertedApplyDir(c, source, fixture.files)
+					hashConvertedApplyDir(c, source, fixture.format)
 					state.mutate(c, source)
 
 					stdout, stderr, err := compatImport(source, target, fixture.format)
@@ -188,7 +185,7 @@ func TestCompatMigrateImport_DriftingSourceRefused(t *testing.T) {
 					c.Assert(err.Error(), qt.Equals, "checksum mismatch")
 					c.Assert(stdout, qt.Equals, atlasChecksumMismatchStdout(state.line, state.file, state.reason))
 					c.Assert(stderr, qt.Equals, atlasChecksumMismatchStderr)
-					assertNothingImported(c.TB, target)
+					assertNothingImported(c, target)
 				})
 			}
 		})
@@ -232,9 +229,9 @@ func TestCompatMigrateImport_TamperedSourceIsNotLaunderedIntoACleanDirectory(t *
 	tamperedFiles := map[string]string{"1_init.sql": gooseLaunderTamperedBody}
 
 	// Leg 1: the honest directory.
-	cleanSource, cleanTarget := importDirs(c.TB)
-	writeConvertedApplyDir(c.TB, cleanSource, cleanFiles)
-	hashConvertedApplyDir(c.TB, cleanSource, format)
+	cleanSource, cleanTarget := importDirs(c)
+	writeConvertedApplyDir(c, cleanSource, cleanFiles)
+	hashConvertedApplyDir(c, cleanSource, format)
 	_, _, cleanErr := compatImport(cleanSource, cleanTarget, format)
 	c.Assert(cleanErr, qt.IsNil)
 	cleanSum, err := os.ReadFile(filepath.Join(cleanTarget, "atlas.sum"))
@@ -243,9 +240,9 @@ func TestCompatMigrateImport_TamperedSourceIsNotLaunderedIntoACleanDirectory(t *
 	// Leg 2: the same injection, but re-hashed, so the source is
 	// self-consistent and the import is legitimate. Its destination is what leg
 	// 3 must not be allowed to produce.
-	rehashedSource, rehashedTarget := importDirs(c.TB)
-	writeConvertedApplyDir(c.TB, rehashedSource, tamperedFiles)
-	hashConvertedApplyDir(c.TB, rehashedSource, format)
+	rehashedSource, rehashedTarget := importDirs(c)
+	writeConvertedApplyDir(c, rehashedSource, tamperedFiles)
+	hashConvertedApplyDir(c, rehashedSource, format)
 	_, _, rehashedErr := compatImport(rehashedSource, rehashedTarget, format)
 	c.Assert(rehashedErr, qt.IsNil)
 	tamperedSum, err := os.ReadFile(filepath.Join(rehashedTarget, "atlas.sum"))
@@ -257,19 +254,19 @@ func TestCompatMigrateImport_TamperedSourceIsNotLaunderedIntoACleanDirectory(t *
 	c.Assert(string(imported), qt.Contains, "CREATE TABLE pwned")
 
 	// Leg 3: the attacker's directory — injected, source sum left as it was.
-	forgedSource, forgedTarget := importDirs(c.TB)
-	writeConvertedApplyDir(c.TB, forgedSource, cleanFiles)
-	hashConvertedApplyDir(c.TB, forgedSource, format)
-	writeConvertedApplyDir(c.TB, forgedSource, tamperedFiles)
+	forgedSource, forgedTarget := importDirs(c)
+	writeConvertedApplyDir(c, forgedSource, cleanFiles)
+	hashConvertedApplyDir(c, forgedSource, format)
+	writeConvertedApplyDir(c, forgedSource, tamperedFiles)
 
 	stdout, stderr, forgedErr := compatImport(forgedSource, forgedTarget, format)
 
 	// The laundering, as an equality: without the gate this destination sum is
 	// leg 2's byte for byte, so the tampered source has been converted into a
 	// directory `migrate validate` calls clean.
-	c.Assert(destinationSum(c.TB, forgedTarget), qt.Not(qt.Equals), string(tamperedSum))
-	c.Assert(destinationSum(c.TB, forgedTarget), qt.Equals, "")
-	assertNothingImported(c.TB, forgedTarget)
+	c.Assert(destinationSum(c, forgedTarget), qt.Not(qt.Equals), string(tamperedSum))
+	c.Assert(destinationSum(c, forgedTarget), qt.Equals, "")
+	assertNothingImported(c, forgedTarget)
 	c.Assert(forgedErr, qt.IsNotNil)
 	c.Assert(forgedErr.Error(), qt.Equals, "checksum mismatch")
 	c.Assert(stdout, qt.Equals, atlasChecksumMismatchStdout(2, "1_init.sql", "edited"))
@@ -302,15 +299,15 @@ func TestCompatMigrateImport_ChecksumRefusalOutranksTheDestinationChecks(t *test
 		{
 			name: "destination already holds migrations",
 			prepare: func(c *qt.C, source, target string) string {
-				appendToFile(c.TB, filepath.Join(source, fixture.covered), "\n-- tampered\n")
-				writeConvertedApplyDir(c.TB, target, map[string]string{"9_existing.sql": "SELECT 1;\n"})
+				appendToFile(c, filepath.Join(source, fixture.covered), "\n-- tampered\n")
+				writeConvertedApplyDir(c, target, map[string]string{"9_existing.sql": "SELECT 1;\n"})
 				return target
 			},
 		},
 		{
 			name: "destination is the source directory",
 			prepare: func(c *qt.C, source, _ string) string {
-				appendToFile(c.TB, filepath.Join(source, fixture.covered), "\n-- tampered\n")
+				appendToFile(c, filepath.Join(source, fixture.covered), "\n-- tampered\n")
 				return source
 			},
 		},
@@ -319,9 +316,9 @@ func TestCompatMigrateImport_ChecksumRefusalOutranksTheDestinationChecks(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			source, target := importDirs(c.TB)
-			writeConvertedApplyDir(c.TB, source, fixture.files)
-			hashConvertedApplyDir(c.TB, source, fixture.format)
+			source, target := importDirs(c)
+			writeConvertedApplyDir(c, source, fixture.files)
+			hashConvertedApplyDir(c, source, fixture.format)
 
 			stdout, stderr, err := compatImport(source, tt.prepare(c, source, target), fixture.format)
 
@@ -343,9 +340,9 @@ func TestCompatMigrateImport_ChecksumRefusalOutranksTheDestinationChecks(t *test
 func TestCompatMigrateImport_MalformedSumRefused(t *testing.T) {
 	c := qt.New(t)
 	fixture := convertedApplyFixtures()[0]
-	source, target := importDirs(c.TB)
-	writeConvertedApplyDir(c.TB, source, fixture.files)
-	writeConvertedApplyDir(c.TB, source, map[string]string{"atlas.sum": "not a sum file\n"})
+	source, target := importDirs(c)
+	writeConvertedApplyDir(c, source, fixture.files)
+	writeConvertedApplyDir(c, source, map[string]string{"atlas.sum": "not a sum file\n"})
 
 	stdout, stderr, err := compatImport(source, target, fixture.format)
 
@@ -353,7 +350,7 @@ func TestCompatMigrateImport_MalformedSumRefused(t *testing.T) {
 	c.Assert(err.Error(), qt.Equals, "checksum mismatch")
 	c.Assert(stdout, qt.Equals, atlasChecksumFileNotFoundStdout)
 	c.Assert(stderr, qt.Equals, atlasChecksumMismatchStderr)
-	assertNothingImported(c.TB, target)
+	assertNothingImported(c, target)
 }
 
 // TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused covers the #991
@@ -386,7 +383,7 @@ func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 	}{
 		{
 			name: "hashed",
-			hash: func(c *qt.C, dir string) { hashConvertedApplyDir(c.TB, dir, fixture.format) },
+			hash: func(c *qt.C, dir string) { hashConvertedApplyDir(c, dir, fixture.format) },
 		},
 		{
 			name: "never hashed",
@@ -397,8 +394,8 @@ func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			source, target := importDirs(c.TB)
-			writeConvertedApplyDir(c.TB, source, fixture.files)
+			source, target := importDirs(c)
+			writeConvertedApplyDir(c, source, fixture.files)
 			tt.hash(c, source)
 			c.Assert(os.MkdirAll(filepath.Join(source, "2_evil.sql"), 0o755), qt.IsNil)
 
@@ -407,7 +404,7 @@ func TestCompatMigrateImport_CoveredEntryThatIsADirectoryRefused(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(stdout, qt.Equals, atlasChecksumFileNotFoundStdout)
 			c.Assert(stderr, qt.Contains, `read file "2_evil.sql": is a directory`)
-			assertNothingImported(c.TB, target)
+			assertNothingImported(c, target)
 		})
 	}
 }

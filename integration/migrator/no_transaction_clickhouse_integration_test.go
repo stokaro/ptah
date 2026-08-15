@@ -26,8 +26,8 @@ func TestNoTransactionCheckpoint_ClickHousePtahRevisionIsVisibleToObserver(t *te
 	conn := openNoTransactionClickHouse(t)
 	defer dbschema.CloseAndWarn(conn)
 	const revisionsTable = "ptah_issue_152_revisions"
-	dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
-	defer dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
+	dropNoTransactionClickHouseTable(c, conn, revisionsTable)
+	defer dropNoTransactionClickHouseTable(c, conn, revisionsTable)
 
 	progress := make([]clickHouseRevisionProgress, 0, 2)
 	observer := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
@@ -39,7 +39,7 @@ func TestNoTransactionCheckpoint_ClickHousePtahRevisionIsVisibleToObserver(t *te
 		progress = append(progress, snapshot)
 		return err
 	})
-	mig := newNoTransactionClickHouseMigrator(c.TB, conn, observer).
+	mig := newNoTransactionClickHouseMigrator(c, conn, observer).
 		WithMigrationsTable("", revisionsTable)
 
 	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
@@ -54,8 +54,8 @@ func TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver(t *t
 	conn := openNoTransactionClickHouse(t)
 	defer dbschema.CloseAndWarn(conn)
 	const revisionsTable = "ptah_issue_152_atlas_revisions"
-	dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
-	defer dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
+	dropNoTransactionClickHouseTable(c, conn, revisionsTable)
+	defer dropNoTransactionClickHouseTable(c, conn, revisionsTable)
 
 	progress := make([]clickHouseRevisionProgress, 0, 2)
 	observer := migrator.StatementObserverFunc(func(ctx context.Context, _ migrator.StatementEvent) error {
@@ -67,7 +67,7 @@ func TestNoTransactionCheckpoint_ClickHouseAtlasRevisionIsVisibleToObserver(t *t
 		progress = append(progress, snapshot)
 		return err
 	})
-	mig := newNoTransactionClickHouseMigrator(c.TB, conn, observer).
+	mig := newNoTransactionClickHouseMigrator(c, conn, observer).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable("", revisionsTable)
 
@@ -83,10 +83,10 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 	conn := openNoTransactionClickHouse(t)
 	defer dbschema.CloseAndWarn(conn)
 	const revisionsTable = "ptah_issue_152_atlas_repair"
-	dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
-	defer dropNoTransactionClickHouseTable(c.TB, conn, revisionsTable)
+	dropNoTransactionClickHouseTable(c, conn, revisionsTable)
+	defer dropNoTransactionClickHouseTable(c, conn, revisionsTable)
 
-	mig := newNoTransactionClickHouseMigrator(c.TB, conn, nil).
+	mig := newNoTransactionClickHouseMigrator(c, conn, nil).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable("", revisionsTable)
 	c.Assert(mig.MigrateUp(t.Context()), qt.IsNil)
@@ -118,11 +118,10 @@ func openNoTransactionClickHouse(t *testing.T) *dbschema.DatabaseConnection {
 }
 
 func newNoTransactionClickHouseMigrator(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	observer migrator.StatementObserver,
 ) *migrator.Migrator {
-	c := qt.New(tb)
 	c.Helper()
 	mig, err := migrator.NewFSMigrator(
 		conn,
@@ -140,8 +139,7 @@ func newNoTransactionClickHouseMigrator(
 	return mig
 }
 
-func dropNoTransactionClickHouseTable(tb testing.TB, conn *dbschema.DatabaseConnection, table string) {
-	c := qt.New(tb)
+func dropNoTransactionClickHouseTable(c *qt.C, conn *dbschema.DatabaseConnection, table string) {
 	c.Helper()
 	_, err := conn.ExecContext(c.Context(), "DROP TABLE IF EXISTS "+table+" SYNC")
 	c.Assert(err, qt.IsNil)

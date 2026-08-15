@@ -32,7 +32,7 @@ func TestNewFS_CleanReportUsesCanonicalJSON(t *testing.T) {
 	contents, err := fs.ReadFile(reportFS, lintartifact.FileName)
 	c.Assert(err, qt.IsNil)
 	report.Findings = []migrationlint.Finding{}
-	c.Assert(contents, qt.DeepEquals, canonicalJSON(c.TB, report))
+	c.Assert(contents, qt.DeepEquals, canonicalJSON(c, report))
 	c.Assert(string(contents), qt.Contains, `"findings": []`)
 }
 
@@ -45,7 +45,7 @@ func TestNewFS_FailedReportUsesCanonicalJSON(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	contents, err := fs.ReadFile(reportFS, lintartifact.FileName)
 	c.Assert(err, qt.IsNil)
-	c.Assert(contents, qt.DeepEquals, canonicalJSON(c.TB, report))
+	c.Assert(contents, qt.DeepEquals, canonicalJSON(c, report))
 	c.Assert(string(contents), qt.Contains, `"failed": true`)
 }
 
@@ -77,7 +77,7 @@ func TestPublishTo_AttachesCanonicalReportToExactSubject(t *testing.T) {
 	c.Assert(manifest.Layers[0].Annotations[ocispec.AnnotationTitle], qt.Equals, lintartifact.FileName)
 	contents, err := content.FetchAll(ctx, store, manifest.Layers[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(contents, qt.DeepEquals, canonicalJSON(c.TB, report))
+	c.Assert(contents, qt.DeepEquals, canonicalJSON(c, report))
 }
 
 func TestPublish_RejectsNilClient(t *testing.T) {
@@ -94,8 +94,7 @@ func TestPublish_RejectsNilClient(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "OCI client is required")
 }
 
-func canonicalJSON(tb testing.TB, report migrationlintreport.Report) []byte {
-	c := qt.New(tb)
+func canonicalJSON(c *qt.C, report migrationlintreport.Report) []byte {
 	c.Helper()
 	var output bytes.Buffer
 	err := migrationlintreport.Write(&output, migrationlintreport.FormatJSON, report)

@@ -19,7 +19,7 @@ import (
 
 func TestGenerateDiff_PreparePublicationRejectsSymlinkReplacement(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c.TB)
+	conn, opts := prepareGenerateDiffFaultTest(c)
 	previousSum, err := os.ReadFile(filepath.Join(opts.Dir, migratesum.AtlasFileName))
 	c.Assert(err, qt.IsNil)
 	targetPath := filepath.Join(c.TempDir(), "replacement.sql")
@@ -44,6 +44,6 @@ func TestGenerateDiff_PreparePublicationRejectsSymlinkReplacement(t *testing.T) 
 	sqlFiles, err := filepath.Glob(filepath.Join(opts.Dir, "*.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(sqlFiles, qt.HasLen, 1)
-	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
-	assertDiffDirectoryLockReleased(c.TB, opts.Dir)
+	assertSQLiteCleanupObjectCount(c, conn, 0)
+	assertDiffDirectoryLockReleased(c, opts.Dir)
 }

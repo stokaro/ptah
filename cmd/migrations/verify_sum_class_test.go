@@ -51,8 +51,7 @@ type unhashedFixture struct {
 // newUnhashedFixture writes a one-migration ptah directory with NO integrity
 // file. That absence is the whole point of the fixture, so nothing here calls
 // migratesum.
-func newUnhashedFixture(tb testing.TB) unhashedFixture {
-	c := qt.New(tb)
+func newUnhashedFixture(c *qt.C) unhashedFixture {
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -145,7 +144,7 @@ func TestVerifySum_RefusesADirectoryCarryingNoSum(t *testing.T) {
 	for _, verb := range verifySumClassVerbs() {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newUnhashedFixture(c.TB)
+			f := newUnhashedFixture(c)
 
 			out, err := verb.run(f, verifySumOn)
 
@@ -168,7 +167,7 @@ func TestVerifySum_AbsentLeavesAnUnhashedDirectoryUngated(t *testing.T) {
 	for _, verb := range verifySumClassVerbs() {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newUnhashedFixture(c.TB)
+			f := newUnhashedFixture(c)
 
 			out, err := verb.run(f, verifySumOff)
 
@@ -188,7 +187,7 @@ func TestVerifySum_RefusesADriftedHashedDirectoryToo(t *testing.T) {
 	for _, verb := range verifySumClassVerbs() {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newUnhashedFixture(c.TB)
+			f := newUnhashedFixture(c)
 			_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
 			c.Assert(err, qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(f.dir, "0000000001_init.down.sql"),
@@ -215,7 +214,7 @@ func TestVerifySum_RefusesADriftedHashedDirectoryToo(t *testing.T) {
 // this row is what caught that.
 func TestStatus_StaysUsableOnADriftedDirectoryWithoutTheFlag(t *testing.T) {
 	c := qt.New(t)
-	f := newUnhashedFixture(c.TB)
+	f := newUnhashedFixture(c)
 	_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(f.dir, "0000000001_init.down.sql"),
@@ -274,7 +273,7 @@ func TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newUnhashedFixture(c.TB)
+			f := newUnhashedFixture(c)
 			_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
 			c.Assert(err, qt.IsNil)
 

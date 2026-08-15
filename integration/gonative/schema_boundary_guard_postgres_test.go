@@ -350,7 +350,7 @@ func TestPostgreSQLSchemaBoundaryGuardIntegration(t *testing.T) {
 	for _, tc := range boundaryCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			observed := observeBoundaryCase(c.TB, dsn, tc)
+			observed := observeBoundaryCase(c, dsn, tc)
 
 			t.Run("scope: reader and document agree on which schemas exist", func(t *testing.T) {
 				c := qt.New(t)
@@ -404,11 +404,10 @@ type boundaryObservation struct {
 
 // observeBoundaryCase provisions the case's throwaway database, then runs both
 // round trips against it.
-func observeBoundaryCase(tb testing.TB, dsn string, tc boundaryCase) boundaryObservation {
-	c := qt.New(tb)
+func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservation {
 	c.Helper()
 
-	dbURL := newBoundaryDatabase(c.TB, dsn, tc)
+	dbURL := newBoundaryDatabase(c, dsn, tc)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
@@ -421,16 +420,16 @@ func observeBoundaryCase(tb testing.TB, dsn string, tc boundaryCase) boundaryObs
 	// tool it stands in for refuses, and tolerates names Ptah does not model.
 	// Everything else is the same library call, so a difference between the
 	// two rows is a difference those options caused.
-	nativeDocument := boundaryInspect(c.TB, dbURL, false)
-	compatDocument := boundaryInspect(c.TB, dbURL, true)
+	nativeDocument := boundaryInspect(c, dbURL, false)
+	compatDocument := boundaryInspect(c, dbURL, true)
 
 	return boundaryObservation{
 		live:          dbschematogo.ConvertDBSchemaToGoSchema(live),
-		document:      boundaryParseBack(c.TB, nativeDocument, false),
+		document:      boundaryParseBack(c, nativeDocument, false),
 		defaultSchema: conn.Info().Schema,
-		role:          boundaryConnectedRole(c.TB, dbURL),
-		nativePlan:    boundaryApplyBack(c.TB, conn, nativeDocument, false),
-		compatPlan:    boundaryApplyBack(c.TB, conn, compatDocument, true),
+		role:          boundaryConnectedRole(c, dbURL),
+		nativePlan:    boundaryApplyBack(c, conn, nativeDocument, false),
+		compatPlan:    boundaryApplyBack(c, conn, compatDocument, true),
 	}
 }
 
@@ -441,8 +440,7 @@ func observeBoundaryCase(tb testing.TB, dsn string, tc boundaryCase) boundaryObs
 // The seed runs through a separate connection that is closed again before the
 // URL under test is used: that is the real order, since a database is already
 // in its state when a run reaches it.
-func newBoundaryDatabase(tb testing.TB, dsn string, tc boundaryCase) string {
-	c := qt.New(tb)
+func newBoundaryDatabase(c *qt.C, dsn string, tc boundaryCase) string {
 	c.Helper()
 
 	admin, err := sql.Open("pgx", dsn)
@@ -469,7 +467,7 @@ func newBoundaryDatabase(tb testing.TB, dsn string, tc boundaryCase) string {
 	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + name
 	parsed.RawPath = ""
-	boundarySeed(c.TB, parsed.String(), tc.seed)
+	boundarySeed(c, parsed.String(), tc.seed)
 
 	// RawQuery is assigned rather than rebuilt through url.Values so a case can
 	// spell its parameter exactly as an operator would on a command line.
@@ -477,8 +475,7 @@ func newBoundaryDatabase(tb testing.TB, dsn string, tc boundaryCase) string {
 	return parsed.String()
 }
 
-func boundarySeed(tb testing.TB, dbURL string, statements []string) {
-	c := qt.New(tb)
+func boundarySeed(c *qt.C, dbURL string, statements []string) {
 	c.Helper()
 
 	seed, err := sql.Open("pgx", dbURL)
@@ -505,8 +502,7 @@ func boundaryQuery(base, extra string) string {
 // boundaryConnectedRole reports the role the fixture tables belong to. It is
 // asked of the database rather than parsed out of the URL because the URL may
 // carry no user at all and leave it to the environment.
-func boundaryConnectedRole(tb testing.TB, dbURL string) string {
-	c := qt.New(tb)
+func boundaryConnectedRole(c *qt.C, dbURL string) string {
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -520,8 +516,7 @@ func boundaryConnectedRole(tb testing.TB, dbURL string) string {
 
 // boundaryInspect renders the live database, through the same entry point
 // cmd/atlas/schema_inspect.go and cmd/schema/inspect.go both call.
-func boundaryInspect(tb testing.TB, dbURL string, compatibility bool) string {
-	c := qt.New(tb)
+func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 	c.Helper()
 
 	rendered, err := atlasschema.InspectSource(c.Context(), atlasschema.InspectSourceOptions{
@@ -543,11 +538,10 @@ func boundaryInspect(tb testing.TB, dbURL string, compatibility bool) string {
 // boundaryParseBack reads an inspected document back into Ptah's IR. A parse
 // failure is property 1 failing in its loudest form -- Ptah unable to read its
 // own output, which is what #1266 was.
-func boundaryParseBack(tb testing.TB, document string, compatibility bool) *goschema.Database {
-	c := qt.New(tb)
+func boundaryParseBack(c *qt.C, document string, compatibility bool) *goschema.Database {
 	c.Helper()
 
-	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c.TB, document)}, schemafile.Options{
+	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
 		Dialect:               "postgres",
 		IgnoreUnknownHCLNames: compatibility,
 	})
@@ -559,12 +553,11 @@ func boundaryParseBack(tb testing.TB, document string, compatibility bool) *gosc
 // returns the statements, through the same entry point
 // cmd/atlas/schema_apply.go and cmd/schema/apply.go both call. An empty result
 // is property 2 holding.
-func boundaryApplyBack(tb testing.TB, conn *dbschema.DatabaseConnection, document string, compatibility bool) []string {
-	c := qt.New(tb)
+func boundaryApplyBack(c *qt.C, conn *dbschema.DatabaseConnection, document string, compatibility bool) []string {
 	c.Helper()
 
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		ToURLs: []string{"file://" + boundaryDocumentFile(c.TB, document)},
+		ToURLs: []string{"file://" + boundaryDocumentFile(c, document)},
 		// Nothing is executed. The plan is the observation, and one of the
 		// plans below would drop an extension.
 		DryRun:                true,
@@ -574,8 +567,7 @@ func boundaryApplyBack(tb testing.TB, conn *dbschema.DatabaseConnection, documen
 	return boundaryStripComments(plan.Statements())
 }
 
-func boundaryDocumentFile(tb testing.TB, document string) string {
-	c := qt.New(tb)
+func boundaryDocumentFile(c *qt.C, document string) string {
 	c.Helper()
 
 	path := filepath.Join(c.TempDir(), "inspected.hcl")

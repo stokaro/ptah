@@ -27,14 +27,12 @@ func execute(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
-func writeLintTestFile(tb testing.TB, dir, name, content string) {
-	c := qt.New(tb)
+func writeLintTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func runGit(tb testing.TB, dir string, args ...string) {
-	c := qt.New(tb)
+func runGit(c *qt.C, dir string, args ...string) {
 	c.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -101,8 +99,8 @@ func TestNewLintCommand_Creation(t *testing.T) {
 func TestRunLint_DefaultTextKeepsNativePtahDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "0000000001_drop.up.sql", "DROP TABLE users;\n")
-	writeLintTestFile(c.TB, dir, "0000000001_drop.down.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "0000000001_drop.up.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "0000000001_drop.down.sql", "CREATE TABLE users (id INT);\n")
 
 	stdout, stderr, err := execute(
 		"--dir", dir,
@@ -146,16 +144,16 @@ func distinctSARIFFingerprints(results []sarifResultForTest) map[string]struct{}
 func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "0000000001_init.up.sql",
+	writeLintTestFile(c, dir, "0000000001_init.up.sql",
 		"CREATE TABLE mid (id INT);\nCREATE TABLE zeta (id INT);\nCREATE TABLE alpha (id INT);\n")
-	writeLintTestFile(c.TB, dir, "0000000001_init.down.sql", "DROP TABLE alpha;\n")
-	writeLintTestFile(c.TB, dir, "0000000002_drop.up.sql", "DROP TABLE zeta, alpha, mid;\n")
-	writeLintTestFile(c.TB, dir, "0000000002_drop.down.sql", "CREATE TABLE mid (id INT);\n")
+	writeLintTestFile(c, dir, "0000000001_init.down.sql", "DROP TABLE alpha;\n")
+	writeLintTestFile(c, dir, "0000000002_drop.up.sql", "DROP TABLE zeta, alpha, mid;\n")
+	writeLintTestFile(c, dir, "0000000002_drop.down.sql", "CREATE TABLE mid (id INT);\n")
 
 	stdout, _, err := execute("--dir", dir, "--dir-format", "ptah", "--format", "sarif", "--fail-on", "none")
 
 	c.Assert(err, qt.IsNil)
-	assertSARIFSchemaValid(c.TB, stdout)
+	assertSARIFSchemaValid(c, stdout)
 	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	results := report.Runs[0].Results
@@ -214,8 +212,8 @@ func TestRunLint_SARIFFormat(t *testing.T) {
 	stdout, _, err := execute("--dir", "testdata/bad", "--format", "sarif", "--fail-on", "none")
 
 	c.Assert(err, qt.IsNil)
-	assertSARIFSchemaValid(c.TB, stdout)
-	assertGitHubCodeScanningSARIF(c.TB, stdout)
+	assertSARIFSchemaValid(c, stdout)
+	assertGitHubCodeScanningSARIF(c, stdout)
 	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Version, qt.Equals, "2.1.0")
@@ -242,8 +240,8 @@ func TestRunLint_SARIFGoldenOutput(t *testing.T) {
 	stdout, _, err := execute("--dir", "testdata/sarif/migrations", "--format", "sarif", "--fail-on", "none")
 
 	c.Assert(err, qt.IsNil)
-	assertSARIFSchemaValid(c.TB, stdout)
-	assertGitHubCodeScanningSARIF(c.TB, stdout)
+	assertSARIFSchemaValid(c, stdout)
+	assertGitHubCodeScanningSARIF(c, stdout)
 	expected, err := os.ReadFile("testdata/sarif/expected.sarif.json")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, string(expected))
@@ -255,10 +253,10 @@ func TestRunLint_SARIFCleanOutputValidatesForUpload(t *testing.T) {
 	stdout, _, err := execute("--dir", "testdata/clean", "--format", "sarif", "--fail-on", "none")
 
 	c.Assert(err, qt.IsNil)
-	assertSARIFSchemaValid(c.TB, stdout)
+	assertSARIFSchemaValid(c, stdout)
 	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	assertSARIFCommonGitHubFields(c.TB, report)
+	assertSARIFCommonGitHubFields(c, report)
 	c.Assert(report.Runs[0].Tool.Driver.Rules, qt.HasLen, 0)
 	c.Assert(report.Runs[0].Results, qt.HasLen, 0)
 }
@@ -290,10 +288,10 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
-	writeLintTestFile(c.TB, dir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
-	writeLintTestFile(c.TB, dir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	writeLintTestFile(c, dir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, dir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	writeLintTestFile(c, dir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 
 	stdout, _, err := execute("--dir", dir, "--format", "json", "--fail-on", "none", "--latest", "1")
 
@@ -312,10 +310,10 @@ func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testin
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -349,7 +347,7 @@ func TestRunLint_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
 	root := t.TempDir()
 	migrationsDir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -373,7 +371,7 @@ func TestRunLint_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) {
 	root := t.TempDir()
 	migrationsDir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "1.sql", "CREATE TABLE users (id INT);\n")
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -398,19 +396,19 @@ func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	runGit(c.TB, dir, "init", "-b", "master")
-	runGit(c.TB, dir, "config", "user.email", "ptah@example.test")
-	runGit(c.TB, dir, "config", "user.name", "Ptah Test")
-	runGit(c.TB, dir, "config", "commit.gpgsign", "false")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "base")
-	runGit(c.TB, dir, "checkout", "-b", "feature")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "feature")
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Chdir(dir), qt.IsNil)
@@ -435,17 +433,17 @@ func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *test
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	runGit(c.TB, dir, "init", "-b", "master")
-	runGit(c.TB, dir, "config", "user.email", "ptah@example.test")
-	runGit(c.TB, dir, "config", "user.name", "Ptah Test")
-	runGit(c.TB, dir, "config", "commit.gpgsign", "false")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "base")
-	runGit(c.TB, dir, "checkout", "-b", "feature")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -458,8 +456,8 @@ func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *test
   }
 }
 `), 0o600), qt.IsNil)
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "feature")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Chdir(dir), qt.IsNil)
@@ -484,18 +482,18 @@ func TestRunLint_GitBaseRejectsUnversionedSQLFiles(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	runGit(c.TB, dir, "init", "-b", "master")
-	runGit(c.TB, dir, "config", "user.email", "ptah@example.test")
-	runGit(c.TB, dir, "config", "user.name", "Ptah Test")
-	runGit(c.TB, dir, "config", "commit.gpgsign", "false")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_base.down.sql", "DROP TABLE users;\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "base")
-	runGit(c.TB, dir, "checkout", "-b", "feature")
-	writeLintTestFile(c.TB, migrationsDir, "misnamed.sql", "DROP TABLE users;\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "feature")
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_base.down.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "misnamed.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Chdir(dir), qt.IsNil)
@@ -515,17 +513,17 @@ func TestRunLint_GitBaseHonorsExplicitAtlasDirFormat(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	runGit(c.TB, dir, "init", "-b", "master")
-	runGit(c.TB, dir, "config", "user.email", "ptah@example.test")
-	runGit(c.TB, dir, "config", "user.name", "Ptah Test")
-	runGit(c.TB, dir, "config", "commit.gpgsign", "false")
-	writeLintTestFile(c.TB, migrationsDir, "1_base.sql", "CREATE TABLE users (id INT);\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "base")
-	runGit(c.TB, dir, "checkout", "-b", "feature")
-	writeLintTestFile(c.TB, migrationsDir, "2_drop_users.sql", "DROP TABLE users;\n")
-	runGit(c.TB, dir, "add", ".")
-	runGit(c.TB, dir, "commit", "-m", "feature")
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "1_base.sql", "CREATE TABLE users (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "2_drop_users.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Chdir(dir), qt.IsNil)
@@ -544,7 +542,7 @@ func TestRunLint_GitBaseHonorsExplicitAtlasDirFormat(t *testing.T) {
 func TestRunLint_GitBaseRejectsOptionShapedRef(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
 
 	_, stderr, err := execute("--dir", dir, "--git-base=-c")
 
@@ -557,7 +555,7 @@ func TestRunLint_ProjectConfigGitBaseRejectsOptionShapedRef(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -595,9 +593,9 @@ func TestRunLint_LatestRejectsZero(t *testing.T) {
 func TestRunLint_LatestRejectsUnversionedSQLFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "0000000002_new.up.sql", "CREATE TABLE users (id INT);\n")
-	writeLintTestFile(c.TB, dir, "0000000002_new.down.sql", "DROP TABLE users;\n")
-	writeLintTestFile(c.TB, dir, "misnamed.sql", "DROP TABLE hidden;\n")
+	writeLintTestFile(c, dir, "0000000002_new.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "0000000002_new.down.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "misnamed.sql", "DROP TABLE hidden;\n")
 
 	_, stderr, err := execute("--dir", dir, "--latest", "1")
 
@@ -609,8 +607,8 @@ func TestRunLint_LatestRejectsUnversionedSQLFiles(t *testing.T) {
 func TestRunLint_LatestHonorsExplicitAtlasDirFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "1_init.sql", "CREATE TABLE users (id INT);\n")
-	writeLintTestFile(c.TB, dir, "2_drop_users.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "1_init.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "2_drop_users.sql", "DROP TABLE users;\n")
 
 	_, stderr, err := execute("--dir", dir, "--dir-format", "atlas", "--latest", "1")
 
@@ -661,8 +659,8 @@ func TestRunLint_AtlasProjectConfigDestructivePolicyDowngradesSeverity(t *testin
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_drop_column.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_drop_column.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_drop_column.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_drop_column.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -698,8 +696,8 @@ func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testin
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_index.up.sql", "CREATE INDEX user_email_idx ON users (email);\n")
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_index.down.sql", "DROP INDEX user_email_idx;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_index.up.sql", "CREATE INDEX user_email_idx ON users (email);\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_index.down.sql", "DROP INDEX user_email_idx;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   lint {
     concurrent_index {
@@ -740,10 +738,10 @@ func TestRunLint_AtlasProjectConfigPolicyAffectsSARIFLevels(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_policy_levels.up.sql", `ALTER TABLE users DROP COLUMN legacy;
+	writeLintTestFile(c, migrationsDir, "0000000001_policy_levels.up.sql", `ALTER TABLE users DROP COLUMN legacy;
 CREATE INDEX user_email_idx ON users (email);
 `)
-	writeLintTestFile(c.TB, migrationsDir, "0000000001_policy_levels.down.sql", `DROP INDEX user_email_idx;
+	writeLintTestFile(c, migrationsDir, "0000000001_policy_levels.down.sql", `DROP INDEX user_email_idx;
 ALTER TABLE users ADD COLUMN legacy TEXT;
 `)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
@@ -920,7 +918,7 @@ func TestRunLint_LocalSourceValidationPrecedence(t *testing.T) {
 	c.Assert(os.Mkdir(validDir, 0o700), qt.IsNil)
 	invalidMetadataDir := filepath.Join(root, "invalid-metadata")
 	c.Assert(os.Mkdir(invalidMetadataDir, 0o700), qt.IsNil)
-	writeLintTestFile(c.TB, invalidMetadataDir, "ATLAS.SUM", "metadata\n")
+	writeLintTestFile(c, invalidMetadataDir, "ATLAS.SUM", "metadata\n")
 
 	tests := []struct {
 		name string
@@ -1007,8 +1005,7 @@ func TestRunLint_JSONReportsEmptyFindingsAsArray(t *testing.T) {
 		qt.Commentf("an empty findings list must serialize as [], not null; got: %s", stdout))
 }
 
-func assertSARIFSchemaValid(tb testing.TB, data string) {
-	c := qt.New(tb)
+func assertSARIFSchemaValid(c *qt.C, data string) {
 	c.Helper()
 
 	compiler := jsonschema.NewCompiler()
@@ -1021,13 +1018,12 @@ func assertSARIFSchemaValid(tb testing.TB, data string) {
 	c.Assert(schema.Validate(doc), qt.IsNil)
 }
 
-func assertGitHubCodeScanningSARIF(tb testing.TB, data string) {
-	c := qt.New(tb)
+func assertGitHubCodeScanningSARIF(c *qt.C, data string) {
 	c.Helper()
 
 	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(data), &report), qt.IsNil)
-	assertSARIFCommonGitHubFields(c.TB, report)
+	assertSARIFCommonGitHubFields(c, report)
 	run := report.Runs[0]
 	c.Assert(run.Tool.Driver.Rules, qt.Not(qt.HasLen), 0)
 
@@ -1060,8 +1056,7 @@ func assertGitHubCodeScanningSARIF(tb testing.TB, data string) {
 	}
 }
 
-func assertSARIFCommonGitHubFields(tb testing.TB, report sarifForTest) {
-	c := qt.New(tb)
+func assertSARIFCommonGitHubFields(c *qt.C, report sarifForTest) {
 	c.Helper()
 
 	c.Assert(report.Version, qt.Equals, "2.1.0")

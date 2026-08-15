@@ -55,7 +55,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	ordersTarget := cockroachIndexIdentityOrdersTarget()
-	live := readCockroachIndexIdentitySchema(c.TB, t, dsn)
+	live := readCockroachIndexIdentitySchema(c, t, dsn)
 	diff := schemadiff.CompareWithDialect(ordersTarget, live, platform.CockroachDB)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
@@ -73,7 +73,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(statements[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("execute CockroachDB index removal: %s", statements[0]))
 
-	live = readCockroachIndexIdentitySchema(c.TB, t, dsn)
+	live = readCockroachIndexIdentitySchema(c, t, dsn)
 	removedDiff := schemadiff.CompareWithDialect(ordersTarget, live, platform.CockroachDB)
 	c.Assert(removedDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removedDiff.IndexRemovals(), qt.HasLen, 0)
@@ -97,7 +97,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(statements[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("execute CockroachDB index addition: %s", statements[0]))
 
-	live = readCockroachIndexIdentitySchema(c.TB, t, dsn)
+	live = readCockroachIndexIdentitySchema(c, t, dsn)
 	finalDiff := schemadiff.CompareWithDialect(bothTarget, live, platform.CockroachDB)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
@@ -114,8 +114,7 @@ func cleanupCockroachIndexIdentity(db *sql.DB) {
 	_, _ = db.Exec(`DROP TABLE IF EXISTS ` + cockroachIndexIdentityUsersTable + ` CASCADE`)
 }
 
-func readCockroachIndexIdentitySchema(tb testing.TB, t *testing.T, dsn string) *dbschematypes.DBSchema {
-	c := qt.New(tb)
+func readCockroachIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

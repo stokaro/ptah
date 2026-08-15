@@ -26,15 +26,13 @@ func redactAtlasLintDurations(s string) string {
 	return atlasLintTotalDurationRe.ReplaceAllString(s, "${1}DUR")
 }
 
-func writeAtlasLintFile(tb testing.TB, dir, name, body string) {
-	c := qt.New(tb)
+func writeAtlasLintFile(c *qt.C, dir, name, body string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 }
 
-func runAtlasMigrateLint(tb testing.TB, args ...string) (stdout, stderr string, err error) {
-	c := qt.New(tb)
+func runAtlasMigrateLint(c *qt.C, args ...string) (stdout, stderr string, err error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -49,9 +47,9 @@ func TestCompatCommand_MigrateLintDefaultTextClean(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "clean.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -71,10 +69,10 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "destructive.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "DROP TABLE users;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "DROP TABLE users;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -98,10 +96,10 @@ func TestCompatCommand_MigrateLintDefaultTextDropColumn(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "drop-column.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE \"Users\" (id int PRIMARY KEY, \"Legacy\" text);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE \"Users\" DROP COLUMN \"Legacy\";\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int PRIMARY KEY, \"Legacy\" text);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" DROP COLUMN \"Legacy\";\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -125,10 +123,10 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsDropColumnAtMeasuredBoundary(t
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "drop-column-wrap.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, c1234567890123456 text);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE users DROP COLUMN c1234567890123456;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, c1234567890123456 text);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users DROP COLUMN c1234567890123456;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -154,10 +152,10 @@ func TestCompatCommand_MigrateLintDefaultTextNormalizesTypeAndIdentifiers(t *tes
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "normalize.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE \"Users\" (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE \"Users\" ADD COLUMN \"Display Name\" VARCHAR(255) NOT NULL;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" ADD COLUMN \"Display Name\" VARCHAR(255) NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -180,10 +178,10 @@ func TestCompatCommand_MigrateLintDefaultTextCollectsFixesAfterEveryAnalyzerGrou
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "mixed-groups.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, legacy text);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE users DROP COLUMN legacy;\nALTER TABLE users ADD COLUMN name TEXT NOT NULL;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, legacy text);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users DROP COLUMN legacy;\nALTER TABLE users ADD COLUMN name TEXT NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -210,10 +208,10 @@ func TestCompatCommand_MigrateLintDefaultTextLabelsUnmeasuredTypeCopy(t *testing
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "unmeasured-type.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE users ADD COLUMN label CHARACTER VARYING(255) NOT NULL;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN label CHARACTER VARYING(255) NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "L1 [MF103]:")
@@ -224,10 +222,10 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "wrap.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE abcdefghijklmnopqrs (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "DROP TABLE abcdefghijklmnopqrs;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE abcdefghijklmnopqrs (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "DROP TABLE abcdefghijklmnopqrs;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -351,11 +349,11 @@ func TestCompatCommand_MigrateLintDefaultTextClassifiesRenames(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "rename.db")
-			writeAtlasLintFile(c.TB, dir, "1.sql", test.base)
-			writeAtlasLintFile(c.TB, dir, "2.sql", test.rename)
+			writeAtlasLintFile(c, dir, "1.sql", test.base)
+			writeAtlasLintFile(c, dir, "2.sql", test.rename)
 
 			stdout, stderr, err := runAtlasMigrateLint(
-				c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+				c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, test.exitCode)
 			c.Assert(stderr, qt.Equals, "")
@@ -368,10 +366,10 @@ func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) 
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "warning.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -399,10 +397,10 @@ func TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "add-notnull.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n\n/* Adding a not-null column without default to a table created in this file should not report. */\nALTER TABLE users ADD COLUMN c1 int NOT NULL;\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n\nALTER TABLE users ADD COLUMN c3 int NOT NULL DEFAULT 1;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n\n/* Adding a not-null column without default to a table created in this file should not report. */\nALTER TABLE users ADD COLUMN c1 int NOT NULL;\n")
+	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n\nALTER TABLE users ADD COLUMN c3 int NOT NULL DEFAULT 1;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "2")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "2")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -429,10 +427,10 @@ func TestCompatCommand_MigrateLintDefaultTextInlineSuppressed(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "suppressed.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\nCREATE TABLE pets (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql", "\n-- atlas:nolint\nALTER TABLE users ADD COLUMN name text NOT NULL;\n\n-- atlas:nolint\nDROP TABLE pets;\n")
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\nCREATE TABLE pets (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql", "\n-- atlas:nolint\nALTER TABLE users ADD COLUMN name text NOT NULL;\n\n-- atlas:nolint\nDROP TABLE pets;\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -480,13 +478,13 @@ func TestCompatCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(atlasProjectLintLogConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://migrations", "--env", "log_name")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "log_name")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, "3.sql\n")
@@ -496,13 +494,13 @@ func TestCompatCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
-	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(atlasProjectLintLogConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://migrations", "--env", "log_count")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "log_count")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, "2\n")
@@ -524,11 +522,11 @@ func TestCompatCommand_MigrateLintToleratesUnreadableTxMode(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "txmode.db")
-	writeAtlasLintFile(c.TB, dir, "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c.TB, dir, "2.sql",
+	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c, dir, "2.sql",
 		"-- atlas:txmode unknown\n\nCREATE TABLE pets (id int);\n")
 
-	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(stdout, qt.Contains, "analyzing version 2")

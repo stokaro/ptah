@@ -141,7 +141,7 @@ type User struct {
 			defer testutil.RemoveTempFile(t, tempFile)
 
 			// Parse the file
-			database := mustParseFile(c.TB, tempFile)
+			database := mustParseFile(c, tempFile)
 
 			// Check RLS policies
 			c.Assert(database.RLSPolicies, qt.HasLen, tt.expectedPolicies,

@@ -30,8 +30,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
-	migrationsDir := writeLatestZeroAtlasDir(c.TB)
+	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	migrationsDir := writeLatestZeroAtlasDir(c)
 
 	c.Run("zero without Git has no usable selector", func(c *qt.C) {
 		stdout, stderr, err := runLatestZeroCompatProcess(
@@ -44,7 +44,7 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 			"--latest", "0",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "Error: --latest or --git-base is required\n")
 	})
@@ -62,7 +62,7 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 			"--git-dir", c.TempDir(),
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Contains, "Error: find git repository root:")
 		c.Assert(stderr, qt.Not(qt.Contains), "mutually exclusive")
@@ -95,7 +95,7 @@ env "ci" {
 			"--latest", "0",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "Error: --git-base \"-unsafe\" is not a safe Git ref\n")
 	})
@@ -129,7 +129,7 @@ env "ci" {
 			"--git-base", "HEAD",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "Error: --latest and --git-base are mutually exclusive\n")
 	})
@@ -175,8 +175,7 @@ func TestMigrationLintReportAtlasExplicitZeroAllowsExplicitGitSelectorE2E(t *tes
 	c.Assert(err, qt.ErrorMatches, `find git repository root: .*`)
 }
 
-func writeLatestZeroAtlasDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeLatestZeroAtlasDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(

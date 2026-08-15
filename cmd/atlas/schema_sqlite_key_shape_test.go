@@ -54,8 +54,7 @@ import (
 
 // inspectSQLiteFormat runs `atlas schema inspect` over dbPath with an explicit
 // --format template and returns what reached stdout.
-func inspectSQLiteFormat(tb testing.TB, dbPath, format string) string {
-	c := qt.New(tb)
+func inspectSQLiteFormat(c *qt.C, dbPath, format string) string {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -73,8 +72,7 @@ func inspectSQLiteFormat(tb testing.TB, dbPath, format string) string {
 
 // sqliteIndexNames returns every index name the database reports, in name
 // order, so a replayed dump can be compared with the source it came from.
-func sqliteIndexNames(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func sqliteIndexNames(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -98,8 +96,7 @@ func sqliteIndexNames(tb testing.TB, dbPath string) []string {
 }
 
 // sqliteTableDDL returns the CREATE TABLE text SQLite persisted for table.
-func sqliteTableDDL(tb testing.TB, dbPath, table string) string {
-	c := qt.New(tb)
+func sqliteTableDDL(c *qt.C, dbPath, table string) string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -119,8 +116,7 @@ func sqliteTableDDL(tb testing.TB, dbPath, table string) string {
 // returns the combined output. The dev URL names a path inside the test's own
 // directory: `sqlite://dev?mode=memory` materializes a file called `dev` in the
 // working directory, which for a package test is the package source tree.
-func applySQLiteHCL(tb testing.TB, dbPath, hclPath string) string {
-	c := qt.New(tb)
+func applySQLiteHCL(c *qt.C, dbPath, hclPath string) string {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -209,10 +205,10 @@ func TestSchemaApplySQLiteKeyColumnKeepsDeclaredNullability(t *testing.T) {
 			c.Assert(os.WriteFile(hclPath, []byte(test.hcl), 0o600), qt.IsNil)
 			dbPath := filepath.Join(dir, "main.db")
 
-			applySQLiteHCL(c.TB, dbPath, hclPath)
+			applySQLiteHCL(c, dbPath, hclPath)
 
-			ddl := sqliteTableDDL(c.TB, dbPath, "users")
-			c.Assert(keyColumnIsNotNull(c.TB, dbPath, "users", "id"), qt.Equals, test.wantNotNull,
+			ddl := sqliteTableDDL(c, dbPath, "users")
+			c.Assert(keyColumnIsNotNull(c, dbPath, "users", "id"), qt.Equals, test.wantNotNull,
 				qt.Commentf("persisted DDL: %s", ddl))
 		})
 	}
@@ -221,8 +217,7 @@ func TestSchemaApplySQLiteKeyColumnKeepsDeclaredNullability(t *testing.T) {
 // keyColumnIsNotNull reports what SQLite itself says about the column, read
 // from pragma table_info rather than from the DDL text, so the assertion is
 // about the database that was built and not about how it was spelled.
-func keyColumnIsNotNull(tb testing.TB, dbPath, table, column string) bool {
-	c := qt.New(tb)
+func keyColumnIsNotNull(c *qt.C, dbPath, table, column string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -269,15 +264,15 @@ func TestSchemaInspectSQLiteSQLReplaysTheSourceIndexSet(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			sourcePath := filepath.Join(dir, "source.db")
-			seedSQLiteSchema(c.TB, sourcePath, test.schemaSQL)
-			c.Assert(sqliteIndexNames(c.TB, sourcePath), qt.DeepEquals, test.wantNames,
+			seedSQLiteSchema(c, sourcePath, test.schemaSQL)
+			c.Assert(sqliteIndexNames(c, sourcePath), qt.DeepEquals, test.wantNames,
 				qt.Commentf("fixture does not have the index set it claims"))
 
-			rendered := inspectSQLiteFormat(c.TB, sourcePath, "{{ sql . }}")
+			rendered := inspectSQLiteFormat(c, sourcePath, "{{ sql . }}")
 
 			replayPath := filepath.Join(dir, "replay.db")
-			seedSQLiteSchema(c.TB, replayPath, rendered)
-			c.Assert(sqliteIndexNames(c.TB, replayPath), qt.DeepEquals, test.wantNames,
+			seedSQLiteSchema(c, replayPath, rendered)
+			c.Assert(sqliteIndexNames(c, replayPath), qt.DeepEquals, test.wantNames,
 				qt.Commentf("rendered SQL: %s", rendered))
 		})
 	}
@@ -360,11 +355,11 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "nullability.db")
-			seedSQLiteSchema(c.TB, dbPath, test.schemaSQL)
+			seedSQLiteSchema(c, dbPath, test.schemaSQL)
 
-			rendered := inspectSQLiteFormat(c.TB, dbPath, "{{ json . }}")
+			rendered := inspectSQLiteFormat(c, dbPath, "{{ json . }}")
 
-			c.Assert(inspectJSONNullability(c.TB, rendered, "t"), qt.DeepEquals, test.wantNullable,
+			c.Assert(inspectJSONNullability(c, rendered, "t"), qt.DeepEquals, test.wantNullable,
 				qt.Commentf("rendered JSON: %s", rendered))
 		})
 	}
@@ -373,8 +368,7 @@ func TestSchemaInspectSQLiteJSONNullabilityMatchesTheCatalog(t *testing.T) {
 // inspectJSONNullability decodes the `{{ json . }}` document and returns each
 // column's nullability for one table, reading an absent `null` key as NOT NULL
 // the way the pinned binary writes it.
-func inspectJSONNullability(tb testing.TB, document, table string) map[string]bool {
-	c := qt.New(tb)
+func inspectJSONNullability(c *qt.C, document, table string) map[string]bool {
 	c.Helper()
 	var report struct {
 		Schemas []struct {

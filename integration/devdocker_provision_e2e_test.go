@@ -42,8 +42,7 @@ const devDockerTestURL = "docker://postgres/16-alpine/ptahdev"
 // because the question being asked is whether the RUNTIME still holds a
 // container -- a leak is precisely the case where the package believes it does
 // not.
-func devDockerCensus(tb testing.TB) []string {
-	c := qt.New(tb)
+func devDockerCensus(c *qt.C) []string {
 	c.Helper()
 	out, err := exec.Command(
 		"docker", "ps", "--all", "--quiet", "--filter", "label="+devdocker.ContainerLabel,
@@ -55,8 +54,7 @@ func devDockerCensus(tb testing.TB) []string {
 
 // onlyNewContainer returns the single container the census gained, failing if
 // the two lists differ by anything else.
-func onlyNewContainer(tb testing.TB, before, during []string) string {
-	c := qt.New(tb)
+func onlyNewContainer(c *qt.C, before, during []string) string {
 	c.Helper()
 	added := slices.DeleteFunc(slices.Clone(during), func(id string) bool {
 		return slices.Contains(before, id)
@@ -67,8 +65,7 @@ func onlyNewContainer(tb testing.TB, before, during []string) string {
 
 // devDockerPortMapping reads the published binding of a container's PostgreSQL
 // port, as the runtime reports it.
-func devDockerPortMapping(tb testing.TB, container string) string {
-	c := qt.New(tb)
+func devDockerPortMapping(c *qt.C, container string) string {
 	c.Helper()
 	out, err := exec.Command("docker", "port", container, "5432/tcp").Output()
 	c.Assert(err, qt.IsNil)
@@ -81,7 +78,7 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
 
-	before := devDockerCensus(c.TB)
+	before := devDockerCensus(c)
 
 	resolved, release, err := devdocker.Resolve(t.Context(), devDockerTestURL, devdocker.Options{})
 	c.Assert(err, qt.IsNil)
@@ -101,7 +98,7 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	c.Assert(resolved, qt.Contains, "/ptahdev",
 		qt.Commentf("resolved=%q does not name the database from the URL", resolved))
 
-	during := devDockerCensus(c.TB)
+	during := devDockerCensus(c)
 	c.Assert(during, qt.HasLen, len(before)+1,
 		qt.Commentf("before=%v during=%v", before, during))
 
@@ -113,7 +110,7 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	// The pinned community binary v1.3.0 does the latter unconditionally --
 	// measured, its container publishes `0.0.0.0:59319->5432/tcp` -- so this row
 	// pins a divergence Ptah keeps on purpose.
-	mapping := devDockerPortMapping(c.TB, onlyNewContainer(c.TB, before, during))
+	mapping := devDockerPortMapping(c, onlyNewContainer(c, before, during))
 	c.Assert(strings.HasPrefix(mapping, "127.0.0.1:"), qt.IsTrue,
 		qt.Commentf("a local daemon published %q, not a loopback binding", mapping))
 
@@ -146,7 +143,7 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	released = true
 	c.Assert(released, qt.IsTrue)
 
-	after := devDockerCensus(c.TB)
+	after := devDockerCensus(c)
 	c.Assert(after, qt.DeepEquals, before,
 		qt.Commentf("release left containers behind: before=%v after=%v", before, after))
 }
@@ -155,7 +152,7 @@ func TestDevDockerRemovesTheContainerWhenTheRunFails(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
 
-	before := devDockerCensus(c.TB)
+	before := devDockerCensus(c)
 
 	// A readiness budget a freshly started PostgreSQL cannot meet. The container
 	// is started -- this is not a failure in front of the runtime -- and then
@@ -169,7 +166,7 @@ func TestDevDockerRemovesTheContainerWhenTheRunFails(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "did not become ready",
 		qt.Commentf("err=%v", err))
 
-	after := devDockerCensus(c.TB)
+	after := devDockerCensus(c)
 	// The census is taken with no release call in between: on this path the
 	// caller never receives an instance, so if Provision did not remove the
 	// container nothing else ever would.
@@ -181,7 +178,7 @@ func TestDevDockerParallelInvocationsDoNotCollide(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
 
-	before := devDockerCensus(c.TB)
+	before := devDockerCensus(c)
 
 	const parallel = 3
 	urls := make([]string, parallel)
@@ -213,14 +210,14 @@ func TestDevDockerParallelInvocationsDoNotCollide(t *testing.T) {
 	}
 	c.Assert(unique, qt.HasLen, parallel, qt.Commentf("urls=%v", urls))
 
-	during := devDockerCensus(c.TB)
+	during := devDockerCensus(c)
 	c.Assert(during, qt.HasLen, len(before)+parallel,
 		qt.Commentf("before=%v during=%v", before, during))
 
 	for _, release := range releases {
 		release()
 	}
-	after := devDockerCensus(c.TB)
+	after := devDockerCensus(c)
 	c.Assert(after, qt.DeepEquals, before,
 		qt.Commentf("before=%v after=%v", before, after))
 }

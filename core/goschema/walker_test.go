@@ -1619,7 +1619,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		full := filepath.Join(fixtureDir, e.Name())
 		content, err := os.ReadFile(full)
 		c.Assert(err, qt.IsNil)
-		db := mustParseSource(c.TB, e.Name(), string(content))
+		db := mustParseSource(c, e.Name(), string(content))
 		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
 		fvSrc := reflect.ValueOf(db)
 		fvDst := reflect.ValueOf(&merged).Elem()

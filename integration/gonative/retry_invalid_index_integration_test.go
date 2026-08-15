@@ -45,8 +45,8 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidUniqueIndexIntegration(t *te
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryInvalidIndexTable(c.TB, db, "'shared@example.com'")
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryInvalidIndexTable(c, db, "'shared@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -55,10 +55,10 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidUniqueIndexIntegration(t *te
 
 	// The concurrent build fails on the duplicates and leaves the index behind.
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
-	valid, ready := retryInvalidIndexFlags(c.TB, db, retryInvalidUniqueIndex)
+	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
-	failed := retryInvalidIndexDirtyRevision(c.TB, ctx, mig)
+	failed := retryInvalidIndexDirtyRevision(c, ctx, mig)
 
 	// The operator fixes the data that broke the build and reaches for the
 	// documented recovery flag instead of repair.
@@ -74,7 +74,7 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidUniqueIndexIntegration(t *te
 
 	// The refusal reads the catalog and writes nothing, so the row still carries
 	// the failure that produced it and the progress a later retry resumes from.
-	assertRetryInvalidIndexRevisionUnchanged(c.TB, retryInvalidIndexDirtyRevision(c.TB, ctx, mig), failed)
+	assertRetryInvalidIndexRevisionUnchanged(c, retryInvalidIndexDirtyRevision(c, ctx, mig), failed)
 
 	// Why refusing is the conservative direction: nothing is enforced yet.
 	c.Assert(retryInvalidIndexDuplicateInsert(ctx, db), qt.IsNil)
@@ -84,7 +84,7 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidUniqueIndexIntegration(t *te
 	// Rebuilding the index is the escape hatch the refusal names, and it works.
 	_, err = db.ExecContext(ctx, `REINDEX INDEX CONCURRENTLY "public"."`+retryInvalidUniqueIndex+`"`)
 	c.Assert(err, qt.IsNil)
-	valid, ready = retryInvalidIndexFlags(c.TB, db, retryInvalidUniqueIndex)
+	valid, ready = retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 
@@ -107,8 +107,8 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidPlainIndexIntegration(t *tes
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryInvalidIndexTable(c.TB, db, "'user' || g || '@example.com'")
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryInvalidIndexTable(c, db, "'user' || g || '@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -116,12 +116,12 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidPlainIndexIntegration(t *tes
 	mig := retryInvalidPlainIndexMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*division by zero.*")
-	valid, ready := retryInvalidIndexFlags(c.TB, db, retryInvalidPlainIndex)
+	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
-	unique := retryInvalidIndexUnique(c.TB, db, retryInvalidPlainIndex)
+	unique := retryInvalidIndexUnique(c, db, retryInvalidPlainIndex)
 	c.Assert(unique, qt.IsFalse)
-	failed := retryInvalidIndexDirtyRevision(c.TB, ctx, mig)
+	failed := retryInvalidIndexDirtyRevision(c, ctx, mig)
 
 	_, err = db.ExecContext(ctx, "DELETE FROM "+retryInvalidIndexTable+" WHERE id = 3")
 	c.Assert(err, qt.IsNil)
@@ -130,14 +130,14 @@ func TestPostgreSQLAllowDirtyRetryRefusesOverInvalidPlainIndexIntegration(t *tes
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `"public"."`+retryInvalidPlainIndex+`"`)
 	c.Assert(err.Error(), qt.Contains, "indisvalid=false, indisready=false")
-	assertRetryInvalidIndexRevisionUnchanged(c.TB, retryInvalidIndexDirtyRevision(c.TB, ctx, mig), failed)
+	assertRetryInvalidIndexRevisionUnchanged(c, retryInvalidIndexDirtyRevision(c, ctx, mig), failed)
 
 	// Dropping the leftover is the refusal's other named remedy: with the name
 	// free, IF NOT EXISTS no longer skips and the retry actually builds it.
 	_, err = db.ExecContext(ctx, `DROP INDEX "public"."`+retryInvalidPlainIndex+`"`)
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-	valid, ready = retryInvalidIndexFlags(c.TB, db, retryInvalidPlainIndex)
+	valid, ready = retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 
@@ -158,8 +158,8 @@ func TestPostgreSQLAllowDirtyRetryOverValidIndexStillAppliesIntegration(t *testi
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryInvalidIndexTable(c.TB, db, "'user' || g || '@example.com'")
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryInvalidIndexTable(c, db, "'user' || g || '@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -169,10 +169,10 @@ func TestPostgreSQLAllowDirtyRetryOverValidIndexStillAppliesIntegration(t *testi
 	// Statement 1 builds the index and commits; statement 2 writes to a table
 	// that does not exist yet and fails.
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*"+retryInvalidIndexMarker+".*")
-	valid, ready := retryInvalidIndexFlags(c.TB, db, retryInvalidUniqueIndex)
+	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
-	failed := retryInvalidIndexDirtyRevision(c.TB, ctx, mig)
+	failed := retryInvalidIndexDirtyRevision(c, ctx, mig)
 	c.Assert(failed.Applied, qt.Equals, 1)
 	c.Assert(failed.Total, qt.Equals, 2)
 
@@ -204,8 +204,8 @@ func TestPostgreSQLFirstAttemptRefusesOverPreexistingInvalidIndexIntegration(t *
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryInvalidIndexTable(c.TB, db, "'shared@example.com'")
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryInvalidIndexTable(c, db, "'shared@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -221,7 +221,7 @@ func TestPostgreSQLFirstAttemptRefusesOverPreexistingInvalidIndexIntegration(t *
 	c.Assert(err, qt.IsNotNil)
 	_, err = db.ExecContext(ctx, "DELETE FROM "+retryInvalidIndexTable+" WHERE id > 1")
 	c.Assert(err, qt.IsNil)
-	valid, ready := retryInvalidIndexFlags(c.TB, db, retryInvalidUniqueIndex)
+	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 
@@ -276,8 +276,8 @@ func TestPostgreSQLFirstAttemptOverPartitionedParentIndexStillAppliesIntegration
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryPartitionedTable(c.TB, db)
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryPartitionedTable(c, db)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -285,7 +285,7 @@ func TestPostgreSQLFirstAttemptOverPartitionedParentIndexStillAppliesIntegration
 	mig := retryPartitionedParentIndexMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	valid, ready := retryInvalidIndexFlags(c.TB, db, retryInvalidPlainIndex)
+	valid, ready := retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsTrue)
 
@@ -317,9 +317,9 @@ func TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegratio
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRetryInvalidIndexDB(c.TB, dsn)
-	seedRetryPartitionedTable(c.TB, db)
-	seedRetryPartitionedDuplicateRows(c.TB, db)
+	db := openRetryInvalidIndexDB(c, dsn)
+	seedRetryPartitionedTable(c, db)
+	seedRetryPartitionedDuplicateRows(c, db)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -330,10 +330,10 @@ func TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegratio
 	// concurrent unique build fails on the duplicates and leaves its own
 	// invalid index behind.
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
-	parentValid, parentReady := retryInvalidIndexFlags(c.TB, db, retryInvalidPlainIndex)
+	parentValid, parentReady := retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(parentValid, qt.IsFalse)
 	c.Assert(parentReady, qt.IsTrue)
-	residueValid, residueReady := retryInvalidIndexFlags(c.TB, db, retryInvalidUniqueIndex)
+	residueValid, residueReady := retryInvalidIndexFlags(c, db, retryInvalidUniqueIndex)
 	c.Assert(residueValid, qt.IsFalse)
 	c.Assert(residueReady, qt.IsFalse)
 
@@ -346,7 +346,7 @@ func TestPostgreSQLSecondAttemptOverPartitionedParentIndexStillAppliesIntegratio
 	// The only invalid index left is the partitioned parent, and it must not be
 	// mistaken for residue.
 	c.Assert(mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
-	parentValid, parentReady = retryInvalidIndexFlags(c.TB, db, retryInvalidPlainIndex)
+	parentValid, parentReady = retryInvalidIndexFlags(c, db, retryInvalidPlainIndex)
 	c.Assert(parentValid, qt.IsFalse)
 	c.Assert(parentReady, qt.IsTrue)
 
@@ -422,8 +422,7 @@ func retryInvalidIndexMigrator(conn *dbschema.DatabaseConnection, up, down strin
 		WithMigrationsTable("", retryInvalidIndexTracker)
 }
 
-func openRetryInvalidIndexDB(tb testing.TB, dsn string) *sql.DB {
-	c := qt.New(tb)
+func openRetryInvalidIndexDB(c *qt.C, dsn string) *sql.DB {
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -435,8 +434,7 @@ func openRetryInvalidIndexDB(tb testing.TB, dsn string) *sql.DB {
 // cannot decide this one's outcome. emailExpr is evaluated per generated row: a
 // constant produces the duplicates that break a unique build, and an expression
 // over g produces distinct values that let it succeed.
-func seedRetryInvalidIndexTable(tb testing.TB, db *sql.DB, emailExpr string) {
-	c := qt.New(tb)
+func seedRetryInvalidIndexTable(c *qt.C, db *sql.DB, emailExpr string) {
 	c.Helper()
 	cleanup := func() {
 		for _, table := range []string{retryInvalidIndexTable, retryInvalidIndexMarker, retryInvalidIndexTracker} {
@@ -463,8 +461,7 @@ func seedRetryInvalidIndexTable(tb testing.TB, db *sql.DB, emailExpr string) {
 
 // seedRetryPartitionedTable builds a partitioned table with one partition, which
 // is what makes CREATE INDEX ... ON ONLY leave a deliberately invalid parent.
-func seedRetryPartitionedTable(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func seedRetryPartitionedTable(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
 		for _, table := range []string{retryPartitionedTable, retryInvalidIndexTracker} {
@@ -489,8 +486,7 @@ func seedRetryPartitionedTable(tb testing.TB, db *sql.DB) {
 // seedRetryPartitionedDuplicateRows fills the single partition with rows that
 // all share one email, so a concurrent UNIQUE build on the partition fails and
 // leaves the migration to be attempted again.
-func seedRetryPartitionedDuplicateRows(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func seedRetryPartitionedDuplicateRows(c *qt.C, db *sql.DB) {
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		"INSERT INTO %s SELECT g, 'shared@example.com' FROM generate_series(1, 99) g",
@@ -501,8 +497,7 @@ func seedRetryPartitionedDuplicateRows(tb testing.TB, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func retryInvalidIndexFlags(tb testing.TB, db *sql.DB, name string) (valid, ready bool) {
-	c := qt.New(tb)
+func retryInvalidIndexFlags(c *qt.C, db *sql.DB, name string) (valid, ready bool) {
 	c.Helper()
 	err := db.QueryRow(`
 		SELECT ix.indisvalid, ix.indisready
@@ -517,8 +512,7 @@ func retryInvalidIndexFlags(tb testing.TB, db *sql.DB, name string) (valid, read
 	return valid, ready
 }
 
-func retryInvalidIndexUnique(tb testing.TB, db *sql.DB, name string) bool {
-	c := qt.New(tb)
+func retryInvalidIndexUnique(c *qt.C, db *sql.DB, name string) bool {
 	c.Helper()
 	var unique bool
 	err := db.QueryRow(`
@@ -538,8 +532,7 @@ func retryInvalidIndexUnique(tb testing.TB, db *sql.DB, name string) bool {
 // reports it, so a later call can assert the refusal left it alone. Timings are
 // blanked because a revision that was not rewritten still reports the wall clock
 // the failing attempt took, which no assertion should depend on.
-func retryInvalidIndexDirtyRevision(tb testing.TB, ctx context.Context, mig *migrator.Migrator) migrator.MigrationRevision {
-	c := qt.New(tb)
+func retryInvalidIndexDirtyRevision(c *qt.C, ctx context.Context, mig *migrator.Migrator) migrator.MigrationRevision {
 	c.Helper()
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -551,11 +544,10 @@ func retryInvalidIndexDirtyRevision(tb testing.TB, ctx context.Context, mig *mig
 }
 
 func assertRetryInvalidIndexRevisionUnchanged(
-	tb testing.TB,
+	c *qt.C,
 	got migrator.MigrationRevision,
 	want migrator.MigrationRevision,
 ) {
-	c := qt.New(tb)
 	c.Helper()
 	c.Assert(got.Version, qt.Equals, want.Version)
 	c.Assert(got.Description, qt.Equals, want.Description)

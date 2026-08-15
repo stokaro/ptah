@@ -71,9 +71,9 @@ func TestMigrateApplyExecutesExternalFormatsUpOnly(t *testing.T) {
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
 			for name, content := range tt.files {
-				writeAtlasApplyProjectMigration(c.TB, migrationsDir, name, content)
+				writeAtlasApplyProjectMigration(c, migrationsDir, name, content)
 			}
-			hashConvertedApplyDir(c.TB, migrationsDir, tt.format)
+			hashConvertedApplyDir(c, migrationsDir, tt.format)
 			dbPath := filepath.Join(dir, "apply.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -89,8 +89,8 @@ func TestMigrateApplyExecutesExternalFormatsUpOnly(t *testing.T) {
 			err := cmd.Execute()
 
 			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out.String()))
-			c.Assert(sqliteTableCount(c.TB, dbPath, "up_ran"), qt.Equals, 1)
-			c.Assert(sqliteTableCount(c.TB, dbPath, "down_ran"), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c, dbPath, "up_ran"), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, "down_ran"), qt.Equals, 0)
 		})
 	}
 }
@@ -99,9 +99,9 @@ func TestMigrateApplyFormatOutputRendersFromConvertedFilesystem(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql",
+	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- +goose Up\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
-	hashConvertedApplyDir(c.TB, migrationsDir, "goose")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -132,9 +132,9 @@ func TestMigrateApplyFlywayMajorMinorVersionsExecuteInOrder(t *testing.T) {
 	// V1.5 creates the table; V2 alters it. Flyway orders 1.5 < 2, so the CREATE
 	// must run before the ALTER. Under the old digit-stripping parser V1.5 became
 	// 15 (> 2), inverting the order and making the ALTER fail with "no such table".
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1.5__create.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V2__extend.sql", "ALTER TABLE widgets ADD COLUMN label TEXT;")
-	hashConvertedApplyDir(c.TB, migrationsDir, "flyway")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__create.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__extend.sql", "ALTER TABLE widgets ADD COLUMN label TEXT;")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -151,7 +151,7 @@ func TestMigrateApplyFlywayMajorMinorVersionsExecuteInOrder(t *testing.T) {
 
 	// A successful apply proves the ALTER (V2) ran after the CREATE (V1.5).
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out.String()))
-	c.Assert(sqliteTableCount(c.TB, dbPath, "widgets"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
 func TestMigrateApplyDBMateTransactionDirectiveOptionUpOnly(t *testing.T) {
@@ -160,9 +160,9 @@ func TestMigrateApplyDBMateTransactionDirectiveOptionUpOnly(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	// "-- migrate:up transaction:false" must not leak "transaction:false" into the
 	// executable SQL, and only the up section must run.
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql",
+	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- migrate:up transaction:false\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\n-- migrate:down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
-	hashConvertedApplyDir(c.TB, migrationsDir, "dbmate")
+	hashConvertedApplyDir(c, migrationsDir, "dbmate")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -178,8 +178,8 @@ func TestMigrateApplyDBMateTransactionDirectiveOptionUpOnly(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out.String()))
-	c.Assert(sqliteTableCount(c.TB, dbPath, "up_ran"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_ran"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "up_ran"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_ran"), qt.Equals, 0)
 }
 
 func TestMigrateApplyGooseStatementBlockExecutesUpOnly(t *testing.T) {
@@ -188,9 +188,9 @@ func TestMigrateApplyGooseStatementBlockExecutesUpOnly(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	// The StatementBegin/End block contains an internal semicolon; its whole body
 	// must execute and the down section must not run.
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql",
+	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql",
 		"-- +goose Up\n-- +goose StatementBegin\nCREATE TABLE up_ran (id INTEGER PRIMARY KEY);\nINSERT INTO up_ran (id) VALUES (1);\n-- +goose StatementEnd\n-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);")
-	hashConvertedApplyDir(c.TB, migrationsDir, "goose")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -206,9 +206,9 @@ func TestMigrateApplyGooseStatementBlockExecutesUpOnly(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out.String()))
-	c.Assert(sqliteTableCount(c.TB, dbPath, "up_ran"), qt.Equals, 1)
-	c.Assert(sqliteRowCount(c.TB, dbPath, "up_ran"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_ran"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "up_ran"), qt.Equals, 1)
+	c.Assert(sqliteRowCount(c, dbPath, "up_ran"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_ran"), qt.Equals, 0)
 }
 
 func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testing.T) {
@@ -219,12 +219,12 @@ func TestMigrateApplyRejectsFlywayVersionCollisionBeforeOpeningDatabase(t *testi
 	// than executing it, so refusing is the oracle's own answer; V1.5 beside
 	// V1_5 is NOT this case, because those are two distinct version strings CE
 	// runs in walk order (stokaro/ptah#982).
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1__a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__b.sql", "CREATE TABLE b (id INTEGER PRIMARY KEY);")
 	// Hashed first: the conversion refusal below is reachable only once the
 	// integrity gate has passed, because the gate now precedes the source-format
 	// parse exactly as it does in Atlas CE (stokaro/ptah#973).
-	hashConvertedApplyDir(c.TB, migrationsDir, "flyway")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "collision.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -248,9 +248,9 @@ func TestMigrateApplyRejectsDuplicateConvertedVersionBeforeOpeningDatabase(t *te
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql", "-- +goose Up\nCREATE TABLE a (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "01_init.sql", "-- +goose Up\nCREATE TABLE b (id INTEGER PRIMARY KEY);")
-	hashConvertedApplyDir(c.TB, migrationsDir, "goose")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "-- +goose Up\nCREATE TABLE a (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "01_init.sql", "-- +goose Up\nCREATE TABLE b (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "dup-version.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -301,8 +301,8 @@ func TestMigrateApplyRejectsMissingUpDirectiveBeforeOpeningDatabase(t *testing.T
 			c := qt.New(t)
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql", tt.content)
-			hashConvertedApplyDir(c.TB, migrationsDir, tt.format)
+			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.content)
+			hashConvertedApplyDir(c, migrationsDir, tt.format)
 			dbPath := filepath.Join(dir, "missing-directive.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -357,9 +357,9 @@ func TestMigrateApplyRejectsUnsupportedFormatFilesBeforeOpeningDatabase(t *testi
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
 			for name, content := range test.files {
-				writeAtlasApplyProjectMigration(c.TB, migrationsDir, name, content)
+				writeAtlasApplyProjectMigration(c, migrationsDir, name, content)
 			}
-			hashConvertedApplyDir(c.TB, migrationsDir, test.format)
+			hashConvertedApplyDir(c, migrationsDir, test.format)
 			dbPath := filepath.Join(dir, "must-not-exist.db")
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -385,7 +385,7 @@ func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) 
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_init.sql", "CREATE TABLE never_created (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "CREATE TABLE never_created (id INTEGER PRIMARY KEY);")
 	dbPath := filepath.Join(dir, "unknown-url-format.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -418,33 +418,33 @@ func TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions(t *testing.T)
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1__base.sql", "CREATE TABLE t_v1 (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1.5__minor.sql", "CREATE TABLE t_v15 (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V2__major.sql", "CREATE TABLE t_v2 (id INTEGER PRIMARY KEY);")
-	hashConvertedApplyDir(c.TB, migrationsDir, "flyway")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__base.sql", "CREATE TABLE t_v1 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__minor.sql", "CREATE TABLE t_v15 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__major.sql", "CREATE TABLE t_v2 (id INTEGER PRIMARY KEY);")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "apply.db")
 
 	firstErr := runFlywayApply(migrationsDir, dbPath)
 
 	c.Assert(firstErr, qt.IsNil)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "t_v1"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "t_v15"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "t_v2"), qt.Equals, 1)
-	before := sqliteAtlasRevisionVersions(c.TB, dbPath)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v1"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v15"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v2"), qt.Equals, 1)
+	before := sqliteAtlasRevisionVersions(c, dbPath)
 
 	// Insert a migration that sorts in the middle (V1.6, between V1.5 and V2) and
 	// re-apply.
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1.6__hotfix.sql", "CREATE TABLE t_v16 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.6__hotfix.sql", "CREATE TABLE t_v16 (id INTEGER PRIMARY KEY);")
 	// Adding a migration invalidates atlas.sum, so re-hash as a user would.
-	hashConvertedApplyDir(c.TB, migrationsDir, "flyway")
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	secondErr := runFlywayApply(migrationsDir, dbPath)
 
 	// No checksum mismatch: V2's recorded checksum still matches V2's SQL because
 	// its Atlas version is unchanged. Re-running V1/V1.5/V2 would fail on "table
 	// already exists", so a nil error also proves only V1.6 ran.
 	c.Assert(secondErr, qt.IsNil)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "t_v16"), qt.Equals, 1)
-	after := sqliteAtlasRevisionVersions(c.TB, dbPath)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v16"), qt.Equals, 1)
+	after := sqliteAtlasRevisionVersions(c, dbPath)
 	c.Assert(after, qt.HasLen, len(before)+1)
 	// Every version recorded by the first apply is still present unchanged, so
 	// the insertion renumbered nothing.
@@ -470,8 +470,7 @@ func runFlywayApply(migrationsDir, dbPath string) error {
 	return cmd.Execute()
 }
 
-func sqliteAtlasRevisionVersions(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func sqliteAtlasRevisionVersions(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -489,8 +488,7 @@ func sqliteAtlasRevisionVersions(tb testing.TB, dbPath string) []string {
 	return versions
 }
 
-func sqliteRowCount(tb testing.TB, dbPath, table string) int {
-	c := qt.New(tb)
+func sqliteRowCount(c *qt.C, dbPath, table string) int {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)

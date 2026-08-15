@@ -233,14 +233,12 @@ func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
 
 // lintOne lints a single-statement up migration (with a paired down file)
 // and returns the rule codes that fired.
-func lintOne(tb testing.TB, sql string) []string {
-	c := qt.New(tb)
-	return lintOneDialect(c.TB, "", sql)
+func lintOne(c *qt.C, sql string) []string {
+	return lintOneDialect(c, "", sql)
 }
 
 // lintOneDialect is lintOne with an explicit target dialect.
-func lintOneDialect(tb testing.TB, dialect, sql string) []string {
-	c := qt.New(tb)
+func lintOneDialect(c *qt.C, dialect, sql string) []string {
 	c.Helper()
 	fsys := fixture(map[string]string{
 		"0000000001_x.up.sql":   sql + "\n",
@@ -326,7 +324,7 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := lintOne(c.TB, tt.sql)
+			got := lintOne(c, tt.sql)
 			if len(tt.want) == 0 {
 				c.Assert(got, qt.HasLen, 0, qt.Commentf("%s must be clean", tt.sql))
 			} else {
@@ -351,7 +349,7 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := lintOne(c.TB, tt.sql)
+			got := lintOne(c, tt.sql)
 			if len(tt.want) == 0 {
 				c.Assert(got, qt.HasLen, 0, qt.Commentf("%s must be clean", tt.sql))
 			} else {
@@ -401,7 +399,7 @@ func TestLintFS_AtlasAnalyzerCatalogHazards(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := lintOneDialect(c.TB, tt.dialect, tt.sql)
+			got := lintOneDialect(c, tt.dialect, tt.sql)
 			c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
 		})
 	}
@@ -420,7 +418,7 @@ ALTER TABLE t ADD COLUMN c INT;
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
 
-	c.Assert(lintOneDialect(c.TB, "postgres", "BEGIN;\nALTER TABLE t ADD COLUMN c INT;\nCOMMIT;"), qt.DeepEquals, []string{"TX201"})
+	c.Assert(lintOneDialect(c, "postgres", "BEGIN;\nALTER TABLE t ADD COLUMN c INT;\nCOMMIT;"), qt.DeepEquals, []string{"TX201"})
 }
 
 func TestLintFS_NonTransactionalDirectivesSuppressTransactionFindings(t *testing.T) {
@@ -642,7 +640,7 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := lintOneDialect(c.TB, tt.dialect, tt.sql)
+			got := lintOneDialect(c, tt.dialect, tt.sql)
 			if len(tt.want) == 0 {
 				c.Assert(got, qt.HasLen, 0, qt.Commentf("%s must be clean", tt.sql))
 			} else {
@@ -703,7 +701,7 @@ func TestLintFS_SameFileCreatedTablesAreExempt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := lintOneDialect(c.TB, tt.dialect, tt.sql)
+			got := lintOneDialect(c, tt.dialect, tt.sql)
 			if len(tt.want) == 0 {
 				c.Assert(got, qt.HasLen, 0, qt.Commentf("%s must be clean", tt.sql))
 			} else {
@@ -718,17 +716,17 @@ func TestLintFS_MY101PinnedOnlineDDLIsExempt(t *testing.T) {
 
 	// Pinned ALGORITHM/LOCK make the server refuse a blocking rebuild, so
 	// the lock hazard cannot occur; the lossy-type-change warning stays.
-	got := lintOneDialect(c.TB, "mysql",
+	got := lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500) NOT NULL, ALGORITHM=INPLACE, LOCK=NONE;")
 	c.Assert(got, qt.DeepEquals, []string{"DS103"})
 
 	// The = is optional in the MySQL grammar.
-	got = lintOneDialect(c.TB, "mysql",
+	got = lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500), ALGORITHM INPLACE;")
 	c.Assert(got, qt.DeepEquals, []string{"DS103"})
 
 	// ALGORITHM=COPY pins the blocking path; MY101 must still fire.
-	got = lintOneDialect(c.TB, "mysql",
+	got = lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500), ALGORITHM=COPY;")
 	c.Assert(got, qt.DeepEquals, []string{"DS103", "MY101"})
 }

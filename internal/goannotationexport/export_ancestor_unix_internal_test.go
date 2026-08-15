@@ -42,9 +42,9 @@ func TestExport_FailurePath_AncestorSwapAbortsHCLPublication(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ErrOutputChanged)
 	c.Assert(result, qt.DeepEquals, Result{})
-	assertExportInternalFileBytes(c.TB, filepath.Join(capturedDir, "schema.hcl"), previousOutput)
-	assertExportInternalFileBytes(c.TB, outsideOutput, outsideData)
-	assertExportInternalFileBytes(c.TB, source, sourceData)
+	assertExportInternalFileBytes(c, filepath.Join(capturedDir, "schema.hcl"), previousOutput)
+	assertExportInternalFileBytes(c, outsideOutput, outsideData)
+	assertExportInternalFileBytes(c, source, sourceData)
 	entries, err := os.ReadDir(capturedDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{"schema.hcl"})

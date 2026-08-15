@@ -43,8 +43,7 @@ type dirFormatFixture struct {
 	emptyDir string
 }
 
-func newDirFormatFixture(tb testing.TB) dirFormatFixture {
-	c := qt.New(tb)
+func newDirFormatFixture(c *qt.C) dirFormatFixture {
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -259,7 +258,7 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.verb+" "+tt.spelling, func(t *testing.T) {
 			c := qt.New(t)
-			fx := newDirFormatFixture(c.TB)
+			fx := newDirFormatFixture(c)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 
 			stdout, stderr, err := runCompatExit(tt.args(fx)...)
@@ -329,7 +328,7 @@ func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fx := newDirFormatFixture(c.TB)
+			fx := newDirFormatFixture(c)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 
 			stdout, stderr, err := runCompatExit(tt.args(fx)...)

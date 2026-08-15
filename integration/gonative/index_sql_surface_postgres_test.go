@@ -43,7 +43,7 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 		name:  "index_attributes_sql_apply",
 		seed:  indexAttributeSeed(),
 		query: "search_path=public",

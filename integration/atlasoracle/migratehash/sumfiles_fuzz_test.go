@@ -29,8 +29,7 @@ import (
 // wrote, so this seam needs the same random population rather than the handful
 // of fixtures a unit test can name. Order is asserted because it feeds the
 // Atlas hash.
-func assertCaptureSelectsTheSame(tb testing.TB, dir string, format atlasmigrateimport.Format, names []string, layout []string) {
-	c := qt.New(tb)
+func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.Format, names []string, layout []string) {
 	c.Helper()
 	captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), format)
 	c.Assert(err, qt.IsNil, qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
@@ -64,8 +63,7 @@ func assertCaptureSelectsTheSame(tb testing.TB, dir string, format atlasmigratei
 // than skipped. Skipping it would make this assertion vacuous exactly when the
 // importer started refusing everything — the one regression it most needs to
 // catch — so a refusal outside flywayRefusalClasses fails the shape.
-func assertImporterConsumesTheCoveredSet(tb testing.TB, dir string, names []string, layout []string) {
-	c := qt.New(tb)
+func assertImporterConsumesTheCoveredSet(c *qt.C, dir string, names []string, layout []string) {
 	c.Helper()
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
 	if err != nil {
@@ -122,8 +120,8 @@ func TestSumFileNamesDifferentialFuzz(t *testing.T) {
 	oracle := requireOracle(t)
 	c := qt.New(t)
 
-	iterations := fuzzIterations(c.TB, 200)
-	seed := fuzzSeed(c.TB, 20260801)
+	iterations := fuzzIterations(c, 200)
+	seed := fuzzSeed(c, 20260801)
 	rng := newFuzzRNG(seed)
 
 	t.Logf("differential fuzz: oracle=%s iterations=%d seed=%d", oracle, iterations, seed)
@@ -131,7 +129,7 @@ func TestSumFileNamesDifferentialFuzz(t *testing.T) {
 	for i := range iterations {
 		layout := randomFlywayLayout(rng)
 		c.Run(fmt.Sprintf("shape-%03d", i), func(c *qt.C) {
-			checkFlywayLayout(c.TB, oracle, layout)
+			checkFlywayLayout(c, oracle, layout)
 		})
 	}
 }
@@ -144,7 +142,7 @@ func TestSumFileNamesDifferentialFuzzExplicitLayout(t *testing.T) {
 	oracle := requireOracle(t)
 	c := qt.New(t)
 
-	checkFlywayLayout(c.TB, oracle, fuzzLayout(t))
+	checkFlywayLayout(c, oracle, fuzzLayout(t))
 }
 
 func fuzzLayout(t *testing.T) []string {
@@ -156,39 +154,37 @@ func fuzzLayout(t *testing.T) []string {
 	return strings.Split(raw, ",")
 }
 
-func checkFlywayLayout(tb testing.TB, oracle string, layout []string) {
-	c := qt.New(tb)
+func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 	c.Helper()
 
 	dir := c.TempDir()
-	writeLayout(c.TB, dir, layout)
+	writeLayout(c, dir, layout)
 
-	outcome := oracleHash(c.TB, oracle, dir, "flyway")
-	names, hashable := assertPtahMatchesOracle(c.TB, dir, atlasmigrateimport.FormatFlyway, outcome, layout)
+	outcome := oracleHash(c, oracle, dir, "flyway")
+	names, hashable := assertPtahMatchesOracle(c, dir, atlasmigrateimport.FormatFlyway, outcome, layout)
 
 	// The capture cross-check applies either way: the gate must recompute the
 	// same covered set from the snapshot it verifies whether or not that set
 	// turns out to be hashable.
-	assertCaptureSelectsTheSame(c.TB, dir, atlasmigrateimport.FormatFlyway, names, layout)
+	assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
 	if !hashable {
 		return
 	}
-	assertImporterConsumesTheCoveredSet(c.TB, dir, names, layout)
+	assertImporterConsumesTheCoveredSet(c, dir, names, layout)
 }
 
 // checkPlainLayout is checkFlywayLayout for the suffix-filter formats. It is a
 // helper rather than an inline test body so the refusal branch does not count
 // against the repository's test-conditional ratchet.
-func checkPlainLayout(tb testing.TB, oracle string, format atlasmigrateimport.Format, layout []string) {
-	c := qt.New(tb)
+func checkPlainLayout(c *qt.C, oracle string, format atlasmigrateimport.Format, layout []string) {
 	c.Helper()
 
 	dir := c.TempDir()
-	writeLayout(c.TB, dir, layout)
+	writeLayout(c, dir, layout)
 
-	outcome := oracleHash(c.TB, oracle, dir, string(format))
-	names, _ := assertPtahMatchesOracle(c.TB, dir, format, outcome, layout)
-	assertCaptureSelectsTheSame(c.TB, dir, format, names, layout)
+	outcome := oracleHash(c, oracle, dir, string(format))
+	names, _ := assertPtahMatchesOracle(c, dir, format, outcome, layout)
+	assertCaptureSelectsTheSame(c, dir, format, names, layout)
 }
 
 // TestSumFileNamesDifferentialFuzzRealisticFlyway restricts generation to what
@@ -203,16 +199,16 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 	oracle := requireOracle(t)
 	c := qt.New(t)
 
-	iterations := fuzzIterations(c.TB, 200)
-	rng := newFuzzRNG(fuzzSeed(c.TB, 20260803))
+	iterations := fuzzIterations(c, 200)
+	rng := newFuzzRNG(fuzzSeed(c, 20260803))
 
 	for i := range iterations {
 		layout := randomRealisticFlywayLayout(rng)
 		c.Run(fmt.Sprintf("realistic-%03d", i), func(c *qt.C) {
 			dir := c.TempDir()
-			writeLayout(c.TB, dir, layout)
+			writeLayout(c, dir, layout)
 
-			want := oracleSum(c.TB, oracle, dir, "flyway")
+			want := oracleSum(c, oracle, dir, "flyway")
 
 			fsys := os.DirFS(dir)
 			names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
@@ -223,8 +219,8 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(sum.Bytes()), qt.Equals, want,
 				qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
-			assertCaptureSelectsTheSame(c.TB, dir, atlasmigrateimport.FormatFlyway, names, layout)
-			assertImporterConsumesTheCoveredSet(c.TB, dir, names, layout)
+			assertCaptureSelectsTheSame(c, dir, atlasmigrateimport.FormatFlyway, names, layout)
+			assertImporterConsumesTheCoveredSet(c, dir, names, layout)
 		})
 	}
 }
@@ -281,7 +277,7 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 		for i := range 40 {
 			layout := randomPlainLayout(rng)
 			c.Run(fmt.Sprintf("%s-%02d", format, i), func(c *qt.C) {
-				checkPlainLayout(c.TB, oracle, format, layout)
+				checkPlainLayout(c, oracle, format, layout)
 			})
 		}
 	}
@@ -289,8 +285,7 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 
 // fuzzIterations, fuzzSeed and newFuzzRNG keep the knob parsing out
 // of the test bodies, which the repository's teststyle ratchet counts.
-func fuzzIterations(tb testing.TB, fallback int) int {
-	c := qt.New(tb)
+func fuzzIterations(c *qt.C, fallback int) int {
 	c.Helper()
 	raw := os.Getenv("PTAH_ATLAS_FUZZ_N")
 	if raw == "" {
@@ -301,8 +296,7 @@ func fuzzIterations(tb testing.TB, fallback int) int {
 	return parsed
 }
 
-func fuzzSeed(tb testing.TB, fallback uint64) uint64 {
-	c := qt.New(tb)
+func fuzzSeed(c *qt.C, fallback uint64) uint64 {
 	c.Helper()
 	raw := os.Getenv("PTAH_ATLAS_FUZZ_SEED")
 	if raw == "" {
@@ -352,8 +346,7 @@ type oracleOutcome struct {
 	output  string
 }
 
-func oracleHash(tb testing.TB, oracle, dir, format string) oracleOutcome {
-	c := qt.New(tb)
+func oracleHash(c *qt.C, oracle, dir, format string) oracleOutcome {
 	c.Helper()
 
 	//nolint:gosec // operator-provided oracle path, and dir is a test temp dir
@@ -377,10 +370,9 @@ func oracleHash(tb testing.TB, oracle, dir, format string) oracleOutcome {
 
 // oracleSum is oracleHash for populations where a refusal would itself be the
 // bug (see TestSumFileNamesDifferentialFuzzRealisticFlyway).
-func oracleSum(tb testing.TB, oracle, dir, format string) string {
-	c := qt.New(tb)
+func oracleSum(c *qt.C, oracle, dir, format string) string {
 	c.Helper()
-	outcome := oracleHash(c.TB, oracle, dir, format)
+	outcome := oracleHash(c, oracle, dir, format)
 	c.Assert(outcome.refused, qt.IsFalse,
 		qt.Commentf("the oracle refused a shape it must accept:\n%s", outcome.output))
 	return outcome.sum
@@ -394,13 +386,12 @@ func oracleSum(tb testing.TB, oracle, dir, format string) string {
 // separate questions, and #991 was Ptah answering the first one by silently
 // dropping an entry it could not answer the second for.
 func assertPtahMatchesOracle(
-	tb testing.TB,
+	c *qt.C,
 	dir string,
 	format atlasmigrateimport.Format,
 	outcome oracleOutcome,
 	layout []string,
 ) (names []string, hashable bool) {
-	c := qt.New(tb)
 	c.Helper()
 	comment := qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ","))
 
@@ -429,8 +420,7 @@ func assertPtahMatchesOracle(
 // PTAH_ATLAS_FUZZ_LAYOUT round trip that makes a failure reducible had no way
 // to name one. Neither could the layout name a directory whose own name ends in
 // .sql, which is the shape #991 turns on.
-func writeLayout(tb testing.TB, dir string, layout []string) {
-	c := qt.New(tb)
+func writeLayout(c *qt.C, dir string, layout []string) {
 	c.Helper()
 	for i, name := range layout {
 		full := filepath.Join(dir, filepath.FromSlash(name))

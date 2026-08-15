@@ -53,7 +53,7 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	})
 
 	oracle := requireAtlasOracle(t)
-	compat := buildCompatBinary(c.TB)
+	compat := buildCompatBinary(c)
 
 	tests := []struct {
 		name              string
@@ -95,21 +95,21 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dir := writeOracleMigrationDir(c.TB, oracle, map[string]string{
+			dir := writeOracleMigrationDir(c, oracle, map[string]string{
 				partialProgressVersion + "_two.sql": test.directive + partialProgressBody,
 			})
 			dbPath := filepath.Join(c.TempDir(), "partial-progress.db")
-			executePartialProgressSQL(c.TB, dbPath, "CREATE TABLE second_success (id INTEGER PRIMARY KEY)")
+			executePartialProgressSQL(c, dbPath, "CREATE TABLE second_success (id INTEGER PRIMARY KEY)")
 
-			failed := runPartialProgressApply(c.TB, test.writer, dbPath, dir, test.applyArgs...)
+			failed := runPartialProgressApply(c, test.writer, dbPath, dir, test.applyArgs...)
 			c.Assert(failed.code, qt.Equals, 1, qt.Commentf("writer output: %s", failed.output))
-			assertPartialProgressFailure(c.TB, dbPath)
+			assertPartialProgressFailure(c, dbPath)
 
-			executePartialProgressSQL(c.TB, dbPath, "DROP TABLE second_success")
-			resumed := runPartialProgressApply(c.TB, test.reader, dbPath, dir, test.applyArgs...)
+			executePartialProgressSQL(c, dbPath, "DROP TABLE second_success")
+			resumed := runPartialProgressApply(c, test.reader, dbPath, dir, test.applyArgs...)
 			c.Assert(resumed.code, qt.Equals, 0, qt.Commentf("reader output: %s", resumed.output))
-			assertPartialProgressCompletion(c.TB, dbPath, test.wantFinalOperator)
-			assertMigrationState(c.TB, dbPath,
+			assertPartialProgressCompletion(c, dbPath, test.wantFinalOperator)
+			assertMigrationState(c, dbPath,
 				[]string{"first_success", "second_success"},
 				[]string{partialProgressVersion})
 		})
@@ -117,13 +117,12 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 }
 
 func runPartialProgressApply(
-	tb testing.TB,
+	c *qt.C,
 	binary string,
 	dbPath string,
 	dir string,
 	extraArgs ...string,
 ) commandResult {
-	c := qt.New(tb)
 	c.Helper()
 	args := []string{
 		"migrate", "apply",
@@ -132,11 +131,10 @@ func runPartialProgressApply(
 		"--allow-dirty",
 	}
 	args = append(args, extraArgs...)
-	return runCommand(c.TB, binary, args...)
+	return runCommand(c, binary, args...)
 }
 
-func executePartialProgressSQL(tb testing.TB, dbPath, statement string) {
-	c := qt.New(tb)
+func executePartialProgressSQL(c *qt.C, dbPath, statement string) {
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -145,8 +143,7 @@ func executePartialProgressSQL(tb testing.TB, dbPath, statement string) {
 	c.Assert(err, qt.IsNil)
 }
 
-func readPartialProgressState(tb testing.TB, dbPath string) partialProgressState {
-	c := qt.New(tb)
+func readPartialProgressState(c *qt.C, dbPath string) partialProgressState {
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -169,10 +166,9 @@ WHERE version = ?`, partialProgressVersion).Scan(
 	return state
 }
 
-func assertPartialProgressFailure(tb testing.TB, dbPath string) {
-	c := qt.New(tb)
+func assertPartialProgressFailure(c *qt.C, dbPath string) {
 	c.Helper()
-	state := readPartialProgressState(c.TB, dbPath)
+	state := readPartialProgressState(c, dbPath)
 	c.Assert(state.applied, qt.Equals, 1)
 	c.Assert(state.total, qt.Equals, 2)
 	c.Assert(state.failure, qt.Not(qt.Equals), "")
@@ -180,10 +176,9 @@ func assertPartialProgressFailure(tb testing.TB, dbPath string) {
 	c.Assert(state.partialHashes, qt.Equals, `["`+partialProgressHash+`"]`)
 }
 
-func assertPartialProgressCompletion(tb testing.TB, dbPath, wantOperator string) {
-	c := qt.New(tb)
+func assertPartialProgressCompletion(c *qt.C, dbPath, wantOperator string) {
 	c.Helper()
-	state := readPartialProgressState(c.TB, dbPath)
+	state := readPartialProgressState(c, dbPath)
 	c.Assert(state.applied, qt.Equals, 2)
 	c.Assert(state.total, qt.Equals, 2)
 	c.Assert(state.failure, qt.Equals, "")

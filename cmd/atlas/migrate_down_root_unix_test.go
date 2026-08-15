@@ -104,10 +104,10 @@ func TestMigrateApplyRejectsProjectDirectorySymlinkEscapeBeforeOpeningDatabase(t
 	root := t.TempDir()
 	t.Chdir(root)
 	outside := t.TempDir()
-	writeAtlasApplyProjectMigration(c.TB, outside, "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c, outside, "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
 	c.Assert(os.Symlink(outside, "migrations"), qt.IsNil)
 	dbPath := filepath.Join(root, "apply.db")
-	writeAtlasApplyProjectConfig(c.TB, dbPath, "atlas", "LINEAR")
+	writeAtlasApplyProjectConfig(c, dbPath, "atlas", "LINEAR")
 
 	output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
 

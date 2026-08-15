@@ -115,8 +115,8 @@ func TestPublishFileAt_FailurePath_RefusesChangedDestination(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, test.wantErrorIs)
 			c.Assert(err, qt.Not(qt.ErrorIs), fsdurable.ErrReplacementCommitted)
-			assertPublicationBytes(c.TB, publishedPath, rival)
-			assertPublicationBytes(c.TB, stagedPath, "new")
+			assertPublicationBytes(c, publishedPath, rival)
+			assertPublicationBytes(c, stagedPath, "new")
 		})
 	}
 }
@@ -152,7 +152,7 @@ func TestPublishFileAt_HappyPath_PublishesOverTheExpectedFile(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	assertPublicationBytes(c.TB, publishedPath, "new")
+	assertPublicationBytes(c, publishedPath, "new")
 	publishedInfo, err := os.Stat(publishedPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.SameFile(stagedInfo, publishedInfo), qt.IsTrue)
@@ -161,8 +161,7 @@ func TestPublishFileAt_HappyPath_PublishesOverTheExpectedFile(t *testing.T) {
 	c.Assert(publicationEntryNames(entries), qt.DeepEquals, []string{"published"})
 }
 
-func assertPublicationBytes(tb testing.TB, path, want string) {
-	c := qt.New(tb)
+func assertPublicationBytes(c *qt.C, path, want string) {
 	c.Helper()
 	contents, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

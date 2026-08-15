@@ -46,13 +46,13 @@ func TestGenerateMigration_ImmediateInsertsWithoutAnalyzeBuildConcurrentlyWithRe
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_fresh_inserts")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_fresh_inserts")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
 
-	setupImmediateInsertsWithoutAnalyze(c.TB, targetURL)
+	setupImmediateInsertsWithoutAnalyze(c, targetURL)
 
 	// The precondition: five thousand rows, nothing has analyzed the table, and
 	// the only place the row count survives is n_live_tup.
@@ -70,7 +70,7 @@ func TestGenerateMigration_ImmediateInsertsWithoutAnalyzeBuildConcurrentlyWithRe
 	c.Assert(actualRows, qt.Equals, int64(5000))
 
 	dir := t.TempDir()
-	entitiesDir := writeUnknownStatsIndexEntities(c.TB, dir)
+	entitiesDir := writeUnknownStatsIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -101,16 +101,16 @@ func TestGenerateMigration_ImmediateInsertsWithoutAnalyzeBuildConcurrentlyWithRe
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsFalse)
 
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -122,8 +122,7 @@ func TestGenerateMigration_ImmediateInsertsWithoutAnalyzeBuildConcurrentlyWithRe
 // between the insert and the read and turn reltuples into a real number, which
 // would silently move the test onto the path the ordinary populated fixture
 // already covers.
-func setupImmediateInsertsWithoutAnalyze(tb testing.TB, targetURL string) {
-	c := qt.New(tb)
+func setupImmediateInsertsWithoutAnalyze(c *qt.C, targetURL string) {
 	c.Helper()
 	raw, err := sql.Open("pgx", targetURL)
 	c.Assert(err, qt.IsNil)

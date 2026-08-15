@@ -13,8 +13,7 @@ import (
 
 // runSchemaInspectOutput runs `atlas schema inspect` against dbPath with extra
 // arguments and returns what reached stdout.
-func runSchemaInspectOutput(tb testing.TB, dbPath string, extra ...string) (string, error) {
-	c := qt.New(tb)
+func runSchemaInspectOutput(c *qt.C, dbPath string, extra ...string) (string, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -58,11 +57,11 @@ func TestSchemaInspectOutputWritesTheFile(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			dbPath := filepath.Join(dir, "inspect-output.db")
-			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+			createSQLiteSchemaCleanTable(c, dbPath, "users")
 			target := filepath.Join(dir, "schema.out")
 
 			args := append([]string{test.flagName, target}, test.format...)
-			out, err := runSchemaInspectOutput(c.TB, dbPath, args...)
+			out, err := runSchemaInspectOutput(c, dbPath, args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			// Nothing on stdout: the file is the output, and a pipeline that
@@ -80,9 +79,9 @@ func TestSchemaInspectOutputWritesTheFile(t *testing.T) {
 func TestSchemaInspectWithoutOutputStillPrints(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(c.TempDir(), "inspect-stdout.db")
-	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
 
-	out, err := runSchemaInspectOutput(c.TB, dbPath)
+	out, err := runSchemaInspectOutput(c, dbPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `table "users"`)
@@ -94,11 +93,11 @@ func TestSchemaInspectOutputReplacesAnExistingFile(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	dbPath := filepath.Join(dir, "inspect-replace.db")
-	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
 	target := filepath.Join(dir, "schema.hcl")
 	c.Assert(os.WriteFile(target, []byte("stale contents\n"), 0o600), qt.IsNil)
 
-	out, err := runSchemaInspectOutput(c.TB, dbPath, "--output", target)
+	out, err := runSchemaInspectOutput(c, dbPath, "--output", target)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	written, readErr := os.ReadFile(target)
@@ -113,10 +112,10 @@ func TestSchemaInspectOutputReportsAnUnwritableDestination(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	dbPath := filepath.Join(dir, "inspect-unwritable.db")
-	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
 	target := filepath.Join(dir, "no-such-directory", "schema.hcl")
 
-	out, err := runSchemaInspectOutput(c.TB, dbPath, "--output", target)
+	out, err := runSchemaInspectOutput(c, dbPath, "--output", target)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Contains, "stage output file")

@@ -35,9 +35,9 @@ func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openDirectionalRepairDB(c.TB, dsn)
-	dropDirectionalRepairObjects(c.TB, db)
-	c.Cleanup(func() { dropDirectionalRepairObjects(c.TB, db) })
+	db := openDirectionalRepairDB(c, dsn)
+	dropDirectionalRepairObjects(c, db)
+	c.Cleanup(func() { dropDirectionalRepairObjects(c, db) })
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -45,8 +45,8 @@ func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing
 	mig := directionalRepairMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairKeep), qt.IsTrue)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairDropped), qt.IsTrue)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairDropped), qt.IsTrue)
 
 	// Fail: the first down statement commits, the second names a table that
 	// does not exist.
@@ -55,9 +55,9 @@ func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing
 	// Inspect: the committed statement is gone, the row records the direction
 	// and how far the rollback got. applied=1 is what makes the resume start at
 	// the right place rather than replaying a DROP that would now fail.
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairDropped), qt.IsFalse)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairKeep), qt.IsTrue)
-	state, applied, total := directionalRepairRevision(c.TB, db)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairDropped), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
+	state, applied, total := directionalRepairRevision(c, db)
 	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 2)
@@ -76,9 +76,9 @@ func TestPostgreSQLDirectionalRepairResumesPartialRollbackIntegration(t *testing
 
 	// Final schema state: the rollback finished, and its revision is gone
 	// rather than left reading as applied over a reverted schema.
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairMissing), qt.IsFalse)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairKeep), qt.IsTrue)
-	c.Assert(directionalRepairRevisionCount(c.TB, db), qt.Equals, 0)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairMissing), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
+	c.Assert(directionalRepairRevisionCount(c, db), qt.Equals, 0)
 }
 
 func TestPostgreSQLAtlasDirectionalRepairResumesPartialRollbackIntegration(t *testing.T) {
@@ -86,9 +86,9 @@ func TestPostgreSQLAtlasDirectionalRepairResumesPartialRollbackIntegration(t *te
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openDirectionalRepairDB(c.TB, dsn)
-	dropDirectionalRepairObjects(c.TB, db)
-	c.Cleanup(func() { dropDirectionalRepairObjects(c.TB, db) })
+	db := openDirectionalRepairDB(c, dsn)
+	dropDirectionalRepairObjects(c, db)
+	c.Cleanup(func() { dropDirectionalRepairObjects(c, db) })
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -99,8 +99,8 @@ func TestPostgreSQLAtlasDirectionalRepairResumesPartialRollbackIntegration(t *te
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 	c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNotNil)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairDropped), qt.IsFalse)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairKeep), qt.IsTrue)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairDropped), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
 
 	var operatorVersion string
 	var applied, total int
@@ -125,8 +125,8 @@ func TestPostgreSQLAtlasDirectionalRepairResumesPartialRollbackIntegration(t *te
 		ResumeFrom: directionalRepairResumeAt,
 	}), qt.IsNil)
 
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairMissing), qt.IsFalse)
-	c.Assert(directionalRepairTableExists(c.TB, db, directionalRepairKeep), qt.IsTrue)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairMissing), qt.IsFalse)
+	c.Assert(directionalRepairTableExists(c, db, directionalRepairKeep), qt.IsTrue)
 	var revisions int
 	c.Assert(db.QueryRow("SELECT COUNT(*) FROM "+directionalRepairAtlasTracker).Scan(&revisions), qt.IsNil)
 	c.Assert(revisions, qt.Equals, 0)
@@ -146,8 +146,7 @@ func directionalRepairMigrator(conn *dbschema.DatabaseConnection) *migrator.Migr
 		WithMigrationsTable("", directionalRepairTracker)
 }
 
-func openDirectionalRepairDB(tb testing.TB, dsn string) *sql.DB {
-	c := qt.New(tb)
+func openDirectionalRepairDB(c *qt.C, dsn string) *sql.DB {
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -155,8 +154,7 @@ func openDirectionalRepairDB(tb testing.TB, dsn string) *sql.DB {
 	return db
 }
 
-func dropDirectionalRepairObjects(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func dropDirectionalRepairObjects(c *qt.C, db *sql.DB) {
 	c.Helper()
 	for _, statement := range []string{
 		"DROP TABLE IF EXISTS " + directionalRepairKeep,
@@ -170,8 +168,7 @@ func dropDirectionalRepairObjects(tb testing.TB, db *sql.DB) {
 	}
 }
 
-func directionalRepairTableExists(tb testing.TB, db *sql.DB, name string) bool {
-	c := qt.New(tb)
+func directionalRepairTableExists(c *qt.C, db *sql.DB, name string) bool {
 	c.Helper()
 	var count int
 	err := db.QueryRow(
@@ -182,8 +179,7 @@ func directionalRepairTableExists(tb testing.TB, db *sql.DB, name string) bool {
 	return count > 0
 }
 
-func directionalRepairRevision(tb testing.TB, db *sql.DB) (state string, applied, total int) {
-	c := qt.New(tb)
+func directionalRepairRevision(c *qt.C, db *sql.DB) (state string, applied, total int) {
 	c.Helper()
 	err := db.QueryRow(
 		"SELECT state, applied, total FROM "+directionalRepairTracker+" WHERE version = $1",
@@ -193,8 +189,7 @@ func directionalRepairRevision(tb testing.TB, db *sql.DB) (state string, applied
 	return state, applied, total
 }
 
-func directionalRepairRevisionCount(tb testing.TB, db *sql.DB) int {
-	c := qt.New(tb)
+func directionalRepairRevisionCount(c *qt.C, db *sql.DB) int {
 	c.Helper()
 	var count int
 	c.Assert(db.QueryRow("SELECT COUNT(*) FROM "+directionalRepairTracker).Scan(&count), qt.IsNil)

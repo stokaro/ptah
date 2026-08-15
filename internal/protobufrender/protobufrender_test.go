@@ -51,23 +51,20 @@ func withPrevious(previous []byte) protobufrender.Options {
 	return opts
 }
 
-func mustRender(tb testing.TB, db *goschema.Database, opts protobufrender.Options) protobufrender.Result {
-	c := qt.New(tb)
+func mustRender(c *qt.C, db *goschema.Database, opts protobufrender.Options) protobufrender.Result {
 	c.Helper()
 	res, err := protobufrender.Render(context.Background(), db, opts)
 	c.Assert(err, qt.IsNil)
 	return res
 }
 
-func mustRenderText(tb testing.TB, db *goschema.Database, opts protobufrender.Options) string {
-	c := qt.New(tb)
+func mustRenderText(c *qt.C, db *goschema.Database, opts protobufrender.Options) string {
 	c.Helper()
-	return string(mustRender(c.TB, db, opts).Data)
+	return string(mustRender(c, db, opts).Data)
 }
 
 // mustFail asserts the export was refused and returns its user-facing message.
-func mustFail(tb testing.TB, db *goschema.Database, opts protobufrender.Options) string {
-	c := qt.New(tb)
+func mustFail(c *qt.C, db *goschema.Database, opts protobufrender.Options) string {
 	c.Helper()
 	res, err := protobufrender.Render(context.Background(), db, opts)
 	c.Assert(err, qt.IsNotNil)
@@ -193,7 +190,7 @@ func TestRenderGoldenFile(t *testing.T) {
 	// The golden file carries source prose, which is opt-in.
 	opts.Comments = protobufrender.CommentsAll
 
-	c.Assert(mustRenderText(c.TB, db, opts), qt.Equals, goldenFile)
+	c.Assert(mustRenderText(c, db, opts), qt.Equals, goldenFile)
 }
 
 const goldenFile = `edition = "2023";
@@ -228,13 +225,13 @@ func TestRenderIsByteIdenticalAcrossRuns(t *testing.T) {
 
 	db := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
 
-	first := mustRender(c.TB, db, baseOptions())
-	second := mustRender(c.TB, db, baseOptions())
+	first := mustRender(c, db, baseOptions())
+	second := mustRender(c, db, baseOptions())
 
 	c.Assert(string(second.Data), qt.Equals, string(first.Data))
 
 	// Regenerating from the file just produced must reproduce it exactly.
-	third := mustRender(c.TB, db, withPrevious(first.Data))
+	third := mustRender(c, db, withPrevious(first.Data))
 	c.Assert(string(third.Data), qt.Equals, string(first.Data))
 }
 
@@ -246,14 +243,14 @@ func TestRenderReorderedColumnsChangeNothing(t *testing.T) {
 		column("sku", "TEXT"),
 		column("name", "TEXT"),
 	)
-	baseline := mustRender(c.TB, db, baseOptions())
+	baseline := mustRender(c, db, baseOptions())
 
 	reordered := oneTable(
 		column("name", "TEXT"),
 		column("id", "BIGINT"),
 		column("sku", "TEXT"),
 	)
-	res := mustRender(c.TB, reordered, withPrevious(baseline.Data))
+	res := mustRender(c, reordered, withPrevious(baseline.Data))
 
 	c.Assert(string(res.Data), qt.Equals, string(baseline.Data))
 	c.Assert(string(res.Data), qt.Contains, "  int64 id = 1;\n  string sku = 2;\n  string name = 3;\n")
@@ -264,13 +261,13 @@ func TestRenderBootstrapWarnsAndFlagsResult(t *testing.T) {
 
 	db := oneTable(column("id", "BIGINT"))
 
-	first := mustRender(c.TB, db, baseOptions())
+	first := mustRender(c, db, baseOptions())
 	c.Assert(first.Bootstrapped, qt.IsTrue)
 	c.Assert(diagnosticMessages(first), qt.Any(qt.Contains),
 		"no previous export found at "+testOutPath+
 			"; field numbering starts from 1 and is not compatible with any previously published .proto")
 
-	second := mustRender(c.TB, db, withPrevious(first.Data))
+	second := mustRender(c, db, withPrevious(first.Data))
 	c.Assert(second.Bootstrapped, qt.IsFalse)
 	c.Assert(second.Diagnostics, qt.HasLen, 0)
 }
@@ -289,7 +286,7 @@ func TestRenderEndsWithExactlyOneNewline(t *testing.T) {
 	for name, db := range shapes {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
-			text := mustRenderText(c.TB, db, baseOptions())
+			text := mustRenderText(c, db, baseOptions())
 			c.Assert(strings.HasSuffix(text, "\n"), qt.IsTrue)
 			c.Assert(strings.HasSuffix(text, "\n\n"), qt.IsFalse)
 			c.Assert(text, qt.Not(qt.Contains), "\r")
@@ -324,7 +321,7 @@ func TestRenderHeaderIsNotTheFilesLeadingComment(t *testing.T) {
 	for name, db := range shapes {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
-			text := mustRenderText(c.TB, db, baseOptions())
+			text := mustRenderText(c, db, baseOptions())
 
 			c.Assert(strings.HasPrefix(text, `edition = "2023";`+"\n"), qt.IsTrue)
 			c.Assert(strings.HasPrefix(text, "//"), qt.IsFalse)
@@ -384,13 +381,13 @@ func TestRenderHonorsTableFilters(t *testing.T) {
 
 	included := baseOptions()
 	included.IncludeTables = []string{"books"}
-	text := mustRenderText(c.TB, db, included)
+	text := mustRenderText(c, db, included)
 	c.Assert(text, qt.Contains, "message Book {")
 	c.Assert(text, qt.Not(qt.Contains), "message Author {")
 
 	excluded := baseOptions()
 	excluded.ExcludeTables = []string{"books"}
-	text = mustRenderText(c.TB, db, excluded)
+	text = mustRenderText(c, db, excluded)
 	c.Assert(text, qt.Contains, "message Author {")
 	c.Assert(text, qt.Not(qt.Contains), "message Book {")
 }
@@ -409,7 +406,7 @@ func TestRenderCommentsCannotEscapeTheirContext(t *testing.T) {
 
 	// Comments are opt-in, and this test is about how they are RENDERED once
 	// asked for, so it asks.
-	text := mustRenderText(c.TB, db, commentOptions(baseOptions(), protobufrender.CommentsAll))
+	text := mustRenderText(c, db, commentOptions(baseOptions(), protobufrender.CommentsAll))
 
 	c.Assert(text, qt.Contains, "// first line\n")
 	c.Assert(text, qt.Contains, "// } message Injected { int32 x = 1; } tabbed\n")
@@ -425,6 +422,6 @@ func TestRenderEscapesGoPackage(t *testing.T) {
 	opts := baseOptions()
 	opts.GoPackage = "example.com/x\"y"
 
-	text := mustRenderText(c.TB, oneTable(column("id", "BIGINT")), opts)
+	text := mustRenderText(c, oneTable(column("id", "BIGINT")), opts)
 	c.Assert(text, qt.Contains, `option go_package = "example.com/x\"y";`)
 }

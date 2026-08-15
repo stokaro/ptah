@@ -90,7 +90,7 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 			c := qt.New(t)
 			dir := c.TempDir()
 			test.seed(c, dir, test.sumName)
-			writer := openTestWriter(c.TB, dir)
+			writer := openTestWriter(c, dir)
 			sum, err := migratesum.ComputeWithFormat(os.DirFS(dir), test.format)
 			c.Assert(err, qt.IsNil)
 
@@ -150,7 +150,7 @@ func TestPublishDirSum_CommitsWhenNothingReplacedTheDestination(t *testing.T) {
 			c.Assert(os.WriteFile(
 				filepath.Join(dir, test.sumName), []byte("h1:stale=\n"), 0o600,
 			), qt.IsNil)
-			writer := openTestWriter(c.TB, dir)
+			writer := openTestWriter(c, dir)
 			sum, err := migratesum.ComputeWithFormat(os.DirFS(dir), test.format)
 			c.Assert(err, qt.IsNil)
 

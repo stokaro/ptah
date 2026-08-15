@@ -31,8 +31,7 @@ func nativeAtlasPreCheckpointFiles() map[string]string {
 	}
 }
 
-func writeHashedAtlasDirFiles(tb testing.TB, files map[string]string) string {
-	c := qt.New(tb)
+func writeHashedAtlasDirFiles(c *qt.C, files map[string]string) string {
 	c.Helper()
 	dir := c.TempDir()
 	for name, content := range files {
@@ -45,16 +44,14 @@ func writeHashedAtlasDirFiles(tb testing.TB, files map[string]string) string {
 
 // writeNativeAtlasCheckpointDir writes the measured Atlas fixture layout from
 // stokaro/ptah#954 and hashes it with atlas.sum.
-func writeNativeAtlasCheckpointDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeNativeAtlasCheckpointDir(c *qt.C) string {
 	c.Helper()
 	files := nativeAtlasPreCheckpointFiles()
 	files["20260801100335_checkpoint.sql"] = "-- atlas:checkpoint\n\n-- Create \"users\" table\nCREATE TABLE `users` (\n  `id` integer NOT NULL PRIMARY KEY AUTOINCREMENT,\n  `name` text NOT NULL,\n  `email` text NULL\n);\n"
-	return writeHashedAtlasDirFiles(c.TB, files)
+	return writeHashedAtlasDirFiles(c, files)
 }
 
-func writeHashedPtahDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeHashedPtahDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -69,8 +66,7 @@ func writeHashedPtahDir(tb testing.TB) string {
 	return dir
 }
 
-func tamperFile(tb testing.TB, path string) {
-	c := qt.New(tb)
+func tamperFile(c *qt.C, path string) {
 	c.Helper()
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	c.Assert(err, qt.IsNil)
@@ -101,8 +97,8 @@ func runNativeStatus(dbPath, dir string) (combined string, err error) {
 
 func TestMigrateUp_TamperedHashedPtahDirRefusesBeforeExecution(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedPtahDir(c.TB)
-	tamperFile(c.TB, filepath.Join(dir, "0000000001_users.up.sql"))
+	dir := writeHashedPtahDir(c)
+	tamperFile(c, filepath.Join(dir, "0000000001_users.up.sql"))
 	dbPath := filepath.Join(c.TempDir(), "tamper.db")
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
@@ -118,11 +114,11 @@ func TestMigrateUp_TamperedHashedPtahDirRefusesBeforeExecution(t *testing.T) {
 
 func TestMigrateUp_TamperedHashedAtlasDirRefusesBeforeExecution(t *testing.T) {
 	c := qt.New(t)
-	dir := writeNativeAtlasCheckpointDir(c.TB)
+	dir := writeNativeAtlasCheckpointDir(c)
 	// The tampered file is the checkpoint itself: the gate must run before
 	// checkpoint selection reads anything, so the tampered checkpoint can
 	// never execute.
-	tamperFile(c.TB, filepath.Join(dir, "20260801100335_checkpoint.sql"))
+	tamperFile(c, filepath.Join(dir, "20260801100335_checkpoint.sql"))
 	dbPath := filepath.Join(c.TempDir(), "tamper.db")
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
@@ -136,8 +132,8 @@ func TestMigrateUp_TamperedHashedAtlasDirRefusesBeforeExecution(t *testing.T) {
 
 func TestMigrateUp_TamperedDirErrorMatchesValidateReport(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedPtahDir(c.TB)
-	tamperFile(c.TB, filepath.Join(dir, "0000000001_users.up.sql"))
+	dir := writeHashedPtahDir(c)
+	tamperFile(c, filepath.Join(dir, "0000000001_users.up.sql"))
 
 	validateOut, validateErr := runNativeValidate(dir)
 	_, upErr := runUp("--db-url", "sqlite://"+filepath.Join(c.TempDir(), "parity.db"), "--migrations-dir", dir)
@@ -162,7 +158,7 @@ func TestMigrateUp_UnhashedDirStaysUngated(t *testing.T) {
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(2))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
 }
 
 // TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum pins the
@@ -208,18 +204,18 @@ func TestMigrateUp_UnhashedAtlasDirStaysUngatedUnlessVerifySum(t *testing.T) {
 
 func TestMigrateUp_ValidHashedPtahDirApplies(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedPtahDir(c.TB)
+	dir := writeHashedPtahDir(c)
 	dbPath := filepath.Join(c.TempDir(), "valid.db")
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(1))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
 }
 
 func TestMigrateUp_AtlasCheckpointFreshDatabase(t *testing.T) {
 	c := qt.New(t)
-	dir := writeNativeAtlasCheckpointDir(c.TB)
+	dir := writeNativeAtlasCheckpointDir(c)
 	dbPath := filepath.Join(c.TempDir(), "fresh.db")
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
@@ -230,7 +226,7 @@ func TestMigrateUp_AtlasCheckpointFreshDatabase(t *testing.T) {
 	// stokaro/ptah#954).
 	c.Assert(out, qt.Contains, "Pending migrations: 1")
 	c.Assert(out, qt.Contains, "Database is now at version: 20260801100335")
-	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(20260801100335))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(20260801100335))
 
 	statusOut, err := runNativeStatus(dbPath, dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", statusOut))
@@ -240,15 +236,15 @@ func TestMigrateUp_AtlasCheckpointFreshDatabase(t *testing.T) {
 
 func TestMigrateUp_AtlasCheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	c := qt.New(t)
-	fullDir := writeNativeAtlasCheckpointDir(c.TB)
+	fullDir := writeNativeAtlasCheckpointDir(c)
 
 	// Seed through ordinary pre-checkpoint history from a directory that does
 	// not contain the checkpoint yet.
-	preDir := writeHashedAtlasDirFiles(c.TB, nativeAtlasPreCheckpointFiles())
+	preDir := writeHashedAtlasDirFiles(c, nativeAtlasPreCheckpointFiles())
 	dbPath := filepath.Join(c.TempDir(), "pre.db")
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", preDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(20250801000002))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(20250801000002))
 
 	// The checkpointed directory is silently skipped: no pending work, no new
 	// bookkeeping row, clean status (measured Atlas prints "No migration files
@@ -257,7 +253,7 @@ func TestMigrateUp_AtlasCheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Pending migrations: 0")
 	c.Assert(out, qt.Contains, "Database is already up to date!")
-	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(20250801000002))
+	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(20250801000002))
 
 	statusOut, err := runNativeStatus(dbPath, fullDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", statusOut))

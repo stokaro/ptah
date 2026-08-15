@@ -82,8 +82,8 @@ func TestNoTransactionCancellation_AfterFinalUpStatementCompletesRevision(t *tes
 	mig := migrator.NewMigrator(conn, provider)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "applied")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
 }
 
 func TestNoTransactionCancellation_AfterFinalDownStatementDeletesRevision(t *testing.T) {
@@ -116,6 +116,6 @@ func TestNoTransactionCancellation_AfterFinalDownStatementDeletesRevision(t *tes
 	mig := migrator.NewMigrator(conn, provider)
 
 	c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNil)
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsFalse)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 }

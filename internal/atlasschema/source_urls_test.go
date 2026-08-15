@@ -20,7 +20,7 @@ func seedSourceSQLite(t *testing.T, ddl string) string {
 	t.Helper()
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "seed.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, ddl), qt.IsNil)
 	return dbPath
@@ -166,7 +166,7 @@ func TestPrepareApply_DatabaseSource(t *testing.T) {
 	c := qt.New(t)
 	sourcePath := seedSourceSQLite(t, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY);\n")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -177,13 +177,13 @@ func TestPrepareApply_DatabaseSource(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	c.Assert(plan.Execute(t.Context()), qt.IsNil)
-	c.Assert(sqliteTableExists(c.TB, targetPath, "mirrored_users"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, targetPath, "mirrored_users"), qt.IsTrue)
 }
 
 func TestPrepareApply_DatabaseSourceDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -200,7 +200,7 @@ func TestPrepareApply_MigrationDirSource(t *testing.T) {
 	migrationsDir := writeAtlasMigrationDir(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -212,14 +212,14 @@ func TestPrepareApply_MigrationDirSource(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	c.Assert(plan.Execute(t.Context()), qt.IsNil)
-	c.Assert(sqliteTableExists(c.TB, targetPath, "replayed_users"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, targetPath, "replayed_users"), qt.IsTrue)
 }
 
 func TestPrepareApply_MigrationDirSourceRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasMigrationDir(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -239,7 +239,7 @@ func TestPlanApply_EmptyLocalDirectoryRefuses(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
@@ -260,7 +260,7 @@ func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "2_posts.sql"),
 		[]byte("CREATE TABLE plan_dir_posts (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
@@ -281,7 +281,7 @@ func TestPreparePlanFile_MigrationDirStaysLocalOnly(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasMigrationDir(t, "CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
-	conn := connectSQLite(c.TB, targetPath)
+	conn := connectSQLite(c, targetPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	_, err := atlasschema.PreparePlanFile(t.Context(), conn, atlasschema.PlanFileOptions{

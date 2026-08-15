@@ -18,7 +18,7 @@ func TestCaptureLocal_RejectsSymlinkedFileEscape(t *testing.T) {
 	dir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 	outside := filepath.Join(t.TempDir(), "outside.sql")
-	writeFile(c.TB, outside, "SELECT 'outside';\n")
+	writeFile(c, outside, "SELECT 'outside';\n")
 	c.Assert(os.Symlink(outside, filepath.Join(dir, "1_init.sql")), qt.IsNil)
 
 	source, err := migrationsource.CaptureLocal(

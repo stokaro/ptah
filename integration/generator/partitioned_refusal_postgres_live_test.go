@@ -41,8 +41,8 @@ func TestGenerateMigration_PartitionedParentRefusesRequestedConcurrentIndexBefor
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_partition_refusal")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_partition_refusal")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -71,7 +71,7 @@ func TestGenerateMigration_PartitionedParentRefusesRequestedConcurrentIndexBefor
 	c.Assert(relkind, qt.Equals, "p")
 
 	dir := t.TempDir()
-	entitiesDir := writePartitionedIndexEntities(c.TB, dir)
+	entitiesDir := writePartitionedIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 

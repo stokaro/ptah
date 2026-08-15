@@ -97,8 +97,8 @@ func TestNativeSchemaVerbsDivergeOnAnEmptyIncludeSelection(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "live.db")
-			seedSQLite(c.TB, dbPath, nativeEmptySelectionDDL)
-			schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql", nativeEmptySelectionDDL+"\n")
+			seedSQLite(c, dbPath, nativeEmptySelectionDDL)
+			schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", nativeEmptySelectionDDL+"\n")
 
 			stdout, stderr, err := test.run(dbPath, schemaPath, filepath.Join(dir, "dev.db"))
 

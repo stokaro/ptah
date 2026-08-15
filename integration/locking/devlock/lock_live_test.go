@@ -20,7 +20,7 @@ import (
 func TestSameRealm_PostgresDriverURLOverridesLive(t *testing.T) {
 	c := qt.New(t)
 	targetURL := dbtarget.URL(c, dbtarget.PostgreSQL)
-	overrideURL := postgresDriverOverrideURL(c.TB, targetURL)
+	overrideURL := postgresDriverOverrideURL(c, targetURL)
 	targetConn, err := dbschema.ConnectToDatabase(c.Context(), targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(targetConn)
@@ -97,8 +97,7 @@ func TestAcquire_CockroachDBSerializesSameRealmLive(t *testing.T) {
 	c.Assert(secondLock.Release(), qt.IsNil)
 }
 
-func postgresDriverOverrideURL(tb testing.TB, rawURL string) string {
-	c := qt.New(tb)
+func postgresDriverOverrideURL(c *qt.C, rawURL string) string {
 	c.Helper()
 	config, err := pgx.ParseConfig(rawURL)
 	c.Assert(err, qt.IsNil)

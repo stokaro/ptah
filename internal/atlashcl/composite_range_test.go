@@ -30,7 +30,7 @@ composite "address" {
 	c.Assert(db.CompositeTypes[0].Fields[0].Type, qt.Equals, "text")
 	c.Assert(db.CompositeTypes[0].Fields[1].Name, qt.Equals, "zip")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE address AS (street text, zip integer);`)
 }
 
@@ -70,7 +70,7 @@ composite "measurement" {
 	c.Assert(db.CompositeTypes, qt.HasLen, 1)
 	c.Assert(db.CompositeTypes[0].Fields[0].Type, qt.Equals, "double precision")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE measurement AS (value double precision);`)
 }
 
@@ -122,7 +122,7 @@ range "floatrange" {
 	c.Assert(db.Ranges[0].Subtype, qt.Equals, "float8")
 	c.Assert(db.Ranges[0].SubtypeDiff, qt.Equals, "float8mi")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TYPE floatrange AS RANGE (SUBTYPE = float8, SUBTYPE_DIFF = float8mi);`)
 }
 

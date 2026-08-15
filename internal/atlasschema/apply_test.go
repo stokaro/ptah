@@ -27,7 +27,7 @@ CREATE TABLE users (
   email TEXT NOT NULL
 );
 `), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
@@ -53,7 +53,7 @@ CREATE TABLE apply_skip (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
@@ -77,7 +77,7 @@ CREATE TABLE apply_keep (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, `
 CREATE TABLE apply_skip (
   id INTEGER PRIMARY KEY
@@ -107,7 +107,7 @@ CREATE TABLE users (
 );
 `
 	c.Assert(os.WriteFile(schemaPath, []byte(schemaSQL), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
@@ -133,7 +133,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 
 	t.Run("empty desired schema URLs", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "empty-to.db"))
+		conn := connectSQLite(c, filepath.Join(t.TempDir(), "empty-to.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{})
@@ -154,7 +154,7 @@ CREATE TABLE runtime_users (
   email TEXT NOT NULL
 );
 `), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL: "sqlite://dev.db",
@@ -169,7 +169,7 @@ CREATE TABLE runtime_users (
 	dbschema.CloseAndWarn(conn)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteTableExists(c.TB, dbPath, "runtime_users"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "runtime_users"), qt.IsTrue)
 }
 
 func TestPrepareApply_DryRunDoesNotApply(t *testing.T) {
@@ -182,7 +182,7 @@ CREATE TABLE runtime_dry_run (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL: "sqlite://dev.db",
@@ -197,7 +197,7 @@ CREATE TABLE runtime_dry_run (
 	dbschema.CloseAndWarn(conn)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteTableExists(c.TB, dbPath, "runtime_dry_run"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c, dbPath, "runtime_dry_run"), qt.IsFalse)
 }
 
 func TestPrepareApply_Synced(t *testing.T) {
@@ -211,7 +211,7 @@ CREATE TABLE runtime_synced (
 );
 `
 	c.Assert(os.WriteFile(schemaPath, []byte(schemaSQL), 0o600), qt.IsNil)
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
 	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -244,7 +244,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 
 	t.Run("dev URL dialect mismatch", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "runtime-dev-url-mismatch.db"))
+		conn := connectSQLite(c, filepath.Join(t.TempDir(), "runtime-dev-url-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
@@ -261,7 +261,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 func TestApplySQL_TxModeAllRollsBackOnFailure(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "tx-mode-all.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	sqlText := `
 CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
@@ -272,13 +272,13 @@ CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to execute SQL statement")
-	c.Assert(sqliteTableExists(c.TB, dbPath, "tx_mode_first"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c, dbPath, "tx_mode_first"), qt.IsFalse)
 }
 
 func TestApplySQL_TxModeNoneKeepsPriorStatementsOnFailure(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "tx-mode-none.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	sqlText := `
 CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
@@ -289,7 +289,7 @@ CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to execute SQL statement")
-	c.Assert(sqliteTableExists(c.TB, dbPath, "tx_mode_first"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "tx_mode_first"), qt.IsTrue)
 }
 
 func TestApplySQL_FailurePath(t *testing.T) {
@@ -333,7 +333,7 @@ func TestApplyStatements_DropsCommentOnlyStatements(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "comment-only-statements.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 
 	err := atlasschema.ApplyStatements(context.Background(), conn, migrator.MigrationTxModeAll, []string{
 		"-- SQLITE: role app_user is not supported by this target; skipped.",
@@ -342,7 +342,7 @@ func TestApplyStatements_DropsCommentOnlyStatements(t *testing.T) {
 	dbschema.CloseAndWarn(conn)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteTableExists(c.TB, dbPath, "applied_statement"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, "applied_statement"), qt.IsTrue)
 }
 
 func TestFormatMigrationSQL_HappyPath(t *testing.T) {
@@ -357,18 +357,16 @@ func TestFormatMigrationSQL_HappyPath(t *testing.T) {
 	c.Assert(sqlText, qt.Equals, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE INDEX users_id_idx ON users (id);\n")
 }
 
-func connectSQLite(tb testing.TB, dbPath string) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func connectSQLite(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	return conn
 }
 
-func sqliteTableExists(tb testing.TB, dbPath, table string) bool {
-	c := qt.New(tb)
+func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	c.Helper()
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)

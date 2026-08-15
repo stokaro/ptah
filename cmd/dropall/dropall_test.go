@@ -17,7 +17,7 @@ func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	cmd := dropall.NewDropAllCommand()
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})
 	cmd.SetIn(bytes.NewBufferString("no\n"))
 	var out bytes.Buffer
@@ -27,7 +27,7 @@ func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	err := cmd.Execute()
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Operation canceled.")
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 }
 
 func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
@@ -35,7 +35,7 @@ func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	cmd := dropall.NewDropAllCommand()
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL, "--auto-approve"})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -45,7 +45,7 @@ func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Auto-approval enabled; skipping interactive confirmation.")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'DELETE EVERYTHING'")
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 }
 
 func TestDropAllCommandAcceptsTwoLineConfirmationFromCobraInput(t *testing.T) {
@@ -53,7 +53,7 @@ func TestDropAllCommandAcceptsTwoLineConfirmationFromCobraInput(t *testing.T) {
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	cmd := dropall.NewDropAllCommand()
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})
 	cmd.SetIn(bytes.NewBufferString("DELETE EVERYTHING\nYES I AM SURE\n"))
 	var out bytes.Buffer
@@ -63,11 +63,10 @@ func TestDropAllCommandAcceptsTwoLineConfirmationFromCobraInput(t *testing.T) {
 	err := cmd.Execute()
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "All tables and enums dropped successfully!")
-	resetDropAllCommandForTest(c.TB, cmd)
+	resetDropAllCommandForTest(c, cmd)
 }
 
-func resetDropAllCommandForTest(tb testing.TB, cmd interface{ Flag(string) *pflag.Flag }) {
-	c := qt.New(tb)
+func resetDropAllCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
 	c.Helper()
 	for name, value := range map[string]string{
 		"db-url":          "",

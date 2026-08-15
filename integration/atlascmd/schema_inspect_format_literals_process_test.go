@@ -22,12 +22,12 @@ import (
 // literally; explicit helpers retain Ptah's complete rendering capability.
 func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	emptyDB := filepath.Join(dir, "empty.db")
 	populatedDB := filepath.Join(dir, "populated.db")
-	createSchemaInspectSQLiteDatabase(c.TB, emptyDB)
-	createSchemaInspectSQLiteDatabase(c.TB, populatedDB,
+	createSchemaInspectSQLiteDatabase(c, emptyDB)
+	createSchemaInspectSQLiteDatabase(c, populatedDB,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY)`)
 
 	tests := []struct {
@@ -90,10 +90,10 @@ func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 
 func TestCompatBinarySchemaInspectBareProjectFormatIsLiteralText(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	dbPath := filepath.Join(dir, "populated.db")
-	createSchemaInspectSQLiteDatabase(c.TB, dbPath,
+	createSchemaInspectSQLiteDatabase(c, dbPath,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY)`)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
@@ -120,12 +120,12 @@ func TestCompatBinarySchemaInspectBareProjectFormatIsLiteralText(t *testing.T) {
 // adapter from narrowing the native Ptah surface.
 func TestNativeBinarySchemaInspectBareFormatsStillRender(t *testing.T) {
 	c := qt.New(t)
-	native := buildSchemaInspectBinary(c.TB, "ptah", "go.5x5.cz/ptah/cmd/ptah")
+	native := buildSchemaInspectBinary(c, "ptah", "go.5x5.cz/ptah/cmd/ptah")
 	dir := c.TempDir()
 	emptyDB := filepath.Join(dir, "empty.db")
 	populatedDB := filepath.Join(dir, "populated.db")
-	createSchemaInspectSQLiteDatabase(c.TB, emptyDB)
-	createSchemaInspectSQLiteDatabase(c.TB, populatedDB,
+	createSchemaInspectSQLiteDatabase(c, emptyDB)
+	createSchemaInspectSQLiteDatabase(c, populatedDB,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY)`)
 
 	tests := []struct {
@@ -174,8 +174,7 @@ func TestNativeBinarySchemaInspectBareFormatsStillRender(t *testing.T) {
 	}
 }
 
-func buildSchemaInspectBinary(tb testing.TB, name, packagePath string) string {
-	c := qt.New(tb)
+func buildSchemaInspectBinary(c *qt.C, name, packagePath string) string {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", path, packagePath)
@@ -206,8 +205,7 @@ func environmentWithoutPtahVariables() []string {
 	return env
 }
 
-func createSchemaInspectSQLiteDatabase(tb testing.TB, dbPath string, statements ...string) {
-	c := qt.New(tb)
+func createSchemaInspectSQLiteDatabase(c *qt.C, dbPath string, statements ...string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

@@ -13,9 +13,9 @@ import (
 
 func TestInspect_HappyPathHCL(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "inspect-hcl.db"))
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-hcl.db"))
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c.TB, conn)
+	createInspectSchema(c, conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "hcl",
@@ -28,9 +28,9 @@ func TestInspect_HappyPathHCL(t *testing.T) {
 
 func TestInspect_HappyPathCustomTemplate(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "inspect-template.db"))
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-template.db"))
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c.TB, conn)
+	createInspectSchema(c, conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: `{{ len .Realm.Schemas }}/{{ len (index .Schema.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
@@ -42,9 +42,9 @@ func TestInspect_HappyPathCustomTemplate(t *testing.T) {
 
 func TestInspect_ExcludeFilter(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "inspect-exclude.db"))
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-exclude.db"))
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c.TB, conn)
+	createInspectSchema(c, conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format:  "hcl",
@@ -60,9 +60,9 @@ func TestInspect_ExcludeFilter(t *testing.T) {
 func TestInspect_IncludeSelection(t *testing.T) {
 	t.Run("selects the named table and its children", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TempDir(), "inspect-include.db"))
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include.db"))
 		defer dbschema.CloseAndWarn(conn)
-		createInspectSchema(c.TB, conn)
+		createInspectSchema(c, conn)
 
 		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			Format:  "hcl",
@@ -78,9 +78,9 @@ func TestInspect_IncludeSelection(t *testing.T) {
 
 	t.Run("refuses a selection that drops a dependency", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TempDir(), "inspect-include-dep.db"))
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-dep.db"))
 		defer dbschema.CloseAndWarn(conn)
-		createInspectSchema(c.TB, conn)
+		createInspectSchema(c, conn)
 
 		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			Format:  "hcl",
@@ -93,9 +93,9 @@ func TestInspect_IncludeSelection(t *testing.T) {
 
 	t.Run("exclusion-only inspection is unchanged", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TempDir(), "inspect-include-none.db"))
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-none.db"))
 		defer dbschema.CloseAndWarn(conn)
-		createInspectSchema(c.TB, conn)
+		createInspectSchema(c, conn)
 
 		withoutInclude, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 			Format:  "hcl",
@@ -135,7 +135,7 @@ func TestInspect_FailurePath(t *testing.T) {
 
 	t.Run("dev url dialect mismatch", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TempDir(), "inspect-mismatch.db"))
+		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
@@ -154,8 +154,7 @@ func TestSplitSchemaNames(t *testing.T) {
 	c.Assert(schemas, qt.DeepEquals, []string{"public", "auth", "tenant"})
 }
 
-func createInspectSchema(tb testing.TB, conn *dbschema.DatabaseConnection) {
-	c := qt.New(tb)
+func createInspectSchema(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	_, err := conn.ExecContext(context.Background(), `
 CREATE TABLE users (

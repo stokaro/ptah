@@ -30,7 +30,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -39,22 +39,22 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 	testID := time.Now().UnixNano()
 	targetDBName := fmt.Sprintf("ptah_shadow_target_e2e_%d", testID)
 	shadowDBName := fmt.Sprintf("ptah_shadow_replay_e2e_%d", testID)
-	createE2EDatabase(c.TB, ctx, adminDB, targetDBName)
-	defer dropE2EDatabase(c.TB, context.Background(), adminDB, targetDBName)
-	createE2EDatabase(c.TB, ctx, adminDB, shadowDBName)
-	defer dropE2EDatabase(c.TB, context.Background(), adminDB, shadowDBName)
+	createE2EDatabase(c, ctx, adminDB, targetDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, targetDBName)
+	createE2EDatabase(c, ctx, adminDB, shadowDBName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, shadowDBName)
 
-	targetDBURL := replaceDatabaseName(c.TB, dbURL, targetDBName)
-	shadowDBURL := replaceDatabaseName(c.TB, dbURL, shadowDBName)
+	targetDBURL := replaceDatabaseName(c, dbURL, targetDBName)
+	shadowDBURL := replaceDatabaseName(c, dbURL, shadowDBName)
 
 	t.Run("broken hand-edited migration aborts before writing candidate files", func(t *testing.T) {
 		c := qt.New(t)
 		dir := t.TempDir()
-		entitiesDir := writeShadowE2EEntities(c.TB, dir)
+		entitiesDir := writeShadowE2EEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-		writeShadowE2EPriorMigration(c.TB, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
-		prepareShadowE2ETargetDB(c.TB, ctx, targetDBURL)
+		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
+		prepareShadowE2ETargetDB(c, ctx, targetDBURL)
 
 		output, err := runPtah(
 			ctx,
@@ -78,11 +78,11 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 	t.Run("correct migration chain writes candidate files", func(t *testing.T) {
 		c := qt.New(t)
 		dir := t.TempDir()
-		entitiesDir := writeShadowE2EEntities(c.TB, dir)
+		entitiesDir := writeShadowE2EEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-		writeShadowE2EPriorMigration(c.TB, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
-		prepareShadowE2ETargetDB(c.TB, ctx, targetDBURL)
+		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
+		prepareShadowE2ETargetDB(c, ctx, targetDBURL)
 
 		output, err := runPtah(
 			ctx,
@@ -101,7 +101,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		matches, globErr := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 4)
-		c.Assert(readFirstMatchingFile(c.TB, migrationsDir, "*_add_email.up.sql"), qt.Contains, "email")
+		c.Assert(readFirstMatchingFile(c, migrationsDir, "*_add_email.up.sql"), qt.Contains, "email")
 	})
 }
 
@@ -114,8 +114,7 @@ func e2eRepoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(file))
 }
 
-func buildPtah(tb testing.TB, ctx context.Context, repoRoot, binaryPath string) {
-	c := qt.New(tb)
+func buildPtah(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/ptah")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
@@ -125,8 +124,7 @@ func buildPtah(tb testing.TB, ctx context.Context, repoRoot, binaryPath string) 
 // buildPtahCompat builds the ptah-compat binary, the drop-in Atlas
 // replacement that hosts the Atlas-compatible command tree removed from the
 // main ptah binary in #850.
-func buildPtahCompat(tb testing.TB, ctx context.Context, repoRoot, binaryPath string) {
-	c := qt.New(tb)
+func buildPtahCompat(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/ptah-compat")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
@@ -140,14 +138,12 @@ func runPtah(ctx context.Context, repoRoot, binaryPath string, args ...string) (
 	return string(output), err
 }
 
-func createE2EDatabase(tb testing.TB, ctx context.Context, db *sql.DB, name string) {
-	c := qt.New(tb)
+func createE2EDatabase(c *qt.C, ctx context.Context, db *sql.DB, name string) {
 	_, err := db.ExecContext(ctx, "CREATE DATABASE "+quoteE2EIdent(name))
 	c.Assert(err, qt.IsNil)
 }
 
-func dropE2EDatabase(tb testing.TB, ctx context.Context, db *sql.DB, name string) {
-	c := qt.New(tb)
+func dropE2EDatabase(c *qt.C, ctx context.Context, db *sql.DB, name string) {
 	_, _ = db.ExecContext(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", name)
 	_, err := db.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteE2EIdent(name))
 	c.Assert(err, qt.IsNil)
@@ -157,16 +153,14 @@ func quoteE2EIdent(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
-func replaceDatabaseName(tb testing.TB, dbURL, databaseName string) string {
-	c := qt.New(tb)
+func replaceDatabaseName(c *qt.C, dbURL, databaseName string) string {
 	parsed, err := url.Parse(dbURL)
 	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + databaseName
 	return parsed.String()
 }
 
-func prepareShadowE2ETargetDB(tb testing.TB, ctx context.Context, dbURL string) {
-	c := qt.New(tb)
+func prepareShadowE2ETargetDB(c *qt.C, ctx context.Context, dbURL string) {
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -179,8 +173,7 @@ func prepareShadowE2ETargetDB(tb testing.TB, ctx context.Context, dbURL string) 
 	c.Assert(err, qt.IsNil)
 }
 
-func writeShadowE2EEntities(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writeShadowE2EEntities(c *qt.C, dir string) string {
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
 	content := `package entities
@@ -201,14 +194,12 @@ type User struct {
 	return entitiesDir
 }
 
-func writeShadowE2EPriorMigration(tb testing.TB, dir, upSQL string) {
-	c := qt.New(tb)
+func writeShadowE2EPriorMigration(c *qt.C, dir, upSQL string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(upSQL), 0600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("DROP TABLE IF EXISTS users;\n"), 0600), qt.IsNil)
 }
 
-func readFirstMatchingFile(tb testing.TB, dir, pattern string) string {
-	c := qt.New(tb)
+func readFirstMatchingFile(c *qt.C, dir, pattern string) string {
 	matches, err := filepath.Glob(filepath.Join(dir, pattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.Not(qt.HasLen), 0)

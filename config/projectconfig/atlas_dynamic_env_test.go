@@ -536,7 +536,7 @@ func TestSingularProjectConfigAdaptersRejectMultipleSelectedInstances(t *testing
 		`atlas env "local" selected 2 project config instances; use the corresponding collection-valued API`,
 	)
 
-	chdirWith(c.TB, map[string]string{"atlas.hcl": raw})
+	chdirWith(c, map[string]string{"atlas.hcl": raw})
 	configs, err := projectconfig.LoadCollection(projectconfig.LoadOptions{EnvName: "local"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(configs, qt.HasLen, 2)

@@ -38,8 +38,7 @@ var allOperations = graphqlrender.Operations{
 	List: true, ByID: true, CreateInput: true, UpdateInput: true,
 }
 
-func render(tb testing.TB, opts graphqlrender.Options) string {
-	c := qt.New(tb)
+func render(c *qt.C, opts graphqlrender.Options) string {
 	c.Helper()
 	res, err := graphqlrender.Render(fixture(), opts)
 	c.Assert(err, qt.IsNil)
@@ -48,7 +47,7 @@ func render(tb testing.TB, opts graphqlrender.Options) string {
 
 func TestRenderObjectTypesAndScalars(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{})
+	sdl := render(c, graphqlrender.Options{})
 
 	c.Assert(sdl, qt.Contains, "scalar DateTime")
 	c.Assert(sdl, qt.Contains, "scalar JSON")
@@ -69,7 +68,7 @@ func TestRenderObjectTypesAndScalars(t *testing.T) {
 
 func TestRenderForeignKeyRelation(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{})
+	sdl := render(c, graphqlrender.Options{})
 	// The scalar id column is kept and a relation object is added alongside it.
 	c.Assert(sdl, qt.Contains, "  author_id: Int!")
 	c.Assert(sdl, qt.Contains, "  author: Author!")
@@ -80,7 +79,7 @@ func TestRenderForeignKeyRelation(t *testing.T) {
 // or data access, so an operation surface must be asked for by name.
 func TestRenderDefaultIsTypesOnly(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{})
+	sdl := render(c, graphqlrender.Options{})
 
 	c.Assert(sdl, qt.Contains, "type Author {")
 	c.Assert(sdl, qt.Contains, "type Book {")
@@ -96,7 +95,7 @@ func TestRenderDefaultIsTypesOnly(t *testing.T) {
 
 func TestRenderListOperations(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{Operations: graphqlrender.Operations{List: true}})
+	sdl := render(c, graphqlrender.Options{Operations: graphqlrender.Operations{List: true}})
 
 	c.Assert(sdl, qt.Contains, "type PageInfo {")
 	c.Assert(sdl, qt.Contains, "type AuthorEdge {\n  node: Author!\n  cursor: String!\n}")
@@ -112,7 +111,7 @@ func TestRenderListOperations(t *testing.T) {
 
 func TestRenderByIDOperations(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{Operations: graphqlrender.Operations{ByID: true}})
+	sdl := render(c, graphqlrender.Options{Operations: graphqlrender.Operations{ByID: true}})
 
 	query := section(sdl, "type Query {")
 	c.Assert(query, qt.Contains, "author(id: ID!): Author")
@@ -125,7 +124,7 @@ func TestRenderByIDOperations(t *testing.T) {
 
 func TestRenderCreateInputExcludesServerGeneratedKey(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{Operations: graphqlrender.Operations{CreateInput: true}})
+	sdl := render(c, graphqlrender.Options{Operations: graphqlrender.Operations{CreateInput: true}})
 
 	input := section(sdl, "input BookCreateInput {")
 	c.Assert(input, qt.Not(qt.Contains), "  id: ") // the serial primary key is server-generated
@@ -137,7 +136,7 @@ func TestRenderCreateInputExcludesServerGeneratedKey(t *testing.T) {
 
 func TestRenderUpdateInputDropsKeyAndIsPartial(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{Operations: graphqlrender.Operations{UpdateInput: true}})
+	sdl := render(c, graphqlrender.Options{Operations: graphqlrender.Operations{UpdateInput: true}})
 
 	input := section(sdl, "input BookUpdateInput {")
 	c.Assert(input, qt.Not(qt.Contains), "  id: ")
@@ -150,7 +149,7 @@ func TestRenderUpdateInputDropsKeyAndIsPartial(t *testing.T) {
 
 func TestRenderCreateAndUpdateInputsAreDistinct(t *testing.T) {
 	c := qt.New(t)
-	sdl := render(c.TB, graphqlrender.Options{
+	sdl := render(c, graphqlrender.Options{
 		Operations: graphqlrender.Operations{CreateInput: true, UpdateInput: true},
 	})
 
@@ -226,7 +225,7 @@ func TestRenderOperationNoticeAccompaniesOperations(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			sdl := render(c.TB, graphqlrender.Options{Operations: test.ops})
+			sdl := render(c, graphqlrender.Options{Operations: test.ops})
 			c.Assert(sdl, qt.Contains, "Ptah generates no resolvers")
 			c.Assert(sdl, qt.Contains, "no authorization or tenant")
 		})
@@ -234,7 +233,7 @@ func TestRenderOperationNoticeAccompaniesOperations(t *testing.T) {
 
 	t.Run("types only says nothing about operations", func(t *testing.T) {
 		c := qt.New(t)
-		sdl := render(c.TB, graphqlrender.Options{})
+		sdl := render(c, graphqlrender.Options{})
 		c.Assert(sdl, qt.Not(qt.Contains), "Operation shapes")
 	})
 }
@@ -303,7 +302,7 @@ func TestRenderArrayColumn(t *testing.T) {
 			{StructName: "T", Name: "scores", Type: "INTEGER[]"},
 		},
 	}
-	sdl := string(mustRender(c.TB, db))
+	sdl := string(mustRender(c, db))
 	c.Assert(sdl, qt.Contains, "  tags: [String]")
 	c.Assert(sdl, qt.Contains, "  scores: [Int]!")
 }
@@ -421,8 +420,7 @@ func TestRenderInputOmittedWhenProjectionIsEmpty(t *testing.T) {
 	c.Assert(diagnosticText(res), qt.Contains, "the update projection is empty; input omitted")
 }
 
-func mustRender(tb testing.TB, db *goschema.Database) []byte {
-	c := qt.New(tb)
+func mustRender(c *qt.C, db *goschema.Database) []byte {
 	c.Helper()
 	res, err := graphqlrender.Render(db, graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)
@@ -446,7 +444,7 @@ func TestRenderDeterministic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			opts := graphqlrender.Options{Operations: test.ops}
-			c.Assert(render(c.TB, opts), qt.Equals, render(c.TB, opts))
+			c.Assert(render(c, opts), qt.Equals, render(c, opts))
 		})
 	}
 }
@@ -456,7 +454,7 @@ func TestRenderDeterministic(t *testing.T) {
 // operation on never renames a published type.
 func TestRenderObjectTypeNamesAreStableAcrossProfiles(t *testing.T) {
 	c := qt.New(t)
-	typesOnly := section(render(c.TB, graphqlrender.Options{}), "type Book {")
+	typesOnly := section(render(c, graphqlrender.Options{}), "type Book {")
 
 	tests := []struct {
 		name string
@@ -472,7 +470,7 @@ func TestRenderObjectTypeNamesAreStableAcrossProfiles(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := section(render(c.TB, graphqlrender.Options{Operations: test.ops}), "type Book {")
+			got := section(render(c, graphqlrender.Options{Operations: test.ops}), "type Book {")
 			c.Assert(got, qt.Equals, typesOnly)
 		})
 	}

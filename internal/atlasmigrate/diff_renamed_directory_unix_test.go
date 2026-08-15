@@ -101,7 +101,7 @@ func TestGenerateDiff_RenamedDirectoryCannotRedirectPublication(t *testing.T) {
 CREATE TABLE legacy (id INTEGER PRIMARY KEY);
 CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL DEFAULT '');
 `), 0o600), qt.IsNil)
-			conn := connectSQLite(c.TB, filepath.Join(root, "dev.db"))
+			conn := connectSQLite(c, filepath.Join(root, "dev.db"))
 			defer dbschema.CloseAndWarn(conn)
 
 			prepared := 0
@@ -109,13 +109,13 @@ CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL DEFAULT '');
 			result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
 				Dir:         migrations,
 				Root:        openDiffProjectRoot(c, root),
-				Desired:     localDesiredSet(c.TB, "file://"+schemaPath),
+				Desired:     localDesiredSet(c, "file://"+schemaPath),
 				Name:        "add_users",
 				LockTimeout: time.Second,
 				PreparePublication: func([]string) error {
 					prepared++
 					test.swap(c, migrations, retained, decoy)
-					decoyAfterSwap = dirEntryNames(c.TB, decoy)
+					decoyAfterSwap = dirEntryNames(c, decoy)
 					return nil
 				},
 			})
@@ -125,11 +125,11 @@ CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL DEFAULT '');
 			c.Assert(result.MigrationPaths, qt.HasLen, 1)
 			// The run published into the object it opened.
 			published := test.published(migrations, retained)
-			c.Assert(atlasSQLFiles(c.TB, published), qt.HasLen, 2)
+			c.Assert(atlasSQLFiles(c, published), qt.HasLen, 2)
 			c.Assert(fileExists(filepath.Join(published, "atlas.sum")), qt.IsTrue)
 			// The decoy holds exactly what the swap left in it: no migration, no
 			// checksum, no journal and no recovery artifact reached it.
-			c.Assert(dirEntryNames(c.TB, decoy), qt.DeepEquals, decoyAfterSwap)
+			c.Assert(dirEntryNames(c, decoy), qt.DeepEquals, decoyAfterSwap)
 		})
 	}
 }

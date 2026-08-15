@@ -25,7 +25,7 @@ import (
 // this package's tests do not reach a live MySQL server.
 func TestInspect_EmptyDatabaseReportsItsSchema(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "inspect-empty.db"))
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty.db"))
 	defer dbschema.CloseAndWarn(conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
@@ -44,7 +44,7 @@ func TestInspect_EmptyDatabaseReportsItsSchema(t *testing.T) {
 // the connection is already in, so there is nothing to refuse.
 func TestInspect_EmptyDatabaseRendersItsSchemaBlock(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLite(c.TB, filepath.Join(t.TempDir(), "inspect-empty-hcl.db"))
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty-hcl.db"))
 	defer dbschema.CloseAndWarn(conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
@@ -62,9 +62,9 @@ func TestInspect_EmptyDatabaseRendersItsSchemaBlock(t *testing.T) {
 func TestInspect_SQLOutputHasNoStatementForTheDefaultNamespace(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "inspect-sql.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c.TB, conn)
+	createInspectSchema(c, conn)
 
 	rendered, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{
 		Format: "sql",

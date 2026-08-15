@@ -37,8 +37,7 @@ import (
 // already created `widgets` and `gadgets` — the latter with a primary key and a
 // foreign key — and returns it with a desired-state file that no longer
 // declares `gadgets`.
-func compatDroppedTableFixture(tb testing.TB) (dir, target string) {
-	c := qt.New(tb)
+func compatDroppedTableFixture(c *qt.C) (dir, target string) {
 	c.Helper()
 	dir = filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -81,7 +80,7 @@ const compatDroppedTableSchema = "CREATE TABLE widgets (id INTEGER NOT NULL PRIM
 // execution step reports as the table never coming back.
 func TestCompatMigrateDiff_ForeignLayoutRollbackRebuildsTheDroppedTable(t *testing.T) {
 	c := qt.New(t)
-	dir, target := compatDroppedTableFixture(c.TB)
+	dir, target := compatDroppedTableFixture(c)
 
 	_, _, err := runCompat("migrate", "diff", "drop",
 		"--dir", "file://"+dir+"?format=golang-migrate",
@@ -89,13 +88,13 @@ func TestCompatMigrateDiff_ForeignLayoutRollbackRebuildsTheDroppedTable(t *testi
 		"--to", "file://"+target)
 	c.Assert(err, qt.IsNil)
 
-	names := atlasDirEntryNames(c.TB, dir)
-	forward := compatReadMigrationFile(c.TB, dir, compatNewestNameWithSuffix(c.TB, names, ".up.sql"))
+	names := atlasDirEntryNames(c, dir)
+	forward := compatReadMigrationFile(c, dir, compatNewestNameWithSuffix(c, names, ".up.sql"))
 	c.Assert(strings.ToUpper(forward), qt.Contains, "DROP TABLE",
 		qt.Commentf("the forward half must be the drop this fixture asks for"))
 
-	rollbackName := compatNewestNameWithSuffix(c.TB, names, ".down.sql")
-	rollback := compatReadMigrationFile(c.TB, dir, rollbackName)
+	rollbackName := compatNewestNameWithSuffix(c, names, ".down.sql")
+	rollback := compatReadMigrationFile(c, dir, rollbackName)
 	c.Assert(strings.ToUpper(rollback), qt.Contains, "CREATE TABLE",
 		qt.Commentf("%s carries no rebuild; a reverse planned against the desired "+
 			"state has nothing to re-create:\n%s", rollbackName, rollback))
@@ -103,20 +102,19 @@ func TestCompatMigrateDiff_ForeignLayoutRollbackRebuildsTheDroppedTable(t *testi
 	// Rendered is not applied. Take a database through the whole history and
 	// then through the rollback, and read the catalog back.
 	dbPath := filepath.Join(c.TempDir(), "target.db")
-	compatExecSQL(c.TB, dbPath, compatDroppedTableSchema, "SEED")
-	compatExecSQL(c.TB, dbPath, forward, "FORWARD")
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "gadgets",
+	compatExecSQL(c, dbPath, compatDroppedTableSchema, "SEED")
+	compatExecSQL(c, dbPath, forward, "FORWARD")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "gadgets",
 		qt.Commentf("the forward half must really drop the table, or the rollback proves nothing"))
 
-	compatExecSQL(c.TB, dbPath, rollback, "ROLLBACK")
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "gadgets",
+	compatExecSQL(c, dbPath, rollback, "ROLLBACK")
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "gadgets",
 		qt.Commentf("rollback SQL:\n%s", rollback))
-	c.Assert(compatForeignKeyNames(c.TB, dbPath, "gadgets"), qt.Contains, "gadgets_widget_fk",
+	c.Assert(compatForeignKeyNames(c, dbPath, "gadgets"), qt.Contains, "gadgets_widget_fk",
 		qt.Commentf("the rollback must restore the table's foreign key:\n%s", rollback))
 }
 
-func compatReadMigrationFile(tb testing.TB, dir, name string) string {
-	c := qt.New(tb)
+func compatReadMigrationFile(c *qt.C, dir, name string) string {
 	c.Helper()
 	contents, err := os.ReadFile(filepath.Join(dir, name))
 	c.Assert(err, qt.IsNil)
@@ -126,18 +124,16 @@ func compatReadMigrationFile(tb testing.TB, dir, name string) string {
 // compatExecSQL applies every statement of a migration half to a SQLite
 // database, failing on the first one the engine refuses. A half that renders
 // and does not apply is the failure this test exists to catch.
-func compatExecSQL(tb testing.TB, dbPath, sqlText, label string) {
-	c := qt.New(tb)
+func compatExecSQL(c *qt.C, dbPath, sqlText, label string) {
 	c.Helper()
-	conn := compatConnect(c.TB, dbPath)
+	conn := compatConnect(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 	for _, statement := range migrator.SplitSQLStatements(sqlText) {
-		compatExecStatement(c.TB, conn, statement, label)
+		compatExecStatement(c, conn, statement, label)
 	}
 }
 
-func compatExecStatement(tb testing.TB, conn *dbschema.DatabaseConnection, statement, label string) {
-	c := qt.New(tb)
+func compatExecStatement(c *qt.C, conn *dbschema.DatabaseConnection, statement, label string) {
 	c.Helper()
 	trimmed := strings.TrimSpace(statement)
 	c.Assert(compatExecNonEmpty(conn, trimmed), qt.IsNil,
@@ -152,19 +148,17 @@ func compatExecNonEmpty(conn *dbschema.DatabaseConnection, statement string) err
 	return err
 }
 
-func compatConnect(tb testing.TB, dbPath string) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func compatConnect(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
 	return conn
 }
 
-func compatForeignKeyNames(tb testing.TB, dbPath, table string) []string {
-	c := qt.New(tb)
+func compatForeignKeyNames(c *qt.C, dbPath, table string) []string {
 	c.Helper()
 	var names []string
-	for _, constraint := range compatReadSchema(c.TB, dbPath).Constraints {
+	for _, constraint := range compatReadSchema(c, dbPath).Constraints {
 		names = append(names, compatForeignKeyName(constraint, table)...)
 	}
 	slices.Sort(names)
@@ -178,10 +172,9 @@ func compatForeignKeyName(constraint dbschematypes.DBConstraint, table string) [
 	return []string{constraint.Name}
 }
 
-func compatReadSchema(tb testing.TB, dbPath string) *dbschematypes.DBSchema {
-	c := qt.New(tb)
+func compatReadSchema(c *qt.C, dbPath string) *dbschematypes.DBSchema {
 	c.Helper()
-	conn := compatConnect(c.TB, dbPath)
+	conn := compatConnect(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 	schema, err := conn.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)

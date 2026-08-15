@@ -44,8 +44,7 @@ const evilDownSQL = "CREATE TABLE evil_down (id INTEGER PRIMARY KEY);\nDROP TABL
 
 // writeHashedWidgetsDir writes the one-migration ptah-format fixture and hashes
 // it, so ptah.sum records the HONEST down file.
-func writeHashedWidgetsDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeHashedWidgetsDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -63,8 +62,7 @@ func writeHashedWidgetsDir(tb testing.TB) string {
 // rewriteDownFile replaces the down migration and deliberately does NOT
 // re-hash, which is the whole fixture: the bytes on disk no longer match the
 // bytes ptah.sum recorded.
-func rewriteDownFile(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func rewriteDownFile(c *qt.C, dir string) {
 	c.Helper()
 	path := filepath.Join(dir, "0000000001_init.down.sql")
 	c.Assert(os.WriteFile(path, []byte(evilDownSQL), 0o600), qt.IsNil)
@@ -72,8 +70,7 @@ func rewriteDownFile(tb testing.TB, dir string) {
 
 // applyWidgets brings a fresh database to version 1 through the honest
 // directory, so the rollback under test has something to roll back.
-func applyWidgets(tb testing.TB, dir, dbPath string) {
-	c := qt.New(tb)
+func applyWidgets(c *qt.C, dir, dbPath string) {
 	c.Helper()
 	cmd := migrateup.NewMigrateUpCommand()
 	var out bytes.Buffer
@@ -98,8 +95,7 @@ func runDown(args ...string) (string, error) {
 // This is the "rendered is not applied" half. Reading the rollback plan would
 // say what the tool intended; only the catalog says what the database now
 // holds, and the tampered file's signature is a table nobody committed.
-func tableCensus(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func tableCensus(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -132,17 +128,17 @@ func tableCensus(tb testing.TB, dbPath string) []string {
 // reported an error.
 func TestMigrateDown_TamperedHashedDirRefusesAndLeavesCatalogIntact(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "down.db")
-	applyWidgets(c.TB, dir, dbPath)
-	rewriteDownFile(c.TB, dir)
+	applyWidgets(c, dir, dbPath)
+	rewriteDownFile(c, dir)
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
 	c.Assert(err.Error(), qt.Contains, "migration sum verification failed")
 	c.Assert(err.Error(), qt.Contains, "changed: 0000000001_init.down.sql")
-	census := tableCensus(c.TB, dbPath)
+	census := tableCensus(c, dbPath)
 	c.Assert(census, qt.Contains, "widgets")
 	c.Assert(census, qt.Not(qt.Contains), "evil_down")
 }
@@ -158,10 +154,10 @@ func TestMigrateDown_TamperedHashedDirRefusesAndLeavesCatalogIntact(t *testing.T
 // error, and the assertion on the message is what tells the two apart.
 func TestMigrateDown_TamperedHashedDirRefusesBeforeConfirmation(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "prompt.db")
-	applyWidgets(c.TB, dir, dbPath)
-	rewriteDownFile(c.TB, dir)
+	applyWidgets(c, dir, dbPath)
+	rewriteDownFile(c, dir)
 
 	cmd := migratedown.NewMigrateDownCommand()
 	var out bytes.Buffer
@@ -193,12 +189,12 @@ func TestMigrateDown_UnhashedDirStaysUngated(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"),
 		[]byte("DROP TABLE widgets;\n"), 0o600), qt.IsNil)
 	dbPath := filepath.Join(c.TempDir(), "unhashed.db")
-	applyWidgets(c.TB, dir, dbPath)
+	applyWidgets(c, dir, dbPath)
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(tableCensus(c.TB, dbPath), qt.Not(qt.Contains), "widgets")
+	c.Assert(tableCensus(c, dbPath), qt.Not(qt.Contains), "widgets")
 }
 
 // TestMigrateDown_CleanHashedDirRollsBack is the non-interference control: the
@@ -210,15 +206,15 @@ func TestMigrateDown_UnhashedDirStaysUngated(t *testing.T) {
 // command exited 0.
 func TestMigrateDown_CleanHashedDirRollsBack(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "clean.db")
-	applyWidgets(c.TB, dir, dbPath)
-	c.Assert(tableCensus(c.TB, dbPath), qt.Contains, "widgets")
+	applyWidgets(c, dir, dbPath)
+	c.Assert(tableCensus(c, dbPath), qt.Contains, "widgets")
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(tableCensus(c.TB, dbPath), qt.Not(qt.Contains), "widgets")
+	c.Assert(tableCensus(c, dbPath), qt.Not(qt.Contains), "widgets")
 }
 
 // TestMigrateDown_EscapeHatchExecutesAndSaysWhatItSkipped pins the capability
@@ -236,10 +232,10 @@ func TestMigrateDown_CleanHashedDirRollsBack(t *testing.T) {
 // pass a weaker test and help nobody.
 func TestMigrateDown_EscapeHatchExecutesAndSaysWhatItSkipped(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "escape.db")
-	applyWidgets(c.TB, dir, dbPath)
-	rewriteDownFile(c.TB, dir)
+	applyWidgets(c, dir, dbPath)
+	rewriteDownFile(c, dir)
 	c.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "true")
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
@@ -250,7 +246,7 @@ func TestMigrateDown_EscapeHatchExecutesAndSaysWhatItSkipped(t *testing.T) {
 	c.Assert(out, qt.Contains, "changed: 0000000001_init.down.sql")
 	// The override really did execute the rewritten file, which is the
 	// capability being preserved.
-	c.Assert(tableCensus(c.TB, dbPath), qt.Contains, "evil_down")
+	c.Assert(tableCensus(c, dbPath), qt.Contains, "evil_down")
 }
 
 // TestMigrateDown_EscapeHatchStaysSilentOnACleanDirectory pins that the notice
@@ -261,9 +257,9 @@ func TestMigrateDown_EscapeHatchExecutesAndSaysWhatItSkipped(t *testing.T) {
 // warning as noise, which is how the one run that mattered gets ignored.
 func TestMigrateDown_EscapeHatchStaysSilentOnACleanDirectory(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "escape-clean.db")
-	applyWidgets(c.TB, dir, dbPath)
+	applyWidgets(c, dir, dbPath)
 	c.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "true")
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
@@ -285,9 +281,9 @@ func TestMigrateDown_EscapeHatchStaysSilentOnACleanDirectory(t *testing.T) {
 // operator believes they configured.
 func TestMigrateDown_EscapeHatchRejectsAnUnparseableValue(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedWidgetsDir(c.TB)
+	dir := writeHashedWidgetsDir(c)
 	dbPath := filepath.Join(c.TempDir(), "badenv.db")
-	applyWidgets(c.TB, dir, dbPath)
+	applyWidgets(c, dir, dbPath)
 	c.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "yes")
 
 	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "0", "--confirm")
@@ -296,7 +292,7 @@ func TestMigrateDown_EscapeHatchRejectsAnUnparseableValue(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, migrationintegrity.AllowUnverifiedEnvVar)
 	c.Assert(err.Error(), qt.Contains, `"yes"`)
 	// The clean directory was never the reason: nothing was rolled back.
-	c.Assert(tableCensus(c.TB, dbPath), qt.Contains, "widgets")
+	c.Assert(tableCensus(c, dbPath), qt.Contains, "widgets")
 }
 
 func TestMigrateDown_EscapeHatchRejectsAnUnparseableValueBeforeArguments(t *testing.T) {

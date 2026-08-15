@@ -15,12 +15,12 @@ import (
 func TestCapture_HappyPath_UsesStableSharedSourcePolicy(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
-	writeSource(c.TB, root, ".generated.go", "package models\n")
-	writeSource(c.TB, root, "models_test.go", "package models_test\n")
-	writeSource(c.TB, root, "myvendor/models.go", "package myvendor\n")
-	writeSource(c.TB, root, "vendor/models.go", "package vendor\n")
-	writeSource(c.TB, root, ".hidden/models.go", "package hidden\n")
+	writeSource(c, root, "models.go", "package models\n")
+	writeSource(c, root, ".generated.go", "package models\n")
+	writeSource(c, root, "models_test.go", "package models_test\n")
+	writeSource(c, root, "myvendor/models.go", "package myvendor\n")
+	writeSource(c, root, "vendor/models.go", "package vendor\n")
+	writeSource(c, root, ".hidden/models.go", "package hidden\n")
 
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
@@ -36,7 +36,7 @@ func TestCapture_HappyPath_UsesStableSharedSourcePolicy(t *testing.T) {
 		"myvendor/models.go",
 	), qt.IsNil)
 
-	writeSource(c.TB, root, "models.go", "package changed\n")
+	writeSource(c, root, "models.go", "package changed\n")
 	data, err := fs.ReadFile(snapshot.FS(), "models.go")
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(data), qt.Equals, "package models\n")
@@ -45,7 +45,7 @@ func TestCapture_HappyPath_UsesStableSharedSourcePolicy(t *testing.T) {
 func TestCapture_HappyPath_ReturnsIndependentFileBytes(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
@@ -60,7 +60,7 @@ func TestCapture_HappyPath_ReturnsIndependentFileBytes(t *testing.T) {
 func TestSnapshotRevalidate_HappyPath_AcceptsUnchangedSources(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
@@ -70,14 +70,14 @@ func TestSnapshotRevalidate_HappyPath_AcceptsUnchangedSources(t *testing.T) {
 func TestSnapshotRevalidate_HappyPath_IgnoresExcludedChanges(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
-	writeSource(c.TB, root, "models_test.go", "package models_test\n")
-	writeSource(c.TB, root, ".hidden/model.go", "package hidden\n")
-	writeSource(c.TB, root, "vendor/model.go", "package vendor\n")
-	writeSource(c.TB, root, "notes.txt", "not Go source\n")
+	writeSource(c, root, "models_test.go", "package models_test\n")
+	writeSource(c, root, ".hidden/model.go", "package hidden\n")
+	writeSource(c, root, "vendor/model.go", "package vendor\n")
+	writeSource(c, root, "notes.txt", "not Go source\n")
 
 	c.Assert(snapshot.Revalidate(), qt.IsNil)
 }
@@ -85,7 +85,7 @@ func TestSnapshotRevalidate_HappyPath_IgnoresExcludedChanges(t *testing.T) {
 func TestCapture_HappyPath_TraversesHiddenSelectedRoot(t *testing.T) {
 	c := qt.New(t)
 	root := filepath.Join(t.TempDir(), ".models")
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 
 	snapshot, err := goannotationsource.Capture(root)
 
@@ -96,11 +96,11 @@ func TestCapture_HappyPath_TraversesHiddenSelectedRoot(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsChangedContents(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
-	writeSource(c.TB, root, "models.go", "package modals\n")
+	writeSource(c, root, "models.go", "package modals\n")
 
 	c.Assert(snapshot.Revalidate(), qt.ErrorIs, goannotationsource.ErrChanged)
 }
@@ -108,11 +108,11 @@ func TestSnapshotRevalidate_FailurePath_RejectsChangedContents(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsAddedSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSource(c.TB, root, "models.go", "package models\n")
+	writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
-	writeSource(c.TB, root, "added.go", "package models\n")
+	writeSource(c, root, "added.go", "package models\n")
 
 	c.Assert(snapshot.Revalidate(), qt.ErrorIs, goannotationsource.ErrChanged)
 }
@@ -120,7 +120,7 @@ func TestSnapshotRevalidate_FailurePath_RejectsAddedSource(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsRemovedSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
@@ -132,7 +132,7 @@ func TestSnapshotRevalidate_FailurePath_RejectsRemovedSource(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsRenamedSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
@@ -144,8 +144,8 @@ func TestSnapshotRevalidate_FailurePath_RejectsRenamedSource(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsReplacedIdentity(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
-	replacement := writeSource(c.TB, root, "replacement.tmp", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
+	replacement := writeSource(c, root, "replacement.tmp", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
@@ -158,7 +158,7 @@ func TestSnapshotRevalidate_FailurePath_RejectsReplacedIdentity(t *testing.T) {
 func TestSnapshotRevalidate_FailurePath_RejectsChangedMode(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
 	c.Assert(os.Chmod(path, 0o600), qt.IsNil)
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
@@ -185,7 +185,7 @@ func TestSnapshotRevalidate_FailurePath_RejectsReplacedEmptyRoot(t *testing.T) {
 func TestSnapshotSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
 	snapshot, err := goannotationsource.Capture(root)
 	c.Assert(err, qt.IsNil)
 
@@ -201,7 +201,7 @@ func TestSnapshotSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testi
 func TestCapture_FailurePath_RejectsNonDirectoryRoot(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	path := writeSource(c.TB, root, "models.go", "package models\n")
+	path := writeSource(c, root, "models.go", "package models\n")
 
 	snapshot, err := goannotationsource.Capture(path)
 	c.Assert(err, qt.IsNotNil)
@@ -217,8 +217,7 @@ func sourcePaths(files []goannotationsource.File) []string {
 	return paths
 }
 
-func writeSource(tb testing.TB, root, name, data string) string {
-	c := qt.New(tb)
+func writeSource(c *qt.C, root, name, data string) string {
 	c.Helper()
 	path := filepath.Join(root, name)
 	c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)

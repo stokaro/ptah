@@ -27,8 +27,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
-	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtah(c, ctx, repoRoot, nativeBinary)
 
 	c.Run("compat malformed HCL matches Atlas error shape", func(c *qt.C) {
 		dir := c.TempDir()
@@ -42,9 +42,9 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
 			"--dry-run",
 		)
-		want := canonicalSchemaApplyProcessPath(c.TB, schemaPath) + malformedSchemaHCLProcessDiagnostic
+		want := canonicalSchemaApplyProcessPath(c, schemaPath) + malformedSchemaHCLProcessDiagnostic
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
 	})
@@ -60,9 +60,9 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
 			"--dry-run",
 		)
-		want := "load --to schema: schema file does not exist: " + canonicalSchemaApplyProcessPath(c.TB, schemaPath)
+		want := "load --to schema: schema file does not exist: " + canonicalSchemaApplyProcessPath(c, schemaPath)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
 	})
@@ -120,7 +120,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 					"--dry-run",
 				)
 
-				c.Check(exitStatusOf(c.TB, err), qt.Equals, 1)
+				c.Check(exitStatusOf(c, err), qt.Equals, 1)
 				c.Check(stdout, qt.Equals, "")
 				c.Check(stderr, qt.Equals,
 					"Error: "+relative.want+malformedSchemaHCLProcessDiagnostic+"\n")
@@ -141,7 +141,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 				"--dry-run",
 			)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals,
 				"Error: "+filepath.Join("fx", "linked.hcl")+malformedSchemaHCLProcessDiagnostic+"\n")
@@ -164,7 +164,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 				"--dry-run",
 			)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals,
 				"Error: "+filepath.Join("schemas", "bad.hcl")+
@@ -188,7 +188,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 				"--dry-run",
 			)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals,
 				"Error: "+filepath.Join("linked-schemas", "bad.hcl")+
@@ -212,7 +212,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 				"--dry-run",
 			)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals,
 				"Error: "+filepath.Join("sql-link-schemas", "bad.sql")+
@@ -234,9 +234,9 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			"--dry-run",
 		)
 		want := "load --to schema: parse HCL schema: " +
-			canonicalSchemaApplyProcessPath(c.TB, schemaPath) + malformedSchemaHCLProcessDiagnostic
+			canonicalSchemaApplyProcessPath(c, schemaPath) + malformedSchemaHCLProcessDiagnostic
 
-		c.Check(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Check(exitStatusOf(c, err), qt.Equals, 2)
 		c.Check(stdout, qt.Equals, "")
 		c.Check(stderr, qt.Equals, "error: "+want+"\n")
 	})
@@ -253,10 +253,10 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 			"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
 			"--dry-run",
 		)
-		want := "load --to schema: parse HCL schema: " + canonicalSchemaApplyProcessPath(c.TB, schemaPath) +
+		want := "load --to schema: parse HCL schema: " + canonicalSchemaApplyProcessPath(c, schemaPath) +
 			malformedSchemaHCLProcessDiagnostic
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 2)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals, "error: "+want+"\n")
 	})
@@ -288,8 +288,7 @@ func environmentWithoutPtahVariables() []string {
 	return environment
 }
 
-func canonicalSchemaApplyProcessPath(tb testing.TB, path string) string {
-	c := qt.New(tb)
+func canonicalSchemaApplyProcessPath(c *qt.C, path string) string {
 	c.Helper()
 	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
 	c.Assert(err, qt.IsNil)

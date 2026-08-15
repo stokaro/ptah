@@ -99,8 +99,7 @@ func convertedApplyFixtures() []convertedApplyFixture {
 }
 
 // writeConvertedApplyDir writes files under dir and returns dir.
-func writeConvertedApplyDir(tb testing.TB, dir string, files map[string]string) string {
-	c := qt.New(tb)
+func writeConvertedApplyDir(c *qt.C, dir string, files map[string]string) string {
 	c.Helper()
 	for name, content := range files {
 		path := filepath.Join(dir, filepath.FromSlash(name))
@@ -118,16 +117,14 @@ func writeConvertedApplyDir(tb testing.TB, dir string, files map[string]string) 
 // uses Atlas CE's covered set: a wrong rule in both halves agrees with itself.
 // TestCompatMigrateApply_ConvertedDirVerifiesOracleWrittenSum pins that against
 // sums copied verbatim from the pinned oracle.
-func hashConvertedApplyDir(tb testing.TB, dir, format string) {
-	c := qt.New(tb)
+func hashConvertedApplyDir(c *qt.C, dir, format string) {
 	c.Helper()
 	stdout, stderr, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 }
 
 // appendToFile edits a migration in place without re-hashing.
-func appendToFile(tb testing.TB, path, text string) {
-	c := qt.New(tb)
+func appendToFile(c *qt.C, path, text string) {
 	c.Helper()
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	c.Assert(err, qt.IsNil)
@@ -167,7 +164,7 @@ func TestCompatMigrateApply_ConvertedDirUnhashedRefuses(t *testing.T) {
 		t.Run(fixture.format, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), fixture.files)
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), fixture.files)
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, fixture.format, dbPath)
@@ -188,14 +185,14 @@ func TestCompatMigrateApply_ConvertedDirHashedCleanApplies(t *testing.T) {
 		t.Run(fixture.format, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), fixture.files)
-			hashConvertedApplyDir(c.TB, dir, fixture.format)
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), fixture.files)
+			hashConvertedApplyDir(c, dir, fixture.format)
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, fixture.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c.TB, dbPath, "widgets"), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 		})
 	}
 }
@@ -217,14 +214,14 @@ func TestCompatMigrateApply_ConvertedDirDriftRefuses(t *testing.T) {
 				{
 					name: "edited",
 					mutate: func(c *qt.C, dir string) {
-						appendToFile(c.TB, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
+						appendToFile(c, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
 					},
 					line: 2, file: fixture.covered, reason: "edited",
 				},
 				{
 					name: "added",
 					mutate: func(c *qt.C, dir string) {
-						writeConvertedApplyDir(c.TB, dir, map[string]string{fixture.extra: fixture.extraBody})
+						writeConvertedApplyDir(c, dir, map[string]string{fixture.extra: fixture.extraBody})
 					},
 					line: 3, file: fixture.extra, reason: "added",
 				},
@@ -240,8 +237,8 @@ func TestCompatMigrateApply_ConvertedDirDriftRefuses(t *testing.T) {
 				t.Run(state.name, func(t *testing.T) {
 					c := qt.New(t)
 					tempDir := c.TempDir()
-					dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), fixture.files)
-					hashConvertedApplyDir(c.TB, dir, fixture.format)
+					dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), fixture.files)
+					hashConvertedApplyDir(c, dir, fixture.format)
 					state.mutate(c, dir)
 					dbPath := filepath.Join(tempDir, "converted.db")
 
@@ -336,13 +333,13 @@ func TestCompatMigrateApply_ConvertedDirVerifiesOracleWrittenSum(t *testing.T) {
 			tempDir := c.TempDir()
 			files := map[string]string{"atlas.sum": tt.oracle}
 			maps.Copy(files, tt.files)
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), files)
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), files)
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c.TB, dbPath, tt.wantTbl), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
 		})
 	}
 }
@@ -395,15 +392,15 @@ func TestCompatMigrateApply_ConvertedDirUncoveredFileEditedApplies(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), tt.files)
-			hashConvertedApplyDir(c.TB, dir, tt.format)
-			appendToFile(c.TB, filepath.Join(dir, tt.edit), "\n-- edited, and invisible to Atlas\n")
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), tt.files)
+			hashConvertedApplyDir(c, dir, tt.format)
+			appendToFile(c, filepath.Join(dir, tt.edit), "\n-- edited, and invisible to Atlas\n")
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c.TB, dbPath, tt.wantTbl), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
 		})
 	}
 }
@@ -485,7 +482,7 @@ func TestCompatMigrateApply_ConvertedDirEmptyCoveredSetIsNotRefused(t *testing.T
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-			writeConvertedApplyDir(c.TB, dir, tt.files)
+			writeConvertedApplyDir(c, dir, tt.files)
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
@@ -530,7 +527,7 @@ func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused(t *tes
 				"atlas.sum": "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n",
 			}
 			maps.Copy(files, tt.files)
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), files)
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), files)
 
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, filepath.Join(tempDir, "converted.db"))
 
@@ -555,7 +552,7 @@ func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetIsNotRefused(t *tes
 func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetDriftRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 		"1_init.down.sql": "DROP TABLE widgets;\n",
 		// The empty-set digest is h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=;
 		// this is a hand-edited directory-hash line over the same empty set.
@@ -583,7 +580,7 @@ func TestCompatMigrateApply_ConvertedDirHashedEmptyCoveredSetDriftRefuses(t *tes
 func TestCompatMigrateApply_ConvertedFlywaySubdirectoryOnlyRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 		"sub/V2__nested.sql": "CREATE TABLE nested (id INTEGER PRIMARY KEY);\n",
 	})
 	dbPath := filepath.Join(tempDir, "converted.db")
@@ -604,12 +601,12 @@ func TestCompatMigrateApply_ConvertedFlywaySubdirectoryOnlyRefuses(t *testing.T)
 func TestCompatMigrateApply_ConvertedFlywayNestedFileTamperRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 		"V1__init.sql":       "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 		"sub/V2__nested.sql": "CREATE TABLE nested (id INTEGER PRIMARY KEY);\n",
 	})
-	hashConvertedApplyDir(c.TB, dir, "flyway")
-	appendToFile(c.TB, filepath.Join(dir, "sub", "V2__nested.sql"), "\n-- tampered\n")
+	hashConvertedApplyDir(c, dir, "flyway")
+	appendToFile(c, filepath.Join(dir, "sub", "V2__nested.sql"), "\n-- tampered\n")
 	dbPath := filepath.Join(tempDir, "converted.db")
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
@@ -628,7 +625,7 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
 	t.Run("unhashed and unparseable reports the missing sum", func(t *testing.T) {
 		c := qt.New(t)
 		tempDir := c.TempDir()
-		dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+		dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 			"1_init.sql": "CREATE TABLE nd (id INTEGER PRIMARY KEY);\n",
 		})
 		dbPath := filepath.Join(tempDir, "converted.db")
@@ -644,13 +641,13 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
 	t.Run("tampered until unparseable reports the mismatch", func(t *testing.T) {
 		c := qt.New(t)
 		tempDir := c.TempDir()
-		dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+		dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 			"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 		})
-		hashConvertedApplyDir(c.TB, dir, "goose")
+		hashConvertedApplyDir(c, dir, "goose")
 		// Removing the directive is what a conversion-first order would report
 		// as `migration file 1_init.sql has no "-- +goose Up" section`.
-		writeConvertedApplyDir(c.TB, dir, map[string]string{
+		writeConvertedApplyDir(c, dir, map[string]string{
 			"1_init.sql": "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 		})
 		dbPath := filepath.Join(tempDir, "converted.db")
@@ -670,7 +667,7 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
 // connection rather than merely appearing to.
 func TestCompatMigrateApply_ConvertedDirGatePrecedesConnection(t *testing.T) {
 	c := qt.New(t)
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(c.TempDir(), "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(c.TempDir(), "m"), map[string]string{
 		"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	})
 
@@ -691,7 +688,7 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesConnection(t *testing.T) {
 func TestCompatMigrateApply_ConvertedDirRefusesDryRun(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 		"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	})
 	dbPath := filepath.Join(tempDir, "converted-dry-run.db")
@@ -710,7 +707,7 @@ func TestCompatMigrateApply_ConvertedDirRefusesDryRun(t *testing.T) {
 func TestCompatMigrateApply_ConvertedDirMalformedSumRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
-	dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+	dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 		"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 		"atlas.sum":  "not a sum file at all\n",
 	})
@@ -737,8 +734,8 @@ func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
 		{
 			name: "tampered",
 			prepare: func(c *qt.C, dir string) {
-				hashConvertedApplyDir(c.TB, dir, "golang-migrate")
-				appendToFile(c.TB, filepath.Join(dir, "1_init.up.sql"), "\n-- tampered\n")
+				hashConvertedApplyDir(c, dir, "golang-migrate")
+				appendToFile(c, filepath.Join(dir, "1_init.up.sql"), "\n-- tampered\n")
 			},
 		},
 	}
@@ -747,7 +744,7 @@ func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
-			dir := writeConvertedApplyDir(c.TB, filepath.Join(tempDir, "m"), map[string]string{
+			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
 				"1_init.up.sql":   "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 				"1_init.down.sql": "DROP TABLE widgets;\n",
 			})
@@ -790,8 +787,8 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 		{
 			name: "tampered",
 			prepare: func(c *qt.C) {
-				hashConvertedApplyDir(c.TB, "migrations", "goose")
-				appendToFile(c.TB, filepath.Join("migrations", "1_create_widgets.sql"), "\n-- tampered\n")
+				hashConvertedApplyDir(c, "migrations", "goose")
+				appendToFile(c, filepath.Join("migrations", "1_create_widgets.sql"), "\n-- tampered\n")
 			},
 			wantErr: "Error: checksum mismatch",
 		},
@@ -802,11 +799,11 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
-			writeAtlasApplyProjectMigration(c.TB, "migrations", "1_create_widgets.sql",
+			writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql",
 				"-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
 			tt.prepare(c)
 			dbPath := filepath.Join(root, "apply.db")
-			writeAtlasApplyProjectConfig(c.TB, dbPath, "goose", "LINEAR")
+			writeAtlasApplyProjectConfig(c, dbPath, "goose", "LINEAR")
 
 			output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
 
@@ -868,7 +865,7 @@ func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *t
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-			writeConvertedApplyDir(c.TB, dir, tt.files)
+			writeConvertedApplyDir(c, dir, tt.files)
 			tt.hash(c, dir)
 			dbPath := filepath.Join(tempDir, "converted.db")
 
@@ -878,7 +875,7 @@ func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *t
 			c.Assert(stdout, qt.Contains, "No migration files to execute")
 			// Nothing executed means nothing executed: a subdirectory migration
 			// the community binary skips must not have created its table.
-			c.Assert(sqliteTableCount(c.TB, dbPath, "widgets"), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 0)
 		})
 	}
 }
@@ -897,7 +894,7 @@ func TestCompatMigrateApply_ConvertedUnreadableCoveredSetStillRefuses(t *testing
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	writeConvertedApplyDir(c.TB, dir, map[string]string{"foo.sql": "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"})
+	writeConvertedApplyDir(c, dir, map[string]string{"foo.sql": "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"})
 	_, _, hashErr := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
 	c.Assert(hashErr, qt.IsNil)
 	dbPath := filepath.Join(tempDir, "converted.db")

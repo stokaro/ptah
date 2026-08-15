@@ -22,8 +22,7 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errTestWrite
 }
 
-func writeMigrationPair(tb testing.TB, dir, name, up, down string) {
-	c := qt.New(tb)
+func writeMigrationPair(c *qt.C, dir, name, up, down string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name+".up.sql"), []byte(up), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name+".down.sql"), []byte(down), 0o600), qt.IsNil)
@@ -43,7 +42,7 @@ func TestMigrationsTestCommand_Passes(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	testsDir := t.TempDir()
-	writeMigrationPair(c.TB, migrationsDir, "0000000001_create_users",
+	writeMigrationPair(c, migrationsDir, "0000000001_create_users",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);", "DROP TABLE users;")
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "users.yaml"), []byte(
 		"cases:\n"+

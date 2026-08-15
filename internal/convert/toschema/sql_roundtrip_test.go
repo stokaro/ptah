@@ -18,8 +18,7 @@ import (
 // external_schema source and SQL --schema-file, asserting that table-level
 // PRIMARY KEY and ALTER TABLE ADD CONSTRAINT FOREIGN KEY survive (see #708).
 
-func parseToDatabase(tb testing.TB, sql string) goschema.Database {
-	c := qt.New(tb)
+func parseToDatabase(c *qt.C, sql string) goschema.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
 	return toschema.ToDatabase(statements)
@@ -46,7 +45,7 @@ func findConstraint(db goschema.Database, typ, table string) (goschema.Constrain
 func TestToDatabase_TableLevelPrimaryKeyCaptured(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE users (id bigserial, name varchar(255), PRIMARY KEY (id));`)
+	db := parseToDatabase(c, `CREATE TABLE users (id bigserial, name varchar(255), PRIMARY KEY (id));`)
 
 	users, ok := findTable(db, "users")
 	c.Assert(ok, qt.IsTrue)
@@ -56,7 +55,7 @@ func TestToDatabase_TableLevelPrimaryKeyCaptured(t *testing.T) {
 func TestToDatabase_AlterTableForeignKeyCaptured(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE users (id bigserial, PRIMARY KEY (id));
+	db := parseToDatabase(c, `CREATE TABLE users (id bigserial, PRIMARY KEY (id));
 CREATE TABLE pets (id bigserial, user_id bigint, PRIMARY KEY (id));
 ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES users(id);`)
 
@@ -71,7 +70,7 @@ ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES us
 func TestToDatabase_TableLevelForeignKeyInCreateCaptured(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE pets (id bigserial, user_id bigint, FOREIGN KEY (user_id) REFERENCES users(id));`)
+	db := parseToDatabase(c, `CREATE TABLE pets (id bigserial, user_id bigint, FOREIGN KEY (user_id) REFERENCES users(id));`)
 
 	fk, ok := findConstraint(db, "FOREIGN KEY", "pets")
 	c.Assert(ok, qt.IsTrue)
@@ -82,7 +81,7 @@ func TestToDatabase_TableLevelForeignKeyInCreateCaptured(t *testing.T) {
 func TestToDatabase_ForeignKeysPreserveTableReferenceIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE "tenant.data" (id BIGINT PRIMARY KEY);
+	db := parseToDatabase(c, `CREATE TABLE "tenant.data" (id BIGINT PRIMARY KEY);
 CREATE TABLE "tenant"."data" (id BIGINT PRIMARY KEY);
 CREATE TABLE children (
 	literal_id BIGINT REFERENCES "tenant.data"(id),
@@ -108,7 +107,7 @@ func TestToDatabase_SQLRoundTripRendersPrimaryKeyAndForeignKey(t *testing.T) {
 	// End-to-end: SQL (as an ORM exporter emits it) -> goschema -> render must
 	// preserve a single-column table-level PK (inline) and an ALTER TABLE foreign
 	// key (#708).
-	db := parseToDatabase(c.TB, `CREATE TABLE users (id bigserial, name varchar(255), PRIMARY KEY (id));
+	db := parseToDatabase(c, `CREATE TABLE users (id bigserial, name varchar(255), PRIMARY KEY (id));
 CREATE TABLE pets (id bigserial, user_id bigint, PRIMARY KEY (id));
 ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES users(id);`)
 	goschema.Finalize(&db)
@@ -124,7 +123,7 @@ ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES us
 func TestToDatabase_QuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE "users" (
+	db := parseToDatabase(c, `CREATE TABLE "users" (
 		"id" INTEGER PRIMARY KEY,
 		"email" TEXT NOT NULL,
 		CONSTRAINT "users_email_key" UNIQUE ("email")
@@ -161,7 +160,7 @@ func TestToDatabase_QuotedIdentifiersAreCanonicalized(t *testing.T) {
 func TestToDatabase_QuotedDotsPreserveIdentifierBoundaries(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE "tenant.data" ("event.id" INTEGER);
+	db := parseToDatabase(c, `CREATE TABLE "tenant.data" ("event.id" INTEGER);
 		CREATE INDEX "literal.lookup" ON "tenant.data" ("event.id");
 		CREATE TABLE "tenant"."data" ("id" INTEGER);
 		CREATE INDEX "qualified.lookup" ON "tenant"."data" ("id");`)
@@ -212,7 +211,7 @@ func TestToDatabase_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
 func TestToDatabase_ParserCanonicalizesEscapedDoubleQuotes(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE "user""events" ("event""id" INTEGER);`)
+	db := parseToDatabase(c, `CREATE TABLE "user""events" ("event""id" INTEGER);`)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, `user"events`)
@@ -223,7 +222,7 @@ func TestToDatabase_ParserCanonicalizesEscapedDoubleQuotes(t *testing.T) {
 func TestToDatabase_ParserCanonicalizesEscapedBackticks(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, "CREATE TABLE `user``events` (`event``id` INTEGER);")
+	db := parseToDatabase(c, "CREATE TABLE `user``events` (`event``id` INTEGER);")
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "user`events")
@@ -234,7 +233,7 @@ func TestToDatabase_ParserCanonicalizesEscapedBackticks(t *testing.T) {
 func TestToDatabase_ParserCanonicalizesEscapedBrackets(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE [user]]events] ([event]]id] INTEGER);`)
+	db := parseToDatabase(c, `CREATE TABLE [user]]events] ([event]]id] INTEGER);`)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "user]events")
@@ -245,7 +244,7 @@ func TestToDatabase_ParserCanonicalizesEscapedBrackets(t *testing.T) {
 func TestToDatabase_ParserPreservesIndexExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db := parseToDatabase(c.TB, `CREATE TABLE events (
+	db := parseToDatabase(c, `CREATE TABLE events (
 			first_name TEXT,
 			last_name TEXT
 		);
@@ -322,7 +321,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	unquoted := parseToDatabase(c.TB, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
+	unquoted := parseToDatabase(c, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
 	c.Assert(unquoted.Extensions, qt.DeepEquals, []goschema.Extension{{
 		Name:   "pgcrypto",
 		Schema: "extensions",
@@ -331,7 +330,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 
-	quoted := parseToDatabase(c.TB, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
+	quoted := parseToDatabase(c, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
 	c.Assert(quoted.Extensions, qt.DeepEquals, []goschema.Extension{{
 		Name:   "PGCrypto",
 		Schema: " Extension Store ",

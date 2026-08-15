@@ -75,13 +75,12 @@ func TestFromDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertRenderedBefore(c.TB, sql, test.earlier, test.later)
+			assertRenderedBefore(c, sql, test.earlier, test.later)
 		})
 	}
 }
 
-func assertRenderedBefore(tb testing.TB, sql, earlier, later string) {
-	c := qt.New(tb)
+func assertRenderedBefore(c *qt.C, sql, earlier, later string) {
 	c.Helper()
 
 	earlierIndex := strings.Index(sql, earlier)

@@ -39,7 +39,7 @@ import (
 func TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile(t *testing.T) {
 	tests := []struct {
 		name          string
-		project       func(testing.TB, string)
+		project       func(*qt.C, string)
 		env           func(testing.TB)
 		wantErr       string
 		wantDescribed bool
@@ -86,7 +86,7 @@ func TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			test.project(t, dir)
+			test.project(c, dir)
 			test.env(t)
 			seedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 			t.Chdir(dir)
@@ -102,14 +102,13 @@ func TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile(t *testing.T) {
 
 // withoutAtlasProjectFile leaves dir with no atlas.hcl, which is the arm the
 // adapter short-circuits on.
-func withoutAtlasProjectFile(testing.TB, string) {}
+func withoutAtlasProjectFile(*qt.C, string) {}
 
 // withAtlasProjectFileWithoutSchemas writes the control config: a project file
 // that exists and parses, and whose selected environment does not spell
 // `schemas`, so the value can only be read by an eager resolve.
-func withAtlasProjectFileWithoutSchemas(t testing.TB, dir string) {
-	t.Helper()
-	c := qt.New(t)
+func withAtlasProjectFileWithoutSchemas(c *qt.C, dir string) {
+	c.Helper()
 	config := "env \"local\" {\n  url = \"sqlite://probe.db\"\n}\n"
 	c.Assert(os.WriteFile(filepath.Join(dir, projectconfig.AtlasFileName), []byte(config), 0o600), qt.IsNil)
 }

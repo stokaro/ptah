@@ -13,8 +13,7 @@ import (
 // assert on the pair. Every rename test needs both halves: a rename is one
 // event described differently per surface, so an assertion on either surface
 // alone cannot show that the other one is still intact.
-func analyzeRename(tb testing.TB, files map[string]string) (native, atlas []lint.Finding) {
-	c := qt.New(tb)
+func analyzeRename(c *qt.C, files map[string]string) (native, atlas []lint.Finding) {
 	c.Helper()
 	fsys := fixture(files)
 	nativeAnalysis, err := lint.AnalyzeFS(fsys, lint.Options{
@@ -126,7 +125,7 @@ func TestAnalyzeFS_RenameClassificationIsScopedToTheSurface(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			native, atlas := analyzeRename(c.TB, map[string]string{"1_rename.sql": test.sql + "\n"})
+			native, atlas := analyzeRename(c, map[string]string{"1_rename.sql": test.sql + "\n"})
 			c.Assert(rulesOf(native), qt.DeepEquals, test.native)
 			c.Assert(rulesOf(atlas), qt.DeepEquals, test.atlas)
 		})
@@ -236,7 +235,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, atlas := analyzeRename(c.TB, map[string]string{"1_rename.sql": test.sql + "\n"})
+			_, atlas := analyzeRename(c, map[string]string{"1_rename.sql": test.sql + "\n"})
 			c.Assert(rulesOf(atlas), qt.DeepEquals, test.rules)
 			c.Assert(subjectsOf(atlas), qt.DeepEquals, test.want)
 		})
@@ -253,7 +252,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 func TestAnalyzeFS_RenameIsErrorGradeOnTheCompatibilitySurface(t *testing.T) {
 	c := qt.New(t)
 
-	native, atlas := analyzeRename(c.TB, map[string]string{
+	native, atlas := analyzeRename(c, map[string]string{
 		"1_rename.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
 	})
 
@@ -324,7 +323,7 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			native, atlas := analyzeRename(c.TB, test.files)
+			native, atlas := analyzeRename(c, test.files)
 			c.Assert(rulesOf(native), qt.DeepEquals, test.native)
 			c.Assert(rulesOf(atlas), qt.DeepEquals, test.atlas)
 		})
@@ -359,7 +358,7 @@ func TestAnalyzeFS_UnreadableRenameStillReports(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, atlas := analyzeRename(c.TB, map[string]string{"1_rename.sql": test.sql + "\n"})
+			_, atlas := analyzeRename(c, map[string]string{"1_rename.sql": test.sql + "\n"})
 			c.Assert(rulesOf(atlas), qt.DeepEquals, test.rules)
 			c.Assert(severitiesOf(atlas), qt.DeepEquals, []lint.Severity{lint.SeverityError, lint.SeverityError}[:len(test.rules)])
 		})
@@ -378,7 +377,7 @@ func TestAnalyzeFS_UnreadableRenameStillReports(t *testing.T) {
 func TestAnalyzeFS_UnreadableRenameCarriesNoSubject(t *testing.T) {
 	c := qt.New(t)
 
-	_, atlas := analyzeRename(c.TB, map[string]string{
+	_, atlas := analyzeRename(c, map[string]string{
 		"1_rename.sql": "ALTER TABLE users RENAME COLUMN;\n",
 	})
 
@@ -414,7 +413,7 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, atlas := analyzeRename(c.TB, map[string]string{
+			_, atlas := analyzeRename(c, map[string]string{
 				"1_init.sql": "CREATE TABLE users (id int);\n",
 				"2_rename.sql": "-- atlas:nolint " + test.selector + "\n" +
 					"ALTER TABLE users RENAME COLUMN id TO oid;\n",
@@ -455,7 +454,7 @@ func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			native, atlas := analyzeRename(c.TB, map[string]string{"1_drop.sql": test.sql + "\n"})
+			native, atlas := analyzeRename(c, map[string]string{"1_drop.sql": test.sql + "\n"})
 			c.Assert(rulesOf(native), qt.DeepEquals, test.want)
 			c.Assert(rulesOf(atlas), qt.DeepEquals, test.want)
 		})
@@ -474,7 +473,7 @@ func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
 func TestAnalyzeFS_DropColumnKeepsEveryDroppedColumnInOneFinding(t *testing.T) {
 	c := qt.New(t)
 
-	native, _ := analyzeRename(c.TB, map[string]string{
+	native, _ := analyzeRename(c, map[string]string{
 		"1_drop.sql": "ALTER TABLE users DROP COLUMN nick, DROP COLUMN email;\n",
 	})
 

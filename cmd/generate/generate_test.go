@@ -30,12 +30,11 @@ func TestGenerateHelperProcess(t *testing.T) {
 	runGenerateHelperProcess()
 }
 
-func executeGenerate(tb testing.TB, cmd interface {
+func executeGenerate(c *qt.C, cmd interface {
 	SetOut(io.Writer)
 	SetErr(io.Writer)
 	Execute() error
 }) (stdoutText, stderrText string, executeErr error) {
-	c := qt.New(tb)
 	c.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -76,7 +75,7 @@ func TestGenerateCommand_UsesExternalSchemaFromPtahConfigEnv(t *testing.T) {
 		"--dialect", "postgres",
 	})
 
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)
@@ -132,7 +131,7 @@ func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 
 	sql := stdout
@@ -152,7 +151,7 @@ func TestGenerateCommand_JsonEmbeddedFieldRendersOnce(t *testing.T) {
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "023-go-annotations-objects")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir, "--dialect", "postgres"})
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 
 	usersCreate := outputStatementContaining(stdout, `CREATE TABLE "users"`)
@@ -175,7 +174,7 @@ tables:
 
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--schema-file", schemaPath, "--dialect", "postgres"})
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(stdout, `CREATE TYPE "account_status"`), qt.Equals, 1)
@@ -193,7 +192,7 @@ func TestGenerateCommand_OmittedDialectForeignKeyFailureKeepsStdoutEmpty(t *test
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--root-dir", fixtureDir})
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.ErrorMatches, "error rendering clickhouse schema: clickhouse does not support foreign keys")
 	c.Assert(stdout, qt.Equals, "")
@@ -212,7 +211,7 @@ func TestGenerateCommand_OmittedDialectIncludesSQLServerReviewTarget(t *testing.
 
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{"--schema-file", schemaPath})
-	stdout, stderr, err := executeGenerate(c.TB, cmd)
+	stdout, stderr, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Contains, "-- sqlserver schema")

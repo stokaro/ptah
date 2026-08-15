@@ -88,8 +88,7 @@ var newConvertedVersionRe = regexp.MustCompile(`[0-9]{14}`)
 // newConvertedNames returns dir's entries other than atlas.sum, sorted, with the
 // yyyyMMddHHmmss version replaced by <V> so a row can name the file it expects
 // without knowing the second it ran in.
-func newConvertedNames(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func newConvertedNames(c *qt.C, dir string) []string {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -104,8 +103,7 @@ func newConvertedNames(tb testing.TB, dir string) []string {
 
 // newConvertedSumEntries returns the file names dir's atlas.sum covers, with the
 // version substitution newConvertedNames applies.
-func newConvertedSumEntries(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func newConvertedSumEntries(c *qt.C, dir string) []string {
 	c.Helper()
 	raw, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
@@ -123,8 +121,7 @@ func newConvertedSumEntries(tb testing.TB, dir string) []string {
 
 // newConvertedBodies returns the created files' contents, keyed by the
 // version-normalized name.
-func newConvertedBodies(tb testing.TB, dir string, names []string) map[string]string {
-	c := qt.New(tb)
+func newConvertedBodies(c *qt.C, dir string, names []string) map[string]string {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -145,12 +142,11 @@ func newConvertedBodies(tb testing.TB, dir string, names []string) map[string]st
 // checksum is computed over the exact covered names after the generated
 // version is known, so the assertion remains deterministic across clock ticks
 // while still catching a wrong file set, order, name, or body.
-func assertMigrateNewArtifacts(tb testing.TB, dir string, layout newConvertedLayout) {
-	c := qt.New(tb)
+func assertMigrateNewArtifacts(c *qt.C, dir string, layout newConvertedLayout) {
 	c.Helper()
-	c.Assert(newConvertedNames(c.TB, dir), qt.DeepEquals, layout.files)
-	c.Assert(newConvertedSumEntries(c.TB, dir), qt.DeepEquals, layout.covered)
-	c.Assert(newConvertedBodies(c.TB, dir, layout.files), qt.DeepEquals, layout.body)
+	c.Assert(newConvertedNames(c, dir), qt.DeepEquals, layout.files)
+	c.Assert(newConvertedSumEntries(c, dir), qt.DeepEquals, layout.covered)
+	c.Assert(newConvertedBodies(c, dir, layout.files), qt.DeepEquals, layout.body)
 
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -200,7 +196,7 @@ func TestCompatMigrateNewConverted_WritesTheSelectedLayout(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
-			assertMigrateNewArtifacts(c.TB, dir, layout)
+			assertMigrateNewArtifacts(c, dir, layout)
 		})
 	}
 }
@@ -230,7 +226,7 @@ func TestCompatMigrateNewConverted_QuerySpellingWritesTheSelectedLayout(t *testi
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
-			assertMigrateNewArtifacts(c.TB, dir, layout)
+			assertMigrateNewArtifacts(c, dir, layout)
 		})
 	}
 }
@@ -281,7 +277,7 @@ func TestCompatMigrateNewConverted_QueryFormatOutranksDirFormatFlag(t *testing.T
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
-			c.Assert(newConvertedNames(c.TB, dir), qt.DeepEquals, tt.want)
+			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -313,22 +309,22 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 		{
 			name: "golang-migrate",
 			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c.TB, dir, "1_init.up.sql", "CREATE TABLE n1 (id INTEGER PRIMARY KEY);\n")
-				writeAtlasApplyProjectMigration(c.TB, dir, "1_init.down.sql", "DROP TABLE n1;\n")
+				writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE n1 (id INTEGER PRIMARY KEY);\n")
+				writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE n1;\n")
 			},
 			count: "2",
 		},
 		{
 			name: "flyway",
 			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c.TB, dir, "V1__init.sql", "CREATE TABLE n2 (id INTEGER PRIMARY KEY);\n")
+				writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE n2 (id INTEGER PRIMARY KEY);\n")
 			},
 			count: "2",
 		},
 		{
 			name: "goose",
 			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c.TB, dir, "1_init.sql",
+				writeAtlasApplyProjectMigration(c, dir, "1_init.sql",
 					"-- +goose Up\nCREATE TABLE n3 (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE n3;\n")
 			},
 			count: "2",
@@ -390,7 +386,7 @@ func TestCompatMigrateNewConverted_GateRefusesBeforeWriting(t *testing.T) {
 		{
 			name: "edited_covered_file",
 			tamper: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c.TB, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
+				writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
 			},
 			hash:    true,
 			wantErr: "checksum mismatch",
@@ -402,23 +398,22 @@ func TestCompatMigrateNewConverted_GateRefusesBeforeWriting(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			dir := c.TempDir()
-			writeAtlasApplyProjectMigration(c.TB, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectMigration(c.TB, dir, "1_init.down.sql", "DROP TABLE g1;\n")
-			hashIfRequested(c.TB, dir, tt.hash)
+			writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
+			writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE g1;\n")
+			hashIfRequested(c, dir, tt.hash)
 			tt.tamper(c, dir)
-			before := newConvertedNames(c.TB, dir)
+			before := newConvertedNames(c, dir)
 
 			_, _, err := runCompatExit("migrate", "new", "addcol",
 				"--dir", "file://"+dir, "--dir-format", "golang-migrate")
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
-			c.Assert(newConvertedNames(c.TB, dir), qt.DeepEquals, before)
+			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, before)
 		})
 	}
 }
 
-func hashIfRequested(tb testing.TB, dir string, hash bool) {
-	c := qt.New(tb)
+func hashIfRequested(c *qt.C, dir string, hash bool) {
 	c.Helper()
 	tests := map[bool]func(){
 		false: func() {},
@@ -480,7 +475,7 @@ func TestCompatMigrateNewConverted_RefusesWhatItCannotReadBack(t *testing.T) {
 			_, _, err := runCompatExit(args...)
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
-			c.Assert(newConvertedNames(c.TB, dir), qt.HasLen, 0)
+			c.Assert(newConvertedNames(c, dir), qt.HasLen, 0)
 		})
 	}
 }
@@ -533,7 +528,7 @@ func TestCompatMigrateNew_NativeAtlasLayoutWritesSameArtifactsSilently(t *testin
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
-			assertMigrateNewArtifacts(c.TB, dir, newConvertedLayout{
+			assertMigrateNewArtifacts(c, dir, newConvertedLayout{
 				format:  "atlas",
 				files:   []string{"<V>_addcol.sql"},
 				covered: []string{"<V>_addcol.sql"},

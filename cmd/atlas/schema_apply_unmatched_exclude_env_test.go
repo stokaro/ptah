@@ -70,7 +70,7 @@ func TestSchemaApplyUnmatchedExcludeOptInIsResolvedBeforeAnyWork(t *testing.T) {
 			dir := t.TempDir()
 			targetPath := filepath.Join(dir, "target.db")
 			seedSQLiteDBAt(t, targetPath, "CREATE TABLE users (id INTEGER PRIMARY KEY); CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
-			schemaPath := writeUnmatchedExcludeSchemaFile(c.TB, dir)
+			schemaPath := writeUnmatchedExcludeSchemaFile(c, dir)
 
 			out, err := runCompatCommand(t,
 				"schema", "apply",
@@ -81,7 +81,7 @@ func TestSchemaApplyUnmatchedExcludeOptInIsResolvedBeforeAnyWork(t *testing.T) {
 			)
 
 			c.Assert(errMessageOrEmpty(err), qt.Equals, test.wantErr, qt.Commentf("%s", out))
-			c.Assert(sqliteHasUsersEmailColumn(c.TB, targetPath), qt.Equals, test.wantApplied,
+			c.Assert(sqliteHasUsersEmailColumn(c, targetPath), qt.Equals, test.wantApplied,
 				qt.Commentf("command output:\n%s", out))
 		})
 	}
@@ -90,8 +90,7 @@ func TestSchemaApplyUnmatchedExcludeOptInIsResolvedBeforeAnyWork(t *testing.T) {
 // writeUnmatchedExcludeSchemaFile writes a desired state that adds one column to
 // `users` and leaves `legacy` as it is, so an applied run is visible as exactly
 // one catalog change.
-func writeUnmatchedExcludeSchemaFile(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writeUnmatchedExcludeSchemaFile(c *qt.C, dir string) string {
 	c.Helper()
 	path := filepath.Join(dir, "schema.sql")
 	body := "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\n" +
@@ -102,8 +101,7 @@ func writeUnmatchedExcludeSchemaFile(tb testing.TB, dir string) string {
 
 // sqliteHasUsersEmailColumn reads the target back through the real reader, so
 // the assertion is about the database rather than about what was printed.
-func sqliteHasUsersEmailColumn(tb testing.TB, path string) bool {
-	c := qt.New(tb)
+func sqliteHasUsersEmailColumn(c *qt.C, path string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+path)
 	c.Assert(err, qt.IsNil)

@@ -22,8 +22,7 @@ type directiveClassCase struct {
 	observe func(c *qt.C, sql string) bool
 }
 
-func upTxMode(tb testing.TB, sql string) migrator.MigrationFileTxMode {
-	c := qt.New(tb)
+func upTxMode(c *qt.C, sql string) migrator.MigrationFileTxMode {
 	c.Helper()
 	parsed, err := migrator.ParseMigrationUp("1_x.sql", sql)
 	c.Assert(err, qt.IsNil)
@@ -58,7 +57,7 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			directive: "-- +ptah no_transaction",
 			honored:   directiveplacement.BeforeTheStatement(),
 			observe: func(c *qt.C, sql string) bool {
-				return upTxMode(c.TB, sql) == migrator.MigrationFileTxModeNone
+				return upTxMode(c, sql) == migrator.MigrationFileTxModeNone
 			},
 		},
 		{
@@ -82,7 +81,7 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			directive: "-- atlas:txmode none",
 			honored:   directiveplacement.InsideAtlasHeaderBlock(),
 			observe: func(c *qt.C, sql string) bool {
-				return upTxMode(c.TB, sql) == migrator.MigrationFileTxModeNone
+				return upTxMode(c, sql) == migrator.MigrationFileTxModeNone
 			},
 		},
 		{
@@ -130,7 +129,7 @@ func TestTrailingCommentCarriesNoDirectiveInEitherFamily(t *testing.T) {
 	ptah := "CREATE TABLE t (id INTEGER PRIMARY KEY); -- +ptah no_transaction\n"
 	atlas := "CREATE TABLE t (id INTEGER PRIMARY KEY); -- atlas:txmode none\n"
 
-	c.Check(upTxMode(c.TB, ptah), qt.Equals, migrator.MigrationFileTxModeUnspecified)
-	c.Check(upTxMode(c.TB, atlas), qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Check(upTxMode(c, ptah), qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Check(upTxMode(c, atlas), qt.Equals, migrator.MigrationFileTxModeUnspecified)
 	c.Check(migrator.ParseFileDirectives(ptah), qt.HasLen, 0)
 }

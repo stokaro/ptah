@@ -363,7 +363,7 @@ func TestAssemble_ThreeOutcomes(t *testing.T) {
 		c.Run(tc.name, func(c *qt.C) {
 			report := reportOn(measuredCell, true, capability.Postgres17())
 			rows := assemble(report, map[capability.Capability]observation{key: tc.obs}, nil)
-			tc.assert(c, rowFor(c.TB, rows, key))
+			tc.assert(c, rowFor(c, rows, key))
 		})
 	}
 }
@@ -420,13 +420,13 @@ func TestAssemble_AnUnattributableLineKeepsTheObservation(t *testing.T) {
 		capability.Views:         decided(true), // CockroachDB23 says true.
 	}, nil)
 
-	advisoryLocks := rowFor(c.TB, report.Rows, capability.AdvisoryLocks)
+	advisoryLocks := rowFor(c, report.Rows, capability.AdvisoryLocks)
 	c.Assert(advisoryLocks.Outcome, qt.Equals, Undecidable)
 	c.Assert(advisoryLocks.Observed, qt.IsTrue)
 	c.Assert(advisoryLocks.ServerDoes, qt.IsTrue)
 	c.Assert(advisoryLocks.Reason, qt.Contains, "banner substring")
 
-	views := rowFor(c.TB, report.Rows, capability.Views)
+	views := rowFor(c, report.Rows, capability.Views)
 	c.Assert(views.Outcome, qt.Equals, Undecidable)
 
 	c.Assert(report.Mismatches(), qt.HasLen, 1)
@@ -502,7 +502,7 @@ func TestReportErr(t *testing.T) {
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertErrMatches(c.TB, tc.build().Err(), tc.want)
+			assertErrMatches(c, tc.build().Err(), tc.want)
 		})
 	}
 }
@@ -556,7 +556,7 @@ func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertErrMatches(c.TB, tc.build().Err(), tc.want)
+			assertErrMatches(c, tc.build().Err(), tc.want)
 		})
 	}
 }
@@ -665,8 +665,7 @@ func decidedReport(cell Cell, matched bool) *Report {
 	return report
 }
 
-func rowFor(tb testing.TB, rows []Row, key capability.Capability) Row {
-	c := qt.New(tb)
+func rowFor(c *qt.C, rows []Row, key capability.Capability) Row {
 	for _, row := range rows {
 		if row.Capability == key {
 			return row
@@ -677,8 +676,7 @@ func rowFor(tb testing.TB, rows []Row, key capability.Capability) Row {
 }
 
 // assertErrMatches keeps the empty-expectation branch out of the test body.
-func assertErrMatches(tb testing.TB, err error, want string) {
-	c := qt.New(tb)
+func assertErrMatches(c *qt.C, err error, want string) {
 	checks := map[bool]func(){
 		true:  func() { c.Assert(err, qt.IsNil) },
 		false: func() { c.Assert(err, qt.ErrorMatches, want) },

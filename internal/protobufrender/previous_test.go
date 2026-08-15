@@ -13,10 +13,9 @@ import (
 
 // pristine is a valid previous export for the single-column "things" table,
 // produced by the exporter itself rather than hand-written.
-func pristine(tb testing.TB) []byte {
-	c := qt.New(tb)
+func pristine(c *qt.C) []byte {
 	c.Helper()
-	return mustRender(c.TB, oneTable(column("id", "BIGINT")), baseOptions()).Data
+	return mustRender(c, oneTable(column("id", "BIGINT")), baseOptions()).Data
 }
 
 // rejectionCase is one previous-output rejection: how the baseline is damaged
@@ -144,8 +143,8 @@ func TestPreviousRejectionsAreDiagnosedSpecifically(t *testing.T) {
 	for _, rc := range rejectionCases() {
 		t.Run(rc.name, func(t *testing.T) {
 			c := qt.New(t)
-			damaged := rc.damage(c, pristine(c.TB))
-			message := mustFail(c.TB, oneTable(column("id", "BIGINT")), withPrevious(damaged))
+			damaged := rc.damage(c, pristine(c))
+			message := mustFail(c, oneTable(column("id", "BIGINT")), withPrevious(damaged))
 			c.Assert(message, qt.Contains, rc.wantMsg)
 		})
 	}
@@ -166,7 +165,7 @@ func TestPreviousRejectionsAreDistinguishable(t *testing.T) {
 	for _, rc := range rejectionCases() {
 		t.Run(rc.name, func(t *testing.T) {
 			c := qt.New(t)
-			damaged := rc.damage(c, pristine(c.TB))
+			damaged := rc.damage(c, pristine(c))
 			_, err := protobufrender.Render(context.Background(), oneTable(column("id", "BIGINT")), withPrevious(damaged))
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err, qt.ErrorIs, rc.wantSentinel)
@@ -200,7 +199,7 @@ func TestPreviousValidationRunsMostSpecificFirst(t *testing.T) {
 	c.Assert(err, qt.Not(qt.ErrorIs), protobufrender.ErrPackageMismatch)
 
 	// A modified file must never be reported as a package mismatch.
-	broken := strings.Replace(string(pristine(c.TB)), "package "+testPackage+";", "package acme.catalog.v1;", 1)
+	broken := strings.Replace(string(pristine(c)), "package "+testPackage+";", "package acme.catalog.v1;", 1)
 	_, err = protobufrender.Render(context.Background(), oneTable(column("id", "BIGINT")), withPrevious([]byte(broken)))
 	c.Assert(err, qt.ErrorIs, protobufrender.ErrModified)
 	c.Assert(err, qt.Not(qt.ErrorIs), protobufrender.ErrPackageMismatch)
@@ -210,7 +209,7 @@ func TestPreviousAcceptsCanonicalizationVariants(t *testing.T) {
 	c := qt.New(t)
 
 	db := oneTable(column("id", "BIGINT"))
-	good := pristine(c.TB)
+	good := pristine(c)
 
 	variants := map[string][]byte{
 		"crlf":      []byte(strings.ReplaceAll(string(good), "\n", "\r\n")),
@@ -230,7 +229,7 @@ func TestPreviousAcceptsCanonicalizationVariants(t *testing.T) {
 			// ptah", whose prescribed remedy is deleting the baseline, so this
 			// must succeed rather than merely produce a different error.
 			c := qt.New(t)
-			res := mustRender(c.TB, db, withPrevious(variant))
+			res := mustRender(c, db, withPrevious(variant))
 			c.Assert(res.Bootstrapped, qt.IsFalse)
 			c.Assert(string(res.Data), qt.Equals, string(good))
 		})
@@ -270,8 +269,8 @@ func TestPreviousRejectsWhitespaceOutsideTheDigestLine(t *testing.T) {
 
 	// Only the digest line tolerates trailing whitespace; every other byte is
 	// covered by the digest.
-	damaged := strings.Replace(string(pristine(c.TB)), "edition = \"2023\";", "edition = \"2023\";  ", 1)
-	message := mustFail(c.TB, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
+	damaged := strings.Replace(string(pristine(c)), "edition = \"2023\";", "edition = \"2023\";  ", 1)
+	message := mustFail(c, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
 	c.Assert(message, qt.Contains, "output file was modified since it was generated")
 }
 
@@ -281,7 +280,7 @@ func TestPreviousDigestDoesNotCoverItsOwnValue(t *testing.T) {
 	// Corrupting the digest value must produce a clean mismatch rather than an
 	// incoherent one: the line is matched by prefix, not by value shape, so it
 	// is still stripped before hashing.
-	damaged := strings.Replace(string(pristine(c.TB)), digestLineOf(string(pristine(c.TB))), digestPrefix+"garbage", 1)
-	message := mustFail(c.TB, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
+	damaged := strings.Replace(string(pristine(c)), digestLineOf(string(pristine(c))), digestPrefix+"garbage", 1)
+	message := mustFail(c, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
 	c.Assert(message, qt.Contains, "output file was modified since it was generated: recorded garbage, computed ")
 }

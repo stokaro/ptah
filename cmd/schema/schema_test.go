@@ -16,7 +16,7 @@ import (
 func TestSchemaExportCommandWritesHCL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c.TB, dir)
+	writeModel(c, dir)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	cmd := schema.NewSchemaCommand()
@@ -49,7 +49,7 @@ func TestSchemaExportCommandWritesHCL(t *testing.T) {
 func TestSchemaExportCommandAcceptsLegacyHCLAlias(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c.TB, dir)
+	writeModel(c, dir)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	cmd := schema.NewSchemaCommand()
@@ -92,7 +92,7 @@ func TestSchemaExportHelpUsesNeutralHCLName(t *testing.T) {
 func TestSchemaExportCommandWritesAPISchemas(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c.TB, dir)
+	writeModel(c, dir)
 
 	// The graphql marker is an object type rather than a Query root: the default
 	// export is types-only, and TestSchemaExportGraphQLDefaultIsTypesOnly pins
@@ -121,7 +121,7 @@ func TestSchemaExportCommandTrimsFormatSelector(t *testing.T) {
 	// without exporting, losing source data).
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c.TB, dir)
+	writeModel(c, dir)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	cmd := schema.NewSchemaCommand()
@@ -256,7 +256,7 @@ func TestSchemaCommand_RenderHelpShowsNativePath(t *testing.T) {
 func TestSchemaExportCleanupDryRunAndWrite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	modelPath := writeModel(c.TB, dir)
+	modelPath := writeModel(c, dir)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	cmd := schema.NewSchemaCommand()
@@ -391,8 +391,7 @@ func TestSchemaExportCommand_FailurePath_NoAnnotationsPreservesExistingOutput(t 
 	c.Assert(outAfter, qt.DeepEquals, outData)
 }
 
-func writeModel(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writeModel(c *qt.C, dir string) string {
 	path := filepath.Join(dir, "model.go")
 	content := `package models
 

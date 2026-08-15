@@ -28,8 +28,7 @@ const (
 
 // writeCleanGateFixture writes a hashed two-migration Atlas directory and
 // returns it with a path for a database file that does not exist yet.
-func writeCleanGateFixture(tb testing.TB) (migrationsDir, dbPath string) {
-	c := qt.New(tb)
+func writeCleanGateFixture(c *qt.C) (migrationsDir, dbPath string) {
 	c.Helper()
 	root := c.TempDir()
 	migrationsDir = filepath.Join(root, "migrations")
@@ -48,8 +47,7 @@ func writeCleanGateFixture(tb testing.TB) (migrationsDir, dbPath string) {
 
 // execCleanGateSQL runs statements against the fixture database directly, so a
 // test can put it in a state no migration in the directory produces.
-func execCleanGateSQL(tb testing.TB, dbPath string, statements ...string) {
-	c := qt.New(tb)
+func execCleanGateSQL(c *qt.C, dbPath string, statements ...string) {
 	c.Helper()
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, atlasurl.SQLiteURLFromPath(dbPath))
@@ -62,8 +60,7 @@ func execCleanGateSQL(tb testing.TB, dbPath string, statements ...string) {
 }
 
 // runCleanGateApply applies the fixture with any extra flags the case needs.
-func runCleanGateApply(tb testing.TB, migrationsDir, dbPath string, extra ...string) (stdout string, err error) {
-	c := qt.New(tb)
+func runCleanGateApply(c *qt.C, migrationsDir, dbPath string, extra ...string) (stdout string, err error) {
 	c.Helper()
 	args := []string{
 		"migrate", "apply",
@@ -71,7 +68,7 @@ func runCleanGateApply(tb testing.TB, migrationsDir, dbPath string, extra ...str
 		"--dir", "file://" + migrationsDir,
 	}
 	args = append(args, extra...)
-	stdout, _, err = runCompatStreams(c.TB, args...)
+	stdout, _, err = runCompatStreams(c, args...)
 	return stdout, err
 }
 
@@ -83,10 +80,10 @@ func runCleanGateApply(tb testing.TB, migrationsDir, dbPath string, extra ...str
 // cg_users exists in a database nobody asked Ptah to adopt.
 func TestCompatCommand_MigrateApplyRefusesUncleanDatabase(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	migrationsDir, dbPath := writeCleanGateFixture(c)
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	_, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	_, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(
@@ -96,21 +93,21 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabase(t *testing.T) {
 			"baseline version or allow-dirty is required",
 	)
 	// The refusal is worth nothing if the migrations ran anyway.
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "cg_users")
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_users")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The count grows with the number of unmanaged tables, exactly as measured, so
 // a reader can tell one stray table from a whole legacy schema.
 func TestCompatCommand_MigrateApplyUncleanCountReportsEveryTable(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-	execCleanGateSQL(c.TB, dbPath,
+	migrationsDir, dbPath := writeCleanGateFixture(c)
+	execCleanGateSQL(c, dbPath,
 		"CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)",
 		"CREATE TABLE other_stuff (id INTEGER PRIMARY KEY)",
 	)
 
-	_, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	_, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(
@@ -127,10 +124,10 @@ func TestCompatCommand_MigrateApplyUncleanCountReportsEveryTable(t *testing.T) {
 // even though this implementation has not created its revisions table yet.
 func TestCompatCommand_MigrateApplyDryRunRefusesUncleanDatabase(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	migrationsDir, dbPath := writeCleanGateFixture(c)
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	stdout, err := runCleanGateApply(c.TB, migrationsDir, dbPath, "--dry-run")
+	stdout, err := runCleanGateApply(c, migrationsDir, dbPath, "--dry-run")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(
@@ -153,9 +150,9 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabaseWithEmptyDirectory(t *t
 	_, sumErr := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
 	c.Assert(sumErr, qt.IsNil)
 	dbPath := filepath.Join(root, "empty-dir.db")
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	_, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	_, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "connected database is not clean")
@@ -184,14 +181,14 @@ func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-			execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+			migrationsDir, dbPath := writeCleanGateFixture(c)
+			execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-			_, err := runCleanGateApply(c.TB, migrationsDir, dbPath, test.extra...)
+			_, err := runCleanGateApply(c, migrationsDir, dbPath, test.extra...)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, test.wantApplied)
-			c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "legacy_stuff")
+			c.Assert(compatTableNames(c, dbPath), qt.Contains, test.wantApplied)
+			c.Assert(compatTableNames(c, dbPath), qt.Contains, "legacy_stuff")
 		})
 	}
 }
@@ -204,33 +201,33 @@ func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
 // plan.
 func TestCompatCommand_MigrateApplyDryRunBaselineAcceptsUncleanDatabase(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	migrationsDir, dbPath := writeCleanGateFixture(c)
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	stdout, err := runCleanGateApply(c.TB, migrationsDir, dbPath,
+	stdout, err := runCleanGateApply(c, migrationsDir, dbPath,
 		"--baseline", cleanGateVersionOne, "--dry-run")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Would have applied 1 migrations.")
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The two opt-ins are not composable. Measured, the binary refuses the pair
 // before recording anything, because they select different histories.
 func TestCompatCommand_MigrateApplyBaselineAndAllowDirtyAreExclusive(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	migrationsDir, dbPath := writeCleanGateFixture(c)
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	_, err := runCleanGateApply(c.TB, migrationsDir, dbPath,
+	_, err := runCleanGateApply(c, migrationsDir, dbPath,
 		"--allow-dirty", "--baseline", cleanGateVersionOne)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, "sql/migrate: baseline and allow-dirty are mutually exclusive")
 	// Refused before the baseline was recorded: no revisions table exists to
 	// carry a row the operator never asked to keep.
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "atlas_schema_revisions")
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "atlas_schema_revisions")
+	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The states the binary calls clean. Each row is a database the gate must let
@@ -251,13 +248,13 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 		{
 			name: "a view is not a table",
 			setup: func(c *qt.C, dbPath string) {
-				execCleanGateSQL(c.TB, dbPath, "CREATE VIEW cg_view AS SELECT 1 AS one")
+				execCleanGateSQL(c, dbPath, "CREATE VIEW cg_view AS SELECT 1 AS one")
 			},
 		},
 		{
 			name: "SQLite's own bookkeeping table does not count",
 			setup: func(c *qt.C, dbPath string) {
-				execCleanGateSQL(c.TB, dbPath,
+				execCleanGateSQL(c, dbPath,
 					"CREATE TABLE cg_seq (id INTEGER PRIMARY KEY AUTOINCREMENT)",
 					"INSERT INTO cg_seq DEFAULT VALUES",
 					"DROP TABLE cg_seq",
@@ -268,14 +265,14 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			migrationsDir, dbPath := writeCleanGateFixture(c.TB)
+			migrationsDir, dbPath := writeCleanGateFixture(c)
 			test.setup(c, dbPath)
 
-			stdout, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+			stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-			c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "cg_users")
+			c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_users")
 		})
 	}
 }
@@ -285,24 +282,24 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 // the row that stops the gate from being "the schema must have no tables".
 func TestCompatCommand_MigrateApplyAcceptsLoneEmptyRevisionsTable(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
+	migrationsDir, dbPath := writeCleanGateFixture(c)
 
-	_, firstErr := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	_, firstErr := runCleanGateApply(c, migrationsDir, dbPath)
 	c.Assert(firstErr, qt.IsNil)
 	// Roll the database back to "adopted once, then emptied": the revisions
 	// table survives with no rows and nothing else remains.
-	execCleanGateSQL(c.TB, dbPath,
+	execCleanGateSQL(c, dbPath,
 		"DROP TABLE cg_users",
 		"DROP TABLE cg_orders",
 		"DELETE FROM atlas_schema_revisions",
 	)
-	c.Assert(compatTableNames(c.TB, dbPath), qt.DeepEquals, []string{"atlas_schema_revisions"})
+	c.Assert(compatTableNames(c, dbPath), qt.DeepEquals, []string{"atlas_schema_revisions"})
 
-	stdout, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "cg_users")
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_users")
 }
 
 // The gate is an adoption gate, not a standing drift check. Once a revision has
@@ -313,15 +310,15 @@ func TestCompatCommand_MigrateApplyAcceptsLoneEmptyRevisionsTable(t *testing.T) 
 // test fails on the second apply with the not-clean refusal.
 func TestCompatCommand_MigrateApplyIgnoresDriftOnAnAdoptedDatabase(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeCleanGateFixture(c.TB)
+	migrationsDir, dbPath := writeCleanGateFixture(c)
 
-	_, firstErr := runCleanGateApply(c.TB, migrationsDir, dbPath, "--to-version", cleanGateVersionOne)
+	_, firstErr := runCleanGateApply(c, migrationsDir, dbPath, "--to-version", cleanGateVersionOne)
 	c.Assert(firstErr, qt.IsNil)
-	execCleanGateSQL(c.TB, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
+	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")
 
-	stdout, err := runCleanGateApply(c.TB, migrationsDir, dbPath)
+	stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "cg_orders")
+	c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_orders")
 }

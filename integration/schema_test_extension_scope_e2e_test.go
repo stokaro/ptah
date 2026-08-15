@@ -29,7 +29,7 @@ func TestSchemaTestSchemaSelectionKeepsDatabaseWideExtensionPostgresE2E(t *testi
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = adminDB.Close() })
 
-	devURL := freshSchemaTestE2EDatabase(c.TB, ctx, adminDB, adminURL, "extension_scope")
+	devURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "extension_scope")
 	schemaFile := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(schemaFile, []byte(`
 schema "extensions" {}
@@ -45,7 +45,7 @@ table "users" {
   }
 }
 `), 0o600), qt.IsNil)
-	testDir := writeLiveTestCases(c.TB, `cases:
+	testDir := writeLiveTestCases(c, `cases:
   - name: selected schema keeps its database-wide extension
     steps:
       - name: extension placement survives selection
@@ -58,7 +58,7 @@ table "users" {
           row_count: 0
 `)
 
-	output := runLivePtahCommand(c.TB, ctx,
+	output := runLivePtahCommand(c, ctx,
 		"schema", "test",
 		"--dir", testDir,
 		"--root-dir", schemaFile,

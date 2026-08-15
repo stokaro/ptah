@@ -31,7 +31,7 @@ sequence "order_seq" {
 	c.Assert(*db.Sequences[0].Start, qt.Equals, int64(1000))
 	c.Assert(db.Sequences[0].Cycle, qt.IsTrue)
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SEQUENCE order_seq AS bigint INCREMENT BY 2 MINVALUE 1 MAXVALUE 9999 START WITH 1000 CACHE 20 CYCLE;`)
 }
 
@@ -45,7 +45,7 @@ sequence "s" {}
 	c.Assert(db.Sequences, qt.HasLen, 1)
 	c.Assert(db.Sequences[0].Start, qt.IsNil)
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SEQUENCE s;`)
 }
 
@@ -65,7 +65,7 @@ sequence "s" {
 	c.Assert(db.Sequences[0].OwnedBy, qt.Equals, "orders.id")
 	c.Assert(db.Sequences[0].IfNotExists, qt.IsTrue)
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SEQUENCE IF NOT EXISTS app.s`)
 	c.Assert(sql, qt.Contains, `OWNED BY orders.id`)
 }
@@ -169,7 +169,7 @@ domain "email" {
 	c.Assert(db.Domains[0].NotNull, qt.IsTrue)
 	c.Assert(db.Domains[0].Check, qt.Equals, "VALUE ~ '@'")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE DOMAIN email AS text NOT NULL CHECK (VALUE ~ '@');`)
 }
 
@@ -202,7 +202,7 @@ domain "positive" {
 	c.Assert(db.Domains[0].Default, qt.Equals, "0")
 	c.Assert(db.Domains[0].DefaultExpr, qt.Equals, "")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE DOMAIN app.positive AS integer`)
 	c.Assert(sql, qt.Contains, `DEFAULT`)
 }

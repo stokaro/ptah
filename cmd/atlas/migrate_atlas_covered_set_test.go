@@ -27,8 +27,7 @@ import (
 // sqliteUserTables returns the non-Atlas tables in dbPath, sorted. Asserting the
 // whole set rather than one name is what separates "the nested file did not run"
 // from "the nested file ran and happened not to create the table I looked for".
-func sqliteUserTables(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func sqliteUserTables(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -48,8 +47,7 @@ func sqliteUserTables(tb testing.TB, dbPath string) []string {
 }
 
 // writeCoveredSetFile writes one file below dir, creating parents.
-func writeCoveredSetFile(tb testing.TB, dir, name, body string) {
-	c := qt.New(tb)
+func writeCoveredSetFile(c *qt.C, dir, name, body string) {
 	c.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
 	c.Assert(os.MkdirAll(filepath.Dir(path), 0o755), qt.IsNil)
@@ -59,8 +57,7 @@ func writeCoveredSetFile(tb testing.TB, dir, name, body string) {
 // appendCoveredSetFile appends to an existing file below dir, which is how a
 // tamper is expressed: the file's name and position never change, only bytes
 // that no entry in atlas.sum is derived from.
-func appendCoveredSetFile(tb testing.TB, dir, name, body string) {
-	c := qt.New(tb)
+func appendCoveredSetFile(c *qt.C, dir, name, body string) {
 	c.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
@@ -74,8 +71,7 @@ func appendCoveredSetFile(tb testing.TB, dir, name, body string) {
 // the covered set. Every row hashes through the compat surface rather than
 // writing atlas.sum by hand, so the covered set under test is the one the tool
 // actually produces.
-func hashCoveredSetDir(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func hashCoveredSetDir(c *qt.C, dir string) {
 	c.Helper()
 	out, errOut, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out, errOut))
@@ -123,10 +119,10 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "tampered nested file never runs",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c.TB, dir, "sub/2_b.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c.TB, dir)
-				appendCoveredSetFile(c.TB, dir, "sub/2_b.sql", coveredSetTamperSQL)
+				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+				writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
+				hashCoveredSetDir(c, dir)
+				appendCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetTamperSQL)
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: coveredSetNestedWarn,
@@ -135,8 +131,8 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "nested file is the only migration",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "sub/2_b.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c.TB, dir)
+				writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
+				hashCoveredSetDir(c, dir)
 			},
 			wantStdout: "No migration files to execute",
 			wantStderr: coveredSetNestedWarn,
@@ -145,8 +141,8 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "top-level only is unchanged",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-				hashCoveredSetDir(c.TB, dir)
+				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+				hashCoveredSetDir(c, dir)
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "",
@@ -155,8 +151,8 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "uppercase-only directory has nothing to execute",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "1_a.SQL", coveredSetTopLevelSQL)
-				hashCoveredSetDir(c.TB, dir)
+				writeCoveredSetFile(c, dir, "1_a.SQL", coveredSetTopLevelSQL)
+				hashCoveredSetDir(c, dir)
 			},
 			wantStdout: "No migration files to execute",
 			wantStderr: "warning: 1_a.SQL is not covered by atlas.sum and will not run; " +
@@ -166,9 +162,9 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "uppercase file beside a migration does not refuse the directory",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c.TB, dir, "2_c.SQL", "CREATE TABLE c (id INTEGER PRIMARY KEY);\n")
-				hashCoveredSetDir(c.TB, dir)
+				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+				writeCoveredSetFile(c, dir, "2_c.SQL", "CREATE TABLE c (id INTEGER PRIMARY KEY);\n")
+				hashCoveredSetDir(c, dir)
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "warning: 2_c.SQL is not covered by atlas.sum and will not run; " +
@@ -178,9 +174,9 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name: "duplicate version across depth is not a duplicate",
 			write: func(c *qt.C, dir string) {
-				writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-				writeCoveredSetFile(c.TB, dir, "sub/1_a.sql", coveredSetNestedSQL)
-				hashCoveredSetDir(c.TB, dir)
+				writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+				writeCoveredSetFile(c, dir, "sub/1_a.sql", coveredSetNestedSQL)
+				hashCoveredSetDir(c, dir)
 			},
 			wantStdout: "Migrating to version 1 from 1 pending migrations.",
 			wantStderr: "warning: sub/1_a.sql is not covered by atlas.sum and will not run; " +
@@ -203,7 +199,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 			// The database is asserted before the narration: what ran is the
 			// property under test, and what was printed about it is secondary.
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteUserTables(c.TB, dbPath), qt.DeepEquals, tt.wantTables)
+			c.Assert(sqliteUserTables(c, dbPath), qt.DeepEquals, tt.wantTables)
 			c.Assert(stdout, qt.Contains, tt.wantStdout)
 			c.Assert(stderr, qt.Equals, tt.wantStderr)
 		})
@@ -218,10 +214,10 @@ func TestCompatMigrateApply_CoveredTamperStillRefuses(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m")
-	writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-	writeCoveredSetFile(c.TB, dir, "sub/2_b.sql", coveredSetNestedSQL)
-	hashCoveredSetDir(c.TB, dir)
-	appendCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTamperSQL)
+	writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+	writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
+	hashCoveredSetDir(c, dir)
+	appendCoveredSetFile(c, dir, "1_a.sql", coveredSetTamperSQL)
 	dbPath := filepath.Join(tempDir, "target.db")
 
 	_, stderr, err := compatApply(dir, dbPath)
@@ -246,12 +242,12 @@ func TestCompatMigrateApply_CoveredTamperStillRefuses(t *testing.T) {
 func TestAtlasDiscoveryMatchesSumCoverage(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
-	writeCoveredSetFile(c.TB, dir, "2_c.SQL", coveredSetTopLevelSQL)
-	writeCoveredSetFile(c.TB, dir, "sub/2_b.sql", coveredSetNestedSQL)
-	writeCoveredSetFile(c.TB, dir, "sub/3_d.SQL", coveredSetNestedSQL)
-	writeCoveredSetFile(c.TB, dir, "sub/deep/4_e.sql", coveredSetNestedSQL)
-	writeCoveredSetFile(c.TB, dir, ".hidden/5_f.sql", coveredSetNestedSQL)
+	writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
+	writeCoveredSetFile(c, dir, "2_c.SQL", coveredSetTopLevelSQL)
+	writeCoveredSetFile(c, dir, "sub/2_b.sql", coveredSetNestedSQL)
+	writeCoveredSetFile(c, dir, "sub/3_d.SQL", coveredSetNestedSQL)
+	writeCoveredSetFile(c, dir, "sub/deep/4_e.sql", coveredSetNestedSQL)
+	writeCoveredSetFile(c, dir, ".hidden/5_f.sql", coveredSetNestedSQL)
 	fsys := os.DirFS(dir)
 
 	covered, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatAtlas)

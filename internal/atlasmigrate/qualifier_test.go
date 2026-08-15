@@ -120,16 +120,14 @@ func TestQualifierValidateScope_FailurePath(t *testing.T) {
 	})
 }
 
-func mustParseQualifier(tb testing.TB, raw string) atlasmigrate.Qualifier {
-	c := qt.New(tb)
+func mustParseQualifier(c *qt.C, raw string) atlasmigrate.Qualifier {
 	c.Helper()
 	qualifier, err := atlasmigrate.ParseQualifier(raw)
 	c.Assert(err, qt.IsNil)
 	return qualifier
 }
 
-func renderQualified(tb testing.TB, dialect string, nodes ...ast.Node) string {
-	c := qt.New(tb)
+func renderQualified(c *qt.C, dialect string, nodes ...ast.Node) string {
 	c.Helper()
 	output, err := renderer.RenderSQLWithCapabilities(dialect, capability.ForDialect(dialect), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -142,12 +140,12 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		table := ast.NewCreateTable("users").
 			AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()).
 			AddColumn(ast.NewColumn("org_id", "INTEGER").SetForeignKey("orgs", "id", "fk_users_org"))
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{table})
 
 		c.Assert(err, qt.IsNil)
-		sql := renderQualified(c.TB, platform.Postgres, table)
+		sql := renderQualified(c, platform.Postgres, table)
 		c.Assert(sql, qt.Contains, `CREATE TABLE "tenant"."users"`)
 		c.Assert(sql, qt.Contains, `REFERENCES "tenant"."orgs"`)
 	})
@@ -169,12 +167,12 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 			},
 		}
 		index := &ast.IndexNode{Name: "idx_users_email", Table: "users", Columns: []string{"email"}}
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{alter, index})
 
 		c.Assert(err, qt.IsNil)
-		sql := renderQualified(c.TB, platform.Postgres, alter, index)
+		sql := renderQualified(c, platform.Postgres, alter, index)
 		c.Assert(sql, qt.Contains, `ALTER TABLE "tenant"."users"`)
 		c.Assert(sql, qt.Contains, `REFERENCES "tenant"."orgs"`)
 		c.Assert(sql, qt.Contains, `CREATE INDEX "idx_users_email" ON "tenant"."users"`)
@@ -184,12 +182,12 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		dropIndex := ast.NewDropIndex("idx_users_email").SetTable("users")
 		dropTable := ast.NewDropTable("orders")
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{dropIndex, dropTable})
 
 		c.Assert(err, qt.IsNil)
-		sql := renderQualified(c.TB, platform.Postgres, dropIndex, dropTable)
+		sql := renderQualified(c, platform.Postgres, dropIndex, dropTable)
 		c.Assert(sql, qt.Contains, `DROP INDEX "tenant"."idx_users_email"`)
 		c.Assert(sql, qt.Contains, `DROP TABLE "tenant"."orders"`)
 	})
@@ -198,31 +196,31 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		table := ast.NewCreateTable("app.users").
 			AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary())
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{table})
 
 		c.Assert(err, qt.IsNil)
-		sql := renderQualified(c.TB, platform.Postgres, table)
+		sql := renderQualified(c, platform.Postgres, table)
 		c.Assert(sql, qt.Contains, `CREATE TABLE "tenant"."users"`)
 	})
 
 	t.Run("mysql create index uses backtick quoting", func(t *testing.T) {
 		c := qt.New(t)
 		index := &ast.IndexNode{Name: "idx_users_email", Table: "users", Columns: []string{"email"}}
-		qualifier := mustParseQualifier(c.TB, "market")
+		qualifier := mustParseQualifier(c, "market")
 
 		err := qualifier.ApplyToPlan(platform.MySQL, &goschema.Database{}, []ast.Node{index})
 
 		c.Assert(err, qt.IsNil)
-		sql := renderQualified(c.TB, platform.MySQL, index)
+		sql := renderQualified(c, platform.MySQL, index)
 		c.Assert(sql, qt.Contains, "ON `market`.`users`")
 	})
 
 	t.Run("comments pass through untouched", func(t *testing.T) {
 		c := qt.New(t)
 		comment := ast.NewComment("WARNING: destructive operation")
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{comment})
 
@@ -244,21 +242,21 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.SQLite, &goschema.Database{}, []ast.Node{ast.NewCreateTable("users")})
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
 	})
 
 	t.Run("unsupported statement kind", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{ast.NewEnum("status", "a", "b")})
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier "tenant" does not support \*ast\.EnumNode statements yet`)
 	})
 
 	t.Run("unsupported alter operation kind", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		alter := &ast.AlterTableNode{
 			Name:       "users",
 			Operations: []ast.AlterOperation{&ast.RenameTableOperation{NewName: "customers"}},
@@ -269,7 +267,7 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 
 	t.Run("plan spanning several schemas", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		nodes := []ast.Node{
 			ast.NewCreateTable("app.users"),
 			ast.NewCreateTable("audit.logs"),
@@ -280,7 +278,7 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 
 	t.Run("enum typed column", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		desired := &goschema.Database{Enums: []goschema.Enum{{Name: "enum_user_status"}}}
 		table := ast.NewCreateTable("users").
 			AddColumn(ast.NewColumn("status", "enum_user_status"))
@@ -291,7 +289,7 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 
 	t.Run("drop index without owning table", func(t *testing.T) {
 		c := qt.New(t)
-		qualifier := mustParseQualifier(c.TB, "tenant")
+		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{ast.NewDropIndex("idx_orphan")})
 		c.Assert(err, qt.ErrorMatches,
 			`atlas migrate diff --qualifier "tenant" cannot qualify DROP INDEX "idx_orphan" without its owning table`)

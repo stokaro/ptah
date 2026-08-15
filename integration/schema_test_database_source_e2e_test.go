@@ -41,7 +41,7 @@ func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
 			verify: func(c *qt.C, stdout, stderr string) {
 				c.Assert(stdout, qt.Contains, `PASS  case "db-sourced table exists"`)
 				c.Assert(stdout, qt.Contains, "1 cases, 1 passed, 0 failed")
-				assertDesiredStateNoteOnStderrOnly(c.TB, stdout, stderr)
+				assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
 			},
 		},
 		{
@@ -61,7 +61,7 @@ func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
 				c.Assert(report.Total, qt.Equals, 1)
 				c.Assert(report.Passed, qt.Equals, 1)
 				c.Assert(report.Failed, qt.Equals, 0)
-				assertDesiredStateNoteOnStderrOnly(c.TB, stdout, stderr)
+				assertDesiredStateNoteOnStderrOnly(c, stdout, stderr)
 			},
 		},
 	}
@@ -81,13 +81,13 @@ func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
 			// Every row gets its own source and throwaway database. The runner
 			// does not reset a caller-owned throwaway between invocations, so a
 			// shared one would let a later row pass on an earlier row's state.
-			sourceURL := freshSchemaTestE2EDatabase(c.TB, ctx, adminDB, adminURL, "src")
-			devURL := freshSchemaTestE2EDatabase(c.TB, ctx, adminDB, adminURL, "dev")
-			seedSchemaTestSourceDatabase(c.TB, ctx, sourceURL)
+			sourceURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "src")
+			devURL := freshSchemaTestE2EDatabase(c, ctx, adminDB, adminURL, "dev")
+			seedSchemaTestSourceDatabase(c, ctx, sourceURL)
 
 			args := append([]string{
 				"schema", "test",
-				"--dir", writeSchemaTestDatabaseSourceCases(c.TB),
+				"--dir", writeSchemaTestDatabaseSourceCases(c),
 				"--root-dir", sourceURL,
 				"--db-url", devURL,
 			}, tt.args...)
@@ -103,8 +103,7 @@ func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
 // note is written. A fresh PostgreSQL database always carries the connecting
 // role and its own GRANT USAGE ON SCHEMA public TO PUBLIC, so the note is
 // always emitted here -- the only question is which stream it lands on.
-func assertDesiredStateNoteOnStderrOnly(tb testing.TB, stdout, stderr string) {
-	c := qt.New(tb)
+func assertDesiredStateNoteOnStderrOnly(c *qt.C, stdout, stderr string) {
 	c.Helper()
 	c.Assert(stderr, qt.Contains, "introspected from the desired-state database")
 	c.Assert(stdout, qt.Not(qt.Contains), "introspected from the desired-state database")
@@ -112,21 +111,19 @@ func assertDesiredStateNoteOnStderrOnly(tb testing.TB, stdout, stderr string) {
 
 // freshSchemaTestE2EDatabase creates a uniquely named database and registers
 // its removal.
-func freshSchemaTestE2EDatabase(tb testing.TB, ctx context.Context, adminDB *sql.DB, adminURL, role string) string {
-	c := qt.New(tb)
+func freshSchemaTestE2EDatabase(c *qt.C, ctx context.Context, adminDB *sql.DB, adminURL, role string) string {
 	c.Helper()
 	name := fmt.Sprintf("ptah_schema_test_src_e2e_%s_%d", role, time.Now().UnixNano())
-	createE2EDatabase(c.TB, ctx, adminDB, name)
-	c.Cleanup(func() { dropE2EDatabase(c.TB, context.Background(), adminDB, name) })
-	return replaceDatabaseName(c.TB, adminURL, name)
+	createE2EDatabase(c, ctx, adminDB, name)
+	c.Cleanup(func() { dropE2EDatabase(c, context.Background(), adminDB, name) })
+	return replaceDatabaseName(c, adminURL, name)
 }
 
 // seedSchemaTestSourceDatabase creates the table the cases assert on. It exists
 // in the source database and nowhere else, which is what makes the fixture
 // discriminate: with the table declared in every input, the run would pass
 // whether or not the source was read.
-func seedSchemaTestSourceDatabase(tb testing.TB, ctx context.Context, sourceURL string) {
-	c := qt.New(tb)
+func seedSchemaTestSourceDatabase(c *qt.C, ctx context.Context, sourceURL string) {
 	c.Helper()
 	db, err := sql.Open("pgx", sourceURL)
 	c.Assert(err, qt.IsNil)
@@ -136,10 +133,9 @@ func seedSchemaTestSourceDatabase(tb testing.TB, ctx context.Context, sourceURL 
 	c.Assert(err, qt.IsNil)
 }
 
-func writeSchemaTestDatabaseSourceCases(tb testing.TB) string {
-	c := qt.New(tb)
+func writeSchemaTestDatabaseSourceCases(c *qt.C) string {
 	c.Helper()
-	return writeLiveTestCases(c.TB, `cases:
+	return writeLiveTestCases(c, `cases:
   - name: db-sourced table exists
     steps:
       - name: introspected table is present

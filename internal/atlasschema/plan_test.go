@@ -16,8 +16,7 @@ import (
 
 // connectPlanSQLite opens a SQLite database file for plan tests and closes it
 // with the test.
-func connectPlanSQLite(tb testing.TB, dbPath string) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func connectPlanSQLite(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -25,8 +24,7 @@ func connectPlanSQLite(tb testing.TB, dbPath string) *dbschema.DatabaseConnectio
 	return conn
 }
 
-func writePlanDesiredSchema(tb testing.TB, dir, sql string) string {
-	c := qt.New(tb)
+func writePlanDesiredSchema(c *qt.C, dir, sql string) string {
 	c.Helper()
 	path := filepath.Join(dir, "desired.sql")
 	c.Assert(os.WriteFile(path, []byte(sql), 0o600), qt.IsNil)
@@ -36,10 +34,10 @@ func writePlanDesiredSchema(tb testing.TB, dir, sql string) string {
 func TestPreparePlanFileComputesFingerprintedPlan(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	conn := connectPlanSQLite(c.TB, filepath.Join(dir, "plan.db"))
+	conn := connectPlanSQLite(c, filepath.Join(dir, "plan.db"))
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY);`), qt.IsNil)
-	desired := writePlanDesiredSchema(c.TB, dir,
+	desired := writePlanDesiredSchema(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
@@ -60,10 +58,10 @@ func TestPreparePlanFileComputesFingerprintedPlan(t *testing.T) {
 func TestPreparePlanFileSyncedSchemaHasNoChanges(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	conn := connectPlanSQLite(c.TB, filepath.Join(dir, "synced.db"))
+	conn := connectPlanSQLite(c, filepath.Join(dir, "synced.db"))
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY);`), qt.IsNil)
-	desired := writePlanDesiredSchema(c.TB, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		ToURLs: []string{desired},
@@ -76,8 +74,8 @@ func TestPreparePlanFileSyncedSchemaHasNoChanges(t *testing.T) {
 func TestPreparePlanFileHonorsCustomNameAndDevURLDialect(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	conn := connectPlanSQLite(c.TB, filepath.Join(dir, "named.db"))
-	desired := writePlanDesiredSchema(c.TB, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	conn := connectPlanSQLite(c, filepath.Join(dir, "named.db"))
+	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		Name:   "my_plan",
@@ -110,10 +108,10 @@ func TestPreparePlanFileRequiresConnection(t *testing.T) {
 func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	conn := connectPlanSQLite(c.TB, filepath.Join(dir, "verify.db"))
+	conn := connectPlanSQLite(c, filepath.Join(dir, "verify.db"))
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY);`), qt.IsNil)
-	desired := writePlanDesiredSchema(c.TB, dir,
+	desired := writePlanDesiredSchema(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		ToURLs: []string{desired},
@@ -140,8 +138,8 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	conn := connectPlanSQLite(c.TB, filepath.Join(dir, "roundtrip.db"))
-	desired := writePlanDesiredSchema(c.TB, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	conn := connectPlanSQLite(c, filepath.Join(dir, "roundtrip.db"))
+	desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
 		ToURLs: []string{desired},
 	})

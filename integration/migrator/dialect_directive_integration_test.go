@@ -28,7 +28,7 @@ const directiveBoundaryValueError = `invalid \+ptah no_transaction value "maybe"
 
 func TestSQLMigrationDirectiveBoundariesUseTargetDialect(t *testing.T) {
 	c := qt.New(t)
-	conn := openDirectiveBoundarySQLite(c.TB)
+	conn := openDirectiveBoundarySQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	upSQL := sqliteDirectiveBoundarySQL("up_probe")
@@ -37,14 +37,14 @@ func TestSQLMigrationDirectiveBoundariesUseTargetDialect(t *testing.T) {
 
 	err := migration.Up(t.Context(), conn)
 	c.Assert(err, qt.ErrorMatches, `invalid up migration directives: `+directiveBoundaryValueError)
-	c.Assert(directiveBoundaryTableExists(c.TB, conn, "up_probe"), qt.IsFalse)
+	c.Assert(directiveBoundaryTableExists(c, conn, "up_probe"), qt.IsFalse)
 
 	err = migration.Down(t.Context(), conn)
 	c.Assert(err, qt.ErrorMatches, `invalid down migration directives: `+directiveBoundaryValueError)
-	c.Assert(directiveBoundaryTableExists(c.TB, conn, "down_probe"), qt.IsFalse)
+	c.Assert(directiveBoundaryTableExists(c, conn, "down_probe"), qt.IsFalse)
 
 	c.Assert(migration.UpForReplay(t.Context(), conn), qt.IsNil)
-	c.Assert(directiveBoundaryTableExists(c.TB, conn, "up_probe"), qt.IsTrue)
+	c.Assert(directiveBoundaryTableExists(c, conn, "up_probe"), qt.IsTrue)
 }
 
 // TestSQLMigrationDirectiveBoundaryIsDecidedByTheTargetDialect is the control
@@ -75,19 +75,19 @@ func TestSQLMigrationDirectiveBoundaryIsDecidedByTheTargetDialect(t *testing.T) 
 // which is not the rule.
 func TestSQLMigrationWellFormedDirectiveBelowTheStatementIsNotHonored(t *testing.T) {
 	c := qt.New(t)
-	conn := openDirectiveBoundarySQLite(c.TB)
+	conn := openDirectiveBoundarySQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	upSQL := "CREATE TABLE well_formed_probe (id integer);\n-- +ptah no_transaction\n"
 	migration := migrator.CreateMigrationFromSQL(1, "well formed", upSQL, "DROP TABLE well_formed_probe;\n")
 
 	c.Assert(migration.Up(t.Context(), conn), qt.IsNil)
-	c.Assert(directiveBoundaryTableExists(c.TB, conn, "well_formed_probe"), qt.IsTrue)
+	c.Assert(directiveBoundaryTableExists(c, conn, "well_formed_probe"), qt.IsTrue)
 }
 
 func TestMigratorResolvesTransactionDirectiveWithTargetDialect(t *testing.T) {
 	c := qt.New(t)
-	conn := openDirectiveBoundarySQLite(c.TB)
+	conn := openDirectiveBoundarySQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	migration := migrator.CreateMigrationFromSQL(
@@ -100,11 +100,10 @@ func TestMigratorResolvesTransactionDirectiveWithTargetDialect(t *testing.T) {
 
 	err := mig.MigrateUp(t.Context())
 	c.Assert(err, qt.ErrorMatches, directiveBoundaryValueError)
-	c.Assert(directiveBoundaryTableExists(c.TB, conn, "migrator_probe"), qt.IsFalse)
+	c.Assert(directiveBoundaryTableExists(c, conn, "migrator_probe"), qt.IsFalse)
 }
 
-func openDirectiveBoundarySQLite(tb testing.TB) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func openDirectiveBoundarySQLite(c *qt.C) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite:///:memory:")
 	c.Assert(err, qt.IsNil)
@@ -119,8 +118,7 @@ func sqliteDirectiveBoundarySQL(table string) string {
 	return "SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\n;\nCREATE TABLE " + table + " (id integer);\n"
 }
 
-func directiveBoundaryTableExists(tb testing.TB, conn *dbschema.DatabaseConnection, table string) bool {
-	c := qt.New(tb)
+func directiveBoundaryTableExists(c *qt.C, conn *dbschema.DatabaseConnection, table string) bool {
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(

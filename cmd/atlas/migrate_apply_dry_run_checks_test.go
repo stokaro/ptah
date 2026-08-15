@@ -93,13 +93,12 @@ ALTER TABLE users ADD COLUMN email TEXT;
 const dryRunChecksDeferredNote = "Deferred pre-migration checks"
 
 // writeDryRunChecksDir writes a hashed two-migration directory.
-func writeDryRunChecksDir(tb testing.TB, dir, first, second string) string {
-	c := qt.New(tb)
+func writeDryRunChecksDir(c *qt.C, dir, first, second string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260101000001_one.sql", first)
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260101000002_two.sql", second)
-	writeAtlasApplyProjectSum(c.TB, migrationsDir)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_one.sql", first)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000002_two.sql", second)
+	writeAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 
@@ -336,7 +335,7 @@ func TestMigrateApplyDryRunChecksObserveApplyState(t *testing.T) {
 			c := qt.New(t)
 			unsetSkipChecksEnv(t)
 			dir := t.TempDir()
-			migrationsDir := writeDryRunChecksDir(c.TB, dir, test.first, test.second)
+			migrationsDir := writeDryRunChecksDir(c, dir, test.first, test.second)
 			dbPath := filepath.Join(dir, "apply.db")
 			test.seed(c, migrationsDir, dbPath)
 
@@ -353,9 +352,9 @@ func TestMigrateApplyDryRunChecksNameConvertedFlywayIdentity(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1__one.sql", dryRunChecksCreateUsers)
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "V1.5__two.sql", dryRunChecksDirectiveNeedsPrior)
-	hashConvertedApplyDir(c.TB, migrationsDir, "flyway")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__one.sql", dryRunChecksCreateUsers)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__two.sql", dryRunChecksDirectiveNeedsPrior)
+	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "flyway-checks.db")
 
 	stdout, stderr, err := runDryRunChecksApply(

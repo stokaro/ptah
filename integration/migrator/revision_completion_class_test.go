@@ -372,7 +372,7 @@ func sqliteRevisionCompletionTarget() revisionCompletionTarget {
 		},
 		installFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL,
@@ -384,7 +384,7 @@ func sqliteRevisionCompletionTarget() revisionCompletionTarget {
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
 )`, names.revisions))
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TRIGGER %s
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TRIGGER %s
 BEFORE UPDATE OF state ON %s
 WHEN NEW.state = 'applied'
 BEGIN
@@ -393,7 +393,7 @@ END`, names.fault, names.revisions))
 		},
 		removeFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, "DROP TRIGGER "+names.fault)
+			execRevisionCompletionSQL(c, conn, "DROP TRIGGER "+names.fault)
 		},
 		bodyPresent: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) bool {
 			c.Helper()
@@ -427,7 +427,7 @@ func postgresRevisionCompletionTarget() revisionCompletionTarget {
 		},
 		installFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger AS $fault$
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger AS $fault$
 BEGIN
 	IF NEW.state = 'applied' THEN
 		RAISE EXCEPTION 'reject applied revision';
@@ -435,7 +435,7 @@ BEGIN
 	RETURN NEW;
 END;
 $fault$ LANGUAGE plpgsql`, names.fault))
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL,
@@ -447,7 +447,7 @@ $fault$ LANGUAGE plpgsql`, names.fault))
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
 )`, names.revisions))
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(
 				"CREATE TRIGGER %s BEFORE UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION %s()",
 				names.fault,
 				names.revisions,
@@ -456,7 +456,7 @@ $fault$ LANGUAGE plpgsql`, names.fault))
 		},
 		removeFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf("DROP TRIGGER %s ON %s", names.fault, names.revisions))
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf("DROP TRIGGER %s ON %s", names.fault, names.revisions))
 		},
 		bodyPresent: postgresRevisionCompletionBodyPresent,
 		dropObjects: dropRevisionCompletionObjects(
@@ -505,7 +505,7 @@ func mySQLFamilyRevisionCompletionTarget(
 		},
 		installFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL,
@@ -517,7 +517,7 @@ func mySQLFamilyRevisionCompletionTarget(
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB`, names.revisions))
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TRIGGER %s
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TRIGGER %s
 BEFORE UPDATE ON %s
 FOR EACH ROW
 BEGIN
@@ -528,7 +528,7 @@ END`, names.fault, names.revisions))
 		},
 		removeFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, "DROP TRIGGER "+names.fault)
+			execRevisionCompletionSQL(c, conn, "DROP TRIGGER "+names.fault)
 		},
 		bodyPresent: mySQLFamilyRevisionCompletionBodyPresent,
 		dropObjects: dropRevisionCompletionObjects(
@@ -577,7 +577,7 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		// that fails.
 		installFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
-			execRevisionCompletionSQL(c.TB, conn, clickHouseRevisionTableDDL(names.revisions, "(version, applied_at)"))
+			execRevisionCompletionSQL(c, conn, clickHouseRevisionTableDDL(names.revisions, "(version, applied_at)"))
 		},
 		// Rebuilding the table with the sorting key Ptah would have created is
 		// what an operator does to undo this, and it carries the dirty revision
@@ -585,11 +585,11 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		removeFault: func(c *qt.C, conn *dbschema.DatabaseConnection, names revisionCompletionNames) {
 			c.Helper()
 			repaired := names.revisions + "_repaired"
-			execRevisionCompletionSQL(c.TB, conn, "DROP TABLE IF EXISTS "+repaired)
-			execRevisionCompletionSQL(c.TB, conn, clickHouseRevisionTableDDL(repaired, "tuple(version)"))
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf("INSERT INTO %s SELECT * FROM %s", repaired, names.revisions))
-			execRevisionCompletionSQL(c.TB, conn, "DROP TABLE "+names.revisions)
-			execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf("RENAME TABLE %s TO %s", repaired, names.revisions))
+			execRevisionCompletionSQL(c, conn, "DROP TABLE IF EXISTS "+repaired)
+			execRevisionCompletionSQL(c, conn, clickHouseRevisionTableDDL(repaired, "tuple(version)"))
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf("INSERT INTO %s SELECT * FROM %s", repaired, names.revisions))
+			execRevisionCompletionSQL(c, conn, "DROP TABLE "+names.revisions)
+			execRevisionCompletionSQL(c, conn, fmt.Sprintf("RENAME TABLE %s TO %s", repaired, names.revisions))
 		},
 		bodyPresent: clickHouseRevisionCompletionBodyPresent,
 		dropObjects: dropRevisionCompletionObjects(
@@ -647,8 +647,7 @@ func dropRevisionCompletionObjects(templates ...string) func(*dbschema.DatabaseC
 	}
 }
 
-func execRevisionCompletionSQL(tb testing.TB, conn *dbschema.DatabaseConnection, statement string) {
-	c := qt.New(tb)
+func execRevisionCompletionSQL(c *qt.C, conn *dbschema.DatabaseConnection, statement string) {
 	c.Helper()
 	_, err := conn.ExecContext(context.Background(), statement)
 	c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", strings.TrimSpace(statement)))

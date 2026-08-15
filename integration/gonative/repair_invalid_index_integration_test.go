@@ -42,8 +42,8 @@ func TestPostgreSQLRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) 
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'shared@example.com'")
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -52,7 +52,7 @@ func TestPostgreSQLRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) 
 
 	// The concurrent build fails on the duplicates and leaves the index behind.
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
-	valid, ready := repairInvalidIndexFlags(c.TB, db)
+	valid, ready := repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 
@@ -90,7 +90,7 @@ func TestPostgreSQLRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) 
 	// Rebuilding the index is the escape hatch the refusal names, and it works.
 	_, err = db.ExecContext(ctx, `REINDEX INDEX CONCURRENTLY "public"."`+repairInvalidIndexName+`"`)
 	c.Assert(err, qt.IsNil)
-	valid, ready = repairInvalidIndexFlags(c.TB, db)
+	valid, ready = repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 
@@ -111,8 +111,8 @@ func TestPostgreSQLRollbackRepairRefusesOverInvalidUniqueIndexIntegration(t *tes
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'shared@example.com'")
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -121,7 +121,7 @@ func TestPostgreSQLRollbackRepairRefusesOverInvalidUniqueIndexIntegration(t *tes
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	c.Assert(mig.MigrateDownTo(ctx, 0), qt.ErrorMatches, "(?s).*could not create unique index.*")
-	valid, ready := repairInvalidIndexFlags(c.TB, db)
+	valid, ready := repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 
@@ -163,8 +163,8 @@ func TestPostgreSQLRepairLeavesUsableIndexAloneIntegration(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'user' || g || '@example.com'")
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'user' || g || '@example.com'")
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -172,7 +172,7 @@ func TestPostgreSQLRepairLeavesUsableIndexAloneIntegration(t *testing.T) {
 	mig := repairInvalidIndexMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	valid, ready := repairInvalidIndexFlags(c.TB, db)
+	valid, ready := repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 	c.Assert(repairInvalidIndexDuplicateInsert(ctx, db), qt.IsNotNil)
@@ -194,8 +194,8 @@ func TestPostgreSQLRetryRefusesInvalidIndexOutsideSearchPathIntegration(t *testi
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexSchemaTable(c.TB, db)
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexSchemaTable(c, db)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -203,7 +203,7 @@ func TestPostgreSQLRetryRefusesInvalidIndexOutsideSearchPathIntegration(t *testi
 	mig := repairInvalidIndexSchemaMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
-	valid, ready := repairInvalidIndexFlagsInSchema(c.TB, db, repairInvalidIndexSchema)
+	valid, ready := repairInvalidIndexFlagsInSchema(c, db, repairInvalidIndexSchema)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 
@@ -232,9 +232,9 @@ func TestPostgreSQLFreshDropRecreateRepairsInvalidIndexIntegration(t *testing.T)
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'shared@example.com'")
-	leaveRepairInvalidIndex(c.TB, db, `"`+repairInvalidIndexTable+`"`)
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
+	leaveRepairInvalidIndex(c, db, `"`+repairInvalidIndexTable+`"`)
 	_, err := db.ExecContext(ctx, "DELETE FROM "+repairInvalidIndexTable+" WHERE id > 1")
 	c.Assert(err, qt.IsNil)
 
@@ -244,7 +244,7 @@ func TestPostgreSQLFreshDropRecreateRepairsInvalidIndexIntegration(t *testing.T)
 	mig := repairInvalidIndexDropRecreateMigrator(conn, repairInvalidIndexDropTracker)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	valid, ready := repairInvalidIndexFlags(c.TB, db)
+	valid, ready := repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 
@@ -260,9 +260,9 @@ func TestPostgreSQLTransactionalDropRecreateUsesTransactionCatalogIntegration(t 
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'shared@example.com'")
-	leaveRepairInvalidIndex(c.TB, db, `"`+repairInvalidIndexTable+`"`)
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
+	leaveRepairInvalidIndex(c, db, `"`+repairInvalidIndexTable+`"`)
 	_, err := db.ExecContext(ctx, "DELETE FROM "+repairInvalidIndexTable+" WHERE id > 1")
 	c.Assert(err, qt.IsNil)
 
@@ -272,7 +272,7 @@ func TestPostgreSQLTransactionalDropRecreateUsesTransactionCatalogIntegration(t 
 	mig := repairInvalidIndexTransactionalDropRecreateMigrator(conn)
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	valid, ready := repairInvalidIndexFlags(c.TB, db)
+	valid, ready := repairInvalidIndexFlags(c, db)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 	status, err := mig.GetMigrationStatus(ctx)
@@ -286,9 +286,9 @@ func TestPostgreSQLResumeCannotReuseSkippedIndexDropIntegration(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexTable(c.TB, db, "'shared@example.com'")
-	leaveRepairInvalidIndex(c.TB, db, `"`+repairInvalidIndexTable+`"`)
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
+	leaveRepairInvalidIndex(c, db, `"`+repairInvalidIndexTable+`"`)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -321,9 +321,9 @@ func TestPostgreSQLRetryFindsInvalidIndexShadowedOnSearchPathIntegration(t *test
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexShadowSchemas(c.TB, db)
-	shadowDSN := repairInvalidIndexSearchPathDSN(c.TB, dsn)
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexShadowSchemas(c, db)
+	shadowDSN := repairInvalidIndexSearchPathDSN(c, dsn)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, shadowDSN)
 	c.Assert(err, qt.IsNil)
@@ -354,9 +354,9 @@ func TestPostgreSQLPreflightRefusesMisdirectedIndexDropIntegration(t *testing.T)
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexShadowSchemas(c.TB, db)
-	leaveRepairInvalidIndex(c.TB, db, fmt.Sprintf(
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexShadowSchemas(c, db)
+	leaveRepairInvalidIndex(c, db, fmt.Sprintf(
 		`%q.%q`,
 		repairInvalidIndexShadowLater,
 		repairInvalidIndexTable,
@@ -367,7 +367,7 @@ func TestPostgreSQLPreflightRefusesMisdirectedIndexDropIntegration(t *testing.T)
 		repairInvalidIndexTable,
 	))
 	c.Assert(err, qt.IsNil)
-	shadowDSN := repairInvalidIndexSearchPathDSN(c.TB, dsn)
+	shadowDSN := repairInvalidIndexSearchPathDSN(c, dsn)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, shadowDSN)
 	c.Assert(err, qt.IsNil)
@@ -378,10 +378,10 @@ func TestPostgreSQLPreflightRefusesMisdirectedIndexDropIntegration(t *testing.T)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `"`+repairInvalidIndexShadowLater+`"."`+repairInvalidIndexName+`"`)
 	c.Assert(err.Error(), qt.Contains, "IF NOT EXISTS finds the name taken")
-	earlyValid, earlyReady := repairInvalidIndexFlagsInSchema(c.TB, db, repairInvalidIndexShadowEarly)
+	earlyValid, earlyReady := repairInvalidIndexFlagsInSchema(c, db, repairInvalidIndexShadowEarly)
 	c.Assert(earlyValid, qt.IsTrue)
 	c.Assert(earlyReady, qt.IsTrue)
-	laterValid, laterReady := repairInvalidIndexFlagsInSchema(c.TB, db, repairInvalidIndexShadowLater)
+	laterValid, laterReady := repairInvalidIndexFlagsInSchema(c, db, repairInvalidIndexShadowLater)
 	c.Assert(laterValid, qt.IsFalse)
 	c.Assert(laterReady, qt.IsFalse)
 
@@ -396,13 +396,13 @@ func TestPostgreSQLUnrelatedVisibleInvalidIndexDoesNotBlockIntegration(t *testin
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openRepairInvalidIndexDB(c.TB, dsn)
-	seedRepairInvalidIndexUnrelatedSchemas(c.TB, db)
-	leaveRepairInvalidIndex(c.TB, db, fmt.Sprintf(
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexUnrelatedSchemas(c, db)
+	leaveRepairInvalidIndex(c, db, fmt.Sprintf(
 		`%q.shadow_owner`,
 		repairInvalidIndexShadowLater,
 	))
-	shadowDSN := repairInvalidIndexSearchPathDSN(c.TB, dsn)
+	shadowDSN := repairInvalidIndexSearchPathDSN(c, dsn)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, shadowDSN)
 	c.Assert(err, qt.IsNil)
@@ -414,7 +414,7 @@ func TestPostgreSQLUnrelatedVisibleInvalidIndexDoesNotBlockIntegration(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.DirtyRevision, qt.IsNil)
 	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{repairInvalidIndexVersion})
-	valid, ready := repairInvalidIndexFlagsInSchema(c.TB, db, repairInvalidIndexShadowLater)
+	valid, ready := repairInvalidIndexFlagsInSchema(c, db, repairInvalidIndexShadowLater)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 }
@@ -534,8 +534,7 @@ func repairInvalidIndexShadowMigrator(
 		WithMigrationsTable("", tracker)
 }
 
-func openRepairInvalidIndexDB(tb testing.TB, dsn string) *sql.DB {
-	c := qt.New(tb)
+func openRepairInvalidIndexDB(c *qt.C, dsn string) *sql.DB {
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -547,8 +546,7 @@ func openRepairInvalidIndexDB(tb testing.TB, dsn string) *sql.DB {
 // run cannot decide this one's outcome. emailExpr is evaluated per generated
 // row: a constant produces the duplicates that break a unique build, and an
 // expression over g produces distinct values that let it succeed.
-func seedRepairInvalidIndexTable(tb testing.TB, db *sql.DB, emailExpr string) {
-	c := qt.New(tb)
+func seedRepairInvalidIndexTable(c *qt.C, db *sql.DB, emailExpr string) {
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexTable + " CASCADE")
@@ -579,8 +577,7 @@ func seedRepairInvalidIndexTable(tb testing.TB, db *sql.DB, emailExpr string) {
 	c.Assert(err, qt.IsNil)
 }
 
-func seedRepairInvalidIndexSchemaTable(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func seedRepairInvalidIndexSchemaTable(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec(`DROP SCHEMA IF EXISTS "` + repairInvalidIndexSchema + `" CASCADE`)
@@ -609,8 +606,7 @@ func seedRepairInvalidIndexSchemaTable(tb testing.TB, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func seedRepairInvalidIndexShadowSchemas(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func seedRepairInvalidIndexShadowSchemas(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec(`DROP SCHEMA IF EXISTS "` + repairInvalidIndexShadowEarly + `" CASCADE`)
@@ -656,8 +652,7 @@ func seedRepairInvalidIndexShadowSchemas(tb testing.TB, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func seedRepairInvalidIndexUnrelatedSchemas(tb testing.TB, db *sql.DB) {
-	c := qt.New(tb)
+func seedRepairInvalidIndexUnrelatedSchemas(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec(`DROP SCHEMA IF EXISTS "` + repairInvalidIndexShadowEarly + `" CASCADE`)
@@ -707,8 +702,7 @@ func seedRepairInvalidIndexUnrelatedSchemas(tb testing.TB, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func repairInvalidIndexSearchPathDSN(tb testing.TB, dsn string) string {
-	c := qt.New(tb)
+func repairInvalidIndexSearchPathDSN(c *qt.C, dsn string) string {
 	c.Helper()
 	parsed, err := url.Parse(dsn)
 	c.Assert(err, qt.IsNil)
@@ -718,8 +712,7 @@ func repairInvalidIndexSearchPathDSN(tb testing.TB, dsn string) string {
 	return parsed.String()
 }
 
-func leaveRepairInvalidIndex(tb testing.TB, db *sql.DB, tableRef string) {
-	c := qt.New(tb)
+func leaveRepairInvalidIndex(c *qt.C, db *sql.DB, tableRef string) {
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		`CREATE UNIQUE INDEX CONCURRENTLY %q ON %s (email)`,
@@ -729,14 +722,12 @@ func leaveRepairInvalidIndex(tb testing.TB, db *sql.DB, tableRef string) {
 	c.Assert(err, qt.IsNotNil)
 }
 
-func repairInvalidIndexFlags(tb testing.TB, db *sql.DB) (valid, ready bool) {
-	c := qt.New(tb)
+func repairInvalidIndexFlags(c *qt.C, db *sql.DB) (valid, ready bool) {
 	c.Helper()
-	return repairInvalidIndexFlagsInSchema(c.TB, db, "public")
+	return repairInvalidIndexFlagsInSchema(c, db, "public")
 }
 
-func repairInvalidIndexFlagsInSchema(tb testing.TB, db *sql.DB, schema string) (valid, ready bool) {
-	c := qt.New(tb)
+func repairInvalidIndexFlagsInSchema(c *qt.C, db *sql.DB, schema string) (valid, ready bool) {
 	c.Helper()
 	err := db.QueryRow(`
 		SELECT ix.indisvalid, ix.indisready

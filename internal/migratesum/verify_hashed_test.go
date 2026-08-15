@@ -11,8 +11,7 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-func writeUnhashedPtahDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeUnhashedPtahDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_users.up.sql"), []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
@@ -20,32 +19,28 @@ func writeUnhashedPtahDir(tb testing.TB) string {
 	return dir
 }
 
-func writeUnhashedAtlasDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeUnhashedAtlasDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_users.sql"), []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	return dir
 }
 
-func hashDir(tb testing.TB, dir string, format migrator.MigrationDirFormat) string {
-	c := qt.New(tb)
+func hashDir(c *qt.C, dir string, format migrator.MigrationDirFormat) string {
 	c.Helper()
 	_, err := migratesum.WriteWithFormat(dir, format)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
 
-func writeHashedPtahDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeHashedPtahDir(c *qt.C) string {
 	c.Helper()
-	return hashDir(c.TB, writeUnhashedPtahDir(c.TB), migrator.MigrationDirFormatPtah)
+	return hashDir(c, writeUnhashedPtahDir(c), migrator.MigrationDirFormatPtah)
 }
 
-func writeHashedAtlasDir(tb testing.TB) string {
-	c := qt.New(tb)
+func writeHashedAtlasDir(c *qt.C) string {
 	c.Helper()
-	return hashDir(c.TB, writeUnhashedAtlasDir(c.TB), migrator.MigrationDirFormatAtlas)
+	return hashDir(c, writeUnhashedAtlasDir(c), migrator.MigrationDirFormatAtlas)
 }
 
 func TestVerifyHashed_UnhashedDirectorySkipsVerification(t *testing.T) {
@@ -56,10 +51,10 @@ func TestVerifyHashed_UnhashedDirectorySkipsVerification(t *testing.T) {
 		dir    string
 		format migrator.MigrationDirFormat
 	}{
-		{name: "ptah dir auto format", dir: writeUnhashedPtahDir(c.TB), format: migrator.MigrationDirFormatAuto},
-		{name: "ptah dir explicit format", dir: writeUnhashedPtahDir(c.TB), format: migrator.MigrationDirFormatPtah},
-		{name: "atlas dir auto format", dir: writeUnhashedAtlasDir(c.TB), format: migrator.MigrationDirFormatAuto},
-		{name: "atlas dir explicit format", dir: writeUnhashedAtlasDir(c.TB), format: migrator.MigrationDirFormatAtlas},
+		{name: "ptah dir auto format", dir: writeUnhashedPtahDir(c), format: migrator.MigrationDirFormatAuto},
+		{name: "ptah dir explicit format", dir: writeUnhashedPtahDir(c), format: migrator.MigrationDirFormatPtah},
+		{name: "atlas dir auto format", dir: writeUnhashedAtlasDir(c), format: migrator.MigrationDirFormatAuto},
+		{name: "atlas dir explicit format", dir: writeUnhashedAtlasDir(c), format: migrator.MigrationDirFormatAtlas},
 	}
 
 	for _, test := range tests {
@@ -82,10 +77,10 @@ func TestVerifyHashed_HashedDirectoryVerifies(t *testing.T) {
 		format      migrator.MigrationDirFormat
 		sumFileName string
 	}{
-		{name: "ptah.sum auto format", dir: writeHashedPtahDir(c.TB), format: migrator.MigrationDirFormatAuto, sumFileName: migratesum.FileName},
-		{name: "ptah.sum explicit format", dir: writeHashedPtahDir(c.TB), format: migrator.MigrationDirFormatPtah, sumFileName: migratesum.FileName},
-		{name: "atlas.sum auto format", dir: writeHashedAtlasDir(c.TB), format: migrator.MigrationDirFormatAuto, sumFileName: migratesum.AtlasFileName},
-		{name: "atlas.sum explicit format", dir: writeHashedAtlasDir(c.TB), format: migrator.MigrationDirFormatAtlas, sumFileName: migratesum.AtlasFileName},
+		{name: "ptah.sum auto format", dir: writeHashedPtahDir(c), format: migrator.MigrationDirFormatAuto, sumFileName: migratesum.FileName},
+		{name: "ptah.sum explicit format", dir: writeHashedPtahDir(c), format: migrator.MigrationDirFormatPtah, sumFileName: migratesum.FileName},
+		{name: "atlas.sum auto format", dir: writeHashedAtlasDir(c), format: migrator.MigrationDirFormatAuto, sumFileName: migratesum.AtlasFileName},
+		{name: "atlas.sum explicit format", dir: writeHashedAtlasDir(c), format: migrator.MigrationDirFormatAtlas, sumFileName: migratesum.AtlasFileName},
 	}
 
 	for _, test := range tests {
@@ -102,7 +97,7 @@ func TestVerifyHashed_HashedDirectoryVerifies(t *testing.T) {
 
 func TestVerifyHashed_TamperedDirectoryReportsDrift(t *testing.T) {
 	c := qt.New(t)
-	dir := writeHashedPtahDir(c.TB)
+	dir := writeHashedPtahDir(c)
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_users.up.sql"), []byte("CREATE TABLE tampered (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 	result, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAuto)
@@ -117,7 +112,7 @@ func TestVerifyHashed_ExplicitFormatIgnoresOtherSumFile(t *testing.T) {
 	c := qt.New(t)
 	// The directory carries only ptah.sum; asked explicitly about the Atlas
 	// integrity file, it counts as unhashed.
-	dir := writeHashedPtahDir(c.TB)
+	dir := writeHashedPtahDir(c)
 
 	result, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
 
@@ -129,7 +124,7 @@ func TestVerifyHashed_ExplicitFormatIgnoresOtherSumFile(t *testing.T) {
 func TestVerifyHashed_FailurePath(t *testing.T) {
 	t.Run("both sum files in auto mode are ambiguous", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeHashedPtahDir(c.TB)
+		dir := writeHashedPtahDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.AtlasFileName), []byte("h1:bogus=\n"), 0o600), qt.IsNil)
 
 		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAuto)
@@ -140,7 +135,7 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 
 	t.Run("both sum files in auto mode are ambiguous, atlas-hashed side", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeHashedAtlasDir(c.TB)
+		dir := writeHashedAtlasDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.FileName), []byte("h1:bogus=\n"), 0o600), qt.IsNil)
 
 		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAuto)
@@ -151,7 +146,7 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 
 	t.Run("malformed sum file is an error", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeUnhashedAtlasDir(c.TB)
+		dir := writeUnhashedAtlasDir(c)
 		c.Assert(os.WriteFile(filepath.Join(dir, migratesum.AtlasFileName), []byte("not a sum file"), 0o600), qt.IsNil)
 
 		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
@@ -162,7 +157,7 @@ func TestVerifyHashed_FailurePath(t *testing.T) {
 
 	t.Run("unknown format is rejected", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeHashedPtahDir(c.TB)
+		dir := writeHashedPtahDir(c)
 
 		_, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), migrator.MigrationDirFormat("bogus"))
 

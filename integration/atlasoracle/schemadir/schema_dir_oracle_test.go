@@ -22,8 +22,7 @@ const oracleEnv = "PTAH_ATLAS_ORACLE"
 // version drift as a divergence.
 const oracleVersion = "atlas community version v1.3.0"
 
-func writeSchemaSourceDir(tb testing.TB, files map[string]string) string {
-	c := qt.New(tb)
+func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 	c.Helper()
 	dir := c.TempDir()
 	for name, contents := range files {
@@ -61,7 +60,7 @@ func writeSchemaSourceDir(tb testing.TB, files map[string]string) string {
 func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c.TB)
+	compat := buildCompatBinary(c)
 
 	tests := []struct {
 		name   string
@@ -128,11 +127,11 @@ func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dir := writeSchemaSourceDir(c.TB, test.files)
+			dir := writeSchemaSourceDir(c, test.files)
 			emptyHCL := filepath.Join(c.TempDir(), "empty.hcl")
 			c.Assert(os.WriteFile(emptyHCL, []byte("schema \"main\" {}\n"), 0o600), qt.IsNil)
 
-			test.assert(c, measureDirVerdict(c.TB, oracle, compat, dir, emptyHCL))
+			test.assert(c, measureDirVerdict(c, oracle, compat, dir, emptyHCL))
 		})
 	}
 }
@@ -152,8 +151,7 @@ type dirVerdict struct {
 // dev database is not merely untidy here: the pinned binary refuses one that is
 // not clean, so a reused dev database would report a refusal that belongs to the
 // previous run rather than to the fixture.
-func measureDirVerdict(tb testing.TB, oracle, compat, dir, emptyHCL string) dirVerdict {
-	c := qt.New(tb)
+func measureDirVerdict(c *qt.C, oracle, compat, dir, emptyHCL string) dirVerdict {
 	c.Helper()
 	work := c.TempDir()
 
@@ -176,16 +174,15 @@ func measureDirVerdict(tb testing.TB, oracle, compat, dir, emptyHCL string) dirV
 	}
 
 	return dirVerdict{
-		oracleDiff:  runForExitCode(c.TB, oracle, diffArgs("oracle-diff-dev.db")...),
-		ptahDiff:    runForExitCode(c.TB, compat, diffArgs("ptah-diff-dev.db")...),
-		oracleApply: runForExitCode(c.TB, oracle, applyArgs("oracle-target.db", "oracle-apply-dev.db")...),
-		ptahApply:   runForExitCode(c.TB, compat, applyArgs("ptah-target.db", "ptah-apply-dev.db")...),
+		oracleDiff:  runForExitCode(c, oracle, diffArgs("oracle-diff-dev.db")...),
+		ptahDiff:    runForExitCode(c, compat, diffArgs("ptah-diff-dev.db")...),
+		oracleApply: runForExitCode(c, oracle, applyArgs("oracle-target.db", "oracle-apply-dev.db")...),
+		ptahApply:   runForExitCode(c, compat, applyArgs("ptah-target.db", "ptah-apply-dev.db")...),
 	}
 }
 
 // runForExitCode runs one command and returns its process exit code.
-func runForExitCode(tb testing.TB, binary string, args ...string) int {
-	c := qt.New(tb)
+func runForExitCode(c *qt.C, binary string, args ...string) int {
 	c.Helper()
 
 	out, err := exec.Command(binary, args...).CombinedOutput()
@@ -203,8 +200,7 @@ func runForExitCode(tb testing.TB, binary string, args ...string) int {
 // a process. Calling the command in this package would compare an error value
 // against an exit status and could not see a regression in how one becomes the
 // other.
-func buildCompatBinary(tb testing.TB) string {
-	c := qt.New(tb)
+func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 
 	path := filepath.Join(c.TempDir(), "ptah-compat")

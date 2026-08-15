@@ -27,8 +27,7 @@ type testVerbWorkspace struct {
 // migratePreamble is the extra YAML step each verb needs before the seed can
 // insert rows: `migrate test` has to migrate first, while `schema test`
 // converges the desired schema before any step runs and rejects migrate_to.
-func writeTestVerbWorkspace(tb testing.TB, migratePreamble string) testVerbWorkspace {
-	c := qt.New(tb)
+func writeTestVerbWorkspace(c *qt.C, migratePreamble string) testVerbWorkspace {
 	c.Helper()
 	workspace := testVerbWorkspace{
 		migrationsDir: c.TempDir(),
@@ -111,7 +110,7 @@ func TestCompatCommand_TestVerbsForwardSeedDirectory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			workspace := writeTestVerbWorkspace(c.TB, tt.preface)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
 			base := tt.argv(workspace)
 
 			withoutOut, withoutErr := runCompatArgs(base)
@@ -180,7 +179,7 @@ func TestCompatCommand_TestVerbsSeedDirectoryURLForms(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			workspace := writeTestVerbWorkspace(c.TB, tt.preface)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
 			argv := append(slices.Clone(tt.argv(workspace)), "--seed-dir", tt.seedDir(workspace))
 
 			out, err := runCompatArgs(argv)
@@ -232,7 +231,7 @@ func TestCompatCommand_TestVerbsForwardReportFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			workspace := writeTestVerbWorkspace(c.TB, tt.preface)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
 			base := append(slices.Clone(tt.argv(workspace)), "--seed-dir", workspace.seedsDir)
 
 			out, err := runCompatArgs(append(slices.Clone(base), "--report", "json"))
@@ -362,7 +361,7 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			name:    "migrate test atlas.hcl dev",
 			preface: migrateSeedPreamble,
 			argv: func(c *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				writeDockerDevProject(c.TB, t, workspace)
+				writeDockerDevProject(c, t, workspace)
 				return []string{"migrate", "test", workspace.casesDir, "--env", "local"}
 			},
 			check: assertDockerDevURLRefused,
@@ -371,7 +370,7 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			name:    "schema test atlas.hcl dev",
 			preface: "",
 			argv: func(c *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				writeDockerDevProject(c.TB, t, workspace)
+				writeDockerDevProject(c, t, workspace)
 				return []string{"schema", "test", workspace.casesDir, "--env", "local"}
 			},
 			check: assertDockerDevURLRefused,
@@ -392,7 +391,7 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			name:    "a directly connectable dev URL is the passing control",
 			preface: "",
 			argv: func(c *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(schemaTestArgs(workspace), "--dev-url", freshDevURL(c.TB))
+				return append(schemaTestArgs(workspace), "--dev-url", freshDevURL(c))
 			},
 			check: func(c *qt.C, out string, err error) {
 				c.Helper()
@@ -405,7 +404,7 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			workspace := writeTestVerbWorkspace(c.TB, tt.preface)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
 			// Every row supplies the seed directory so the case set is valid.
 			// Without it the run is refused before any dev database is
 			// consulted, and a row that never consults the dev URL cannot tell
@@ -428,8 +427,7 @@ func assertDockerDevURLRefused(c *qt.C, out string, err error) {
 // writeDockerDevProject writes an atlas.hcl whose env supplies the docker dev
 // database URL, and moves the process into its directory so the default
 // --config location finds it.
-func writeDockerDevProject(tb testing.TB, t *testing.T, workspace testVerbWorkspace) {
-	c := qt.New(tb)
+func writeDockerDevProject(c *qt.C, t *testing.T, workspace testVerbWorkspace) {
 	c.Helper()
 	dir := c.TempDir()
 	t.Chdir(dir)

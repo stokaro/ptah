@@ -33,8 +33,7 @@ const normalizeDialectSource = "../../core/platform/constants.go"
 
 var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
 
-func acceptedSpellings(tb testing.TB) []string {
-	c := qt.New(tb)
+func acceptedSpellings(c *qt.C) []string {
 	source, err := os.ReadFile(normalizeDialectSource)
 	c.Assert(err, qt.IsNil)
 
@@ -75,8 +74,7 @@ func dialectFixture(policyDialect string) fstest.MapFS {
 // resolves to, and returns the sorted rule codes. Going through LoadConfigFS is
 // the point: the canonicalization under test lives in the reader, not in the
 // engine.
-func findingCodes(tb testing.TB, policyDialect string) []string {
-	c := qt.New(tb)
+func findingCodes(c *qt.C, policyDialect string) []string {
 	fsys := dialectFixture(policyDialect)
 
 	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
@@ -98,7 +96,7 @@ func findingCodes(tb testing.TB, policyDialect string) []string {
 func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c.TB) {
+	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			cfg, err := lint.LoadConfigFS(dialectFixture(spelling), lint.ConfigFileName)
@@ -118,8 +116,8 @@ func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T)
 func TestLintFS_HappyPath_FixtureDiscriminatesDialects(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(findingCodes(c.TB, platform.Postgres), qt.Contains, "PG101")
-	c.Assert(findingCodes(c.TB, platform.MySQL), qt.Not(qt.Contains), "PG101")
+	c.Assert(findingCodes(c, platform.Postgres), qt.Contains, "PG101")
+	c.Assert(findingCodes(c, platform.MySQL), qt.Not(qt.Contains), "PG101")
 }
 
 // TestLintFS_HappyPath_EverySpellingLintsLikeItsCanonicalName is the parity
@@ -131,10 +129,10 @@ func TestLintFS_HappyPath_FixtureDiscriminatesDialects(t *testing.T) {
 func TestLintFS_HappyPath_EverySpellingLintsLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c.TB) {
+	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(findingCodes(c.TB, spelling), qt.DeepEquals, findingCodes(c.TB, platform.NormalizeDialect(spelling)))
+			c.Assert(findingCodes(c, spelling), qt.DeepEquals, findingCodes(c, platform.NormalizeDialect(spelling)))
 		})
 	}
 }

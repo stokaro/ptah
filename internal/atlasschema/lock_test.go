@@ -61,7 +61,7 @@ func TestParseApplyLockTimeout_FailurePath(t *testing.T) {
 func TestAcquireApplyLock_HappyPath(t *testing.T) {
 	t.Run("sqlite acquires an explicit no-op lock", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TB.TempDir(), "lock.db"))
+		conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, "", time.Second)
@@ -72,7 +72,7 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 
 	t.Run("release is idempotent", func(t *testing.T) {
 		c := qt.New(t)
-		conn := connectSQLite(c.TB, filepath.Join(c.TB.TempDir(), "lock-idem.db"))
+		conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-idem.db"))
 		defer dbschema.CloseAndWarn(conn)
 
 		lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, "", 0)

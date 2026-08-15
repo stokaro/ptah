@@ -46,8 +46,7 @@ type classFixture struct {
 // newClassFixture writes a hashed one-migration ptah directory. The sum records
 // the honest files; callers that want drift rewrite a file afterwards WITHOUT
 // re-hashing.
-func newClassFixture(tb testing.TB) classFixture {
-	c := qt.New(tb)
+func newClassFixture(c *qt.C) classFixture {
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -202,7 +201,7 @@ func executingVerbs() []classVerb {
 // reason. What must not appear is a refusal from the integrity gate.
 func TestRepairResumeFrom_PlainRepairStaysUsableOnADriftedDirectory(t *testing.T) {
 	c := qt.New(t)
-	f := newClassFixture(c.TB)
+	f := newClassFixture(c)
 	f.tamper(c)
 
 	out, err := runClassCommand(migraterepair.NewMigrateRepairCommand(),
@@ -220,7 +219,7 @@ func TestExecutingVerbs_RefuseATamperedHashedDirectory(t *testing.T) {
 	for _, verb := range executingVerbs() {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newClassFixture(c.TB)
+			f := newClassFixture(c)
 			f.tamper(c)
 
 			out, err := verb.run(f)
@@ -248,7 +247,7 @@ func TestExecutingVerbs_AcceptACleanHashedDirectory(t *testing.T) {
 	for _, verb := range executingVerbs() {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newClassFixture(c.TB)
+			f := newClassFixture(c)
 
 			out, err := verb.run(f)
 

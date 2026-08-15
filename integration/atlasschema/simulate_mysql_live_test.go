@@ -38,14 +38,14 @@ import (
 func TestSimulateOnDev_MySQLFailedRehearsalLeavesTargetByteIdenticalLive(t *testing.T) {
 	c := qt.New(t)
 	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
-	targetURL := createRestrictedLiveMySQLDatabase(c.TB, adminURL, restrictedURL, "ptah1240_fail_target")
-	devURL := createLiveMySQLDatabase(c.TB, adminURL, adminURL, "ptah1240_fail_dev")
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_fail_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_fail_dev")
 
-	targetConn := openLiveMySQL(c.TB, targetURL)
+	targetConn := openLiveMySQL(c, targetURL)
 	c.Assert(atlasschema.ApplySQL(c.Context(), targetConn, migrator.MigrationTxModeNone,
 		"CREATE TABLE `sim_keep` (`id` int NOT NULL, `label` varchar(32) NOT NULL, PRIMARY KEY (`id`));"), qt.IsNil)
 
-	desiredPath := writeMySQLDesiredHCL(c.TB, liveMySQLDatabaseName(c.TB, targetURL), `
+	desiredPath := writeMySQLDesiredHCL(c, liveMySQLDatabaseName(c, targetURL), `
 table "sim_keep" {
   schema = schema.%[1]s
   column "id" {
@@ -79,16 +79,16 @@ table "sim_added" {
 	// The premise of the defect: the plan carries the TARGET's schema name.
 	// Without this the rest of the test would pass for the wrong reason.
 	c.Assert(strings.Join(plan.Statements(), "\n"), qt.Contains,
-		"`"+liveMySQLDatabaseName(c.TB, targetURL)+"`.`sim_added`")
+		"`"+liveMySQLDatabaseName(c, targetURL)+"`.`sim_added`")
 
-	before := mySQLSchemaSnapshot(c.TB, targetConn, liveMySQLDatabaseName(c.TB, targetURL))
+	before := mySQLSchemaSnapshot(c, targetConn, liveMySQLDatabaseName(c, targetURL))
 
 	// The plan's own statements, plus one that collides with the baseline the
 	// rehearsal recreates on the dev database. The first statement is the one
 	// that used to land in the target; the last one guarantees the rehearsal
 	// fails after it ran.
 	statements := append(plan.Statements(),
-		"CREATE TABLE `"+liveMySQLDatabaseName(c.TB, targetURL)+"`.`sim_keep` (`id` int NOT NULL)")
+		"CREATE TABLE `"+liveMySQLDatabaseName(c, targetURL)+"`.`sim_keep` (`id` int NOT NULL)")
 
 	err = plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 		DevURL:     devURL,
@@ -99,22 +99,22 @@ table "sim_added" {
 	c.Assert(atlasschema.IsSimulationFailure(err), qt.IsTrue, qt.Commentf("error: %v", err))
 	// The property worth pinning: a failed apply leaves the target exactly as
 	// it was, down to every column and index information_schema reports.
-	c.Assert(mySQLSchemaSnapshot(c.TB, targetConn, liveMySQLDatabaseName(c.TB, targetURL)), qt.DeepEquals, before)
+	c.Assert(mySQLSchemaSnapshot(c, targetConn, liveMySQLDatabaseName(c, targetURL)), qt.DeepEquals, before)
 	// And the dev database is handed back empty, as the pinned community
 	// binary v1.3.0 does when its own dev-database work fails.
-	devConn := openLiveMySQL(c.TB, devURL)
-	c.Assert(mySQLTableNames(c.TB, devConn, liveMySQLDatabaseName(c.TB, devURL)), qt.HasLen, 0)
+	devConn := openLiveMySQL(c, devURL)
+	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, devURL)), qt.HasLen, 0)
 }
 
 func TestSimulateOnDev_MySQLSuccessfulRehearsalStillAppliesLive(t *testing.T) {
 	c := qt.New(t)
 	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
-	targetURL := createRestrictedLiveMySQLDatabase(c.TB, adminURL, restrictedURL, "ptah1240_ok_target")
-	devURL := createLiveMySQLDatabase(c.TB, adminURL, adminURL, "ptah1240_ok_dev")
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_ok_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_ok_dev")
 
-	targetConn := openLiveMySQL(c.TB, targetURL)
-	targetName := liveMySQLDatabaseName(c.TB, targetURL)
-	desiredPath := writeMySQLDesiredHCL(c.TB, targetName, `
+	targetConn := openLiveMySQL(c, targetURL)
+	targetName := liveMySQLDatabaseName(c, targetURL)
+	desiredPath := writeMySQLDesiredHCL(c, targetName, `
 table "sim_added" {
   schema = schema.%[1]s
   column "id" {
@@ -143,32 +143,32 @@ table "sim_added" {
 
 	// Isolation must not be bought by rehearsing nothing: the simulation left
 	// the target untouched, and the apply that follows it still works.
-	c.Assert(mySQLTableNames(c.TB, targetConn, targetName), qt.HasLen, 0)
-	devConn := openLiveMySQL(c.TB, devURL)
-	c.Assert(mySQLTableNames(c.TB, devConn, liveMySQLDatabaseName(c.TB, devURL)), qt.HasLen, 0)
+	c.Assert(mySQLTableNames(c, targetConn, targetName), qt.HasLen, 0)
+	devConn := openLiveMySQL(c, devURL)
+	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, devURL)), qt.HasLen, 0)
 
 	c.Assert(plan.Execute(c.Context()), qt.IsNil)
-	c.Assert(mySQLTableNames(c.TB, targetConn, targetName), qt.DeepEquals, []string{"sim_added"})
-	c.Assert(mySQLSchemaSnapshot(c.TB, targetConn, targetName), qt.Contains,
+	c.Assert(mySQLTableNames(c, targetConn, targetName), qt.DeepEquals, []string{"sim_added"})
+	c.Assert(mySQLSchemaSnapshot(c, targetConn, targetName), qt.Contains,
 		"column|sim_added|email|2|varchar(255)|NO||<null>|")
 }
 
 func TestSimulateOnDev_MySQLRefusesAThirdDatabaseLive(t *testing.T) {
 	c := qt.New(t)
 	restrictedURL, adminURL := liveMySQLURLsForSimulation(t)
-	targetURL := createRestrictedLiveMySQLDatabase(c.TB, adminURL, restrictedURL, "ptah1240_third_target")
-	devURL := createLiveMySQLDatabase(c.TB, adminURL, adminURL, "ptah1240_third_dev")
-	bystanderURL := createRestrictedLiveMySQLDatabase(c.TB, adminURL, restrictedURL, "ptah1240_third_bystander")
+	targetURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_third_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_third_dev")
+	bystanderURL := createRestrictedLiveMySQLDatabase(c, adminURL, restrictedURL, "ptah1240_third_bystander")
 
-	bystanderConn := openLiveMySQL(c.TB, bystanderURL)
-	bystanderName := liveMySQLDatabaseName(c.TB, bystanderURL)
+	bystanderConn := openLiveMySQL(c, bystanderURL)
+	bystanderName := liveMySQLDatabaseName(c, bystanderURL)
 	c.Assert(atlasschema.ApplySQL(c.Context(), bystanderConn, migrator.MigrationTxModeNone,
 		"CREATE TABLE `bystander_keep` (`id` int NOT NULL, PRIMARY KEY (`id`));"), qt.IsNil)
-	before := mySQLSchemaSnapshot(c.TB, bystanderConn, bystanderName)
+	before := mySQLSchemaSnapshot(c, bystanderConn, bystanderName)
 
-	targetConn := openLiveMySQL(c.TB, targetURL)
-	targetName := liveMySQLDatabaseName(c.TB, targetURL)
-	desiredPath := writeMySQLDesiredHCL(c.TB, targetName, `
+	targetConn := openLiveMySQL(c, targetURL)
+	targetName := liveMySQLDatabaseName(c, targetURL)
+	desiredPath := writeMySQLDesiredHCL(c, targetName, `
 table "sim_added" {
   schema = schema.%[1]s
   column "id" {
@@ -195,7 +195,7 @@ table "sim_added" {
 	})
 
 	c.Assert(atlasschema.IsDevScopeEscape(err), qt.IsTrue, qt.Commentf("error: %v", err))
-	c.Assert(mySQLSchemaSnapshot(c.TB, bystanderConn, bystanderName), qt.DeepEquals, before)
+	c.Assert(mySQLSchemaSnapshot(c, bystanderConn, bystanderName), qt.DeepEquals, before)
 }
 
 // liveMySQLURLsForSimulation keeps the target connection restricted while
@@ -218,8 +218,7 @@ func normalizeMySQLTestURL(rawURL string) string {
 // but returns a URL with the caller-selected credentials. This distinction is
 // what lets the tests exercise a restricted target and an administrative dev
 // database without granting CREATE DATABASE to the target user.
-func createLiveMySQLDatabase(tb testing.TB, adminURL, connectionURL, prefix string) string {
-	c := qt.New(tb)
+func createLiveMySQLDatabase(c *qt.C, adminURL, connectionURL, prefix string) string {
 	c.Helper()
 	name := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano())
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
@@ -235,20 +234,19 @@ func createLiveMySQLDatabase(tb testing.TB, adminURL, connectionURL, prefix stri
 		_, cleanupErr := admin.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quotedName)
 		c.Check(cleanupErr, qt.IsNil)
 	})
-	return mySQLURLForDatabase(c.TB, connectionURL, name)
+	return mySQLURLForDatabase(c, connectionURL, name)
 }
 
-func createRestrictedLiveMySQLDatabase(tb testing.TB, adminURL, restrictedURL, prefix string) string {
-	c := qt.New(tb)
+func createRestrictedLiveMySQLDatabase(c *qt.C, adminURL, restrictedURL, prefix string) string {
 	c.Helper()
-	dbURL := createLiveMySQLDatabase(c.TB, adminURL, restrictedURL, prefix)
-	username, host := currentMySQLAccount(c.TB, restrictedURL)
+	dbURL := createLiveMySQLDatabase(c, adminURL, restrictedURL, prefix)
+	username, host := currentMySQLAccount(c, restrictedURL)
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	_, err = admin.ExecContext(context.Background(), fmt.Sprintf(
 		"GRANT ALL PRIVILEGES ON %s.* TO %s@%s",
-		sqlident.Quote(platform.MySQL, liveMySQLDatabaseName(c.TB, dbURL)),
+		sqlident.Quote(platform.MySQL, liveMySQLDatabaseName(c, dbURL)),
 		quoteMySQLString(username),
 		quoteMySQLString(host),
 	))
@@ -256,8 +254,7 @@ func createRestrictedLiveMySQLDatabase(tb testing.TB, adminURL, restrictedURL, p
 	return dbURL
 }
 
-func currentMySQLAccount(tb testing.TB, dbURL string) (username, host string) {
-	c := qt.New(tb)
+func currentMySQLAccount(c *qt.C, dbURL string) (username, host string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -272,8 +269,7 @@ func currentMySQLAccount(tb testing.TB, dbURL string) (username, host string) {
 	return username, host
 }
 
-func mySQLURLForDatabase(tb testing.TB, baseURL, name string) string {
-	c := qt.New(tb)
+func mySQLURLForDatabase(c *qt.C, baseURL, name string) string {
 	c.Helper()
 	scheme, dsn, found := strings.Cut(baseURL, "://")
 	c.Assert(found, qt.IsTrue)
@@ -283,8 +279,7 @@ func mySQLURLForDatabase(tb testing.TB, baseURL, name string) string {
 	return scheme + "://" + config.FormatDSN()
 }
 
-func liveMySQLDatabaseName(tb testing.TB, dbURL string) string {
-	c := qt.New(tb)
+func liveMySQLDatabaseName(c *qt.C, dbURL string) string {
 	c.Helper()
 	_, dsn, found := strings.Cut(dbURL, "://")
 	c.Assert(found, qt.IsTrue)
@@ -298,8 +293,7 @@ func quoteMySQLString(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-func openLiveMySQL(tb testing.TB, dbURL string) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func openLiveMySQL(c *qt.C, dbURL string) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -311,8 +305,7 @@ func openLiveMySQL(tb testing.TB, dbURL string) *dbschema.DatabaseConnection {
 // database explicitly. That explicit `schema = schema.<database>` is what makes
 // the planner qualify every statement with the target's name, which is the
 // input the defect needs.
-func writeMySQLDesiredHCL(tb testing.TB, database, tables string) string {
-	c := qt.New(tb)
+func writeMySQLDesiredHCL(c *qt.C, database, tables string) string {
 	c.Helper()
 	path := filepath.Join(c.TB.TempDir(), "desired.hcl")
 	document := fmt.Sprintf("schema %q {\n}\n", database) + fmt.Sprintf(tables, database)
@@ -323,34 +316,31 @@ func writeMySQLDesiredHCL(tb testing.TB, database, tables string) string {
 // mySQLSchemaSnapshot renders every column and index information_schema reports
 // for one database as sorted text, so "the target is unchanged" is asserted
 // against the catalog rather than against an exit status.
-func mySQLSchemaSnapshot(tb testing.TB, conn *dbschema.DatabaseConnection, database string) []string {
-	c := qt.New(tb)
+func mySQLSchemaSnapshot(c *qt.C, conn *dbschema.DatabaseConnection, database string) []string {
 	c.Helper()
-	snapshot := mySQLQueryLines(c.TB, conn, `
+	snapshot := mySQLQueryLines(c, conn, `
 SELECT CONCAT_WS('|', 'column', TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE,
                  IS_NULLABLE, COLUMN_KEY, IFNULL(COLUMN_DEFAULT, '<null>'), EXTRA)
 FROM information_schema.COLUMNS
 WHERE TABLE_SCHEMA = ?
 ORDER BY TABLE_NAME, ORDINAL_POSITION`, database)
-	return append(snapshot, mySQLQueryLines(c.TB, conn, `
+	return append(snapshot, mySQLQueryLines(c, conn, `
 SELECT CONCAT_WS('|', 'index', TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX, COLUMN_NAME, NON_UNIQUE)
 FROM information_schema.STATISTICS
 WHERE TABLE_SCHEMA = ?
 ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`, database)...)
 }
 
-func mySQLTableNames(tb testing.TB, conn *dbschema.DatabaseConnection, database string) []string {
-	c := qt.New(tb)
+func mySQLTableNames(c *qt.C, conn *dbschema.DatabaseConnection, database string) []string {
 	c.Helper()
-	return mySQLQueryLines(c.TB, conn, `
+	return mySQLQueryLines(c, conn, `
 SELECT TABLE_NAME
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = ?
 ORDER BY TABLE_NAME`, database)
 }
 
-func mySQLQueryLines(tb testing.TB, conn *dbschema.DatabaseConnection, query, database string) []string {
-	c := qt.New(tb)
+func mySQLQueryLines(c *qt.C, conn *dbschema.DatabaseConnection, query, database string) []string {
 	c.Helper()
 	rows, err := conn.QueryContext(context.Background(), query, database)
 	c.Assert(err, qt.IsNil)

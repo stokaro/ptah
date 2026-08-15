@@ -17,8 +17,7 @@ import (
 // flag — atlas.hcl and the PTAH_* environment — and the two behaviors the
 // converted path inherits that Atlas CE does not share.
 
-func writeIntegrityProject(tb testing.TB, format string) (configPath, migrationsDir string) {
-	c := qt.New(tb)
+func writeIntegrityProject(c *qt.C, format string) (configPath, migrationsDir string) {
 	c.Helper()
 	projectDir := c.TempDir()
 	migrationsDir = filepath.Join(projectDir, "migrations")
@@ -57,13 +56,13 @@ func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			configPath, migrationsDir := writeIntegrityProject(c.TB, tt.format)
+			configPath, migrationsDir := writeIntegrityProject(c, tt.format)
 
 			hashOut, _, hashErr := runCompatExit(
 				"migrate", "hash", "--config", "file://"+configPath, "--env", "local")
 
 			c.Assert(hashErr, qt.IsNil, qt.Commentf("output:\n%s", hashOut))
-			c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, tt.want)
+			c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, tt.want)
 
 			validateOut, validateErrOut, validateErr := runCompatExit(
 				"migrate", "validate", "--config", "file://"+configPath, "--env", "local")
@@ -82,25 +81,25 @@ func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
 func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 	t.Run("flag overrides project format", func(t *testing.T) {
 		c := qt.New(t)
-		configPath, migrationsDir := writeIntegrityProject(c.TB, "flyway")
+		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, _, err := runCompatExit(
 			"migrate", "hash", "--config", "file://"+configPath, "--env", "local", "--dir-format", "goose")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
+		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
 	t.Run("query overrides project format", func(t *testing.T) {
 		c := qt.New(t)
-		configPath, migrationsDir := writeIntegrityProject(c.TB, "flyway")
+		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, _, err := runCompatExit(
 			"migrate", "hash", "--config", "file://"+configPath, "--env", "local",
 			"--dir", "file://"+migrationsDir+"?format=golang-migrate")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
+		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
 	})
 
 	// An atlas query over a converted project format is the case that forwards
@@ -111,25 +110,25 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 	//	  -> 1_init.sql U1__undo.sql V1__x.sql   (atlas, with migration.format = flyway)
 	t.Run("atlas query overrides a converted project format", func(t *testing.T) {
 		c := qt.New(t)
-		configPath, migrationsDir := writeIntegrityProject(c.TB, "flyway")
+		configPath, migrationsDir := writeIntegrityProject(c, "flyway")
 
 		stdout, stderr, err := runCompatExit(
 			"migrate", "hash", "--config", "file://"+configPath, "--env", "local",
 			"--dir", "file://"+migrationsDir+"?format=atlas")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-		c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
+		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
 	t.Run("project format applies when no spelling is given", func(t *testing.T) {
 		c := qt.New(t)
-		configPath, migrationsDir := writeIntegrityProject(c.TB, "golang-migrate")
+		configPath, migrationsDir := writeIntegrityProject(c, "golang-migrate")
 
 		stdout, _, err := runCompatExit(
 			"migrate", "hash", "--config", "file://"+configPath, "--env", "local")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
+		c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
 	})
 }
 
@@ -140,47 +139,47 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
 	t.Run("PTAH_DIR_FORMAT selects the layout", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR_FORMAT", "flyway")
 
 		stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, flywayCoveredSet)
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, flywayCoveredSet)
 	})
 
 	t.Run("PTAH_DIR carries a converted query", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR", "file://"+dir+"?format=golang-migrate")
 
 		stdout, _, err := runCompatExit("migrate", "hash")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, golangMigrateCoveredSet)
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, golangMigrateCoveredSet)
 	})
 
 	t.Run("an atlas query overrides PTAH_DIR_FORMAT", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR_FORMAT", "goose")
 
 		stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=atlas")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-		c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, sqlSuffixCoveredSet)
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
 	t.Run("PTAH_DIR carries an atlas query", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		c.Setenv("PTAH_DIR", "file://"+dir+"?format=atlas")
 
 		stdout, _, err := runCompatExit("migrate", "hash")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 		c.Assert(stdout, qt.Equals, "")
-		c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, sqlSuffixCoveredSet)
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 }
 
@@ -203,7 +202,7 @@ func TestCompatMigrateIntegrityDefaultDirectory_HappyPath(t *testing.T) {
 	stdout, stderr, err := runCompatExit("migrate", "hash", "--dir-format", "golang-migrate")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-	c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
+	c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, golangMigrateCoveredSet)
 
 	validateOut, validateErrOut, validateErr := runCompatExit("migrate", "validate", "--dir-format", "golang-migrate")
 
@@ -232,7 +231,7 @@ func TestCompatMigrateValidateConvertedDevURL_HappyPath(t *testing.T) {
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "")
 	// The replay cleans up after itself, so the table exists only during it.
-	assertSQLiteTableCount(c.TB, devDBPath, "compat_converted_dev_url", 0)
+	assertSQLiteTableCount(c, devDBPath, "compat_converted_dev_url", 0)
 }
 
 // TestCompatMigrateValidateConvertedDevURL_FailurePath covers the two orders
@@ -288,8 +287,7 @@ const directoryNamedSQLRefusal = `read file "%s": is a directory, not a migratio
 // writeDirectoryNamedSQLEntries writes files and empty directories under dir.
 // Directories are created before files so a case can nest a migration inside a
 // directory whose own name ends in .sql.
-func writeDirectoryNamedSQLEntries(tb testing.TB, dir string, files map[string]string, dirs []string) {
-	c := qt.New(tb)
+func writeDirectoryNamedSQLEntries(c *qt.C, dir string, files map[string]string, dirs []string) {
 	c.Helper()
 	for _, name := range dirs {
 		c.Assert(os.MkdirAll(filepath.Join(dir, filepath.FromSlash(name)), 0o755), qt.IsNil)
@@ -301,11 +299,10 @@ func writeDirectoryNamedSQLEntries(tb testing.TB, dir string, files map[string]s
 	}
 }
 
-func writeDirectoryNamedSQLFixture(tb testing.TB, files map[string]string, dirs []string) string {
-	c := qt.New(tb)
+func writeDirectoryNamedSQLFixture(c *qt.C, files map[string]string, dirs []string) string {
 	c.Helper()
 	dir := c.TempDir()
-	writeDirectoryNamedSQLEntries(c.TB, dir, files, dirs)
+	writeDirectoryNamedSQLEntries(c, dir, files, dirs)
 	return dir
 }
 
@@ -315,8 +312,7 @@ func wantDirectoryRefusal(name string) string {
 	return regexp.QuoteMeta(fmt.Sprintf(directoryNamedSQLRefusal, name))
 }
 
-func assertNoAtlasSum(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func assertNoAtlasSum(c *qt.C, dir string) {
 	c.Helper()
 	_, statErr := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("an atlas.sum was written for a refused directory"))
@@ -370,7 +366,7 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(err, qt.ErrorMatches, wantDirectoryRefusal("weird.sql"))
-			assertNoAtlasSum(c.TB, dir)
+			assertNoAtlasSum(c, dir)
 		},
 	}, {
 		name:   "goose hashes the same layout without the directory",
@@ -378,7 +374,7 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		files:  map[string]string{"1_init.sql": gooseBody},
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, []string{"1_init.sql"})
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.sql"})
 		},
 	}, {
 		name:   "golang-migrate ignores a directory outside its glob",
@@ -387,7 +383,7 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		dirs:   []string{"weird.sql"},
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, []string{"1_init.up.sql"})
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.up.sql"})
 		},
 	}, {
 		name:   "golang-migrate refuses a directory its glob matches",
@@ -397,7 +393,7 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(err, qt.ErrorMatches, wantDirectoryRefusal("weird.up.sql"))
-			assertNoAtlasSum(c.TB, dir)
+			assertNoAtlasSum(c, dir)
 		},
 	}, {
 		name:   "flyway walks past a directory named sql",
@@ -406,7 +402,7 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		dirs:   []string{"weird.sql"},
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, []string{"V1__init.sql"})
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"V1__init.sql"})
 		},
 	}, {
 		name:   "flyway still covers a migration nested inside one",
@@ -417,14 +413,14 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 		},
 		assert: func(c *qt.C, dir string, err error) {
 			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals,
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals,
 				[]string{"V1__init.sql", "weird.sql/V2__nested.sql"})
 		},
 	}}
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			dir := writeDirectoryNamedSQLFixture(c.TB, tt.files, tt.dirs)
+			dir := writeDirectoryNamedSQLFixture(c, tt.files, tt.dirs)
 
 			stdout, stderr, err := runCompatExit(
 				"migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
@@ -514,14 +510,14 @@ func TestCompatMigrateNativeDirectoryNamedSQL(t *testing.T) {
 	for _, shape := range shapes {
 		for _, verb := range verbs {
 			c.Run(shape.name+"/"+verb.name, func(c *qt.C) {
-				dir := writeDirectoryNamedSQLFixture(c.TB,
+				dir := writeDirectoryNamedSQLFixture(c,
 					map[string]string{"1_init.sql": "CREATE TABLE w (id INTEGER PRIMARY KEY);\n"}, nil)
 				hashOut, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
 				c.Assert(hashErr, qt.IsNil, qt.Commentf("seed:\n%s", hashOut))
 
 				// The sum above covers only 1_init.sql, exactly as the community
 				// binary's would; the directory appears afterwards.
-				writeDirectoryNamedSQLEntries(c.TB, dir, shape.files, shape.dirs)
+				writeDirectoryNamedSQLEntries(c, dir, shape.files, shape.dirs)
 
 				stdout, stderr, err := runCompatExit(
 					verb.args(dir, filepath.Join(c.TempDir(), "evil.db"))...)

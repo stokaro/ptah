@@ -29,8 +29,7 @@ func flywaySource(names ...string) fstest.MapFS {
 
 // flywayConsumed returns the source files a Flyway directory actually executes,
 // in execution order, recovered from the converted SQL bodies.
-func flywayConsumed(tb testing.TB, fsys fs.FS) []string {
-	c := qt.New(tb)
+func flywayConsumed(c *qt.C, fsys fs.FS) []string {
 	c.Helper()
 	loaded, err := atlasmigrateimport.LoadFS(fsys, "migrations", atlasmigrateimport.FormatFlyway)
 	c.Assert(err, qt.IsNil)
@@ -216,8 +215,7 @@ func TestCompareFlywayRevisionOrder(t *testing.T) {
 
 // flywayCovered returns the source files the directory's atlas.sum covers, in
 // the order Atlas CE hashes them.
-func flywayCovered(tb testing.TB, fsys fs.FS) []string {
-	c := qt.New(tb)
+func flywayCovered(c *qt.C, fsys fs.FS) []string {
 	c.Helper()
 	covered, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
 	c.Assert(err, qt.IsNil)
@@ -340,9 +338,9 @@ func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
 			c := qt.New(t)
 			source := flywaySource(tt.files...)
 
-			consumed := flywayConsumed(c.TB, source)
+			consumed := flywayConsumed(c, source)
 
-			c.Assert(consumed, qt.DeepEquals, flywayCovered(c.TB, source))
+			c.Assert(consumed, qt.DeepEquals, flywayCovered(c, source))
 		})
 	}
 }
@@ -375,7 +373,7 @@ func TestLoadFSFlywayCoveredSetIsNotEmptyForTheseShapes(t *testing.T) {
 	c := qt.New(t)
 	source := flywaySource("B1__one.sql", "B2__two.sql", "V3__three.sql", "U1__undo.sql", "v4__lower.sql")
 
-	covered := flywayCovered(c.TB, source)
+	covered := flywayCovered(c, source)
 
 	// Three of the five files are outside the covered set, so the equality above
 	// is a claim about selection and not about "everything is kept".
@@ -391,7 +389,7 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 		c := qt.New(t)
 		source := flywaySource("B1__one.sql", "B2__two.sql", "V3__three.sql")
 
-		consumed := flywayConsumed(c.TB, source)
+		consumed := flywayConsumed(c, source)
 
 		c.Assert(consumed, qt.DeepEquals, []string{"B2__two.sql", "V3__three.sql"})
 		c.Assert(consumed, qt.Not(qt.Contains), "B1__one.sql")
@@ -401,7 +399,7 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 		c := qt.New(t)
 		source := flywaySource("V1__init.sql", "v2__evil.sql")
 
-		consumed := flywayConsumed(c.TB, source)
+		consumed := flywayConsumed(c, source)
 
 		c.Assert(consumed, qt.DeepEquals, []string{"V1__init.sql"})
 		c.Assert(consumed, qt.Not(qt.Contains), "v2__evil.sql")
@@ -664,7 +662,7 @@ func TestLoadFSFlywayTieBudgetExhausted_KnownDivergence(t *testing.T) {
 	c.Assert(loaded, qt.IsNil)
 	// Four in one score class still convert, so the budget is a budget and not
 	// a ban on ties.
-	c.Assert(flywayConsumed(c.TB, flywaySource(
+	c.Assert(flywayConsumed(c, flywaySource(
 		"Vendors.sql", "Vacuum.sql", "Validation.sql", "Version.sql", "V1__init.sql")), qt.HasLen, 5)
 }
 

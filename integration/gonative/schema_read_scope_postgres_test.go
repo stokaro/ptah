@@ -129,9 +129,9 @@ func TestPostgreSQLDiffReadScopeMatchesTheDescribedScopeIntegration(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sourceURL := newReadScopeDatabase(c.TB, dsn, "src", readScopeSeed)
-			devURL := newReadScopeDatabase(c.TB, dsn, "dev", nil)
-			documentURL := "file://" + readScopeDocumentFile(c.TB, test.document(c, sourceURL))
+			sourceURL := newReadScopeDatabase(c, dsn, "src", readScopeSeed)
+			devURL := newReadScopeDatabase(c, dsn, "dev", nil)
+			documentURL := "file://" + readScopeDocumentFile(c, test.document(c, sourceURL))
 
 			from, to := test.sides(sourceURL, documentURL)
 			diff, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
@@ -182,8 +182,7 @@ func readScopeStatements(changes []atlasreport.SchemaDiffChange) []string {
 	return statements
 }
 
-func readScopeDocumentFile(tb testing.TB, document string) string {
-	c := qt.New(tb)
+func readScopeDocumentFile(c *qt.C, document string) string {
 	c.Helper()
 
 	path := filepath.Join(c.TempDir(), "desired.hcl")
@@ -197,8 +196,7 @@ func readScopeDocumentFile(tb testing.TB, document string) string {
 //
 // The server is shared with other suites and other agents, so nothing here
 // touches the database POSTGRES_TEST_DSN names.
-func newReadScopeDatabase(tb testing.TB, dsn, role string, seed []string) string {
-	c := qt.New(tb)
+func newReadScopeDatabase(c *qt.C, dsn, role string, seed []string) string {
 	c.Helper()
 
 	admin, err := sql.Open("pgx", dsn)
@@ -223,6 +221,6 @@ func newReadScopeDatabase(tb testing.TB, dsn, role string, seed []string) string
 	parsed.Path = "/" + name
 	parsed.RawPath = ""
 	dbURL := parsed.String()
-	boundarySeed(c.TB, dbURL, seed)
+	boundarySeed(c, dbURL, seed)
 	return dbURL
 }

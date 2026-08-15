@@ -100,8 +100,7 @@ type compatDockerFixture struct {
 	root string
 }
 
-func newCompatDockerFixture(tb testing.TB) compatDockerFixture {
-	c := qt.New(tb)
+func newCompatDockerFixture(c *qt.C) compatDockerFixture {
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -232,7 +231,7 @@ func compatDockerRows() []compatDockerRow {
 
 func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 	c := qt.New(t)
-	fx := newCompatDockerFixture(c.TB)
+	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {
 		c.Run(tt.name, func(c *qt.C) {
@@ -271,7 +270,7 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 // refusal is a sentence only the provisioner produces.
 func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testing.T) {
 	c := qt.New(t)
-	fx := newCompatDockerFixture(c.TB)
+	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {
 		c.Run(tt.name, func(c *qt.C) {

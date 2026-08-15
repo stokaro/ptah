@@ -35,8 +35,7 @@ const atlasSumSectionHeading = "### Which verbs enforce `atlas.sum`"
 // atlasSumSectionBody returns the enumeration section of the compat
 // migrate-commands page: everything from its heading to the next second-level
 // heading.
-func atlasSumSectionBody(tb testing.TB) string {
-	c := qt.New(tb)
+func atlasSumSectionBody(c *qt.C) string {
 	c.Helper()
 	page, err := os.ReadFile(filepath.Join(
 		"..", "..", "docs", "site", "src", "content", "docs", "atlas", "migrate-commands.md"))
@@ -57,7 +56,7 @@ func atlasSumSectionBody(tb testing.TB) string {
 func TestCompatMigrateDown_NamedInAtlasSumEnumeration(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(atlasSumSectionBody(c.TB), qt.Contains, "`down`")
+	c.Assert(atlasSumSectionBody(c), qt.Contains, "`down`")
 }
 
 // TestCompatMigrateDown_RefusesWhereStatusRefuses is the measurement the

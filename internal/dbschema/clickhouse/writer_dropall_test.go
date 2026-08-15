@@ -74,12 +74,12 @@ func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 		{sql: "DROP VIEW IF EXISTS `v_users` SYNC"},
 		{sql: "DROP TABLE IF EXISTS `users` SYNC"},
 	}
-	db := openClickHouseSQLMock(t, c.TB, queries, execs)
+	db := openClickHouseSQLMock(t, c, queries, execs)
 
 	err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
+	assertClickHouseSQLMockComplete(c, db, queries, execs)
 }
 
 // TestWriterDropAllTables_RefusesBacktickedNames keeps the identifier guard on
@@ -120,7 +120,7 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 					result: dbtest.QueryResult{Columns: []string{"name"}, Rows: test.tables},
 				},
 			}
-			db := openClickHouseSQLMock(t, c.TB, queries, nil)
+			db := openClickHouseSQLMock(t, c, queries, nil)
 
 			err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
 

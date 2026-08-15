@@ -23,15 +23,15 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	dbURL, conn := requirePostgresBaselineTestConnection(t, c.TB, ctx, "baseline shadow verification test")
+	dbURL, conn := requirePostgresBaselineTestConnection(t, c, ctx, "baseline shadow verification test")
 	defer dbschema.CloseAndWarn(conn)
 
 	suffix := time.Now().UnixNano()
 	schema := fmt.Sprintf("ptah_issue_269_shadow_%d", suffix)
 	shadowDBName := fmt.Sprintf("ptah_issue_269_shadow_db_%d", suffix)
-	shadowDBURL := baselineShadowDatabaseURL(c.TB, dbURL, shadowDBName)
-	createBaselineShadowDatabase(c.TB, ctx, conn, shadowDBName)
-	defer dropBaselineShadowDatabase(c.TB, ctx, conn, shadowDBName)
+	shadowDBURL := baselineShadowDatabaseURL(c, dbURL, shadowDBName)
+	createBaselineShadowDatabase(c, ctx, conn, shadowDBName)
+	defer dropBaselineShadowDatabase(c, ctx, conn, shadowDBName)
 	defer func() {
 		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quotePostgresIdent(schema)+" CASCADE")
 	}()
@@ -46,7 +46,7 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := c.TempDir()
-	writeBaselineShadowMigration(c.TB, migrationsDir, schema)
+	writeBaselineShadowMigration(c, migrationsDir, schema)
 	info := conn.Info()
 	err = generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
 		ShadowDatabaseURL: shadowDBURL,
@@ -80,18 +80,18 @@ func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c.TB, ctx, "baseline shadow verification test")
+	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c, ctx, "baseline shadow verification test")
 	defer dbschema.CloseAndWarn(adminConn)
 
 	suffix := time.Now().UnixNano()
 	targetDBName := fmt.Sprintf("ptah_issue_269_target_db_%d", suffix)
 	shadowDBName := fmt.Sprintf("ptah_issue_269_shadow_db_%d", suffix)
-	targetDBURL := baselineShadowDatabaseURL(c.TB, dbURL, targetDBName)
-	shadowDBURL := baselineShadowDatabaseURL(c.TB, dbURL, shadowDBName)
-	createBaselineShadowDatabase(c.TB, ctx, adminConn, targetDBName)
-	createBaselineShadowDatabase(c.TB, ctx, adminConn, shadowDBName)
-	defer dropBaselineShadowDatabase(c.TB, ctx, adminConn, targetDBName)
-	defer dropBaselineShadowDatabase(c.TB, ctx, adminConn, shadowDBName)
+	targetDBURL := baselineShadowDatabaseURL(c, dbURL, targetDBName)
+	shadowDBURL := baselineShadowDatabaseURL(c, dbURL, shadowDBName)
+	createBaselineShadowDatabase(c, ctx, adminConn, targetDBName)
+	createBaselineShadowDatabase(c, ctx, adminConn, shadowDBName)
+	defer dropBaselineShadowDatabase(c, ctx, adminConn, targetDBName)
+	defer dropBaselineShadowDatabase(c, ctx, adminConn, shadowDBName)
 
 	targetConn, err := dbschema.ConnectToDatabase(ctx, targetDBURL)
 	c.Assert(err, qt.IsNil)
@@ -100,7 +100,7 @@ func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := c.TempDir()
-	writeBaselineShadowPublicMigration(c.TB, migrationsDir)
+	writeBaselineShadowPublicMigration(c, migrationsDir)
 	info := targetConn.Info()
 	err = generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
 		ShadowDatabaseURL: shadowDBURL,
@@ -117,18 +117,18 @@ func TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL(t *test
 	c := qt.New(t)
 	ctx := context.Background()
 
-	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c.TB, ctx, "migrate-baseline command test")
+	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c, ctx, "migrate-baseline command test")
 	defer dbschema.CloseAndWarn(adminConn)
 
 	suffix := time.Now().UnixNano()
 	targetDBName := fmt.Sprintf("ptah_issue_269_cli_target_%d", suffix)
 	shadowDBName := fmt.Sprintf("ptah_issue_269_cli_shadow_%d", suffix)
-	targetDBURL := baselineShadowDatabaseURL(c.TB, dbURL, targetDBName)
-	shadowDBURL := baselineShadowDatabaseURL(c.TB, dbURL, shadowDBName)
-	createBaselineShadowDatabase(c.TB, ctx, adminConn, targetDBName)
-	createBaselineShadowDatabase(c.TB, ctx, adminConn, shadowDBName)
-	defer dropBaselineShadowDatabase(c.TB, ctx, adminConn, targetDBName)
-	defer dropBaselineShadowDatabase(c.TB, ctx, adminConn, shadowDBName)
+	targetDBURL := baselineShadowDatabaseURL(c, dbURL, targetDBName)
+	shadowDBURL := baselineShadowDatabaseURL(c, dbURL, shadowDBName)
+	createBaselineShadowDatabase(c, ctx, adminConn, targetDBName)
+	createBaselineShadowDatabase(c, ctx, adminConn, shadowDBName)
+	defer dropBaselineShadowDatabase(c, ctx, adminConn, targetDBName)
+	defer dropBaselineShadowDatabase(c, ctx, adminConn, shadowDBName)
 
 	targetConn, err := dbschema.ConnectToDatabase(ctx, targetDBURL)
 	c.Assert(err, qt.IsNil)
@@ -137,7 +137,7 @@ func TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL(t *test
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := c.TempDir()
-	writeBaselineShadowPublicMigration(c.TB, migrationsDir)
+	writeBaselineShadowPublicMigration(c, migrationsDir)
 	metadataTable := fmt.Sprintf("schema_migrations_issue_269_cli_%d", suffix)
 	cmd := migratebaseline.NewMigrateBaselineCommand()
 	cmd.SetArgs([]string{
@@ -173,11 +173,10 @@ func postgresBaselineTestURL() string {
 
 func requirePostgresBaselineTestConnection(
 	t *testing.T,
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	purpose string,
 ) (string, *dbschema.DatabaseConnection) {
-	c := qt.New(tb)
 	t.Helper()
 
 	dbURL := postgresBaselineTestURL()
@@ -198,8 +197,7 @@ func requirePostgresBaselineTestConnection(
 	return dbURL, conn
 }
 
-func baselineShadowDatabaseURL(tb testing.TB, dbURL, dbName string) string {
-	c := qt.New(tb)
+func baselineShadowDatabaseURL(c *qt.C, dbURL, dbName string) string {
 	c.Helper()
 
 	parsed, err := url.Parse(dbURL)
@@ -208,25 +206,22 @@ func baselineShadowDatabaseURL(tb testing.TB, dbURL, dbName string) string {
 	return parsed.String()
 }
 
-func createBaselineShadowDatabase(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection, dbName string) {
-	c := qt.New(tb)
+func createBaselineShadowDatabase(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, dbName string) {
 	c.Helper()
 
-	dropBaselineShadowDatabase(c.TB, ctx, conn, dbName)
+	dropBaselineShadowDatabase(c, ctx, conn, dbName)
 	_, err := conn.ExecContext(ctx, "CREATE DATABASE "+quotePostgresIdent(dbName))
 	c.Assert(err, qt.IsNil)
 }
 
-func dropBaselineShadowDatabase(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection, dbName string) {
-	c := qt.New(tb)
+func dropBaselineShadowDatabase(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, dbName string) {
 	c.Helper()
 
 	_, err := conn.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quotePostgresIdent(dbName)+" WITH (FORCE)")
 	c.Assert(err, qt.IsNil)
 }
 
-func writeBaselineShadowMigration(tb testing.TB, dir, schema string) {
-	c := qt.New(tb)
+func writeBaselineShadowMigration(c *qt.C, dir, schema string) {
 	c.Helper()
 
 	upSQL := fmt.Sprintf(
@@ -245,8 +240,7 @@ func writeBaselineShadowMigration(tb testing.TB, dir, schema string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte(downSQL), 0600), qt.IsNil)
 }
 
-func writeBaselineShadowPublicMigration(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func writeBaselineShadowPublicMigration(c *qt.C, dir string) {
 	c.Helper()
 
 	upSQL := "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n"

@@ -37,8 +37,7 @@ const roundTripDatabase = "ptah_rt_functions"
 //
 // It also confines the leak that started this: whatever the body creates goes
 // away with the database.
-func newOwnedDatabase(tb testing.TB, dsn string) *sql.DB {
-	c := qt.New(tb)
+func newOwnedDatabase(c *qt.C, dsn string) *sql.DB {
 	c.Helper()
 
 	admin, err := sql.Open("mysql", dsn)
@@ -67,7 +66,7 @@ func newOwnedDatabase(tb testing.TB, dsn string) *sql.DB {
 	c.Cleanup(func() { _ = db.Close() })
 	// Registered after, so it runs first. It opens its own connection so that it
 	// depends on nothing another cleanup may already have released.
-	c.Cleanup(func() { dropOwnedDatabase(c.TB, dsn) })
+	c.Cleanup(func() { dropOwnedDatabase(c, dsn) })
 
 	return db
 }
@@ -79,8 +78,7 @@ func newOwnedDatabase(tb testing.TB, dsn string) *sql.DB {
 // indistinguishable from one that worked, and it runs on the failure path too,
 // where leaks actually happen. If this cannot clean up, this test fails rather
 // than a neighbour's.
-func dropOwnedDatabase(tb testing.TB, dsn string) {
-	c := qt.New(tb)
+func dropOwnedDatabase(c *qt.C, dsn string) {
 	c.Helper()
 
 	admin, err := sql.Open("mysql", dsn)
@@ -119,8 +117,7 @@ func functionRoundTripSchema(body string) *goschema.Database {
 
 // applyPlannedSQL plans the diff between desired and the live database, executes
 // every statement, and returns the statements it ran.
-func applyPlannedSQL(tb testing.TB, db *sql.DB, dialect string, desired *goschema.Database) []string {
-	c := qt.New(tb)
+func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) []string {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -139,8 +136,7 @@ func applyPlannedSQL(tb testing.TB, db *sql.DB, dialect string, desired *goschem
 }
 
 // readBackDiff reads the live catalog and diffs it against desired.
-func readBackDiff(tb testing.TB, db *sql.DB, desired *goschema.Database) *difftypes.SchemaDiff {
-	c := qt.New(tb)
+func readBackDiff(c *qt.C, db *sql.DB, desired *goschema.Database) *difftypes.SchemaDiff {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -184,12 +180,12 @@ func TestFunctionRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			dsn := test.dsn(t)
 			c := qt.New(t)
 
-			db := newOwnedDatabase(c.TB, dsn)
+			db := newOwnedDatabase(c, dsn)
 
 			desired := functionRoundTripSchema("RETURN a + 1")
 
 			// 1. The plan is not silent: it carries the function.
-			created := applyPlannedSQL(c.TB, db, test.dialect, desired)
+			created := applyPlannedSQL(c, db, test.dialect, desired)
 			c.Assert(created, qt.Not(qt.HasLen), 0)
 
 			// 2. The server really hosts it. This is the catalog answering,
@@ -199,11 +195,11 @@ func TestFunctionRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			c.Check(value, qt.Equals, 42)
 
 			// 3. Round trip: reading it back and diffing yields nothing.
-			c.Check(readBackDiff(c.TB, db, desired).HasChanges(), qt.IsFalse)
+			c.Check(readBackDiff(c, db, desired).HasChanges(), qt.IsFalse)
 
 			// 4. A changed body is exactly one change, named as the body.
 			changed := functionRoundTripSchema("RETURN a + 2")
-			bodyDiff := readBackDiff(c.TB, db, changed)
+			bodyDiff := readBackDiff(c, db, changed)
 			c.Assert(bodyDiff.FunctionsModified, qt.HasLen, 1)
 			c.Check(bodyDiff.FunctionsModified[0].FunctionName, qt.Equals, "ptah_rt_fn")
 			c.Check(bodyDiff.FunctionsModified[0].Changes, qt.HasLen, 1)
@@ -212,8 +208,8 @@ func TestFunctionRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			c.Check(bodyDiff.FunctionsRemoved, qt.HasLen, 0)
 
 			// 5. And planning that change converges again.
-			applyPlannedSQL(c.TB, db, test.dialect, changed)
-			c.Check(readBackDiff(c.TB, db, changed).HasChanges(), qt.IsFalse)
+			applyPlannedSQL(c, db, test.dialect, changed)
+			c.Check(readBackDiff(c, db, changed).HasChanges(), qt.IsFalse)
 
 			c.Assert(db.QueryRow("SELECT ptah_rt_fn(40)").Scan(&value), qt.IsNil)
 			c.Check(value, qt.Equals, 42)

@@ -16,7 +16,7 @@ func TestParseDomainAnnotation(t *testing.T) {
 type EmailDomain struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c.TB, "fixture.go", src)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.Domains, qt.HasLen, 1)
 	d := db.Domains[0]
 	c.Assert(d.Name, qt.Equals, "email")
@@ -47,7 +47,7 @@ func TestParseCompositeAnnotation(t *testing.T) {
 type AddressType struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c.TB, "fixture.go", src)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.CompositeTypes, qt.HasLen, 1)
 	comp := db.CompositeTypes[0]
 	c.Assert(comp.Name, qt.Equals, "address")
@@ -65,7 +65,7 @@ func TestParseCompositeAnnotation_ParameterizedTypesWithCommas(t *testing.T) {
 type MoneyType struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c.TB, "fixture.go", src)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.CompositeTypes, qt.HasLen, 1)
 	comp := db.CompositeTypes[0]
 	c.Assert(comp.Fields, qt.HasLen, 2)
@@ -94,7 +94,7 @@ func TestParseRangeAnnotation(t *testing.T) {
 type FloatRange struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c.TB, "fixture.go", src)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.Ranges, qt.HasLen, 1)
 	r := db.Ranges[0]
 	c.Assert(r.Name, qt.Equals, "floatrange")

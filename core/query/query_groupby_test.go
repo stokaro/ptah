@@ -14,8 +14,7 @@ import (
 // renderProjection renders "SELECT <expr> FROM t" for PostgreSQL and returns the
 // observable SQL and args, so aggregate constructors can be asserted through the
 // public rendering contract rather than the internal node shape.
-func renderProjection(tb testing.TB, expr ast.Expression) (string, []any) {
-	c := qt.New(tb)
+func renderProjection(c *qt.C, expr ast.Expression) (string, []any) {
 	c.Helper()
 	stmt := query.Select().Exprs(expr).From("t").Build()
 	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
@@ -41,7 +40,7 @@ func TestAggregateConstructors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args := renderProjection(c.TB, tt.expr)
+			sql, args := renderProjection(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
 		})
@@ -53,8 +52,8 @@ func TestCountStarArgumentIsCountStar(t *testing.T) {
 
 	// Count("*") is a convenience for COUNT(*): it renders identically to
 	// CountStar and never the invalid COUNT("*") over a column named "*".
-	starSQL, starArgs := renderProjection(c.TB, query.CountStar())
-	countSQL, countArgs := renderProjection(c.TB, query.Count("*"))
+	starSQL, starArgs := renderProjection(c, query.CountStar())
+	countSQL, countArgs := renderProjection(c, query.Count("*"))
 
 	c.Assert(countSQL, qt.Equals, `SELECT COUNT(*) FROM "t"`)
 	c.Assert(countSQL, qt.Equals, starSQL)
@@ -108,7 +107,7 @@ func TestColumnAggregateMethods(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args := renderProjection(c.TB, tt.expr)
+			sql, args := renderProjection(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
 		})
@@ -134,7 +133,7 @@ func TestExprComparison(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args := renderWhere(c.TB, tt.expr)
+			sql, args := renderWhere(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(5)})
 		})

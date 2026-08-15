@@ -320,8 +320,8 @@ table "t" {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			withDDL, withCode := runSchemaOracle(c.TB, oracle, tt.hcl)
-			withoutDDL, withoutCode := runSchemaOracle(c.TB, oracle, tt.equivalent)
+			withDDL, withCode := runSchemaOracle(c, oracle, tt.hcl)
+			withoutDDL, withoutCode := runSchemaOracle(c, oracle, tt.equivalent)
 			c.Assert(withCode, qt.Equals, 0, qt.Commentf("oracle output: %s", withDDL))
 			c.Assert(withoutCode, qt.Equals, 0, qt.Commentf("oracle output: %s", withoutDDL))
 			c.Assert(withDDL, qt.Equals, withoutDDL)
@@ -695,7 +695,7 @@ table "t" {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			out, code := runSchemaOracle(c.TB, oracle, tt.hcl)
+			out, code := runSchemaOracle(c, oracle, tt.hcl)
 			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("oracle output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
@@ -797,7 +797,7 @@ table "t" {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			out, code := runSchemaOracle(c.TB, oracle, tt.hcl)
+			out, code := runSchemaOracle(c, oracle, tt.hcl)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("oracle output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
@@ -829,7 +829,7 @@ annotation "gql" {
 }
 `
 
-	out, code := runSchemaOracle(c.TB, oracle, bare)
+	out, code := runSchemaOracle(c, oracle, bare)
 	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("oracle output: %s", out))
 	c.Assert(out, qt.Contains, `There is no variable named "HASH"`)
 
@@ -884,8 +884,7 @@ func requireSchemaOracle(t *testing.T) string {
 // the notice does not appear there.
 var schemaOracleWarmup sync.Once
 
-func warmUpSchemaOracle(tb testing.TB, oracle string) {
-	c := qt.New(tb)
+func warmUpSchemaOracle(c *qt.C, oracle string) {
 	c.Helper()
 
 	schemaOracleWarmup.Do(func() {
@@ -901,11 +900,10 @@ func warmUpSchemaOracle(tb testing.TB, oracle string) {
 
 // runSchemaOracle inspects one schema source with the pinned binary and returns
 // its combined output and exit code.
-func runSchemaOracle(tb testing.TB, oracle, source string) (string, int) {
-	c := qt.New(tb)
+func runSchemaOracle(c *qt.C, oracle, source string) (string, int) {
 	c.Helper()
 
-	warmUpSchemaOracle(c.TB, oracle)
+	warmUpSchemaOracle(c, oracle)
 
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)

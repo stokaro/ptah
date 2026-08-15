@@ -24,7 +24,7 @@ func TestCompatVarFlagKeepsAtlasUsage(t *testing.T) {
 
 	root := atlas.NewCompatCommand("ptah-compat")
 	for _, group := range []string{"schema", "migrate"} {
-		cmd := childCommand(c.TB, root, group)
+		cmd := childCommand(c, root, group)
 		flag := cmd.PersistentFlags().Lookup("var")
 		c.Assert(flag, qt.IsNotNil, qt.Commentf("%s must carry --var", group))
 		// A prefix, not equality: the env-binding pass appends
@@ -45,8 +45,7 @@ func TestCompatVarFlagKeepsAtlasUsage(t *testing.T) {
 	}
 }
 
-func childCommand(tb testing.TB, parent *cobra.Command, name string) *cobra.Command {
-	c := qt.New(tb)
+func childCommand(c *qt.C, parent *cobra.Command, name string) *cobra.Command {
 	for _, child := range parent.Commands() {
 		if child.Name() == name {
 			return child

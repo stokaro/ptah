@@ -17,8 +17,7 @@ import (
 
 // writeCheckpointPtahFixture fills migrationsDir with a ptah-format migration
 // pair.
-func writeCheckpointPtahFixture(tb testing.TB, migrationsDir string) {
-	c := qt.New(tb)
+func writeCheckpointPtahFixture(c *qt.C, migrationsDir string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_init.up.sql"),
@@ -30,8 +29,7 @@ func writeCheckpointPtahFixture(tb testing.TB, migrationsDir string) {
 // writeCheckpointAtlasFixture fills migrationsDir with an Atlas-format history:
 // single up-only files carrying timestamp versions, the shape `atlas migrate
 // diff` produces and the shape a Pro checkpoint pipeline actually runs against.
-func writeCheckpointAtlasFixture(tb testing.TB, migrationsDir string) {
-	c := qt.New(tb)
+func writeCheckpointAtlasFixture(c *qt.C, migrationsDir string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "20250801000001_init.sql"),
@@ -40,8 +38,7 @@ func writeCheckpointAtlasFixture(tb testing.TB, migrationsDir string) {
 		[]byte("ALTER TABLE ckpt_users ADD COLUMN email TEXT;\n"), 0o600), qt.IsNil)
 }
 
-func runCompatCheckpoint(tb testing.TB, args ...string) (string, error) {
-	c := qt.New(tb)
+func runCompatCheckpoint(c *qt.C, args ...string) (string, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -57,8 +54,7 @@ func runCompatCheckpoint(tb testing.TB, args ...string) (string, error) {
 // assertAtlasCheckpointWritten asserts the Atlas artifact: exactly one new
 // single file whose FIRST line is the directive, covered by atlas.sum, with no
 // ptah-side output. It returns the checkpoint's base name.
-func assertAtlasCheckpointWritten(tb testing.TB, migrationsDir, stem string) string {
-	c := qt.New(tb)
+func assertAtlasCheckpointWritten(c *qt.C, migrationsDir, stem string) string {
 	c.Helper()
 	written, err := filepath.Glob(filepath.Join(migrationsDir, "*_"+stem+".sql"))
 	c.Assert(err, qt.IsNil)
@@ -86,9 +82,9 @@ func assertAtlasCheckpointWritten(tb testing.TB, migrationsDir, stem string) str
 func TestCompatCommand_MigrateCheckpointDirFormatAtlasWrites(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeCheckpointAtlasFixture(c.TB, migrationsDir)
+	writeCheckpointAtlasFixture(c, migrationsDir)
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
@@ -97,7 +93,7 @@ func TestCompatCommand_MigrateCheckpointDirFormatAtlasWrites(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	name := assertAtlasCheckpointWritten(c.TB, migrationsDir, "snapshot")
+	name := assertAtlasCheckpointWritten(c, migrationsDir, "snapshot")
 	// The positional [name] became the file-name stem, as Atlas's [tag] does.
 	c.Assert(strings.HasSuffix(name, "_snapshot.sql"), qt.IsTrue, qt.Commentf("name=%s", name))
 
@@ -111,26 +107,26 @@ func TestCompatCommand_MigrateCheckpointDirFormatAtlasWrites(t *testing.T) {
 func TestCompatCommand_MigrateCheckpointDefaultsToAtlasFormat(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeCheckpointAtlasFixture(c.TB, migrationsDir)
+	writeCheckpointAtlasFixture(c, migrationsDir)
 
 	// No --dir-format at all: an unflagged Atlas pipeline must get the Atlas
 	// convention back, matching the default Atlas registers on
 	// this verb. This is the case that separates the compat default from the
 	// native `ptah migrations checkpoint` default, which stays ptah.
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	assertAtlasCheckpointWritten(c.TB, migrationsDir, "checkpoint")
+	assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
 }
 
 func TestCompatCommand_MigrateCheckpointEmptyDirFormatIsAtlas(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeCheckpointAtlasFixture(c.TB, migrationsDir)
+	writeCheckpointAtlasFixture(c, migrationsDir)
 
 	// An explicitly empty --dir-format is a different path from omitting the
 	// flag: the registered default never fires, so the mapper sees "". Measured
@@ -138,7 +134,7 @@ func TestCompatCommand_MigrateCheckpointEmptyDirFormatIsAtlas(t *testing.T) {
 	// error rather than rejecting the format), so checkpoint does too. This is
 	// deliberately unlike the other compat migrate verbs, which reject an empty
 	// value — that rejection is itself a recorded divergence from CE.
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
@@ -146,15 +142,15 @@ func TestCompatCommand_MigrateCheckpointEmptyDirFormatIsAtlas(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	assertAtlasCheckpointWritten(c.TB, migrationsDir, "checkpoint")
+	assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
 }
 
 func TestCompatCommand_MigrateCheckpointAtlasVersionIsATimestamp(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeCheckpointAtlasFixture(c.TB, migrationsDir) // newest version 20250801000002
+	writeCheckpointAtlasFixture(c, migrationsDir) // newest version 20250801000002
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
@@ -162,7 +158,7 @@ func TestCompatCommand_MigrateCheckpointAtlasVersionIsATimestamp(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	name := assertAtlasCheckpointWritten(c.TB, migrationsDir, "checkpoint")
+	name := assertAtlasCheckpointWritten(c, migrationsDir, "checkpoint")
 	version, err := strconv.ParseInt(strings.TrimSuffix(name, "_checkpoint.sql"), 10, 64)
 	c.Assert(err, qt.IsNil)
 
@@ -176,9 +172,9 @@ func TestCompatCommand_MigrateCheckpointAtlasVersionIsATimestamp(t *testing.T) {
 func TestCompatCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	writeCheckpointPtahFixture(c.TB, migrationsDir)
+	writeCheckpointPtahFixture(c, migrationsDir)
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
@@ -208,7 +204,7 @@ func TestCompatCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
 func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCheckpointAtlasFixture(c.TB, dir)
+	writeCheckpointAtlasFixture(c, dir)
 	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
@@ -218,14 +214,14 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	applyOut, _, err := compatApply(dir, preDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
 		"--dir-format", "atlas",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	name := assertAtlasCheckpointWritten(c.TB, dir, "checkpoint")
+	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
 	version := strings.TrimSuffix(name, "_checkpoint.sql")
 
 	// Fresh database: only the checkpoint runs, recorded as a single type=2
@@ -234,12 +230,12 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	freshOut, _, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", freshOut))
 	c.Assert(freshOut, qt.Contains, "Migrating to version "+version+" from 1 pending migrations.")
-	c.Assert(compatRevisionRows(c.TB, freshDB), qt.DeepEquals, []compatRevisionRow{
+	c.Assert(compatRevisionRows(c, freshDB), qt.DeepEquals, []compatRevisionRow{
 		{Version: version, Description: "checkpoint", Type: 2, Applied: 1, Total: 1},
 	})
 	// The checkpoint body is cumulative, so the column the second migration
 	// added exists even though that migration never ran here.
-	c.Assert(sqliteTableCount(c.TB, freshDB, "ckpt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
 
 	// Pre-checkpoint database: the checkpoint is skipped, not replayed. Assert
 	// the revision rows, not just the message — replaying it is exactly the
@@ -248,7 +244,7 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	skipOut, _, err := compatApply(dir, preDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", skipOut))
 	c.Assert(skipOut, qt.Contains, "No migration files to execute")
-	rows := compatRevisionRows(c.TB, preDB)
+	rows := compatRevisionRows(c, preDB)
 	c.Assert(rows, qt.HasLen, 2)
 	c.Assert(rows[0].Version, qt.Equals, "20250801000001")
 	c.Assert(rows[1].Version, qt.Equals, "20250801000002")
@@ -262,12 +258,12 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 func TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCheckpointAtlasFixture(c.TB, dir)
+	writeCheckpointAtlasFixture(c, dir)
 
 	devURL := "sqlite://" + filepath.Join(c.TempDir(), "shadow1.db")
-	out, err := runCompatCheckpoint(c.TB, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL, "--dir-format", "atlas")
+	out, err := runCompatCheckpoint(c, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL, "--dir-format", "atlas")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	first := assertAtlasCheckpointWritten(c.TB, dir, "checkpoint")
+	first := assertAtlasCheckpointWritten(c, dir, "checkpoint")
 
 	// A migration dated far past any real timestamp, added after the first
 	// checkpoint.
@@ -277,7 +273,7 @@ func TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint(t *test
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
 	devURL2 := "sqlite://" + filepath.Join(c.TempDir(), "shadow2.db")
-	out, err = runCompatCheckpoint(c.TB, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL2, "--dir-format", "atlas")
+	out, err = runCompatCheckpoint(c, "migrate", "checkpoint", "--dir", dir, "--dev-url", devURL2, "--dir-format", "atlas")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	// Both checkpoints coexist; the new one is above the future-dated migration.
@@ -288,19 +284,18 @@ func TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint(t *test
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
 	applyOut, _, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
-	c.Assert(compatRevisionRows(c.TB, freshDB), qt.DeepEquals, []compatRevisionRow{
+	c.Assert(compatRevisionRows(c, freshDB), qt.DeepEquals, []compatRevisionRow{
 		{Version: "29990101000001", Description: "checkpoint", Type: 2, Applied: 1, Total: 1},
 	})
 	// The newest checkpoint is cumulative through the later migration, so the
 	// column that migration adds exists without it having run.
-	c.Assert(sqliteCheckpointColumnCount(c.TB, freshDB, "ckpt_users", "nickname"), qt.Equals, 1)
+	c.Assert(sqliteCheckpointColumnCount(c, freshDB, "ckpt_users", "nickname"), qt.Equals, 1)
 }
 
 // sqliteCheckpointColumnCount reports whether table carries column, so a
 // cumulative checkpoint body can be asserted by its effect on the database
 // rather than by grepping the SQL it was rendered from.
-func sqliteCheckpointColumnCount(tb testing.TB, dbPath, table, column string) int {
-	c := qt.New(tb)
+func sqliteCheckpointColumnCount(c *qt.C, dbPath, table, column string) int {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -348,7 +343,7 @@ func sqliteCheckpointColumnCount(tb testing.TB, dbPath, table, column string) in
 func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCheckpointAtlasFixture(c.TB, dir)
+	writeCheckpointAtlasFixture(c, dir)
 	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o755), qt.IsNil)
 	// Dated far beyond any real timestamp: a version above it can only come from
 	// a bound that still reads subdirectories.
@@ -357,7 +352,7 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
@@ -365,7 +360,7 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	name := assertAtlasCheckpointWritten(c.TB, dir, "checkpoint")
+	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
 	version, err := strconv.ParseInt(strings.TrimSuffix(name, "_checkpoint.sql"), 10, 64)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version < 29990101000000, qt.IsTrue, qt.Commentf("version=%d", version))
@@ -373,13 +368,13 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
 	applyOut, applyErrOut, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
-	rows := compatRevisionRows(c.TB, freshDB)
+	rows := compatRevisionRows(c, freshDB)
 	c.Assert(rows, qt.HasLen, 1)
 	c.Assert(rows[0].Applied, qt.Equals, int64(rows[0].Total))
 	c.Assert(rows[0].Version, qt.Equals, strings.TrimSuffix(name, "_checkpoint.sql"))
 	// Never replayed into the body, never executed from its own file.
-	c.Assert(sqliteTableCount(c.TB, freshDB, "ckpt_future"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c.TB, freshDB, "ckpt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
 	c.Assert(applyErrOut, qt.Equals,
 		"warning: sub/29990101000000_future.sql is not covered by atlas.sum and will not run; "+
 			"Atlas migrations are top-level files named *.sql\n")
@@ -411,7 +406,7 @@ func TestCompatCommand_MigrateCheckpointNestedTieCannotCollide(t *testing.T) {
 	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
@@ -419,46 +414,46 @@ func TestCompatCommand_MigrateCheckpointNestedTieCannotCollide(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
-	name := assertAtlasCheckpointWritten(c.TB, dir, "checkpoint")
+	name := assertAtlasCheckpointWritten(c, dir, "checkpoint")
 	// One past the top-level history, which is now the whole history.
 	c.Assert(strings.TrimSuffix(name, "_checkpoint.sql"), qt.Equals, "29990101000001")
 
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
 	applyOut, _, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applyOut))
-	rows := compatRevisionRows(c.TB, freshDB)
+	rows := compatRevisionRows(c, freshDB)
 	c.Assert(rows, qt.HasLen, 1)
 	c.Assert(rows[0].Version, qt.Equals, "29990101000001")
-	c.Assert(sqliteCheckpointColumnCount(c.TB, freshDB, "ckpt_users", "tie"), qt.Equals, 0)
+	c.Assert(sqliteCheckpointColumnCount(c, freshDB, "ckpt_users", "tie"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateCheckpointDirFormatIsCaseFolded(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCheckpointAtlasFixture(c.TB, dir)
+	writeCheckpointAtlasFixture(c, dir)
 
 	// A row of the PR's own branch table that nothing held: the mapper lowercases
 	// before matching, so an upper-case spelling selects atlas rather than
 	// falling through to the unknown-format rejection.
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
 		"--dir-format", "ATLAS",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	assertAtlasCheckpointWritten(c.TB, dir, "checkpoint")
+	assertAtlasCheckpointWritten(c, dir, "checkpoint")
 }
 
 func TestCompatCommand_MigrateCheckpointRefusesUnhashedPtahDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCheckpointPtahFixture(c.TB, dir) // never hashed: no sum file at all
+	writeCheckpointPtahFixture(c, dir) // never hashed: no sum file at all
 
 	// The unflagged compat run is the reachable form of this, because the compat
 	// default is atlas. Before the content-shaped guard it converted the
 	// directory at exit 0.
-	out, err := runCompatCheckpoint(c.TB,
+	out, err := runCompatCheckpoint(c,
 		"migrate", "checkpoint",
 		"--dir", dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "shadow.db"),
@@ -496,9 +491,9 @@ func TestCompatCommand_MigrateCheckpointDirFormatRejections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			migrationsDir := filepath.Join(t.TempDir(), "migrations")
-			writeCheckpointAtlasFixture(c.TB, migrationsDir)
+			writeCheckpointAtlasFixture(c, migrationsDir)
 
-			_, err := runCompatCheckpoint(c.TB,
+			_, err := runCompatCheckpoint(c,
 				"migrate", "checkpoint",
 				"--dir", migrationsDir,
 				"--dev-url", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),

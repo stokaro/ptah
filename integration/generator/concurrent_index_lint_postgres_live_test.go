@@ -53,10 +53,10 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
 
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_lint_target")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
-	shadowURL, shadowDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_lint_shadow")
-	defer dropGeneratorTestPostgres(c.TB, admin, shadowDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_lint_target")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
+	shadowURL, shadowDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_lint_shadow")
+	defer dropGeneratorTestPostgres(c, admin, shadowDatabase)
 
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
@@ -69,7 +69,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	// Cycle 1 puts the table into the directory's history, verified on the
 	// shadow like every other cycle here.
 	baseFiles, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir:     writeGeneratorEntities(c.TB, filepath.Join(dir, "base"), membersEntitiesWithoutIndex),
+		GoEntitiesDir:     writeGeneratorEntities(c, filepath.Join(dir, "base"), membersEntitiesWithoutIndex),
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
 		MigrationName:     "create_members",
@@ -94,7 +94,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	c.Assert(err, qt.IsNil)
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir:     writeGeneratorEntities(c.TB, filepath.Join(dir, "indexed"), membersEntitiesWithIndex),
+		GoEntitiesDir:     writeGeneratorEntities(c, filepath.Join(dir, "indexed"), membersEntitiesWithIndex),
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
 		MigrationName:     "add_members_email_index",
@@ -108,7 +108,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	// The lint verdict comes first deliberately. Behind a text assertion it
 	// could never be the finding that names a regression, and a rule that only
 	// ever runs after the bytes were already pinned by hand is decoration.
-	c.Assert(lintGeneratedMigrations(c.TB, migrationsDir), qt.DeepEquals, []string{})
+	c.Assert(lintGeneratedMigrations(c, migrationsDir), qt.DeepEquals, []string{})
 
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
@@ -125,16 +125,16 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsFalse)
 
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -180,7 +180,7 @@ func TestLintFS_BlockingRollbackOfAConcurrentBuildIsReported(t *testing.T) {
 				0o600,
 			), qt.IsNil)
 
-			c.Assert(lintGeneratedMigrations(c.TB, dir), qt.DeepEquals, test.want)
+			c.Assert(lintGeneratedMigrations(c, dir), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -216,8 +216,7 @@ type Member struct {
 
 // lintGeneratedMigrations runs Ptah's linter over a published migration
 // directory and returns the rule code of every finding, in report order.
-func lintGeneratedMigrations(tb testing.TB, migrationsDir string) []string {
-	c := qt.New(tb)
+func lintGeneratedMigrations(c *qt.C, migrationsDir string) []string {
 	c.Helper()
 	findings, err := lint.LintFS(os.DirFS(migrationsDir), lint.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)

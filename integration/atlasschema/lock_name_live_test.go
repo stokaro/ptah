@@ -28,8 +28,8 @@ func TestAcquireApplyLock_NamedLockContendsLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	holder := holdNamedLockSession(c.TB, dbURL, namedLockLive)
-	blocked := connectPostgresForLock(c.TB, dbURL)
+	holder := holdNamedLockSession(c, dbURL, namedLockLive)
+	blocked := connectPostgresForLock(c, dbURL)
 
 	start := time.Now()
 	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, namedLockLive, 200*time.Millisecond)
@@ -43,7 +43,7 @@ func TestAcquireApplyLock_NamedLockContendsLive(t *testing.T) {
 	c.Assert(lock, qt.IsNil)
 	c.Assert(elapsed < 5*time.Second, qt.IsTrue, qt.Commentf("acquire waited %s", elapsed))
 
-	releaseNamedLockSession(c.TB, holder, namedLockLive)
+	releaseNamedLockSession(c, holder, namedLockLive)
 	lock, err = atlasschema.AcquireApplyLock(ctx, blocked, namedLockLive, 5*time.Second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.Supported(), qt.IsTrue)
@@ -56,9 +56,9 @@ func TestAcquireApplyLock_DistinctNamesDoNotContendLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	holder := holdNamedLockSession(c.TB, dbURL, namedLockLive)
-	defer releaseNamedLockSession(c.TB, holder, namedLockLive)
-	other := connectPostgresForLock(c.TB, dbURL)
+	holder := holdNamedLockSession(c, dbURL, namedLockLive)
+	defer releaseNamedLockSession(c, holder, namedLockLive)
+	other := connectPostgresForLock(c, dbURL)
 
 	// The default lock is a different name, so the held lock is irrelevant to
 	// it. This is what makes --lock-name a real choice rather than a label: a
@@ -71,11 +71,10 @@ func TestAcquireApplyLock_DistinctNamesDoNotContendLive(t *testing.T) {
 	c.Assert(lock.Release(), qt.IsNil)
 }
 
-func holdNamedLockSession(tb testing.TB, dbURL, name string) *sql.Conn {
-	c := qt.New(tb)
+func holdNamedLockSession(c *qt.C, dbURL, name string) *sql.Conn {
 	c.Helper()
 	ctx := context.Background()
-	holder := connectPostgresForLock(c.TB, dbURL)
+	holder := connectPostgresForLock(c, dbURL)
 	session, err := holder.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
@@ -84,8 +83,7 @@ func holdNamedLockSession(tb testing.TB, dbURL, name string) *sql.Conn {
 	return session
 }
 
-func releaseNamedLockSession(tb testing.TB, session *sql.Conn, name string) {
-	c := qt.New(tb)
+func releaseNamedLockSession(c *qt.C, session *sql.Conn, name string) {
 	c.Helper()
 	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", dblock.PostgresKey(name))
 }

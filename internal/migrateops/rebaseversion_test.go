@@ -44,8 +44,7 @@ func atlasDir(t *testing.T, files map[string]string) string {
 // neither of them a time; an assertion written as `qt.Equals, "29991231235960"`
 // passes on the defect it was added to catch (stokaro/ptah#938). Parsing is the
 // only check that separates a version that reads back from one that does not.
-func assertNamedInstant(tb testing.TB, dir, description string, version int64) {
-	c := qt.New(tb)
+func assertNamedInstant(c *qt.C, dir, description string, version int64) {
 	c.Helper()
 	name := strconv.FormatInt(version, 10) + "_" + description + ".sql"
 	_, statErr := os.Stat(filepath.Join(dir, name))
@@ -81,14 +80,14 @@ func TestAtlasRebaseBumpsOntoASecondThatExists(t *testing.T) {
 	first, _, err := migrateops.Rebase(dir, 20200101000000, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(first, qt.Equals, int64(30000101000000))
-	assertNamedInstant(c.TB, dir, "users", first)
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	assertNamedInstant(c, dir, "users", first)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 
 	second, _, err := migrateops.Rebase(dir, 29991231235959, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(second, qt.Equals, int64(30000101000001))
-	assertNamedInstant(c.TB, dir, "future", second)
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	assertNamedInstant(c, dir, "future", second)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 }
 
 // TestAtlasRebaseStampsTheCalendarSecond covers the clock rebase reaches for
@@ -113,8 +112,8 @@ func TestAtlasRebaseStampsTheCalendarSecond(t *testing.T) {
 	version, _, err := migrateops.Rebase(dir, 1, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strconv.FormatInt(version, 10), qt.HasLen, 14, qt.Commentf("version %d is not a fourteen-digit stamp", version))
-	assertNamedInstant(c.TB, dir, "init", version)
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	assertNamedInstant(c, dir, "init", version)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 }
 
 // TestPtahRebaseKeepsTheTenDigitVersion is the non-interference control for the
@@ -136,5 +135,5 @@ func TestPtahRebaseKeepsTheTenDigitVersion(t *testing.T) {
 	moved := migrator.GenerateMigrationFileName(version, "first", "up")
 	_, statErr := os.Stat(filepath.Join(dir, moved))
 	c.Assert(statErr, qt.IsNil)
-	validates(c.TB, dir, migrator.MigrationDirFormatPtah)
+	validates(c, dir, migrator.MigrationDirFormatPtah)
 }

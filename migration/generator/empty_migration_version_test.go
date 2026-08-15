@@ -49,8 +49,7 @@ import (
 
 // atlasStamp renders at as the UTC yyyyMMddHHmmss version, so a row can bracket
 // "the clock" without naming a second.
-func atlasStamp(tb testing.TB, at time.Time) int64 {
-	c := qt.New(tb)
+func atlasStamp(c *qt.C, at time.Time) int64 {
 	c.Helper()
 	stamp, err := strconv.ParseInt(at.UTC().Format("20060102150405"), 10, 64)
 	c.Assert(err, qt.IsNil)
@@ -58,8 +57,7 @@ func atlasStamp(tb testing.TB, at time.Time) int64 {
 }
 
 // atlasFileVersions returns the versions of the Atlas migrations in dir.
-func atlasFileVersions(tb testing.TB, dir string) []int64 {
-	c := qt.New(tb)
+func atlasFileVersions(c *qt.C, dir string) []int64 {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -87,13 +85,13 @@ func TestGenerateEmptyMigration_AtlasStampsTheClockBesideAFutureMigration(t *tes
 		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600,
 	), qt.IsNil)
 
-	before := atlasStamp(c.TB, time.Now())
+	before := atlasStamp(c, time.Now())
 	files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "hello",
 		OutputDir:     dir,
 		DirFormat:     migrator.MigrationDirFormatAtlas,
 	})
-	after := atlasStamp(c.TB, time.Now())
+	after := atlasStamp(c, time.Now())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files.Files, qt.HasLen, 1)
@@ -146,7 +144,7 @@ func TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbor(t *testing.T) {
 	for _, name := range names {
 		c.Assert(strings.HasPrefix(name, "-"), qt.IsFalse, qt.Commentf("name %q", name))
 	}
-	c.Assert(atlasFileVersions(c.TB, dir), qt.HasLen, 2)
+	c.Assert(atlasFileVersions(c, dir), qt.HasLen, 2)
 }
 
 // TestGenerateEmptyMigration_PtahRefusesPastTheTenDigitCeiling is the same class

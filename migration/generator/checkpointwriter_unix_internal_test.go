@@ -189,14 +189,14 @@ func TestCheckpointWritersReplacedDirectoryCannotRedirectTheWrite(t *testing.T) 
 			// The hostile step, staged in the window the binding defends: after the
 			// directory is bound and before the transaction writes through it.
 			var retained string
-			afterMigrationWriterBound = func() { retained = replaceWithSymlink(c.TB, selected, decoy) }
+			afterMigrationWriterBound = func() { retained = replaceWithSymlink(c, selected, decoy) }
 			defer func() { afterMigrationWriterBound = nil }()
 
 			err := test.write(selected)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(generatorDirNames(c.TB, retained), qt.DeepEquals, test.wantRetained)
-			c.Assert(generatorDirNames(c.TB, decoy), qt.HasLen, 0)
+			c.Assert(generatorDirNames(c, retained), qt.DeepEquals, test.wantRetained)
+			c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
 		})
 	}
 }
@@ -248,7 +248,7 @@ func TestCheckpointWritersCreateAMissingDirectoryThroughTheBoundParent(t *testin
 
 			var retained string
 			afterMigrationWriterBound = func() {
-				retained = replaceWithSymlink(c.TB, filepath.Join(root, "nest"), decoy)
+				retained = replaceWithSymlink(c, filepath.Join(root, "nest"), decoy)
 			}
 			defer func() { afterMigrationWriterBound = nil }()
 
@@ -256,10 +256,10 @@ func TestCheckpointWritersCreateAMissingDirectoryThroughTheBoundParent(t *testin
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(
-				generatorDirNames(c.TB, filepath.Join(retained, "migrations")),
+				generatorDirNames(c, filepath.Join(retained, "migrations")),
 				qt.DeepEquals, test.wantRetained,
 			)
-			c.Assert(generatorDirNames(c.TB, decoy), qt.HasLen, 0)
+			c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
 		})
 	}
 }
@@ -358,7 +358,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 			err := test.write(selected)
 
 			test.check(c, err)
-			c.Assert(generatorDirNames(c.TB, selected), qt.DeepEquals, test.wantDir)
+			c.Assert(generatorDirNames(c, selected), qt.DeepEquals, test.wantDir)
 			// The protected state, not the message: the intruder's bytes survive.
 			body, readErr := os.ReadFile(filepath.Join(selected, occupied))
 			c.Assert(readErr, qt.IsNil)
@@ -410,7 +410,7 @@ func TestGenerateEmptyMigrationStepsPastADestinationTakenAfterTheNameWasChosen(t
 	c.Assert(occupied, qt.Equals, atlasEmptyMigrationFileName(29990101000001, "added"))
 	c.Assert(files.Files, qt.HasLen, 1)
 	c.Assert(files.Files[0].Version, qt.Equals, int64(29990101000002))
-	c.Assert(generatorDirNames(c.TB, selected), qt.DeepEquals, []string{
+	c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{
 		atlasEmptyMigrationFileName(29990101000001, "added"),
 		atlasEmptyMigrationFileName(29990101000002, "added"),
 		"atlas.sum",

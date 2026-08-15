@@ -73,8 +73,7 @@ func atlasFileLoaders() []atlasFileLoader {
 // writeAtlasFileConfig writes an atlas.hcl whose env URL is the contents of the
 // named file, and returns its path. The value lands in a field the caller can
 // read back, so a successful read is provable rather than merely not an error.
-func writeAtlasFileConfig(tb testing.TB, dir, argument string) string {
-	c := qt.New(tb)
+func writeAtlasFileConfig(c *qt.C, dir, argument string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -89,8 +88,7 @@ func quoteHCL(value string) string {
 
 // plantOutsideSecret writes the out-of-directory file every escape below aims
 // at, one level above the config directory, and returns its absolute path.
-func plantOutsideSecret(tb testing.TB, base string) string {
-	c := qt.New(tb)
+func plantOutsideSecret(c *qt.C, base string) string {
 	c.Helper()
 
 	path := filepath.Join(base, "secret.txt")
@@ -98,8 +96,7 @@ func plantOutsideSecret(tb testing.TB, base string) string {
 	return path
 }
 
-func symlink(tb testing.TB, target, link string) {
-	c := qt.New(tb)
+func symlink(c *qt.C, target, link string) {
 	c.Helper()
 
 	c.Assert(os.Symlink(target, link), qt.IsNil)
@@ -123,29 +120,29 @@ func escapeParentTraversal(c *qt.C, _, outside string) string {
 func escapeSymlinkedFile(c *qt.C, dir, outside string) string {
 	c.Helper()
 
-	symlink(c.TB, outside, filepath.Join(dir, "link.txt"))
+	symlink(c, outside, filepath.Join(dir, "link.txt"))
 	return "link.txt"
 }
 
 func escapeSymlinkedRelativeFile(c *qt.C, dir, outside string) string {
 	c.Helper()
 
-	symlink(c.TB, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "relative.link"))
+	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "relative.link"))
 	return "relative.link"
 }
 
 func escapeSymlinkedDirectory(c *qt.C, dir, outside string) string {
 	c.Helper()
 
-	symlink(c.TB, filepath.Dir(outside), filepath.Join(dir, "outdir"))
+	symlink(c, filepath.Dir(outside), filepath.Join(dir, "outdir"))
 	return "outdir/" + filepath.Base(outside)
 }
 
 func escapeSymlinkChain(c *qt.C, dir, outside string) string {
 	c.Helper()
 
-	symlink(c.TB, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "second.link"))
-	symlink(c.TB, "second.link", filepath.Join(dir, "first.link"))
+	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "second.link"))
+	symlink(c, "second.link", filepath.Join(dir, "first.link"))
 	return "first.link"
 }
 
@@ -158,9 +155,9 @@ func escapeLongSymlinkChain(c *qt.C, dir, outside string) string {
 
 	const hops = 6
 	for hop := range hops - 1 {
-		symlink(c.TB, hopLinkName(hop+1), filepath.Join(dir, hopLinkName(hop)))
+		symlink(c, hopLinkName(hop+1), filepath.Join(dir, hopLinkName(hop)))
 	}
-	symlink(c.TB, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, hopLinkName(hops-1)))
+	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, hopLinkName(hops-1)))
 	return hopLinkName(0)
 }
 
@@ -177,7 +174,7 @@ func escapeSymlinkReentry(c *qt.C, dir, _ string) string {
 
 	inside := filepath.Join(dir, "inside.txt")
 	c.Assert(os.WriteFile(inside, []byte(insideFileMarker), 0o600), qt.IsNil)
-	symlink(c.TB, filepath.Join("..", filepath.Base(dir), "inside.txt"), filepath.Join(dir, "reentry.link"))
+	symlink(c, filepath.Join("..", filepath.Base(dir), "inside.txt"), filepath.Join(dir, "reentry.link"))
 	return "reentry.link"
 }
 
@@ -243,8 +240,8 @@ func TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory(t *testing.T) {
 				base := t.TempDir()
 				dir := filepath.Join(base, "project")
 				c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-				outside := plantOutsideSecret(c.TB, base)
-				path := writeAtlasFileConfig(c.TB, dir, tt.plant(c, dir, outside))
+				outside := plantOutsideSecret(c, base)
+				path := writeAtlasFileConfig(c, dir, tt.plant(c, dir, outside))
 
 				cfg, err := loader.load(c, path)
 
@@ -296,8 +293,8 @@ func TestAtlasFileSandboxReadsInsideTheConfigDirectory(t *testing.T) {
 				base := t.TempDir()
 				dir := filepath.Join(base, "project")
 				c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-				plantOutsideSecret(c.TB, base)
-				path := writeAtlasFileConfig(c.TB, dir, tt.plant(c, dir))
+				plantOutsideSecret(c, base)
+				path := writeAtlasFileConfig(c, dir, tt.plant(c, dir))
 
 				cfg, err := loader.load(c, path)
 
@@ -334,7 +331,7 @@ func insideSiblingSymlink(c *qt.C, dir string) string {
 	c.Helper()
 
 	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	symlink(c.TB, "url.txt", filepath.Join(dir, "url.link"))
+	symlink(c, "url.txt", filepath.Join(dir, "url.link"))
 	return "url.link"
 }
 
@@ -343,14 +340,13 @@ func insideUpwardSymlink(c *qt.C, dir string) string {
 
 	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
 	c.Assert(os.Mkdir(filepath.Join(dir, "conf"), 0o700), qt.IsNil)
-	symlink(c.TB, filepath.Join("..", "url.txt"), filepath.Join(dir, "conf", "url.link"))
+	symlink(c, filepath.Join("..", "url.txt"), filepath.Join(dir, "conf", "url.link"))
 	return "conf/url.link"
 }
 
 // writeAtlasFilesetConfig writes an atlas.hcl whose schema sources are a
 // fileset() glob, so the resolved list is readable from the parsed config.
-func writeAtlasFilesetConfig(tb testing.TB, dir, glob string) string {
-	c := qt.New(tb)
+func writeAtlasFilesetConfig(c *qt.C, dir, glob string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -399,9 +395,9 @@ func TestAtlasFilesetSandboxRefusesEscapingEntries(t *testing.T) {
 			base := t.TempDir()
 			dir := filepath.Join(base, "project")
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-			outside := plantOutsideSchema(c.TB, base)
+			outside := plantOutsideSchema(c, base)
 			tt.plant(c, dir, outside)
-			path := writeAtlasFilesetConfig(c.TB, dir, tt.glob)
+			path := writeAtlasFilesetConfig(c, dir, tt.glob)
 
 			cfg, err := projectconfig.LoadAtlasFile(path, "local")
 
@@ -419,11 +415,11 @@ func TestAtlasFilesetResolvesEntriesInsideTheConfigDirectory(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "project")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	plantOutsideSchema(c.TB, base)
+	plantOutsideSchema(c, base)
 	c.Assert(os.Mkdir(filepath.Join(dir, "schema"), 0o700), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "schema", "a.hcl"), []byte("schema \"main\" {\n}\n"), 0o600), qt.IsNil)
-	symlink(c.TB, "a.hcl", filepath.Join(dir, "schema", "b.hcl"))
-	path := writeAtlasFilesetConfig(c.TB, dir, "schema/*.hcl")
+	symlink(c, "a.hcl", filepath.Join(dir, "schema", "b.hcl"))
+	path := writeAtlasFilesetConfig(c, dir, "schema/*.hcl")
 
 	cfg, err := projectconfig.LoadAtlasFile(path, "local")
 
@@ -431,8 +427,7 @@ func TestAtlasFilesetResolvesEntriesInsideTheConfigDirectory(t *testing.T) {
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema/a.hcl", "file://schema/b.hcl"})
 }
 
-func plantOutsideSchema(tb testing.TB, base string) string {
-	c := qt.New(tb)
+func plantOutsideSchema(c *qt.C, base string) string {
 	c.Helper()
 
 	path := filepath.Join(base, "leaked.hcl")
@@ -443,14 +438,14 @@ func plantOutsideSchema(tb testing.TB, base string) string {
 func plantEscapingFilesetEntry(c *qt.C, dir, outside string) {
 	c.Helper()
 
-	symlink(c.TB, outside, filepath.Join(dir, "leaked.hcl"))
+	symlink(c, outside, filepath.Join(dir, "leaked.hcl"))
 }
 
 func plantEscapingNestedFilesetEntry(c *qt.C, dir, outside string) {
 	c.Helper()
 
 	c.Assert(os.Mkdir(filepath.Join(dir, "nested"), 0o700), qt.IsNil)
-	symlink(c.TB, outside, filepath.Join(dir, "nested", "leaked.hcl"))
+	symlink(c, outside, filepath.Join(dir, "nested", "leaked.hcl"))
 }
 
 func plantSiblingSchema(c *qt.C, _, _ string) {

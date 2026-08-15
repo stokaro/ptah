@@ -83,7 +83,7 @@ func TestColumnExpressionConstructors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args := renderWhere(c.TB, tt.expr)
+			sql, args := renderWhere(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, tt.wantArgs)
 		})

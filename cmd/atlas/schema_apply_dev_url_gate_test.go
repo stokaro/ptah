@@ -17,8 +17,7 @@ import (
 // and under --auto-approve alike.
 const unreachableDevURL = "sqlite:///nonexistent-dir-940-xyz/dev.db"
 
-func writeSchemaApplyGateFixture(tb testing.TB, dir, table string) string {
-	c := qt.New(tb)
+func writeSchemaApplyGateFixture(c *qt.C, dir, table string) string {
 	c.Helper()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath,
@@ -26,8 +25,7 @@ func writeSchemaApplyGateFixture(tb testing.TB, dir, table string) string {
 	return schemaPath
 }
 
-func runSchemaApply(tb testing.TB, args ...string) (string, error) {
-	c := qt.New(tb)
+func runSchemaApply(c *qt.C, args ...string) (string, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -74,9 +72,9 @@ func TestSchemaApplyDryRunRehearsesOnDevDatabase(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
-			schemaPath := writeSchemaApplyGateFixture(c.TB, dir, "rehearsal_users")
+			schemaPath := writeSchemaApplyGateFixture(c, dir, "rehearsal_users")
 
-			out, err := runSchemaApply(c.TB,
+			out, err := runSchemaApply(c,
 				"--url", "sqlite://"+dbPath,
 				"--to", "file://"+schemaPath,
 				"--dev-url", test.devURL(dir),
@@ -84,7 +82,7 @@ func TestSchemaApplyDryRunRehearsesOnDevDatabase(t *testing.T) {
 			)
 
 			test.assert(c, out, err)
-			c.Assert(sqliteTableCount(c.TB, dbPath, "rehearsal_users"), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
 		})
 	}
 }
@@ -96,15 +94,15 @@ func TestSchemaApplyDryRunRehearsesOnDevDatabase(t *testing.T) {
 func TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	schemaPath := writeSchemaApplyGateFixture(c.TB, dir, "agree_users")
+	schemaPath := writeSchemaApplyGateFixture(c, dir, "agree_users")
 
-	dryOut, dryErr := runSchemaApply(c.TB,
+	dryOut, dryErr := runSchemaApply(c,
 		"--url", "sqlite://"+filepath.Join(dir, "dry.db"),
 		"--to", "file://"+schemaPath,
 		"--dev-url", unreachableDevURL,
 		"--dry-run",
 	)
-	applyOut, applyErr := runSchemaApply(c.TB,
+	applyOut, applyErr := runSchemaApply(c,
 		"--url", "sqlite://"+filepath.Join(dir, "apply.db"),
 		"--to", "file://"+schemaPath,
 		"--dev-url", unreachableDevURL,
@@ -113,7 +111,7 @@ func TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase(t *testing.T) {
 
 	c.Assert(dryErr, qt.IsNotNil, qt.Commentf("%s", dryOut))
 	c.Assert(applyErr, qt.IsNotNil, qt.Commentf("%s", applyOut))
-	c.Assert(sqliteTableCount(c.TB, filepath.Join(dir, "apply.db"), "agree_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, filepath.Join(dir, "apply.db"), "agree_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyRequiresDevURLForNonDatabaseSource is the regression test for
@@ -135,15 +133,15 @@ func TestSchemaApplyRequiresDevURLForNonDatabaseSource(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
-			schemaPath := writeSchemaApplyGateFixture(c.TB, dir, "gate_users")
+			schemaPath := writeSchemaApplyGateFixture(c, dir, "gate_users")
 
-			out, err := runSchemaApply(c.TB, append([]string{
+			out, err := runSchemaApply(c, append([]string{
 				"--url", "sqlite://" + dbPath,
 				"--to", "file://" + schemaPath,
 			}, test.args...)...)
 
 			c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`, qt.Commentf("%s", out))
-			c.Assert(sqliteTableCount(c.TB, dbPath, "gate_users"), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c, dbPath, "gate_users"), qt.Equals, 0)
 		})
 	}
 }
@@ -156,9 +154,9 @@ func TestSchemaApplyDatabaseSourceNeedsNoDevURL(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.db")
 	targetPath := filepath.Join(dir, "target.db")
-	schemaPath := writeSchemaApplyGateFixture(c.TB, dir, "source_users")
+	schemaPath := writeSchemaApplyGateFixture(c, dir, "source_users")
 
-	seedOut, seedErr := runSchemaApply(c.TB,
+	seedOut, seedErr := runSchemaApply(c,
 		"--url", "sqlite://"+sourcePath,
 		"--to", "file://"+schemaPath,
 		"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
@@ -166,14 +164,14 @@ func TestSchemaApplyDatabaseSourceNeedsNoDevURL(t *testing.T) {
 	)
 	c.Assert(seedErr, qt.IsNil, qt.Commentf("%s", seedOut))
 
-	out, err := runSchemaApply(c.TB,
+	out, err := runSchemaApply(c,
 		"--url", "sqlite://"+targetPath,
 		"--to", "sqlite://"+sourcePath,
 		"--auto-approve",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c.TB, targetPath, "source_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, targetPath, "source_users"), qt.Equals, 1)
 }
 
 // TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning pins the escape hatch item
@@ -185,14 +183,14 @@ func TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning(t *testing.T) {
 	allowSchemaApplyWithoutDevURL(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	schemaPath := writeSchemaApplyGateFixture(c.TB, dir, "restored_users")
+	schemaPath := writeSchemaApplyGateFixture(c, dir, "restored_users")
 
-	out, err := runSchemaApply(c.TB,
+	out, err := runSchemaApply(c,
 		"--url", "sqlite://"+dbPath,
 		"--to", "file://"+schemaPath,
 		"--auto-approve",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c.TB, dbPath, "restored_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "restored_users"), qt.Equals, 1)
 }

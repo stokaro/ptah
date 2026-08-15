@@ -53,16 +53,14 @@ func closeOpenedRoot(opened *pathguard.OpenedDirectory) error {
 }
 
 // swapSkeletonSymlink replaces link so it points at target.
-func swapSkeletonSymlink(tb testing.TB, link, target string) {
-	c := qt.New(tb)
+func swapSkeletonSymlink(c *qt.C, link, target string) {
 	c.Helper()
 	c.Assert(os.Remove(link), qt.IsNil)
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 }
 
 // skeletonDirNames lists the base names in dir, or nil when dir is absent.
-func skeletonDirNames(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func skeletonDirNames(c *qt.C, dir string) []string {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -150,7 +148,7 @@ func TestWriteSkeletonMigration_ReplacedDirectoryCannotRedirectTheWrite(t *testi
 			defer func() { _ = closeOpenedRoot(opened) }()
 
 			link, target := test.swapTo(root, decoy)
-			afterSkeletonDirBound = func() { swapSkeletonSymlink(c.TB, link, target) }
+			afterSkeletonDirBound = func() { swapSkeletonSymlink(c, link, target) }
 			defer func() { afterSkeletonDirBound = nil }()
 
 			written, err := WriteSkeletonMigration(opened, selected, atlasmigrateimport.FormatGolangMigrate, "added")
@@ -159,8 +157,8 @@ func TestWriteSkeletonMigration_ReplacedDirectoryCannotRedirectTheWrite(t *testi
 			c.Assert(written, qt.HasLen, 2)
 			// The bound directory holds the pair plus atlas.sum, and the decoy
 			// holds nothing this run put there.
-			c.Assert(skeletonDirNames(c.TB, bound), qt.HasLen, 3)
-			c.Assert(skeletonDirNames(c.TB, decoy), qt.HasLen, test.wantDecoyEntries)
+			c.Assert(skeletonDirNames(c, bound), qt.HasLen, 3)
+			c.Assert(skeletonDirNames(c, decoy), qt.HasLen, test.wantDecoyEntries)
 		})
 	}
 }

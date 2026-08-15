@@ -76,10 +76,10 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 			defer adminDB.Close()
 
 			testDBName := fmt.Sprintf("ptah_array_roundtrip_e2e_%d", time.Now().UnixNano())
-			createE2EDatabase(c.TB, ctx, adminDB, testDBName)
-			defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
+			createE2EDatabase(c, ctx, adminDB, testDBName)
+			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
-			scopedURL := replaceDatabaseName(c.TB, dbURL, testDBName)
+			scopedURL := replaceDatabaseName(c, dbURL, testDBName)
 			setupDB, err := sql.Open("pgx", scopedURL)
 			c.Assert(err, qt.IsNil)
 			defer setupDB.Close()
@@ -104,7 +104,7 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 				"CREATE TABLE logs_again (records "+converted.Fields[0].Type+" NOT NULL)")
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(livePostgresColumnFormat(c.TB, ctx, setupDB, "logs_again", "records"),
+			c.Assert(livePostgresColumnFormat(c, ctx, setupDB, "logs_again", "records"),
 				qt.Equals, test.want)
 		})
 	}
@@ -124,8 +124,7 @@ func postgresColumnType(schema *dbschematypes.DBSchema, table, column string) st
 }
 
 // livePostgresColumnFormat asks the server how it spells a column's type.
-func livePostgresColumnFormat(tb testing.TB, ctx context.Context, db *sql.DB, table, column string) string {
-	c := qt.New(tb)
+func livePostgresColumnFormat(c *qt.C, ctx context.Context, db *sql.DB, table, column string) string {
 	c.Helper()
 	var formatted string
 	err := db.QueryRowContext(ctx, `

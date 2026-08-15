@@ -27,8 +27,8 @@ func TestMigrateLintMissingDirectoryDiagnosticsE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
-	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtah(c, ctx, repoRoot, nativeBinary)
 
 	compatCases := []lintMissingDirectoryProcessCase{
 		{
@@ -97,7 +97,7 @@ func TestMigrateLintMissingDirectoryDiagnosticsE2E(t *testing.T) {
 			stdout, stderr, err := runCLIProcess(ctx, root, compatBinary, test.args(root)...)
 			wantStderr := "Error: sql/migrate: stat " + test.wantPath(root) + ": no such file or directory\n"
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, wantStderr)
 			c.Assert(stderr, qt.HasLen, len(wantStderr))
@@ -109,7 +109,7 @@ func TestMigrateLintMissingDirectoryDiagnosticsE2E(t *testing.T) {
 			"migrations", "lint", "--dir", "nope",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 2)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
 			"error: migrations directory nope: stat nope: no such file or directory\n")

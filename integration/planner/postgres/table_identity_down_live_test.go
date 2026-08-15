@@ -50,8 +50,8 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := createRLSEnableDatabase(c.TB, adminURL)
-			executeSQL(c.TB, dbURL, []string{
+			dbURL := createRLSEnableDatabase(c, adminURL)
+			executeSQL(c, dbURL, []string{
 				`CREATE TABLE users (id integer PRIMARY KEY, email text, legacy_note text)`,
 				`INSERT INTO users (id, email, legacy_note) VALUES (1, 'a@example.com', 'keep')`,
 			})
@@ -62,22 +62,21 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 			forward := schemadiff.CompareWithDialect(generated, database, "postgres")
 			up, err := planner.GenerateSchemaDiffSQLStatements(forward, generated, "postgres")
 			c.Assert(err, qt.IsNil)
-			executeSQL(c.TB, dbURL, up)
-			c.Assert(usersColumns(c.TB, dbURL), qt.DeepEquals, []string{"email", "id"})
+			executeSQL(c, dbURL, up)
+			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id"})
 
 			down := planDownStatements(c, generated, database)
 			c.Logf("down plan:\n%s", strings.Join(down, "\n"))
-			executeSQL(c.TB, dbURL, down)
-			c.Assert(usersColumns(c.TB, dbURL), qt.DeepEquals, []string{"email", "id", "legacy_note"})
+			executeSQL(c, dbURL, down)
+			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id", "legacy_note"})
 		})
 	}
 }
 
 // usersColumns reports the columns public.users holds, sorted by name.
-func usersColumns(tb testing.TB, dbURL string) []string {
-	c := qt.New(tb)
+func usersColumns(c *qt.C, dbURL string) []string {
 	c.Helper()
-	return queryStrings(c.TB, dbURL,
+	return queryStrings(c, dbURL,
 		`SELECT column_name FROM information_schema.columns
 		  WHERE table_schema = 'public' AND table_name = 'users'
 		  ORDER BY column_name`)
@@ -120,12 +119,12 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := createRLSEnableDatabase(c.TB, adminURL)
-			executeSQL(c.TB, dbURL, []string{
+			dbURL := createRLSEnableDatabase(c, adminURL)
+			executeSQL(c, dbURL, []string{
 				`CREATE SCHEMA app`,
 				`CREATE DOMAIN app.zip AS varchar(5)`,
 			})
-			c.Assert(domainNames(c.TB, dbURL), qt.DeepEquals, []string{"app.zip"})
+			c.Assert(domainNames(c, dbURL), qt.DeepEquals, []string{"app.zip"})
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				modifiedZipDomainDiff(),
@@ -134,17 +133,16 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
-			executeSQL(c.TB, dbURL, statements)
-			c.Assert(domainNames(c.TB, dbURL), qt.DeepEquals, test.wantTypes)
+			executeSQL(c, dbURL, statements)
+			c.Assert(domainNames(c, dbURL), qt.DeepEquals, test.wantTypes)
 		})
 	}
 }
 
 // domainNames reports every user-schema domain in pg_type as `schema.name`.
-func domainNames(tb testing.TB, dbURL string) []string {
-	c := qt.New(tb)
+func domainNames(c *qt.C, dbURL string) []string {
 	c.Helper()
-	return queryStrings(c.TB, dbURL,
+	return queryStrings(c, dbURL,
 		`SELECT n.nspname || '.' || t.typname
 		   FROM pg_type t
 		   JOIN pg_namespace n ON n.oid = t.typnamespace

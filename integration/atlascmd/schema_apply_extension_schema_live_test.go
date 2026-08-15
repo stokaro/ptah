@@ -37,7 +37,7 @@ extension "pgcrypto" {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
 	c.Assert(first, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 	c.Assert(second, qt.Contains, "Schema is synced, no changes to be made")
-	c.Assert(compatExtensionInstallations(c.TB, targetURL), qt.DeepEquals, []string{"extensions.pgcrypto"})
+	c.Assert(compatExtensionInstallations(c, targetURL), qt.DeepEquals, []string{"extensions.pgcrypto"})
 }
 
 // TestCompatSchemaApplyRefusesDeclaredSystemSchemaBeforePlanningPostgres pins
@@ -130,7 +130,7 @@ func TestCompatSchemaDiffRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *te
 			c.Assert(os.WriteFile(fromPath, []byte(test.from), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(toPath, []byte(test.to), 0o600), qt.IsNil)
 
-			out, err := executeCompatSchemaDiff(c.TB,
+			out, err := executeCompatSchemaDiff(c,
 				"--from", "file://"+fromPath,
 				"--to", "file://"+toPath,
 				"--dev-url", "postgres://invalid.invalid/db",
@@ -149,11 +149,11 @@ func TestCompatSchemaDiffRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *te
 func TestCompatSchemaDiffRefusesUnsafeIntrospectedSystemSchemasPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
-	targetURL := createDisposableDatabase(c.TB, dbURL, "ptah_system_diff_"+uniqueScopeSuffix())
+	targetURL := createDisposableDatabase(c, dbURL, "ptah_system_diff_"+uniqueScopeSuffix())
 
 	for _, schema := range []string{"pg_catalog", "information_schema"} {
 		c.Run(schema, func(c *qt.C) {
-			out, err := executeCompatSchemaDiff(c.TB,
+			out, err := executeCompatSchemaDiff(c,
 				"--from", targetURL,
 				"--to", targetURL,
 				"--dev-url", targetURL,
@@ -178,8 +178,8 @@ func TestCompatSchemaDiffMigrationReplayRefusesAuthoredSystemSchemaPostgres(t *t
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	currentURL := createDisposableDatabase(c.TB, dbURL, "ptah_system_replay_current_"+suffix)
-	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_system_replay_dev_"+suffix)
+	currentURL := createDisposableDatabase(c, dbURL, "ptah_system_replay_current_"+suffix)
+	devURL := createDisposableDatabase(c, dbURL, "ptah_system_replay_dev_"+suffix)
 	migrationsDir := t.TempDir()
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "20260813000000_system.sql"),
@@ -189,7 +189,7 @@ func TestCompatSchemaDiffMigrationReplayRefusesAuthoredSystemSchemaPostgres(t *t
 	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
-	out, err := executeCompatSchemaDiff(c.TB,
+	out, err := executeCompatSchemaDiff(c,
 		"--from", currentURL,
 		"--to", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -200,8 +200,7 @@ func TestCompatSchemaDiffMigrationReplayRefusesAuthoredSystemSchemaPostgres(t *t
 	c.Assert(out, qt.Not(qt.Contains), "CREATE SCHEMA IF NOT EXISTS")
 }
 
-func compatExtensionInstallations(tb testing.TB, dbURL string) []string {
-	c := qt.New(tb)
+func compatExtensionInstallations(c *qt.C, dbURL string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)

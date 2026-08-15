@@ -27,7 +27,7 @@ const presetSource = "../../core/platform/capability/capability.go"
 func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 	c := qt.New(t)
 
-	shipped := presetConstructors(c.TB)
+	shipped := presetConstructors(c)
 	c.Assert(len(shipped) > 8, qt.IsTrue,
 		qt.Commentf("only %d presets were read out of %s; the parse is broken, not the matrix",
 			len(shipped), presetSource))
@@ -57,7 +57,7 @@ func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 	c := qt.New(t)
 
-	shipped := presetConstructors(c.TB)
+	shipped := presetConstructors(c)
 	c.Assert(capabilityprobe.PresetsWithoutCell, qt.Not(qt.HasLen), 0)
 	for name, reason := range capabilityprobe.PresetsWithoutCell {
 		t.Run(name, func(t *testing.T) {
@@ -73,8 +73,7 @@ func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 // presetConstructors returns the name of every exported function in the
 // capability package that takes nothing and returns a Capabilities set, which
 // is the shape every preset has.
-func presetConstructors(tb testing.TB) []string {
-	c := qt.New(tb)
+func presetConstructors(c *qt.C) []string {
 	c.Helper()
 
 	parsed, err := parser.ParseFile(token.NewFileSet(), presetSource, nil, 0)

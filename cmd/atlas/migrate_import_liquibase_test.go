@@ -24,7 +24,7 @@ func TestCompatMigrateImport_LiquibaseConventionalRoundTrip(t *testing.T) {
 	source := filepath.Join(root, "source")
 	target := filepath.Join(root, "target")
 	dbPath := filepath.Join(root, "apply.db")
-	writeConvertedApplyDir(c.TB, source, map[string]string{
+	writeConvertedApplyDir(c, source, map[string]string{
 		"1_numbered.sql": `--liquibase formatted sql
 --changeset numbered:first
 CREATE TABLE numbered_table (id INTEGER PRIMARY KEY);
@@ -58,9 +58,9 @@ CREATE TABLE conventional_table (id INTEGER PRIMARY KEY);
 
 	applyOut, applyErrOut, applyErr := compatApply(target, dbPath)
 	c.Assert(applyErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applyOut, applyErrOut))
-	c.Assert(sqliteTableCount(c.TB, dbPath, "numbered_table"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "conventional_table"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(sqliteTableCount(c, dbPath, "numbered_table"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "conventional_table"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 // TestCompatMigrateImport_LiquibasePadsGlobalVersions is the order control for
@@ -73,7 +73,7 @@ func TestCompatMigrateImport_LiquibasePadsGlobalVersions(t *testing.T) {
 	source := filepath.Join(root, "source")
 	target := filepath.Join(root, "target")
 	dbPath := filepath.Join(root, "apply.db")
-	writeConvertedApplyDir(c.TB, source, map[string]string{
+	writeConvertedApplyDir(c, source, map[string]string{
 		"changelog.sql": `--liquibase formatted sql
 --changeset order:step-1
 CREATE TABLE ordered_steps (step INTEGER PRIMARY KEY);
@@ -129,16 +129,16 @@ SELECT 11 WHERE (SELECT count(*) FROM ordered_steps) = 10;
 	applyOut, applyErrOut, applyErr := compatApply(target, dbPath)
 	c.Assert(applyErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applyOut, applyErrOut))
 	c.Assert(applyOut, qt.Contains, "Migration complete. Current version: 11")
-	c.Assert(sqliteRowCount(c.TB, dbPath, "ordered_steps"), qt.Equals, 11)
-	c.Assert(sqliteAtlasRevisionVersionsNumeric(c.TB, dbPath), qt.DeepEquals, []string{
+	c.Assert(sqliteRowCount(c, dbPath, "ordered_steps"), qt.Equals, 11)
+	c.Assert(sqliteAtlasRevisionVersionsNumeric(c, dbPath), qt.DeepEquals, []string{
 		"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
 	})
 }
 
 func TestCompatMigrateImport_LiquibaseMixedInvalidRefusesBeforeTargetCreation(t *testing.T) {
 	c := qt.New(t)
-	source, target := importDirs(c.TB)
-	writeConvertedApplyDir(c.TB, source, map[string]string{
+	source, target := importDirs(c)
+	writeConvertedApplyDir(c, source, map[string]string{
 		"1_headerless.sql": "CREATE TABLE skipped_table (id INTEGER PRIMARY KEY);\n",
 		"changelog.sql": `--liquibase formatted sql
 --changeset conventional:valid
@@ -151,11 +151,10 @@ CREATE TABLE valid_table (id INTEGER PRIMARY KEY);
 	c.Assert(err, qt.ErrorMatches, `parse liquibase source file 1_headerless\.sql: no liquibase formatted-SQL changelogs .* found`)
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Matches, `Error: parse liquibase source file 1_headerless\.sql: no liquibase formatted-SQL changelogs .* found\n`)
-	assertNothingImported(c.TB, target)
+	assertNothingImported(c, target)
 }
 
-func sqliteAtlasRevisionVersionsNumeric(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func sqliteAtlasRevisionVersionsNumeric(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)

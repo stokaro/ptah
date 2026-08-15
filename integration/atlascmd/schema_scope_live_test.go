@@ -77,7 +77,7 @@ func livePostgresTableExists(t *testing.T, dbURL, schema, table string) bool {
 func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
-	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_scope_apply_dev_"+uniqueScopeSuffix())
+	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_apply_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255)\n);\n"
@@ -108,7 +108,7 @@ func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
-	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_scope_dependency_dev_"+uniqueScopeSuffix())
+	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_dependency_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	// The desired state declares both tables; the schema scope selects only
@@ -193,7 +193,7 @@ table "users" {
 `
 	c.Assert(os.WriteFile(schemaPath, []byte(desired), 0o600), qt.IsNil)
 
-	out := runCompatSchemaDiff(c.TB,
+	out := runCompatSchemaDiff(c,
 		"--from", dbURL,
 		"--to", "file://"+schemaPath,
 		"--schema", appSchema,
@@ -216,9 +216,9 @@ func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres
 	c := qt.New(t)
 	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	targetURL := createDisposableDatabase(c.TB, adminURL, "ptah_scope_apply_support_target_"+suffix)
-	devURL := createDisposableDatabase(c.TB, adminURL, "ptah_scope_apply_support_dev_"+suffix)
-	seedDatabase(c.TB, targetURL,
+	targetURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_target_"+suffix)
+	devURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_dev_"+suffix)
+	seedDatabase(c, targetURL,
 		`CREATE SCHEMA app`,
 		`CREATE TABLE app.users (id bigint PRIMARY KEY)`,
 		`CREATE EXTENSION pgcrypto`,

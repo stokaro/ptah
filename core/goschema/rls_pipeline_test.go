@@ -73,7 +73,7 @@ type Product struct {
 	defer cleanupTestFile(testFile)
 
 	// Parse the file
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 
 	// Verify functions were parsed correctly
 	c.Assert(database.Functions, qt.HasLen, 2)
@@ -203,7 +203,7 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 	defer cleanupTestFile(testFile)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 
 	// Verify that the functions and RLS policies were parsed
 	c.Assert(database.Functions, qt.HasLen, 1)

@@ -40,7 +40,7 @@ func TestMySQLLiveConnection_DefaultSchemaIsTheConnectedDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			databaseURL := dbtarget.URL(c, test.engine)
-			wantSchema := databaseNameFromURL(c.TB, databaseURL)
+			wantSchema := databaseNameFromURL(c, databaseURL)
 
 			conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)
@@ -64,8 +64,7 @@ func TestMySQLLiveConnection_DefaultSchemaIsTheConnectedDatabase(t *testing.T) {
 // databaseNameFromURL reads the database through the same semantic URL API used
 // by the product. In particular, it supports the driver's tcp(host:port) form,
 // which net/url rejects before it reaches the database path.
-func databaseNameFromURL(tb testing.TB, rawURL string) string {
-	c := qt.New(tb)
+func databaseNameFromURL(c *qt.C, rawURL string) string {
 	c.Helper()
 	name, limited := schemaselection.URLScope(rawURL)
 	c.Assert(limited, qt.IsTrue, qt.Commentf("the configured URL must name a database"))

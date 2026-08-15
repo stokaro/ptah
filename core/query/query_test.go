@@ -14,8 +14,7 @@ import (
 // renderWhere renders "SELECT * FROM t WHERE <expr>" for PostgreSQL and returns
 // the WHERE-clause behavior, so constructor tests can assert the observable SQL
 // contract rather than the internal node shape.
-func renderWhere(tb testing.TB, expr ast.Expression) (string, []any) {
-	c := qt.New(tb)
+func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
 	c.Helper()
 	sql, args, err := renderer.RenderSelect(&ast.SelectStatement{From: "t", Where: expr}, platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -118,7 +117,7 @@ func TestExpressionConstructors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args := renderWhere(c.TB, tt.expr)
+			sql, args := renderWhere(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, tt.wantArgs)
 		})

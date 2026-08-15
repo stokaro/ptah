@@ -26,15 +26,13 @@ DROP TABLE users;
 `
 )
 
-func writeMigrateImportFixture(tb testing.TB, dir, name, body string) {
-	c := qt.New(tb)
+func writeMigrateImportFixture(c *qt.C, dir, name, body string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 }
 
-func runMigrateImport(tb testing.TB, args []string) (*bytes.Buffer, error) {
-	c := qt.New(tb)
+func runMigrateImport(c *qt.C, args []string) (*bytes.Buffer, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	out := &bytes.Buffer{}
@@ -63,51 +61,51 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 		{
 			name: "goose via format query parameter",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + target}
 			},
 		},
 		{
 			name: "goose via dir-format flag",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "goose"}
 			},
 		},
 		{
 			name: "golang-migrate via format query parameter",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "1_init.up.sql", "CREATE TABLE users (id int);\n")
-				writeMigrateImportFixture(c.TB, source, "1_init.down.sql", "DROP TABLE users;\n")
+				writeMigrateImportFixture(c, source, "1_init.up.sql", "CREATE TABLE users (id int);\n")
+				writeMigrateImportFixture(c, source, "1_init.down.sql", "DROP TABLE users;\n")
 				return []string{"--from", "file://" + source + "?format=golang-migrate", "--to", "file://" + target}
 			},
 		},
 		{
 			name: "golang-migrate via dir-format flag",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "1_init.up.sql", "CREATE TABLE users (id int);\n")
-				writeMigrateImportFixture(c.TB, source, "1_init.down.sql", "DROP TABLE users;\n")
+				writeMigrateImportFixture(c, source, "1_init.up.sql", "CREATE TABLE users (id int);\n")
+				writeMigrateImportFixture(c, source, "1_init.down.sql", "DROP TABLE users;\n")
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "golang-migrate"}
 			},
 		},
 		{
 			name: "dbmate via format query parameter",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "20240101010101_init.sql", dbmateImportFixture)
+				writeMigrateImportFixture(c, source, "20240101010101_init.sql", dbmateImportFixture)
 				return []string{"--from", "file://" + source + "?format=dbmate", "--to", "file://" + target}
 			},
 		},
 		{
 			name: "dbmate via dir-format flag",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "20240101010101_init.sql", dbmateImportFixture)
+				writeMigrateImportFixture(c, source, "20240101010101_init.sql", dbmateImportFixture)
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "dbmate"}
 			},
 		},
 		{
 			name: "flyway via format query parameter",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "V1__init.sql", "CREATE TABLE users (id int);\n")
+				writeMigrateImportFixture(c, source, "V1__init.sql", "CREATE TABLE users (id int);\n")
 				return []string{"--from", "file://" + source + "?format=flyway", "--to", "file://" + target}
 			},
 		},
@@ -119,7 +117,7 @@ func TestCompatMigrateImportSuccessIsSilent(t *testing.T) {
 			source := filepath.Join(root, "source")
 			target := filepath.Join(root, "target")
 
-			out, err := runMigrateImport(c.TB, tt.prepare(c, source, target))
+			out, err := runMigrateImport(c, tt.prepare(c, source, target))
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 			c.Assert(out.String(), qt.Equals, "")
@@ -140,7 +138,7 @@ func TestCompatMigrateImportHelpUsesUpdatedRootWriter(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	target := filepath.Join(root, "target")
-	writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+	writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var firstOut bytes.Buffer
@@ -186,29 +184,29 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 		{
 			name: "source and destination are the same directory",
 			prepare: func(c *qt.C, source, _ string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + source}
 			},
 		},
 		{
 			name: "destination already holds migrations",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
-				writeMigrateImportFixture(c.TB, target, "1_existing.sql", "CREATE TABLE existing (id int);\n")
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, target, "1_existing.sql", "CREATE TABLE existing (id int);\n")
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + target}
 			},
 		},
 		{
 			name: "unknown dir-format flag value",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source, "--to", "file://" + target, "--dir-format", "nope"}
 			},
 		},
 		{
 			name: "unknown format query parameter",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source + "?format=nope", "--to", "file://" + target}
 			},
 		},
@@ -221,14 +219,14 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 		{
 			name: "positional argument",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + target, "extra"}
 			},
 		},
 		{
 			name: "unknown flag",
 			prepare: func(c *qt.C, source, target string) []string {
-				writeMigrateImportFixture(c.TB, source, "00001_init.sql", gooseImportFixture)
+				writeMigrateImportFixture(c, source, "00001_init.sql", gooseImportFixture)
 				return []string{"--from", "file://" + source + "?format=goose", "--to", "file://" + target, "--nope"}
 			},
 		},
@@ -240,7 +238,7 @@ func TestCompatMigrateImportFailuresStayLoud(t *testing.T) {
 			source := filepath.Join(root, "source")
 			target := filepath.Join(root, "target")
 
-			out, err := runMigrateImport(c.TB, tt.prepare(c, source, target))
+			out, err := runMigrateImport(c, tt.prepare(c, source, target))
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out.String(), qt.Contains, "Error: ")
@@ -291,9 +289,9 @@ func TestCompatMigrateImportRefusesADirectoryAlreadyInTargetFormat(t *testing.T)
 			c := qt.New(t)
 			from := filepath.Join(t.TempDir(), "src")
 			to := filepath.Join(t.TempDir(), "dst")
-			writeMigrateImportFixture(c.TB, from, "20240101010101_init.sql", "CREATE TABLE users (id int);\n")
+			writeMigrateImportFixture(c, from, "20240101010101_init.sql", "CREATE TABLE users (id int);\n")
 
-			_, err := runMigrateImport(c.TB, tt.args(from, to))
+			_, err := runMigrateImport(c, tt.args(from, to))
 
 			c.Assert(err, qt.ErrorMatches, `cannot import a migration directory already in "atlas" format`)
 			_, statErr := os.Stat(to)

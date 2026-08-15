@@ -49,7 +49,7 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	target := postgresSchemaScopedIndexTarget()
-	live := readPostgresIndexIdentitySchema(c.TB, t, dsn)
+	live := readPostgresIndexIdentitySchema(c, t, dsn)
 	diff := schemadiff.CompareWithDialect(target, live, platform.Postgres)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: postgresIndexIdentityName, TableName: postgresIndexIdentitySchemaA + ".orders"},
@@ -68,7 +68,7 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 	_, err = db.Exec(statements[1])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply schema-scoped index create: %s", statements[1]))
 
-	live = readPostgresIndexIdentitySchema(c.TB, t, dsn)
+	live = readPostgresIndexIdentitySchema(c, t, dsn)
 	finalDiff := schemadiff.CompareWithDialect(target, live, platform.Postgres)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
@@ -81,8 +81,7 @@ func cleanupPostgresIndexIdentity(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + postgresIndexIdentitySchemaB + ` CASCADE`)
 }
 
-func readPostgresIndexIdentitySchema(tb testing.TB, t *testing.T, dsn string) *dbschematypes.DBSchema {
-	c := qt.New(tb)
+func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

@@ -85,8 +85,7 @@ func TestSumFileNamesMatchesAtlasCE(t *testing.T) {
 // oracleRefusedEntry returns the entry name the oracle's recorded refusal
 // blames, so the assertion below compares the two tools' answers rather than
 // merely observing that both said no.
-func oracleRefusedEntry(tb testing.TB, marker string) string {
-	c := qt.New(tb)
+func oracleRefusedEntry(c *qt.C, marker string) string {
 	c.Helper()
 	matches := regexp.MustCompile(`read file "([^"]+)"`).FindStringSubmatch(marker)
 	c.Assert(matches, qt.HasLen, 2, qt.Commentf("unparsed oracle refusal: %s", marker))
@@ -128,7 +127,7 @@ func TestSumFileNamesMatchesAtlasCERefusals(t *testing.T) {
 
 			marker, err := fs.ReadFile(os.DirFS(root), markerPath)
 			c.Assert(err, qt.IsNil)
-			blamed := oracleRefusedEntry(c.TB, string(marker))
+			blamed := oracleRefusedEntry(c, string(marker))
 			c.Assert(names, qt.Contains, blamed)
 
 			_, err = migratesum.ComputeAtlasFiles(fsys, names)

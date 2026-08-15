@@ -1111,7 +1111,7 @@ func TestCompatCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testi
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1132,7 +1132,7 @@ func TestCompatCommand_SchemaInspectOutputsExplicitHCLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-hcl.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1156,7 +1156,7 @@ func TestCompatCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-sql.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1180,7 +1180,7 @@ func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-json.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1199,9 +1199,9 @@ func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Schemas, qt.HasLen, 1)
 	c.Assert(result.Schemas[0].Name, qt.Equals, "main")
-	users := atlasSchemaInspectJSONTableByName(c.TB, result.Schemas[0].Tables, "users")
+	users := atlasSchemaInspectJSONTableByName(c, result.Schemas[0].Tables, "users")
 	c.Assert(users.Columns, qt.HasLen, 2)
-	email := atlasSchemaInspectJSONColumnByName(c.TB, users.Columns, "email")
+	email := atlasSchemaInspectJSONColumnByName(c, users.Columns, "email")
 	c.Assert(email.Type, qt.Equals, "TEXT")
 	c.Assert(email.Null, qt.IsFalse)
 	c.Assert(users.PrimaryKey, qt.IsNotNil)
@@ -1211,7 +1211,7 @@ func TestCompatCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
 	c.Assert(users.Indexes[0].Name, qt.Equals, "users_email_key")
 	c.Assert(users.Indexes[0].Unique, qt.IsTrue)
 	c.Assert(users.Indexes[0].Parts, qt.DeepEquals, []atlasSchemaInspectJSONIndexPartResult{{Column: "email"}})
-	posts := atlasSchemaInspectJSONTableByName(c.TB, result.Schemas[0].Tables, "posts")
+	posts := atlasSchemaInspectJSONTableByName(c, result.Schemas[0].Tables, "posts")
 	c.Assert(posts.ForeignKeys, qt.HasLen, 1)
 	c.Assert(posts.ForeignKeys[0].Columns, qt.DeepEquals, []string{"user_id"})
 	c.Assert(posts.ForeignKeys[0].References.Table, qt.Equals, "users")
@@ -1222,7 +1222,7 @@ func TestCompatCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-template.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1262,7 +1262,7 @@ func TestNewCompatCommand_SchemaInspectUsesAtlasRoot(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "compat-inspect.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1280,7 +1280,7 @@ func TestCompatCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-unsupported-format.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1298,7 +1298,7 @@ func TestCompatCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-write-sql.db")
 	outDir := filepath.Join(dir, "schema")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1314,13 +1314,13 @@ func TestCompatCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	mainSQL := readAtlasTestFile(c.TB, outDir, "main.sql")
+	mainSQL := readAtlasTestFile(c, outDir, "main.sql")
 	c.Assert(mainSQL, qt.Contains, "-- atlas:import ./tables/posts.sql")
 	c.Assert(mainSQL, qt.Contains, "-- atlas:import ./tables/users.sql")
-	usersSQL := readAtlasTestFile(c.TB, filepath.Join(outDir, "tables"), "users.sql")
+	usersSQL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "users.sql")
 	c.Assert(usersSQL, qt.Contains, "CREATE TABLE")
 	c.Assert(usersSQL, qt.Contains, "users")
-	postsSQL := readAtlasTestFile(c.TB, filepath.Join(outDir, "tables"), "posts.sql")
+	postsSQL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "posts.sql")
 	c.Assert(postsSQL, qt.Contains, "REFERENCES")
 }
 
@@ -1329,7 +1329,7 @@ func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-write-hcl.db")
 	outDir := filepath.Join(dir, "schema-hcl")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1346,7 +1346,7 @@ func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
 	// Schema-qualified since the table declares its schema (stokaro/ptah#1234).
-	usersHCL := readAtlasTestFile(c.TB, filepath.Join(outDir, "tables"), "main_users.hcl")
+	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "main_users.hcl")
 	c.Assert(usersHCL, qt.Contains, `table "users"`)
 	c.Assert(usersHCL, qt.Contains, `column "email"`)
 }
@@ -1355,7 +1355,7 @@ func TestCompatCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *testi
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-literal-format.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1377,7 +1377,7 @@ func TestCompatCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-exclude.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1398,7 +1398,7 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dbPath := filepath.Join(dir, "inspect-env.db")
-	createAtlasInspectSQLiteSchema(c.TB, dbPath)
+	createAtlasInspectSQLiteSchema(c, dbPath)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   schema {
@@ -1526,7 +1526,7 @@ func TestCompatCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
 func TestCompatCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -1547,7 +1547,7 @@ func TestCompatCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
 	apply := NewCompatCommand("atlas")
 	var applyOut bytes.Buffer
@@ -1573,7 +1573,7 @@ func TestCompatCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-format.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1596,7 +1596,7 @@ func TestCompatCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testin
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-applied-format.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_create_users.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_create_users.sql", "CREATE TABLE users (id integer primary key)")
 
 	apply := NewCompatCommand("atlas")
 	var applyOut bytes.Buffer
@@ -1628,7 +1628,7 @@ func TestCompatCommand_MigrateStatusUsesDefaultDirWithoutEnvWhenURLExplicit(t *t
 	t.Chdir(dir)
 	dbPath := filepath.Join(dir, "status-default-dir.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url = "sqlite://local.db"
 }
@@ -1659,7 +1659,7 @@ func TestCompatCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
 	t.Chdir(dir)
 	dbPath := filepath.Join(dir, "status-config-format.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   migration {
@@ -1692,7 +1692,7 @@ func TestCompatCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *test
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "status-invalid-format.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1715,7 +1715,7 @@ func TestCompatCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *test
 func TestCompatCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1745,7 +1745,7 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   migration {
     dir = "file://migrations"
@@ -1784,7 +1784,7 @@ func TestCompatCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t 
 	otherDir := filepath.Join(dir, "other")
 	migrationsDir := filepath.Join(projectDir, "migrations")
 	c.Assert(os.MkdirAll(otherDir, 0o755), qt.IsNil)
-	writeAtlasApplyMigration(c.TB, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -1852,7 +1852,7 @@ func TestCompatCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-invalid-sum.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("stale\n"), 0o600), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
@@ -1879,7 +1879,7 @@ func TestCompatCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "lint-invalid-format.db")
-	writeAtlasApplyMigration(c.TB, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1930,7 +1930,7 @@ func TestCompatCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "set-positional.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_set_positional.sql", "CREATE TABLE set_positional_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_positional.sql", "CREATE TABLE set_positional_users (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -1946,7 +1946,7 @@ func TestCompatCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Current version is 1 (1 set)")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 func TestCompatCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
@@ -2612,7 +2612,7 @@ CREATE TABLE users (
 	c.Assert(firstOut.String(), qt.Contains, "Planned schema changes:")
 	c.Assert(firstOut.String(), qt.Contains, "CREATE TABLE")
 	c.Assert(firstOut.String(), qt.Contains, "Schema apply completed successfully.")
-	assertSQLiteTableExists(c.TB, dbPath, "users")
+	assertSQLiteTableExists(c, dbPath, "users")
 
 	second := NewCompatCommand("atlas")
 	var secondOut bytes.Buffer
@@ -2662,7 +2662,7 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
-	assertSQLiteTableMissing(c.TB, dbPath, "users")
+	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
 func TestCompatCommand_SchemaApplyFileShorthandDryRun(t *testing.T) {
@@ -2693,7 +2693,7 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
-	assertSQLiteTableMissing(c.TB, dbPath, "users")
+	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
 func TestCompatCommand_SchemaApplyAcceptsTxMode(t *testing.T) {
@@ -2724,7 +2724,7 @@ CREATE TABLE tx_mode_users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	assertSQLiteTableExists(c.TB, dbPath, "tx_mode_users")
+	assertSQLiteTableExists(c, dbPath, "tx_mode_users")
 }
 
 func TestCompatCommand_SchemaApplyRejectsInvalidTxMode(t *testing.T) {
@@ -2773,7 +2773,7 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
-	assertSQLiteTableMissing(c.TB, dbPath, "users")
+	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
 func TestCompatCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
@@ -2840,7 +2840,7 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 		// A valid qualifier on a dialect without schema-qualified DDL support
 		// fails explicitly before any migration file or checksum is written.
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
-		c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 0)
+		c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 	})
 
 	t.Run("schema_apply_plan_registry_url", func(t *testing.T) {
@@ -2879,9 +2879,9 @@ func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-migrations.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE apply_one (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "2_two.sql", "CREATE TABLE apply_two (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "3_three.sql", "CREATE TABLE apply_three (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE apply_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE apply_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE apply_three (id INTEGER PRIMARY KEY);")
 
 	first := NewCompatCommand("atlas")
 	var firstOut bytes.Buffer
@@ -2899,9 +2899,9 @@ func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstOut.String(), qt.Contains, "Migrating to version 2 from 2 pending migrations.")
 	c.Assert(firstOut.String(), qt.Contains, "Migration complete. Current version: 2")
-	assertSQLiteTableExists(c.TB, dbPath, "apply_one")
-	assertSQLiteTableExists(c.TB, dbPath, "apply_two")
-	assertSQLiteTableMissing(c.TB, dbPath, "apply_three")
+	assertSQLiteTableExists(c, dbPath, "apply_one")
+	assertSQLiteTableExists(c, dbPath, "apply_two")
+	assertSQLiteTableMissing(c, dbPath, "apply_three")
 
 	second := NewCompatCommand("atlas")
 	var secondOut bytes.Buffer
@@ -2919,7 +2919,7 @@ func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(secondOut.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
 	c.Assert(secondOut.String(), qt.Contains, "Migration complete. Current version: 3")
-	assertSQLiteTableExists(c.TB, dbPath, "apply_three")
+	assertSQLiteTableExists(c, dbPath, "apply_three")
 }
 
 func TestCompatCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
@@ -2927,9 +2927,9 @@ func TestCompatCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "baseline.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE baseline_one (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "2_two.sql", "CREATE TABLE baseline_two (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "3_three.sql", "CREATE TABLE baseline_three (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE baseline_three (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -2946,10 +2946,10 @@ func TestCompatCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
-	assertSQLiteTableMissing(c.TB, dbPath, "baseline_one")
-	assertSQLiteTableMissing(c.TB, dbPath, "baseline_two")
-	assertSQLiteTableExists(c.TB, dbPath, "baseline_three")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"2", "3"})
+	assertSQLiteTableMissing(c, dbPath, "baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "baseline_two")
+	assertSQLiteTableExists(c, dbPath, "baseline_three")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"2", "3"})
 }
 
 func TestCompatCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *testing.T) {
@@ -2957,9 +2957,9 @@ func TestCompatCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *tes
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "baseline-dry-run.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE dry_baseline_one (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "2_two.sql", "CREATE TABLE dry_baseline_two (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "3_three.sql", "CREATE TABLE dry_baseline_three (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE dry_baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE dry_baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE dry_baseline_three (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -2979,9 +2979,9 @@ func TestCompatCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *tes
 	c.Assert(out.String(), qt.Contains, "Would baseline migrations at version 2.")
 	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
 	c.Assert(out.String(), qt.Contains, "Would have applied 1 migrations.")
-	assertSQLiteTableMissing(c.TB, dbPath, "dry_baseline_one")
-	assertSQLiteTableMissing(c.TB, dbPath, "dry_baseline_two")
-	assertSQLiteTableMissing(c.TB, dbPath, "dry_baseline_three")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_two")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_three")
 }
 
 func TestCompatCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
@@ -2989,7 +2989,7 @@ func TestCompatCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-json.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_create_users.sql", `
+	writeAtlasApplyMigration(c, migrationsDir, "1_create_users.sql", `
 CREATE TABLE format_json_users (id INTEGER PRIMARY KEY);
 CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 `)
@@ -3032,9 +3032,9 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 		"CREATE TABLE format_json_users (id INTEGER PRIMARY KEY)",
 		"CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY)",
 	})
-	assertSQLiteTableExists(c.TB, dbPath, "format_json_users")
-	assertSQLiteTableExists(c.TB, dbPath, "format_json_posts")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1"})
+	assertSQLiteTableExists(c, dbPath, "format_json_users")
+	assertSQLiteTableExists(c, dbPath, "format_json_posts")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 func TestCompatCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
@@ -3042,8 +3042,8 @@ func TestCompatCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-template.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE format_template_one (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "2_two.sql", "CREATE TABLE format_template_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE format_template_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_template_two (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3061,8 +3061,8 @@ func TestCompatCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "sqlite/sqlite:>1:1:1:1_one.sql")
-	assertSQLiteTableExists(c.TB, dbPath, "format_template_one")
-	assertSQLiteTableMissing(c.TB, dbPath, "format_template_two")
+	assertSQLiteTableExists(c, dbPath, "format_template_one")
+	assertSQLiteTableMissing(c, dbPath, "format_template_two")
 }
 
 func TestCompatCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
@@ -3072,7 +3072,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testi
 	dbPath := filepath.Join(dir, "migrate-apply-env.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_apply_env.sql", "CREATE TABLE apply_env_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_env.sql", "CREATE TABLE apply_env_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   migration {
@@ -3099,7 +3099,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testi
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "1")
-	assertSQLiteTableExists(c.TB, dbPath, "apply_env_users")
+	assertSQLiteTableExists(c, dbPath, "apply_env_users")
 }
 
 func TestCompatCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
@@ -3109,7 +3109,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFla
 	dbPath := filepath.Join(dir, "migrate-apply-explicit-defaults.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_apply_explicit_defaults.sql", "CREATE TABLE apply_explicit_defaults (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_explicit_defaults.sql", "CREATE TABLE apply_explicit_defaults (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   format {
     migrate {
@@ -3133,7 +3133,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFla
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "1")
-	assertSQLiteTableExists(c.TB, dbPath, "apply_explicit_defaults")
+	assertSQLiteTableExists(c, dbPath, "apply_explicit_defaults")
 }
 
 func TestCompatCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
@@ -3141,7 +3141,7 @@ func TestCompatCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-dry-run.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_dry_run.sql", "CREATE TABLE format_dry_run (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_dry_run.sql", "CREATE TABLE format_dry_run (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3165,7 +3165,7 @@ func TestCompatCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	c.Assert(result.Message, qt.Equals, "")
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Applied, qt.HasLen, 0)
-	assertSQLiteTableMissing(c.TB, dbPath, "format_dry_run")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_run")
 }
 
 func TestCompatCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
@@ -3173,9 +3173,9 @@ func TestCompatCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-dry-baseline.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE format_dry_baseline_one (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "2_two.sql", "CREATE TABLE format_dry_baseline_two (id INTEGER PRIMARY KEY);")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "3_three.sql", "CREATE TABLE format_dry_baseline_three (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE format_dry_baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_dry_baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE format_dry_baseline_three (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3200,9 +3200,9 @@ func TestCompatCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Pending[0].Name, qt.Equals, "3_three.sql")
 	c.Assert(result.Applied, qt.HasLen, 0)
-	assertSQLiteTableMissing(c.TB, dbPath, "format_dry_baseline_one")
-	assertSQLiteTableMissing(c.TB, dbPath, "format_dry_baseline_two")
-	assertSQLiteTableMissing(c.TB, dbPath, "format_dry_baseline_three")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_two")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_three")
 }
 
 func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
@@ -3210,7 +3210,7 @@ func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-noop.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_noop.sql", "CREATE TABLE format_noop (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_noop.sql", "CREATE TABLE format_noop (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3269,7 +3269,7 @@ func TestCompatCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "invalid-format.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_invalid_format.sql", "CREATE TABLE invalid_format_applied (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_invalid_format.sql", "CREATE TABLE invalid_format_applied (id INTEGER PRIMARY KEY);")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3285,7 +3285,7 @@ func TestCompatCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
-	assertSQLiteTableMissing(c.TB, dbPath, "invalid_format_applied")
+	assertSQLiteTableMissing(c, dbPath, "invalid_format_applied")
 }
 
 func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
@@ -3293,7 +3293,7 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "format-error.db")
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_error.sql", "CREATE TABLE error_before (id INTEGER PRIMARY KEY); SELECT * FROM missing_table;")
+	writeAtlasApplyMigration(c, migrationsDir, "1_error.sql", "CREATE TABLE error_before (id INTEGER PRIMARY KEY); SELECT * FROM missing_table;")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3320,7 +3320,7 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	})
 	c.Assert(result.Applied[0].Error.Text, qt.Contains, "missing_table")
 	c.Assert(result.Applied[0].Error.Stmt, qt.Equals, "SELECT * FROM missing_table")
-	assertSQLiteTableMissing(c.TB, dbPath, "error_before")
+	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 
 // TestCompatCommand_MigrateApplyRejectsNonAtlasFlags keeps the spellings this
@@ -3394,7 +3394,7 @@ CREATE TABLE users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
@@ -3422,9 +3422,9 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstOut.String(), qt.Contains, "Created migration file:")
 	c.Assert(firstOut.String(), qt.Contains, "Updated migration checksum:")
-	migrationFiles := atlasSQLFiles(c.TB, migrationsDir)
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
 	c.Assert(migrationFiles, qt.HasLen, 2)
-	newMigration := nonInitialAtlasMigration(c.TB, migrationFiles)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(string(newSQL), "  ALTER TABLE"), qt.IsTrue)
@@ -3450,7 +3450,7 @@ CREATE TABLE users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(secondOut.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 2)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 2)
 }
 
 func TestCompatCommand_MigrateDiffDryRunPrintsMigrationWithoutWritingFiles(t *testing.T) {
@@ -3467,7 +3467,7 @@ CREATE TABLE users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	sumBefore, readErr := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(readErr, qt.IsNil)
 	schemaPath := filepath.Join(dir, "schema.sql")
@@ -3503,7 +3503,7 @@ CREATE TABLE users (
 	c.Assert(out.String(), qt.Contains, "ADD COLUMN")
 	c.Assert(out.String(), qt.Contains, "email")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Created migration file:")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 	// The directory the gate verified is now hashed, so "wrote nothing" is
 	// asserted as "atlas.sum is byte-identical" rather than as its absence.
 	// That is the stronger statement anyway: a dry run that re-hashed the
@@ -3530,7 +3530,7 @@ CREATE TABLE users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE users (
@@ -3555,9 +3555,9 @@ CREATE TABLE users (
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	migrationFiles := atlasSQLFiles(c.TB, migrationsDir)
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
 	c.Assert(migrationFiles, qt.HasLen, 2)
-	newMigration := nonInitialAtlasMigration(c.TB, migrationFiles)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
@@ -3580,7 +3580,7 @@ CREATE TABLE users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.WriteFile("schema.sql", []byte(`
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
@@ -3617,9 +3617,9 @@ CREATE TABLE users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Created migration file:")
-	migrationFiles := atlasSQLFiles(c.TB, migrationsDir)
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
 	c.Assert(migrationFiles, qt.HasLen, 2)
-	newMigration := nonInitialAtlasMigration(c.TB, migrationFiles)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
@@ -3642,7 +3642,7 @@ CREATE TABLE old_users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.WriteFile("schema.hcl", []byte(`schema "main" {}
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
@@ -3675,7 +3675,7 @@ CREATE TABLE old_users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
 func TestCompatCommand_MigrateDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
@@ -3693,7 +3693,7 @@ CREATE TABLE old_users (
 	// migration and no checksum, exactly as the pinned community binary v1.3.0
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	schemaPath := filepath.Join(dir, "schema.hcl")
 	c.Assert(os.WriteFile(schemaPath, []byte(`schema "main" {}
 `), 0o600), qt.IsNil)
@@ -3727,7 +3727,7 @@ CREATE TABLE old_users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
 func TestCompatCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
@@ -3770,7 +3770,7 @@ func TestCompatCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *te
 	// index capability, so the plan stays one plain transactional file.
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Created migration file:")
-	migrationFiles := atlasSQLFiles(c.TB, migrationsDir)
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
 	c.Assert(migrationFiles, qt.HasLen, 1)
 	migrationSQL, readErr := os.ReadFile(migrationFiles[0])
 	c.Assert(readErr, qt.IsNil)
@@ -3815,7 +3815,7 @@ table "users" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 0)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
 func TestCompatCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
@@ -3869,7 +3869,7 @@ CREATE TABLE users (
 	c.Assert(err, qt.ErrorMatches, `checksum mismatch`)
 	c.Assert(out.String(), qt.Contains, "You have a checksum error in your migration directory.")
 	c.Assert(out.String(), qt.Contains, "L2: 1_init.sql was edited")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
 func TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
@@ -3920,7 +3920,7 @@ func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `migration directory lock timeout after 1ms: .*\.ptah-migrate-diff\.lock`)
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 0)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
 func TestCompatCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
@@ -3952,7 +3952,7 @@ func TestCompatCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testin
 	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
 	t.Chdir(outsideDir)
 	dbPath := filepath.Join(dir, "apply-relative.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_apply_relative.sql", "CREATE TABLE apply_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_relative.sql", "CREATE TABLE apply_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   migration {
@@ -3974,7 +3974,7 @@ func TestCompatCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testin
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	assertSQLiteTableExists(c.TB, dbPath, "apply_relative_users")
+	assertSQLiteTableExists(c, dbPath, "apply_relative_users")
 }
 
 func TestCompatCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testing.T) {
@@ -3987,7 +3987,7 @@ func TestCompatCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testi
 	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
 	t.Chdir(outsideDir)
 	dbPath := filepath.Join(dir, "status-relative.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_status_relative.sql", "CREATE TABLE status_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_status_relative.sql", "CREATE TABLE status_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   migration {
@@ -4021,7 +4021,7 @@ func TestCompatCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *tes
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
 	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
 	t.Chdir(outsideDir)
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_validate_relative.sql", "CREATE TABLE validate_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_validate_relative.sql", "CREATE TABLE validate_relative_users (id INTEGER PRIMARY KEY);")
 	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -4053,7 +4053,7 @@ func TestCompatCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing
 	projectDir := filepath.Join(dir, "project")
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(projectDir, "migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_hash_relative.sql", "CREATE TABLE hash_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_hash_relative.sql", "CREATE TABLE hash_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -4111,7 +4111,7 @@ func TestCompatCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 1)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(err, qt.IsNil)
 }
@@ -4123,7 +4123,7 @@ func TestCompatCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(projectDir, "migrations")
 	dbPath := filepath.Join(dir, "set-relative.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_set_relative.sql", "CREATE TABLE set_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_relative.sql", "CREATE TABLE set_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -4148,7 +4148,7 @@ func TestCompatCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Current version is 1 (1 set)")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testing.T) {
@@ -4158,7 +4158,7 @@ func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testin
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(dir, "explicit-migrations")
 	dbPath := filepath.Join(dir, "set-explicit-dir.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_set_explicit.sql", "CREATE TABLE set_explicit_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_explicit.sql", "CREATE TABLE set_explicit_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
@@ -4185,7 +4185,7 @@ func TestCompatCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testin
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Current version is 1 (1 set)")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing.T) {
@@ -4195,11 +4195,11 @@ func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(projectDir, "migrations")
 	dbPath := filepath.Join(dir, "down-relative.db")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_down_relative.sql", "CREATE TABLE down_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_down_relative.sql", "CREATE TABLE down_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_down_relative.down.sql"), []byte("DROP TABLE down_relative_users;\n"), 0o600), qt.IsNil)
 	// The down file joined the directory after the last hash, so re-hash it:
 	// the compat apply below verifies atlas.sum before executing anything.
-	hashAtlasApplyDir(c.TB, migrationsDir)
+	hashAtlasApplyDir(c, migrationsDir)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -4221,7 +4221,7 @@ func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing
 	})
 	err := apply.Execute()
 	c.Assert(err, qt.IsNil)
-	assertSQLiteTableExists(c.TB, dbPath, "down_relative_users")
+	assertSQLiteTableExists(c, dbPath, "down_relative_users")
 
 	down := NewCompatCommand("atlas")
 	var downOut bytes.Buffer
@@ -4238,8 +4238,8 @@ func TestCompatCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing
 	err = down.Execute()
 
 	c.Assert(err, qt.IsNil)
-	assertSQLiteTableMissing(c.TB, dbPath, "down_relative_users")
-	c.Assert(sqliteAtlasAppliedVersions(c.TB, dbPath), qt.HasLen, 0)
+	assertSQLiteTableMissing(c, dbPath, "down_relative_users")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.HasLen, 0)
 }
 
 func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjectDir(t *testing.T) {
@@ -4248,7 +4248,7 @@ func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjec
 	projectDir := filepath.Join(dir, "project")
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(dir, "explicit-migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_override_relative.sql", "CREATE TABLE override_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_override_relative.sql", "CREATE TABLE override_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
@@ -4316,7 +4316,7 @@ func TestCompatCommand_MigrateStatusRejectsParentRelativeProjectDir(t *testing.T
 	projectDir := filepath.Join(dir, "project")
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(dir, "shared-migrations")
-	writeAtlasApplyMigration(c.TB, migrationsDir, "1_parent_relative.sql", "CREATE TABLE parent_relative_users (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "1_parent_relative.sql", "CREATE TABLE parent_relative_users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
@@ -4381,7 +4381,7 @@ func TestCompatCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	assertSQLiteTableExists(c.TB, dbPath, "schema_apply_relative")
+	assertSQLiteTableExists(c, dbPath, "schema_apply_relative")
 }
 
 func TestCompatCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T) {
@@ -4455,7 +4455,7 @@ func TestCompatCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *test
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 1)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 }
 
 func TestCompatCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *testing.T) {
@@ -4601,11 +4601,10 @@ type atlasSchemaInspectJSONIndexPartResult struct {
 }
 
 func atlasSchemaInspectJSONTableByName(
-	tb testing.TB,
+	c *qt.C,
 	tables []atlasSchemaInspectJSONTableResult,
 	name string,
 ) atlasSchemaInspectJSONTableResult {
-	c := qt.New(tb)
 	c.Helper()
 	for _, table := range tables {
 		if table.Name == name {
@@ -4617,11 +4616,10 @@ func atlasSchemaInspectJSONTableByName(
 }
 
 func atlasSchemaInspectJSONColumnByName(
-	tb testing.TB,
+	c *qt.C,
 	columns []atlasSchemaInspectJSONColumnResult,
 	name string,
 ) atlasSchemaInspectJSONColumnResult {
-	c := qt.New(tb)
 	c.Helper()
 	for _, column := range columns {
 		if column.Name == name {
@@ -4638,24 +4636,21 @@ func atlasSchemaInspectJSONColumnByName(
 // refuses an unhashed Atlas directory, so an apply fixture must carry a valid
 // integrity file; tests that deliberately exercise an unhashed directory write
 // their files directly instead.
-func writeAtlasApplyMigration(tb testing.TB, dir, name, sql string) {
-	c := qt.New(tb)
+func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql+"\n"), 0o600), qt.IsNil)
-	hashAtlasApplyDir(c.TB, dir)
+	hashAtlasApplyDir(c, dir)
 }
 
 // hashAtlasApplyDir (re)writes atlas.sum over dir's current contents.
-func hashAtlasApplyDir(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func hashAtlasApplyDir(c *qt.C, dir string) {
 	c.Helper()
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 
-func sqliteAtlasAppliedVersions(tb testing.TB, dbPath string) []string {
-	c := qt.New(tb)
+func sqliteAtlasAppliedVersions(c *qt.C, dbPath string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -4675,15 +4670,13 @@ func sqliteAtlasAppliedVersions(tb testing.TB, dbPath string) []string {
 	return versions
 }
 
-func atlasSQLFiles(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func atlasSQLFiles(c *qt.C, dir string) []string {
 	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
 	c.Assert(err, qt.IsNil)
 	return files
 }
 
-func nonInitialAtlasMigration(tb testing.TB, files []string) string {
-	c := qt.New(tb)
+func nonInitialAtlasMigration(c *qt.C, files []string) string {
 	var generated string
 	for _, file := range files {
 		if filepath.Base(file) != "1_init.sql" {
@@ -4695,20 +4688,17 @@ func nonInitialAtlasMigration(tb testing.TB, files []string) string {
 	return generated
 }
 
-func assertSQLiteTableExists(tb testing.TB, dbPath, table string) {
-	c := qt.New(tb)
+func assertSQLiteTableExists(c *qt.C, dbPath, table string) {
 	c.Helper()
-	c.Assert(sqliteTableExists(c.TB, dbPath, table), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, dbPath, table), qt.IsTrue)
 }
 
-func assertSQLiteTableMissing(tb testing.TB, dbPath, table string) {
-	c := qt.New(tb)
+func assertSQLiteTableMissing(c *qt.C, dbPath, table string) {
 	c.Helper()
-	c.Assert(sqliteTableExists(c.TB, dbPath, table), qt.IsFalse)
+	c.Assert(sqliteTableExists(c, dbPath, table), qt.IsFalse)
 }
 
-func createAtlasInspectSQLiteSchema(tb testing.TB, dbPath string) {
-	c := qt.New(tb)
+func createAtlasInspectSQLiteSchema(c *qt.C, dbPath string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -4729,8 +4719,7 @@ CREATE UNIQUE INDEX users_email_key ON users (email);
 	c.Assert(err, qt.IsNil)
 }
 
-func sqliteTableExists(tb testing.TB, dbPath, table string) bool {
-	c := qt.New(tb)
+func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -4854,10 +4843,10 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeAtlasTestFile(c.TB, source, "V1__initial.sql", "CREATE TABLE skipped (id int);\n")
-	writeAtlasTestFile(c.TB, source, "B1__baseline.sql", "CREATE TABLE baseline (id int);\n")
-	writeAtlasTestFile(c.TB, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
-	writeAtlasTestFile(c.TB, source, "U1__initial.sql", "DROP TABLE skipped;\n")
+	writeAtlasTestFile(c, source, "V1__initial.sql", "CREATE TABLE skipped (id int);\n")
+	writeAtlasTestFile(c, source, "B1__baseline.sql", "CREATE TABLE baseline (id int);\n")
+	writeAtlasTestFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
+	writeAtlasTestFile(c, source, "U1__initial.sql", "DROP TABLE skipped;\n")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -4879,17 +4868,17 @@ func TestCompatCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
 	c.Assert(statErr, qt.IsNil)
 	_, statErr = os.Stat(filepath.Join(target, "atlas.sum"))
 	c.Assert(statErr, qt.IsNil)
-	c.Assert(readAtlasTestFile(c.TB, target, "81608_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readAtlasTestFile(c.TB, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
-	c.Assert(readAtlasTestFile(c.TB, target, "atlas.sum"), qt.Contains, "4611686018427510315_add_posts.sql h1:")
+	c.Assert(readAtlasTestFile(c, target, "81608_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "4611686018427510315_add_posts.sql h1:")
 }
 
 func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeAtlasTestFile(c.TB, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasTestFile(c.TB, source, "1_initial.down.sql", "DROP TABLE users;\n")
+	writeAtlasTestFile(c, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasTestFile(c, source, "1_initial.down.sql", "DROP TABLE users;\n")
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -4903,8 +4892,8 @@ func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "")
 	_, statErr := os.Stat(filepath.Join(target, "1_initial.sql"))
 	c.Assert(statErr, qt.IsNil)
-	c.Assert(readAtlasTestFile(c.TB, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readAtlasTestFile(c.TB, target, "atlas.sum"), qt.Contains, "1_initial.sql h1:")
+	c.Assert(readAtlasTestFile(c, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "1_initial.sql h1:")
 }
 
 func TestCompatCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
@@ -4975,14 +4964,12 @@ func TestCompatCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 	}
 }
 
-func writeAtlasTestFile(tb testing.TB, dir, name, content string) {
-	c := qt.New(tb)
+func writeAtlasTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func readAtlasTestFile(tb testing.TB, dir, name string) string {
-	c := qt.New(tb)
+func readAtlasTestFile(c *qt.C, dir, name string) string {
 	c.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	c.Assert(err, qt.IsNil)

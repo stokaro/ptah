@@ -18,7 +18,7 @@ package test
 type UserRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
@@ -43,7 +43,7 @@ package test
 type AdminRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
@@ -68,7 +68,7 @@ package test
 type ServiceRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
@@ -88,7 +88,7 @@ package test
 type UserRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 3)
 
@@ -127,7 +127,7 @@ type AppRoles struct {
 type AdminRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 2)
 
@@ -149,7 +149,7 @@ package test
 type MinimalRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
@@ -175,7 +175,7 @@ package test
 type InheritRoles struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Roles, qt.HasLen, 3)
 
@@ -200,7 +200,7 @@ package test
 type AccessControl struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Grants, qt.HasLen, 1)
 		grant := database.Grants[0]
@@ -221,7 +221,7 @@ package test
 type AccessControl struct {
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Grants, qt.HasLen, 1)
 		grant := database.Grants[0]
@@ -244,7 +244,7 @@ type User struct {
 	ID int64
 }
 `
-		database := parseStringAsGoFile(c.TB, goCode)
+		database := parseStringAsGoFile(c, goCode)
 
 		c.Assert(database.Grants, qt.HasLen, 1)
 		c.Assert(database.Grants[0].OnTable, qt.Equals, "app.users")

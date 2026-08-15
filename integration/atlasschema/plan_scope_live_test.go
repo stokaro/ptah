@@ -104,7 +104,7 @@ table "c" {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newInspectLiveConnection(c.TB, ctx, "", test.setup)
+			conn := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			path := filepath.Join(c.TempDir(), "desired.hcl")
 			c.Assert(os.WriteFile(path, []byte(test.document), 0o600), qt.IsNil)

@@ -43,8 +43,8 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
-			writeFormatFile(c.TB, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
+			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
+			writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
 
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -54,11 +54,11 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE changed_after_capture (id INTEGER PRIMARY KEY);\n")
+			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE changed_after_capture (id INTEGER PRIMARY KEY);\n")
 			// The Atlas snapshot preserves both the byte-for-byte up file and
 			// the accompanying down file after the source changes.
-			c.Assert(readFSFile(c.TB, gotFS, "1_init.sql"), qt.Equals, "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
-			c.Assert(readFSFile(c.TB, gotFS, "1_init.down.sql"), qt.Equals, "DROP TABLE atlas_unchanged;\n")
+			c.Assert(readFSFile(c, gotFS, "1_init.sql"), qt.Equals, "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
+			c.Assert(readFSFile(c, gotFS, "1_init.down.sql"), qt.Equals, "DROP TABLE atlas_unchanged;\n")
 		})
 	}
 }
@@ -162,7 +162,7 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			writeFormatFile(c.TB, dir, tt.file, tt.source)
+			writeFormatFile(c, dir, tt.file, tt.source)
 
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -172,10 +172,10 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(readFSFile(c.TB, gotFS, tt.wantFile), qt.Equals, tt.wantSQL)
+			c.Assert(readFSFile(c, gotFS, tt.wantFile), qt.Equals, tt.wantSQL)
 			// The original source file name is not carried into the converted
 			// filesystem when it differs from the Atlas single-file name.
-			c.Assert(fsFileNames(c.TB, gotFS), qt.DeepEquals, []string{tt.wantFile})
+			c.Assert(fsFileNames(c, gotFS), qt.DeepEquals, []string{tt.wantFile})
 		})
 	}
 }
@@ -249,8 +249,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	t.Run("flyway migrations sharing one Atlas version", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c.TB, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
-		writeFormatFile(c.TB, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
+		writeFormatFile(c, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
+		writeFormatFile(c, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "flyway", nil)
 
@@ -268,7 +268,7 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	t.Run("non-empty covered set the converter cannot read", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c.TB, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
+		writeFormatFile(c, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
@@ -279,8 +279,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	t.Run("Go-based Goose migration", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c.TB, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
-		writeFormatFile(c.TB, dir, "2_seed.go", "package migrations\n")
+		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c, dir, "2_seed.go", "package migrations\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
@@ -291,8 +291,8 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	t.Run("Liquibase XML changelog", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c.TB, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
-		writeFormatFile(c.TB, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
+		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
 
@@ -430,7 +430,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			writeSeamFixture(c.TB, dir, tt.format)
+			writeSeamFixture(c, dir, tt.format)
 
 			format, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 			c.Assert(err, qt.IsNil)
@@ -438,7 +438,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 			got, err := atlasmigrate.ResolveApplySourceForFormat(os.DirFS(dir), dir, format)
 
 			c.Assert(err, qt.IsNil)
-			names := fsFileNames(c.TB, got)
+			names := fsFileNames(c, got)
 			c.Assert(len(names) > 0, qt.IsTrue)
 			// Every format is rebuilt as up-only Atlas migrations, so a
 			// golang-migrate down file never survives into what gets executed.
@@ -446,7 +446,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 			// true elsewhere and load-bearing for golang-migrate.
 			c.Assert(names, qt.Not(qt.Contains), "1_init.down.sql")
 			for _, name := range names {
-				c.Assert(readFSFile(c.TB, got, name), qt.Not(qt.Equals), "")
+				c.Assert(readFSFile(c, got, name), qt.Not(qt.Equals), "")
 			}
 		})
 	}
@@ -470,42 +470,38 @@ func resolveApplySource(
 }
 
 // writeSeamFixture writes the minimal directory the named format can read.
-func writeSeamFixture(tb testing.TB, dir, format string) {
-	c := qt.New(tb)
+func writeSeamFixture(c *qt.C, dir, format string) {
 	c.Helper()
 	switch format {
 	case "goose":
-		writeFormatFile(c.TB, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
 	case "dbmate":
-		writeFormatFile(c.TB, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
 	case "liquibase":
-		writeFormatFile(c.TB, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
 	case "flyway":
-		writeFormatFile(c.TB, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
 	case "golang-migrate":
-		writeFormatFile(c.TB, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
-		writeFormatFile(c.TB, dir, "1_init.down.sql", "DROP TABLE seam;\n")
+		writeFormatFile(c, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE seam;\n")
 	default:
-		writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
 	}
 }
 
-func writeFormatFile(tb testing.TB, dir, name, content string) {
-	c := qt.New(tb)
+func writeFormatFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func readFSFile(tb testing.TB, fsys fs.FS, name string) string {
-	c := qt.New(tb)
+func readFSFile(c *qt.C, fsys fs.FS, name string) string {
 	c.Helper()
 	data, err := fs.ReadFile(fsys, name)
 	c.Assert(err, qt.IsNil)
 	return string(data)
 }
 
-func fsFileNames(tb testing.TB, fsys fs.FS) []string {
-	c := qt.New(tb)
+func fsFileNames(c *qt.C, fsys fs.FS) []string {
 	c.Helper()
 	entries, err := fs.ReadDir(fsys, ".")
 	c.Assert(err, qt.IsNil)

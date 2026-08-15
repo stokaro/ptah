@@ -28,8 +28,8 @@ func TestVerifyBaselineShadow_ReplayErrorWithRealPostgres(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
 	c.Assert(platform.NormalizeDialect(target.Info().Dialect), qt.Equals, platform.Postgres)
-	shadowURL, shadowDatabase := createGeneratorTestPostgres(c.TB, target, dbURL, "ptah_baseline_shadow")
-	defer dropGeneratorTestPostgres(c.TB, target, shadowDatabase)
+	shadowURL, shadowDatabase := createGeneratorTestPostgres(c, target, dbURL, "ptah_baseline_shadow")
+	defer dropGeneratorTestPostgres(c, target, shadowDatabase)
 
 	migrationsDir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
@@ -78,8 +78,8 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_concurrent")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_concurrent")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -96,7 +96,7 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	c.Assert(err, qt.IsNil)
 
 	dir := t.TempDir()
-	entitiesDir := writeConcurrentIndexEntities(c.TB, dir)
+	entitiesDir := writeConcurrentIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -126,12 +126,12 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_users_email")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_users_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_users_email")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_users_email")
 	c.Assert(exists, qt.IsFalse)
 }
 
@@ -147,12 +147,11 @@ func requireGeneratorPostgresURL(t *testing.T) string {
 }
 
 func createGeneratorTestPostgres(
-	tb testing.TB,
+	c *qt.C,
 	admin *dbschema.DatabaseConnection,
 	baseURL string,
 	prefix string,
 ) (shadowURL, database string) {
-	c := qt.New(tb)
 	c.Helper()
 	database = fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	_, err := admin.ExecContext(
@@ -167,8 +166,7 @@ func createGeneratorTestPostgres(
 	return parsed.String(), database
 }
 
-func dropGeneratorTestPostgres(tb testing.TB, admin *dbschema.DatabaseConnection, database string) {
-	c := qt.New(tb)
+func dropGeneratorTestPostgres(c *qt.C, admin *dbschema.DatabaseConnection, database string) {
 	c.Helper()
 	_, _ = admin.ExecContext(
 		context.Background(),
@@ -182,8 +180,7 @@ func dropGeneratorTestPostgres(tb testing.TB, admin *dbschema.DatabaseConnection
 	c.Assert(err, qt.IsNil)
 }
 
-func writeConcurrentIndexEntities(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writeConcurrentIndexEntities(c *qt.C, dir string) string {
 	c.Helper()
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0o755), qt.IsNil)
@@ -208,11 +205,10 @@ type User struct {
 }
 
 func readGeneratorPostgresIndexState(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	indexName string,
 ) (exists, valid bool) {
-	c := qt.New(tb)
 	c.Helper()
 	err := conn.QueryRowContext(c.Context(), `
 		SELECT COUNT(*) = 1,

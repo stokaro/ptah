@@ -26,7 +26,7 @@ extension "pg_trgm" {
 	c.Assert(db.Extensions[0].IfNotExists, qt.IsTrue)
 	c.Assert(db.Extensions[0].Version, qt.Equals, "1.6")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.6';`)
 }
 
@@ -40,7 +40,7 @@ extension "pg_trgm" {}
 	c.Assert(db.Extensions, qt.HasLen, 1)
 	c.Assert(db.Extensions[0].IfNotExists, qt.IsFalse)
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE EXTENSION pg_trgm;`)
 }
 
@@ -139,7 +139,7 @@ extension "plpgsql" {
 		Version: "1.0",
 	}})
 
-	sql := strings.Join(renderStatements(c.TB, db, "postgres"), "\n")
+	sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
 	c.Assert(sql, qt.Not(qt.Contains), `CREATE SCHEMA IF NOT EXISTS "pg_catalog"`)
 	c.Assert(sql, qt.Contains, `CREATE EXTENSION "plpgsql" WITH SCHEMA "pg_catalog" VERSION '1.0';`)
 }

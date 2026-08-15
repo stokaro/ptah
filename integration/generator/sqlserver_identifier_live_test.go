@@ -22,9 +22,9 @@ import (
 
 func TestGenerateMigration_SQLServerIndexDirectionRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	targetURL := provisionSQLServerGeneratorDatabase(t, "target")
-	shadowURL := provisionSQLServerGeneratorDatabase(t, "shadow")
-	target := connectSQLServerGeneratorDatabase(t, targetURL)
+	targetURL := provisionSQLServerGeneratorDatabase(c, "target")
+	shadowURL := provisionSQLServerGeneratorDatabase(c, "shadow")
+	target := connectSQLServerGeneratorDatabase(c, targetURL)
 	ctx := t.Context()
 
 	_, err := target.ExecContext(ctx, `
@@ -34,11 +34,11 @@ CREATE TABLE [dbo].[users] (
 );
 CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsFalse)
+	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsFalse)
 
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	writeSQLServerGeneratorInitialMigration(c.TB, migrationsDir)
+	writeSQLServerGeneratorInitialMigration(c, migrationsDir)
 	targetSchema := sqlServerGeneratorTargetSchema()
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
@@ -63,15 +63,15 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 
 	_, err = target.ExecContext(ctx, string(upSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsTrue)
+	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
 
 	_, err = target.ExecContext(ctx, string(downSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsFalse)
+	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsFalse)
 
 	_, err = target.ExecContext(ctx, string(upSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsTrue)
+	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
 }
 
 func sqlServerGeneratorTargetSchema() *goschema.Database {
@@ -97,10 +97,9 @@ func sqlServerGeneratorTargetSchema() *goschema.Database {
 }
 
 func readSQLServerGeneratorIndexDirection(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 ) bool {
-	c := qt.New(tb)
 	c.Helper()
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
@@ -115,8 +114,7 @@ func readSQLServerGeneratorIndexDirection(
 	return indexes[0].Parts[0].Desc
 }
 
-func writeSQLServerGeneratorInitialMigration(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func writeSQLServerGeneratorInitialMigration(c *qt.C, dir string) {
 	c.Helper()
 	upSQL := `
 CREATE TABLE [dbo].[users] (
@@ -144,21 +142,20 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);
 	)
 }
 
-func provisionSQLServerGeneratorDatabase(t testing.TB, role string) string {
-	t.Helper()
-	c := qt.New(t)
-	adminURL := sqlServerGeneratorAdminURL(t)
+func provisionSQLServerGeneratorDatabase(c *qt.C, role string) string {
+	c.Helper()
+	adminURL := sqlServerGeneratorAdminURL(c)
 	databaseName := "ptah_777_" + role + "_" +
 		time.Now().UTC().Format("20060102150405.000000000")
-	admin := connectSQLServerGeneratorDatabase(t, adminURL)
+	admin := connectSQLServerGeneratorDatabase(c, adminURL)
 	_, err := admin.ExecContext(
-		t.Context(),
+		c.Context(),
 		"CREATE DATABASE "+quoteSQLServerGeneratorIdentifier(databaseName)+
 			" COLLATE SQL_Latin1_General_CP1_CI_AS",
 	)
 	c.Assert(err, qt.IsNil)
 
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(
 			context.Background(),
 			30*time.Second,
@@ -190,14 +187,13 @@ func sqlServerGeneratorAdminURL(t testing.TB) string {
 }
 
 func connectSQLServerGeneratorDatabase(
-	t testing.TB,
+	c *qt.C,
 	databaseURL string,
 ) *dbschema.DatabaseConnection {
-	t.Helper()
-	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(t.Context(), databaseURL)
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
 	})
 	return conn

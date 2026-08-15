@@ -13,16 +13,14 @@ import (
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 )
 
-func mustParseSource(tb testing.TB, filename string, source any) goschema.Database {
-	c := qt.New(tb)
+func mustParseSource(c *qt.C, filename string, source any) goschema.Database {
 	c.Helper()
 	db, err := goschema.ParseSource(filename, source)
 	c.Assert(err, qt.IsNil)
 	return db
 }
 
-func mustParseFile(tb testing.TB, filename string) goschema.Database {
-	c := qt.New(tb)
+func mustParseFile(c *qt.C, filename string) goschema.Database {
 	c.Helper()
 	db, err := goschema.ParseFile(filename)
 	c.Assert(err, qt.IsNil)
@@ -136,7 +134,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 func TestParseSource_FieldIdentityAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c.TB, "schema.go", `
+	db := mustParseSource(c, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -172,7 +170,7 @@ type User struct {
 func TestParseSource_FieldIdentityOptionsDefaultGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c.TB, "schema.go", `
+	db := mustParseSource(c, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -266,7 +264,7 @@ type User struct {
 func TestParseSource_TableCommentLeavesAbsentCSVAttributesEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c.TB, "schema.go", `
+	db := mustParseSource(c, "schema.go", `
 package test
 
 //ptah:schema:table name="users"
@@ -286,7 +284,7 @@ type User struct {
 func TestParseSchemaObjectAnnotations(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c.TB, "schema_objects.go", `
+	db := mustParseSource(c, "schema_objects.go", `
 package test
 
 //ptah:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
@@ -483,7 +481,7 @@ type Product struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 
 	// Should have 4 fields and 1 enum
 	c.Assert(database.Fields, qt.HasLen, 4)
@@ -524,7 +522,7 @@ type User struct {
 	err := os.WriteFile(testFile, []byte(content), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Name, qt.Equals, "users")
 	c.Assert(database.Tables[0].Schema, qt.Equals, "auth")
@@ -564,7 +562,7 @@ type User struct {
 	err := os.WriteFile(testFile, []byte(content), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Constraints, qt.HasLen, 2)
 	c.Assert(database.Constraints[0].Table, qt.Equals, "auth.users")
 	c.Assert(database.Constraints[1].Table, qt.Equals, "auth.users")
@@ -830,7 +828,7 @@ func TestParseFunctionComment(t *testing.T) {
 			tmp := t.TempDir() + "/fn.go"
 			c.Assert(os.WriteFile(tmp, []byte(src), 0o644), qt.IsNil) //nolint:gosec // 0644 is fine for a test fixture
 
-			db := mustParseFile(c.TB, tmp)
+			db := mustParseFile(c, tmp)
 			c.Assert(db.Functions, qt.HasLen, 1)
 			c.Assert(db.Functions[0], qt.DeepEquals, tt.expected)
 		})
@@ -1041,7 +1039,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 			c := qt.New(t)
 
 			source := "package test\n\n" + tt.comment + "\ntype TestStruct struct{}\n"
-			db := mustParseSource(c.TB, "constraints.go", source)
+			db := mustParseSource(c, "constraints.go", source)
 
 			c.Assert(db.Constraints, qt.HasLen, 1)
 			constraint := db.Constraints[0]
@@ -1071,7 +1069,7 @@ func TestParseSource_ExplicitEnumComment(t *testing.T) {
 //ptah:schema:enum name="status_type" values="active,inactive,pending"
 type SchemaObjects struct{}
 `
-	db := mustParseSource(c.TB, "enums.go", source)
+	db := mustParseSource(c, "enums.go", source)
 
 	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
 		Name:   "status_type",
@@ -1150,7 +1148,7 @@ type Widget struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Fields, qt.HasLen, 3)
 }
 
@@ -1184,7 +1182,7 @@ type CommodityService struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 
 	var fkField *goschema.Field
 	for i, f := range database.Fields {
@@ -1276,7 +1274,7 @@ type File struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := mustParseFile(c.TB, testFile)
+	database := mustParseFile(c, testFile)
 
 	var category, typ *goschema.Field
 	for i, f := range database.Fields {

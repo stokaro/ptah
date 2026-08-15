@@ -24,7 +24,7 @@ import (
 
 func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 
 	run := newCompatProcess(binPath, "migrate", "down", "--help")
 	runOut, err := run.CombinedOutput()
@@ -69,7 +69,7 @@ func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 // red against the module it actually builds.
 func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 
 	tests := []struct {
 		name       string
@@ -167,11 +167,11 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 
 func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 
 	t.Run("clean validation is silent", func(t *testing.T) {
 		c := qt.New(t)
-		dir := cleanAtlasDir(c.TB)
+		dir := cleanAtlasDir(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -233,7 +233,7 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 // and the Atlas migration plus atlas.sum still written and valid.
 func TestCompatBinaryMigrateNewSuccessIsSilent(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 	dir := c.TempDir()
 	run := newCompatProcess(
 		binPath,
@@ -259,7 +259,7 @@ func TestCompatBinaryMigrateNewSuccessIsSilent(t *testing.T) {
 
 func TestCompatBinaryMigrateNewFailureStaysLoud(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 	dir := c.TempDir()
 	run := newCompatProcess(
 		binPath,
@@ -285,11 +285,11 @@ func TestCompatBinaryMigrateNewFailureStaysLoud(t *testing.T) {
 
 func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 
 	t.Run("checksum mismatch", func(t *testing.T) {
 		c := qt.New(t)
-		dir := malformedAtlasDir(c.TB)
+		dir := malformedAtlasDir(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -306,7 +306,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 	t.Run("missing checksum file", func(t *testing.T) {
 		c := qt.New(t)
-		dir := atlasDirWithoutSum(c.TB)
+		dir := atlasDirWithoutSum(c)
 		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
 		var stdout, stderr bytes.Buffer
 		run.Stdout = &stdout
@@ -326,7 +326,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		// (stokaro/ptah#970): exit 1, the same output as validate above, and
 		// the target database is never created.
 		c := qt.New(t)
-		dir := atlasDirWithoutSum(c.TB)
+		dir := atlasDirWithoutSum(c)
 		dbPath := filepath.Join(c.TempDir(), "unhashed.db")
 		run := newCompatProcess(binPath,
 			"migrate", "apply",
@@ -350,7 +350,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 	t.Run("migrate set operation error", func(t *testing.T) {
 		c := qt.New(t)
-		dir := cleanAtlasDir(c.TB)
+		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
 			"migrate", "set", "2",
@@ -386,7 +386,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 	t.Run("migrate set missing driver precedes version", func(t *testing.T) {
 		c := qt.New(t)
-		dir := cleanAtlasDir(c.TB)
+		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
 			"migrate", "set",
@@ -414,7 +414,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 	t.Run("migrate set missing version after environment", func(t *testing.T) {
 		c := qt.New(t)
-		dir := cleanAtlasDir(c.TB)
+		dir := cleanAtlasDir(c)
 		dbPath := filepath.Join(c.TempDir(), "state.db")
 		run := newCompatProcess(
 			binPath,
@@ -438,7 +438,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 	t.Run("migrate set extra version", func(t *testing.T) {
 		c := qt.New(t)
-		dir := cleanAtlasDir(c.TB)
+		dir := cleanAtlasDir(c)
 		run := newCompatProcess(
 			binPath,
 			"migrate", "set", "1", "2",
@@ -492,7 +492,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 
 func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 	tests := []struct {
 		name      string
 		filename  string
@@ -516,7 +516,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := malformedAtlasTxModeDir(c.TB, test.filename, test.directive)
+			dir := malformedAtlasTxModeDir(c, test.filename, test.directive)
 			run := newCompatProcess(
 				binPath,
 				"migrate", "apply",
@@ -538,8 +538,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 	}
 }
 
-func buildCompatBinary(tb testing.TB) string {
-	c := qt.New(tb)
+func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "atlas")
 	build := exec.Command("go", "build", "-o", binPath, ".")
@@ -553,26 +552,23 @@ func newCompatProcess(binPath string, args ...string) *exec.Cmd {
 	return exec.Command(binPath, args...)
 }
 
-func malformedAtlasDir(tb testing.TB) string {
-	c := qt.New(tb)
+func malformedAtlasDir(c *qt.C) string {
 	c.Helper()
-	dir := atlasDirWithoutSum(c.TB)
+	dir := atlasDirWithoutSum(c)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
 		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
 	return dir
 }
 
-func cleanAtlasDir(tb testing.TB) string {
-	c := qt.New(tb)
+func cleanAtlasDir(c *qt.C) string {
 	c.Helper()
-	dir := atlasDirWithoutSum(c.TB)
+	dir := atlasDirWithoutSum(c)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
 
-func atlasDirWithoutSum(tb testing.TB) string {
-	c := qt.New(tb)
+func atlasDirWithoutSum(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
@@ -580,8 +576,7 @@ func atlasDirWithoutSum(tb testing.TB) string {
 	return dir
 }
 
-func malformedAtlasTxModeDir(tb testing.TB, filename, directive string) string {
-	c := qt.New(tb)
+func malformedAtlasTxModeDir(c *qt.C, filename, directive string) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, filename), []byte(

@@ -13,8 +13,8 @@ import (
 func TestSchemaDiffRefusesMaterializedViewRefreshStrategyBeforeSyncedOutput(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	from := writeCompatMaterializedViewSchema(c.TB, dir, "from.hcl", "manual")
-	to := writeCompatMaterializedViewSchema(c.TB, dir, "to.hcl", "concurrently")
+	from := writeCompatMaterializedViewSchema(c, dir, "from.hcl", "manual")
+	to := writeCompatMaterializedViewSchema(c, dir, "to.hcl", "concurrently")
 
 	out, err := runCompatCommand(
 		t,
@@ -32,8 +32,8 @@ func TestSchemaDiffRefusesMaterializedViewRefreshStrategyBeforeSyncedOutput(t *t
 func TestSchemaDiffScopesMaterializedViewRefreshStrategyBeforeValidation(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	from := writeCompatScopedMaterializedViewSchema(c.TB, dir, "from.hcl")
-	to := writeCompatScopedMaterializedViewSchema(c.TB, dir, "to.hcl")
+	from := writeCompatScopedMaterializedViewSchema(c, dir, "from.hcl")
+	to := writeCompatScopedMaterializedViewSchema(c, dir, "to.hcl")
 
 	out, err := runCompatCommand(
 		t,
@@ -48,8 +48,7 @@ func TestSchemaDiffScopesMaterializedViewRefreshStrategyBeforeValidation(t *test
 	c.Assert(out, qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
 
-func writeCompatMaterializedViewSchema(tb testing.TB, dir, name, strategy string) string {
-	c := qt.New(tb)
+func writeCompatMaterializedViewSchema(c *qt.C, dir, name, strategy string) string {
 	c.Helper()
 	path := filepath.Join(dir, name)
 	contents := []byte(`
@@ -62,8 +61,7 @@ materialized "user_counts" {
 	return path
 }
 
-func writeCompatScopedMaterializedViewSchema(tb testing.TB, dir, name string) string {
-	c := qt.New(tb)
+func writeCompatScopedMaterializedViewSchema(c *qt.C, dir, name string) string {
 	c.Helper()
 	path := filepath.Join(dir, name)
 	contents := []byte(`

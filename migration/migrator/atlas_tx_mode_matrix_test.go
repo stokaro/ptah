@@ -21,11 +21,10 @@ INSERT INTO atlas_tx_mode_matrix_missing (id) VALUES (1);
 )
 
 func newAtlasTxModeMatrixMigrator(
-	tb testing.TB,
+	c *qt.C,
 	globalMode migrator.MigrationTxMode,
 	directive string,
 ) (*dbschema.DatabaseConnection, *migrator.Migrator) {
-	c := qt.New(tb)
 	conn, err := dbschema.ConnectToDatabase(
 		c.Context(),
 		"sqlite://"+filepath.Join(c.TempDir(), "atlas-tx-mode-matrix.sqlite"),
@@ -48,8 +47,7 @@ func newAtlasTxModeMatrixMigrator(
 		WithTransactionMode(globalMode)
 }
 
-func atlasTxModeTableExists(tb testing.TB, conn *dbschema.DatabaseConnection) bool {
-	c := qt.New(tb)
+func atlasTxModeTableExists(c *qt.C, conn *dbschema.DatabaseConnection) bool {
 	var count int
 	err := conn.QueryRowContext(
 		c.Context(),
@@ -60,8 +58,7 @@ func atlasTxModeTableExists(tb testing.TB, conn *dbschema.DatabaseConnection) bo
 	return count == 1
 }
 
-func atlasTxModeRevisionCount(tb testing.TB, conn *dbschema.DatabaseConnection) int {
-	c := qt.New(tb)
+func atlasTxModeRevisionCount(c *qt.C, conn *dbschema.DatabaseConnection) int {
 	var count int
 	err := conn.QueryRowContext(
 		c.Context(),
@@ -72,18 +69,17 @@ func atlasTxModeRevisionCount(tb testing.TB, conn *dbschema.DatabaseConnection) 
 }
 
 func assertAtlasTxModeBodyFailure(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	mig *migrator.Migrator,
 	wantTable bool,
 	wantApplied int,
 ) {
-	c := qt.New(tb)
 	err := mig.MigrateUp(c.Context())
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "no such table: "+atlasTxModeMissingTable)
-	c.Assert(atlasTxModeTableExists(c.TB, conn), qt.Equals, wantTable)
-	c.Assert(atlasTxModeRevisionCount(c.TB, conn), qt.Equals, 1)
+	c.Assert(atlasTxModeTableExists(c, conn), qt.Equals, wantTable)
+	c.Assert(atlasTxModeRevisionCount(c, conn), qt.Equals, 1)
 
 	revisions, err := mig.GetRevisions(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -106,19 +102,18 @@ func assertAtlasTxModeBodyFailure(
 }
 
 func assertAtlasTxModeRejectedBeforeWrites(
-	tb testing.TB,
+	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	mig *migrator.Migrator,
 	wantErr string,
 ) {
-	c := qt.New(tb)
 	err := mig.MigrateUp(c.Context())
 	c.Assert(err, qt.IsNotNil)
 	var txModeErr *migrator.AtlasTxModeDirectiveError
 	c.Assert(err, qt.ErrorAs, &txModeErr)
 	c.Assert(err.Error(), qt.Equals, wantErr)
-	c.Assert(atlasTxModeTableExists(c.TB, conn), qt.IsFalse)
-	c.Assert(atlasTxModeRevisionCount(c.TB, conn), qt.Equals, 0)
+	c.Assert(atlasTxModeTableExists(c, conn), qt.IsFalse)
+	c.Assert(atlasTxModeRevisionCount(c, conn), qt.Equals, 0)
 
 	revisions, err := mig.GetRevisions(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -197,8 +192,8 @@ func TestAtlasTxModeMatrix_BodyFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn, mig := newAtlasTxModeMatrixMigrator(c.TB, test.globalMode, test.directive)
-			assertAtlasTxModeBodyFailure(c.TB, conn, mig, test.wantTable, test.wantApplied)
+			conn, mig := newAtlasTxModeMatrixMigrator(c, test.globalMode, test.directive)
+			assertAtlasTxModeBodyFailure(c, conn, mig, test.wantTable, test.wantApplied)
 		})
 	}
 }
@@ -245,8 +240,8 @@ func TestAtlasTxModeMatrix_DirectiveFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn, mig := newAtlasTxModeMatrixMigrator(c.TB, test.globalMode, test.directive)
-			assertAtlasTxModeRejectedBeforeWrites(c.TB, conn, mig, test.wantErr)
+			conn, mig := newAtlasTxModeMatrixMigrator(c, test.globalMode, test.directive)
+			assertAtlasTxModeRejectedBeforeWrites(c, conn, mig, test.wantErr)
 		})
 	}
 }
@@ -272,8 +267,8 @@ func TestAtlasTxModeMalformedDirectives_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn, mig := newAtlasTxModeMatrixMigrator(c.TB, migrator.MigrationTxModeFile, test.directive)
-			assertAtlasTxModeRejectedBeforeWrites(c.TB, conn, mig, test.wantErr)
+			conn, mig := newAtlasTxModeMatrixMigrator(c, migrator.MigrationTxModeFile, test.directive)
+			assertAtlasTxModeRejectedBeforeWrites(c, conn, mig, test.wantErr)
 		})
 	}
 }

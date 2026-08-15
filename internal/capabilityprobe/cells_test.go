@@ -279,8 +279,8 @@ var notADatabase = map[string]bool{
 func TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts(t *testing.T) {
 	c := qt.New(t)
 
-	pinned := readPinnedImages(c.TB)
-	assertThePinnedListHasDatabasesInIt(c.TB, pinned)
+	pinned := readPinnedImages(c)
+	assertThePinnedListHasDatabasesInIt(c, pinned)
 
 	for _, ref := range pinned {
 		c.Run(ref, func(c *qt.C) {
@@ -301,8 +301,7 @@ func TestCellsDeclaring_LineAliasMatchesTheTargetLine(t *testing.T) {
 
 // readPinnedImages returns every image reference the two files start, sorted
 // and deduplicated: postgres:18 appears in both.
-func readPinnedImages(tb testing.TB) []string {
-	c := qt.New(tb)
+func readPinnedImages(c *qt.C) []string {
 	c.Helper()
 
 	var refs []string
@@ -324,8 +323,7 @@ func readPinnedImages(tb testing.TB) []string {
 // above. A regex that stopped matching the service blocks would still return
 // the workflow's registry image, every per-image check would classify it as not
 // a database, and the test would pass having examined no database at all.
-func assertThePinnedListHasDatabasesInIt(tb testing.TB, pinned []string) {
-	c := qt.New(tb)
+func assertThePinnedListHasDatabasesInIt(c *qt.C, pinned []string) {
 	c.Helper()
 
 	seen := map[string]bool{}

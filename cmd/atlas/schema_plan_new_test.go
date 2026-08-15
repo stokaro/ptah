@@ -22,10 +22,9 @@ import (
 
 // newSubverbFixture is the additive fixture the `new` tests share: one live
 // SQLite table, a desired state with one more.
-func newSubverbFixture(tb testing.TB, name string) planFixture {
-	c := qt.New(tb)
+func newSubverbFixture(c *qt.C, name string) planFixture {
 	c.Helper()
-	return newPlanFixture(c.TB, name,
+	return newPlanFixture(c, name,
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE added (id INTEGER PRIMARY KEY);")
 }
@@ -41,8 +40,8 @@ func newSubverbFixture(tb testing.TB, name string) planFixture {
 // while producing nothing.
 func TestSchemaPlanNewWritesThePlanFileWithoutASaveFlag(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newSubverbFixture(c.TB, "new-default")
+	dir := chdirToScratchC(c)
+	fixture := newSubverbFixture(c, "new-default")
 
 	stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "new", fixture.args()...)
 
@@ -70,8 +69,8 @@ func TestSchemaPlanNewWritesThePlanFileWithoutASaveFlag(t *testing.T) {
 // provenance stays out of operator-facing output.
 func TestSchemaPlanNewDoesNotEmitInternalProvenance(t *testing.T) {
 	c := qt.New(t)
-	chdirToScratchC(c.TB)
-	fixture := newSubverbFixture(c.TB, "new-note")
+	chdirToScratchC(c)
+	fixture := newSubverbFixture(c, "new-note")
 
 	stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "new", fixture.args()...)
 
@@ -85,8 +84,8 @@ func TestSchemaPlanNewDoesNotEmitInternalProvenance(t *testing.T) {
 // forcing --save on must not have disturbed.
 func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newSubverbFixture(c.TB, "new-output")
+	dir := chdirToScratchC(c)
+	fixture := newSubverbFixture(c, "new-output")
 
 	tests := []struct {
 		name       string
@@ -120,8 +119,8 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 	t.Run("name", func(t *testing.T) {
 		c := qt.New(t)
-		dir := chdirToScratchC(c.TB)
-		fixture := newSubverbFixture(c.TB, "new-name")
+		dir := chdirToScratchC(c)
+		fixture := newSubverbFixture(c, "new-name")
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 			fixture.args("--name", "release-42")...)
@@ -133,8 +132,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 
 	t.Run("name_format", func(t *testing.T) {
 		c := qt.New(t)
-		dir := chdirToScratchC(c.TB)
-		fixture := newSubverbFixture(c.TB, "new-name-format")
+		dir := chdirToScratchC(c)
+		fixture := newSubverbFixture(c, "new-name-format")
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 			fixture.args("--name-format", "plan_{{ slice .ToHash 0 6 }}")...)
@@ -148,8 +147,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 
 	t.Run("name_and_name_format_are_mutually_exclusive", func(t *testing.T) {
 		c := qt.New(t)
-		dir := chdirToScratchC(c.TB)
-		fixture := newSubverbFixture(c.TB, "new-name-both")
+		dir := chdirToScratchC(c)
+		fixture := newSubverbFixture(c, "new-name-both")
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 			fixture.args("--name", "a", "--name-format", "b")...)
@@ -157,19 +156,19 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches,
 			`if any flags in the group \[name name-format\] are set none of the others can be.*`,
 			qt.Commentf("%s", out))
-		assertNoPlanFileWritten(c.TB, dir)
+		assertNoPlanFileWritten(c, dir)
 	})
 
 	t.Run("malformed_name_format_writes_nothing", func(t *testing.T) {
 		c := qt.New(t)
-		dir := chdirToScratchC(c.TB)
-		fixture := newSubverbFixture(c.TB, "new-name-bad")
+		dir := chdirToScratchC(c)
+		fixture := newSubverbFixture(c, "new-name-bad")
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 			fixture.args("--name-format", "{{ .Nope }")...)
 
 		c.Assert(err, qt.IsNotNil)
-		assertNoPlanFileWritten(c.TB, dir)
+		assertNoPlanFileWritten(c, dir)
 		c.Assert(out, qt.Not(qt.Contains), "Plan saved to")
 	})
 }
@@ -180,8 +179,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 // truncated the reviewed plan and then complained.
 func TestSchemaPlanNewRefusesToOverwriteADefaultNamedPlan(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newSubverbFixture(c.TB, "new-collision")
+	dir := chdirToScratchC(c)
+	fixture := newSubverbFixture(c, "new-collision")
 	path := filepath.Join(dir, "pinned.plan.hcl")
 
 	first, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
@@ -206,8 +205,8 @@ func TestSchemaPlanNewRefusesToOverwriteADefaultNamedPlan(t *testing.T) {
 // changes nothing, which reads as success.
 func TestSchemaPlanNewOnASyncedSchemaWritesNoPlan(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newPlanFixture(c.TB, "new-synced",
+	dir := chdirToScratchC(c)
+	fixture := newPlanFixture(c, "new-synced",
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
 
@@ -215,7 +214,7 @@ func TestSchemaPlanNewOnASyncedSchemaWritesNoPlan(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema is synced, no changes to be made.")
-	assertNoPlanFileWritten(c.TB, dir)
+	assertNoPlanFileWritten(c, dir)
 }
 
 // TestSchemaPlanNewRefusesUnimplementedTransitionFlags proves the sub-verb
@@ -238,15 +237,15 @@ func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := chdirToScratchC(c.TB)
-			fixture := newSubverbFixture(c.TB, "new-reject")
+			dir := chdirToScratchC(c)
+			fixture := newSubverbFixture(c, "new-reject")
 
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 				fixture.args(test.args...)...)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Contains, "atlas schema plan new "+test.want)
-			assertNoPlanFileWritten(c.TB, dir)
+			assertNoPlanFileWritten(c, dir)
 		})
 	}
 }
@@ -256,14 +255,14 @@ func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
 // `atlas schema plan [flags] [name]`.
 func TestSchemaPlanNewRejectsPositionalArguments(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newSubverbFixture(c.TB, "new-positional")
+	dir := chdirToScratchC(c)
+	fixture := newSubverbFixture(c, "new-positional")
 
 	out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
 		fixture.args("some-name")...)
 
 	c.Assert(err, qt.IsNotNil)
-	assertNoPlanFileWritten(c.TB, dir)
+	assertNoPlanFileWritten(c, dir)
 	c.Assert(out, qt.Not(qt.Contains), "Plan saved to")
 }
 
@@ -274,8 +273,8 @@ func TestSchemaPlanNewRejectsPositionalArguments(t *testing.T) {
 // destroys data.
 func TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim(t *testing.T) {
 	c := qt.New(t)
-	dir := chdirToScratchC(c.TB)
-	fixture := newPlanFixture(c.TB, "new-edit",
+	dir := chdirToScratchC(c)
+	fixture := newPlanFixture(c, "new-edit",
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE drop_me (id INTEGER);",
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
 	withoutEdit := filepath.Join(dir, "without.plan.hcl")

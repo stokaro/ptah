@@ -77,8 +77,7 @@ type compatURLFixture struct {
 	desiredURL  string
 }
 
-func newCompatURLFixture(tb testing.TB) compatURLFixture {
-	c := qt.New(tb)
+func newCompatURLFixture(c *qt.C) compatURLFixture {
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -328,7 +327,7 @@ func compatURLRows() []compatURLRow {
 func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := qt.New(t)
-	fx := newCompatURLFixture(c.TB)
+	fx := newCompatURLFixture(c)
 
 	for _, tt := range compatURLRows() {
 		t.Run(tt.name, func(t *testing.T) {

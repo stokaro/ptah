@@ -33,12 +33,11 @@ const warningLintPolicy = `lint {
 // atlas.hcl, a live SQLite database with one table, and a desired schema that
 // drops it. Applying the desired state therefore plans a DROP TABLE, which is
 // what the destructive analyzer reports.
-func schemaApplySkipLintFixture(tb testing.TB, policy string) (dir, dbPath string) {
-	c := qt.New(tb)
+func schemaApplySkipLintFixture(c *qt.C, policy string) (dir, dbPath string) {
 	c.Helper()
 	dir = c.TempDir()
 	dbPath = filepath.Join(dir, "target.db")
-	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+	createSQLiteSchemaCleanTable(c, dbPath, "users")
 	c.Assert(os.WriteFile(
 		filepath.Join(dir, "schema.sql"),
 		[]byte("CREATE TABLE keep (id INTEGER PRIMARY KEY);\n"),
@@ -52,8 +51,7 @@ func schemaApplySkipLintFixture(tb testing.TB, policy string) (dir, dbPath strin
 
 // runSchemaApplyInDir runs `atlas schema apply --dry-run` with dir as the
 // working directory, so the optional atlas.hcl beside it is the one that loads.
-func runSchemaApplyInDir(tb testing.TB, dir, dbPath string, extra ...string) (string, error) {
-	c := qt.New(tb)
+func runSchemaApplyInDir(c *qt.C, dir, dbPath string, extra ...string) (string, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -125,12 +123,12 @@ func TestSchemaApplySkipLint(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir, dbPath := schemaApplySkipLintFixture(c.TB, test.policy)
+			dir, dbPath := schemaApplySkipLintFixture(c, test.policy)
 			// The atlas.hcl lookup is relative to the working directory, and
 			// t.Chdir restores it and rejects a parallel test outright.
 			t.Chdir(dir)
 
-			out, err := runSchemaApplyInDir(c.TB, dir, dbPath, test.extra...)
+			out, err := runSchemaApplyInDir(c, dir, dbPath, test.extra...)
 
 			c.Assert(err != nil, qt.Equals, test.wantErr, qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, test.want)

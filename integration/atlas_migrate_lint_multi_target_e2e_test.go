@@ -32,8 +32,7 @@ func redactLintE2EDurations(s string) string {
 	return lintE2ETotalDurationRe.ReplaceAllString(s, "${1}DUR")
 }
 
-func writeLintE2EFile(tb testing.TB, dir, name, body string) {
-	c := qt.New(tb)
+func writeLintE2EFile(c *qt.C, dir, name, body string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 }
@@ -79,7 +78,7 @@ func TestAtlasMigrateLintMultiTargetDropE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -135,18 +134,18 @@ func TestAtlasMigrateLintMultiTargetDropE2E(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			testDBName := fmt.Sprintf("ptah_lint_mt_e2e_%d", time.Now().UnixNano())
-			createE2EDatabase(c.TB, ctx, adminDB, testDBName)
-			defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
+			createE2EDatabase(c, ctx, adminDB, testDBName)
+			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
 			migrationsDir := c.TempDir()
-			writeLintE2EFile(c.TB, migrationsDir, "1.sql",
+			writeLintE2EFile(c, migrationsDir, "1.sql",
 				"CREATE TABLE mid (id int);\nCREATE TABLE zeta (id int);\nCREATE TABLE alpha (id int);\n")
-			writeLintE2EFile(c.TB, migrationsDir, "2.sql", test.drop)
+			writeLintE2EFile(c, migrationsDir, "2.sql", test.drop)
 
 			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
-				"--dev-url", replaceDatabaseName(c.TB, dbURL, testDBName),
+				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),
 				"--latest", "1",
 			)
 

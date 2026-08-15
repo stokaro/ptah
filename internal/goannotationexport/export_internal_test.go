@@ -87,8 +87,8 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, goannotationsource.ErrChanged)
 			c.Assert(result, qt.DeepEquals, Result{})
-			assertExportInternalFileBytes(c.TB, source, test.wantSource)
-			assertExportInternalFileBytes(c.TB, output, previousOutput)
+			assertExportInternalFileBytes(c, source, test.wantSource)
+			assertExportInternalFileBytes(c, output, previousOutput)
 			entries, err := os.ReadDir(root)
 			c.Assert(err, qt.IsNil)
 			c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, test.wantEntryNames)
@@ -135,8 +135,8 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 
 			c.Assert(err, qt.ErrorIs, ErrOutputChanged)
 			c.Assert(result, qt.DeepEquals, Result{})
-			assertExportInternalFileBytes(c.TB, source, sourceData)
-			assertExportInternalFileBytes(c.TB, output, concurrentOutput)
+			assertExportInternalFileBytes(c, source, sourceData)
+			assertExportInternalFileBytes(c, output, concurrentOutput)
 			entries, err := os.ReadDir(root)
 			c.Assert(err, qt.IsNil)
 			c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{
@@ -173,8 +173,8 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, fsdurable.ErrStagedFileChanged)
 	c.Assert(result, qt.DeepEquals, Result{})
-	assertExportInternalFileBytes(c.TB, source, sourceData)
-	assertExportInternalFileBytes(c.TB, output, previousOutput)
+	assertExportInternalFileBytes(c, source, sourceData)
+	assertExportInternalFileBytes(c, output, previousOutput)
 	entries, err := os.ReadDir(root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{
@@ -275,8 +275,8 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 			c.Assert(err, qt.ErrorIs, ErrOutputChanged)
 			c.Assert(err, qt.Not(qt.ErrorIs), fsdurable.ErrReplacementCommitted)
 			c.Assert(result, qt.DeepEquals, Result{})
-			assertExportInternalFileBytes(c.TB, output, rival)
-			assertExportInternalFileBytes(c.TB, source, sourceData)
+			assertExportInternalFileBytes(c, output, rival)
+			assertExportInternalFileBytes(c, source, sourceData)
 			entries, err := os.ReadDir(root)
 			c.Assert(err, qt.IsNil)
 			c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{
@@ -287,8 +287,7 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 	}
 }
 
-func assertExportInternalFileBytes(tb testing.TB, path string, want []byte) {
-	c := qt.New(tb)
+func assertExportInternalFileBytes(c *qt.C, path string, want []byte) {
 	c.Helper()
 	got, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

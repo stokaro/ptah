@@ -45,8 +45,7 @@ func entryExists(path string) bool {
 // replaceBoundDirectory moves dir aside to retained and leaves a symlink to
 // decoy in its place, the way a hostile writer would between the moment the
 // interrupted run was cut short and the moment the next lock holder recovers.
-func replaceBoundDirectory(tb testing.TB, dir, retained, decoy string) {
-	c := qt.New(tb)
+func replaceBoundDirectory(c *qt.C, dir, retained, decoy string) {
 	c.Helper()
 	// The decoy is a live copy, staged temporary files included, so a recovery
 	// that follows the pathname finds a complete interrupted batch there and
@@ -66,7 +65,7 @@ func TestRecoverPendingPublication_RollsBackInTheRetainedDirectory(t *testing.T)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"), []byte("SELECT 1;"), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c.TB, dir)
+	writer := openTestWriter(c, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"interrupted",
@@ -74,13 +73,13 @@ func TestRecoverPendingPublication_RollsBackInTheRetainedDirectory(t *testing.T)
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
 	)
 	c.Assert(err, qt.IsNil)
-	_, _ = beginTestPublication(c.TB, writer, batch, []MigrationFileContent{{SQL: "SELECT 2;"}})
+	_, _ = beginTestPublication(c, writer, batch, []MigrationFileContent{{SQL: "SELECT 2;"}})
 	published, err := publishMigrationBatch(writer, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
 	publishedName := filepath.Base(batch.paths[0])
 	stagedName := batch.stagedNames[0]
-	replaceBoundDirectory(c.TB, dir, retained, decoy)
+	replaceBoundDirectory(c, dir, retained, decoy)
 
 	c.Assert(recoverPendingPublication(writer), qt.IsNil)
 
@@ -100,7 +99,7 @@ func TestRecoverPendingPublication_CleansUpInTheRetainedDirectory(t *testing.T) 
 	retained := filepath.Join(root, "migrations.moved")
 	decoy := filepath.Join(root, "decoy")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	writer := openTestWriter(c.TB, dir)
+	writer := openTestWriter(c, dir)
 	// An orphan staging file with no journal beside it: the shape an aborted run
 	// leaves behind, which recovery removes as cleanup rather than as rollback.
 	stagedName, err := stageRootedFile(
@@ -110,7 +109,7 @@ func TestRecoverPendingPublication_CleansUpInTheRetainedDirectory(t *testing.T) 
 		publishedFileMode,
 	)
 	c.Assert(err, qt.IsNil)
-	replaceBoundDirectory(c.TB, dir, retained, decoy)
+	replaceBoundDirectory(c, dir, retained, decoy)
 
 	c.Assert(recoverPendingPublication(writer), qt.IsNil)
 

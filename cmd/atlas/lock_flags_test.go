@@ -159,9 +159,9 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "lock-apply.db")
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260101000001_init.sql",
+			writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_init.sql",
 				"CREATE TABLE lock_flag_users (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectSum(c.TB, migrationsDir)
+			writeAtlasApplyProjectSum(c, migrationsDir)
 
 			args := append([]string{
 				"migrate", "apply",
@@ -175,7 +175,7 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 			c.Assert(out, qt.Contains, "Migration complete. Current version: 20260101000001")
 			c.Assert(strings.Contains(out, migrateApplyNamedLockNote), qt.Equals, tt.wantNote,
 				qt.Commentf("output:\n%s", out))
-			c.Assert(sqliteTableCount(c.TB, dbPath, "lock_flag_users"), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, "lock_flag_users"), qt.Equals, 1)
 		})
 	}
 }
@@ -220,7 +220,7 @@ func TestSchemaApplyNamedLockReachesLockMachinery(t *testing.T) {
 			// The --lock-timeout wording never appears alongside --skip-lock:
 			// a run that takes no lock has no timeout to ignore.
 			c.Assert(out, qt.Not(qt.Contains), schemaApplyLockUnsupportedNote)
-			c.Assert(sqliteTableCount(c.TB, dbPath, "lock_flag_schema"), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c, dbPath, "lock_flag_schema"), qt.Equals, 1)
 		})
 	}
 }

@@ -18,8 +18,7 @@ import (
 // provisioning the unscoped schema fails outright on the "other" table: a
 // --schema that was parsed and then ignored cannot make this pass, and a
 // --schema that kept both tables cannot either.
-func writeSchemaTestScopeFixture(tb testing.TB, modelsDir, testsDir string) {
-	c := qt.New(tb)
+func writeSchemaTestScopeFixture(c *qt.C, modelsDir, testsDir string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(modelsDir, "models.go"), []byte(`package models
 
@@ -99,7 +98,7 @@ func TestSchemaTestSchemaSelection(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			modelsDir, testsDir := c.TempDir(), c.TempDir()
-			writeSchemaTestScopeFixture(c.TB, modelsDir, testsDir)
+			writeSchemaTestScopeFixture(c, modelsDir, testsDir)
 			devDB := "sqlite://" + filepath.Join(c.TempDir(), "dev.db")
 
 			cmd := atlas.NewCompatCommand("atlas")

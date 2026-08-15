@@ -48,8 +48,7 @@ import (
 // It binds a port, reads it back and closes the listener, so the number is one
 // the kernel actually handed out rather than a guess that might collide with a
 // registry another test — or another agent on the same machine — is running.
-func closedRegistryHost(tb testing.TB) string {
-	c := qt.New(tb)
+func closedRegistryHost(c *qt.C) string {
 	c.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, qt.IsNil)
@@ -234,7 +233,7 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 // that reached the client.
 func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/schema:v1"
+	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
@@ -265,7 +264,7 @@ func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 // unencrypted all along.
 func TestOCISchemaSourceVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/schema:v1"
+	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
@@ -453,7 +452,7 @@ func TestOCIMigrationDirVerbs_EveryDirectoryFlagIsAccountedFor(t *testing.T) {
 // a registry being involved.
 func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
 
 	for _, row := range ociMigrationDirVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
@@ -480,7 +479,7 @@ func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 // encrypted.
 func TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
 
 	for _, row := range ociMigrationDirVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
@@ -517,8 +516,7 @@ func ociSourceReferencePath() string {
 // It is derived from the invocation the row already builds rather than restated
 // beside it, so the census below cannot claim a pairing the driven probe does
 // not exercise.
-func ociSourceFlag(tb testing.TB, row ociSourceVerb) string {
-	c := qt.New(tb)
+func ociSourceFlag(c *qt.C, row ociSourceVerb) string {
 	c.Helper()
 	const reference = "oci://registry.invalid/demo/artifact:v1"
 	args := row.args(reference)
@@ -530,13 +528,12 @@ func ociSourceFlag(tb testing.TB, row ociSourceVerb) string {
 
 // ociSourceCensus returns `<verb> <flag>` for every command the driven tables
 // above establish as resolving an `oci://` source, sorted.
-func ociSourceCensus(tb testing.TB) []string {
-	c := qt.New(tb)
+func ociSourceCensus(c *qt.C) []string {
 	c.Helper()
 	rows := slices.Concat(ociSchemaSourceVerbs(), ociMigrationDirVerbs())
 	census := make([]string, 0, len(rows))
 	for _, row := range rows {
-		census = append(census, row.verb+" "+ociSourceFlag(c.TB, row))
+		census = append(census, row.verb+" "+ociSourceFlag(c, row))
 	}
 	slices.Sort(census)
 	return census
@@ -544,8 +541,7 @@ func ociSourceCensus(tb testing.TB) []string {
 
 // ociReferenceCensus returns `<verb> <flag>` for every row of the reference
 // page's table, sorted.
-func ociReferenceCensus(tb testing.TB) []string {
-	c := qt.New(tb)
+func ociReferenceCensus(c *qt.C) []string {
 	c.Helper()
 	path := ociSourceReferencePath()
 	raw, err := os.ReadFile(path)
@@ -591,11 +587,11 @@ func appendOCIReferenceRow(census []string, match []string) []string {
 func TestOCISourceVerbs_MatchTheCommandReference(t *testing.T) {
 	c := qt.New(t)
 
-	census := ociSourceCensus(c.TB)
+	census := ociSourceCensus(c)
 	c.Assert(len(census) > 0, qt.IsTrue,
 		qt.Commentf("the driven tables are empty, so this gate is measuring nothing"))
 
-	c.Assert(ociReferenceCensus(c.TB), qt.DeepEquals, census)
+	c.Assert(ociReferenceCensus(c), qt.DeepEquals, census)
 }
 
 // verifySumVerb is one command registering --verify-sum, with the reason.

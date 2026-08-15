@@ -11,7 +11,7 @@ import (
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql", "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "inspect",
 		"--schema-file", schemaPath,
@@ -28,7 +28,7 @@ func TestSchemaInspectOutDirExportsFiles(t *testing.T) {
 	dir := t.TempDir()
 	outDir := filepath.Join(dir, "exported")
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -54,7 +54,7 @@ func TestSchemaInspectRejectsTemplateFormats(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -68,7 +68,7 @@ func TestSchemaInspectRejectsSplitWithoutOutDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -100,7 +100,7 @@ func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c.TB, dbPath, nativeInspectIncludeDDL)
+	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,

@@ -18,8 +18,8 @@ func TestStatus_SQLiteMainRevisionsSchema(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigrationFile(c.TB, migrationsDir, "1_one.sql", "CREATE TABLE status_main_revisions_schema_one (id INTEGER PRIMARY KEY);")
-	conn := connectSQLite(c.TB, filepath.Join(dir, "status-main-revisions-schema.db"))
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_one.sql", "CREATE TABLE status_main_revisions_schema_one (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "status-main-revisions-schema.db"))
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{

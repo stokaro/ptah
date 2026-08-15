@@ -67,7 +67,7 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "ui-flags.db")
-			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+			createSQLiteSchemaCleanTable(c, dbPath, "users")
 
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
@@ -110,7 +110,7 @@ func TestSchemaUIFlagsUnpassedDoNotInterfere(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "ui-flags-clear.db")
-			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+			createSQLiteSchemaCleanTable(c, dbPath, "users")
 
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer

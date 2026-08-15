@@ -20,8 +20,8 @@ func TestMigrateDirectorySchemeDiagnosticsE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
-	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtah(c, ctx, repoRoot, nativeBinary)
 
 	compatCases := []struct {
 		name string
@@ -65,11 +65,11 @@ func TestMigrateDirectorySchemeDiagnosticsE2E(t *testing.T) {
 			stdout, stderr, err := runCLIProcess(ctx, root, compatBinary, test.args...)
 
 			const wantStderr = "Error: missing scheme for dir url. Did you mean \"file://migrations\"? \n"
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, wantStderr)
 			c.Assert(stderr, qt.HasLen, 70)
-			c.Assert(readDirectoryNames(c.TB, root), qt.HasLen, 0)
+			c.Assert(readDirectoryNames(c, root), qt.HasLen, 0)
 		})
 	}
 
@@ -108,8 +108,7 @@ func TestMigrateDirectorySchemeDiagnosticsE2E(t *testing.T) {
 	})
 }
 
-func readDirectoryNames(tb testing.TB, path string) []string {
-	c := qt.New(tb)
+func readDirectoryNames(c *qt.C, path string) []string {
 	c.Helper()
 	entries, err := os.ReadDir(path)
 	c.Assert(err, qt.IsNil)

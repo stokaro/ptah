@@ -84,11 +84,11 @@ var booleanLiterals = []string{
 // rule catches both.
 func TestNoDirectBooleanEnvironmentParsing(t *testing.T) {
 	c := qt.New(t)
-	root := repositoryRoot(c.TB)
+	root := repositoryRoot(c)
 
 	var violations []string
-	for _, path := range goSourceFiles(c.TB, root) {
-		violations = append(violations, scanFile(c.TB, root, path)...)
+	for _, path := range goSourceFiles(c, root) {
+		violations = append(violations, scanFile(c, root, path)...)
 	}
 
 	c.Assert(violations, qt.HasLen, 0, qt.Commentf(
@@ -228,9 +228,9 @@ func Configured() bool {
 			c := qt.New(t)
 			dir := t.TempDir()
 			path := filepath.Join(dir, "probe.go")
-			writeFile(c.TB, path, test.source)
+			writeFile(c, path, test.source)
 
-			got := scanFile(c.TB, dir, path)
+			got := scanFile(c, dir, path)
 
 			c.Assert(got, qt.HasLen, test.want, qt.Commentf("%v", got))
 		})
@@ -246,7 +246,7 @@ func Configured() bool {
 func TestEveryPtahVariableIsClassified(t *testing.T) {
 	c := qt.New(t)
 
-	mentioned := ptahVarNames(c.TB, repositoryRoot(c.TB))
+	mentioned := ptahVarNames(c, repositoryRoot(c))
 
 	c.Assert(len(mentioned) > 10, qt.IsTrue, qt.Commentf(
 		"found %d names; a scan that finds nothing is also green", len(mentioned)))
@@ -415,8 +415,7 @@ func namesInBothClassifications() []string {
 
 // scanFile reports the guard violations in one Go source file, as
 // "path:line: reason" strings.
-func scanFile(tb testing.TB, root, path string) []string {
-	c := qt.New(tb)
+func scanFile(c *qt.C, root, path string) []string {
 	c.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, 0)
@@ -584,11 +583,10 @@ func selectorName(expression ast.Expr) string {
 //
 // Only string literals count. A name in a comment is prose; a name in a literal
 // is the program naming a variable.
-func ptahVarNames(tb testing.TB, root string) []string {
-	c := qt.New(tb)
+func ptahVarNames(c *qt.C, root string) []string {
 	c.Helper()
 	var names []string
-	for _, path := range goSourceFiles(c.TB, root) {
+	for _, path := range goSourceFiles(c, root) {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		c.Assert(err, qt.IsNil)
@@ -615,8 +613,7 @@ func ptahVarNames(tb testing.TB, root string) []string {
 // git is the path source for the reason scripts/check-test-style.sh gives: a
 // filesystem walk descends into every linked worktree parked under the
 // repository, and judges code that is not in this working tree at all.
-func goSourceFiles(tb testing.TB, root string) []string {
-	c := qt.New(tb)
+func goSourceFiles(c *qt.C, root string) []string {
 	c.Helper()
 	cmd := exec.Command("git", "-c", "core.quotePath=false",
 		"ls-files", "--cached", "--others", "--exclude-standard", "--", "*.go")
@@ -641,8 +638,7 @@ func goSourceFiles(tb testing.TB, root string) []string {
 }
 
 // repositoryRoot resolves the checkout this test belongs to.
-func repositoryRoot(tb testing.TB) string {
-	c := qt.New(tb)
+func repositoryRoot(c *qt.C) string {
 	c.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	c.Assert(err, qt.IsNil)
@@ -650,8 +646,7 @@ func repositoryRoot(tb testing.TB) string {
 }
 
 // writeFile writes a fixture, failing the test rather than the scanner.
-func writeFile(tb testing.TB, path, content string) {
-	c := qt.New(tb)
+func writeFile(c *qt.C, path, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 }

@@ -25,7 +25,7 @@ import (
 
 func TestInspectSource_DatabaseURL(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c.TB)
+	dbPath := seedInspectSQLiteDB(c)
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
@@ -39,7 +39,7 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 
 func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c.TB)
+	dbPath := seedInspectSQLiteDB(c)
 	diagnosticCalled := false
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -76,7 +76,7 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
-	assertInspectSQLiteDevEmpty(c.TB, devPath)
+	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
 func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
@@ -93,7 +93,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 		qt.IsNil,
 	)
 
-	lockConn := connectSQLite(c.TB, devPath)
+	lockConn := connectSQLite(c, devPath)
 	defer dbschema.CloseAndWarn(lockConn)
 	lock, err := devlock.Acquire(t.Context(), lockConn, 0)
 	c.Assert(err, qt.IsNil)
@@ -116,7 +116,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "locked_inspection"`)
-	assertInspectSQLiteDevEmpty(c.TB, devPath)
+	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
 // TestInspectSource_DevDatabaseIsReset proves the dev database is reset
@@ -126,7 +126,7 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devPath := filepath.Join(dir, "dev.db")
-	devConn := connectSQLite(c.TB, devPath)
+	devConn := connectSQLite(c, devPath)
 	_, err := devConn.ExecContext(context.Background(), "CREATE TABLE stale_dev_table (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(devConn)
@@ -167,13 +167,12 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "replayed_users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "atlas_schema_revisions")
-	assertInspectSQLiteDevEmpty(c.TB, devPath)
+	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
-func assertInspectSQLiteDevEmpty(tb testing.TB, path string) {
-	c := qt.New(tb)
+func assertInspectSQLiteDevEmpty(c *qt.C, path string) {
 	c.Helper()
-	conn := connectSQLite(c.TB, path)
+	conn := connectSQLite(c, path)
 	defer dbschema.CloseAndWarn(conn)
 	var count int
 	err := conn.QueryRowContext(c.Context(), `
@@ -214,7 +213,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 // loader, and together they reproduce the inspected tables.
 func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c.TB)
+	dbPath := seedInspectSQLiteDB(c)
 	outDir := filepath.Join(t.TempDir(), "schema")
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -224,7 +223,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Equals, "")
-	written := collectFiles(c.TB, outDir, ".hcl")
+	written := collectFiles(c, outDir, ".hcl")
 	c.Assert(written, qt.Not(qt.HasLen), 0)
 	reloaded, err := schemafile.LoadAll(written, schemafile.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
@@ -244,7 +243,7 @@ func TestInspectSource_SQLSplitWriteExportReloads(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-sql-export.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	_, err := conn.ExecContext(context.Background(), `
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
@@ -269,7 +268,7 @@ CREATE TABLE sessions (
 	mainSQL, err := os.ReadFile(filepath.Join(outDir, "main.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(mainSQL), qt.Contains, "-- atlas:import ./tables/users.sql")
-	objectFiles := collectFiles(c.TB, filepath.Join(outDir, "tables"), ".sql")
+	objectFiles := collectFiles(c, filepath.Join(outDir, "tables"), ".sql")
 	c.Assert(objectFiles, qt.Not(qt.HasLen), 0)
 	reloaded, err := schemafile.LoadAll(objectFiles, schemafile.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
@@ -281,7 +280,7 @@ CREATE TABLE sessions (
 // database: the reloaded output must reproduce the live output.
 func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c.TB)
+	dbPath := seedInspectSQLiteDB(c)
 	dir := t.TempDir()
 
 	live, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -399,7 +398,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 
 	t.Run("write escaping the working directory", func(t *testing.T) {
 		c := qt.New(t)
-		dbPath := seedInspectSQLiteDB(c.TB)
+		dbPath := seedInspectSQLiteDB(c)
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://" + dbPath,
@@ -411,7 +410,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 
 	t.Run("duplicate write targets", func(t *testing.T) {
 		c := qt.New(t)
-		dbPath := seedInspectSQLiteDB(c.TB)
+		dbPath := seedInspectSQLiteDB(c)
 		outDir := filepath.Join(c.TempDir(), "dup")
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -423,20 +422,18 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	})
 }
 
-func seedInspectSQLiteDB(tb testing.TB) string {
-	c := qt.New(tb)
+func seedInspectSQLiteDB(c *qt.C) string {
 	c.Helper()
 	dbPath := filepath.Join(c.TempDir(), "inspect-source.db")
-	conn := connectSQLite(c.TB, dbPath)
+	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c.TB, conn)
+	createInspectSchema(c, conn)
 	return dbPath
 }
 
 // collectFiles returns every file under root with the given extension, in
 // deterministic sorted order.
-func collectFiles(tb testing.TB, root, extension string) []string {
-	c := qt.New(tb)
+func collectFiles(c *qt.C, root, extension string) []string {
 	c.Helper()
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {

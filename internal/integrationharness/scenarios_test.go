@@ -69,15 +69,15 @@ func TestGetDynamicScenariosRegistersRunnableMetadata(t *testing.T) {
 
 func TestExistingColumnForeignKeyFixtureMetadata(t *testing.T) {
 	c := qt.New(t)
-	baseSchema := loadRoundTripFixtureSchema(c.TB, "046-roundtrip-existing-fk-base")
-	addedSchema := loadRoundTripFixtureSchema(c.TB, "047-roundtrip-existing-fk-added")
+	baseSchema := loadRoundTripFixtureSchema(c, "046-roundtrip-existing-fk-base")
+	addedSchema := loadRoundTripFixtureSchema(c, "047-roundtrip-existing-fk-added")
 
-	baseUsers := findRoundTripTable(c.TB, baseSchema, "users")
-	addedUsers := findRoundTripTable(c.TB, addedSchema, "users")
-	baseAccountID := findRoundTripField(c.TB, baseSchema, baseUsers.StructName, "account_id")
-	baseManagerID := findRoundTripField(c.TB, baseSchema, baseUsers.StructName, "manager_id")
-	addedAccountID := findRoundTripField(c.TB, addedSchema, addedUsers.StructName, "account_id")
-	addedManagerID := findRoundTripField(c.TB, addedSchema, addedUsers.StructName, "manager_id")
+	baseUsers := findRoundTripTable(c, baseSchema, "users")
+	addedUsers := findRoundTripTable(c, addedSchema, "users")
+	baseAccountID := findRoundTripField(c, baseSchema, baseUsers.StructName, "account_id")
+	baseManagerID := findRoundTripField(c, baseSchema, baseUsers.StructName, "manager_id")
+	addedAccountID := findRoundTripField(c, addedSchema, addedUsers.StructName, "account_id")
+	addedManagerID := findRoundTripField(c, addedSchema, addedUsers.StructName, "manager_id")
 
 	c.Assert(baseAccountID.Type, qt.Equals, "INTEGER")
 	c.Assert(baseAccountID.Foreign, qt.Equals, "")
@@ -125,8 +125,7 @@ func scenarioNames(scenarios []integrationharness.TestScenario) []string {
 	return names
 }
 
-func loadRoundTripFixtureSchema(tb testing.TB, version string) *goschema.Database {
-	c := qt.New(tb)
+func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
 	c.Helper()
 	vem, err := integrationharness.NewVersionedEntityManager(os.DirFS(fixturesRoot))
 	c.Assert(err, qt.IsNil)
@@ -139,8 +138,7 @@ func loadRoundTripFixtureSchema(tb testing.TB, version string) *goschema.Databas
 	return schema
 }
 
-func findRoundTripTable(tb testing.TB, schema *goschema.Database, name string) *goschema.Table {
-	c := qt.New(tb)
+func findRoundTripTable(c *qt.C, schema *goschema.Database, name string) *goschema.Table {
 	c.Helper()
 	index := slices.IndexFunc(schema.Tables, func(table goschema.Table) bool {
 		return table.Name == name
@@ -149,8 +147,7 @@ func findRoundTripTable(tb testing.TB, schema *goschema.Database, name string) *
 	return &schema.Tables[index]
 }
 
-func findRoundTripField(tb testing.TB, schema *goschema.Database, structName, name string) *goschema.Field {
-	c := qt.New(tb)
+func findRoundTripField(c *qt.C, schema *goschema.Database, structName, name string) *goschema.Field {
 	c.Helper()
 	index := slices.IndexFunc(schema.Fields, func(field goschema.Field) bool {
 		return field.StructName == structName && field.Name == name

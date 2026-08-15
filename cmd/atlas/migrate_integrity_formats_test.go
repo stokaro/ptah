@@ -101,8 +101,7 @@ func errorChainContainsText(err error, want string) bool {
 	return errorChainContainsText(errors.Unwrap(err), want)
 }
 
-func writeIntegrityFixture(tb testing.TB) string {
-	c := qt.New(tb)
+func writeIntegrityFixture(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	for name, content := range integrityFixture {
@@ -116,15 +115,13 @@ func writeIntegrityFixture(tb testing.TB) string {
 // sumFileExists reports whether the directory carries an atlas.sum, so a
 // refusal can be checked to have written nothing rather than only to have
 // returned an error.
-func sumFileExists(tb testing.TB, dir string) bool {
-	c := qt.New(tb)
+func sumFileExists(c *qt.C, dir string) bool {
 	c.Helper()
 	_, err := os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
 	return err == nil
 }
 
-func readSumFile(tb testing.TB, dir string) *migratesum.SumFile {
-	c := qt.New(tb)
+func readSumFile(c *qt.C, dir string) *migratesum.SumFile {
 	c.Helper()
 	raw, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
 	c.Assert(err, qt.IsNil)
@@ -133,18 +130,16 @@ func readSumFile(tb testing.TB, dir string) *migratesum.SumFile {
 	return sum
 }
 
-func sumEntryNames(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func sumEntryNames(c *qt.C, dir string) []string {
 	c.Helper()
 	names := make([]string, 0)
-	for _, entry := range readSumFile(c.TB, dir).Entries {
+	for _, entry := range readSumFile(c, dir).Entries {
 		names = append(names, entry.Name)
 	}
 	return names
 }
 
-func sumBytes(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func sumBytes(c *qt.C, dir string) string {
 	c.Helper()
 	raw, err := os.ReadFile(filepath.Join(dir, migratesum.AtlasFileName))
 	c.Assert(err, qt.IsNil)
@@ -171,21 +166,21 @@ func TestCompatMigrateHashSourceFormat_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("query_"+tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, tt.want)
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
 		})
 		t.Run("flag_"+tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.format)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, tt.want)
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -209,15 +204,15 @@ func TestCompatMigrateHashSpellingsAgree_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			queryDir := writeIntegrityFixture(c.TB)
-			flagDir := writeIntegrityFixture(c.TB)
+			queryDir := writeIntegrityFixture(c)
+			flagDir := writeIntegrityFixture(c)
 
 			queryOut, _, queryErr := runCompatExit("migrate", "hash", "--dir", "file://"+queryDir+"?format="+tt.format)
 			flagOut, _, flagErr := runCompatExit("migrate", "hash", "--dir", "file://"+flagDir, "--dir-format", tt.format)
 
 			c.Assert(queryErr, qt.IsNil, qt.Commentf("output:\n%s", queryOut))
 			c.Assert(flagErr, qt.IsNil, qt.Commentf("output:\n%s", flagOut))
-			c.Assert(sumBytes(c.TB, flagDir), qt.Equals, sumBytes(c.TB, queryDir))
+			c.Assert(sumBytes(c, flagDir), qt.Equals, sumBytes(c, queryDir))
 		})
 	}
 }
@@ -244,7 +239,7 @@ func TestCompatMigrateSourceFormatPrecedence_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, _, err := runCompatExit(
 				"migrate", "hash",
@@ -253,7 +248,7 @@ func TestCompatMigrateSourceFormatPrecedence_HappyPath(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, tt.want)
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -306,22 +301,22 @@ func TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath(t *testing.T) {
 		},
 	}
 
-	baseline := writeIntegrityFixture(c.TB)
+	baseline := writeIntegrityFixture(c)
 	baselineOut, baselineErrOut, err := runCompatExit("migrate", "hash", "--dir", "file://"+baseline)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", baselineOut, baselineErrOut))
 	c.Assert(baselineOut, qt.Equals, "")
 	c.Assert(baselineErrOut, qt.Equals, "")
-	wantSum := sumBytes(c.TB, baseline)
+	wantSum := sumBytes(c, baseline)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "hash"}, tt.args(dir)...)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-			c.Assert(sumBytes(c.TB, dir), qt.Equals, wantSum)
+			c.Assert(sumBytes(c, dir), qt.Equals, wantSum)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
 		})
@@ -332,14 +327,14 @@ func TestCompatMigrateHashAtlasLayoutUnmoved_HappyPath(t *testing.T) {
 // success contract for converted migration directory formats.
 func TestCompatMigrateHashConvertedDirOutput_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	dir := writeIntegrityFixture(c.TB)
+	dir := writeIntegrityFixture(c)
 
 	stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "")
-	c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, golangMigrateCoveredSet)
+	c.Assert(sumEntryNames(c, dir), qt.DeepEquals, golangMigrateCoveredSet)
 }
 
 // TestCompatMigrateHashEmptySourceSet_HappyPath covers the seam with the apply
@@ -374,7 +369,7 @@ func TestCompatMigrateHashEmptySourceSet_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 			c.Assert(stdout, qt.Equals, "")
 			// Measured CE empty-set sum, identical across formats.
-			c.Assert(sumBytes(c.TB, dir), qt.Equals, "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n")
+			c.Assert(sumBytes(c, dir), qt.Equals, "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n")
 
 			validateOut, validateErrOut, validateErr := runCompatExit(
 				"migrate", "validate", "--dir", "file://"+dir+"?format="+tt.format)
@@ -406,7 +401,7 @@ func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("query_"+tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
 			c.Assert(err, qt.IsNil)
 
@@ -418,7 +413,7 @@ func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
 		})
 		t.Run("flag_"+tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.format)
 			c.Assert(err, qt.IsNil)
 
@@ -432,7 +427,7 @@ func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
 
 	t.Run("golang_migrate_down_file_is_outside_the_covered_set", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 		c.Assert(err, qt.IsNil)
 		c.Assert(os.WriteFile(filepath.Join(dir, "2_more.down.sql"), []byte("DROP TABLE b CASCADE;\n"), 0o600), qt.IsNil)
@@ -452,7 +447,7 @@ func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
 func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
 	t.Run("unhashed converted directory", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 
 		stdout, stderr, err := runCompatExit("migrate", "validate", "--dir", "file://"+dir+"?format=goose")
 
@@ -476,7 +471,7 @@ func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
 	for _, tt := range tampered {
 		t.Run("tampered "+tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
 			c.Assert(err, qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(dir, tt.file), []byte("CREATE TABLE pwned (id int);\n"), 0o600), qt.IsNil)
@@ -492,7 +487,7 @@ func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
 
 	t.Run("malformed sum file", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
 		c.Assert(err, qt.IsNil)
 		c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("not a sum file\n"), 0o600), qt.IsNil)
@@ -507,7 +502,7 @@ func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
 
 	t.Run("a directory hashed as one layout does not verify as another", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
 		c.Assert(err, qt.IsNil)
 
@@ -563,7 +558,7 @@ func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			_, _, err := runCompatExit(append([]string{"migrate", "hash"}, tt.args(dir)...)...)
 
@@ -694,12 +689,12 @@ func TestCompatMigrateSourceFormatQuery_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+tt.query)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-			c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, tt.want)
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -744,13 +739,13 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			_, _, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+tt.query)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(sumFileExists(c.TB, dir), qt.IsFalse)
+			c.Assert(sumFileExists(c, dir), qt.IsFalse)
 		})
 	}
 }
@@ -765,15 +760,15 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 func TestCompatMigrateIntegrityRepeatedDir_HappyPath(t *testing.T) {
 	t.Run("the last --dir names the directory and the layout", func(t *testing.T) {
 		c := qt.New(t)
-		first := writeIntegrityFixture(c.TB)
-		last := writeIntegrityFixture(c.TB)
+		first := writeIntegrityFixture(c)
+		last := writeIntegrityFixture(c)
 
 		stdout, _, err := runCompatExit("migrate", "hash",
 			"--dir", "file://"+first,
 			"--dir", "file://"+last+"?format=golang-migrate")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-		c.Assert(sumEntryNames(c.TB, last), qt.DeepEquals, golangMigrateCoveredSet)
+		c.Assert(sumEntryNames(c, last), qt.DeepEquals, golangMigrateCoveredSet)
 		_, statErr := os.Stat(filepath.Join(first, migratesum.AtlasFileName))
 		c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 	})
@@ -789,8 +784,8 @@ func TestCompatMigrateIntegrityRepeatedDir_HappyPath(t *testing.T) {
 // notion of "which --dir counts" inside the resolver.
 func TestCompatMigrateIntegrityRepeatedDir_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	first := writeIntegrityFixture(c.TB)
-	last := writeIntegrityFixture(c.TB)
+	first := writeIntegrityFixture(c)
+	last := writeIntegrityFixture(c)
 
 	_, _, err := runCompatExit("migrate", "hash",
 		"--dir", "file://"+first+"?format=goose",
@@ -813,17 +808,17 @@ func TestCompatMigrateIntegrityRepeatedDir_FailurePath(t *testing.T) {
 func TestCompatMigrateIntegrityEmptyDirFormat_HappyPath(t *testing.T) {
 	t.Run("hash writes the atlas covered set", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 
 		stdout, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s%s", stdout, stderr))
-		c.Assert(sumEntryNames(c.TB, dir), qt.DeepEquals, sqlSuffixCoveredSet)
+		c.Assert(sumEntryNames(c, dir), qt.DeepEquals, sqlSuffixCoveredSet)
 	})
 
 	t.Run("validate accepts the directory hash wrote", func(t *testing.T) {
 		c := qt.New(t)
-		dir := writeIntegrityFixture(c.TB)
+		dir := writeIntegrityFixture(c)
 		_, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "")
 		c.Assert(hashErr, qt.IsNil)
 
@@ -873,7 +868,7 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 			base := []string{"migrate", tt.verb, "--dir", "file://" + dir}
 
 			convertedArgs := append(append(append([]string{}, base...), "--dir-format", "goose"), tt.args...)
@@ -914,8 +909,8 @@ func TestCompatMigrateIntegrityArgumentTerminator_FailurePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			named := writeIntegrityFixture(c.TB)
-			other := writeIntegrityFixture(c.TB)
+			named := writeIntegrityFixture(c)
+			other := writeIntegrityFixture(c)
 
 			_, _, err := runCompatExit("migrate", tt.verb,
 				"--dir", "file://"+named+"?format=atlas",
@@ -966,7 +961,7 @@ func TestCompatMigrateIntegrityHelp_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", tt.verb}, tt.args(dir)...)...)
 
@@ -1003,7 +998,7 @@ func TestCompatMigrateIntegritySemicolonQuery_FailurePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeIntegrityFixture(c.TB)
+			dir := writeIntegrityFixture(c)
 
 			_, _, err := runCompatExit("migrate", tt.verb, "--dir", "file://"+dir+tt.query)
 

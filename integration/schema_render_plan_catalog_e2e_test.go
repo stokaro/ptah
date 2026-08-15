@@ -168,7 +168,7 @@ func TestSchemaRenderAndPlanCatalogAgreementE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	tests := []renderPlanCatalogCase{
 		{name: "postgres", dialect: "postgres", engine: dbtarget.PostgreSQL},
@@ -178,22 +178,21 @@ func TestSchemaRenderAndPlanCatalogAgreementE2E(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			runRenderPlanCatalogCase(c.TB, ctx, binaryPath, test)
+			runRenderPlanCatalogCase(c, ctx, binaryPath, test)
 		})
 	}
 }
 
 func runRenderPlanCatalogCase(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	binaryPath string,
 	test renderPlanCatalogCase,
 ) {
-	c := qt.New(tb)
 	c.Helper()
 
 	adminURL := dbtarget.URL(c, test.engine)
-	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c.TB, adminURL))
+	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
 	c.Assert(err, qt.IsNil)
 	// Registered before the drops below so it runs after them: cleanups are
 	// last-in-first-out, and a deferred Close would shut the pool while the
@@ -203,7 +202,7 @@ func runRenderPlanCatalogCase(
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	roleName := "p929_role_" + suffix
-	fixtureDir := writeRenderPlanFixture(c.TB, suffix)
+	fixtureDir := writeRenderPlanFixture(c, suffix)
 
 	renderName := "p929_render_" + suffix
 	planName := "p929_plan_" + suffix
@@ -215,31 +214,31 @@ func runRenderPlanCatalogCase(
 	// order wrong leaks one role per run onto a shared server rather than into a
 	// database somebody later removes.
 	c.Cleanup(func() { dropRenderPlanRole(adminDB, roleName) })
-	createE2EDatabase(c.TB, ctx, adminDB, renderName)
-	c.Cleanup(func() { dropRenderPlanDatabase(c.TB, adminDB, renderName) })
-	createE2EDatabase(c.TB, ctx, adminDB, planName)
-	c.Cleanup(func() { dropRenderPlanDatabase(c.TB, adminDB, planName) })
+	createE2EDatabase(c, ctx, adminDB, renderName)
+	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, renderName) })
+	createE2EDatabase(c, ctx, adminDB, planName)
+	c.Cleanup(func() { dropRenderPlanDatabase(c, adminDB, planName) })
 
-	renderURL := replaceDatabaseName(c.TB, adminURL, renderName)
-	planURL := replaceDatabaseName(c.TB, adminURL, planName)
+	renderURL := replaceDatabaseName(c, adminURL, renderName)
+	planURL := replaceDatabaseName(c, adminURL, planName)
 
 	// The plan is read first, while both databases are empty and no role of this
 	// name exists anywhere on the server. Reading it after the render surface ran
 	// would let the planner see the role the render surface created and omit
 	// CREATE ROLE, which is the one way this comparison could agree for the wrong
 	// reason.
-	planSQL := readPlanSurfaceSQL(c.TB, ctx, binaryPath, fixtureDir, planURL)
-	renderSQL := readRenderSurfaceSQL(c.TB, ctx, binaryPath, fixtureDir, test.dialect)
+	planSQL := readPlanSurfaceSQL(c, ctx, binaryPath, fixtureDir, planURL)
+	renderSQL := readRenderSurfaceSQL(c, ctx, binaryPath, fixtureDir, test.dialect)
 
-	renderCensus := applyAndCensus(c.TB, ctx, test.dialect, renderURL, renderSQL, suffix)
+	renderCensus := applyAndCensus(c, ctx, test.dialect, renderURL, renderSQL, suffix)
 
 	// The render surface's database and role are removed before the plan surface
 	// runs, so the plan surface starts from the same empty server the plan was
 	// read against.
-	dropRenderPlanDatabase(c.TB, adminDB, renderName)
+	dropRenderPlanDatabase(c, adminDB, renderName)
 	dropRenderPlanRole(adminDB, roleName)
 
-	planCensus := applyAndCensus(c.TB, ctx, test.dialect, planURL, planSQL, suffix)
+	planCensus := applyAndCensus(c, ctx, test.dialect, planURL, planSQL, suffix)
 
 	c.Logf("%s catalog after the render surface:\n%s", test.name, formatRenderPlanCensus(renderCensus))
 	c.Logf("%s catalog after the plan surface:\n%s", test.name, formatRenderPlanCensus(planCensus))
@@ -263,8 +262,7 @@ func runRenderPlanCatalogCase(
 
 // writeRenderPlanFixture materializes the annotated fixture with this run's
 // suffix and returns the directory holding it.
-func writeRenderPlanFixture(tb testing.TB, suffix string) string {
-	c := qt.New(tb)
+func writeRenderPlanFixture(c *qt.C, suffix string) string {
 	c.Helper()
 
 	dir := filepath.Join(c.TempDir(), "models")
@@ -276,11 +274,10 @@ func writeRenderPlanFixture(tb testing.TB, suffix string) string {
 
 // readRenderSurfaceSQL returns what `schema render` emits for the dialect.
 func readRenderSurfaceSQL(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	binaryPath, fixtureDir, dialect string,
 ) string {
-	c := qt.New(tb)
 	c.Helper()
 
 	stdout, stderr, err := runPtahCapturingStreams(ctx, binaryPath,
@@ -296,11 +293,10 @@ func readRenderSurfaceSQL(
 // line ever became SQL, silently dropping it would delete a statement from the
 // surface under measurement.
 func readPlanSurfaceSQL(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	binaryPath, fixtureDir, dbURL string,
 ) string {
-	c := qt.New(tb)
 	c.Helper()
 
 	stdout, stderr, err := runPtahCapturingStreams(ctx, binaryPath,
@@ -332,14 +328,13 @@ func runPtahCapturingStreams(
 // applyAndCensus executes one surface's SQL against dbURL and reads the catalog
 // back.
 func applyAndCensus(
-	tb testing.TB,
+	c *qt.C,
 	ctx context.Context,
 	dialect, dbURL, surfaceSQL, suffix string,
 ) map[string]string {
-	c := qt.New(tb)
 	c.Helper()
 
-	db, err := sql.Open("pgx", postgresFamilyDriverURL(c.TB, dbURL))
+	db, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbURL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 
@@ -373,8 +368,7 @@ func applyAndCensus(
 // canceled. The budget is deliberately generous: a loaded machine has taken
 // over thirty seconds to drop a database of this size, which is a fact about
 // the disk and not about the surfaces under measurement.
-func dropRenderPlanDatabase(tb testing.TB, adminDB *sql.DB, name string) {
-	c := qt.New(tb)
+func dropRenderPlanDatabase(c *qt.C, adminDB *sql.DB, name string) {
 	c.Helper()
 
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

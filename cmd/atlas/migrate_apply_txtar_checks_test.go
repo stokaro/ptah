@@ -28,18 +28,16 @@ SELECT NOT EXISTS (SELECT * FROM users);
 ALTER TABLE users ADD COLUMN email TEXT;
 `
 
-func writeTxtarChecksMigrationsDir(tb testing.TB, dir string, usersSQL string) string {
-	c := qt.New(tb)
+func writeTxtarChecksMigrationsDir(c *qt.C, dir string, usersSQL string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql", usersSQL)
-	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000002_add_users_email.sql", compatTxtarCheckedAddEmail)
-	writeAtlasApplyProjectSum(c.TB, migrationsDir)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql", usersSQL)
+	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql", compatTxtarCheckedAddEmail)
+	writeAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 
-func sqliteUsersEmailColumnCount(tb testing.TB, dbPath string) int {
-	c := qt.New(tb)
+func sqliteUsersEmailColumnCount(c *qt.C, dbPath string) int {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -57,7 +55,7 @@ func TestMigrateApplyTxtarFailingChecksAbortBeforeBody(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	// Migration 1 seeds a row, so migration 2's checks.sql assertion fails.
-	migrationsDir := writeTxtarChecksMigrationsDir(c.TB, dir,
+	migrationsDir := writeTxtarChecksMigrationsDir(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
 	dbPath := filepath.Join(dir, "apply.db")
 
@@ -70,8 +68,8 @@ func TestMigrateApplyTxtarFailingChecksAbortBeforeBody(t *testing.T) {
 	c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
 	c.Assert(err.Error(), qt.Contains, "pre-migration check checks.sql#1 for migration 20260801000002 was not satisfied")
 	// Migration 1 applied; nothing from migration 2's body did.
-	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
-	c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 0)
 }
 
 // TestMigrateApplyTxtarRetryAfterFixingDataSucceeds is the recovery half of the
@@ -83,7 +81,7 @@ func TestMigrateApplyTxtarFailingChecksAbortBeforeBody(t *testing.T) {
 func TestMigrateApplyTxtarRetryAfterFixingDataSucceeds(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeTxtarChecksMigrationsDir(c.TB, dir,
+	migrationsDir := writeTxtarChecksMigrationsDir(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
 	dbPath := filepath.Join(dir, "apply.db")
 
@@ -109,7 +107,7 @@ func TestMigrateApplyTxtarRetryAfterFixingDataSucceeds(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("retry output:\n%s", out))
-	c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
 
 	status, err := executeAtlasProjectCommand(
 		"migrate", "status",
@@ -124,7 +122,7 @@ func TestMigrateApplyTxtarPassingChecksApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	// users stays empty, so migration 2's checks.sql assertion passes.
-	migrationsDir := writeTxtarChecksMigrationsDir(c.TB, dir,
+	migrationsDir := writeTxtarChecksMigrationsDir(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
 	dbPath := filepath.Join(dir, "apply.db")
 
@@ -135,13 +133,13 @@ func TestMigrateApplyTxtarPassingChecksApply(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
 }
 
 func TestMigrateApplyHasNoSkipChecksFlag(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeTxtarChecksMigrationsDir(c.TB, dir,
+	migrationsDir := writeTxtarChecksMigrationsDir(c, dir,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
 	dbPath := filepath.Join(dir, "apply.db")
 

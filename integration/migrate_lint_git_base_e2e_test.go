@@ -36,10 +36,10 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
-	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtah(c, ctx, repoRoot, nativeBinary)
 
-	dir := newGitFixtureRepository(c.TB, ctx, compatBinary)
+	dir := newGitFixtureRepository(c, ctx, compatBinary)
 
 	t.Run("a resolvable --git-base analyzes the changeset", func(t *testing.T) {
 		c := qt.New(t)
@@ -64,7 +64,7 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 			"--git-base", "nosuchbranch",
 		)
 
-		c.Check(exitStatusOf(c.TB, err), qt.Equals, 1)
+		c.Check(exitStatusOf(c, err), qt.Equals, 1)
 		c.Check(stdout, qt.Equals, "")
 		c.Check(stderr, qt.Equals, "Error: git diff: exit status 128\n")
 	})
@@ -77,7 +77,7 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 			"--git-base", "nosuchbranch",
 		)
 
-		c.Check(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Check(exitStatusOf(c, err), qt.Equals, 2)
 		c.Check(stdout, qt.Equals, "")
 		// The full command line is what makes a failed selection reproducible
 		// by hand, so the native surface keeps it. Removing it there would be
@@ -92,8 +92,7 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 // branches, two commits, a hashed migration directory on each. Global and
 // system git configuration are neutralized so the fixture cannot inherit a
 // signing requirement or a default branch name from the host.
-func newGitFixtureRepository(tb testing.TB, ctx context.Context, hashBinary string) string {
-	c := qt.New(tb)
+func newGitFixtureRepository(c *qt.C, ctx context.Context, hashBinary string) string {
 	c.Helper()
 	dir := c.TempDir()
 	environment := append(environmentWithoutPtahVariables(),

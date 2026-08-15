@@ -63,7 +63,7 @@ func TestMigrateUpLockRequest(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 
-			assertLockAcquisition(c.TB, observer, tt.wantAcquire)
+			assertLockAcquisition(c, observer, tt.wantAcquire)
 		})
 	}
 }
@@ -93,8 +93,7 @@ func TestMigrationLockAccessors(t *testing.T) {
 
 // assertLockAcquisition asserts the observed acquisition against want, where
 // the empty string means "no lock was requested at all".
-func assertLockAcquisition(tb testing.TB, observer *recordingObserver, want string) {
-	c := qt.New(tb)
+func assertLockAcquisition(c *qt.C, observer *recordingObserver, want string) {
 	c.Helper()
 	got, acquired := observedLockName(observer)
 	c.Assert(acquired, qt.Equals, want != "",

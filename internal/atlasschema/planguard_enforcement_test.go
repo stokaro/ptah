@@ -25,8 +25,7 @@ import (
 // create for a rehearsal, pins a session, and applies the engine-level
 // restrictions. The callback receives a connection whose statements the lint
 // never inspected.
-func restrictedEphemeralDev(tb testing.TB, use func(*dbschema.DatabaseConnection)) {
-	c := qt.New(tb)
+func restrictedEphemeralDev(c *qt.C, use func(*dbschema.DatabaseConnection)) {
 	c.Helper()
 	devURL, cleanup, err := atlasschema.NewEphemeralSQLiteDev()
 	c.Assert(err, qt.IsNil)
@@ -47,9 +46,9 @@ func TestEphemeralSQLiteDevRefusesAttachAtTheEngine(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	victimPath := filepath.Join(dir, "victim.db")
-	seedPlanSQLite(c.TB, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	seedPlanSQLite(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
 
-	restrictedEphemeralDev(c.TB, func(session *dbschema.DatabaseConnection) {
+	restrictedEphemeralDev(c, func(session *dbschema.DatabaseConnection) {
 		ctx := context.Background()
 
 		// The exact payload from the original escape, run with no lint in
@@ -61,8 +60,8 @@ func TestEphemeralSQLiteDevRefusesAttachAtTheEngine(t *testing.T) {
 	})
 
 	// The victim database never gained the attacker's table.
-	c.Assert(sqliteHasTable(c.TB, victimPath, "pwned"), qt.IsFalse)
-	c.Assert(sqliteHasTable(c.TB, victimPath, "untouched"), qt.IsTrue)
+	c.Assert(sqliteHasTable(c, victimPath, "pwned"), qt.IsFalse)
+	c.Assert(sqliteHasTable(c, victimPath, "untouched"), qt.IsTrue)
 }
 
 func TestEphemeralSQLiteDevRefusesFilesystemWritesAtTheEngine(t *testing.T) {
@@ -70,7 +69,7 @@ func TestEphemeralSQLiteDevRefusesFilesystemWritesAtTheEngine(t *testing.T) {
 	dir := t.TempDir()
 	copyPath := filepath.Join(dir, "exfiltrated.db")
 
-	restrictedEphemeralDev(c.TB, func(session *dbschema.DatabaseConnection) {
+	restrictedEphemeralDev(c, func(session *dbschema.DatabaseConnection) {
 		ctx := context.Background()
 
 		// VACUUM INTO writes a database copy to an arbitrary path. SQLite
@@ -91,7 +90,7 @@ func TestEphemeralSQLiteDevRefusesFilesystemWritesAtTheEngine(t *testing.T) {
 func TestEphemeralSQLiteDevStillRunsOrdinaryDDL(t *testing.T) {
 	c := qt.New(t)
 
-	restrictedEphemeralDev(c.TB, func(session *dbschema.DatabaseConnection) {
+	restrictedEphemeralDev(c, func(session *dbschema.DatabaseConnection) {
 		ctx := context.Background()
 
 		// The restriction must not get in the way of the rehearsal itself.
@@ -147,8 +146,7 @@ func TestUntrustedSQLSessionRestrictsBeforeTheCallback(t *testing.T) {
 }
 
 // sqliteHasTable reports whether a SQLite database file contains a table.
-func sqliteHasTable(tb testing.TB, dbPath, table string) bool {
-	c := qt.New(tb)
+func sqliteHasTable(c *qt.C, dbPath, table string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -161,8 +159,7 @@ func sqliteHasTable(tb testing.TB, dbPath, table string) bool {
 }
 
 // seedPlanSQLite creates a SQLite database file with the given DDL.
-func seedPlanSQLite(tb testing.TB, dbPath, ddl string) {
-	c := qt.New(tb)
+func seedPlanSQLite(c *qt.C, dbPath, ddl string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

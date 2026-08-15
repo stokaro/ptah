@@ -36,8 +36,7 @@ func ptahFixture(t *testing.T) string {
 	return dir
 }
 
-func validates(tb testing.TB, dir string, format migrator.MigrationDirFormat) {
-	c := qt.New(tb)
+func validates(c *qt.C, dir string, format migrator.MigrationDirFormat) {
 	c.Helper()
 	res, err := migratesum.VerifyDirWithFormat(dir, format)
 	c.Assert(err, qt.IsNil)
@@ -58,7 +57,7 @@ func TestRemove(t *testing.T) {
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 	_, statErr = os.Stat(filepath.Join(dir, "0000000001_first.up.sql"))
 	c.Assert(statErr, qt.IsNil)
-	validates(c.TB, dir, migrator.MigrationDirFormatPtah)
+	validates(c, dir, migrator.MigrationDirFormatPtah)
 }
 
 func TestRemoveNotFound(t *testing.T) {
@@ -98,7 +97,7 @@ func TestAutoDetectsAtlasWithoutSum(t *testing.T) {
 	res, err := migrateops.Remove(dir, 20230101120000, migrator.MigrationDirFormatAuto)
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.SumFile, qt.Equals, "atlas.sum")
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 }
 
 func TestRebaseMovesToEnd(t *testing.T) {
@@ -117,7 +116,7 @@ func TestRebaseMovesToEnd(t *testing.T) {
 	moved := migrator.GenerateMigrationFileName(newVersion, "first", "up")
 	_, statErr = os.Stat(filepath.Join(dir, moved))
 	c.Assert(statErr, qt.IsNil)
-	validates(c.TB, dir, migrator.MigrationDirFormatPtah)
+	validates(c, dir, migrator.MigrationDirFormatPtah)
 }
 
 func TestRebaseAlreadyLast(t *testing.T) {
@@ -140,7 +139,7 @@ func TestRehashAfterEdit(t *testing.T) {
 	res, err := migrateops.Rehash(dir, migrator.MigrationDirFormatAuto)
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.SumFile, qt.Equals, "ptah.sum")
-	validates(c.TB, dir, migrator.MigrationDirFormatPtah)
+	validates(c, dir, migrator.MigrationDirFormatPtah)
 }
 
 func TestEnsureNotApplied_Refused(t *testing.T) {
@@ -173,7 +172,7 @@ func TestAtlasRoundTrip(t *testing.T) {
 	res, err := migrateops.Remove(dir, 20230101120000, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.SumFile, qt.Equals, "atlas.sum")
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 }
 
 // TestAtlasRebase proves rebase re-timestamps an atlas-format pair (preserving
@@ -199,5 +198,5 @@ func TestAtlasRebase(t *testing.T) {
 	c.Assert(res.SumFile, qt.Equals, "atlas.sum")
 	_, statErr := os.Stat(filepath.Join(dir, "20230101120000_first.up.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-	validates(c.TB, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrator.MigrationDirFormatAtlas)
 }

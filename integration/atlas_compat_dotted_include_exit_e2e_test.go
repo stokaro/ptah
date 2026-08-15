@@ -13,8 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 )
 
-func writeDottedIncludeDiffFiles(tb testing.TB, fromSQL, toSQL string) (fromPath, toPath, devPath string) {
-	c := qt.New(tb)
+func writeDottedIncludeDiffFiles(c *qt.C, fromSQL, toSQL string) (fromPath, toPath, devPath string) {
 	c.Helper()
 	dir := c.TempDir()
 	fromPath = filepath.Join(dir, "from.sql")
@@ -48,7 +47,7 @@ func runDottedIncludeDiff(fromPath, toPath, devPath, selector string) (stdout, s
 // that meets neither side instead of reporting a false synced result to CI.
 func TestAtlasCompatDottedIncludeMissFailsE2E(t *testing.T) {
 	c := qt.New(t)
-	fromPath, toPath, devPath := writeDottedIncludeDiffFiles(c.TB,
+	fromPath, toPath, devPath := writeDottedIncludeDiffFiles(c,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\n"+
 			"CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n")
@@ -65,7 +64,7 @@ func TestAtlasCompatDottedIncludeMissFailsE2E(t *testing.T) {
 // identifier contains a dot remains selectable on the full Pro-like surface.
 func TestAtlasCompatDottedIncludeControlsE2E(t *testing.T) {
 	c := qt.New(t)
-	fromPath, toPath, devPath := writeDottedIncludeDiffFiles(c.TB, "",
+	fromPath, toPath, devPath := writeDottedIncludeDiffFiles(c, "",
 		"CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n")
 
 	plainOut, plainErrOut, plainErr := runDottedIncludeDiff(fromPath, toPath, devPath, "posts")
@@ -74,7 +73,7 @@ func TestAtlasCompatDottedIncludeControlsE2E(t *testing.T) {
 	c.Assert(plainOut, qt.Contains, "CREATE TABLE")
 	c.Assert(plainOut, qt.Contains, "posts")
 
-	dropFrom, dropTo, dropDev := writeDottedIncludeDiffFiles(c.TB,
+	dropFrom, dropTo, dropDev := writeDottedIncludeDiffFiles(c,
 		"CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n", "")
 	dropOut, dropErrOut, dropErr := runDottedIncludeDiff(dropFrom, dropTo, dropDev, "posts")
 
@@ -82,7 +81,7 @@ func TestAtlasCompatDottedIncludeControlsE2E(t *testing.T) {
 	c.Assert(dropOut, qt.Contains, "DROP TABLE")
 	c.Assert(dropOut, qt.Contains, "posts")
 
-	dottedFrom, dottedTo, dottedDev := writeDottedIncludeDiffFiles(c.TB, "",
+	dottedFrom, dottedTo, dottedDev := writeDottedIncludeDiffFiles(c, "",
 		"CREATE TABLE \"posts.title\" (id INTEGER PRIMARY KEY);\n")
 
 	dottedOut, dottedErrOut, dottedErr := runDottedIncludeDiff(dottedFrom, dottedTo, dottedDev, "posts.title")

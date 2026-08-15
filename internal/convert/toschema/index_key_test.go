@@ -16,8 +16,7 @@ import (
 
 // parseOneIndex parses a document holding exactly one CREATE INDEX and converts
 // it the way every SQL schema source does.
-func parseOneIndex(tb testing.TB, sql string) goschema.Index {
-	c := qt.New(tb)
+func parseOneIndex(c *qt.C, sql string) goschema.Index {
 	c.Helper()
 	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
 	c.Assert(err, qt.IsNil)
@@ -133,7 +132,7 @@ func TestToIndex_KeySuffixes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			index := parseOneIndex(c.TB, tt.sql)
+			index := parseOneIndex(c, tt.sql)
 			c.Assert(index.Parts, qt.DeepEquals, tt.parts)
 			c.Assert(index.Fields, qt.DeepEquals, tt.fields)
 		})
@@ -209,7 +208,7 @@ func TestPostgresIndexDDLSurvivesItsOwnSQLSurface(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			index := parseOneIndex(c.TB, tt.ddl)
+			index := parseOneIndex(c, tt.ddl)
 			rendered, err := renderer.RenderSQL(platform.Postgres, fromschema.FromIndex(index))
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.Equals, tt.ddl+"\n")

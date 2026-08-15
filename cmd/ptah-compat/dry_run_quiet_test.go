@@ -32,8 +32,7 @@ import (
 
 // dryRunQuietDir writes an Atlas-format migration directory with a matching
 // down migration and seals it with atlas.sum.
-func dryRunQuietDir(tb testing.TB) string {
-	c := qt.New(tb)
+func dryRunQuietDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -50,8 +49,7 @@ func dryRunQuietDir(tb testing.TB) string {
 
 // applyForReal runs a real apply so the revision table exists for a later
 // dry-run rollback.
-func applyForReal(tb testing.TB, binPath, dbPath, migrationsDir string) {
-	c := qt.New(tb)
+func applyForReal(c *qt.C, binPath, dbPath, migrationsDir string) {
 	c.Helper()
 	run := newCompatProcess(binPath,
 		"migrate", "apply",
@@ -64,10 +62,10 @@ func applyForReal(tb testing.TB, binPath, dbPath, migrationsDir string) {
 
 func TestCompatBinaryMigrateDownRunsWithEOFStdin(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 	dbPath := filepath.Join(c.TempDir(), "down-eof.db")
-	applyForReal(c.TB, binPath, dbPath, migrationsDir)
+	applyForReal(c, binPath, dbPath, migrationsDir)
 	t.Setenv("PTAH_CONFIRM", "not-a-boolean")
 
 	run := newCompatProcess(binPath,
@@ -109,8 +107,7 @@ func TestCompatBinaryMigrateDownRunsWithEOFStdin(t *testing.T) {
 
 // assertSingleJSONDocument asserts that combined holds exactly one JSON
 // document and nothing else — the shape `... 2>&1 | jq` requires.
-func assertSingleJSONDocument(tb testing.TB, combined []byte) map[string]any {
-	c := qt.New(tb)
+func assertSingleJSONDocument(c *qt.C, combined []byte) map[string]any {
 	c.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(combined))
 	var document map[string]any
@@ -124,8 +121,8 @@ func assertSingleJSONDocument(tb testing.TB, combined []byte) map[string]any {
 
 func TestCompatBinaryDryRunFormatCombinedOutputIsOneJSONDocument(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 
 	t.Run("migrate apply", func(t *testing.T) {
 		c := qt.New(t)
@@ -140,14 +137,14 @@ func TestCompatBinaryDryRunFormatCombinedOutputIsOneJSONDocument(t *testing.T) {
 		combined, err := run.CombinedOutput()
 
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", combined))
-		document := assertSingleJSONDocument(c.TB, combined)
+		document := assertSingleJSONDocument(c, combined)
 		c.Assert(document["Target"], qt.Equals, "1")
 	})
 
 	t.Run("migrate down", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "down.db")
-		applyForReal(c.TB, binPath, dbPath, migrationsDir)
+		applyForReal(c, binPath, dbPath, migrationsDir)
 
 		run := newCompatProcess(binPath,
 			"migrate", "down",
@@ -161,15 +158,15 @@ func TestCompatBinaryDryRunFormatCombinedOutputIsOneJSONDocument(t *testing.T) {
 		combined, err := run.CombinedOutput()
 
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", combined))
-		document := assertSingleJSONDocument(c.TB, combined)
+		document := assertSingleJSONDocument(c, combined)
 		c.Assert(document["Current"], qt.Equals, "1")
 	})
 }
 
 func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 
 	tests := []struct {
 		name       string
@@ -240,8 +237,8 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 // never reached the rollback would satisfy an empty stderr too.
 func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 
 	tests := []struct {
 		name string
@@ -283,7 +280,7 @@ func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
 			// would then prove nothing.
 			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "down-quiet.db")
-			applyForReal(c.TB, binPath, dbPath, migrationsDir)
+			applyForReal(c, binPath, dbPath, migrationsDir)
 			run := newCompatProcess(binPath, tt.args(dbPath)...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout
@@ -312,8 +309,8 @@ func TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty(t *testing.T) {
 // broken binary.
 func TestCompatBinaryMigrateDownJSONKeepsItsReport(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 
 	tests := []struct {
 		name  string
@@ -333,7 +330,7 @@ func TestCompatBinaryMigrateDownJSONKeepsItsReport(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "down-json.db")
-			applyForReal(c.TB, binPath, dbPath, migrationsDir)
+			applyForReal(c, binPath, dbPath, migrationsDir)
 			args := append([]string{
 				"migrate", "down",
 				"--url", "sqlite://" + dbPath,
@@ -359,8 +356,8 @@ func TestCompatBinaryMigrateDownJSONKeepsItsReport(t *testing.T) {
 // it away.
 func TestCompatBinaryMalformedPTAHDryRunAppliesNothing(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 	dbPath := filepath.Join(c.TempDir(), "malformed-env.db")
 	t.Setenv("PTAH_DRY_RUN", "notabool")
 	run := newCompatProcess(binPath,
@@ -379,8 +376,8 @@ func TestCompatBinaryMalformedPTAHDryRunAppliesNothing(t *testing.T) {
 
 func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
-	migrationsDir := dryRunQuietDir(c.TB)
+	binPath := buildCompatBinary(c)
+	migrationsDir := dryRunQuietDir(c)
 
 	// The apply cases need a target with pending work and the down case needs
 	// one with a revision to roll back. Sharing a database between them would
@@ -388,7 +385,7 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 	// be entered and the pin would hold vacuously.
 	applyDB := filepath.Join(c.TempDir(), "pin-apply.db")
 	downDB := filepath.Join(c.TempDir(), "pin-down.db")
-	applyForReal(c.TB, binPath, downDB, migrationsDir)
+	applyForReal(c, binPath, downDB, migrationsDir)
 
 	tests := []struct {
 		name string
@@ -449,7 +446,7 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 // foreign-key rendering treats valid cycles as ordinary schema relationships.
 func TestCompatBinaryValidCircularForeignKeysDoNotWarn(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 	dir := c.TempDir()
 	schemaPath := filepath.Join(dir, "circular.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(
@@ -497,7 +494,7 @@ func TestCompatBinaryValidCircularForeignKeysDoNotWarn(t *testing.T) {
 // from turning into silence: a dry run that fails still explains itself.
 func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildCompatBinary(c.TB)
+	binPath := buildCompatBinary(c)
 
 	tests := []struct {
 		name       string
@@ -523,7 +520,7 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 				return []string{
 					"migrate", "apply",
 					"--url", "sqlite://" + filepath.Join(c.TempDir(), "tampered.db"),
-					"--dir", "file://" + malformedAtlasDir(c.TB),
+					"--dir", "file://" + malformedAtlasDir(c),
 					"--dry-run",
 				}
 			},

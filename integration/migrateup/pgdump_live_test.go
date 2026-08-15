@@ -28,8 +28,8 @@ func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
 	defer dropPgDumpTable(conn, tableName)
 
 	dir := t.TempDir()
-	writePgDumpMigration(c.TB, dir, "0000000001_create_dump_guarded.up.sql", fmt.Sprintf("CREATE TABLE %s (id BIGINT);\n", tableName))
-	writePgDumpMigration(c.TB, dir, "0000000001_create_dump_guarded.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+	writePgDumpMigration(c, dir, "0000000001_create_dump_guarded.up.sql", fmt.Sprintf("CREATE TABLE %s (id BIGINT);\n", tableName))
+	writePgDumpMigration(c, dir, "0000000001_create_dump_guarded.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
 
 	argsLog := filepath.Join(t.TempDir(), "pg_dump_args.log")
 	fakeBin := filepath.Join(t.TempDir(), "pg_dump")
@@ -92,8 +92,7 @@ func requiredPgDumpPostgresURL(t *testing.T) string {
 	return ""
 }
 
-func writePgDumpMigration(tb testing.TB, dir, name, content string) {
-	c := qt.New(tb)
+func writePgDumpMigration(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }

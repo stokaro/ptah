@@ -218,7 +218,7 @@ func TestRunMigrationTest_MigrateToUsesProvidedSnapshotInsteadOfPath(t *testing.
 
 func TestRunMigrationTest_ApplySchema(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 	cases := []dbtest.Case{{
 		Name: "desired schema applies",
 		Steps: []dbtest.Step{
@@ -244,7 +244,7 @@ func TestRunMigrationTest_ApplySchemaPreservesMigrationObjects(t *testing.T) {
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "0000000001_create_widgets.down.sql"),
 		[]byte("DROP TABLE widgets;"), 0o600), qt.IsNil)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 
 	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
 		Cases: []dbtest.Case{{

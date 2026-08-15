@@ -42,8 +42,8 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_partition_cycle")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_partition_cycle")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -64,7 +64,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	c.Assert(err, qt.IsNil)
 
 	dir := t.TempDir()
-	entitiesDir := writePartitionedIndexEntities(c.TB, dir)
+	entitiesDir := writePartitionedIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -86,7 +86,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	// The state the second cycle has to survive: the parent index and the copy
 	// the server created for the partition, both usable.
 	c.Assert(
-		readPartitionedIndexCatalog(c.TB, target),
+		readPartitionedIndexCatalog(c, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
@@ -104,7 +104,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(second, qt.IsNil)
-	c.Assert(readGeneratedMigrationFilenames(c.TB, migrationsDir), qt.HasLen, 2)
+	c.Assert(readGeneratedMigrationFilenames(c, migrationsDir), qt.HasLen, 2)
 
 	// Whatever the second cycle decided, the directory still applies: a no-op
 	// run is only worth something if the run itself succeeds.
@@ -112,7 +112,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrator.NewMigrator(target, replayProvider).MigrateUp(ctx), qt.IsNil)
 	c.Assert(
-		readPartitionedIndexCatalog(c.TB, target),
+		readPartitionedIndexCatalog(c, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
@@ -145,7 +145,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrator.NewMigrator(target, thirdProvider).MigrateUp(ctx), qt.IsNil)
 	c.Assert(
-		readPartitionedIndexCatalog(c.TB, target),
+		readPartitionedIndexCatalog(c, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
@@ -186,8 +186,8 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_reader_partition_index")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_reader_partition_index")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -212,7 +212,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 	// yet, so it is not valid. A rule keyed on the partition's own attachment
 	// marks my_local_created here, and this is where it is wrong.
 	c.Assert(
-		readPartitionedIndexCatalog(c.TB, target),
+		readPartitionedIndexCatalog(c, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_id_idx", RelKind: "i", Valid: true, Ready: true, Attached: false},
@@ -222,7 +222,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 			{Name: "my_local_created", RelKind: "i", Valid: true, Ready: true, Attached: false},
 		},
 	)
-	c.Assert(readPartitionAttachedMarks(c.TB, target), qt.DeepEquals, map[string]bool{
+	c.Assert(readPartitionAttachedMarks(c, target), qt.DeepEquals, map[string]bool{
 		"idx_events_tenant":      false,
 		"idx_events_created":     false,
 		"events_2026_tenant_idx": true,
@@ -238,7 +238,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 	// partition now has an attached index, which is the condition PostgreSQL
 	// validates the parent on.
 	c.Assert(
-		readPartitionedIndexCatalog(c.TB, target),
+		readPartitionedIndexCatalog(c, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_id_idx", RelKind: "i", Valid: true, Ready: true, Attached: false},
@@ -248,7 +248,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 			{Name: "my_local_created", RelKind: "i", Valid: true, Ready: true, Attached: true},
 		},
 	)
-	attached := readPartitionAttachedMarks(c.TB, target)
+	attached := readPartitionAttachedMarks(c, target)
 	c.Assert(attached, qt.DeepEquals, map[string]bool{
 		"idx_events_tenant":      false,
 		"idx_events_created":     false,
@@ -261,7 +261,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 	// the WHOLE fixture rather than over a chosen pair. Three of these five
 	// indexes accept a DROP INDEX and two refuse it, and the two that refuse
 	// are exactly the two the reader marks.
-	c.Assert(refusedDropIndex(c.TB, target, indexNames(attached)), qt.DeepEquals, attached)
+	c.Assert(refusedDropIndex(c, target, indexNames(attached)), qt.DeepEquals, attached)
 
 	// The refusal is the one #997 is about, quoted rather than counted.
 	_, err = target.ExecContext(ctx, `DROP INDEX "events_2026_id_idx"`)
@@ -273,8 +273,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 
 // readPartitionAttachedMarks reports PartitionAttached per index name, as the
 // reader under test describes the live database.
-func readPartitionAttachedMarks(tb testing.TB, conn *dbschema.DatabaseConnection) map[string]bool {
-	c := qt.New(tb)
+func readPartitionAttachedMarks(c *qt.C, conn *dbschema.DatabaseConnection) map[string]bool {
 	c.Helper()
 	schema, err := conn.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
@@ -304,8 +303,7 @@ func indexNames(marks map[string]bool) []string {
 // name is measured against the same catalog the reader was asked about --
 // dropping one index for real would change what the next attempt means, and
 // dropping a parent takes its copies with it.
-func refusedDropIndex(tb testing.TB, conn *dbschema.DatabaseConnection, names []string) map[string]bool {
-	c := qt.New(tb)
+func refusedDropIndex(c *qt.C, conn *dbschema.DatabaseConnection, names []string) map[string]bool {
 	c.Helper()
 	session, err := conn.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -340,8 +338,7 @@ type partitionedIndexRow struct {
 // parent index is 'I', a parent built with CREATE INDEX ... ON ONLY is 'I' with
 // indisvalid false and indisready true, and a failed concurrent build is 'i'
 // with both false.
-func readPartitionedIndexCatalog(tb testing.TB, conn *dbschema.DatabaseConnection) []partitionedIndexRow {
-	c := qt.New(tb)
+func readPartitionedIndexCatalog(c *qt.C, conn *dbschema.DatabaseConnection) []partitionedIndexRow {
 	c.Helper()
 	rows, err := conn.QueryContext(c.Context(), `
 		SELECT class.relname,
@@ -373,8 +370,7 @@ func readPartitionedIndexCatalog(tb testing.TB, conn *dbschema.DatabaseConnectio
 // readGeneratedMigrationFilenames lists the migration directory so a "nothing
 // was generated" claim is measured against the directory rather than against
 // the return value alone.
-func readGeneratedMigrationFilenames(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func readGeneratedMigrationFilenames(c *qt.C, dir string) []string {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)

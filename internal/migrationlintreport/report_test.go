@@ -43,21 +43,18 @@ func TestGitCommandErrorKeepsTheNativeRendering(t *testing.T) {
 	c.Assert(errors.Unwrap(err), qt.Equals, error(gitExitStatus128{}))
 }
 
-func writeLintTestFile(tb testing.TB, dir, name, content string) {
-	c := qt.New(tb)
+func writeLintTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func writeWarningMigration(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func writeWarningMigration(c *qt.C, dir string) {
 	c.Helper()
-	writeLintTestFile(c.TB, dir, "0000000001_index.up.sql", "CREATE INDEX idx_users_id ON users (id);\n")
-	writeLintTestFile(c.TB, dir, "0000000001_index.down.sql", "DROP INDEX idx_users_id;\n")
+	writeLintTestFile(c, dir, "0000000001_index.up.sql", "CREATE INDEX idx_users_id ON users (id);\n")
+	writeLintTestFile(c, dir, "0000000001_index.down.sql", "DROP INDEX idx_users_id;\n")
 }
 
-func runGit(tb testing.TB, dir string, args ...string) {
-	c := qt.New(tb)
+func runGit(c *qt.C, dir string, args ...string) {
 	c.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -80,10 +77,10 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	latest := 1
-	writeLintTestFile(c.TB, dir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
-	writeLintTestFile(c.TB, dir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
-	writeLintTestFile(c.TB, dir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeLintTestFile(c.TB, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	writeLintTestFile(c, dir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, dir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	writeLintTestFile(c, dir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
@@ -253,17 +250,17 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	migrationsDir := filepath.Join(repo, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o700), qt.IsNil)
-	runGit(c.TB, repo, "init")
-	runGit(c.TB, repo, "config", "commit.gpgsign", "false")
-	runGit(c.TB, repo, "config", "user.email", "ptah@example.com")
-	runGit(c.TB, repo, "config", "user.name", "Ptah Test")
-	writeLintTestFile(c.TB, migrationsDir, "1_create_users.sql", "CREATE TABLE users (id int);\n")
-	writeLintTestFile(c.TB, migrationsDir, "2_create_accounts.sql", "CREATE TABLE accounts (id int);\n")
-	runGit(c.TB, repo, "add", "migrations")
-	runGit(c.TB, repo, "commit", "-m", "baseline")
-	writeLintTestFile(c.TB, migrationsDir, "2R_drop_users.sql", "DROP TABLE users;\n")
-	runGit(c.TB, repo, "add", "migrations/2R_drop_users.sql")
-	runGit(c.TB, repo, "commit", "-m", "repeatable")
+	runGit(c, repo, "init")
+	runGit(c, repo, "config", "commit.gpgsign", "false")
+	runGit(c, repo, "config", "user.email", "ptah@example.com")
+	runGit(c, repo, "config", "user.name", "Ptah Test")
+	writeLintTestFile(c, migrationsDir, "1_create_users.sql", "CREATE TABLE users (id int);\n")
+	writeLintTestFile(c, migrationsDir, "2_create_accounts.sql", "CREATE TABLE accounts (id int);\n")
+	runGit(c, repo, "add", "migrations")
+	runGit(c, repo, "commit", "-m", "baseline")
+	writeLintTestFile(c, migrationsDir, "2R_drop_users.sql", "DROP TABLE users;\n")
+	runGit(c, repo, "add", "migrations/2R_drop_users.sql")
+	runGit(c, repo, "commit", "-m", "repeatable")
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       migrationsDir,
@@ -288,7 +285,7 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeLintTestFile(c.TB, dir, "1_drop.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "1_drop.sql", "DROP TABLE users;\n")
 	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.RemoveAll(dir), qt.IsNil)
@@ -334,7 +331,7 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeWarningMigration(c.TB, dir)
+	writeWarningMigration(c, dir)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
@@ -352,7 +349,7 @@ func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeWarningMigration(c.TB, dir)
+	writeWarningMigration(c, dir)
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,

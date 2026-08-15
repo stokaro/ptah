@@ -34,8 +34,7 @@ type User struct {
 }
 `
 
-func writeGraphQLModel(tb testing.TB) string {
-	c := qt.New(tb)
+func writeGraphQLModel(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(graphqlModel), 0o600), qt.IsNil)
@@ -48,7 +47,7 @@ func writeGraphQLModel(tb testing.TB) string {
 // one.
 func TestSchemaExportGraphQLDefaultIsTypesOnly(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 
 	stdout, stderr, err := runSchemaExport("--to", "graphql", "--root-dir", dir)
 
@@ -66,7 +65,7 @@ func TestSchemaExportGraphQLDefaultIsTypesOnly(t *testing.T) {
 // writes the default down.
 func TestSchemaExportGraphQLExplicitNoneMatchesDefault(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 
 	base, _, err := runSchemaExport("--to", "graphql", "--root-dir", dir)
 	c.Assert(err, qt.IsNil)
@@ -78,7 +77,7 @@ func TestSchemaExportGraphQLExplicitNoneMatchesDefault(t *testing.T) {
 
 func TestSchemaExportGraphQLOperationProfiles(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 
 	tests := []struct {
 		name    string
@@ -162,7 +161,7 @@ func TestSchemaExportGraphQLOperationProfiles(t *testing.T) {
 // shape.
 func TestSchemaExportGraphQLInputsExcludeServerOwnedColumns(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 
 	stdout, stderr, err := runSchemaExport(
 		"--to", "graphql", "--root-dir", dir, "--graphql-operations", "create-input,update-input")
@@ -176,7 +175,7 @@ func TestSchemaExportGraphQLInputsExcludeServerOwnedColumns(t *testing.T) {
 
 func TestSchemaExportGraphQLOperationsWritesToFile(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 	outPath := filepath.Join(dir, "schema.graphql")
 
 	stdout, stderr, err := runSchemaExport(
@@ -191,7 +190,7 @@ func TestSchemaExportGraphQLOperationsWritesToFile(t *testing.T) {
 
 func TestSchemaExportGraphQLOperationsFailurePath(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 
 	tests := []struct {
 		name    string
@@ -234,7 +233,7 @@ func TestSchemaExportGraphQLOperationsFailurePath(t *testing.T) {
 // from being accepted where it would silently do nothing.
 func TestSchemaExportGraphQLOperationsRejectedOnOtherTargets(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 	wantErr := "--graphql-operations is only supported with --to graphql"
 
 	tests := []struct {
@@ -272,7 +271,7 @@ func TestSchemaExportGraphQLOperationsRejectedOnOtherTargets(t *testing.T) {
 // compatibility state.
 func TestSchemaExportGraphQLRefusalHappensBeforeWriting(t *testing.T) {
 	c := qt.New(t)
-	dir := writeGraphQLModel(c.TB)
+	dir := writeGraphQLModel(c)
 	outPath := filepath.Join(dir, "schema.proto")
 
 	_, _, err := runSchemaExport(

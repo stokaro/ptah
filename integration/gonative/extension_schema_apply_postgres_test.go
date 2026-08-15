@@ -22,8 +22,8 @@ import (
 func TestNativeSchemaApplyCreatesExtensionInDeclaredSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
 	dsn := skipIfNoPostgreSQL(t)
-	targetURL := newReadScopeDatabase(c.TB, dsn, "native_ext_target", nil)
-	devURL := newReadScopeDatabase(c.TB, dsn, "native_ext_dev", nil)
+	targetURL := newReadScopeDatabase(c, dsn, "native_ext_target", nil)
+	devURL := newReadScopeDatabase(c, dsn, "native_ext_dev", nil)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`
 schema "extensions" {}
@@ -32,16 +32,15 @@ extension "pgcrypto" {
 }
 `), 0o600), qt.IsNil)
 
-	first := runNativeExtensionSchemaApply(c.TB, targetURL, devURL, path)
-	second := runNativeExtensionSchemaApply(c.TB, targetURL, devURL, path)
+	first := runNativeExtensionSchemaApply(c, targetURL, devURL, path)
+	second := runNativeExtensionSchemaApply(c, targetURL, devURL, path)
 	c.Assert(first, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 	c.Assert(first, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(second, qt.Contains, "Schema is synced, no changes to be made.")
-	c.Assert(extensionInstallations(c.TB, targetURL), qt.DeepEquals, []string{"extensions.pgcrypto"})
+	c.Assert(extensionInstallations(c, targetURL), qt.DeepEquals, []string{"extensions.pgcrypto"})
 }
 
-func runNativeExtensionSchemaApply(tb testing.TB, targetURL, devURL, path string) string {
-	c := qt.New(tb)
+func runNativeExtensionSchemaApply(c *qt.C, targetURL, devURL, path string) string {
 	c.Helper()
 	cmd := root.NewRootCommand()
 	var output bytes.Buffer
@@ -58,8 +57,7 @@ func runNativeExtensionSchemaApply(tb testing.TB, targetURL, devURL, path string
 	return output.String()
 }
 
-func extensionInstallations(tb testing.TB, dbURL string) []string {
-	c := qt.New(tb)
+func extensionInstallations(c *qt.C, dbURL string) []string {
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)

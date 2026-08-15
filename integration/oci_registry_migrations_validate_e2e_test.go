@@ -36,7 +36,7 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 	suffix := time.Now().UnixNano()
 
 	tests := []struct {
@@ -101,7 +101,7 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 	for index, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			dir := filepath.Join(c.TempDir(), "migrations")
-			writeOCIMigration(c.TB, dir, ociMigrationVersion, "widgets")
+			writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
 			test.prepare(c, dir)
 
 			localOutput, localErr := runPtahInDir(
@@ -109,7 +109,7 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 				"migrations", "validate",
 				"--dir", dir,
 			)
-			c.Assert(exitStatusOf(c.TB, localErr), qt.Equals, test.wantExit,
+			c.Assert(exitStatusOf(c, localErr), qt.Equals, test.wantExit,
 				qt.Commentf("local output:\n%s", localOutput))
 			c.Assert(localOutput, qt.Contains, test.wantOutput)
 
@@ -128,7 +128,7 @@ func TestOCIRegistryMigrationsValidateE2E(t *testing.T) {
 				"--dir", reference,
 				"--plain-http",
 			)
-			c.Assert(exitStatusOf(c.TB, artifactErr), qt.Equals, test.wantExit,
+			c.Assert(exitStatusOf(c, artifactErr), qt.Equals, test.wantExit,
 				qt.Commentf("artifact output:\n%s", artifactOutput))
 			c.Assert(artifactOutput, qt.Contains, test.wantOutput)
 			// The path-shaped failure the issue reported. It is asserted
@@ -160,10 +160,10 @@ func TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E(t *testing.T
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	dir := filepath.Join(c.TempDir(), "migrations")
-	writeOCIMigration(c.TB, dir, ociMigrationVersion, "widgets")
+	writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
 	reference := fmt.Sprintf("oci://%s/ptah/oci-validate-digest-%d:latest", registry, time.Now().UnixNano())
 
 	pushOutput, pushErr := runPtahInDir(
@@ -173,7 +173,7 @@ func TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E(t *testing.T
 		"--plain-http",
 	)
 	c.Assert(pushErr, qt.IsNil, qt.Commentf("push output:\n%s", pushOutput))
-	pinned := digestReference(reference, digestFromPushOutput(c.TB, pushOutput))
+	pinned := digestReference(reference, digestFromPushOutput(c, pushOutput))
 
 	output, err := runPtahInDir(
 		ctx, repoRoot, binaryPath,
@@ -182,7 +182,7 @@ func TestOCIRegistryMigrationsValidateDigestSourceIsNotQualifiedE2E(t *testing.T
 		"--plain-http",
 	)
 
-	c.Assert(exitStatusOf(c.TB, err), qt.Equals, 0, qt.Commentf("output:\n%s", output))
+	c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("output:\n%s", output))
 	c.Assert(output, qt.Contains, "OK: migrations directory matches ptah.sum")
 	c.Assert(output, qt.Not(qt.Contains), "is a movable tag")
 }
@@ -202,10 +202,10 @@ func TestOCIRegistryMigrationsValidateWithoutPlainHTTPE2E(t *testing.T) {
 	registry := requiredOCIRegistry(t)
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c.TB, ctx, repoRoot, binaryPath)
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	dir := filepath.Join(c.TempDir(), "migrations")
-	writeOCIMigration(c.TB, dir, ociMigrationVersion, "widgets")
+	writeOCIMigration(c, dir, ociMigrationVersion, "widgets")
 	reference := fmt.Sprintf("oci://%s/ptah/oci-validate-tls-%d:latest", registry, time.Now().UnixNano())
 
 	pushOutput, pushErr := runPtahInDir(
@@ -222,6 +222,6 @@ func TestOCIRegistryMigrationsValidateWithoutPlainHTTPE2E(t *testing.T) {
 		"--dir", reference,
 	)
 
-	c.Assert(exitStatusOf(c.TB, err), qt.Not(qt.Equals), 0, qt.Commentf("output:\n%s", output))
+	c.Assert(exitStatusOf(c, err), qt.Not(qt.Equals), 0, qt.Commentf("output:\n%s", output))
 	c.Assert(output, qt.Contains, "https://", qt.Commentf("output:\n%s", output))
 }

@@ -169,8 +169,8 @@ CREATE TABLE users (
 	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
 	c.Assert(out.String(), qt.Contains, "audit_log")
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	assertEditorFlagsSQLiteTableExists(c.TB, dbPath, "users")
-	assertEditorFlagsSQLiteTableExists(c.TB, dbPath, "audit_log")
+	assertEditorFlagsSQLiteTableExists(c, dbPath, "users")
+	assertEditorFlagsSQLiteTableExists(c, dbPath, "audit_log")
 }
 
 func TestCompatCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
@@ -199,8 +199,7 @@ func TestCompatCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*no editor configured: set \$EDITOR or \$VISUAL`)
 }
 
-func assertEditorFlagsSQLiteTableExists(tb testing.TB, dbPath, table string) {
-	c := qt.New(tb)
+func assertEditorFlagsSQLiteTableExists(c *qt.C, dbPath, table string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

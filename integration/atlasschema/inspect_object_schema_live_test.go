@@ -231,7 +231,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			source := newInspectLiveConnection(c.TB, ctx, "", test.setup)
+			source := newInspectLiveConnection(c, ctx, "", test.setup)
 
 			document, err := atlasschema.Inspect(ctx, source, atlasschema.InspectOptions{
 				Format:                 "hcl",
@@ -259,7 +259,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 			c.Assert(noop.Statements(), qt.HasLen, 0,
 				qt.Commentf("document:\n%s\nplan:\n%s", document, noop.SQL()))
 
-			target := newInspectLiveConnection(c.TB, ctx, "", nil)
+			target := newInspectLiveConnection(c, ctx, "", nil)
 			plan, err := atlasschema.PlanApply(ctx, target, atlasschema.ApplyOptions{
 				ToURLs: []string{"file://" + path},
 			})

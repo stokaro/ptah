@@ -19,8 +19,7 @@ func atlasSourceFS(files map[string]string) fstest.MapFS {
 
 // sealAtlasSum records the sum of names into the filesystem, the way
 // `migrate hash` would.
-func sealAtlasSum(tb testing.TB, fsys fstest.MapFS, names []string) fstest.MapFS {
-	c := qt.New(tb)
+func sealAtlasSum(c *qt.C, fsys fstest.MapFS, names []string) fstest.MapFS {
 	c.Helper()
 	sum, err := migratesum.ComputeAtlasFiles(fsys, names)
 	c.Assert(err, qt.IsNil)
@@ -134,7 +133,7 @@ func TestVerifyAtlasFiles(t *testing.T) {
 
 	t.Run("clean directory verifies", func(t *testing.T) {
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 
 		result, err := migratesum.VerifyAtlasFiles(fsys, names)
 
@@ -145,7 +144,7 @@ func TestVerifyAtlasFiles(t *testing.T) {
 
 	t.Run("edited file is reported as changed", func(t *testing.T) {
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 		fsys["2_more.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE a;\n")}
 
 		result, err := migratesum.VerifyAtlasFiles(fsys, names)
@@ -161,7 +160,7 @@ func TestVerifyAtlasFiles(t *testing.T) {
 
 	t.Run("newly covered file is reported as added", func(t *testing.T) {
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 		fsys["3_new.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE c (id int);\n")}
 
 		result, err := migratesum.VerifyAtlasFiles(fsys, append(names, "3_new.sql"))
@@ -173,7 +172,7 @@ func TestVerifyAtlasFiles(t *testing.T) {
 
 	t.Run("deleted file is reported as removed", func(t *testing.T) {
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 		delete(fsys, "2_more.sql")
 
 		result, err := migratesum.VerifyAtlasFiles(fsys, names[:1])
@@ -188,7 +187,7 @@ func TestVerifyAtlasFiles(t *testing.T) {
 		// answers for the named files only, so a golang-migrate down file or a
 		// Flyway undo file may change freely.
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 		fsys["notes.sql"] = &fstest.MapFile{Data: []byte("-- scratch\n")}
 
 		result, err := migratesum.VerifyAtlasFiles(fsys, names)
@@ -234,7 +233,7 @@ func TestVerifyAtlasFilesHashed(t *testing.T) {
 
 	t.Run("hashed clean directory reports hashed=true and OK", func(t *testing.T) {
 		c := qt.New(t)
-		result, hashed, err := migratesum.VerifyAtlasFilesHashed(sealAtlasSum(c.TB, seed(), names), names)
+		result, hashed, err := migratesum.VerifyAtlasFilesHashed(sealAtlasSum(c, seed(), names), names)
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(hashed, qt.IsTrue)
@@ -243,7 +242,7 @@ func TestVerifyAtlasFilesHashed(t *testing.T) {
 
 	t.Run("hashed tampered directory reports hashed=true and drift", func(t *testing.T) {
 		c := qt.New(t)
-		fsys := sealAtlasSum(c.TB, seed(), names)
+		fsys := sealAtlasSum(c, seed(), names)
 		fsys["1_init.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE a;\n")}
 
 		result, hashed, err := migratesum.VerifyAtlasFilesHashed(fsys, names)

@@ -24,8 +24,7 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 
 // renderMySQLFamily generates the migration AST once per invocation and
 // renders it with the given dialect.
-func renderMySQLFamily(tb testing.TB, dialect string, diff *types.SchemaDiff, generated *goschema.Database) string {
-	c := qt.New(tb)
+func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generated *goschema.Database) string {
 	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
@@ -34,8 +33,7 @@ func renderMySQLFamily(tb testing.TB, dialect string, diff *types.SchemaDiff, ge
 	return sql
 }
 
-func assertContainsBefore(tb testing.TB, sql, earlier, later string) {
-	c := qt.New(tb)
+func assertContainsBefore(c *qt.C, sql, earlier, later string) {
 	earlierIndex := strings.Index(sql, earlier)
 	laterIndex := strings.Index(sql, later)
 	c.Assert(earlierIndex >= 0, qt.IsTrue, qt.Commentf("%q not found in SQL:\n%s", earlier, sql))
@@ -64,7 +62,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 			c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
 				qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
@@ -89,16 +87,16 @@ func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *t
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 			assertContainsBefore(
-				c.TB,
+				c,
 				sql,
 				"ALTER TABLE users DROP FOREIGN KEY fk_users_account_id;",
 				"DROP INDEX fk_users_account_id ON users;",
 			)
 			assertContainsBefore(
-				c.TB,
+				c,
 				sql,
 				"ALTER TABLE users DROP FOREIGN KEY fk_users_manager_id;",
 				"DROP INDEX fk_users_manager_id ON users;",
@@ -161,9 +159,9 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 			t.Run(dialect+"/"+tt.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				sql := renderMySQLFamily(c.TB, dialect, tt.diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, tt.diff, &goschema.Database{})
 
-				assertContainsBefore(c.TB, sql, tt.wantDrop, tt.wantSQL)
+				assertContainsBefore(c, sql, tt.wantDrop, tt.wantSQL)
 				c.Assert(sql, qt.Contains, tt.wantSQL)
 				c.Assert(strings.Count(sql, tt.wantSQL), qt.Equals, 1)
 			})
@@ -184,10 +182,10 @@ func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
-			assertContainsBefore(c.TB, sql, "ALTER TABLE tasks DROP FOREIGN KEY fk_tasks_project;", "DROP TABLE IF EXISTS tasks;")
-			assertContainsBefore(c.TB, sql, "ALTER TABLE projects DROP FOREIGN KEY fk_projects_account;", "DROP TABLE IF EXISTS projects;")
+			assertContainsBefore(c, sql, "ALTER TABLE tasks DROP FOREIGN KEY fk_tasks_project;", "DROP TABLE IF EXISTS tasks;")
+			assertContainsBefore(c, sql, "ALTER TABLE projects DROP FOREIGN KEY fk_projects_account;", "DROP TABLE IF EXISTS projects;")
 		})
 	}
 }
@@ -240,7 +238,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 						ConstraintsRemovedWithTables: removals,
 					}
 
-					sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+					sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 					// The modified host is dropped exactly once with FK syntax and
 					// re-added exactly once, drop before add.
@@ -309,7 +307,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 						},
 					}
 
-					sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+					sql := renderMySQLFamily(c, dialect, diff, generated)
 
 					// Modified host: dropped exactly once from ITS table (the
 					// name-keyed single-winner map could drop pages instead and
@@ -373,7 +371,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 				c.Assert(strings.Count(sql, "ALTER TABLE orders DROP FOREIGN KEY fk_customer;"), qt.Equals, 1,
 					qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
@@ -414,7 +412,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 				c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_post_owner;"), qt.Equals, 1,
 					qt.Commentf("exactly one drop; got:\n%s", sql))
@@ -457,7 +455,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, generated)
 
 				// Exactly ONE drop in the whole plan: the add side owns it and
 				// removeConstraints must not emit a second, unguarded one.
@@ -507,7 +505,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, generated)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT shared_check;"), qt.Equals, 1,
 					qt.Commentf("first removal host must be dropped exactly once; got:\n%s", sql))
@@ -552,7 +550,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, generated)
 
 				c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT chk_hostless",
 					qt.Commentf("a hostless removal entry must be skipped, not dropped; got:\n%s", sql))
@@ -594,7 +592,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, generated)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_ghost;"), qt.Equals, 1,
 					qt.Commentf("the recorded removal host must be dropped exactly once; got:\n%s", sql))
@@ -637,7 +635,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, generated)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_post_owner;"), qt.Equals, 1,
 					qt.Commentf("the drop must be emitted exactly once across both planner phases; got:\n%s", sql))
@@ -682,7 +680,7 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 
 			c.Assert(strings.Count(sql, "ALTER TABLE orders DROP FOREIGN KEY fk_orders_customer;"), qt.Equals, 1,
 				qt.Commentf("FK removal must be dropped exactly once (deduped) with FK syntax; got:\n%s", sql))
@@ -724,7 +722,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 				}},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 			c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")
@@ -753,7 +751,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesC
 				}},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 			c.Assert(sql, qt.Contains, "ALTER TABLE memberships DROP PRIMARY KEY;")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")

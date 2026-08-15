@@ -28,7 +28,7 @@ CREATE TABLE archive (id INTEGER PRIMARY KEY);`
 func TestSchemaInspectExplicitSQLTemplateWritesExactTerminatedStatement(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "inspect-sql.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runCompatInspect(dbPath, "--format", `{{ sql . }}`)
 
@@ -49,7 +49,7 @@ func TestSchemaInspectExplicitSQLTemplateWritesNoBytesForEmptyDatabase(t *testin
 func TestSchemaInspectLiveDatabaseWritesSQL(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "live.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runNativeInspect(dbPath, "--format", "sql")
 
@@ -136,7 +136,7 @@ func TestSchemaInspectNativeHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 func TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "live.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
 
 	nativeOut, err := runNativeInspect(dbPath, "--format", "hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
@@ -153,7 +153,7 @@ func TestSchemaInspectAndAtlasSchemaInspectShareSchemaContent(t *testing.T) {
 func TestSchemaInspectIncludeMatchesAtlasSchemaInspectContent(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "live.db")
-	seedSQLite(c.TB, dbPath, nativeInspectIncludeDDL)
+	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
 
 	nativeOut, err := runNativeInspect(dbPath, "--include", "users", "--format", "hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", nativeOut))
@@ -187,8 +187,7 @@ func runNativeInspect(dbPath string, extra ...string) (string, error) {
 	return out.String(), err
 }
 
-func seedSQLite(tb testing.TB, dbPath, schemaSQL string) {
-	c := qt.New(tb)
+func seedSQLite(c *qt.C, dbPath, schemaSQL string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

@@ -94,7 +94,7 @@ func TestRun_FailurePathRejectsWhiteBoxIntegrationTest(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c.TB, dir, "fixture", "fixture", "integration")
+	writeIntegrationFixture(c, dir, "fixture", "fixture", "integration")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -112,7 +112,7 @@ func TestRun_FailurePathRejectsUntaggedIntegrationTest(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c.TB, dir, "fixture", "fixture_test", "!windows")
+	writeIntegrationFixture(c, dir, "fixture", "fixture_test", "!windows")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -130,7 +130,7 @@ func TestRun_FailurePathRejectsLeakingIntegrationConstraint(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c.TB, dir, "fixture", "fixture_test", "integration || linux")
+	writeIntegrationFixture(c, dir, "fixture", "fixture_test", "integration || linux")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -385,8 +385,7 @@ func TestUnit(_ *testing.T) {}
 	)
 }
 
-func writeIntegrationFixture(tb testing.TB, root, packageDir, packageName, buildConstraint string) {
-	c := qt.New(tb)
+func writeIntegrationFixture(c *qt.C, root, packageDir, packageName, buildConstraint string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/fixture\n\ngo 1.26\n"), 0o600), qt.IsNil)
 	dir := filepath.Join(root, "integration", packageDir)

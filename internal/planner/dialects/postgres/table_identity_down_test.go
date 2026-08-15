@@ -46,8 +46,7 @@ func downColumnDatabase(tableSchema string) *dbtypes.DBSchema {
 // planDownStatements runs the whole forward-then-reverse path a `.down.sql` file
 // is produced by: compare, reverse, and plan the reversal against the pre-change
 // database converted back to a schema.
-func planDownStatements(tb testing.TB, generated *goschema.Database, database *dbtypes.DBSchema) []string {
-	c := qt.New(tb)
+func planDownStatements(c *qt.C, generated *goschema.Database, database *dbtypes.DBSchema) []string {
 	c.Helper()
 	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
@@ -130,7 +129,7 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements := planDownStatements(
-				c.TB,
+				c,
 				downColumnTarget(test.targetSchema),
 				downColumnDatabase(test.dbSchema),
 			)

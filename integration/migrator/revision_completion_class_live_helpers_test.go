@@ -44,7 +44,7 @@ func runRevisionCompletionAfterDDL(t *testing.T, target revisionCompletionTarget
 	// The implicit commit before the CREATE ends the transaction, so the INSERT
 	// after it autocommits and both statements are durable.
 	c.Assert(target.bodyPresent(c, fixture.conn, fixture.names), qt.IsTrue)
-	c.Assert(revisionCompletionRowCount(c.TB, fixture.conn, fixture.names.body), qt.Equals, int64(1))
+	c.Assert(revisionCompletionRowCount(c, fixture.conn, fixture.names.body), qt.Equals, int64(1))
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -53,7 +53,7 @@ func runRevisionCompletionAfterDDL(t *testing.T, target revisionCompletionTarget
 	c.Assert(status.DirtyRevision.Applied, qt.Equals, 2)
 
 	fixture.recoverWithRetry(c, up, down)
-	c.Assert(revisionCompletionRowCount(c.TB, fixture.conn, fixture.names.body), qt.Equals, int64(1))
+	c.Assert(revisionCompletionRowCount(c, fixture.conn, fixture.names.body), qt.Equals, int64(1))
 }
 
 func runRevisionCompletionDMLOnly(t *testing.T, target revisionCompletionTarget) {
@@ -63,7 +63,7 @@ func runRevisionCompletionDMLOnly(t *testing.T, target revisionCompletionTarget)
 
 	// The table is created outside the migration, so the body contains no DDL
 	// and never triggers an implicit commit.
-	execRevisionCompletionSQL(c.TB, fixture.faultConn, fmt.Sprintf(
+	execRevisionCompletionSQL(c, fixture.faultConn, fmt.Sprintf(
 		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB",
 		fixture.names.body,
 	))
@@ -82,7 +82,7 @@ func runRevisionCompletionDMLOnly(t *testing.T, target revisionCompletionTarget)
 
 	// Nothing in this body is DDL, so the rollback took all of it. A revision
 	// claiming otherwise would send the retry past rows that are not there.
-	c.Assert(revisionCompletionRowCount(c.TB, fixture.conn, fixture.names.body), qt.Equals, int64(0))
+	c.Assert(revisionCompletionRowCount(c, fixture.conn, fixture.names.body), qt.Equals, int64(0))
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -91,7 +91,7 @@ func runRevisionCompletionDMLOnly(t *testing.T, target revisionCompletionTarget)
 	c.Assert(status.DirtyRevision.Applied, qt.Equals, 0)
 
 	fixture.recoverWithRetry(c, up, down)
-	c.Assert(revisionCompletionRowCount(c.TB, fixture.conn, fixture.names.body), qt.Equals, int64(2))
+	c.Assert(revisionCompletionRowCount(c, fixture.conn, fixture.names.body), qt.Equals, int64(2))
 }
 
 // revisionCompletionFixture holds the connections and names shared by the two
@@ -142,8 +142,7 @@ func (f revisionCompletionFixture) recoverWithRetry(c *qt.C, up, down string) {
 	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{1})
 }
 
-func revisionCompletionRowCount(tb testing.TB, conn *dbschema.DatabaseConnection, table string) int64 {
-	c := qt.New(tb)
+func revisionCompletionRowCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) int64 {
 	c.Helper()
 	var count int64
 	c.Assert(conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&count), qt.IsNil)

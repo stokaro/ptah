@@ -38,8 +38,7 @@ func runSchemaExport(args ...string) (stdout, stderr string, err error) {
 // resolved. pathguard.ResolveCLIPath resolves them before the command echoes
 // the destination back, and on macOS t.TempDir() sits under a symlinked /var,
 // so the raw path never appears in the command output.
-func resolvedTempDir(tb testing.TB) string {
-	c := qt.New(tb)
+func resolvedTempDir(c *qt.C) string {
 	c.Helper()
 	resolved, err := filepath.EvalSymlinks(c.TempDir())
 	c.Assert(err, qt.IsNil)
@@ -49,8 +48,7 @@ func resolvedTempDir(tb testing.TB) string {
 // leftoverTempFiles lists the atomic-write scratch files still present in dir.
 // writeProtobufAtomically stages into ".<base>.*.tmp" before renaming, so any
 // survivor means a run left partial state behind.
-func leftoverTempFiles(tb testing.TB, dir string) []string {
-	c := qt.New(tb)
+func leftoverTempFiles(c *qt.C, dir string) []string {
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -66,11 +64,10 @@ func leftoverTempFiles(tb testing.TB, dir string) []string {
 // exportProtobufFixture writes the shared Go model into a fresh directory and
 // returns the directory plus a well-formed output path whose directory matches
 // protoTestPackage.
-func exportProtobufFixture(tb testing.TB) (dir, outPath string) {
-	c := qt.New(tb)
+func exportProtobufFixture(c *qt.C) (dir, outPath string) {
 	c.Helper()
-	dir = resolvedTempDir(c.TB)
-	writeModel(c.TB, dir)
+	dir = resolvedTempDir(c)
+	writeModel(c, dir)
 	return dir, filepath.Join(dir, "proto", "acme", "inventory", "v1", "schema.proto")
 }
 
@@ -93,8 +90,7 @@ func digestValueOf(text string) string {
 
 // writeCommentedModel writes a model carrying an internal table comment and a
 // sensitive column comment, the fixture the comment policy exists for.
-func writeCommentedModel(tb testing.TB, dir string) {
-	c := qt.New(tb)
+func writeCommentedModel(c *qt.C, dir string) {
 	c.Helper()
 	content := `package models
 
@@ -128,8 +124,8 @@ func protoCommentLines(text string) []string {
 
 func TestSchemaExportProtobufOmitsSourceCommentsUnlessAsked(t *testing.T) {
 	c := qt.New(t)
-	dir := resolvedTempDir(c.TB)
-	writeCommentedModel(c.TB, dir)
+	dir := resolvedTempDir(c)
+	writeCommentedModel(c, dir)
 	outPath := filepath.Join(dir, "proto", "acme", "inventory", "v1", "schema.proto")
 
 	exportArgs := func(extra ...string) []string {
@@ -189,7 +185,7 @@ func TestSchemaExportProtobufOmitsSourceCommentsUnlessAsked(t *testing.T) {
 
 func TestSchemaExportProtobufWritesFileAndBootstrapsHistory(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	stdout, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -243,7 +239,7 @@ func TestSchemaExportProtobufWritesFileAndBootstrapsHistory(t *testing.T) {
 
 func TestSchemaExportProtobufRegenerationIsByteIdentical(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -272,7 +268,7 @@ func TestSchemaExportProtobufRegenerationIsByteIdentical(t *testing.T) {
 
 func TestSchemaExportProtobufEmitsGoPackageOption(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -291,7 +287,7 @@ func TestSchemaExportProtobufEmitsGoPackageOption(t *testing.T) {
 
 func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	tests := []struct {
 		name    string
@@ -359,7 +355,7 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 
 func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 	c := qt.New(t)
-	dir, _ := exportProtobufFixture(c.TB)
+	dir, _ := exportProtobufFixture(c)
 
 	tests := []struct {
 		name string
@@ -399,7 +395,7 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 
 func TestSchemaExportProtobufWarnsAboutIgnoredTitle(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	stdout, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -455,8 +451,8 @@ func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := resolvedTempDir(c.TB)
-			writeModel(c.TB, dir)
+			dir := resolvedTempDir(c)
+			writeModel(c, dir)
 			outPath := filepath.Join(append([]string{dir}, tt.out...)...)
 
 			stdout, stderr, err := runSchemaExport(
@@ -479,7 +475,7 @@ func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
 
 func TestSchemaExportProtobufRefusalPreservesPreviousFile(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -511,12 +507,12 @@ func TestSchemaExportProtobufRefusalPreservesPreviousFile(t *testing.T) {
 	after, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(after, qt.DeepEquals, before)
-	c.Assert(leftoverTempFiles(c.TB, filepath.Dir(outPath)), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c, filepath.Dir(outPath)), qt.HasLen, 0)
 }
 
 func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c.TB)
+	dir, outPath := exportProtobufFixture(c)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -533,7 +529,7 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
 
 	outDir := filepath.Dir(outPath)
-	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
 	entries, err := os.ReadDir(outDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 1)
@@ -549,7 +545,7 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
 	info, err = os.Stat(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))

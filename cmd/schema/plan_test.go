@@ -18,8 +18,8 @@ func TestSchemaPlanSavesFingerprintedPlanFile(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "plan.db")
 	planPath := filepath.Join(dir, "add-orders.plan.json")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "plan",
@@ -47,8 +47,8 @@ func TestSchemaPlanRequiresSaveOutputOrDryRun(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "plan.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "plan",
 		"--db-url", "sqlite://"+dbPath,
@@ -107,8 +107,8 @@ func TestSchemaPlanDryRunPrintsDocumentWithoutSaving(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dbPath := filepath.Join(dir, "plan.db")
-	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "plan",
@@ -137,9 +137,9 @@ func TestSchemaPlanMatchesAtlasSchemaPlan(t *testing.T) {
 	nativePlan := filepath.Join(dir, "native.plan.json")
 	atlasPlan := filepath.Join(dir, "atlas.plan.json")
 	const seed = "CREATE TABLE users (id INTEGER PRIMARY KEY);"
-	seedSQLite(c.TB, nativeDB, seed)
-	seedSQLite(c.TB, atlasDB, seed)
-	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
+	seedSQLite(c, nativeDB, seed)
+	seedSQLite(c, atlasDB, seed)
+	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	nativeOut, err := runSchema("", "plan",

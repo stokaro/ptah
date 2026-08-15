@@ -16,7 +16,7 @@ import (
 func TestCapture_FailurePath_RejectsSelectedSourceSymlink(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	target := writeSource(c.TB, t.TempDir(), "outside.go", "package outside\n")
+	target := writeSource(c, t.TempDir(), "outside.go", "package outside\n")
 	link := filepath.Join(root, "model.go")
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 
@@ -30,7 +30,7 @@ func TestCapture_FailurePath_RejectsSelectedSourceSymlink(t *testing.T) {
 func TestCapture_FailurePath_RejectsSelectedHiddenFilenameSymlink(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	target := writeSource(c.TB, t.TempDir(), "outside.go", "package outside\n")
+	target := writeSource(c, t.TempDir(), "outside.go", "package outside\n")
 	link := filepath.Join(root, ".model.go")
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 
@@ -57,7 +57,7 @@ func TestCapture_FailurePath_RejectsSelectedNamedPipe(t *testing.T) {
 func TestCapture_HappyPath_AnchorsSymlinkedRoot(t *testing.T) {
 	c := qt.New(t)
 	target := t.TempDir()
-	writeSource(c.TB, target, "models.go", "package models\n")
+	writeSource(c, target, "models.go", "package models\n")
 	root := filepath.Join(t.TempDir(), "models")
 	c.Assert(os.Symlink(target, root), qt.IsNil)
 
@@ -74,7 +74,7 @@ func TestCapture_HappyPath_AnchorsSymlinkedRoot(t *testing.T) {
 func TestSnapshotSourceAlias_HappyPath_ReportsSymlinkAndHardLink(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSource(c.TB, root, "model.go", "package models\n")
+	source := writeSource(c, root, "model.go", "package models\n")
 	aliases := t.TempDir()
 	symlinkAlias := filepath.Join(aliases, "schema-symlink.hcl")
 	hardLinkAlias := filepath.Join(aliases, "schema-hardlink.hcl")

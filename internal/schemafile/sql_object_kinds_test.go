@@ -15,13 +15,12 @@ import (
 // anchor and must both load without error and reach the rendered SQL: an
 // exit-code assertion on its own passes for a statement that parses and is
 // then dropped, which is exactly how five of these used to behave.
-func loadRenderedPostgresSQL(tb testing.TB, body string) string {
-	c := qt.New(tb)
+func loadRenderedPostgresSQL(c *qt.C, body string) string {
 	dir := c.TempDir()
-	path := writeSchemaFile(c.TB, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+body+"\n")
+	path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+body+"\n")
 	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	return strings.Join(renderPostgres(c.TB, db), "\n")
+	return strings.Join(renderPostgres(c, db), "\n")
 }
 
 func TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles(t *testing.T) {
@@ -94,7 +93,7 @@ func TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(loadRenderedPostgresSQL(c.TB, tc.statement), qt.Contains, tc.want)
+			c.Assert(loadRenderedPostgresSQL(c, tc.statement), qt.Contains, tc.want)
 		})
 	}
 }
@@ -107,7 +106,7 @@ func TestLoadAll_PostgresObjectKindsSurviveSQLSchemaFiles(t *testing.T) {
 func TestLoadAll_TriggerOnAnExistingFunctionDoesNotRedefineIt(t *testing.T) {
 	c := qt.New(t)
 
-	sql := loadRenderedPostgresSQL(c.TB, `CREATE TRIGGER tg1 AFTER INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION f1();`)
+	sql := loadRenderedPostgresSQL(c, `CREATE TRIGGER tg1 AFTER INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION f1();`)
 
 	c.Assert(sql, qt.Contains, `EXECUTE FUNCTION "f1"();`)
 	c.Assert(sql, qt.Not(qt.Contains), `CREATE OR REPLACE FUNCTION "f1"()`)
@@ -148,7 +147,7 @@ func TestLoadAll_SQLSchemaFileStillRefusesStatementsOutsideTheGrammar(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			path := writeSchemaFile(c.TB, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+tc.statement+"\n")
+			path := writeSchemaFile(c, dir, "schema.sql", "CREATE TABLE t1 (id BIGINT PRIMARY KEY);\n"+tc.statement+"\n")
 
 			_, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
 

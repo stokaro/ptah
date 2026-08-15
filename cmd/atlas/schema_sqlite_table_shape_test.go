@@ -52,8 +52,7 @@ import (
 //
 // devName names a dev database per call so a second apply is answered from a
 // scratch database of its own rather than out of the first one's leftovers.
-func applySQLiteSourceFile(tb testing.TB, dbPath, sourcePath, devName string) string {
-	c := qt.New(tb)
+func applySQLiteSourceFile(c *qt.C, dbPath, sourcePath, devName string) string {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -76,8 +75,7 @@ func applySQLiteSourceFile(tb testing.TB, dbPath, sourcePath, devName string) st
 // assertion is about the database that was built and not about how it was
 // spelled. The map covers the key exactly, so a composite key that lost a
 // column is a failure too.
-func keyColumnNullability(tb testing.TB, dbPath, table string) map[string]bool {
-	c := qt.New(tb)
+func keyColumnNullability(c *qt.C, dbPath, table string) map[string]bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -205,11 +203,11 @@ func TestSchemaApplySQLiteTableShapeConvergesOnKeyNullability(t *testing.T) {
 			c.Assert(os.WriteFile(sourcePath, []byte(test.source), 0o600), qt.IsNil)
 			dbPath := filepath.Join(dir, "main.db")
 
-			applySQLiteSourceFile(c.TB, dbPath, sourcePath, "dev1.db")
-			c.Assert(keyColumnNullability(c.TB, dbPath, test.table), qt.DeepEquals, test.want,
-				qt.Commentf("persisted DDL: %s", sqliteTableDDL(c.TB, dbPath, test.table)))
+			applySQLiteSourceFile(c, dbPath, sourcePath, "dev1.db")
+			c.Assert(keyColumnNullability(c, dbPath, test.table), qt.DeepEquals, test.want,
+				qt.Commentf("persisted DDL: %s", sqliteTableDDL(c, dbPath, test.table)))
 
-			second := applySQLiteSourceFile(c.TB, dbPath, sourcePath, "dev2.db")
+			second := applySQLiteSourceFile(c, dbPath, sourcePath, "dev2.db")
 			c.Assert(second, qt.Contains, "Schema is synced, no changes to be made")
 		})
 	}
@@ -232,12 +230,12 @@ func TestSchemaApplySQLiteTableShapeStillPlansGenuineChanges(t *testing.T) {
 		"CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT) WITHOUT ROWID;",
 	), 0o600), qt.IsNil)
 
-	applySQLiteSourceFile(c.TB, dbPath, before, "dev1.db")
+	applySQLiteSourceFile(c, dbPath, before, "dev1.db")
 
-	changed := applySQLiteSourceFile(c.TB, dbPath, after, "dev2.db")
+	changed := applySQLiteSourceFile(c, dbPath, after, "dev2.db")
 	c.Assert(changed, qt.Contains, `ADD COLUMN "note"`)
-	c.Assert(keyColumnNullability(c.TB, dbPath, "users"), qt.DeepEquals, map[string]bool{"id": true})
+	c.Assert(keyColumnNullability(c, dbPath, "users"), qt.DeepEquals, map[string]bool{"id": true})
 
-	again := applySQLiteSourceFile(c.TB, dbPath, after, "dev3.db")
+	again := applySQLiteSourceFile(c, dbPath, after, "dev3.db")
 	c.Assert(again, qt.Contains, "Schema is synced, no changes to be made")
 }

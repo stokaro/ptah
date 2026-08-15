@@ -31,7 +31,7 @@ func TestEmitterJSONModeWritesParseableJSONLines(t *testing.T) {
 	emit.Println("plain status")
 	emit.Printf("version: %d\n", 42)
 
-	for _, payload := range parseJSONLogLines(c.TB, out.String()) {
+	for _, payload := range parseJSONLogLines(c, out.String()) {
 		c.Assert(payload["msg"], qt.Not(qt.Equals), "")
 		c.Assert(payload["correlation_id"], qt.Not(qt.Equals), "")
 	}
@@ -57,7 +57,7 @@ func TestJSONOutputWriterLogsSubprocessLines(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	var records int
-	for _, payload := range parseJSONLogLines(c.TB, out.String()) {
+	for _, payload := range parseJSONLogLines(c, out.String()) {
 		c.Assert(payload["msg"], qt.Equals, "hook output")
 		c.Assert(payload["output"], qt.Not(qt.Equals), "")
 		records++
@@ -106,8 +106,7 @@ func TestStartRejectsInvalidLogOptions(t *testing.T) {
 	})
 }
 
-func parseJSONLogLines(tb testing.TB, raw string) []map[string]any {
-	c := qt.New(tb)
+func parseJSONLogLines(c *qt.C, raw string) []map[string]any {
 	c.Helper()
 
 	lines := strings.Split(strings.TrimSpace(raw), "\n")

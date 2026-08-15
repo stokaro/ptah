@@ -86,15 +86,13 @@ func diagnosticLines(statements []string) []string {
 	return lines
 }
 
-func planStatements(tb testing.TB, diff *types.SchemaDiff, generated *goschema.Database, dialect string) []string {
-	c := qt.New(tb)
+func planStatements(c *qt.C, diff *types.SchemaDiff, generated *goschema.Database, dialect string) []string {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
 
-func renderStatements(tb testing.TB, generated *goschema.Database, dialect string) []string {
-	c := qt.New(tb)
+func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []string {
 	statements, err := renderer.GetOrderedCreateStatements(generated, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -114,7 +112,7 @@ func renderStatements(tb testing.TB, generated *goschema.Database, dialect strin
 func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c.TB, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
+	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse), "\n")
 
 	tests := []struct {
 		name string
@@ -155,8 +153,8 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	c := qt.New(t)
 
-	rendered := diagnosticLines(renderStatements(c.TB, unhostableSchema(), platform.ClickHouse))
-	planned := diagnosticLines(planStatements(c.TB, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
+	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
+	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
 	c.Assert(rendered, qt.HasLen, 8)
 	c.Assert(planned, qt.DeepEquals, rendered)
@@ -172,7 +170,7 @@ func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	}
 	diff := &types.SchemaDiff{ViewsAdded: []string{"v_only"}}
 
-	statements := planStatements(c.TB, diff, generated, platform.ClickHouse)
+	statements := planStatements(c, diff, generated, platform.ClickHouse)
 
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "CREATE VIEW `v_only` AS\nSELECT 1")
@@ -199,7 +197,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		TriggersRemoved: []types.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
 
-	planned := strings.Join(planStatements(c.TB, diff, &goschema.Database{}, platform.ClickHouse), "\n")
+	planned := strings.Join(planStatements(c, diff, &goschema.Database{}, platform.ClickHouse), "\n")
 
 	tests := []struct {
 		name string
@@ -234,7 +232,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c.TB, unhostableCreationDiff(), unhostableSchema(), platform.Postgres), "\n")
+	planned := strings.Join(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres), "\n")
 
 	tests := []struct {
 		name string
@@ -258,7 +256,7 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 
 	t.Run("no diagnostics", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(diagnosticLines(planStatements(c.TB, unhostableCreationDiff(), unhostableSchema(), platform.Postgres)),
+		c.Assert(diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres)),
 			qt.HasLen, 0)
 	})
 }
@@ -310,8 +308,8 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			planned := strings.Join(planStatements(c.TB, mysqlFamilyCreationDiff(), mysqlFamilySchema(), test.dialect), "\n")
-			rendered := strings.Join(renderStatements(c.TB, mysqlFamilySchema(), test.dialect), "\n")
+			planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), test.dialect), "\n")
+			rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), test.dialect), "\n")
 
 			c.Assert(planned, qt.Contains, test.wantExtension)
 			c.Assert(planned, qt.Contains, test.wantSequence)
@@ -338,7 +336,7 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			planned := strings.Join(planStatements(c.TB, diff, &goschema.Database{}, test.dialect), "\n")
+			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, test.dialect), "\n")
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -416,8 +414,8 @@ func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBef
 func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
 	c := qt.New(t)
 
-	planned := strings.Join(planStatements(c.TB, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
-	rendered := strings.Join(renderStatements(c.TB, mysqlFamilySchema(), platform.SQLServer), "\n")
+	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
+	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
 	c.Assert(executableSQL(planned), qt.Not(qt.Contains), "CREATE SEQUENCE")
 	c.Assert(executableSQL(rendered), qt.Not(qt.Contains), "CREATE SEQUENCE")

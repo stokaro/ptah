@@ -14,8 +14,7 @@ import (
 // writeUsersEntity writes a minimal Go entity annotation file describing a
 // "users" table into a fresh temporary directory and returns that directory so
 // it can be used as a [dbtest.SchemaOptions] RootDir.
-func writeUsersEntity(tb testing.TB) string {
-	c := qt.New(tb)
+func writeUsersEntity(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	content := `package models
@@ -35,7 +34,7 @@ type User struct {
 
 func TestRunSchemaTest_AppliesDesiredSchema(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 
 	cases := []dbtest.Case{{
 		Name: "users schema applies and accepts rows",
@@ -60,7 +59,7 @@ func TestRunSchemaTest_AppliesDesiredSchema(t *testing.T) {
 
 func TestRunSchemaTest_ApplySchemaRepairsDrift(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 	cases := []dbtest.Case{{
 		Name: "apply_schema restores a missing desired table",
 		Steps: []dbtest.Step{
@@ -78,7 +77,7 @@ func TestRunSchemaTest_ApplySchemaRepairsDrift(t *testing.T) {
 
 func TestRunSchemaTest_ExplicitDBURLIsRepeatableForIdempotentCases(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 	databaseURL := "sqlite://" + filepath.Join(c.TempDir(), "repeatable.db")
 	opts := dbtest.SchemaOptions{
 		Cases: []dbtest.Case{{
@@ -121,7 +120,7 @@ type Security struct{}
 
 func TestRunSchemaTest_RejectsMigrateToStep(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 
 	cases := []dbtest.Case{{
 		Name:  "migrate_to is not allowed",
@@ -140,7 +139,7 @@ func TestRunSchemaTest_RejectsMigrateToStep(t *testing.T) {
 
 func TestRunSchemaTest_EphemeralCasesAreIsolated(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 
 	cases := []dbtest.Case{
 		{
@@ -171,7 +170,7 @@ func TestRunSchemaTest_EphemeralCasesAreIsolated(t *testing.T) {
 
 func TestRunSchemaTest_ExplicitDBURLPreservesStateBetweenCases(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 	shared := "sqlite://" + filepath.Join(c.TempDir(), "shared.db")
 
 	// An explicit database is caller-owned and intentionally shared for the run,
@@ -203,7 +202,7 @@ func TestRunSchemaTest_ExplicitDBURLPreservesStateBetweenCases(t *testing.T) {
 
 func TestRunSchemaTest_InvalidCasesError(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c.TB)
+	rootDir := writeUsersEntity(c)
 
 	cases := []dbtest.Case{{
 		Name:  "no action",

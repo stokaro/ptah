@@ -48,7 +48,7 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	cmd := migratedown.NewMigrateDownCommand()
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
@@ -59,7 +59,7 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 
 	err = cmd.Execute()
 	c.Assert(err, qt.ErrorMatches, "(?s).*down pre-flight custom command hook failed: exit status 8\nrollback backup refused")
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -89,17 +89,17 @@ func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	cmd := migratedown.NewMigrateDownCommand()
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
 		"--target", "0",
 	})
 
-	out, err := captureStdIO(c.TB, "NO\n", cmd.Execute)
+	out, err := captureStdIO(c, "NO\n", cmd.Execute)
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "Migration rollback canceled.")
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -124,7 +124,7 @@ func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	cmd := migratedown.NewMigrateDownCommand()
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
@@ -133,10 +133,10 @@ func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) 
 		"--confirm",
 	})
 
-	out, err := captureStdIO(c.TB, "", cmd.Execute)
+	out, err := captureStdIO(c, "", cmd.Execute)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Rollback plan verified on shadow database")
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -163,7 +163,7 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
 	cmd := migratedown.NewMigrateDownCommand()
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
@@ -174,7 +174,7 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 
 	err = cmd.Execute()
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: roll back to version 0 on shadow database: .*no_such_table.*`)
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -190,7 +190,7 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
 	c := qt.New(t)
 	cmd := migratedown.NewMigrateDownCommand()
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
 		"--db-url", "sqlite://ignored",
 		"--migrations-dir", "../outside",
@@ -201,11 +201,10 @@ func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
-	resetMigrateDownCommandForTest(c.TB, cmd)
+	resetMigrateDownCommandForTest(c, cmd)
 }
 
-func captureStdIO(tb testing.TB, input string, run func() error) (string, error) {
-	c := qt.New(tb)
+func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
 	c.Helper()
 
 	oldStdin := os.Stdin
@@ -238,8 +237,7 @@ func captureStdIO(tb testing.TB, input string, run func() error) (string, error)
 	return string(output), runErr
 }
 
-func resetMigrateDownCommandForTest(tb testing.TB, cmd interface{ Flag(string) *pflag.Flag }) {
-	c := qt.New(tb)
+func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
 	c.Helper()
 	for name, value := range map[string]string{
 		"db-url":                 "",

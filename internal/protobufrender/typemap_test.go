@@ -16,10 +16,9 @@ type typeCase struct {
 	want       string
 }
 
-func assertColumnType(tb testing.TB, tc typeCase) {
-	c := qt.New(tb)
+func assertColumnType(c *qt.C, tc typeCase) {
 	c.Helper()
-	text := mustRenderText(c.TB, oneTable(column("v", tc.columnType)), baseOptions())
+	text := mustRenderText(c, oneTable(column("v", tc.columnType)), baseOptions())
 	c.Assert(section(text, "message Thing {"), qt.Equals, "message Thing {\n  "+tc.want+"\n}")
 }
 
@@ -27,7 +26,7 @@ func runTypeCases(t *testing.T, cases []typeCase) {
 	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.columnType, func(t *testing.T) {
-			assertColumnType(qt.New(t).TB, tc)
+			assertColumnType(qt.New(t), tc)
 		})
 	}
 }
@@ -168,14 +167,14 @@ func TestTypeMapArraysBecomeRepeated(t *testing.T) {
 func TestTypeMapImportsOnlyWhatItUses(t *testing.T) {
 	c := qt.New(t)
 
-	plain := mustRenderText(c.TB, oneTable(column("v", "TEXT")), baseOptions())
+	plain := mustRenderText(c, oneTable(column("v", "TEXT")), baseOptions())
 	c.Assert(plain, qt.Not(qt.Contains), "import ")
 
-	structOnly := mustRenderText(c.TB, oneTable(column("v", "JSONB")), baseOptions())
+	structOnly := mustRenderText(c, oneTable(column("v", "JSONB")), baseOptions())
 	c.Assert(structOnly, qt.Contains, "import \"google/protobuf/struct.proto\";\n")
 	c.Assert(structOnly, qt.Not(qt.Contains), "timestamp.proto")
 
-	both := mustRenderText(c.TB, oneTable(column("a", "JSONB"), column("b", "TIMESTAMPTZ")), baseOptions())
+	both := mustRenderText(c, oneTable(column("a", "JSONB"), column("b", "TIMESTAMPTZ")), baseOptions())
 	c.Assert(both, qt.Contains,
 		"import \"google/protobuf/struct.proto\";\nimport \"google/protobuf/timestamp.proto\";\n")
 }
@@ -186,10 +185,9 @@ type diagnosticCase struct {
 	want       string
 }
 
-func assertMappingDiagnostic(tb testing.TB, dc diagnosticCase) {
-	c := qt.New(tb)
+func assertMappingDiagnostic(c *qt.C, dc diagnosticCase) {
 	c.Helper()
-	res := mustRender(c.TB, oneTable(column("v", dc.columnType)), baseOptions())
+	res := mustRender(c, oneTable(column("v", dc.columnType)), baseOptions())
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains), "warning things.v: "+dc.want)
 }
 
@@ -208,7 +206,7 @@ func TestTypeMapLossyProjectionsAreReported(t *testing.T) {
 	}
 	for _, dc := range cases {
 		t.Run(dc.columnType, func(t *testing.T) {
-			assertMappingDiagnostic(qt.New(t).TB, dc)
+			assertMappingDiagnostic(qt.New(t), dc)
 		})
 	}
 }
@@ -216,7 +214,7 @@ func TestTypeMapLossyProjectionsAreReported(t *testing.T) {
 func TestTypeMapFaithfulProjectionsAreSilent(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c.TB, oneTable(
+	res := mustRender(c, oneTable(
 		column("a", "BIGINT"),
 		column("b", "TEXT"),
 		column("c", "BOOLEAN"),
@@ -233,13 +231,13 @@ func TestTypeMapFaithfulProjectionsAreSilent(t *testing.T) {
 func TestTypeMapNullableArrayReportsTheNullVersusEmptyLoss(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c.TB, oneTable(goschema.Field{Name: "tags", Type: "TEXT[]", Nullable: true}), baseOptions())
+	res := mustRender(c, oneTable(goschema.Field{Name: "tags", Type: "TEXT[]", Nullable: true}), baseOptions())
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
 		"warning things.tags: nullable array column exported as repeated; "+
 			"protobuf cannot distinguish SQL NULL from an empty list")
 
 	// A NOT NULL array carries no such ambiguity and must stay silent.
-	notNull := mustRender(c.TB, oneTable(column("tags", "TEXT[]")), baseOptions())
+	notNull := mustRender(c, oneTable(column("tags", "TEXT[]")), baseOptions())
 	c.Assert(notNull.Diagnostics, qt.HasLen, 1)
 }
 
@@ -248,7 +246,7 @@ func TestTypeMapNeverEmitsPresenceModifiers(t *testing.T) {
 
 	// Editions default features.field_presence to EXPLICIT, and both "optional"
 	// and "required" are hard parse errors there. SQL NOT NULL is simply lossy.
-	text := mustRenderText(c.TB, oneTable(
+	text := mustRenderText(c, oneTable(
 		goschema.Field{Name: "a", Type: "TEXT", Nullable: true},
 		goschema.Field{Name: "b", Type: "TEXT", Nullable: false},
 	), baseOptions())

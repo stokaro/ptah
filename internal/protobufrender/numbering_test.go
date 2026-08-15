@@ -11,14 +11,14 @@ import (
 func TestNumberingAdditiveChangeAllocatesAboveTheMaximum(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c.TB, oneTable(
+	baseline := mustRender(c, oneTable(
 		column("id", "BIGINT"),
 		column("sku", "TEXT"),
 	), baseOptions())
 
 	// The new column is declared first in the source; it must still take the
 	// next free number rather than displacing anything.
-	grown := mustRenderText(c.TB, oneTable(
+	grown := mustRenderText(c, oneTable(
 		column("added", "TEXT"),
 		column("id", "BIGINT"),
 		column("sku", "TEXT"),
@@ -31,13 +31,13 @@ func TestNumberingAdditiveChangeAllocatesAboveTheMaximum(t *testing.T) {
 func TestNumberingRemovedFieldReservesNumberAndName(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c.TB, oneTable(
+	baseline := mustRender(c, oneTable(
 		column("id", "BIGINT"),
 		column("sku", "TEXT"),
 		column("name", "TEXT"),
 	), baseOptions())
 
-	shrunk := mustRenderText(c.TB, oneTable(
+	shrunk := mustRenderText(c, oneTable(
 		column("id", "BIGINT"),
 		column("name", "TEXT"),
 	), withPrevious(baseline.Data))
@@ -52,16 +52,16 @@ func TestNumberingRemovedThenReAddedDoesNotReuseTheNumber(t *testing.T) {
 	c := qt.New(t)
 
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
-	baseline := mustRender(c.TB, full, baseOptions())
+	baseline := mustRender(c, full, baseOptions())
 
-	shrunk := mustRender(c.TB, oneTable(column("id", "BIGINT")), withPrevious(baseline.Data))
+	shrunk := mustRender(c, oneTable(column("id", "BIGINT")), withPrevious(baseline.Data))
 	c.Assert(string(shrunk.Data), qt.Contains, "  reserved 2;\n  reserved sku;\n")
 
 	// Bringing the column back is a name reuse, so it needs the release policy;
 	// the retired number 2 is gone for good and 3 is allocated instead.
 	opts := withPrevious(shrunk.Data)
 	opts.OnNameReuse = releasePolicy
-	readded := mustRenderText(c.TB, full, opts)
+	readded := mustRenderText(c, full, opts)
 
 	c.Assert(section(readded, "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n  string sku = 3;\n\n  reserved 2;\n}")
@@ -70,9 +70,9 @@ func TestNumberingRemovedThenReAddedDoesNotReuseTheNumber(t *testing.T) {
 func TestNumberingRemovedEnumValueReservesNumberAndName(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c.TB, inlineEnumTable("new", "done"), baseOptions())
+	baseline := mustRender(c, inlineEnumTable("new", "done"), baseOptions())
 
-	shrunk := mustRenderText(c.TB, inlineEnumTable("new"), withPrevious(baseline.Data))
+	shrunk := mustRenderText(c, inlineEnumTable("new"), withPrevious(baseline.Data))
 	c.Assert(section(shrunk, "enum ThingState {"), qt.Equals,
 		"enum ThingState {\n"+
 			"  THING_STATE_UNSPECIFIED = 0;\n"+
@@ -90,7 +90,7 @@ func TestNumberingSkipsTheProtobufImplementationRange(t *testing.T) {
 	// immediately below it must jump the whole block.
 	previous := previousExport("message Thing {\n  int64 id = 18999;\n}\n")
 
-	grown := mustRenderText(c.TB, oneTable(
+	grown := mustRenderText(c, oneTable(
 		column("id", "BIGINT"),
 		column("extra", "TEXT"),
 	), withPrevious(previous))
@@ -106,7 +106,7 @@ func TestNumberingSkipsTheImplementationRangeForEnums(t *testing.T) {
 		"message Thing {\n  ThingState state = 1;\n}\n\n" +
 			"enum ThingState {\n  THING_STATE_UNSPECIFIED = 0;\n  THING_STATE_NEW = 18999;\n}\n")
 
-	grown := mustRenderText(c.TB, inlineEnumTable("new", "done"), withPrevious(previous))
+	grown := mustRenderText(c, inlineEnumTable("new", "done"), withPrevious(previous))
 	c.Assert(section(grown, "enum ThingState {"), qt.Equals,
 		"enum ThingState {\n"+
 			"  THING_STATE_UNSPECIFIED = 0;\n"+
@@ -121,7 +121,7 @@ func TestNumberingRefusesToAllocatePastTheMaximum(t *testing.T) {
 	// 536870911 is the largest legal field number, so nothing is left.
 	previous := previousExport("message Thing {\n  int64 id = 536870911;\n}\n")
 
-	message := mustFail(c.TB, oneTable(
+	message := mustFail(c, oneTable(
 		column("id", "BIGINT"),
 		column("extra", "TEXT"),
 	), withPrevious(previous))
@@ -137,7 +137,7 @@ func TestNumberingCountsReservedNumbersAsUsed(t *testing.T) {
 	previous := previousExport(
 		"message Thing {\n  int64 id = 1;\n\n  reserved 2 to 7;\n  reserved sku, name;\n}\n")
 
-	grown := mustRenderText(c.TB, oneTable(
+	grown := mustRenderText(c, oneTable(
 		column("id", "BIGINT"),
 		column("extra", "TEXT"),
 	), withPrevious(previous))
@@ -149,7 +149,7 @@ func TestNumberingCountsReservedNumbersAsUsed(t *testing.T) {
 func TestNumberingCollapsesContiguousReservedRuns(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c.TB, oneTable(
+	baseline := mustRender(c, oneTable(
 		column("a", "TEXT"),
 		column("b", "TEXT"),
 		column("c", "TEXT"),
@@ -157,7 +157,7 @@ func TestNumberingCollapsesContiguousReservedRuns(t *testing.T) {
 		column("e", "TEXT"),
 	), baseOptions())
 
-	shrunk := mustRenderText(c.TB, oneTable(column("a", "TEXT"), column("e", "TEXT")), withPrevious(baseline.Data))
+	shrunk := mustRenderText(c, oneTable(column("a", "TEXT"), column("e", "TEXT")), withPrevious(baseline.Data))
 	c.Assert(section(shrunk, "message Thing {"), qt.Equals,
 		"message Thing {\n  string a = 1;\n  string e = 5;\n\n  reserved 2 to 4;\n  reserved b, c, d;\n}")
 }

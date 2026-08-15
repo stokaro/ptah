@@ -19,7 +19,7 @@ func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) 
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeAtlasMigration(c.TB, migrationsDir, "1_create_atlas_validate_table.sql",
+	writeAtlasMigration(c, migrationsDir, "1_create_atlas_validate_table.sql",
 		"CREATE TABLE atlas_validate_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	var out bytes.Buffer
@@ -37,14 +37,14 @@ func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c.TB, devDBPath, "atlas_validate_dev_url", 0)
+	assertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 0)
 }
 
 func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeAtlasMigration(c.TB, migrationsDir, "1_create_compat_validate_table.sql",
+	writeAtlasMigration(c, migrationsDir, "1_create_compat_validate_table.sql",
 		"CREATE TABLE compat_validate_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	var out bytes.Buffer
@@ -62,19 +62,17 @@ func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c.TB, devDBPath, "compat_validate_dev_url", 0)
+	assertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 0)
 }
 
-func writeAtlasMigration(tb testing.TB, dir, name, sql string) {
-	c := qt.New(tb)
+func writeAtlasMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 
-func assertSQLiteTableCount(tb testing.TB, dbPath, table string, want int) {
-	c := qt.New(tb)
+func assertSQLiteTableCount(c *qt.C, dbPath, table string, want int) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

@@ -22,11 +22,11 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_projects", "CREATE TABLE ptah_fk_order_tasks")
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_tasks", "ALTER TABLE ptah_fk_order_projects ADD CONSTRAINT")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_projects", "CREATE TABLE ptah_fk_order_tasks")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_tasks", "ALTER TABLE ptah_fk_order_projects ADD CONSTRAINT")
 		})
 	}
 }
@@ -45,12 +45,12 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKDiamondTables(t *testin
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_memberships")
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_projects", "CREATE TABLE ptah_fk_order_tasks")
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_memberships", "CREATE TABLE ptah_fk_order_tasks")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_memberships")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_projects", "CREATE TABLE ptah_fk_order_tasks")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_memberships", "CREATE TABLE ptah_fk_order_tasks")
 		})
 	}
 }
@@ -69,12 +69,12 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyDropsFKDiamondTablesInDependenc
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			assertContainsBefore(c.TB, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
-			assertContainsBefore(c.TB, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
-			assertContainsBefore(c.TB, sql, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
-			assertContainsBefore(c.TB, sql, "DROP TABLE IF EXISTS ptah_fk_order_memberships", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
+			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_memberships", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
 		})
 	}
 }
@@ -91,10 +91,10 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 				},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			assertContainsBefore(c.TB, sql, "CREATE TABLE ptah_fk_order_parents", "CREATE TABLE ptah_fk_order_children")
-			assertContainsBefore(c.TB, sql, "CREATE UNIQUE INDEX uq_ptah_fk_order_parents_code_idx", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
+			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_parents", "CREATE TABLE ptah_fk_order_children")
+			assertContainsBefore(c, sql, "CREATE UNIQUE INDEX uq_ptah_fk_order_parents_code_idx", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
 		})
 	}
 }
@@ -115,9 +115,9 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 				}},
 			}
 
-			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			assertContainsBefore(c.TB, sql, "ALTER TABLE ptah_fk_order_parents ADD CONSTRAINT uq_ptah_fk_order_parents_code", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
+			assertContainsBefore(c, sql, "ALTER TABLE ptah_fk_order_parents ADD CONSTRAINT uq_ptah_fk_order_parents_code", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
 		})
 	}
 }

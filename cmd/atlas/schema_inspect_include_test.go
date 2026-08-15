@@ -420,7 +420,7 @@ func TestSchemaInspectIncludeAppliesToSplitWriteExport(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
-	written := exportedFileNames(c.TB, outDir)
+	written := exportedFileNames(c, outDir)
 	// Both names follow from the table declaring its schema, which the render
 	// must do for the document to be valid HCL at all (stokaro/ptah#1234). The
 	// schema file is new; the table file gained its schema prefix.
@@ -429,8 +429,7 @@ func TestSchemaInspectIncludeAppliesToSplitWriteExport(t *testing.T) {
 
 // exportedFileNames returns the base names of every file below root, sorted by
 // walk order, so a split/write export can be asserted on exactly.
-func exportedFileNames(tb testing.TB, root string) []string {
-	c := qt.New(tb)
+func exportedFileNames(c *qt.C, root string) []string {
 	c.Helper()
 	var names []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

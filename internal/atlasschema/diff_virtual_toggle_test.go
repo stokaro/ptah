@@ -78,11 +78,11 @@ func TestDiffResolvesTheDropToggleBeforeSelectionCanReturn(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			from := virtualToggleFixture(c.TB, t.TempDir(), "from.db",
+			from := virtualToggleFixture(c, t.TempDir(), "from.db",
 				`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
 				`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
 			)
-			to := virtualToggleFixture(c.TB, t.TempDir(), "to.db",
+			to := virtualToggleFixture(c, t.TempDir(), "to.db",
 				`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
 			)
 
@@ -109,8 +109,7 @@ func missingSchemaFileURL(database string) string {
 	return "file://" + database + ".missing.sql"
 }
 
-func virtualToggleFixture(tb testing.TB, dir, name string, statements ...string) string {
-	c := qt.New(tb)
+func virtualToggleFixture(c *qt.C, dir, name string, statements ...string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, name)

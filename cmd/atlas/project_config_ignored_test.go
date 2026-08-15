@@ -72,7 +72,7 @@ func TestCompatAdapterCommandReportsIgnoredAtlasConstructs(t *testing.T) {
 
 func TestCompatConvertedIntegrityCommandReportsIgnoredAtlasConstructs(t *testing.T) {
 	c := qt.New(t)
-	configPath, migrationsDir := writeIntegrityProject(c.TB, "goose")
+	configPath, migrationsDir := writeIntegrityProject(c, "goose")
 	c.Assert(os.WriteFile(configPath, []byte(`env "local" {
   project = "ignored"
   migration {
@@ -93,7 +93,7 @@ func TestCompatConvertedIntegrityCommandReportsIgnoredAtlasConstructs(t *testing
 		qt.Equals,
 		"warning: atlas.hcl attribute \"project\" at "+configPath+":2 is ignored for Atlas compatibility and has no effect\n",
 	)
-	c.Assert(sumEntryNames(c.TB, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
+	c.Assert(sumEntryNames(c, migrationsDir), qt.DeepEquals, sqlSuffixCoveredSet)
 }
 
 func TestCompatConvertedMigrateNewReportsIgnoredAtlasConstructs(t *testing.T) {

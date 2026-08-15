@@ -51,7 +51,7 @@ func TestAcquireApplyLock_RecordsRequestedName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := connectSQLite(c.TB, filepath.Join(c.TB.TempDir(), "lock-name.db"))
+			conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-name.db"))
 			defer dbschema.CloseAndWarn(conn)
 
 			lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, test.requested, time.Second)

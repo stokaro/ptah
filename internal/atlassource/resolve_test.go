@@ -93,7 +93,7 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "replayed_users")
 	c.Assert(state.DefaultSchema, qt.Equals, "main")
-	assertSQLiteDevEmpty(c.TB, devURL)
+	assertSQLiteDevEmpty(c, devURL)
 }
 
 func TestResolve_MigrationDirFailureCleansPartialDevDatabase(t *testing.T) {
@@ -117,7 +117,7 @@ CREATE VIEW user_ids AS SELECT id FROM users;
 	})
 
 	c.Assert(err, qt.ErrorMatches, `(?s)--to "file://.*": replay migration 2 on dev database: .*`)
-	assertSQLiteDevEmpty(c.TB, devURL)
+	assertSQLiteDevEmpty(c, devURL)
 }
 
 func TestResolve_MigrationDirRequiresDevURL(t *testing.T) {
@@ -303,8 +303,7 @@ func TestResolve_LocalDirectoryOfSQLFiles(t *testing.T) {
 	c.Assert(state.Schema.Tables, qt.HasLen, 2)
 }
 
-func assertSQLiteDevEmpty(tb testing.TB, devURL string) {
-	c := qt.New(tb)
+func assertSQLiteDevEmpty(c *qt.C, devURL string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), devURL)
 	c.Assert(err, qt.IsNil)

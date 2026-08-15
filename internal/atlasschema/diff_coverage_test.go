@@ -33,7 +33,7 @@ func TestDiffNamesAGuardedExtensionPlacementItCannotConfirm(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 
-	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB,
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c,
 		"// ptah:not-described extension\n"+coverageDiffFrom,
 		coverageDiffFrom+`
 extension "citext" {
@@ -53,7 +53,7 @@ func TestDiffPlansGuardedExtensionPlacementWhenCurrentIsAuthoritative(t *testing
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 
-	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB,
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c,
 		coverageDiffFrom,
 		coverageDiffFrom+`
 extension "citext" {
@@ -78,7 +78,7 @@ func TestDiffNamesAnUnguardedCreationItWithheld(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 
-	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB,
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c,
 		"// ptah:not-described sequence\n"+coverageDiffFrom,
 		coverageDiffFrom+`
 sequence "order_seq" {
@@ -101,7 +101,7 @@ func TestDiffPlansAnUnguardedCreationWithoutTheRecord(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 
-	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB, coverageDiffFrom, coverageDiffFrom+`
+	report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, coverageDiffFrom, coverageDiffFrom+`
 sequence "order_seq" {
   schema = schema.public
   type = "bigint"
@@ -131,7 +131,7 @@ extension "pgcrypto" {
 		c := qt.New(t)
 		var diagnostics bytes.Buffer
 
-		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB, from,
+		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, from,
 			"// ptah:not-described extension\n"+coverageDiffFrom, &diagnostics))
 
 		c.Assert(err, qt.IsNil)
@@ -143,7 +143,7 @@ extension "pgcrypto" {
 		c := qt.New(t)
 		var diagnostics bytes.Buffer
 
-		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c.TB, from, coverageDiffFrom, &diagnostics))
+		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, from, coverageDiffFrom, &diagnostics))
 
 		c.Assert(err, qt.IsNil)
 		sql, err := report.MarshalSQL()
@@ -152,8 +152,7 @@ extension "pgcrypto" {
 	})
 }
 
-func coverageDiffOptions(tb testing.TB, from, to string, diagnostics *bytes.Buffer) atlasschema.DiffOptions {
-	c := qt.New(tb)
+func coverageDiffOptions(c *qt.C, from, to string, diagnostics *bytes.Buffer) atlasschema.DiffOptions {
 	dir := c.TempDir()
 	fromPath := filepath.Join(dir, "from.hcl")
 	toPath := filepath.Join(dir, "to.hcl")

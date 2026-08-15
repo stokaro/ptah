@@ -16,7 +16,7 @@ import (
 func TestNoTransactionTimeoutValidation_UpLeavesNoRevision(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
@@ -31,8 +31,8 @@ func TestNoTransactionTimeoutValidation_UpLeavesNoRevision(t *testing.T) {
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -43,7 +43,7 @@ func TestNoTransactionTimeoutValidation_UpLeavesNoRevision(t *testing.T) {
 func TestNoTransactionTimeoutValidation_DownPreservesAppliedRevision(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
@@ -59,9 +59,9 @@ func TestNoTransactionTimeoutValidation_DownPreservesAppliedRevision(t *testing.
 
 	err = mig.MigrateDownTo(ctx, 0)
 	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(1))
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "applied")
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -72,7 +72,7 @@ func TestNoTransactionTimeoutValidation_DownPreservesAppliedRevision(t *testing.
 func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
@@ -91,14 +91,14 @@ func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *te
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.ErrorMatches, `migration 1 is marked no_transaction, so migration timeouts cannot be applied safely`)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 
 	mig = mig.WithDefaultTimeouts(migrator.MigrationTimeouts{})
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(1))
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "applied")
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 }
 
 func TestNoTransactionControlValidation_UpLeavesNoRevision(t *testing.T) {
@@ -117,7 +117,7 @@ func TestNoTransactionControlValidation_UpLeavesNoRevision(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := openNoTransactionValidationSQLite(c.TB)
+			conn := openNoTransactionValidationSQLite(c)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 			migration := migrator.CreateMigrationFromSQL(
 				1,
@@ -129,15 +129,15 @@ func TestNoTransactionControlValidation_UpLeavesNoRevision(t *testing.T) {
 
 			err := mig.MigrateUp(c.Context())
 			c.Assert(err, qt.ErrorMatches, `migration 1 cannot run up statement 1 without a transaction because .* controls transaction state;.*`)
-			c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
-			c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsFalse)
+			c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+			c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 		})
 	}
 }
 
 func TestNoTransactionControlValidation_DownPreservesAppliedRevision(t *testing.T) {
 	c := qt.New(t)
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 	migration := migrator.CreateMigrationFromSQL(
 		1,
@@ -150,14 +150,14 @@ func TestNoTransactionControlValidation_DownPreservesAppliedRevision(t *testing.
 
 	err := mig.MigrateDownTo(c.Context(), 0)
 	c.Assert(err, qt.ErrorMatches, `migration 1 cannot run down statement 1 without a transaction because .* controls transaction state;.*`)
-	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(1))
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "applied")
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 }
 
 func TestNoTransactionControlValidation_RepairPreservesDirtyRevision(t *testing.T) {
 	c := qt.New(t)
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 	initial, err := migrator.NewFSMigrator(conn, fstest.MapFS{
 		"000001_repair.up.sql": {Data: []byte(
@@ -195,7 +195,7 @@ func TestNoTransactionControlValidation_RepairPreservesDirtyRevision(t *testing.
 func TestProgrammaticMigration_UpNoTransactionUsesAutocommit(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-	conn := openNoTransactionValidationSQLite(c.TB)
+	conn := openNoTransactionValidationSQLite(c)
 	defer dbschema.CloseAndWarn(conn)
 
 	migration := migrator.CreateMigrationFromSQL(
@@ -209,8 +209,8 @@ func TestProgrammaticMigration_UpNoTransactionUsesAutocommit(t *testing.T) {
 
 	err := mig.MigrateUp(ctx)
 	c.Assert(err, qt.ErrorMatches, `(?s).*failed to execute SQL.*no such table: missing_table.*`)
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "failed")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "failed")
 	var applied, total int
 	c.Assert(
 		conn.QueryRow("SELECT applied, total FROM schema_migrations WHERE version = 1").Scan(&applied, &total),
@@ -237,12 +237,11 @@ func TestNoTransaction_InMemorySQLiteUsesPinnedBookkeeping(t *testing.T) {
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	c.Assert(noTransactionRevisionState(c.TB, conn), qt.Equals, "applied")
-	c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
+	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
 }
 
-func openNoTransactionValidationSQLite(tb testing.TB) *dbschema.DatabaseConnection {
-	c := qt.New(tb)
+func openNoTransactionValidationSQLite(c *qt.C) *dbschema.DatabaseConnection {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
@@ -252,24 +251,21 @@ func openNoTransactionValidationSQLite(tb testing.TB) *dbschema.DatabaseConnecti
 	return conn
 }
 
-func noTransactionRevisionCount(tb testing.TB, conn *dbschema.DatabaseConnection) int64 {
-	c := qt.New(tb)
+func noTransactionRevisionCount(c *qt.C, conn *dbschema.DatabaseConnection) int64 {
 	c.Helper()
 	var count int64
 	c.Assert(conn.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count), qt.IsNil)
 	return count
 }
 
-func noTransactionRevisionState(tb testing.TB, conn *dbschema.DatabaseConnection) string {
-	c := qt.New(tb)
+func noTransactionRevisionState(c *qt.C, conn *dbschema.DatabaseConnection) string {
 	c.Helper()
 	var state string
 	c.Assert(conn.QueryRow("SELECT state FROM schema_migrations WHERE version = 1").Scan(&state), qt.IsNil)
 	return state
 }
 
-func noTransactionTableExists(tb testing.TB, conn *dbschema.DatabaseConnection, table string) bool {
-	c := qt.New(tb)
+func noTransactionTableExists(c *qt.C, conn *dbschema.DatabaseConnection, table string) bool {
 	c.Helper()
 	var count int64
 	c.Assert(

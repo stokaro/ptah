@@ -63,7 +63,7 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 			t.Run("rendered", func(t *testing.T) {
 				c := qt.New(t)
 
-				out, code := runReferenceOracle(c.TB, oracle, devURL, short)
+				out, code := runReferenceOracle(c, oracle, devURL, short)
 
 				c.Assert(code, qt.Equals, 0,
 					qt.Commentf("the binary refuses the document Ptah renders on %s: %s\n%s", dialect, out, short))
@@ -78,7 +78,7 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 				c.Assert(long, qt.Not(qt.Equals), short,
 					qt.Commentf("the qualified variant is identical to the accepted one, so this row measures nothing"))
 
-				out, code := runReferenceOracle(c.TB, oracle, devURL, long)
+				out, code := runReferenceOracle(c, oracle, devURL, long)
 
 				c.Assert(code, qt.Not(qt.Equals), 0,
 					qt.Commentf("the binary now reads `table.%s.users` on %s; the short form is no longer required and this rule can go: %s",
@@ -132,8 +132,7 @@ func referenceOracleSchema(schema string) *goschema.Database {
 
 // runReferenceOracle asks the pinned binary to read one document and returns its
 // combined output and exit status.
-func runReferenceOracle(tb testing.TB, oracle, devURL, source string) (string, int) {
-	c := qt.New(tb)
+func runReferenceOracle(c *qt.C, oracle, devURL, source string) (string, int) {
 	c.Helper()
 
 	typeOracleWarmup.Do(func() {})

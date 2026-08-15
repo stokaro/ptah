@@ -41,8 +41,7 @@ import (
 
 // newCleanGateDatabase creates a throwaway database in the state the case is
 // about and returns its plain URL, so no two cases can see each other's schemas.
-func newCleanGateDatabase(tb testing.TB, adminURL string, setup []string) string {
-	c := qt.New(tb)
+func newCleanGateDatabase(c *qt.C, adminURL string, setup []string) string {
 	c.Helper()
 	ctx := context.Background()
 	admin, err := sql.Open("pgx", adminURL)
@@ -78,8 +77,7 @@ func newCleanGateDatabase(tb testing.TB, adminURL string, setup []string) string
 
 // writeCleanGatePostgresFixture writes a hashed one-migration Atlas directory
 // whose SQL PostgreSQL accepts.
-func writeCleanGatePostgresFixture(tb testing.TB) string {
-	c := qt.New(tb)
+func writeCleanGatePostgresFixture(c *qt.C) string {
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -186,8 +184,8 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dir := writeCleanGatePostgresFixture(c.TB)
-			dbURL := newCleanGateDatabase(c.TB, adminURL, test.setup)
+			dir := writeCleanGatePostgresFixture(c)
+			dbURL := newCleanGateDatabase(c, adminURL, test.setup)
 			args := []string{"migrate", "apply", "--dir", "file://" + dir, "--url", withCleanGateQuery(dbURL, test.query)}
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
@@ -219,8 +217,8 @@ func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dir := writeCleanGatePostgresFixture(c.TB)
-			dbURL := newCleanGateDatabase(c.TB, adminURL, []string{"CREATE SCHEMA extra"})
+			dir := writeCleanGatePostgresFixture(c)
+			dbURL := newCleanGateDatabase(c, adminURL, []string{"CREATE SCHEMA extra"})
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)

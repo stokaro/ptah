@@ -89,7 +89,7 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 			c := qt.New(t)
 			desired := routingFixture()
 
-			renderCensus := surfaceCensus(c.TB, dialect,
+			renderCensus := surfaceCensus(c, dialect,
 				fromschema.FromDatabase(desired, dialect).Statements)
 
 			planNodes, err := planner.GenerateSchemaDiffAST(
@@ -98,7 +98,7 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 				dialect,
 			)
 			c.Assert(err, qt.IsNil)
-			planCensus := surfaceCensus(c.TB, dialect, planNodes)
+			planCensus := surfaceCensus(c, dialect, planNodes)
 
 			// Non-vacuity: two empty censuses are equal. The fixture declares one
 			// object of every kind in routedKinds, and each of those kinds is one
@@ -137,8 +137,7 @@ func postgresFamilyPlannerDialects() []string {
 // Each node is rendered on its own so the count is per object rather than per
 // document; rendering the whole slice at once would let one node's text hide
 // another's absence.
-func surfaceCensus(tb testing.TB, dialect string, nodes []ast.Node) []string {
-	c := qt.New(tb)
+func surfaceCensus(c *qt.C, dialect string, nodes []ast.Node) []string {
 	c.Helper()
 
 	produced := map[string]int{}

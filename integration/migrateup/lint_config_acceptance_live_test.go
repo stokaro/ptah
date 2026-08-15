@@ -31,7 +31,7 @@ func TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration(t *testin
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	tableName := "ptah_lint_warning_" + suffix
 	revisionTable := "ptah_lint_warning_revisions_" + suffix
-	defer dropLintGatePostgresTables(c.TB, conn, tableName, revisionTable)
+	defer dropLintGatePostgresTables(c, conn, tableName, revisionTable)
 
 	dir := t.TempDir()
 	writeLintGateMigration(c, dir, lint.ConfigFileName, `rules:
@@ -95,7 +95,7 @@ func TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable(t *testing.T) {
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	tableName := "ptah_lint_drop_" + suffix
 	revisionTable := "ptah_lint_drop_revisions_" + suffix
-	defer dropLintGatePostgresTables(c.TB, conn, tableName, revisionTable)
+	defer dropLintGatePostgresTables(c, conn, tableName, revisionTable)
 
 	dir := t.TempDir()
 	writeLintGateMigration(c, dir, lint.ConfigFileName, `rules:
@@ -139,8 +139,7 @@ func requireLintGatePostgresURL(t *testing.T) string {
 	return ""
 }
 
-func dropLintGatePostgresTables(tb testing.TB, conn *dbschema.DatabaseConnection, names ...string) {
-	c := qt.New(tb)
+func dropLintGatePostgresTables(c *qt.C, conn *dbschema.DatabaseConnection, names ...string) {
 	c.Helper()
 	for _, name := range names {
 		statement, err := renderer.RenderSQL(platform.Postgres, ast.NewDropTable(name).SetIfExists().SetCascade())

@@ -34,8 +34,8 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_partitioned")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_partitioned")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -67,7 +67,7 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 	c.Assert(estimatedRows, qt.Equals, int64(5000))
 
 	dir := t.TempDir()
-	entitiesDir := writePartitionedIndexEntities(c.TB, dir)
+	entitiesDir := writePartitionedIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -95,17 +95,17 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_events_tenant")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_events_tenant")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_events_tenant")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_events_tenant")
 	c.Assert(exists, qt.IsFalse)
 
 	// up/down/up: the pair has to be replayable, not merely runnable once.
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid = readGeneratorPostgresIndexState(c.TB, target, "idx_events_tenant")
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_events_tenant")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -127,13 +127,13 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_unknown_stats")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_unknown_stats")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
 
-	setupUnknownRowStatistics(c.TB, targetURL)
+	setupUnknownRowStatistics(c, targetURL)
 
 	// The precondition: the table holds 5000 rows and the catalog reports the
 	// same numbers an empty table reports.
@@ -151,7 +151,7 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(actualRows, qt.Equals, int64(5000))
 
 	dir := t.TempDir()
-	entitiesDir := writeUnknownStatsIndexEntities(c.TB, dir)
+	entitiesDir := writeUnknownStatsIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -178,19 +178,19 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsFalse)
 
 	// up/down/up over a non-transactional pair: both halves have to be
 	// replayable, and a concurrent build that resumes onto its own leftovers is
 	// exactly where that stops being true.
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -220,8 +220,8 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_empty_stats")
-	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_empty_stats")
+	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
@@ -255,7 +255,7 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 	c.Assert(tableSize > 0, qt.IsTrue, qt.Commentf("pg_table_size was %d", tableSize))
 
 	dir := t.TempDir()
-	entitiesDir := writeUnknownStatsIndexEntities(c.TB, dir)
+	entitiesDir := writeUnknownStatsIndexEntities(c, dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -284,16 +284,16 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 	c.Assert(err, qt.IsNil)
 	migrations := migrator.NewMigrator(target, provider)
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid := readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid := readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 
 	c.Assert(migrations.MigrateDown(ctx), qt.IsNil)
-	exists, _ = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, _ = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsFalse)
 
 	c.Assert(migrations.MigrateUp(ctx), qt.IsNil)
-	exists, valid = readGeneratorPostgresIndexState(c.TB, target, "idx_members_email")
+	exists, valid = readGeneratorPostgresIndexState(c, target, "idx_members_email")
 	c.Assert(exists, qt.IsTrue)
 	c.Assert(valid, qt.IsTrue)
 }
@@ -307,8 +307,7 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 // will stay cleared. Without the forced flush the pending counters are written
 // back after the reset and the table reports 5000 live tuples again. Autovacuum
 // is disabled on the table so nothing analyzes it behind the test's back.
-func setupUnknownRowStatistics(tb testing.TB, targetURL string) {
-	c := qt.New(tb)
+func setupUnknownRowStatistics(c *qt.C, targetURL string) {
 	c.Helper()
 	raw, err := sql.Open("pgx", targetURL)
 	c.Assert(err, qt.IsNil)
@@ -331,10 +330,9 @@ func setupUnknownRowStatistics(tb testing.TB, targetURL string) {
 	}
 }
 
-func writePartitionedIndexEntities(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writePartitionedIndexEntities(c *qt.C, dir string) string {
 	c.Helper()
-	return writeGeneratorEntities(c.TB, dir, `package entities
+	return writeGeneratorEntities(c, dir, `package entities
 
 //ptah:schema:table name="events"
 type Event struct {
@@ -363,10 +361,9 @@ type Event2026 struct {
 `)
 }
 
-func writeUnknownStatsIndexEntities(tb testing.TB, dir string) string {
-	c := qt.New(tb)
+func writeUnknownStatsIndexEntities(c *qt.C, dir string) string {
 	c.Helper()
-	return writeGeneratorEntities(c.TB, dir, `package entities
+	return writeGeneratorEntities(c, dir, `package entities
 
 //ptah:schema:table name="members"
 type Member struct {
@@ -380,8 +377,7 @@ type Member struct {
 `)
 }
 
-func writeGeneratorEntities(tb testing.TB, dir, content string) string {
-	c := qt.New(tb)
+func writeGeneratorEntities(c *qt.C, dir, content string) string {
 	c.Helper()
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0o755), qt.IsNil)

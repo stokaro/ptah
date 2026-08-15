@@ -34,7 +34,7 @@ func TestFKDropOrder_DownRoundTrip_Integration(t *testing.T) {
 
 			target := fkOrderSchema()
 			goschema.Finalize(target)
-			upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
+			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 
 			t.Logf("[%s] generated DOWN:\n%s", dialect, downSQL)
@@ -68,7 +68,7 @@ func TestFKDropOrder_MutualCycleDownRoundTrip_Integration(t *testing.T) {
 
 			target := mutualFKCycleSchema()
 			goschema.Finalize(target)
-			upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
+			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 
 			t.Logf("[%s] generated mutual-cycle DOWN:\n%s", dialect, downSQL)

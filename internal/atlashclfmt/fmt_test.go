@@ -28,13 +28,13 @@ func TestFormatPaths_HappyPathFormatsFilesRecursively(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, []string{changed, nestedChanged})
-	c.Assert(readFile(c.TB, changed), qt.Equals, `schema "main" {}
+	c.Assert(readFile(c, changed), qt.Equals, `schema "main" {}
 `)
-	c.Assert(readFile(c.TB, nestedChanged), qt.Equals, `schema "nested" {}
+	c.Assert(readFile(c, nestedChanged), qt.Equals, `schema "nested" {}
 `)
-	c.Assert(readFile(c.TB, unchanged), qt.Equals, `schema "main" {}
+	c.Assert(readFile(c, unchanged), qt.Equals, `schema "main" {}
 `)
-	c.Assert(readFile(c.TB, ignored), qt.Equals, `schema "main"{}`+"\n")
+	c.Assert(readFile(c, ignored), qt.Equals, `schema "main"{}`+"\n")
 }
 
 func TestFormatFile_HappyPathIgnoresNonHCLFiles(t *testing.T) {
@@ -47,7 +47,7 @@ func TestFormatFile_HappyPathIgnoresNonHCLFiles(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsFalse)
-	c.Assert(readFile(c.TB, path), qt.Equals, `schema "main"{}`+"\n")
+	c.Assert(readFile(c, path), qt.Equals, `schema "main"{}`+"\n")
 }
 
 func TestFormatFile_FailurePathRejectsInvalidHCLWithoutRewriting(t *testing.T) {
@@ -62,7 +62,7 @@ func TestFormatFile_FailurePathRejectsInvalidHCLWithoutRewriting(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `schema fmt .*bad\.hcl: .*`)
 	c.Assert(changed, qt.IsFalse)
-	c.Assert(readFileBytes(c.TB, path), qt.DeepEquals, original)
+	c.Assert(readFileBytes(c, path), qt.DeepEquals, original)
 }
 
 func TestFormatPath_FailurePathReportsMissingPath(t *testing.T) {
@@ -75,14 +75,12 @@ func TestFormatPath_FailurePathReportsMissingPath(t *testing.T) {
 	c.Assert(result, qt.HasLen, 0)
 }
 
-func readFile(tb testing.TB, path string) string {
-	c := qt.New(tb)
+func readFile(c *qt.C, path string) string {
 	c.Helper()
-	return string(readFileBytes(c.TB, path))
+	return string(readFileBytes(c, path))
 }
 
-func readFileBytes(tb testing.TB, path string) []byte {
-	c := qt.New(tb)
+func readFileBytes(c *qt.C, path string) []byte {
 	c.Helper()
 	data, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

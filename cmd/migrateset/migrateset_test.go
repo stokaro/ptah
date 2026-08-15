@@ -67,8 +67,7 @@ func runSet(args ...string) (string, error) {
 }
 
 // queryVersions returns the version column values of the revision table.
-func queryVersions(tb testing.TB, dbPath, table string) []string {
-	c := qt.New(tb)
+func queryVersions(c *qt.C, dbPath, table string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -97,7 +96,7 @@ func TestMigrationsSetMovesBoundaryBothDirections(t *testing.T) {
 	c.Assert(out, qt.Contains, "Current version is 2 (2 set):")
 	c.Assert(out, qt.Contains, "+ 1 (Users)")
 	c.Assert(out, qt.Contains, "+ 2 (Orders)")
-	c.Assert(queryVersions(c.TB, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1", "2"})
 
 	// Downward: remove the revision row above the target version, still
 	// without executing SQL.
@@ -105,7 +104,7 @@ func TestMigrationsSetMovesBoundaryBothDirections(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Current version is 1 (1 removed):")
 	c.Assert(out, qt.Contains, "- 2 (Orders)")
-	c.Assert(queryVersions(c.TB, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1"})
+	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1"})
 }
 
 func TestMigrationsSetIsIdempotent(t *testing.T) {
@@ -140,8 +139,7 @@ func TestMigrationsSetRequiresVersion(t *testing.T) {
 }
 
 // assertNoRevisionTable asserts the revision table was never created.
-func assertNoRevisionTable(tb testing.TB, dbPath string) {
-	c := qt.New(tb)
+func assertNoRevisionTable(c *qt.C, dbPath string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -161,7 +159,7 @@ func TestMigrationsSetDryRunChangesNothing(t *testing.T) {
 	out, err := runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version", "2", "--dry-run")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Dry run: would set the revision boundary to version 2.")
-	assertNoRevisionTable(c.TB, dbPath)
+	assertNoRevisionTable(c, dbPath)
 }
 
 // TestMigrationsSetAtlasFormatMatchesAtlasMigrateSet proves the native verb
@@ -195,8 +193,8 @@ func TestMigrationsSetAtlasFormatMatchesAtlasMigrateSet(t *testing.T) {
 	// Same summary output and identical revision rows in both databases.
 	c.Assert(nativeOut, qt.Equals, atlasOut.String())
 	c.Assert(
-		queryVersions(c.TB, nativeDB, "atlas_schema_revisions"),
+		queryVersions(c, nativeDB, "atlas_schema_revisions"),
 		qt.DeepEquals,
-		queryVersions(c.TB, atlasDB, "atlas_schema_revisions"),
+		queryVersions(c, atlasDB, "atlas_schema_revisions"),
 	)
 }

@@ -522,7 +522,7 @@ FOR EACH ROW EXECUTE FUNCTION ptah_issue_819_pause_delete()`)
 		result, setErr := mig.SetAtlasRevision(ctx, 1)
 		setDone <- issue819SetCall{Result: result, Err: setErr}
 	}()
-	waitForIssue819AdvisoryWait(c.TB, conn)
+	waitForIssue819AdvisoryWait(c, conn)
 
 	concurrent, err := conn.Conn(ctx)
 	c.Assert(err, qt.IsNil)
@@ -552,7 +552,7 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 	setCall := <-setDone
 	c.Assert(setCall.Err, qt.IsNil)
 	c.Assert(issue819RevisionVersions(setCall.Result.Removed), qt.DeepEquals, []int64{2, 3})
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:           "1",
 			Description:       "create_accounts",
@@ -607,7 +607,7 @@ func TestAtlasRevisionMetadata_ClickHouseIntegration(t *testing.T) {
 	err = mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:               "1",
 			Description:           "create_accounts",
@@ -656,8 +656,7 @@ type issue819SetCall struct {
 	Err    error
 }
 
-func waitForIssue819AdvisoryWait(tb testing.TB, conn *dbschema.DatabaseConnection) {
-	c := qt.New(tb)
+func waitForIssue819AdvisoryWait(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -1090,7 +1089,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 
 	err = mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1})
 	c.Assert(err, qt.IsNil)
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:               "1",
 			Description:           "create_accounts",
@@ -1111,7 +1110,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(issue819RevisionVersions(result.Set), qt.DeepEquals, []int64{2, 3})
 	c.Assert(result.Removed, qt.HasLen, 0)
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:               "1",
 			Description:           "create_accounts",
@@ -1150,12 +1149,12 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 		},
 	})
 
-	markIssue819RevisionDirty(c.TB, conn, "1")
+	markIssue819RevisionDirty(c, conn, "1")
 	result, err = mig.SetAtlasRevision(ctx, 2)
 	c.Assert(err, qt.IsNil)
 	c.Assert(issue819RevisionVersions(result.Set), qt.DeepEquals, []int64{1})
 	c.Assert(issue819RevisionVersions(result.Removed), qt.DeepEquals, []int64{3})
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:               "1",
 			Description:           "create_accounts",
@@ -1192,7 +1191,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	baselineMigrator = baselineMigrator.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	err = baselineMigrator.Baseline(ctx, 2)
 	c.Assert(err, qt.IsNil)
-	c.Assert(readIssue819Revisions(c.TB, conn), qt.DeepEquals, []issue819Revision{
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
 			Version:           "2",
 			Description:       "create_users",
@@ -1453,7 +1452,7 @@ func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
 	// comment became live SQL that Ptah then correctly refused. A derived guard
 	// cannot rot that way, and measureExecutableCommentGuard proves it is inert
 	// on this exact server before the fixture leans on it.
-	inertGuard := strconv.Itoa(inertExecutableCommentGuard(c.TB, ctx, conn))
+	inertGuard := strconv.Itoa(inertExecutableCommentGuard(c, ctx, conn))
 
 	mig, err := migrator.NewFSMigrator(
 		conn,
@@ -1556,8 +1555,7 @@ func serverExecutableCommentVersionID(banner string) (int, bool) {
 // numeric executable-comment guard, rather than assuming. `SELECT 1 /*!N + 1 */`
 // evaluates to 2 when the server honors guard N and 1 when it ignores it, so the
 // return value reports the guard's effect in the only authority that matters.
-func measureExecutableCommentGuard(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection, guard int) int {
-	c := qt.New(tb)
+func measureExecutableCommentGuard(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, guard int) int {
 	c.Helper()
 
 	query := "SELECT 1 /*!" + strconv.Itoa(guard) + " + 1 */"
@@ -1576,17 +1574,16 @@ func measureExecutableCommentGuard(tb testing.TB, ctx context.Context, conn *dbs
 // first probe reads 1. Only the true version id passes both, so no fixture can
 // quietly inherit a guard that has stopped being inert — the failure mode #791
 // exposed.
-func inertExecutableCommentGuard(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection) int {
-	c := qt.New(tb)
+func inertExecutableCommentGuard(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) int {
 	c.Helper()
 
 	banner := conn.Info().Version
 	serverID, ok := serverExecutableCommentVersionID(banner)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("server version banner %q", banner))
 
-	c.Assert(measureExecutableCommentGuard(c.TB, ctx, conn, serverID), qt.Equals, 2,
+	c.Assert(measureExecutableCommentGuard(c, ctx, conn, serverID), qt.Equals, 2,
 		qt.Commentf("server %q must honor a guard at its own version id %d", banner, serverID))
-	c.Assert(measureExecutableCommentGuard(c.TB, ctx, conn, serverID+1), qt.Equals, 1,
+	c.Assert(measureExecutableCommentGuard(c, ctx, conn, serverID+1), qt.Equals, 1,
 		qt.Commentf("server %q must ignore a guard one above its version id %d", banner, serverID))
 
 	return serverID + 1
@@ -1620,7 +1617,7 @@ func runAtlasTxtarChecksVersionGuardBoundaryIntegration(t *testing.T, dbURL stri
 	cleanupIssue819(t, conn)
 	defer cleanupIssue819(t, conn)
 
-	inertGuard := inertExecutableCommentGuard(c.TB, ctx, conn)
+	inertGuard := inertExecutableCommentGuard(c, ctx, conn)
 	liveGuard := inertGuard - 1
 
 	_, err = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_check_version_guard")
@@ -1880,8 +1877,7 @@ type issue819Revision struct {
 	OperatorVersion       string
 }
 
-func readIssue819Revisions(tb testing.TB, conn *dbschema.DatabaseConnection) []issue819Revision {
-	c := qt.New(tb)
+func readIssue819Revisions(c *qt.C, conn *dbschema.DatabaseConnection) []issue819Revision {
 	c.Helper()
 
 	rows, err := conn.QueryContext(
@@ -1937,8 +1933,7 @@ func issue819SQLHash(sqlText string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func markIssue819RevisionDirty(tb testing.TB, conn *dbschema.DatabaseConnection, version string) {
-	c := qt.New(tb)
+func markIssue819RevisionDirty(c *qt.C, conn *dbschema.DatabaseConnection, version string) {
 	c.Helper()
 
 	query := sqlutil.Rebind(

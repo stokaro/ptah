@@ -19,8 +19,8 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
-	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtah(c, ctx, repoRoot, nativeBinary)
 
 	// One row per VERB and per SPELLING, because that is the granularity at
 	// which this can regress. `unknown dir format "bogus"` is the pinned
@@ -138,7 +138,7 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 		c.Run(test.name, func(c *qt.C) {
 			stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), compatBinary, test.args...)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "Error: unknown dir format \"bogus\"\n")
 			c.Assert(stderr, qt.HasLen, 34)
@@ -154,7 +154,7 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 			"--dir-format", "bogus",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 2)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
 			"error: unknown migration directory format \"bogus\": expected auto, ptah, or atlas\n")
@@ -172,7 +172,7 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 			"--from", "flyway",
 		)
 
-		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 2)
+		c.Assert(exitStatusOf(c, err), qt.Equals, 2)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
 			"error: migrations directory nope: stat nope: no such file or directory\n")
@@ -205,7 +205,7 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 		c.Run("compat import missing source "+test.name, func(c *qt.C) {
 			stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), compatBinary, test.args...)
 
-			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "Error: sql/migrate: stat nope: no such file or directory\n")
 			c.Assert(stderr, qt.HasLen, 57)

@@ -19,8 +19,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-func sqliteSession(tb testing.TB) (*sql.Conn, *sql.DB) {
-	c := qt.New(tb)
+func sqliteSession(c *qt.C) (*sql.Conn, *sql.DB) {
 	c.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(c.TB.TempDir(), "probe.db"))
 	c.Assert(err, qt.IsNil)
@@ -32,7 +31,7 @@ func sqliteSession(tb testing.TB) (*sql.Conn, *sql.DB) {
 
 func TestVerifyAttachRefusedAcceptsTheLimitError(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c.TB)
+	session, db := sqliteSession(c)
 	defer db.Close()
 	_, err := sqlitedriver.Limit(session, sqlite3.SQLITE_LIMIT_ATTACHED, 0)
 	c.Assert(err, qt.IsNil)
@@ -42,7 +41,7 @@ func TestVerifyAttachRefusedAcceptsTheLimitError(t *testing.T) {
 
 func TestVerifyAttachRefusedRejectsAnUnrestrictedSession(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c.TB)
+	session, db := sqliteSession(c)
 	defer db.Close()
 
 	// No limit applied: the ATTACH succeeds, which means the restriction is
@@ -55,7 +54,7 @@ func TestVerifyAttachRefusedRejectsAnUnrestrictedSession(t *testing.T) {
 
 func TestVerifyAttachRefusedRejectsAnUnrelatedFailure(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c.TB)
+	session, db := sqliteSession(c)
 	c.Assert(session.Close(), qt.IsNil)
 	defer db.Close()
 
@@ -93,7 +92,7 @@ func TestVerifyRestrictionDefaultsToTheAttachProbe(t *testing.T) {
 // made observable here.
 func TestRestrictSessionConsultsTheVerification(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c.TB)
+	session, db := sqliteSession(c)
 	defer db.Close()
 	sentinel := errors.New("verification refused this session")
 	original := verifyRestriction

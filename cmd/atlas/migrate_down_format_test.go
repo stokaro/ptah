@@ -24,10 +24,9 @@ const failingRollbackSQL = "DROP TABLE no_such_table;"
 // writeMigrateDownFixture fills migrationsDir with two Atlas-format
 // migrations plus ptah-style supplementary down files, and applies them to
 // dbPath through `atlas migrate apply` so the revision table is Atlas-shaped.
-func writeMigrateDownFixture(tb testing.TB, migrationsDir, dbPath string) {
-	c := qt.New(tb)
+func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
 	c.Helper()
-	writeMigrateDownFixtureWithRollback(c.TB, migrationsDir, dbPath, "DROP TABLE down_fmt_audit;")
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, "DROP TABLE down_fmt_audit;")
 }
 
 // writeMigrateDownFixtureWithRollback is [writeMigrateDownFixture] with the
@@ -46,8 +45,7 @@ func writeMigrateDownFixture(tb testing.TB, migrationsDir, dbPath string) {
 // tests make — the rollback still fails at execution time, on the same
 // statement, with the same report — while making the fixture a directory that
 // verifies, which is what a real one would be.
-func writeMigrateDownFixtureWithRollback(tb testing.TB, migrationsDir, dbPath, secondDownSQL string) {
-	c := qt.New(tb)
+func writeMigrateDownFixtureWithRollback(c *qt.C, migrationsDir, dbPath, secondDownSQL string) {
 	c.Helper()
 	write := func(name, sql string) {
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
@@ -60,7 +58,7 @@ func writeMigrateDownFixtureWithRollback(tb testing.TB, migrationsDir, dbPath, s
 	// The apply below verifies atlas.sum first (stokaro/ptah#970), and so does
 	// `migrate down` now, so the fixture directory must be hashed like a real
 	// Atlas directory — after every file it covers is in its final state.
-	writeAtlasApplyProjectSum(c.TB, migrationsDir)
+	writeAtlasApplyProjectSum(c, migrationsDir)
 
 	apply := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -102,7 +100,7 @@ func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-format.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	t.Setenv("PTAH_CONFIRM", "not-a-boolean")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -136,8 +134,8 @@ func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	c.Assert(report.Current, qt.Equals, "2")
 	c.Assert(report.Target, qt.Equals, "1")
 	c.Assert(report.Total, qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T) {
@@ -145,7 +143,7 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dry.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -164,8 +162,8 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	// Dry run needs no confirmation, renders the plan, and reverts nothing.
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
 	c.Assert(out.String(), qt.Equals, "2|0|2|")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
@@ -173,7 +171,7 @@ func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-override.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "2_add_audit.down.sql"),
 		[]byte("DROP TABLE down_fmt_audit;\n-- reviewed emergency edit\n"),
@@ -199,7 +197,7 @@ func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "2")
 	c.Assert(errOut.String(), qt.Contains, migrationintegrity.AllowUnverifiedEnvVar)
 	c.Assert(errOut.String(), qt.Contains, "verification was SKIPPED")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *testing.T) {
@@ -207,7 +205,7 @@ func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *test
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dirty.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(context.Background(), `UPDATE atlas_schema_revisions
@@ -236,8 +234,8 @@ WHERE version = '2'`)
 	c.Assert(report.Planned[0].Version, qt.Equals, "1")
 	c.Assert(report.Reverted, qt.HasLen, 0)
 	c.Assert(report.Error, qt.Contains, "migration 2 is dirty")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T) {
@@ -245,7 +243,7 @@ func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-first-failure.db")
-	writeMigrateDownFixtureWithRollback(c.TB, migrationsDir, dbPath, failingRollbackSQL)
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -290,7 +288,7 @@ func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-env.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	t.Setenv("PTAH_FORMAT", "planned={{ len .Planned }}")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -317,7 +315,7 @@ func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) 
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-dev.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -336,7 +334,7 @@ func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) 
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
 	c.Assert(out.String(), qt.Equals, "reverted=2")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) {
@@ -348,7 +346,7 @@ func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) 
 	// It is written before the directory is hashed: the integrity gate is a
 	// separate refusal that would otherwise fire first and hide the replay this
 	// test is about.
-	writeMigrateDownFixtureWithRollback(c.TB, migrationsDir, dbPath, failingRollbackSQL)
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -368,8 +366,8 @@ func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) 
 	// The dev replay fails before the target is touched.
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
 	c.Assert(out.String(), qt.Equals, "")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *testing.T) {
@@ -377,7 +375,7 @@ func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *te
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-native-dev.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -400,7 +398,7 @@ func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *te
 	// rejected.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Rollback plan verified on shadow database")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T) {
@@ -408,7 +406,7 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-native-abort.db")
-	writeMigrateDownFixtureWithRollback(c.TB, migrationsDir, dbPath, failingRollbackSQL)
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -425,7 +423,7 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 // TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
@@ -442,7 +440,7 @@ func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T
 	runDown := func(dbName string, run func(migrationsDir, dbPath string) (string, error)) string {
 		migrationsDir := filepath.Join(dir, "migrations-"+dbName)
 		dbPath := filepath.Join(dir, dbName+".db")
-		writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+		writeMigrateDownFixture(c, migrationsDir, dbPath)
 		out, err := run(migrationsDir, dbPath)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 		// The migration directory path differs per run; normalize it so the
@@ -494,7 +492,7 @@ func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-default-revisions.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -512,9 +510,9 @@ func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{"1"})
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 // TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
@@ -526,7 +524,7 @@ func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-ptah-revisions.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -545,9 +543,9 @@ func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.
 	// Atlas-applied schema and revisions stay in place.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "already at or below target version 0")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_users"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testing.T) {
@@ -555,7 +553,7 @@ func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testi
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-declined.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -578,7 +576,7 @@ func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testi
 	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
 	c.Assert(report.Reverted, qt.HasLen, 2)
 	c.Assert(errOut.String(), qt.Equals, "")
-	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
@@ -588,7 +586,7 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	outsideDir := filepath.Join(dir, "outside")
 	migrationsDir := filepath.Join(projectDir, "migrations")
 	dbPath := filepath.Join(dir, "down-project.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
 	t.Chdir(outsideDir)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
@@ -777,7 +775,7 @@ func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "down-compat.db")
-	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer

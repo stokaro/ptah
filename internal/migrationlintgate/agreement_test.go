@@ -81,8 +81,7 @@ func upRefuses(fsys fstest.MapFS, databaseDialect string) bool {
 
 // lintRefuses reports whether `ptah migrations lint` would refuse this policy
 // against a dev database of the same dialect.
-func lintRefuses(tb testing.TB, fsys fstest.MapFS, databaseDialect string) bool {
-	c := qt.New(tb)
+func lintRefuses(c *qt.C, fsys fstest.MapFS, databaseDialect string) bool {
 	devURL, known := devURLs[databaseDialect]
 	c.Assert(known, qt.IsTrue, qt.Commentf("no dev URL for dialect %q", databaseDialect))
 
@@ -206,7 +205,7 @@ func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
 			fsys := policyDirectory(test.policy)
 
 			up := upRefuses(fsys, test.database)
-			lintVerdict := lintRefuses(c.TB, fsys, test.database)
+			lintVerdict := lintRefuses(c, fsys, test.database)
 
 			c.Assert(up, qt.Equals, lintVerdict, qt.Commentf(
 				"migrations up refused=%v but migrations lint refused=%v for policy %q against %s",

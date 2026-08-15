@@ -57,14 +57,14 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := createRLSEnableDatabase(c.TB, adminURL)
-			executeSQL(c.TB, dbURL, []string{
+			dbURL := createRLSEnableDatabase(c, adminURL)
+			executeSQL(c, dbURL, []string{
 				`CREATE SCHEMA app`,
 				`CREATE SCHEMA reporting`,
 				`CREATE TABLE app.users (id integer PRIMARY KEY)`,
 				`CREATE TABLE reporting.users (id integer PRIMARY KEY, note text)`,
 			})
-			c.Assert(schemaTableColumns(c.TB, dbURL, "app", "users"), qt.DeepEquals, []string{"id"})
+			c.Assert(schemaTableColumns(c, dbURL, "app", "users"), qt.DeepEquals, []string{"id"})
 
 			generated := &goschema.Database{
 				Tables: []goschema.Table{{
@@ -85,21 +85,20 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
-			executeSQL(c.TB, dbURL, statements)
+			executeSQL(c, dbURL, statements)
 
-			c.Assert(schemaTableColumns(c.TB, dbURL, "app", "users"), qt.DeepEquals, test.wantAppColumns)
+			c.Assert(schemaTableColumns(c, dbURL, "app", "users"), qt.DeepEquals, test.wantAppColumns)
 			// reporting.users is the table the desired schema actually declares
 			// and nothing in this plan touches it.
-			c.Assert(schemaTableColumns(c.TB, dbURL, "reporting", "users"), qt.DeepEquals, []string{"id", "note"})
+			c.Assert(schemaTableColumns(c, dbURL, "reporting", "users"), qt.DeepEquals, []string{"id", "note"})
 		})
 	}
 }
 
 // schemaTableColumns reports the columns one relation holds, sorted by name.
-func schemaTableColumns(tb testing.TB, dbURL, schema, table string) []string {
-	c := qt.New(tb)
+func schemaTableColumns(c *qt.C, dbURL, schema, table string) []string {
 	c.Helper()
-	return queryStrings(c.TB, dbURL,
+	return queryStrings(c, dbURL,
 		`SELECT column_name FROM information_schema.columns
 		  WHERE table_schema = '`+schema+`' AND table_name = '`+table+`'
 		  ORDER BY column_name`)

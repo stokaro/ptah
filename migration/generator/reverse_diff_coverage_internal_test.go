@@ -49,20 +49,19 @@ func TestReverseSchemaDiff_AccountsForEverySchemaDiffField(t *testing.T) {
 		field := diffType.Field(i)
 		t.Run(field.Name, func(t *testing.T) {
 			c := qt.New(t)
-			assertReverseCoverageField(c.TB, baseline, schema, dbSchema, field, i)
+			assertReverseCoverageField(c, baseline, schema, dbSchema, field, i)
 		})
 	}
 }
 
 func assertReverseCoverageField(
-	tb testing.TB,
+	c *qt.C,
 	baseline *types.SchemaDiff,
 	schema *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	field reflect.StructField,
 	fieldIndex int,
 ) {
-	c := qt.New(tb)
 	c.Helper()
 	if field.Name == "ForeignKeysRemovedWithTables" {
 		// This collection is supplemental metadata for ordering the forward
