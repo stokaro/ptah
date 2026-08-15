@@ -492,15 +492,56 @@ of which reads as correct on a Linux runner:
    drop-in installed as `atlas.exe` still calls itself `atlas`, which is what
    the pinned binary does regardless of its own filename.
 
-The trap underneath all four is worse than the failures: **a
-platform-conditional assertion tends to pass on the platform it cannot test.**
-A file-mode check reduces to `0o200 == 0o200` on Windows and asserts nothing
-while staying green; a suffix-trimming check written against the build-tagged
-constant trims nothing on Unix, and would keep passing if the code stopped
-trimming at all. Where the answer differs per platform, either take the varying
-part as a **parameter** so every platform can exercise every answer, or split
-the test by build tag so each half is real where it runs. Never write one
+Four more of the same kind, each found only because the job ran:
+
+5. **A field name the platform chose.** `os.Stat` fills `os.PathError.Op` with
+   `stat` on Unix and `GetFileAttributesEx` on Windows. Comparing it to a
+   literal made the Atlas-compatible diagnostic adapt on one platform only, so
+   `ptah-compat` printed Go's wording instead of Atlas's — a compatibility
+   divergence on the surface that exists not to have one.
+6. **A shell's grammar in a fixture.** `internal/preflight` picks `/bin/sh -c`
+   or `cmd /C` per platform, so the feature is portable; `echo m; exit 9` is
+   not. Under `cmd` it neither separates on `;` nor exits 9, and a test
+   asserting a failed hook saw a successful one. `testutils.FailingHookCommand`
+   renders each spelling.
+7. **A character the filesystem reserves.** Win32 refuses `< > : " / \ | ? *`
+   in a file name, so a fixture named `a?b.sqlite` cannot exist there at all.
+   Split such a test: the filesystem round trip uses a name every platform
+   allows, and the escaping guarantee for the reserved character is asserted as
+   a string.
+8. **An environment variable one platform maintains.** `os/exec` sets `PWD` to
+   `Dir` on POSIX and documents that it does not on Windows. Ptah's own
+   contract promises `PWD` follows `Dir`, so Ptah sets it — a promise the
+   standard library does not keep for you is still yours.
+
+Two rules come out of this, and they matter beyond Windows.
+
+**A platform-conditional assertion tends to pass on the platform it cannot
+test.** A file-mode check reduces to `0o200 == 0o200` on Windows and asserts
+nothing while staying green — in one case asserting that a file holding a
+password *is* writable. A suffix-trimming check written against the
+build-tagged constant trims nothing on Unix, and would keep passing if the code
+stopped trimming at all. Where the answer differs per platform, either take the
+varying part as a **parameter** so every platform can exercise every answer, or
+split the test by build tag so each half is real where it runs. Never write one
 assertion that quietly becomes a tautology on the half you are not looking at.
+
+**Derive the expectation rather than restating it.** Where a diagnostic
+embeds text the platform wrote, do not spell one platform's wording and do not
+drop the clause either — the clause is what proves the failure was about that
+path. `testutils.StatMissingText` and `syscall.ENOENT.Error()` keep such an
+assertion byte-exact and portable at once, the way the DML placeholder matrix
+already derives its expected SQL from `sqlutil.Rebind` instead of restating it.
+
+One of these was not a portability question at all. The rule confining an
+`atlas.hcl` to its own directory asked `filepath.IsAbs`, which answers false on
+Windows for `/tmp/secret.txt` — a path that still resolves to `C:\tmp\...`,
+outside every project. **A rule about what a file is allowed to name must not
+depend on the machine reading the file.** It refuses a leading slash, a leading
+backslash and a drive letter on every platform now, including where that
+spelling is merely an odd directory name, because the alternative is a project
+that stays inside its directory where it was written and leaves it where it is
+deployed.
 
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
