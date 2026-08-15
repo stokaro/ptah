@@ -33,6 +33,21 @@ type Options struct {
 	Commands []schemasource.Command
 	// Dialect is an optional dialect hint used when parsing SQL schema files.
 	Dialect string
+	// Vars supplies values for the `variable` blocks of an HCL schema file, in
+	// the `name=value` spelling `--var` takes. See [schemafile.Options.Vars].
+	//
+	// Without it every verb resolving its desired state through this loader --
+	// `schema apply`, `schema plan`, `compare`, `generate`, `migrate generate`,
+	// `schema export` and `schema test` -- read an HCL schema with its declared
+	// defaults whatever the caller passed, and refused a file whose variable
+	// had none (stokaro/ptah#1533).
+	Vars []string
+	// VarValues supplies already-decoded values, which is the form an
+	// atlas.hcl data source scope resolves to. It is carried beside Vars
+	// rather than folded into it because a value containing `=` survives a map
+	// and does not survive a round trip through the flag spelling. See
+	// [schemafile.Options.VarValues].
+	VarValues map[string]string
 	// PlainHTTP explicitly permits an unencrypted local OCI registry.
 	PlainHTTP bool
 	// Logf, when non-nil, receives human-readable progress messages. Commands
@@ -289,7 +304,11 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	// destination through that identical guard. absPath is a display and
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
-	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{Dialect: o.Dialect})
+	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
+		Dialect:   o.Dialect,
+		Vars:      o.Vars,
+		VarValues: o.VarValues,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}

@@ -1267,14 +1267,16 @@ Forwards to `ptah schema test`.
 
 | Atlas flag | Native equivalent |
 | --- | --- |
-| `-u`/`--url` | `--root-dir`. The desired schema URL is a local `file://` directory of Go schema annotations. |
+| `-u`/`--url` | `--root-dir`. Accepts Go annotations, a SQL or HCL file, or a live database URL. |
 | `--dev-url` | The native throwaway database; an ephemeral SQLite database when omitted. |
 | `--run` | The native case-name filter. |
+| `--var` | Repeatable HCL schema-variable values. An explicit `--url` keeps these values; a project `data.hcl_schema` source uses its block-scoped `vars`. |
 | Positional path (optional) | The directory of Ptah-native YAML test cases. |
 
 With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev
-database. Exit codes match the native runner: 0 when all cases pass, 1 on test
-failure.
+database. A source from `data.hcl_schema` keeps that source's variable scope,
+including an empty scope that excludes run-wide values. Exit codes match the
+native runner: 0 when all cases pass, 1 on test failure.
 
 Atlas keeps `schema test` in its Pro build, so this is a free Ptah capability
 rather than an Atlas CE stub.

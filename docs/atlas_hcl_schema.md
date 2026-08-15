@@ -694,7 +694,8 @@ their qualified name, which is what `public.mood` and `other.mood` are, and is
 the setting under which Ptah reads its own inspect output for such a database
 back.
 
-A top-level `variable` block is accepted but not evaluated. References such as
-`var.name` are not substituted, and a variable with no default is not reported as
-missing, so a schema file relying on variables renders the reference as literal
-text. Schema-file variable evaluation is tracked separately in issue #926.
+A top-level `variable` block requires a supported `type` and may declare a
+`default` and `description`. `var.name` references are evaluated, and repeatable
+`--var name=value` values override defaults. A required variable with no value
+is refused as `missing value for required variable "name"`. The same evaluation
+path is used by `ptah schema test` when `--root-dir` names an HCL file.
