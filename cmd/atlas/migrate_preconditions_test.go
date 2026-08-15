@@ -261,7 +261,7 @@ func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 			return []string{
 				"migrate", "diff", "third",
 				"--dir", "file://" + dir,
-				"--to", "sqlite://" + seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
+				"--to", "sqlite://" + seedSQLiteDB(qt.New(t), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
 				"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 			}
 		}},
@@ -624,7 +624,7 @@ func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -654,7 +654,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 	dir := t.TempDir()
 	writeAtlasLintFile(c, dir, "20260101000000_first.sql", "CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n")
 	hashMigrationDir(c, dir)
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -680,7 +680,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -700,7 +700,7 @@ func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 func TestCompatCommand_MigrateDiffAcceptsOnePositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,

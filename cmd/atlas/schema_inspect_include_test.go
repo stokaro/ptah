@@ -58,7 +58,7 @@ func TestSchemaInspectAdvertisesIncludeInItsFlagList(t *testing.T) {
 
 func TestSchemaInspectIncludeSelectsTopLevelResources(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+	dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 	stdout, stderr, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", "inspect_users")
 
@@ -83,7 +83,7 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+			dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
 
@@ -110,7 +110,7 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+			dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", test.pattern)
 
@@ -139,7 +139,7 @@ func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t,
+			dbPath := seedSQLiteDB(c,
 				"CREATE TABLE \"dotted.table\" (id INTEGER PRIMARY KEY, email TEXT);\n"+
 					"CREATE TABLE inspect_archive (id INTEGER PRIMARY KEY);")
 
@@ -155,7 +155,7 @@ func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 
 func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+	dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 	stdout, stderr, err := runCompatInspect(
 		"--url", "sqlite://"+dbPath,
@@ -174,7 +174,7 @@ func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 	t.Run("selected schema keeps the selection", func(t *testing.T) {
 		c := qt.New(t)
-		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+		dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
 			"--url", "sqlite://"+dbPath,
@@ -189,7 +189,7 @@ func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 
 	t.Run("unknown schema does not narrow SQLite inspection", func(t *testing.T) {
 		c := qt.New(t)
-		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+		dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
 			"--url", "sqlite://"+dbPath,
@@ -253,7 +253,7 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+			dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
 
@@ -270,7 +270,7 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 
 func TestSchemaInspectIncludeCrossScopeDependencyFails(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+	dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 	stdout, _, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", "inspect_posts")
 
@@ -393,7 +393,7 @@ func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+			dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,
@@ -410,7 +410,7 @@ func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
 
 func TestSchemaInspectIncludeAppliesToSplitWriteExport(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedSQLiteDB(t, inspectIncludeDDL)
+	dbPath := seedSQLiteDB(c, inspectIncludeDDL)
 	outDir := filepath.Join(t.TempDir(), "export")
 
 	_, stderr, err := runCompatInspect(

@@ -285,7 +285,7 @@ func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
 	c := qt.New(t)
 	// The target already contains an out-of-scope table that the scoped apply
 	// must leave untouched.
-	dbPath := seedSQLiteDB(t, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
+	dbPath := seedSQLiteDB(c, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
 	cmd := atlas.NewCompatCommand("atlas")

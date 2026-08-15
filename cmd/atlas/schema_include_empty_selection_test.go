@@ -82,7 +82,7 @@ func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, emptySelectionDDL)
+			dbPath := seedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,
@@ -112,7 +112,7 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
+			dbPath := seedSQLiteDB(c, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
 			schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(schemaPath, []byte(emptySelectionDDL), 0o600), qt.IsNil)
 
@@ -158,7 +158,7 @@ func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(t, emptySelectionDDL)
+			dbPath := seedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,

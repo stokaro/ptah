@@ -53,8 +53,8 @@ func dirEntryNames(c *qt.C, dir string) []string {
 func runMigrateDiffInto(c *qt.C, dir string) []string {
 	c.Helper()
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(c.TB.(*testing.T), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
-	devPath := filepath.Join(c.TB.(*testing.T).TempDir(), "dev.db")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	devPath := filepath.Join(c.TempDir(), "dev.db")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
