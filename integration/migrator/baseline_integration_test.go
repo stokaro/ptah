@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -106,12 +107,12 @@ func TestBaseline_PostgresForceRejectsHistoryAboveBaseline(t *testing.T) {
 }
 
 func TestBaseline_MySQLRecordsAppliedWithoutExecutingSQL(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runIssue269MySQLFamilyBaselineIntegration(t, dbURL)
 }
 
 func TestBaseline_MariaDBRecordsAppliedWithoutExecutingSQL(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runIssue269MySQLFamilyBaselineIntegration(t, dbURL)
 }
 

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -16,12 +15,13 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
 type postgresWriterFamilyLiveCase struct {
 	name   string
-	urlEnv string
+	engine dbtarget.Engine
 }
 
 type postgresWriterLiveDatabase struct {
@@ -41,7 +41,7 @@ func TestWriterDropAllTables_LiveRejectsExternalPolicyDependency(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
-	db, err := sql.Open("pgx", requirePostgresWriterLiveURL(t))
+	db, err := sql.Open("pgx", dbtarget.URL(t, dbtarget.PostgreSQL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	c.Assert(db.PingContext(ctx), qt.IsNil)
@@ -91,7 +91,7 @@ func TestWriterDropAllTables_LiveResolvesInternalDependencies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
-	db, err := sql.Open("pgx", requirePostgresWriterLiveURL(t))
+	db, err := sql.Open("pgx", dbtarget.URL(t, dbtarget.PostgreSQL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	c.Assert(db.PingContext(ctx), qt.IsNil)
@@ -138,13 +138,13 @@ func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testi
 	defer cancel()
 
 	tests := []postgresWriterFamilyLiveCase{
-		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
-		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+		{name: "cockroachdb", engine: dbtarget.CockroachDB},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c, test.urlEnv))
+			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c, test.engine))
 			c.Assert(err, qt.IsNil)
 			defer db.Close()
 			c.Assert(db.PingContext(ctx), qt.IsNil)
@@ -184,9 +184,9 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 	defer cancel()
 
 	tests := []postgresWriterFamilyLiveCase{
-		{name: "postgres", urlEnv: "POSTGRES_URL"},
-		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
-		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+		{name: "postgres", engine: dbtarget.PostgreSQL},
+		{name: "cockroachdb", engine: dbtarget.CockroachDB},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB},
 	}
 
 	for _, test := range tests {
@@ -194,7 +194,7 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 			liveDatabase := newPostgresWriterLiveDatabase(
 				c,
 				ctx,
-				requirePostgresWriterFamilyLiveURL(c, test.urlEnv),
+				requirePostgresWriterFamilyLiveURL(c, test.engine),
 			)
 			defer liveDatabase.cleanup()
 			db := liveDatabase.db
@@ -269,7 +269,7 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansToastTable(t *testing.T) {
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -303,7 +303,7 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansLargeObjects(t *testing.T) {
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -331,7 +331,7 @@ func TestWriterDropDatabaseRealm_LivePostgresRejectsPublication(t *testing.T) {
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -376,7 +376,7 @@ func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependenc
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -417,22 +417,22 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name     string
-		urlEnv   string
+		engine   dbtarget.Engine
 		database string
 	}{
 		{
 			name:     "postgres",
-			urlEnv:   "POSTGRES_URL",
+			engine:   dbtarget.PostgreSQL,
 			database: "postgres",
 		},
 		{
 			name:     "cockroachdb",
-			urlEnv:   "COCKROACHDB_URL",
+			engine:   dbtarget.CockroachDB,
 			database: "defaultdb",
 		},
 		{
 			name:     "yugabytedb",
-			urlEnv:   "YUGABYTEDB_URL",
+			engine:   dbtarget.YugabyteDB,
 			database: "yugabyte",
 		},
 	}
@@ -441,7 +441,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 		c.Run(test.name, func(c *qt.C) {
 			db := openPostgresWriterProtectedLiveDatabase(
 				c,
-				requirePostgresWriterFamilyLiveURL(c, test.urlEnv),
+				requirePostgresWriterFamilyLiveURL(c, test.engine),
 				test.database,
 			)
 			writer := postgres.NewPostgreSQLWriter(db, "public")
@@ -465,7 +465,7 @@ func TestWriterDropDatabaseRealm_LivePostgresRestoresRootMetadata(t *testing.T) 
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -504,7 +504,7 @@ func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
 	liveDatabase := newPostgresWriterLiveDatabase(
 		c,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 
@@ -527,7 +527,7 @@ func TestWriterDropAllTables_LiveRejectsCrossSchemaPartitionEdges(t *testing.T) 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
-	db, err := sql.Open("pgx", requirePostgresWriterLiveURL(t))
+	db, err := sql.Open("pgx", dbtarget.URL(t, dbtarget.PostgreSQL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	c.Assert(db.PingContext(ctx), qt.IsNil)
@@ -648,13 +648,13 @@ func newPostgresWriterLiveDatabase(
 	}
 }
 
-func requirePostgresWriterFamilyLiveURL(c *qt.C, name string) string {
+// requirePostgresWriterFamilyLiveURL resolves the engine's address and rewrites
+// its scheme to postgres, which is not about finding the address: the pgx stdlib
+// driver registered above is opened by name, and a CockroachDB or YugabyteDB
+// address may carry its own scheme, which url.Parse keeps and the driver rejects.
+func requirePostgresWriterFamilyLiveURL(c *qt.C, engine dbtarget.Engine) string {
 	c.Helper()
-	rawURL := os.Getenv(name)
-	if rawURL == "" {
-		c.Skipf("%s is not set", name)
-	}
-	parsed, err := url.Parse(rawURL)
+	parsed, err := url.Parse(dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
 	parsed.Scheme = "postgres"
 	return parsed.String()
@@ -673,17 +673,6 @@ func openPostgresWriterProtectedLiveDatabase(c *qt.C, rawURL, database string) *
 		c.Check(db.Close(), qt.IsNil)
 	})
 	return db
-}
-
-func requirePostgresWriterLiveURL(t *testing.T) string {
-	t.Helper()
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	return ""
 }
 
 func postgresWriterLiveCurrentDatabase(c *qt.C, ctx context.Context, db *sql.DB) string {

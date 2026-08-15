@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -37,23 +38,6 @@ import (
 //
 // Every expected string was produced by that binary against PostgreSQL 17 on
 // 2026-08-07, one throwaway database per cell.
-
-// livePostgresURLForCleanGate gates these cases on the same environment
-// variables as the other PostgreSQL live tests in this package.
-func livePostgresURLForCleanGate(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for the clean gate live tests")
-	}
-	return dbURL
-}
 
 // newCleanGateDatabase creates a throwaway database in the state the case is
 // about and returns its plain URL, so no two cases can see each other's schemas.
@@ -106,7 +90,7 @@ func writeCleanGatePostgresFixture(c *qt.C) string {
 
 func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForCleanGate(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name string
@@ -221,7 +205,7 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 // the same database it otherwise refuses.
 func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForCleanGate(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name  string

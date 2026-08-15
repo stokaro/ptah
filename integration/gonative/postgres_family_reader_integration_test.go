@@ -5,7 +5,6 @@ package gonative_test
 import (
 	"bytes"
 	"database/sql"
-	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -15,12 +14,13 @@ import (
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 	c := qt.New(t)
 	dsn := requireReachableTestDSN(t, "COCKROACHDB_TEST_DSN", "pgx", "CockroachDB")
-	sourceURL := requireReaderURL(t, "COCKROACHDB_URL", "CockroachDB")
+	sourceURL := dbtarget.URL(t, dbtarget.CockroachDB)
 	fixture := cockroachReaderFixture()
 
 	result := exercisePostgresFamilyReader(c, t, dsn, sourceURL, fixture)
@@ -32,7 +32,7 @@ func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 func TestPostgresFamilyReader_YugabyteDBCatalogObjects(t *testing.T) {
 	c := qt.New(t)
 	dsn := requireReachableTestDSN(t, "YUGABYTEDB_TEST_DSN", "pgx", "YugabyteDB")
-	sourceURL := requireReaderURL(t, "YUGABYTEDB_URL", "YugabyteDB")
+	sourceURL := dbtarget.URL(t, dbtarget.YugabyteDB)
 	fixture := yugabyteReaderFixture()
 
 	result := exercisePostgresFamilyReader(c, t, dsn, sourceURL, fixture)
@@ -142,16 +142,6 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 				`SELECT id, email FROM ` + schema + `.` + table,
 		},
 	}
-}
-
-func requireReaderURL(t *testing.T, envName, databaseName string) string {
-	t.Helper()
-
-	rawURL := os.Getenv(envName)
-	if rawURL == "" {
-		t.Skipf("Skipping %s reader tests: %s environment variable not set", databaseName, envName)
-	}
-	return rawURL
 }
 
 func exercisePostgresFamilyReader(

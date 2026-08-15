@@ -14,6 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E runs the real ptah-compat
@@ -23,7 +25,7 @@ import (
 // transactional/concurrent safety split, atomic atlas.sum updates, and
 // --qualifier artifact naming.
 func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

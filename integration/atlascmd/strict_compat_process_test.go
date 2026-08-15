@@ -21,6 +21,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -1133,7 +1134,7 @@ func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 
 func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *testing.T) {
 	c := qt.New(t)
-	dbURL := strictCompatPostgresTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	schemaName := fmt.Sprintf("ptah_strict_clean_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
 	admin, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
@@ -1230,7 +1231,7 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
 		c,
-		strictCompatPostgresTestURL(t),
+		dbtarget.URL(t, dbtarget.PostgreSQL),
 		fmt.Sprintf("ptah_strict_baseline_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
@@ -1261,7 +1262,7 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
 		c,
-		strictCompatPostgresTestURL(t),
+		dbtarget.URL(t, dbtarget.PostgreSQL),
 		fmt.Sprintf("ptah_strict_clean_snapshot_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
 	seedDatabase(c, dbURL, "CREATE TABLE users (id integer PRIMARY KEY)")
@@ -1323,7 +1324,7 @@ func waitForFileContains(t *testing.T, path, needle string) {
 
 func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testing.T) {
 	c := qt.New(t)
-	dbURL := strictCompatPostgresTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	prefix := fmt.Sprintf("ptah_strict_sources_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
 	dbURL = createDisposableDatabase(c, dbURL, prefix+"_target")
 	procedureSchema := prefix + "_procedure"
@@ -1705,21 +1706,10 @@ func waitForPostgresAdvisoryLockPoller(t *testing.T, conn *dbschema.DatabaseConn
 	t.Fatal("timed out waiting for schema apply to poll the advisory lock")
 }
 
-func strictCompatPostgresTestURL(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for strict schema-clean runtime coverage")
-	}
-	return dbURL
-}
-
+// strictCompatPostgresDevURL resolves the dev database the oracle harness
+// provisions. It is not a test target, so it does not go through dbtarget: the
+// variable names a scratch database the harness owns, and a run configured
+// without one has nothing to rehearse a plan on.
 func strictCompatPostgresDevURL(t *testing.T) string {
 	t.Helper()
 	dbURL := os.Getenv("PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL")

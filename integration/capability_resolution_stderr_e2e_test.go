@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // capabilityReportDefaultLogLevel is the threshold
@@ -42,7 +43,7 @@ const capabilityReportDefaultLogLevel = slog.LevelWarn
 // default level", saturated or not. The resolution is asserted to have seen
 // the real banner so the assertion cannot pass by never connecting.
 func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

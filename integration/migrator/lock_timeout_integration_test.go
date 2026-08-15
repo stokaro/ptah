@@ -5,8 +5,6 @@ package migrator_test
 import (
 	"context"
 	"database/sql"
-	"os"
-	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -18,7 +16,7 @@ import (
 )
 
 func TestMigrateUp_PostgresLockTimeoutIntegration(t *testing.T) {
-	dbURL := requirePostgresLockTimeoutURL(t)
+	dbURL := postgresTestURL(t)
 	c := qt.New(t)
 	ctx := context.Background()
 
@@ -65,19 +63,4 @@ func TestMigrateUp_PostgresLockTimeoutIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "lock timeout")
 	c.Assert(elapsed < 2*time.Second, qt.IsTrue, qt.Commentf("migration took %s", elapsed))
-}
-
-func requirePostgresLockTimeoutURL(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for lock timeout integration test")
-	}
-	return dbURL
 }

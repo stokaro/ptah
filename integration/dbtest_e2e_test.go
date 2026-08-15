@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestDatabaseTestRunnersPostgresE2E(t *testing.T) {
@@ -22,7 +23,7 @@ func TestDatabaseTestRunnersPostgresE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	adminDB, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -36,15 +37,6 @@ func TestDatabaseTestRunnersPostgresE2E(t *testing.T) {
 
 	runLiveMigrationTest(c, ctx, replaceDatabaseName(c, adminURL, migrationDBName))
 	runLiveSchemaTest(c, ctx, replaceDatabaseName(c, adminURL, schemaDBName))
-}
-
-func requirePostgresE2EDatabaseURL(t *testing.T) string {
-	t.Helper()
-	databaseURL := postgresE2EDatabaseURL(t)
-	if databaseURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
-	return databaseURL
 }
 
 func runLiveMigrationTest(c *qt.C, ctx context.Context, databaseURL string) {

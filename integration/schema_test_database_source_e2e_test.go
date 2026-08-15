@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestSchemaTestDatabaseDesiredSourcePostgresE2E covers `ptah schema test` with
@@ -27,7 +28,7 @@ import (
 // The asserted table exists in the source database and in no other input, so a
 // pass can only come from having introspected it.
 func TestSchemaTestDatabaseDesiredSourcePostgresE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name   string

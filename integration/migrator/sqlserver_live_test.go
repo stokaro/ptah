@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestSQLServerMigratorHonorsURLSchemaForMetadata(t *testing.T) {
-	dbURL := requireSQLServerMigratorTestURL(t)
+	dbURL := sqlServerTestURL(t)
 	c := qt.New(t)
 	ctx := context.Background()
 
@@ -58,15 +57,6 @@ func TestSQLServerMigratorHonorsURLSchemaForMetadata(t *testing.T) {
 	c.Assert(sqlServerTableExists(t, scopedConn, schemaName, "ptah_issue_149_items"), qt.IsTrue)
 	c.Assert(sqlServerTableExists(t, scopedConn, schemaName, "schema_migrations_issue_149"), qt.IsTrue)
 	c.Assert(sqlServerTableExists(t, scopedConn, "dbo", "schema_migrations_issue_149"), qt.IsFalse)
-}
-
-func requireSQLServerMigratorTestURL(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if dbURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live migrator tests")
-	}
-	return dbURL
 }
 
 func cleanupSQLServerMigratorSchema(t *testing.T, conn *dbschema.DatabaseConnection, schemaName string) {

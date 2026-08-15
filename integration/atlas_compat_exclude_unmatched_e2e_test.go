@@ -16,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // excludeUnmatchedSeed is the fixture every row below runs against. It holds one
@@ -69,7 +70,7 @@ type excludeUnmatchedCase struct {
 // selector that names nothing must still refuse, or the fix would be "stop
 // reporting" rather than "start asking".
 func TestAtlasCompatExcludeUnmatchedE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []excludeUnmatchedCase{
 		{
@@ -165,7 +166,7 @@ func TestAtlasCompatExcludeUnmatchedE2E(t *testing.T) {
 // emitted `DROP DOMAIN IF EXISTS "positive_int" CASCADE`.
 func TestAtlasCompatExcludeProtectsATypeObjectE2E(t *testing.T) {
 	c := qt.New(t)
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -225,7 +226,7 @@ CREATE TYPE app.color AS ENUM ('red', 'blue');
 // selector to the schema rather than to something else in the command.
 func TestAtlasCompatExcludeSchemaSelectorE2E(t *testing.T) {
 	c := qt.New(t)
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

@@ -16,24 +16,8 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
-
-// livePostgresURLForScope gates the live schema-scope tests on the same
-// environment variables as the other PostgreSQL live tests.
-func livePostgresURLForScope(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for schema scope live tests")
-	}
-	return dbURL
-}
 
 // createScopeSchemas provisions two uniquely named schemas with one table
 // each and registers a cascading cleanup.
@@ -92,7 +76,7 @@ func livePostgresTableExists(t *testing.T, dbURL, schema, table string) bool {
 
 func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_apply_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
@@ -123,7 +107,7 @@ func TestSchemaApplySchemaScopeLivePostgres(t *testing.T) {
 
 func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	devURL := createDisposableDatabase(c, dbURL, "ptah_scope_dependency_dev_"+uniqueScopeSuffix())
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
@@ -157,7 +141,7 @@ func TestSchemaApplySchemaScopeCrossSchemaDependencyLivePostgres(t *testing.T) {
 
 func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	appSchema, auditSchema := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	desired := "CREATE TABLE " + appSchema + ".users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255)\n);\n"
@@ -184,7 +168,7 @@ func TestSchemaDiffSchemaScopeLivePostgres(t *testing.T) {
 
 func TestSchemaDiffSchemaScopeKeepsDatabaseWideExtensionLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	appSchema, _ := createScopeSchemas(t, dbURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.hcl")
 	desired := `
@@ -230,7 +214,7 @@ table "users" {
 
 func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForScope(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	targetURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_target_"+suffix)
 	devURL := createDisposableDatabase(c, adminURL, "ptah_scope_apply_support_dev_"+suffix)
@@ -290,7 +274,7 @@ func createScopeInspectSchema(t *testing.T, dbURL string) string {
 }
 
 func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	schemaName := createScopeInspectSchema(t, dbURL)
 
 	t.Run("qualified selection keeps the table and the type it uses", func(t *testing.T) {

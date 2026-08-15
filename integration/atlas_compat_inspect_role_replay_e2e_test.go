@@ -17,6 +17,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestAtlasCompatInspectRoleReplayE2E is the property stokaro/ptah#1267 names
@@ -47,7 +48,7 @@ import (
 // that test needs to reach the extension question; here it would remove the
 // subject.
 func TestAtlasCompatInspectRoleReplayE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -105,7 +106,7 @@ func TestAtlasCompatInspectRoleReplayE2E(t *testing.T) {
 // Skipping it would break the replay in a way #1267 never asked for: the GRANT
 // that follows would then name a role nothing on that server declares.
 func TestAtlasCompatInspectCreatesARoleTheServerLacksE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

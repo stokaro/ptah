@@ -16,6 +16,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 var (
@@ -68,7 +70,7 @@ func runLintE2EBinary(ctx context.Context, binaryPath string, args ...string) (s
 // dropped zeta/alpha/mid, so source order, creation order and reverse creation
 // order each give a different answer, and only one of them is the order below.
 func TestAtlasMigrateLintMultiTargetDropE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -566,7 +566,7 @@ func TestSQLServerLiveIdentifierSemantics_TurkishDistinctPair(t *testing.T) {
 
 func TestSQLServerLiveIdentifierSemantics_OversizedIdentifier_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLServerCollationDatabase(c, sqlServerTestURL(t))
+	conn := connectSQLServerCollationDatabase(c, dbtarget.URL(t, dbtarget.SQLServer))
 
 	_, err := conn.ResolveIdentifierSemantics(
 		t.Context(),
@@ -643,7 +643,7 @@ func TestSQLServerLiveIdentifierSemantics_EmbeddedColumnCollision_FailurePath(t 
 func provisionSQLServerCollationDatabase(t testing.TB, collation string) string {
 	t.Helper()
 	c := qt.New(t)
-	adminURL := sqlServerTestURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c.Assert(
 		collation,
 		qt.Matches,
@@ -689,15 +689,6 @@ func provisionSQLServerCollationDatabase(t testing.TB, collation string) string 
 	query.Set("database", databaseName)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
-}
-
-func sqlServerTestURL(t testing.TB) string {
-	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
-	}
-	return adminURL
 }
 
 func connectSQLServerCollationDatabase(

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestSchemaTestSchemaSelectionKeepsDatabaseWideExtensionPostgresE2E proves a
@@ -22,7 +24,7 @@ func TestSchemaTestSchemaSelectionKeepsDatabaseWideExtensionPostgresE2E(t *testi
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	adminDB, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = adminDB.Close() })

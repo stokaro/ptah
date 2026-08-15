@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -48,12 +49,12 @@ func TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry(t *testing.T
 }
 
 func TestDirtyMigrationState_MySQLRepairReachesHead(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runIssue265MySQLFamilyRepair(t, dbURL, "mysql")
 }
 
 func TestDirtyMigrationState_MariaDBRepairReachesHead(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runIssue265MySQLFamilyRepair(t, dbURL, "mariadb")
 }
 

@@ -33,7 +33,6 @@ package migrator_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,6 +41,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/ddltx"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -202,14 +202,11 @@ func revisionCompletionRepairTargets() []revisionCompletionTarget {
 }
 
 func mySQLRevisionCompletionTarget() revisionCompletionTarget {
-	return mySQLFamilyRevisionCompletionTarget("mysql", "MYSQL_ADMIN_TEST_URL")
+	return mySQLFamilyRevisionCompletionTarget("mysql", dbtarget.MySQLAdmin)
 }
 
 func mariaDBRevisionCompletionTarget() revisionCompletionTarget {
-	return mySQLFamilyRevisionCompletionTarget(
-		"mariadb",
-		"MARIADB_ADMIN_TEST_URL",
-	)
+	return mySQLFamilyRevisionCompletionTarget("mariadb", dbtarget.MariaDBAdmin)
 }
 
 // revisionCompletionRecovery is one supported way out of a dirty revision left
@@ -486,7 +483,10 @@ WHERE table_schema = current_schema() AND table_name = $1 AND table_type = 'BASE
 	return count > 0
 }
 
-func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompletionTarget {
+func mySQLFamilyRevisionCompletionTarget(
+	dialect string,
+	adminEngine dbtarget.Engine,
+) revisionCompletionTarget {
 	return revisionCompletionTarget{
 		name:      dialect,
 		class:     ddltx.ImplicitCommit,
@@ -494,7 +494,7 @@ func mySQLFamilyRevisionCompletionTarget(dialect, adminEnv string) revisionCompl
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			c := qt.New(t)
 			t.Helper()
-			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEnv, "ptah_rev999")
+			dbURL := mySQLFamilyScratchDatabaseURL(t, dialect, adminEngine, "ptah_rev999")
 			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 			c.Assert(err, qt.IsNil)
 			return conn
@@ -563,11 +563,7 @@ func clickHouseRevisionCompletionTarget() revisionCompletionTarget {
 		connect: func(t *testing.T) *dbschema.DatabaseConnection {
 			c := qt.New(t)
 			t.Helper()
-			dbURL := os.Getenv("CLICKHOUSE_URL")
-			if dbURL == "" {
-				t.Skip("CLICKHOUSE_URL not set")
-			}
-			conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+			conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(t, dbtarget.ClickHouse))
 			c.Assert(err, qt.IsNil)
 			return conn
 		},

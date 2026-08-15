@@ -15,41 +15,31 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
+// postgresTestURL resolves the live PostgreSQL address. dbtarget refuses an
+// address carrying another engine's scheme, so the dialect guard this helper
+// used to carry has nothing left to catch.
 func postgresTestURL(t *testing.T) string {
 	t.Helper()
 
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for live migration test")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
-func mySQLFamilyTestURL(t *testing.T, dialect string, envNames ...string) string {
+// mySQLFamilyTestURL resolves one MySQL-family engine and keeps the dialect
+// guard: dbtarget declares no scheme for the MySQL family, because a MySQL
+// address is often a driver DSN with no scheme at all, so nothing in the
+// package stops a MariaDB address sitting in a MySQL variable.
+func mySQLFamilyTestURL(t *testing.T, dialect string, engine dbtarget.Engine) string {
 	t.Helper()
 
-	for _, envName := range envNames {
-		dbURL := os.Getenv(envName)
-		if dbURL == "" {
-			continue
-		}
-		if !strings.HasPrefix(dbURL, dialect+"://") {
-			t.Skipf("%s URL required for live migration test", dialect)
-		}
-		return dbURL
+	dbURL := dbtarget.URL(t, engine)
+	if !strings.HasPrefix(dbURL, dialect+"://") {
+		t.Skipf("%s URL required for live migration test", dialect)
 	}
-
-	t.Skipf("%s not set", strings.Join(envNames, " or "))
-	return ""
+	return dbURL
 }
 
 // mySQLFamilyScratchDatabaseURL keeps the administrative connection on its
@@ -57,11 +47,16 @@ func mySQLFamilyTestURL(t *testing.T, dialect string, envNames ...string) string
 // database. The returned URL deliberately preserves the administrative
 // credentials: callers in this package need privileges such as CREATE TRIGGER,
 // while the system database is used only to provision and remove the realm.
-func mySQLFamilyScratchDatabaseURL(t *testing.T, dialect, adminEnv, prefix string) string {
+func mySQLFamilyScratchDatabaseURL(
+	t *testing.T,
+	dialect string,
+	adminEngine dbtarget.Engine,
+	prefix string,
+) string {
 	c := qt.New(t)
 	t.Helper()
 
-	adminURL := mySQLFamilyTestURL(t, dialect, adminEnv)
+	adminURL := mySQLFamilyTestURL(t, dialect, adminEngine)
 	adminConn, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { dbschema.CloseAndWarn(adminConn) })

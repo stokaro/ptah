@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -22,24 +22,24 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
 		name    string
-		dsnEnv  string
+		engine  dbtarget.Engine
 		dialect string
 	}{
 		{
 			name:    "mysql",
-			dsnEnv:  "MYSQL_ADMIN_TEST_DSN",
+			engine:  dbtarget.MySQLAdmin,
 			dialect: platform.MySQL,
 		},
 		{
 			name:    "mariadb",
-			dsnEnv:  "MARIADB_ADMIN_TEST_DSN",
+			engine:  dbtarget.MariaDBAdmin,
 			dialect: platform.MariaDB,
 		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openMySQLWriterLiveDatabase(c, test.dsnEnv)
+			db := openMySQLWriterLiveDatabase(c, test.engine)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)
 			})
@@ -56,24 +56,24 @@ func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) 
 	c := qt.New(t)
 	tests := []struct {
 		name    string
-		dsnEnv  string
+		engine  dbtarget.Engine
 		dialect string
 	}{
 		{
 			name:    "mysql",
-			dsnEnv:  "MYSQL_ADMIN_TEST_DSN",
+			engine:  dbtarget.MySQLAdmin,
 			dialect: platform.MySQL,
 		},
 		{
 			name:    "mariadb",
-			dsnEnv:  "MARIADB_ADMIN_TEST_DSN",
+			engine:  dbtarget.MariaDBAdmin,
 			dialect: platform.MariaDB,
 		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openMySQLWriterLiveDatabase(c, test.dsnEnv)
+			db := openMySQLWriterLiveDatabase(c, test.engine)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)
 			})
@@ -141,7 +141,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) 
 
 func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T) {
 	c := qt.New(t)
-	adminDB := openMySQLWriterLiveDatabase(c, "MYSQL_ADMIN_TEST_DSN")
+	adminDB := openMySQLWriterLiveDatabase(c, dbtarget.MySQLAdmin)
 	c.Cleanup(func() {
 		c.Check(adminDB.Close(), qt.IsNil)
 	})
@@ -185,7 +185,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 	})
 	grantMySQLWriterLivePrivilegesWithoutTrigger(c, adminDB, username)
 
-	config, err := mysqldriver.ParseDSN(os.Getenv("MYSQL_ADMIN_TEST_DSN"))
+	config, err := mysqldriver.ParseDSN(dbtarget.URL(c, dbtarget.MySQLAdmin))
 	c.Assert(err, qt.IsNil)
 	config.User = username
 	config.Passwd = password
@@ -213,13 +213,9 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 	c.Assert(tableCount, qt.Equals, 1)
 }
 
-func openMySQLWriterLiveDatabase(c *qt.C, dsnEnv string) *sql.DB {
+func openMySQLWriterLiveDatabase(c *qt.C, engine dbtarget.Engine) *sql.DB {
 	c.Helper()
-	dsn := os.Getenv(dsnEnv)
-	if dsn == "" {
-		c.Skipf("%s is not set", dsnEnv)
-	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.PingContext(c.Context()), qt.IsNil)
 	return db

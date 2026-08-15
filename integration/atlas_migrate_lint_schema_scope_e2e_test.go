@@ -13,6 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // withLintE2ESearchPath returns dbURL carrying a `search_path` query parameter,
@@ -59,7 +61,7 @@ func withLintE2ESearchPath(c *qt.C, dbURL, schema string) string {
 // `want` below is that binary's report byte for byte, with only the two elapsed
 // durations redacted, and every `wantExitOne` its exit status.
 func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -352,7 +354,7 @@ func assertLintE2EScopedReport(
 // Removing the profile gate in migrationlintreport leaves every other test in
 // the repository green, so without this row the split is unpinned.
 func TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

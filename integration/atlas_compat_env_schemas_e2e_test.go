@@ -20,6 +20,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
@@ -74,7 +75,7 @@ type atlasCompatEnvSchemasCase struct {
 // only `one` and `two` would pass an implementation that restricted to
 // "every non-system schema" without reading the attribute at all.
 func TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []atlasCompatEnvSchemasCase{
 		{
@@ -158,7 +159,7 @@ func TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E(t *testing.T) {
 // nothing at all and the first row would still pass if the restriction had
 // never been implemented.
 func TestAtlasCompatEnvSchemasOptOutRestoresTheRealmDescriptionE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name        string
@@ -204,7 +205,7 @@ func TestAtlasCompatEnvSchemasOptOutRestoresTheRealmDescriptionE2E(t *testing.T)
 // opt-out row is here because an environment variable must not be able to
 // reopen an exit 0 where the pinned binary exits 1.
 func TestAtlasCompatEnvSchemasRefusesAValueTheFieldCannotHoldE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name string

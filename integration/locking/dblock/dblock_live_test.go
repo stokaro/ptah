@@ -3,7 +3,6 @@
 package dblock_test
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
@@ -19,16 +19,16 @@ func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		urlEnv  string
+		engine  dbtarget.Engine
 		dialect string
 	}{
-		{name: "postgres", urlEnv: "POSTGRES_TEST_DSN", dialect: platform.Postgres},
-		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL", dialect: platform.YugabyteDB},
+		{name: "postgres", engine: dbtarget.PostgreSQL, dialect: platform.Postgres},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB, dialect: platform.YugabyteDB},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			databaseURL := requireLiveLockURL(c, test.urlEnv)
+			databaseURL := dbtarget.URL(c, test.engine)
 			first, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() {
@@ -74,13 +74,4 @@ func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
 			c.Assert(secondLock.Release(c.Context()), qt.IsNil)
 		})
 	}
-}
-
-func requireLiveLockURL(c *qt.C, environmentName string) string {
-	c.Helper()
-	databaseURL := os.Getenv(environmentName)
-	if databaseURL == "" {
-		c.Skip(environmentName + " is not set")
-	}
-	return databaseURL
 }
