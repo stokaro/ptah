@@ -10,13 +10,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/testutils"
+
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	c := qt.New(t)
-	helperPath := filepath.Join(t.TempDir(), "no-transaction-crash-helper")
+	helperPath := filepath.Join(t.TempDir(), "no-transaction-crash-helper"+testutils.ExecutableSuffix)
 	build := exec.Command("go", "build", "-o", helperPath, "./testdata/no_transaction_crash")
 	build.Dir = "."
 	c.Assert(build.Run(), qt.IsNil)

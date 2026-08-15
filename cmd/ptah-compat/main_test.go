@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -540,7 +541,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "atlas")
+	binPath := filepath.Join(c.TempDir(), "atlas"+testutils.ExecutableSuffix)
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Env = append(os.Environ(), "GOWORK=off")
 	buildOut, err := build.CombinedOutput()
