@@ -126,11 +126,16 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// projectToURLs is the desired-state URL list this run took from the
+	// project's schema sources, and stays nil when --to supplied it. See
+	// [atlasProjectSourceURLs].
+	var projectToURLs []string
 	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
 		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
 		if err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
 		}
+		projectToURLs = opts.toURLs
 	}
 	if loaded && !cmd.Flags().Changed("to") && atlasExternalSchemaConfigured(projectCfg) {
 		opts.toURLs = []string{"env://src"}
@@ -148,6 +153,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", projectToURLs)
 	}
 	if err := validateAtlasSchemaDiffOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)

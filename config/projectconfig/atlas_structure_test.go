@@ -755,33 +755,15 @@ env "local" {
 `,
 			ignored: "drop_column",
 		},
-		{
-			// A well-formed baseline is tolerated and reported, not acted on:
-			// wiring it into `migrate apply` is stokaro/ptah#934 item 5a and is
-			// not this change. The community binary exits 0 on this file too.
-			name: "migration baseline given a string",
-			raw: `env "local" {
-  url = "sqlite://s.db"
-  migration {
-    dir      = "file://m"
-    baseline = "20240101000000"
-  }
-}
-`,
-			ignored: "baseline",
-		},
-		{
-			name: "migration baseline given null",
-			raw: `env "local" {
-  url = "sqlite://s.db"
-  migration {
-    dir      = "file://m"
-    baseline = null
-  }
-}
-`,
-			ignored: "baseline",
-		},
+		// `migration { baseline }` used to be two rows here, tolerated and
+		// reported as having no effect. It is DECODED now -- stokaro/ptah#934
+		// item 5a wired it into `migrate apply` -- so it no longer reaches the
+		// tolerance path at all and asserting it is reported would assert the
+		// symptom that issue names. Its rows live in
+		// TestParseAtlasMigrationBaseline and
+		// TestMigrateApplyHonorsProjectBaseline. The two scope controls below
+		// stay: `baseline` outside `env.migration` is still a name the pinned
+		// binary decodes nowhere.
 		{
 			name: "migration skip_report beside a decoded baseline",
 			raw: `env "local" {
@@ -1788,9 +1770,14 @@ env "local" {
 //
 // The last row is the one that separates a decoded name from a tolerated one:
 // null is accepted for every name in atlasDecodedLeafAttributes, on the pinned
-// community binary v1.3.0 and here, so `env.migration.baseline` given the same
-// typed null that the rows above refuse still parses and is still reported as
-// having no effect.
+// community binary v1.3.0 and here, so `lint.review` given the same typed null
+// that the rows above refuse still parses and is still reported as having no
+// effect.
+//
+// The row used to be `env.migration.baseline`. That name is DECODED now
+// (stokaro/ptah#934 item 5a), so it no longer reaches the tolerance path and
+// would have tested nothing here; `lint.review` is the string-valued name that
+// took its place, from the same table.
 func TestParseAtlasProjectConfigAcceptsTypedNonNullDecodedValues(t *testing.T) {
 	c := qt.New(t)
 
@@ -1869,7 +1856,7 @@ env "local" {
 			},
 		},
 		{
-			name: "env migration baseline given a typed null string",
+			name: "env lint review given a typed null string",
 			raw: `variable "s" {
   type    = string
   default = null
@@ -1877,13 +1864,13 @@ env "local" {
 
 env "local" {
   url = "sqlite://s.db"
-  migration {
-    baseline = var.s
+  lint {
+    review = var.s
   }
 }
 `,
 			assert: func(c *qt.C, cfg projectconfig.Config) {
-				c.Assert(ignoredAtlasNames(cfg), qt.Contains, "baseline")
+				c.Assert(ignoredAtlasNames(cfg), qt.Contains, "review")
 			},
 		},
 	}

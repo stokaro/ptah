@@ -93,6 +93,11 @@ type Source struct {
 	// sources; zero for every other kind. Its dialect hint is filled during
 	// resolution.
 	Command schemasource.Command
+	// VarValues and VarsScoped carry the variable scope an atlas.hcl
+	// `data "hcl_schema"` block puts around the files it selects. See
+	// [go.5x5.cz/ptah/internal/schemafile.Source].
+	VarValues  map[string]string
+	VarsScoped bool
 }
 
 // ProjectEnv carries the evaluated atlas.hcl environment used to expand env://
@@ -105,6 +110,39 @@ type ProjectEnv struct {
 	// BaseDir is the atlas.hcl directory; relative env paths resolve against
 	// it.
 	BaseDir string
+	// ProjectSourceURLs records, per desired-state flag, the URLs this run took
+	// FROM the project's own schema sources rather than from the operator's
+	// flag value. Only those URLs carry an atlas.hcl `data "hcl_schema"`
+	// variable scope; see [ProjectEnv.SuppliedSource].
+	//
+	// The command is the only layer that knows the difference: by the time a
+	// URL reaches classification it is a string like any other, and the same
+	// file can be named both ways in one run.
+	ProjectSourceURLs map[string][]string
+}
+
+// SuppliedSource reports whether this run took rawURL for flag from the
+// project's schema sources.
+//
+// The distinction is measured, not stylistic. With
+// `data "hcl_schema" "app" { paths = ["s.hcl"] vars = { tenant = "acme" } }`
+// and `env "local" { src = data.hcl_schema.app.url }`, on the pinned Atlas
+// community binary v1.3.0 and exit codes read from unpiped invocations:
+//
+//	schema apply --env local --dry-run                        -> 0, DEFAULT 'acme'
+//	schema apply --env local --to file://s.hcl --dry-run       -> 1, missing value for required variable "tenant"
+//	schema apply --env local --to file://s.hcl --var tenant=zzz --dry-run -> 0, DEFAULT 'zzz'
+//
+// So a file named by the flag keeps flag-variable precedence even when a data
+// source in the loaded env selects the very same file. Attaching the block's
+// vars to it made this binary exit 0 where that one exits 1, which is the
+// violation AGENTS.md rule (a) names, and silently planned from the wrong
+// values when --var was passed.
+func (e ProjectEnv) SuppliedSource(flag, rawURL string) bool {
+	trimmed := strings.TrimSpace(rawURL)
+	return slices.ContainsFunc(e.ProjectSourceURLs[flag], func(candidate string) bool {
+		return strings.TrimSpace(candidate) == trimmed
+	})
 }
 
 // Set is the classified value of one desired-state flag (--from or --to).
@@ -242,7 +280,7 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
 			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
 		}
 		if source.Kind != KindEnv {
-			set.Sources = append(set.Sources, source)
+			set.Sources = append(set.Sources, withProjectVarScope(source, env, flag))
 			continue
 		}
 		if len(rawURLs) > 1 {
@@ -258,6 +296,36 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
 		return Set{}, err
 	}
 	return set, nil
+}
+
+// withProjectVarScope attaches the variable scope an atlas.hcl
+// `data "hcl_schema"` block puts around the file this source names.
+//
+// It runs for URLs that arrive already classified rather than through env://
+// expansion, because that is how most of the compatibility tree reaches a
+// project's schema sources: `schema apply`, `schema diff` and `migrate diff`
+// resolve `projectCfg.SchemaSources` against the atlas.hcl directory and pass
+// the resulting file:// URLs as --to. Only the external-schema shape reaches
+// [expandEnvSchemaSources], which attaches the same scope on its own path.
+//
+// A URL the operator passed on the flag is left alone even when it names the
+// very file a referenced data source selects: that fact reaches this layer as
+// [ProjectEnv.ProjectSourceURLs], recorded by the command where it substitutes
+// the project's sources, and [ProjectEnv.SuppliedSource] carries the measured
+// reason. An empty record scopes nothing, so a command that never substitutes
+// project sources -- and native Ptah, which passes a zero ProjectEnv -- keeps
+// flag-variable precedence by construction.
+func withProjectVarScope(source Source, env ProjectEnv, flag string) Source {
+	if !env.Loaded || source.Kind != KindLocalFile || !env.SuppliedSource(flag, source.Raw) {
+		return source
+	}
+	values, scoped := env.Config.SchemaSourceVars(source.Raw)
+	if !scoped {
+		return source
+	}
+	source.VarValues = values
+	source.VarsScoped = true
+	return source
 }
 
 func (s *Set) validate() error {
@@ -463,6 +531,10 @@ func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl schema source %q: %w", value, err)
 		}
+		// The scope is attached to the URL the project file minted, not to the
+		// resolved path, because the project file is the only layer that knows
+		// which data source produced which entry.
+		source.VarValues, source.VarsScoped = env.Config.SchemaSourceVars(value)
 		sources = append(sources, source)
 	}
 	return sources, nil

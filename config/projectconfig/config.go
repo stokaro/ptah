@@ -4,6 +4,7 @@ package projectconfig
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -75,6 +76,44 @@ type Config struct {
 	ExternalSchema ExternalSchemaConfig
 
 	presence configPresence
+	// schemaSourceVars maps a SchemaSources entry to the variable values the
+	// atlas.hcl `data "hcl_schema"` block that minted it scopes to its files.
+	// Read through [Config.SchemaSourceVars]; see there for the rule it carries.
+	schemaSourceVars map[string]map[string]string
+}
+
+// SchemaSourceVars reports the variable values scoped to one desired-state
+// schema source, and whether that source came from an atlas.hcl
+// `data "hcl_schema"` block at all.
+//
+// The bool is the load-bearing half. A data source that declares NO `vars`
+// still closes the boundary, so `ok` cannot be derived from a non-empty map.
+// Measured on the pinned Atlas community binary v1.3.0 with
+// `schema apply --env local --dry-run` against a schema file declaring
+// `variable "tenant" { type = string }` with no default, exit codes read
+// directly from unpiped invocations:
+//
+//	src = data.hcl_schema.app.url, vars = { tenant = "acme" }   -> 0
+//	src = data.hcl_schema.app.url, no vars                      -> 1  missing value
+//	                                                                  for required
+//	                                                                  variable "tenant"
+//	  ... the same run with --var tenant=acme                   -> 1  (the leak probe:
+//	                                                                  the flag does not
+//	                                                                  cross the boundary)
+//	src = "file://s.hcl" with --var tenant=acme                 -> 0  (the control:
+//	                                                                  --var DOES reach a
+//	                                                                  file that no data
+//	                                                                  source selected)
+//
+// The control is what separates "the boundary is closed" from "this binary has
+// no --var": the same flag, the same file, the same command, and only the way
+// the env names the source differs.
+func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool) {
+	values, ok := c.schemaSourceVars[rawURL]
+	if !ok {
+		return nil, false
+	}
+	return maps.Clone(values), true
 }
 
 // Value carries a project-config value together with whether a source or
@@ -125,6 +164,10 @@ const (
 	StringFormatSchemaInspect
 	StringExternalSchemaFormat
 	StringExternalSchemaWorkingDir
+	// StringMigrationBaseline is appended rather than filed next to the other
+	// migration names on purpose: StringField is an exported iota enum, and
+	// inserting into the middle would renumber every constant after it.
+	StringMigrationBaseline
 	stringFieldCount
 )
 
@@ -153,6 +196,7 @@ const (
 	fieldMigrationPostgresDumpTo   configField = "migration.pg_dump_to"
 	fieldMigrationMySQLDumpTo      configField = "migration.mysqldump_to"
 	fieldMigrationWebhook          configField = "migration.webhook"
+	fieldMigrationBaseline         configField = "migration.baseline"
 	fieldOnlineDDLTool             configField = "online_ddl.tool"
 	fieldOnlineDDLThresholdRows    configField = "online_ddl.threshold_rows"
 	fieldOnlineDDLArgs             configField = "online_ddl.args"
@@ -253,6 +297,10 @@ var stringFieldDescriptors = [stringFieldCount]stringFieldDescriptor{
 	StringMigrationRevisionsSchema: {
 		presence: fieldMigrationRevisionsSchema,
 		value:    func(c Config) string { return c.Migration.RevisionsSchema },
+	},
+	StringMigrationBaseline: {
+		presence: fieldMigrationBaseline,
+		value:    func(c Config) string { return c.Migration.Baseline },
 	},
 	StringMigrationRevisionsTable: {
 		presence: fieldMigrationRevisionsTable,
@@ -550,6 +598,10 @@ type MigrationConfig struct {
 	PostgresDumpTo       string
 	MySQLDumpTo          string
 	Webhook              string
+	// Baseline is the migration version `migrate apply` marks as already
+	// applied before running the pending ones, the config spelling of its
+	// --baseline flag.
+	Baseline string
 }
 
 // LintConfig is the lint section of the project config IR.
@@ -719,6 +771,13 @@ func Merge(base, override Config) Config {
 		override.presence,
 		&result.presence,
 	)
+	// The scope map travels with the list it describes. Keeping the base map
+	// after the override replaced the list would attach one file's variables to
+	// a source the surviving list never names.
+	result.schemaSourceVars = base.schemaSourceVars
+	if override.presence.has(fieldSchemaSources) || len(override.SchemaSources) > 0 {
+		result.schemaSourceVars = override.schemaSourceVars
+	}
 	result.Schemas = mergeStringSliceValue(
 		base.Schemas,
 		override.Schemas,
@@ -947,6 +1006,13 @@ func mergeMigration(
 		base.RevisionsTable,
 		override.RevisionsTable,
 		fieldMigrationRevisionsTable,
+		overridePresence,
+		resultPresence,
+	)
+	result.Baseline = mergeStringValue(
+		base.Baseline,
+		override.Baseline,
+		fieldMigrationBaseline,
 		overridePresence,
 		resultPresence,
 	)
