@@ -185,7 +185,7 @@ func writeAtlasApplyProjectConfigWithDir(c *qt.C, dbPath, dir, format, execOrder
     tx_mode    = "file"
   }
 }
-`, dbPath, dir, format, execOrder), 0o600), qt.IsNil)
+`, filepath.ToSlash(dbPath), dir, format, execOrder), 0o600), qt.IsNil)
 }
 
 func executeAtlasProjectCommand(args ...string) (string, error) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -218,7 +219,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
-		Format: `{{ hcl . | split | write "` + outDir + `" }}`,
+		Format: `{{ hcl . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -260,7 +261,7 @@ CREATE TABLE sessions (
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
-		Format: `{{ sql . | split | write "` + outDir + `" }}`,
+		Format: `{{ sql . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -415,7 +416,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://" + dbPath,
-			Format: `{{ $s := sql . | split }}{{ $s | write "` + outDir + `" }}{{ $s | write "` + outDir + `" }}`,
+			Format: `{{ $s := sql . | split }}{{ $s | write ` + strconv.Quote(outDir) + ` }}{{ $s | write ` + strconv.Quote(outDir) + ` }}`,
 		})
 
 		c.Assert(err, qt.ErrorMatches, `duplicate output path "main.sql" .*`)

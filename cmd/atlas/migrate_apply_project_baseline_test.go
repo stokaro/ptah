@@ -150,5 +150,5 @@ func writeAtlasApplyBaselineProjectConfig(c *qt.C, dbPath, migrationExtra string
     tx_mode = "file"
 %s  }
 }
-`, dbPath, migrationExtra), 0o600), qt.IsNil)
+`, filepath.ToSlash(dbPath), migrationExtra), 0o600), qt.IsNil)
 }

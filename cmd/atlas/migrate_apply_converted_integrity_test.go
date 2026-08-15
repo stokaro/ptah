@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // errorText renders err for a containment assertion, so a test can say "this
@@ -687,7 +689,7 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesConnection(t *testing.T) {
 	c.Assert(stdout, qt.Equals, atlasChecksumFileNotFoundStdout)
 	c.Assert(stderr, qt.Equals, atlasChecksumFileNotFoundStderr)
 	// The alternative ordering would surface a dial error instead.
-	c.Assert(stderr, qt.Not(qt.Contains), "connection refused")
+	c.Assert(stderr, qt.Not(qt.Contains), testutils.RefusedConnection)
 }
 
 func TestCompatMigrateApply_ConvertedDirRefusesDryRun(t *testing.T) {

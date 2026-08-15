@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -178,7 +179,7 @@ func capturePtahStdout(c *qt.C, binPath string, args ...string) string {
 
 func buildPtahBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "ptah")
+	binPath := filepath.Join(c.TempDir(), "ptah"+testutils.ExecutableSuffix)
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Env = append(os.Environ(), "GOWORK=off")
 	buildOut, err := build.CombinedOutput()

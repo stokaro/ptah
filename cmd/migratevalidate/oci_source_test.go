@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // This file holds the two halves of stokaro/ptah#1499 that live in this
@@ -43,7 +44,7 @@ func TestValidate_NativeResolvesTheOCISchemeRatherThanStattingIt(t *testing.T) {
 
 	// The dial happened, which only a value that reached the OCI client can
 	// produce.
-	c.Assert(stderr, qt.Contains, "connection refused")
+	c.Assert(stderr, qt.Contains, testutils.RefusedConnection)
 	c.Assert(stderr, qt.Contains, "http://")
 	c.Assert(stderr, qt.Not(qt.Contains), "https://")
 	// The failure the issue reported. It is asserted separately because that
@@ -68,8 +69,10 @@ func TestValidate_AtlasSurfaceLeavesTheOCISchemeToTheFilesystem(t *testing.T) {
 
 	_, stderr, err := executeAtlas("--dir", reference)
 
-	c.Assert(stderr, qt.Contains, "stat "+reference)
-	c.Assert(stderr, qt.Not(qt.Contains), "connection refused")
+	// Derived: os.Stat renders "stat <ref>: ..." here and names a different
+	// call on Windows, so the Op belongs to the platform rather than to Ptah.
+	c.Assert(stderr, qt.Contains, testutils.StatMissingText(reference))
+	c.Assert(stderr, qt.Not(qt.Contains), testutils.RefusedConnection)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 }
 

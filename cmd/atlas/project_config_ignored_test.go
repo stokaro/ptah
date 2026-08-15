@@ -16,7 +16,7 @@ func TestCompatDirectCommandReportsIgnoredAtlasConstructs(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url     = "sqlite://`+filepath.Join(dir, "inspect.db")+`"
+  url     = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "inspect.db"))+`"
   project = "ignored"
 }
 `), 0o600), qt.IsNil)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -285,7 +286,7 @@ func TestRenderSchemaInspect_WritePlansFilesWithoutTouchingFilesystem(t *testing
 	report := sampleSchemaInspectReport()
 	outDir := filepath.Join(t.TempDir(), "schema")
 
-	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split | write "`+outDir+`" }}`, report)
+	output, err := atlasreport.RenderSchemaInspect(`{{ sql . | split | write `+strconv.Quote(outDir)+` }}`, report)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(output.Text, qt.Equals, "")

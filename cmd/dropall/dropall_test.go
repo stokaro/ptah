@@ -2,7 +2,6 @@ package dropall_test
 
 import (
 	"bytes"
-	"net/url"
 	"path/filepath"
 	"testing"
 
@@ -10,12 +9,13 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/dropall"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c := qt.New(t)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})
@@ -33,7 +33,7 @@ func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 	c := qt.New(t)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL, "--auto-approve"})
@@ -51,7 +51,7 @@ func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 func TestDropAllCommandAcceptsTwoLineConfirmationFromCobraInput(t *testing.T) {
 	c := qt.New(t)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})

@@ -170,7 +170,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 	dbPath := filepath.Join(dir, "project-env.db")
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   src = "schema.sql"
   dev = "sqlite://dev.db"
 }
@@ -201,7 +201,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
 	dbPath := filepath.Join(dir, "project-env-schema-format.db")
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_schema_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = "schema.sql"
   }
@@ -238,7 +238,7 @@ func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
 	dbPath := filepath.Join(dir, "project-env-schema-mode.db")
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_schema_mode_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = "schema.sql"
     mode {
@@ -329,7 +329,7 @@ table "env_eval_users" {
 }
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`variable "db_url" {
-  default = "sqlite://`+dbPath+`"
+  default = "sqlite://`+filepath.ToSlash(dbPath)+`"
 }
 
 data "hcl_schema" "app" {
@@ -370,7 +370,7 @@ CREATE TABLE env_keep (id INTEGER PRIMARY KEY);
 CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   src = "schema.sql"
   dev = "sqlite://dev.db"
   exclude = ["env_skip"]
@@ -408,7 +408,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 	c.Assert(os.WriteFile("schema.hcl", []byte(`schema "main" {}
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = "schema.hcl"
   }
@@ -450,7 +450,7 @@ func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.
 	dbPath := filepath.Join(dir, "project-env-concurrent-index.db")
 	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   schema {
     src = "schema.sql"
   }
@@ -489,7 +489,7 @@ func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
 	c.Assert(os.WriteFile("config.sql", []byte(`CREATE TABLE config_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("cli.sql", []byte(`CREATE TABLE cli_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+configDBPath+`"
+  url = "sqlite://`+filepath.ToSlash(configDBPath)+`"
   src = "config.sql"
 }
 `), 0o600), qt.IsNil)
@@ -559,7 +559,7 @@ func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
     url: sqlite://other.db
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   src = "schema.sql"
 }
 `), 0o600), qt.IsNil)

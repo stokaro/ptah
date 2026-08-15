@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -36,10 +36,7 @@ func TestMigrateDownCommandUsesNamedEnvOnlineDDLConfig(t *testing.T) {
 		),
 		qt.IsNil,
 	)
-	dbURL := (&url.URL{
-		Scheme: "sqlite",
-		Path:   filepath.Join(t.TempDir(), "ptah.db"),
-	}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)

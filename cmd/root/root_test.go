@@ -3,7 +3,6 @@ package root_test
 import (
 	"bytes"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestNewRootCommand_UsesPtahBranding(t *testing.T) {
@@ -171,7 +171,7 @@ func TestNewRootCommand_MalformedPTAHDryRunAppliesNothing(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "0000000001_users.down.sql"),
 		[]byte("DROP TABLE users;\n"), 0o600), qt.IsNil)
 	dbPath := filepath.Join(t.TempDir(), "native-env.db")
-	dbURL := (&url.URL{Scheme: "sqlite", Path: dbPath}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(dbPath)
 
 	_, _, err := executeRootCommand(
 		"migrations", "up",
@@ -188,7 +188,7 @@ func TestNewRootCommand_PTAHAutoApproveDoesNotBypassDropAllConfirmation(t *testi
 	c := qt.New(t)
 	t.Setenv("PTAH_AUTO_APPROVE", "true")
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	out, _, err := captureRootStdIO(c, "no\n", "db", "drop-all", "--db-url", dbURL)
 
 	c.Assert(err, qt.IsNil)

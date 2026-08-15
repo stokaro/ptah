@@ -10,12 +10,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // writeAppendScript writes an executable shell script that appends a marker
 // line to every file passed to it, so tests can observe an "editing" session
 // without spawning an interactive editor.
 func writeAppendScript(t *testing.T, marker string) string {
+	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
@@ -83,6 +85,7 @@ func TestOpen_EditorFallsBackFromEmptyVisual(t *testing.T) {
 }
 
 func TestOpen_FailingEditorReportsCommand(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "boom.sh")
 	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexit 42\n"), 0o700), qt.IsNil) // #nosec G306 -- test helper script must be executable
@@ -93,6 +96,7 @@ func TestOpen_FailingEditorReportsCommand(t *testing.T) {
 }
 
 func TestOpen_ParsesQuotedExecutablePathAndEmptyArgument(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	dir := filepath.Join(t.TempDir(), "editor with spaces")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
@@ -125,6 +129,7 @@ func TestOpen_RejectsCommandWithoutExecutable(t *testing.T) {
 }
 
 func TestOpen_StopsEditorWhenContextExpires(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "blocking-editor.sh")
 	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700), qt.IsNil) // #nosec G306 -- test helper script must be executable

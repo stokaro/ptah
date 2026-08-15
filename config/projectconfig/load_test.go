@@ -18,7 +18,10 @@ func TestLoadExplicitMissingPtahConfigFails(t *testing.T) {
 	_, err := projectconfig.Load(projectconfig.LoadOptions{PtahPath: path})
 
 	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
-	c.Assert(err, qt.ErrorMatches, `failed to read ptah config .*missing\.yaml: .*no such file or directory`)
+	// The clause after the file name is the platform's wording, and the line
+	// above already asserts the sentinel it renders. This one is about Ptah's
+	// half of the sentence.
+	c.Assert(err, qt.ErrorMatches, `failed to read ptah config .*missing\.yaml: .*`)
 }
 
 func TestLoadConventionalMissingProjectConfigsAreOptional(t *testing.T) {

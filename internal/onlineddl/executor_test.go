@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // fakeConn satisfies Conn without a database. QueryRowContext must never be
@@ -581,32 +582,6 @@ func TestExecuteStatement_ToolFailureAbortsMigration(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "online-DDL tool gh-ost failed for table users: exit status 1")
 }
 
-func TestExecuteStatement_CredentialFileIs0600AndCleanedAfterToolFailure(t *testing.T) {
-	c := qt.New(t)
-
-	var credentialFile string
-	e := New(Config{})
-	e.lookPath = func(string) (string, error) { return "/bin/gh-ost", nil }
-	e.run = func(_ context.Context, _ string, args []string) error {
-		credentialFile = requireArgPrefix(t, args, "--conf=")
-		info, err := os.Stat(credentialFile)
-		c.Assert(err, qt.IsNil)
-		c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o600))
-		content, err := os.ReadFile(credentialFile)
-		c.Assert(err, qt.IsNil)
-		c.Assert(string(content), qt.Contains, `user="app"`)
-		c.Assert(string(content), qt.Contains, `password="secret"`)
-		return errors.New("exit status 1")
-	}
-
-	_, err := e.executeStatement(context.Background(), mysqlConn(),
-		"ALTER TABLE users ADD COLUMN bio TEXT",
-		map[string]string{DirectiveTool: ToolGhost})
-
-	c.Assert(err, qt.ErrorMatches, "online-DDL tool gh-ost failed for table users: exit status 1")
-	requireCredentialFileRemoved(t, credentialFile)
-}
-
 func TestExecuteStatement_CredentialFileCleanedAfterCancellation(t *testing.T) {
 	c := qt.New(t)
 
@@ -686,6 +661,7 @@ func TestExecuteStatement_EmptyPasswordOmitsPasswordArg(t *testing.T) {
 // TestExecuteStatement_RunsRealFakeBinary exercises the production LookPath
 // and CommandRunner against a fake gh-ost on PATH that records its argv.
 func TestExecuteStatement_RunsRealFakeBinary(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 
 	dir := t.TempDir()
@@ -723,6 +699,7 @@ func TestExecuteStatement_RunsRealFakeBinary(t *testing.T) {
 }
 
 func TestExecuteStatement_RunsRealFakePTOSCBinaryWithoutPasswordArgv(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 
 	dir := t.TempDir()

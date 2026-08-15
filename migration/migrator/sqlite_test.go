@@ -3,21 +3,17 @@ package migrator
 import (
 	"context"
 	"errors"
-	"net/url"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
 
-	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestFSMigratorSQLiteAppliesMigrations(t *testing.T) {
 	ctx := context.Background()
-	dbURL := (&url.URL{
-		Scheme: platform.SQLite,
-		Path:   filepath.Join(t.TempDir(), "ptah-test.sqlite"),
-	}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah-test.sqlite"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
 		t.Fatalf("connect to SQLite: %v", err)
@@ -407,10 +403,7 @@ func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, name str
 
 func openSQLiteMigratorTestDB(t *testing.T) *dbschema.DatabaseConnection {
 	t.Helper()
-	dbURL := (&url.URL{
-		Scheme: platform.SQLite,
-		Path:   filepath.Join(t.TempDir(), "ptah-test.sqlite"),
-	}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah-test.sqlite"))
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		t.Fatalf("connect to SQLite: %v", err)

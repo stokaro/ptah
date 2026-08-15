@@ -374,7 +374,10 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 
 	return compatLiveSourceFixture{
-		liveURL:   "sqlite://" + livePath,
+		// Slashed: this URL is interpolated into an atlas.hcl double-quoted
+		// string, where a Windows separator makes \U an invalid escape and the
+		// whole project file is refused.
+		liveURL:   "sqlite://" + filepath.ToSlash(livePath),
 		modelsDir: modelsDir,
 		sqlFile:   sqlFile,
 		testsDir:  testsDir,
@@ -388,7 +391,10 @@ type User struct {
 // 1 passed, 0 failed" and exit 0 -- the fixture would stop discriminating.
 func freshDevURL(c *qt.C) string {
 	c.Helper()
-	return "sqlite://" + filepath.Join(c.TempDir(), "dev.db")
+	// Slashed for the same reason liveURL is: callers interpolate this into an
+	// atlas.hcl double-quoted string, where a Windows separator makes \U an
+	// invalid escape and the whole project file is refused.
+	return "sqlite://" + filepath.ToSlash(filepath.Join(c.TempDir(), "dev.db"))
 }
 
 func runCompatArgs(args []string) (string, error) {

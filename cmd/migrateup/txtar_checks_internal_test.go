@@ -11,13 +11,13 @@ package migrateup
 import (
 	"bytes"
 	"context"
-	"net/url"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // txtarCheckedAddEmailSQL mirrors the measured Atlas fixture: checks.sql
@@ -75,7 +75,7 @@ func TestMigrateUpCommand_TxtarFailingCheckAborts(t *testing.T) {
 	// the guarded ALTER TABLE never runs.
 	dir := writeTxtarCheckedMigrationsDir(c,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 
 	err := executeTxtarMigrateUp(c, dir, dbURL)
 
@@ -90,7 +90,7 @@ func TestMigrateUpCommand_TxtarSkipChecksBypasses(t *testing.T) {
 
 	dir := writeTxtarCheckedMigrationsDir(c,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 
 	err := executeTxtarMigrateUp(c, dir, dbURL, "--skip-checks")
 

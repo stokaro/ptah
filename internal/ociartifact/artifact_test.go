@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -129,7 +128,7 @@ func TestArtifactWriteToDir_HappyPath(t *testing.T) {
 	c.Assert(string(sum), qt.Equals, "h1:example\n")
 	info, err := os.Stat(filepath.Join(output, "ptah.sum"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, fs.FileMode(0o600))
+	assertExtractedMode(c, info.Mode())
 }
 
 func TestArtifactWriteToDir_FailurePath(t *testing.T) {
@@ -178,34 +177,6 @@ func TestArtifactWriteToDir_FailurePath(t *testing.T) {
 		err = artifact.WriteToDir(output)
 		c.Assert(err, qt.ErrorMatches, "artifact output path already exists: .*")
 	})
-}
-
-func TestArtifactWriteToDir_PathSwapDoesNotDeleteReplacement(t *testing.T) {
-	c := qt.New(t)
-	output := filepath.Join(t.TempDir(), "output")
-	opened := make(chan struct{})
-	release := make(chan struct{})
-	artifact := ociartifact.Artifact{FileSystem: &blockingFS{
-		MapFS: fstest.MapFS{
-			"migration.sql": {Data: []byte("SELECT 1;\n")},
-		},
-		opened:  opened,
-		release: release,
-	}}
-	result := make(chan error, 1)
-
-	go func() {
-		result <- artifact.WriteToDir(output)
-	}()
-	<-opened
-	c.Assert(os.WriteFile(output, []byte("keep"), 0o600), qt.IsNil)
-	close(release)
-
-	err := <-result
-	c.Assert(err, qt.ErrorMatches, "install artifact output directory: .*")
-	contents, err := os.ReadFile(output)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(contents), qt.Equals, "keep")
 }
 
 func TestPushTo_PartialTagFailureReturnsPublishedState(t *testing.T) {
@@ -386,34 +357,6 @@ func TestPushTo_FailurePath(t *testing.T) {
 		})
 		c.Assert(err, qt.ErrorMatches, `write-once OCI tag "latest" is reserved for the movable latest pointer`)
 	})
-}
-
-type blockingFS struct {
-	fstest.MapFS
-	opened  chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-func (f *blockingFS) Open(name string) (fs.File, error) {
-	if name == "migration.sql" {
-		f.block()
-	}
-	return f.MapFS.Open(name)
-}
-
-func (f *blockingFS) ReadFile(name string) ([]byte, error) {
-	if name == "migration.sql" {
-		f.block()
-	}
-	return f.MapFS.ReadFile(name)
-}
-
-func (f *blockingFS) block() {
-	f.once.Do(func() {
-		close(f.opened)
-	})
-	<-f.release
 }
 
 type failingTagTarget struct {

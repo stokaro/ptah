@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/internal/cliobs"
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"go.5x5.cz/ptah/internal/exeext"
 )
 
 func main() {
@@ -27,5 +27,10 @@ func main() {
 	// single JSON document (stokaro/ptah#967). Quiet is not silent — log-only
 	// Warn and Error diagnostics still get through.
 	cliobs.QuietDefaultLogger()
-	root.ExecuteCommand(atlas.NewCompatCommandWithPolicy(filepath.Base(os.Args[0]), policy))
+	// The displayed name drops the platform's executable extension. Measured
+	// against the pinned community binary: a copy of it renamed to
+	// atlas-renamed.exe still prints `Usage:\n  atlas migrate [command]`, so its
+	// name is static and a drop-in installed as atlas.exe -- which is the only
+	// way to install one on Windows -- has to say atlas too.
+	root.ExecuteCommand(atlas.NewCompatCommandWithPolicy(exeext.TrimmedBase(os.Args[0]), policy))
 }

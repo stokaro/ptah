@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -134,7 +135,7 @@ func TestSchemaInspectSplitTypeModeWritesGroupedFiles(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", `{{ hcl . | split "type" ".sqlite.hcl" | write "` + outDir + `" }}`,
+		"--format", `{{ hcl . | split "type" ".sqlite.hcl" | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
 	err := cmd.Execute()

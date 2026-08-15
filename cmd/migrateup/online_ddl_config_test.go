@@ -3,7 +3,6 @@ package migrateup_test
 import (
 	"bytes"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migrateup"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 func TestMigrateUpCommandUsesNamedEnvOnlineDDLConfig(t *testing.T) {
@@ -32,10 +32,7 @@ func TestMigrateUpCommandUsesNamedEnvOnlineDDLConfig(t *testing.T) {
 		),
 		qt.IsNil,
 	)
-	dbURL := (&url.URL{
-		Scheme: "sqlite",
-		Path:   filepath.Join(t.TempDir(), "ptah.db"),
-	}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
 	config := fmt.Sprintf(`env:
   local:

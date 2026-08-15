@@ -141,8 +141,16 @@ func TestSchemaExportCommandTrimsFormatSelector(t *testing.T) {
 func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fixtureDir, err := filepath.Abs("../../integration/fixtures/entities/023-go-annotations-objects")
+	// The fixture is copied rather than read where it lies, so the source and
+	// the output share a volume. rebaseManagedDataFiles expresses a data file
+	// relative to the export output, and no relative path exists between two
+	// Windows drives -- which is what a CI checkout on D: and a temp directory
+	// on C: produces. Copying also makes the run independent of the tree it
+	// was started from.
+	repoFixture, err := filepath.Abs("../../integration/fixtures/entities/023-go-annotations-objects")
 	c.Assert(err, qt.IsNil)
+	fixtureDir := filepath.Join(dir, "fixture")
+	c.Assert(os.CopyFS(fixtureDir, os.DirFS(repoFixture)), qt.IsNil)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	cmd := schema.NewSchemaCommand()

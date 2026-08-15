@@ -117,7 +117,14 @@ multi-part alters (`ADD COLUMN a INT, ADD INDEX idx (a)`) work.
 If the database URL contains a password, ptah writes a temporary MySQL
 defaults file with mode `0600`, passes only that file path to the tool, and
 removes it after the tool exits, fails, or is canceled. The password is never
-passed as a command-line argument. User-supplied credential configuration wins: when
+passed as a command-line argument.
+
+The `0600` is a POSIX mode, and Windows has no equivalent: `os.Chmod` there
+only moves the read-only attribute, so on Windows the defaults file is left
+readable by anyone who can reach the temporary directory. The file is still
+short-lived and still keeps the password off the command line, but treat the
+restriction as a Unix property. Run online DDL from a machine whose temporary
+directory you control. User-supplied credential configuration wins: when
 `online_ddl.args` already includes gh-ost `--conf`, pt-osc `--defaults-file`,
 or pt-osc DSN credentials (`p=` or `F=`), ptah does not generate its own
 credential file.

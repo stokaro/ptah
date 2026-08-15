@@ -96,7 +96,7 @@ func TestCompatBinarySchemaInspectBareProjectFormatIsLiteralText(t *testing.T) {
 	createSchemaInspectSQLiteDatabase(c, dbPath,
 		`CREATE TABLE users (id INTEGER PRIMARY KEY)`)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   format {
     schema {
       inspect = "json"
