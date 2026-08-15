@@ -1447,7 +1447,6 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 // stokaro/ptah#951. --include is registered and covered by
 // schema_inspect_include_test.go.
 func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {
-
 	for _, flag := range []string{"--export"} {
 		t.Run(flag, func(t *testing.T) {
 			c := qt.New(t)
@@ -1965,7 +1964,6 @@ func TestCompatCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 }
 
 func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
-
 	t.Run("missing version", func(t2 *testing.T) {
 		c := qt.New(t2)
 		cmd := NewCompatCommand("atlas")
@@ -2801,7 +2799,6 @@ func TestCompatCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 }
 
 func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
-
 	t.Run("migrate_diff_qualifier_invalid_value", func(t *testing.T) {
 		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
@@ -3344,7 +3341,6 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 // flag for it on this verb (see ApplyOptions.SkipChecks). It is the remaining
 // member of the class this test exists to guard.
 func TestCompatCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
-
 	t.Run("skip_checks", func(t *testing.T) {
 		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")

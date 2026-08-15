@@ -36,7 +36,6 @@ type dottedPolicyCase struct {
 //
 // Joined with a dot both become `a.b.c`, and deduplication keeps one.
 func TestDeduplicate_KeepsPoliciesADelimiterWouldCollapse(t *testing.T) {
-
 	tests := []dottedPolicyCase{
 		{
 			// The shape the reviewer reproduced.

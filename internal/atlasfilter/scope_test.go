@@ -11,7 +11,6 @@ import (
 )
 
 func TestScopePositive(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		scope atlasfilter.Scope
@@ -33,7 +32,6 @@ func TestScopePositive(t *testing.T) {
 }
 
 func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		values []string
@@ -87,7 +85,6 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 }
 
 func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		values  []string
@@ -157,7 +154,6 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 // refused there — see
 // TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
 func TestExcludeSelectorsReachChildResources(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		values []string
@@ -273,7 +269,6 @@ func TestScopeGenerated_IncludeTableRideAlongs(t *testing.T) {
 }
 
 func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
-
 	t.Run("selector inside the universe matches", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
@@ -365,7 +360,6 @@ func TestScopeGenerated_NonPositiveDelegatesToExclude(t *testing.T) {
 }
 
 func TestScopeGenerated_FailurePath(t *testing.T) {
-
 	t.Run("foreign key to unselected table", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
@@ -759,7 +753,6 @@ func TestScopeDatabase_NonPositiveDelegatesToExclude(t *testing.T) {
 }
 
 func TestScopeDatabase_FailurePath(t *testing.T) {
-
 	t.Run("foreign key to unselected table", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{

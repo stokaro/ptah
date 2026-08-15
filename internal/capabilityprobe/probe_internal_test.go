@@ -41,7 +41,6 @@ var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaD
 // them apart is what lets
 // TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
-
 	registered := map[capability.Capability]bool{}
 	for _, key := range capability.All() {
 		registered[key] = true
@@ -97,7 +96,6 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // Each entry is the set plans.go argues for in a comment at the point of
 // declaration. Postgres argues for none: everything it registers, it measures.
 func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
-
 	for _, tc := range []struct {
 		dialect string
 		want    []capability.Capability
@@ -123,7 +121,6 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 }
 
 func TestIndexIncludeSPGiSTObservation(t *testing.T) {
-
 	accepted := Attempt{Statement: "CREATE INDEX", Accepted: true}
 	inspected := Attempt{Statement: "SELECT index metadata", Accepted: true}
 	for _, tc := range []struct {
@@ -185,7 +182,6 @@ func TestIndexIncludeSPGiSTObservation(t *testing.T) {
 }
 
 func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
-
 	for _, tc := range []struct {
 		name    string
 		created Attempt
@@ -218,7 +214,6 @@ func TestUninspectableIndexIncludeSPGiSTObservation(t *testing.T) {
 // owes 25 decisions, mysql:9.7 owes 24, mariadb:10.11 owes 23, and CockroachDB
 // 25.4 owes 24 because generic DROP CONSTRAINT is absent there.
 func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
-
 	registered := len(capability.All())
 	for _, tc := range []struct {
 		name string
@@ -298,7 +293,6 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 // TestPlans_DeclaredUndecidablesCarryAReason pins the shape that makes
 // undecidable an answer rather than a shrug.
 func TestPlans_DeclaredUndecidablesCarryAReason(t *testing.T) {
-
 	for _, dialect := range probedDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -442,7 +436,6 @@ func TestAssemble_AnUnattributableLineKeepsTheObservation(t *testing.T) {
 
 // TestReportErr covers the ways a run must refuse to report success.
 func TestReportErr(t *testing.T) {
-
 	for _, tc := range []struct {
 		name  string
 		build func() *Report
@@ -522,7 +515,6 @@ func TestReportErr(t *testing.T) {
 // decided count around a fixed promise, so the boundary is exercised from both
 // sides rather than only from the failing one.
 func TestReportErr_TheFloorIsWhatThePlanPromised(t *testing.T) {
-
 	registered := len(capability.All())
 	for _, tc := range []struct {
 		name  string
@@ -622,7 +614,6 @@ func TestRun_RefusesAnEmptyMatrix(t *testing.T) {
 // refused for the missing clause, so scoring the guard false would answer a
 // question the run never asked.
 func TestUnmetRequirement(t *testing.T) {
-
 	guardExperiment := experiment{
 		decides:  []capability.Capability{capability.DropConstraintIfExists},
 		requires: []capability.Capability{capability.DropConstraintGeneric},

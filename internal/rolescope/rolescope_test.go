@@ -105,7 +105,6 @@ func TestDescribeAllEnvVarIsSpelledLikeTheDocumentationQuotesIt(t *testing.T) {
 // with no roles from a server whose roles this description declined to
 // mention.
 func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		omitted []dbschematypes.DBRole
@@ -175,7 +174,6 @@ func TestReportUndescribedNeverPrintsARoleName(t *testing.T) {
 // writer row is the inspect surfaces' spelling of "no diagnostics stream", and
 // a note that panicked there would fail a read that succeeded.
 func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		report func(*bytes.Buffer)

@@ -121,7 +121,6 @@ CREATE TABLE users (
 }
 
 func TestPlanApply_FailurePath(t *testing.T) {
-
 	t.Run("nil connection", func(t2 *testing.T) {
 		c := qt.New(t2)
 		plan, err := atlasschema.PlanApply(t.Context(), nil, atlasschema.ApplyOptions{
@@ -231,7 +230,6 @@ CREATE TABLE runtime_synced (
 }
 
 func TestPrepareApply_FailurePath(t *testing.T) {
-
 	t.Run("nil connection", func(t2 *testing.T) {
 		c := qt.New(t2)
 		plan, err := atlasschema.PrepareApply(t.Context(), nil, atlasschema.ApplyRuntimeOptions{
@@ -295,7 +293,6 @@ CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
 }
 
 func TestApplySQL_FailurePath(t *testing.T) {
-
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
 		err := atlasschema.ApplySQL(context.Background(), nil, migrator.MigrationTxModeAll, "SELECT 1;")

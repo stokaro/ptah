@@ -21,7 +21,6 @@ import (
 // subtests, each named for its rule code and printing "value is not true" with
 // the comment "native rule PG101 prints as PG101, which resolves to []".
 func TestRules_EveryCompatibilityCodeIsSuppressibleByThatCode(t *testing.T) {
-
 	for _, rule := range lint.Rules() {
 		t.Run(rule.Code, func(t *testing.T) {
 			c := qt.New(t)

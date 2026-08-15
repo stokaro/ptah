@@ -118,7 +118,6 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 // and the --name case are separated by asserting the FILE NAME, not just that
 // some plan file exists: a `new` that ignored --name would still write a plan.
 func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
-
 	t.Run("name", func(t *testing.T) {
 		c := qt.New(t)
 		dir := chdirToScratchC(c.TB)
@@ -224,7 +223,6 @@ func TestSchemaPlanNewOnASyncedSchemaWritesNoPlan(t *testing.T) {
 // it: a diagnostic that says `atlas schema plan` after the operator typed
 // `atlas schema plan new` sends them to the wrong command's help.
 func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string

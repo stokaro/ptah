@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		annotation string

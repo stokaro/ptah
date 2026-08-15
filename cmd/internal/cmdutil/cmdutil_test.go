@@ -134,7 +134,6 @@ func TestExactArgs_HappyPath(t *testing.T) {
 }
 
 func TestExactArgs_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		args    []string

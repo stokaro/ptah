@@ -145,7 +145,6 @@ func TestCapabilityErrorFallbackMessages(t *testing.T) {
 }
 
 func TestSentinelErrorsMatchThemselves(t *testing.T) {
-
 	tests := []struct {
 		name string
 		err  error
@@ -167,7 +166,6 @@ func TestSentinelErrorsMatchThemselves(t *testing.T) {
 }
 
 func TestSentinelErrorsAreDistinct(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		left  error

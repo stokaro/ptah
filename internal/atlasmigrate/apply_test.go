@@ -634,7 +634,6 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 }
 
 func TestPrepareApply_FailurePath(t *testing.T) {
-
 	t.Run("nil database connection", func(t *testing.T) {
 		c := qt.New(t)
 		plan, err := atlasmigrate.PrepareApply(context.Background(), nil, atlasmigrate.ApplyOptions{
@@ -700,7 +699,6 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 }
 
 func TestParseApplyAmount_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string
@@ -734,7 +732,6 @@ func TestParseApplyAmount_HappyPath(t *testing.T) {
 }
 
 func TestParseApplyAmount_FailurePath(t *testing.T) {
-
 	t.Run("too many arguments", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasmigrate.ParseApplyAmount([]string{"1", "2"})
@@ -751,7 +748,6 @@ func TestParseApplyAmount_FailurePath(t *testing.T) {
 }
 
 func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value string
@@ -785,7 +781,6 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 }
 
 func TestParseMigrationVersionFlag_FailurePath(t *testing.T) {
-
 	t.Run("invalid integer", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "nope")

@@ -73,7 +73,6 @@ func TestParseLocalDir_HappyPath(t *testing.T) {
 }
 
 func TestParseLocalDir_FailurePath(t *testing.T) {
-
 	t.Run("remote URL", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasargs.ParseLocalDir("atlas://repo/migrations")
@@ -385,7 +384,6 @@ func TestMap_FailurePathRejectsMalformedUintEnvironment(t *testing.T) {
 }
 
 func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string

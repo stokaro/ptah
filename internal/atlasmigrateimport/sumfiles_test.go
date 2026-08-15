@@ -143,7 +143,6 @@ func TestSumFileNamesMatchesAtlasCERefusals(t *testing.T) {
 }
 
 func TestSumFileNamesPerFormat(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format atlasmigrateimport.Format
@@ -329,7 +328,6 @@ func TestSumFileNamesPerFormat(t *testing.T) {
 // file, and a verification path built on it would refuse a directory Atlas CE
 // hashed and applies.
 func TestSumFileNamesFlywayPrefixIsCaseSensitive(t *testing.T) {
-
 	for _, prefix := range []string{"v", "b", "r", "u"} {
 		t.Run("lowercase "+prefix+" is not a flyway file", func(t *testing.T) {
 			c := qt.New(t)
@@ -351,7 +349,6 @@ func TestSumFileNamesFlywayPrefixIsCaseSensitive(t *testing.T) {
 // so a rule borrowed from it would keep B1__one.sql. Atlas CE keeps only the
 // highest baseline.
 func TestSumFileNamesFlywayBaselineDropsLowerBaselines(t *testing.T) {
-
 	t.Run("lower baseline is squashed", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
@@ -382,7 +379,6 @@ func TestSumFileNamesFlywayBaselineDropsLowerBaselines(t *testing.T) {
 // V10. Implementing the cut numerically leaves V10 in the sum and produces a
 // checksum the oracle never wrote, on an entirely ordinary directory.
 func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
-
 	t.Run("baseline at 2 squashes version 10", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
@@ -430,7 +426,6 @@ func TestSumFileNamesFlywayBaselineCutComparesVersionsAsStrings(t *testing.T) {
 //
 // Every expectation below was measured against the pinned oracle.
 func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -503,7 +498,6 @@ func TestSumFileNamesFlywayBaselineIsAWalkOrderStateMachine(t *testing.T) {
 // byte, which is what rules those models out and what nobody should later
 // "simplify" into a numeric comparison.
 func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
-
 	t.Run("sweep: the directory name decides, at the token boundary", func(t *testing.T) {
 		// '5' is 0x35. Directories sorting below it lose their file.
 		c := qt.New(t)
@@ -630,7 +624,6 @@ func TestSumFileNamesFlywayBaselineReachesBackwards(t *testing.T) {
 // substitution changes the answer, so they are what stops a future reader from
 // merging them.
 func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
-
 	t.Run("supersede compares version tokens, not names", func(t *testing.T) {
 		// 1dir/B9 installs first. The name "B5__base.sql" sorts above "9"
 		// (0x42 > 0x39) while the token "5" does not, so a name-based
@@ -710,7 +703,6 @@ func TestSumFileNamesFlywayComparisonOperands(t *testing.T) {
 // Each case is a pair or triple whose oracle order is decided purely by the
 // comparator, measured against the pinned binary.
 func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -776,7 +768,6 @@ func TestSumFileNamesFlywayVersionComponents(t *testing.T) {
 // refuse a directory the oracle still considers clean, which is worse than a
 // plain false refusal: the offending file is one a user deliberately archived.
 func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
-
 	t.Run("a hidden directory is not covered", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasmigrateimport.SumFileNames(
@@ -823,7 +814,6 @@ func TestSumFileNamesFlywaySkipsHiddenDirectories(t *testing.T) {
 // here is also in the oracle corpus, where CE recorded an atlas.sum holding
 // nothing but the empty-set directory hash.
 func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
-
 	// The sum over no files at all: sha256 of the empty input, base64-encoded.
 	const emptySetSum = "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n"
 
@@ -865,7 +855,6 @@ func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
 }
 
 func TestSumFileNamesRejectsBadInput(t *testing.T) {
-
 	t.Run("nil filesystem", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := atlasmigrateimport.SumFileNames(nil, atlasmigrateimport.FormatGoose)

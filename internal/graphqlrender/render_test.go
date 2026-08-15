@@ -212,7 +212,6 @@ func TestRenderIdentityByDefaultStaysAssignable(t *testing.T) {
 }
 
 func TestRenderOperationNoticeAccompaniesOperations(t *testing.T) {
-
 	tests := []struct {
 		name string
 		ops  graphqlrender.Operations
@@ -313,7 +312,6 @@ func TestRenderArrayColumn(t *testing.T) {
 // matches nothing: with a query shape requested the root must still be a legal,
 // non-empty type, and with none requested there must be no root at all.
 func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
-
 	t.Run("query shape selected", func(t *testing.T) {
 		c := qt.New(t)
 		res, err := graphqlrender.Render(fixture(), graphqlrender.Options{
@@ -432,7 +430,6 @@ func mustRender(tb testing.TB, db *goschema.Database) []byte {
 }
 
 func TestRenderDeterministic(t *testing.T) {
-
 	tests := []struct {
 		name string
 		ops  graphqlrender.Operations

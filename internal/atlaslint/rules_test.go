@@ -9,7 +9,6 @@ import (
 )
 
 func TestRuleForNativeCode(t *testing.T) {
-
 	tests := []struct {
 		name string
 		code string
@@ -64,7 +63,6 @@ func TestRuleForNativeCode(t *testing.T) {
 // the code fallback Family:true and both rows silence the whole DS family,
 // which is exit 0 where the community binary exits 1.
 func TestNativeSuppressionTargets(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		selector string
@@ -155,7 +153,6 @@ func TestNativeSuppressionTargets(t *testing.T) {
 // family target widens to every code sharing its prefix, an exact target does
 // not. Collapse the two and `-- atlas:nolint DS` starts silencing DS101.
 func TestTargetMatches(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		target atlaslint.Target
@@ -182,7 +179,6 @@ func TestTargetMatches(t *testing.T) {
 // empty must not, or a directive whose selector parsed to nothing would mark a
 // whole file ignored.
 func TestTargetMatchesEveryRule(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		target atlaslint.Target
@@ -208,7 +204,6 @@ func TestTargetMatchesEveryRule(t *testing.T) {
 // `-- atlas:nolint concurrent_index` stops silencing PG101 on
 // `ptah migrations lint`.
 func TestAnalyzerSuppressionTargets(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		selector string

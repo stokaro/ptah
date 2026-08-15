@@ -11,7 +11,6 @@ import (
 )
 
 func TestRenderSelect_Distinct(t *testing.T) {
-
 	stmt := &ast.SelectStatement{
 		Distinct: true,
 		Columns:  []ast.ResultColumn{{Name: "status"}},
@@ -40,7 +39,6 @@ func TestRenderSelect_Distinct(t *testing.T) {
 }
 
 func TestRenderSelect_GroupBy(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		stmt    *ast.SelectStatement
@@ -107,7 +105,6 @@ func groupedCountQuery() *ast.SelectStatement {
 }
 
 func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
-
 	// A bound WHERE value takes the first placeholder, the HAVING value the second,
 	// and the LIMIT bound the third, proving HAVING binds after WHERE and before
 	// LIMIT and that GROUP BY (a COUNT(*) with no arguments) binds nothing.
@@ -147,7 +144,6 @@ func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_AggregateProjection(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		expr    ast.Expression
@@ -211,7 +207,6 @@ func TestRenderSelect_AggregateProjection(t *testing.T) {
 }
 
 func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
-
 	// COUNT("u"."id") and SUM("o"."total") each quote both qualifier parts, mix
 	// with a grouped column, and render in a join query across dialects.
 	stmt := &ast.SelectStatement{
@@ -284,7 +279,6 @@ func TestRenderSelect_AggregateInHavingBindsValue(t *testing.T) {
 }
 
 func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
-
 	// The function name is a keyword emitted verbatim, so a well-formed name is not
 	// quoted even though its column argument is.
 	t.Run("name is not quoted", func(t *testing.T) {
@@ -314,7 +308,6 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 }
 
 func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		stmt        *ast.SelectStatement
@@ -429,7 +422,6 @@ func onWhereHavingLimitOffset() *ast.SelectStatement {
 }
 
 func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) {
-
 	// The bound values are numbered strictly by render order: JOIN ON first, then
 	// WHERE, then HAVING, then LIMIT, then OFFSET — regardless of placeholder style.
 	wantArgs := []any{"active", int64(100), int64(5), int64(10), int64(20)}
@@ -468,7 +460,6 @@ func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) 
 }
 
 func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
-
 	// A HAVING is valid without GROUP BY: the aggregate spans the whole table. No
 	// GROUP BY clause is emitted, and the HAVING value takes the first placeholder.
 	stmt := &ast.SelectStatement{
@@ -502,7 +493,6 @@ func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
 }
 
 func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
-
 	// A HAVING value binds before the OFFSET value even when there is no LIMIT: the
 	// HAVING takes the first placeholder and the OFFSET the second. On MySQL,
 	// MariaDB, and SQLite the offset-only "no limit" sentinel is a literal between

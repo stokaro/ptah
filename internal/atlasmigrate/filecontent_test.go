@@ -30,7 +30,6 @@ func concurrentIndexNode(name, table, column string) *ast.IndexNode {
 }
 
 func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
-
 	t.Run("transactional plan stays one plain file", func(t *testing.T) {
 		c := qt.New(t)
 		nodes := []ast.Node{
@@ -140,7 +139,6 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 }
 
 func TestBuildMigrationFileContents_FailurePath(t *testing.T) {
-
 	t.Run("mixed plan with non-concurrent no-transaction statements is refused", func(t *testing.T) {
 		c := qt.New(t)
 		nodes := []ast.Node{

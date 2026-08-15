@@ -70,7 +70,6 @@ func TestPushToAndPullFrom_RoundTrip(t *testing.T) {
 }
 
 func TestCapture_FailurePath(t *testing.T) {
-
 	t.Run("no migrations", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := migrationartifact.Capture(

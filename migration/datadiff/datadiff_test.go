@@ -9,7 +9,6 @@ import (
 )
 
 func TestCompute(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		table   string
@@ -191,7 +190,6 @@ func TestCompute(t *testing.T) {
 }
 
 func TestComputeErrors(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		keys    []string

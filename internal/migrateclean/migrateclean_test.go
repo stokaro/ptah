@@ -14,7 +14,6 @@ import (
 // binary was in when it produced that line.
 
 func TestGoverns_EnforcedDialects(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -40,7 +39,6 @@ func TestGoverns_EnforcedDialects(t *testing.T) {
 // saying the other implementation refuses them, which is the drop-in
 // regression the compatibility policy forbids.
 func TestGoverns_UnmeasuredDialects(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -62,7 +60,6 @@ func TestGoverns_UnmeasuredDialects(t *testing.T) {
 }
 
 func TestScopeRefusal_CleanDatabases(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		scope migrateclean.Scope
@@ -137,7 +134,6 @@ func TestScopeRefusal_CleanDatabases(t *testing.T) {
 }
 
 func TestScopeRefusal_UncleanDatabases(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		scope   migrateclean.Scope
@@ -256,7 +252,6 @@ func TestScopeRefusal_UncleanDatabases(t *testing.T) {
 // URL — no search_path — against a throwaway PostgreSQL 17 database per cell.
 
 func TestScopeRefusal_CleanRealms(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		scope migrateclean.Scope
@@ -353,7 +348,6 @@ func TestScopeRefusal_CleanRealms(t *testing.T) {
 }
 
 func TestScopeRefusal_UncleanRealms(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		scope   migrateclean.Scope
@@ -562,7 +556,6 @@ func TestScopeRefusal_UncleanRealms(t *testing.T) {
 // ForRevisions is the boundary between the catalog read and the decision, and
 // the two scopes fill different fields from the same call.
 func TestScopeForRevisions(t *testing.T) {
-
 	tests := []struct {
 		name            string
 		scope           migrateclean.Scope

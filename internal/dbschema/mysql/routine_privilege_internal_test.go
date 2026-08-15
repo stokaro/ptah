@@ -29,7 +29,6 @@ import (
 // dressing it up in a privilege message would hide a rendering regression
 // behind friendly text. Anything that is not 1419 must fall through untouched.
 func TestDescribeRoutinePrivilegeRefusal(t *testing.T) {
-
 	const statement = "CREATE FUNCTION `f1`() RETURNS int DETERMINISTIC RETURN 1"
 
 	tests := []struct {

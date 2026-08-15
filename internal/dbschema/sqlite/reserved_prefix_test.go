@@ -37,7 +37,6 @@ type reservedPrefixCase struct {
 // control in the other direction is that the drop leaves the internal schema
 // intact and reports success, which the surrounding suite already covers.
 func TestWriterDropAllTables_DropsUserObjectsNamedSqliteSomething(t *testing.T) {
-
 	tests := []reservedPrefixCase{
 		{
 			name:      "a table whose name begins sqlite plus one character",

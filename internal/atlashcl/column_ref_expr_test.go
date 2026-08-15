@@ -227,7 +227,6 @@ func assertSoleIndexField(name string) func(c *qt.C, db *goschema.Database) {
 // would plan an index on "a" for a file the pinned binary refuses with
 // `variable "pick": a number is required`.
 func TestParseRefusesAConditionalColumnWhoseConditionCannotBeDecided(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -383,7 +382,6 @@ const refusedConditional = `.*index on column contains unsupported reference "va
 // conditional. They go red only under a mutation that lets a taken branch
 // resolve to something that is not a column name, which is what they forbid.
 func TestParseRefusesAConditionalBranchThatCannotNameAColumn(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		hcl   string

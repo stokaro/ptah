@@ -18,7 +18,6 @@ import (
 // same destructive drop and create forever -- measured on MySQL 26.7.0 and
 // MariaDB 12.3.2, still there after a second apply.
 func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		volatility string
@@ -64,7 +63,6 @@ func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T
 // would silently reinterpret it, which is the failure mode this package exists
 // to end.
 func TestCharacteristic_RefusesAValueItCannotEncode(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		volatility string
@@ -91,7 +89,6 @@ func TestCharacteristic_RefusesAValueItCannotEncode(t *testing.T) {
 // A mutant that reads only IS_DETERMINISTIC -- which is what the reader did --
 // fails the STABLE row, because it is NOT DETERMINISTIC exactly like VOLATILE.
 func TestVolatilityFromCatalog_InvertsCharacteristic(t *testing.T) {
-
 	tests := []struct {
 		name            string
 		volatility      string
@@ -135,7 +132,6 @@ func TestVolatilityFromCatalog_InvertsCharacteristic(t *testing.T) {
 // `security: DEFINER -> INVKOER` on a successful apply, forever. Measured on
 // MySQL 26.7.0 and MariaDB 12.3.2.
 func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
-
 	accepted := []struct {
 		name     string
 		security string
@@ -189,7 +185,6 @@ func TestSecurityClause_RefusesAnUnknownMode(t *testing.T) {
 // The rows that must NOT change are the control. A mutant that truncated at the
 // first "(" would pass every integer row and fail varchar, decimal and enum.
 func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
-
 	tests := []struct {
 		name string
 		in   string
@@ -262,7 +257,6 @@ func TestNormalizeType_ResolvesAliasesAndStripsTheDisplayWidth(t *testing.T) {
 // spelling on the desired side against a different catalog spelling, which is
 // permanent drift -- the failure this package exists to end.
 func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
-
 	refused := []struct {
 		name       string
 		parameters string
@@ -328,7 +322,6 @@ func TestValidateSignature_RefusesTypesThatCannotRoundTrip(t *testing.T) {
 // The plain-integer rows are the control: they must still lose their width, or
 // the two engines stop agreeing with each other.
 func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
-
 	tests := []struct {
 		name string
 		in   string
@@ -368,7 +361,6 @@ func TestNormalizeType_KeepsTheWidthUnderZEROFILL(t *testing.T) {
 // exactly, which is why the refusal asks for the width rather than rejecting
 // ZEROFILL outright -- and the accepted rows below are that control.
 func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
-
 	refused := []struct {
 		name       string
 		parameters string
@@ -420,7 +412,6 @@ func TestValidateSignature_RefusesZEROFILLWithoutAWidth(t *testing.T) {
 // by accident, and the two-parameter rows are the control: real separators must
 // still separate.
 func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
-
 	tests := []struct {
 		name string
 		in   string
@@ -463,7 +454,6 @@ func TestNormalizeParameterList_SplitsAtTopLevelCommasOnly(t *testing.T) {
 // both sides of a comparison: the catalog spelling is already a fixed point, so
 // normalizing it again cannot move it.
 func TestNormalizeType_IsIdempotent(t *testing.T) {
-
 	for _, in := range []string{
 		"integer", "int(11)", "varchar(20)", "decimal(10,2)", "int(10) unsigned",
 		"bool", "double precision", "character varying(20)", "text",
@@ -481,7 +471,6 @@ func TestNormalizeType_IsIdempotent(t *testing.T) {
 // function whose argument is called `integer` would be renamed by its own
 // normalization.
 func TestNormalizeParameterList_NormalizesTypesAndKeepsNames(t *testing.T) {
-
 	tests := []struct {
 		name string
 		in   string

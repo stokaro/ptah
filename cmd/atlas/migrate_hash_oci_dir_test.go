@@ -25,7 +25,6 @@ const compatHashDigest = "sha256:" +
 // qt.Not(qt.Contains) row below goes red rather than silently exporting native
 // wording into the compat namespace.
 func TestCompatMigrateHash_RefusesOCIDirAtTheURLGate(t *testing.T) {
-
 	tests := []struct {
 		name string
 		dir  string

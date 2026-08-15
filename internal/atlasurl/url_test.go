@@ -12,7 +12,6 @@ import (
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		rawURL string
@@ -52,7 +51,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		rawURL  string
@@ -73,7 +71,6 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 }
 
 func TestValidateDialectMatch_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		rawURL        string
@@ -95,7 +92,6 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 }
 
 func TestValidateDialectMatch_FailurePath(t *testing.T) {
-
 	t.Run("unsupported dev url", func(t *testing.T) {
 		c := qt.New(t)
 		err := atlasurl.ValidateDialectMatch("spanner://localhost/dev", "postgres")
@@ -244,7 +240,6 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 }
 
 func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
-
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasurl.SameDatabaseEndpoint("oracle://localhost/source", "postgres://localhost/dev")
@@ -261,7 +256,6 @@ func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
 }
 
 func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		left  string

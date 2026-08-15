@@ -24,7 +24,6 @@ import (
 // TypeRawSQL being false while Type stays correct -- the exact split that made
 // issue #1138 look like a rendering bug rather than a parsing one.
 func TestParseMarksSQLRawExpressionColumnTypes(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		hcl        string

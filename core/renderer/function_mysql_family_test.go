@@ -34,7 +34,6 @@ func functionSchema(fn goschema.Function) *goschema.Database {
 // engine will not accept, and no offline test that only checks "a
 // characteristic is present" would notice.
 func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		volatility string
@@ -85,7 +84,6 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 // the dialect-blind validator: folding there would refuse a schema PostgreSQL
 // hosts perfectly well.
 func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
-
 	colliding := &goschema.Database{Functions: []goschema.Function{
 		{
 			Name: "Ptah_Dup_Fn", Returns: "int", Language: "sql",
@@ -154,7 +152,6 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 // FUNCTION` is still never rendered -- it is Error 1064 on MySQL 26.7.0 -- so
 // the family still shares one shape.
 func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -179,7 +176,6 @@ func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
 // ACCEPTED on MySQL 26.7.0 and MariaDB 10.11.18. An operator who read the old
 // sentence concluded their database could not host a function.
 func TestRender_MySQLFamilyNoLongerBlamesTheEngine(t *testing.T) {
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

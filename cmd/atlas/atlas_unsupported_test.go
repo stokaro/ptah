@@ -12,7 +12,6 @@ import (
 )
 
 func TestCompatCommand_UnsupportedCommands(t *testing.T) {
-
 	tests := unsupportedCommandTests()
 
 	for _, test := range tests {
@@ -34,7 +33,6 @@ func TestCompatCommand_UnsupportedCommands(t *testing.T) {
 }
 
 func TestCompatCommand_UnsupportedCommandsHelp(t *testing.T) {
-
 	tests := unsupportedCommandTests()
 
 	for _, test := range tests {

@@ -31,7 +31,6 @@ func TestAllowsAttributeValidatesPlatformOverrideShape(t *testing.T) {
 }
 
 func TestAllowsAttribute_AcceptsRetainedPlatformOverrides(t *testing.T) {
-
 	directives := []string{
 		"ptah:schema:field",
 		"ptah:embedded",
@@ -53,7 +52,6 @@ func TestAllowsAttribute_AcceptsIndexInclude(t *testing.T) {
 }
 
 func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		directive string
@@ -95,7 +93,6 @@ func TestAllowsAttribute_RejectsDroppedCompatibilitySyntax(t *testing.T) {
 }
 
 func TestAllowsAttribute_RejectsPlatformOverridesWithoutRuntimeSupport(t *testing.T) {
-
 	directives := []string{
 		"ptah:schema:index",
 		"ptah:schema:schema",

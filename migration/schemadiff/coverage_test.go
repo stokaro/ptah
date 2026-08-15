@@ -99,7 +99,6 @@ func coverageCases() []coverageCase {
 }
 
 func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
-
 	for _, test := range coverageCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -116,7 +115,6 @@ func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
 // the same schemas with the record removed. Without it a comparator that
 // planned nothing at all would pass the suppression test.
 func TestNoCoverageStillPlansTheChange(t *testing.T) {
-
 	for _, test := range coverageCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -133,7 +131,6 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 // describe extensions still says nothing about whether one should be CREATED,
 // and that question is the read's to answer.
 func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
-
 	t.Run("a desired-state record does not suppress an addition", func(t *testing.T) {
 		c := qt.New(t)
 		desired := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
@@ -180,7 +177,6 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 // surface omits `policy` blocks with the same rule it omits `extension` blocks,
 // and the measured plan dropped a policy the database had.
 func TestUndescribedPolicyIsNotADroppedPolicy(t *testing.T) {
-
 	database := func() *types.DBSchema {
 		return &types.DBSchema{RLSPolicies: []types.DBRLSPolicy{{Name: "p", Table: "public.guarded"}}}
 	}

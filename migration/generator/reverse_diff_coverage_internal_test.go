@@ -113,7 +113,6 @@ func assertReverseCoverageField(
 // by reflection, so renaming a field breaks this test rather than quietly
 // emptying it.
 func TestReverseSchemaDiff_EveryModifiedCategoryReachesTheRenderedRollback(t *testing.T) {
-
 	schema, dbSchema := modifiedCategoryContext()
 	diffType := reflect.TypeFor[types.SchemaDiff]()
 
@@ -251,7 +250,6 @@ func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
 // report the builder's omission as the fixture's -- so the fixture states its own
 // completeness separately.
 func TestReverseCoverageDiff_PopulatesEverySchemaDiffField(t *testing.T) {
-
 	populated := reflect.ValueOf(*reverseCoverageDiff())
 	diffType := populated.Type()
 

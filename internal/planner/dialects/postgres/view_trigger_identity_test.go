@@ -24,7 +24,6 @@ import (
 // Crossing schemas here is not a missing statement, it is a wrong one: the view
 // body or trigger definition of `reporting.x` rendered under the name `app.x`.
 func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
@@ -96,7 +95,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // spellings that DO name one object still resolve, so the rows above are a
 // refusal to guess rather than a refusal to work.
 func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		generated *goschema.Database

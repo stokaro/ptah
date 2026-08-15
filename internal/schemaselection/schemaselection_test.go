@@ -251,7 +251,6 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 }
 
 func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *testing.T) {
-
 	t.Run("postgres", func(t *testing.T) {
 		c := qt.New(t)
 		predicate := schemaselection.PostgresNonSystemSchemasPredicate("postgres")
@@ -283,7 +282,6 @@ func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
 }
 
 func TestIsPostgresFamilySystemSchemaAddsOnlyCockroachDBInternal(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

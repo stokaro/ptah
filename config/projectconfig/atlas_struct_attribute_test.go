@@ -33,7 +33,6 @@ import (
 // Each row's message on the pinned binary is quoted beside it. `ptah-compat`
 // exited 0 on all thirteen before this change.
 func TestParseAtlasStructAttributeRefusesAnObjectBody(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -226,7 +225,6 @@ env "local" {
 // "latest"`, `unsupported attribute "dir"` -- so there is no configuration to
 // carry over and nothing for Ptah to implement, only a refusal to reproduce.
 func TestParseAtlasStructAttributeRefusesAMemberTheBlockSpellingAccepts(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -287,7 +285,6 @@ func TestParseAtlasStructAttributeRefusesAMemberTheBlockSpellingAccepts(t *testi
 // reached. Ptah refuses every tuple, which is the safe direction if one that
 // these probes did not reach were to decode.
 func TestParseAtlasStructAttributeRefusesNonObjectValues(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -334,7 +331,6 @@ func TestParseAtlasStructAttributeRefusesNonObjectValues(t *testing.T) {
 // takes them, so Ptah records each as an ignored construct rather than acting on
 // it.
 func TestParseAtlasStructAttributeAcceptsTheEmptyShapes(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -412,7 +408,6 @@ env "local" {
 // here: `diff.concurrent_index`, `schema.mode`, the six `lint` analyzer blocks,
 // and the three top-level names that are decoded under `env` and tolerated here.
 func TestParseAtlasStructAttributeToleratesTheRest(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -566,7 +561,6 @@ env "local" {
 // Without these rows a refusal keyed off the NAME rather than the attribute /
 // block distinction would pass the whole refusal suite.
 func TestParseAtlasStructAttributeLeavesTheBlockSpellingAlone(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -656,7 +650,6 @@ env "local" {
 // The third row is the one that shows the binary does not decode an unselected
 // env at all: the same object body refuses at exit 1 when its env IS selected.
 func TestParseAtlasStructAttributeWaitsForTheEvaluationContext(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		envName string
@@ -742,7 +735,6 @@ env "prod" {
 // the one reported -- it names the offending sub-expression, and the shape
 // message would blame the key instead.
 func TestParseAtlasStructAttributeReportsAnUnevaluableValueAsSuch(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string

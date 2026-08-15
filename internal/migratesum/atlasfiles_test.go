@@ -104,7 +104,6 @@ func TestComputeAtlasFilesSumIgnoreDirective(t *testing.T) {
 }
 
 func TestComputeAtlasFilesRejectsBadInput(t *testing.T) {
-
 	t.Run("duplicate name", func(t *testing.T) {
 		c := qt.New(t)
 		fsys := atlasSourceFS(map[string]string{"a.sql": "CREATE TABLE a (id int);\n"})
@@ -125,7 +124,6 @@ func TestComputeAtlasFilesRejectsBadInput(t *testing.T) {
 }
 
 func TestVerifyAtlasFiles(t *testing.T) {
-
 	names := []string{"1_init.sql", "2_more.sql"}
 	seed := func() fstest.MapFS {
 		return atlasSourceFS(map[string]string{
@@ -220,7 +218,6 @@ func TestVerifyAtlasFiles(t *testing.T) {
 }
 
 func TestVerifyAtlasFilesHashed(t *testing.T) {
-
 	names := []string{"1_init.sql"}
 	seed := func() fstest.MapFS {
 		return atlasSourceFS(map[string]string{"1_init.sql": "CREATE TABLE a (id int);\n"})

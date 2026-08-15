@@ -42,7 +42,6 @@ import (
 // members on the filesystem and the next process is handed one of them by path,
 // so a record carried by a sibling is a record that is not there.
 func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		format    string

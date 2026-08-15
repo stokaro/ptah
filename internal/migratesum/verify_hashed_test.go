@@ -127,7 +127,6 @@ func TestVerifyHashed_ExplicitFormatIgnoresOtherSumFile(t *testing.T) {
 }
 
 func TestVerifyHashed_FailurePath(t *testing.T) {
-
 	t.Run("both sum files in auto mode are ambiguous", func(t *testing.T) {
 		c := qt.New(t)
 		dir := writeHashedPtahDir(c.TB)

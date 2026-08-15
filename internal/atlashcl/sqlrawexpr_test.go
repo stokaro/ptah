@@ -324,7 +324,6 @@ SQL
 // row plans as `DEFAULT "1") + sql("2"` -- the old textual `sql(` prefix match
 // handing back the bytes between the first `sql(` and the last `)`.
 func TestParseRefusesMalformedSQLRawExpression(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		hcl   string

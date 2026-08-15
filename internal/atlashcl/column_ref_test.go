@@ -23,7 +23,6 @@ import (
 // at render time and without naming the attribute. The pinned Atlas community
 // binary v1.3.0 exits 1 on all five.
 func TestParseRefusesAColumnAttributeThatCannotNameAColumn(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		hcl   string

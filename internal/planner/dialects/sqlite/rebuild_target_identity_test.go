@@ -22,7 +22,6 @@ import (
 // at all -- the column type change the rebuild exists for is silently not
 // planned.
 func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		tableSchema   string
@@ -89,7 +88,6 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 // Reverting `target` to `r.targets[tableName]` leaves the whole planner and
 // migration suite green, which is why this pin is here rather than assumed.
 func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		tableSchema   string

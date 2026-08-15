@@ -10,7 +10,6 @@ import (
 )
 
 func TestOptions_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

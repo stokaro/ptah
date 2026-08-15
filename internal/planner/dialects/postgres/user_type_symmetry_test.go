@@ -21,7 +21,6 @@ import (
 // did not, the plan dropped the type and put nothing back -- and that is not a
 // migration that fails, it is one that succeeds having deleted a type.
 func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database

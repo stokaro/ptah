@@ -1051,7 +1051,6 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 // every GiST index over tsvector with a signature length -- and the failure it
 // produces is not an error but a quietly different index.
 func TestPostgresOperatorClassSpelling(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		class postgresKeyOperatorClass
@@ -1100,7 +1099,6 @@ func TestPostgresOperatorClassSpelling(t *testing.T) {
 // document on every run, and the rebuild that difference plans would drop the
 // parameter it was meant to protect.
 func TestPostgresIndexStorageParams(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		reloptions string
@@ -1225,7 +1223,6 @@ func TestNamesIndexRelation(t *testing.T) {
 // server dropped the comment; only the live guard caught it, and the live guard
 // runs only in integration-tests.
 func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
-
 	catalog := commentedCatalog()
 
 	tests := []struct {

@@ -24,7 +24,6 @@ import (
 // function call. The literal control row passes either way, which is what makes
 // the others discriminate.
 func TestParseResolvesSchemaVariablesAndLocals(t *testing.T) {
-
 	tests := []struct {
 		name string
 		hcl  string
@@ -156,7 +155,6 @@ table "t" {
 // this test fails on the value; the second row keeps the block's own default
 // and fails the same way.
 func TestParseAppliesVarOverrides(t *testing.T) {
-
 	tests := []struct {
 		name string
 		hcl  string
@@ -255,7 +253,6 @@ table "t" {
 // row. Reverted, every row parses at exit 0 and this test fails on the
 // non-nil-error assertion.
 func TestParseRefusesUnresolvableExpressions(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		hcl     string

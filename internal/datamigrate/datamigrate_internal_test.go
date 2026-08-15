@@ -15,7 +15,6 @@ import (
 )
 
 func TestRejectsExplicitInsert(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -41,7 +40,6 @@ func TestRejectsExplicitInsert(t *testing.T) {
 }
 
 func TestInsertableColumns_Success(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		dialect  string
@@ -84,7 +82,6 @@ func TestInsertableColumns_Success(t *testing.T) {
 }
 
 func TestInsertableColumns_Refusals(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -135,7 +132,6 @@ func TestInsertableColumns_Refusals(t *testing.T) {
 }
 
 func TestFindManagedTable(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		tables        []types.DBTable

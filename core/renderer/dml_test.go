@@ -21,7 +21,6 @@ func insertUsers() *ast.InsertStatement {
 }
 
 func TestRenderInsert_SingleRow(t *testing.T) {
-
 	wantArgs := []any{int64(1), "alice"}
 
 	tests := []struct {
@@ -63,7 +62,6 @@ func TestRenderInsert_SingleRow(t *testing.T) {
 }
 
 func TestRenderInsert_MultiRow(t *testing.T) {
-
 	stmt := &ast.InsertStatement{
 		Table:   "users",
 		Columns: []string{"id", "name"},
@@ -104,7 +102,6 @@ func TestRenderInsert_MultiRow(t *testing.T) {
 }
 
 func TestRenderInsert_Returning(t *testing.T) {
-
 	stmt := &ast.InsertStatement{
 		Table:     "users",
 		Columns:   []string{"name"},
@@ -141,7 +138,6 @@ func TestRenderInsert_Returning(t *testing.T) {
 }
 
 func TestRenderInsert_Errors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		stmt        *ast.InsertStatement
@@ -249,7 +245,6 @@ func updateUser() *ast.UpdateStatement {
 }
 
 func TestRenderUpdate_SetThenWhere(t *testing.T) {
-
 	wantArgs := []any{"bob", "bob@example.com", int64(7)}
 
 	tests := []struct {
@@ -286,7 +281,6 @@ func TestRenderUpdate_SetThenWhere(t *testing.T) {
 }
 
 func TestRenderUpdate_Returning(t *testing.T) {
-
 	stmt := &ast.UpdateStatement{
 		Table:     "users",
 		Set:       []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "bob"}}},
@@ -323,7 +317,6 @@ func TestRenderUpdate_Returning(t *testing.T) {
 }
 
 func TestRenderUpdate_NoWhereGuard(t *testing.T) {
-
 	t.Run("without unconditional the whole-table update is rejected", func(t *testing.T) {
 		c := qt.New(t)
 		stmt := &ast.UpdateStatement{
@@ -351,7 +344,6 @@ func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 }
 
 func TestRenderUpdate_Errors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		stmt        *ast.UpdateStatement
@@ -424,7 +416,6 @@ func deleteUser() *ast.DeleteStatement {
 }
 
 func TestRenderDelete_Where(t *testing.T) {
-
 	wantArgs := []any{int64(7)}
 
 	tests := []struct {
@@ -461,7 +452,6 @@ func TestRenderDelete_Where(t *testing.T) {
 }
 
 func TestRenderDelete_NoWhereGuard(t *testing.T) {
-
 	t.Run("without unconditional the whole-table delete is rejected", func(t *testing.T) {
 		c := qt.New(t)
 		sql, args, err := renderer.RenderDelete(&ast.DeleteStatement{Table: "users"}, platform.Postgres)
@@ -480,7 +470,6 @@ func TestRenderDelete_NoWhereGuard(t *testing.T) {
 }
 
 func TestRenderDelete_Returning(t *testing.T) {
-
 	stmt := &ast.DeleteStatement{
 		Table:     "users",
 		Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: int64(7)}},
@@ -516,7 +505,6 @@ func TestRenderDelete_Returning(t *testing.T) {
 }
 
 func TestRenderDelete_Errors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		stmt        *ast.DeleteStatement
@@ -568,7 +556,6 @@ func TestRenderDelete_Errors(t *testing.T) {
 // value, an UPDATE SET value, and a DELETE WHERE value, and asserts each ends up
 // as a bound argument — never spliced into the SQL text.
 func TestRenderWrite_ValuesStayBound(t *testing.T) {
-
 	payload := `x'); DROP TABLE users; --`
 
 	t.Run("insert value is bound", func(t *testing.T) {
@@ -618,7 +605,6 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 // embedded quote is doubled (escaped) so the identifier can never terminate its
 // quotes — an identifier stays an identifier.
 func TestRenderWrite_IdentifiersAreQuoted(t *testing.T) {
-
 	t.Run("insert column and table are quoted", func(t *testing.T) {
 		c := qt.New(t)
 		stmt := &ast.InsertStatement{

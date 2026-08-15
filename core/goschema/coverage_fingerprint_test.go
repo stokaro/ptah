@@ -24,7 +24,6 @@ import (
 // encoded as `"NotDescribed":{"Kinds":null,"Objects":null}` on every schema,
 // live or hand-written.
 func TestDatabaseJSONEncodingIsTheFingerprint(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		database    goschema.Database

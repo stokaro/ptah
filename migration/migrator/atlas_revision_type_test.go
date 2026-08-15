@@ -14,7 +14,6 @@ import (
 )
 
 func TestAtlasRevisionType_String(t *testing.T) {
-
 	tests := []struct {
 		name         string
 		revisionType migrator.AtlasRevisionType

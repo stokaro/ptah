@@ -15,7 +15,6 @@ import (
 // from an introspected database, which qualifies every name it read; the diff
 // records the name the Go schema spells, which is normally bare.
 func TestView_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		views     []goschema.View
@@ -117,7 +116,6 @@ func TestView_HappyPath(t *testing.T) {
 // statement for either of them would be a coin toss on which one the migration
 // destroys.
 func TestView_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		views     []goschema.View
@@ -180,7 +178,6 @@ func TestMaterializedView_FailurePath(t *testing.T) {
 // TestTrigger_HappyPath covers the half of a trigger's identity that carries a
 // schema: the table it hangs on.
 func TestTrigger_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		triggers  []goschema.Trigger
@@ -226,7 +223,6 @@ func TestTrigger_HappyPath(t *testing.T) {
 }
 
 func TestTrigger_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		triggers  []goschema.Trigger
@@ -274,7 +270,6 @@ func TestTrigger_FailurePath(t *testing.T) {
 // TestContains pins the identity-aware replacement for the
 // `slices.Contains(diff.Tables…, ref)` shape.
 func TestContains(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		names     []string
@@ -345,7 +340,6 @@ func TestContains(t *testing.T) {
 // QualifiedName goes through: tables, domains, composites, ranges, sequences and
 // enums.
 func TestQualified(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		tables     []goschema.Table

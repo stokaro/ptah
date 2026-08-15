@@ -18,7 +18,6 @@ import (
 )
 
 func TestEffectiveApplyLockName(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value string
@@ -39,7 +38,6 @@ func TestEffectiveApplyLockName(t *testing.T) {
 }
 
 func TestAcquireApplyLock_RecordsRequestedName(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		requested string

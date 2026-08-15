@@ -298,7 +298,6 @@ func TestCompatMigrateApply_LegacyFlywayIgnoresNestedFiles(t *testing.T) {
 // this build wrote, and the ordinary Flyway workflow of adding a baseline that
 // retires applied migrations, both pass through it.
 func TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse(t *testing.T) {
-
 	t.Run("a database migrated only by this build", func(t *testing.T) {
 		c := qt.New(t)
 		root := c.TempDir()
@@ -337,7 +336,6 @@ func TestCompatMigrateApply_LegacyFlywayDetectorDoesNotOverRefuse(t *testing.T) 
 }
 
 func TestCompatMigrateApply_AmbiguousLegacyFlywayIdentityRefusesBeforeExecution(t *testing.T) {
-
 	t.Run("an older V1 ordering key is not mistaken for exact V10000", func(t *testing.T) {
 		c := qt.New(t)
 		root := c.TempDir()
@@ -488,7 +486,6 @@ func TestCompatMigrateApply_FlywayBaselineAfterApply(t *testing.T) {
 // `migration file V2__b.sql was added out of order`. A loose exemption would
 // silently apply it.
 func TestCompatMigrateApply_FlywayOutOfOrderStillRefused(t *testing.T) {
-
 	t.Run("an ordinary versioned migration below the high-water mark", func(t *testing.T) {
 		c := qt.New(t)
 		root := c.TempDir()

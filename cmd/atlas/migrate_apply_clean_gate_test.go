@@ -165,7 +165,6 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabaseWithEmptyDirectory(t *t
 // each one alone applies against the same database the gate refused. Refusing
 // either would be the other half of the parity rule broken.
 func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		extra []string

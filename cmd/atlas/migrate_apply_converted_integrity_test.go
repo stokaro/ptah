@@ -625,7 +625,6 @@ func TestCompatMigrateApply_ConvertedFlywayNestedFileTamperRefuses(t *testing.T)
 // cannot read, and both must report the checksum state rather than the parse
 // failure, exactly as Atlas CE does.
 func TestCompatMigrateApply_ConvertedDirGatePrecedesSourceParse(t *testing.T) {
-
 	t.Run("unhashed and unparseable reports the missing sum", func(t *testing.T) {
 		c := qt.New(t)
 		tempDir := c.TempDir()

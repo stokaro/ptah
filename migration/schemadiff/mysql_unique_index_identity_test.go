@@ -452,7 +452,6 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 // PostgreSQL as everywhere else. Marking every removal would turn this one into
 // an ALTER TABLE DROP CONSTRAINT for a constraint that does not exist.
 func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T) {
-
 	t.Run("postgres", func(t *testing.T) {
 		c := qt.New(t)
 		generated := mysqlUniqueKeyGeneratedSchema()

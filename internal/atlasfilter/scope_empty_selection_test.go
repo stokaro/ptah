@@ -103,7 +103,6 @@ func errorText(err error) string {
 // quoting. Each of those spellings has a row here, because a rule whose
 // escapes were sampled rather than enumerated is how the last one shipped.
 func TestIncludeSelectionOutcome(t *testing.T) {
-
 	projections := []struct {
 		name string
 		// project runs one side's projection and returns the surviving
@@ -245,7 +244,6 @@ func TestIncludeSelectionOutcome(t *testing.T) {
 // and silent on every verb. Narrowing to a schema that holds nothing stays an
 // ordinary answer here; only --include, which has no such oracle, reports.
 func TestSchemaScopeAloneNeverReportsEmptySelection(t *testing.T) {
-
 	tests := []struct {
 		name string
 		// project runs one side's projection under a schema-only scope.

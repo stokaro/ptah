@@ -189,7 +189,6 @@ func queryReadsCatalogColumn(query, column string) (bool, error) {
 // against the source with the pinned binary v1.3.0 then reports
 // `ALTER TABLE "t" ALTER COLUMN "qty" TYPE positive_int;`.
 func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		catalog func() pgColumnCatalog

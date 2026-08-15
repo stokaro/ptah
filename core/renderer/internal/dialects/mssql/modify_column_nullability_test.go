@@ -21,7 +21,6 @@ import (
 // measured live and refused with SQLSTATE 42P16; this dialect is guarded by
 // inspection, with no live SQL Server available to measure against.
 func TestMSSQL_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column *ast.ColumnNode
@@ -57,7 +56,6 @@ func TestMSSQL_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
 // direction: over-correcting renderColumnForAlter to always write NOT NULL
 // reddens here.
 func TestMSSQL_ModifyColumn_OrdinaryColumnStaysNullable(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column *ast.ColumnNode

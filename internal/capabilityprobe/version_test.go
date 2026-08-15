@@ -38,7 +38,6 @@ const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-lin
 // capability.TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners calls the
 // shared parser itself, where the numbers are readable.
 func TestParseVersion_CorrectsTheBannersOneParserCannotRead(t *testing.T) {
-
 	for _, tc := range []struct {
 		name    string
 		dialect string

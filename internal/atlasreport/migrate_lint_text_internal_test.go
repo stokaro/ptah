@@ -25,7 +25,6 @@ func fixedZeroClock() func() time.Time {
 }
 
 func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
-
 	tests := []struct {
 		name string
 		text string

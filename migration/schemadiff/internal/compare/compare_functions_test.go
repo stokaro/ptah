@@ -238,7 +238,6 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 // different function, or the fix would have replaced one collision with
 // another.
 func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing.T) {
-
 	function := func(name string) goschema.Function {
 		return goschema.Function{
 			Name: name, Returns: "int", Language: "sql",

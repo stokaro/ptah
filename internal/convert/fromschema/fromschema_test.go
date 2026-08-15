@@ -1211,7 +1211,6 @@ func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) 
 }
 
 func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
-
 	database := goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "Parent", Name: "parents"},

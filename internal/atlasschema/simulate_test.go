@@ -47,7 +47,6 @@ CREATE TABLE sim_existing (
 }
 
 func TestSimulateOnDev_HappyPath(t *testing.T) {
-
 	t.Run("plan rehearses on the reset dev database and hands it back empty", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TB.TempDir()
@@ -196,7 +195,6 @@ func TestSimulateOnDev_FailedSimulationLeavesTargetUnchanged(t *testing.T) {
 }
 
 func TestSimulateOnDev_FailurePath(t *testing.T) {
-
 	// The rehearsal used to refuse every docker:// dev URL here. It now
 	// provisions one (stokaro/ptah#844), so the row asserts that the value
 	// reached the provisioning layer.

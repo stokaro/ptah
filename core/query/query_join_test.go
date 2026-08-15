@@ -12,7 +12,6 @@ import (
 )
 
 func TestColumnExpressionConstructors(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		expr     ast.Expression
@@ -127,7 +126,6 @@ func TestSelectBuilder_FromClearsPreviousAlias(t *testing.T) {
 }
 
 func TestSelectBuilder_Columns(t *testing.T) {
-
 	tests := []struct {
 		name string
 		stmt *ast.SelectStatement
@@ -171,7 +169,6 @@ func TestSelectBuilder_QualifiedStarProjection(t *testing.T) {
 }
 
 func TestSelectBuilder_JoinMethodsSetType(t *testing.T) {
-
 	on := query.Col("b", "a_id").EqCol(query.Col("a", "id"))
 
 	tests := []struct {

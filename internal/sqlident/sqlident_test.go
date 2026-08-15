@@ -9,7 +9,6 @@ import (
 )
 
 func TestQuote(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -53,7 +52,6 @@ func TestQuote(t *testing.T) {
 }
 
 func TestQualified(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

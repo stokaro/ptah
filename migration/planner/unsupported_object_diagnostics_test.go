@@ -290,7 +290,6 @@ func mysqlFamilyCreationDiff() *types.SchemaDiff {
 // objects, while `schema apply --dry-run` against live MySQL 9.7 and live
 // MariaDB 10.11.18 planned the CREATE TABLE and said nothing about either.
 func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) {
-
 	tests := []struct {
 		dialect       string
 		wantExtension string

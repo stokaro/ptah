@@ -20,7 +20,6 @@ import (
 // missing statement here, it is a wrong one: `reporting.v`'s body rendered under
 // the name `app.v`.
 func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
@@ -79,7 +78,6 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 // annotation leaves it bare, which is the case that made objectlookup exist
 // (stokaro/ptah#1287) and the one no static default schema can answer.
 func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		generated *goschema.Database

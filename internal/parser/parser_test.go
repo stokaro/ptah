@@ -1480,7 +1480,6 @@ func TestParser_ParseSQLServerDialectBracketIdentifiersWithSQLMarkers(t *testing
 }
 
 func TestParser_ParseSQLServerDialectUnterminatedBracketIdentifier(t *testing.T) {
-
 	tests := []string{
 		"CREATE TABLE [name (id int);",
 		"CREATE TABLE [name]] (id int);",

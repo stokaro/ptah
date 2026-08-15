@@ -9,7 +9,6 @@ import (
 )
 
 func TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelection(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		body    string
@@ -159,7 +158,6 @@ func ignoredAtlasNames(cfg projectconfig.Config) []string {
 // row of TestParseAtlasProjectConfigRefusesAtlasCEDecodedLeafValues: that
 // binary answers 1 for `format { migrate { apply = 1 } }` and so does Ptah.
 func TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		body    string
@@ -236,7 +234,6 @@ func TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts(t *testing.T) 
 // parseLintAttr each serve a top-level block and an env block, so the scope key
 // is bare, and both spellings were measured to refuse on that binary.
 func TestParseAtlasProjectConfigRefusesAtlasCEDecodedLeafValues(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -579,7 +576,6 @@ env "local" {
 // `frobnicate9` rows are the nonsense controls that keep the silences
 // meaningful.
 func TestParseAtlasProjectConfigAcceptsAtlasCEDecodedLeafValues(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -968,7 +964,6 @@ env "local" {
 }
 
 func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(t *testing.T) {
-
 	tests := []struct {
 		name string
 		body string
@@ -1006,7 +1001,6 @@ func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(
 }
 
 func TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection(t *testing.T) {
-
 	tests := []struct {
 		name string
 		body string
@@ -1054,7 +1048,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigToleratesUnknownLeafAttributesRegardlessOfSelection(t *testing.T) {
-
 	tests := []struct {
 		name string
 		body string
@@ -1169,7 +1162,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		body    string
@@ -1285,7 +1277,6 @@ func TestParseAtlasProjectConfigOrdersIgnoredGlobalLintAttributesDeterministical
 // two rows are the top-level scope, which reaches the block parsers rather than
 // the structure validator and was unpinned.
 func TestParseAtlasProjectConfigToleratesUnknownTopLevelNestedBlocks(t *testing.T) {
-
 	tests := []struct {
 		name string
 		body string
@@ -1333,7 +1324,6 @@ env "local" {
 // pins. Ptah refuses instead so that a misspelled policy body is not silently
 // dropped, and refusing can never accept a file that binary rejects.
 func TestParseAtlasProjectConfigRefusesNestedBlocksInTopLevelLeafBodies(t *testing.T) {
-
 	tests := []struct {
 		name string
 		body string
@@ -1448,7 +1438,6 @@ env "local" {
 // -- so `env.include`, `env.migration.exclude`, `env.exclude`, `env.schemas`
 // and `env.src` fed a list holding one were a rule (a) hole or a crash.
 func TestParseAtlasProjectConfigRefusesTypedNullDecodedValues(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string

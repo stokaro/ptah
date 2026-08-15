@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseOperations_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		values []string
@@ -65,7 +64,6 @@ func TestParseOperations_HappyPath(t *testing.T) {
 }
 
 func TestParseOperations_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		values  []string
@@ -111,7 +109,6 @@ func TestParseOperations_FailurePath(t *testing.T) {
 }
 
 func TestOperationsPredicates(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		ops         graphqlrender.Operations

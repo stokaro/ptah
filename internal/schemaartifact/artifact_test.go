@@ -49,7 +49,6 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 }
 
 func TestCapture_FailurePath(t *testing.T) {
-
 	t.Run("nil database", func(t *testing.T) {
 		c := qt.New(t)
 		snapshot, err := schemaartifact.Capture(nil)

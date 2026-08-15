@@ -57,7 +57,6 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 // control: its writer drops views and materialized views but no types,
 // routines or foreign keys, so a row copied from postgres would fail too.
 func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -166,7 +165,6 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 // TestPlanFromObjectsRendersDialectSpecificDropCommands pins the rendered
 // report statement for every object kind a plan can name.
 func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

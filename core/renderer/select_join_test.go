@@ -51,7 +51,6 @@ func twoTableJoin() *ast.SelectStatement {
 }
 
 func TestRenderSelect_TwoTableJoin(t *testing.T) {
-
 	wantArgs := []any{"paid", true, int64(5)}
 
 	tests := []struct {
@@ -113,7 +112,6 @@ func threeTableJoin() *ast.SelectStatement {
 }
 
 func TestRenderSelect_ThreeTableJoin(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -143,7 +141,6 @@ func TestRenderSelect_ThreeTableJoin(t *testing.T) {
 }
 
 func TestRenderSelect_JoinTypeKeywords(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		joinType ast.JoinType
@@ -192,7 +189,6 @@ func TestRenderSelect_JoinWithoutAliasUsesTableNameQualifier(t *testing.T) {
 }
 
 func TestRenderSelect_JoinAliasAndQualifierQuoteEscaping(t *testing.T) {
-
 	// A quote-bearing FROM alias, join alias, and column qualifier are all
 	// escaped by doubling the dialect quote character, so none can break out.
 	stmt := &ast.SelectStatement{
@@ -248,7 +244,6 @@ func TestRenderSelect_FromAliasQuoteEscaping(t *testing.T) {
 }
 
 func TestRenderSelect_JoinPlaceholderOrderingAcrossOnWhereLimit(t *testing.T) {
-
 	// A bound value inside the JOIN ON is numbered before the WHERE value, which
 	// is numbered before the LIMIT bound, proving placeholders follow render
 	// order across ON, WHERE, and LIMIT.
@@ -305,7 +300,6 @@ func TestRenderSelect_JoinPlaceholderOrderingAcrossOnWhereLimit(t *testing.T) {
 }
 
 func TestRenderSelect_SQLiteAcceptsInnerAndLeftJoin(t *testing.T) {
-
 	// INNER and LEFT joins are supported by every SQLite version.
 	tests := []struct {
 		name     string
@@ -332,7 +326,6 @@ func TestRenderSelect_SQLiteAcceptsInnerAndLeftJoin(t *testing.T) {
 }
 
 func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
-
 	// SQLite gained RIGHT and FULL joins only in 3.39; the renderer rejects them
 	// rather than emit SQL that fails at execution time on an older engine.
 	tests := []struct {
@@ -360,7 +353,6 @@ func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
 }
 
 func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
-
 	// MySQL and MariaDB have no FULL [OUTER] JOIN in any version; the renderer
 	// rejects it rather than emit SQL the database would fail on. The error names
 	// the normalized dialect.
@@ -389,7 +381,6 @@ func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
 }
 
 func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
-
 	// RIGHT JOIN is valid on MySQL and MariaDB; only FULL is blocked there.
 	tests := []struct {
 		name    string
@@ -415,7 +406,6 @@ func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
 }
 
 func TestRenderSelect_QualifiedStar(t *testing.T) {
-
 	// A qualified star renders "u".* (not the invalid "u"."*"), and mixes with
 	// ordinary qualified columns.
 	stmt := &ast.SelectStatement{
@@ -483,7 +473,6 @@ func TestRenderSelect_IdentifiersAreTrimmedBeforeQuoting(t *testing.T) {
 }
 
 func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
-
 	// Two joins, each carrying a bound value in its ON, prove the exact ordering:
 	// join1 ON -> $1, join2 ON -> $2, WHERE -> $3, LIMIT -> $4.
 	limit := int64(10)
@@ -551,7 +540,6 @@ func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_JoinErrors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		join        ast.JoinClause

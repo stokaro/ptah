@@ -303,7 +303,6 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 }
 
 func TestInspectSource_FailurePath(t *testing.T) {
-
 	t.Run("local file requires dev url", func(t *testing.T) {
 		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")

@@ -19,7 +19,6 @@ import (
 // pgadmin and pgpool are ordinary user roles, and a test that treated the
 // underscore as a wildcard would refuse all three.
 func TestIsRecognizesBothSpellingsTheServerRefuses(t *testing.T) {
-
 	tests := []struct {
 		name string
 		role string
@@ -67,7 +66,6 @@ func TestExcludeSQLEscapesTheUnderscore(t *testing.T) {
 // A schema whose roles are ordinary is planned exactly as before, and so is one
 // declaring a reserved name for a target whose reader never excluded it.
 func TestValidateDeclaredHappyPath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -112,7 +110,6 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 // PostgreSQL-family dialect whose reader excludes these names from both of its
 // role reads.
 func TestValidateDeclaredFailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -186,7 +183,6 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 // than "postgres", CREATE ROLE "postgres" succeeds and the role appears in
 // pg_roles. Refusing it unconditionally would take that away.
 func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value string

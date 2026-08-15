@@ -21,7 +21,6 @@ import (
 // rendered as `CREATE ROLE "pg_monitor" WITH NOLOGIN ...`, a statement
 // PostgreSQL 17.10 refuses at SQLSTATE 42939 whoever runs it.
 func TestGetOrderedCreateStatementsRefusesAReservedRole(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		roles   []goschema.Role
@@ -75,7 +74,6 @@ func TestValidateSchemaRefusesAReservedRole(t *testing.T) {
 // TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole is the control: the
 // statement the refusal exists to prevent is the only one it prevents.
 func TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole(t *testing.T) {
-
 	tests := []struct {
 		name string
 		role goschema.Role

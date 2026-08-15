@@ -21,7 +21,6 @@ import (
 // stops the first one's fix from inventing a schema nobody has. Measured
 // 2026-08-07 on PostgreSQL 17, MySQL 9.7 and SQLite.
 func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		schema *types.DBSchema

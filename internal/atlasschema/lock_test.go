@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseApplyLockTimeout_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value string
@@ -38,7 +37,6 @@ func TestParseApplyLockTimeout_HappyPath(t *testing.T) {
 }
 
 func TestParseApplyLockTimeout_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		value   string
@@ -61,7 +59,6 @@ func TestParseApplyLockTimeout_FailurePath(t *testing.T) {
 }
 
 func TestAcquireApplyLock_HappyPath(t *testing.T) {
-
 	t.Run("sqlite acquires an explicit no-op lock", func(t *testing.T) {
 		c := qt.New(t)
 		conn := connectSQLite(c.TB, filepath.Join(c.TB.TempDir(), "lock.db"))
@@ -93,7 +90,6 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 }
 
 func TestAcquireApplyLock_FailurePath(t *testing.T) {
-
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
 		lock, err := atlasschema.AcquireApplyLock(c.Context(), nil, "", time.Second)

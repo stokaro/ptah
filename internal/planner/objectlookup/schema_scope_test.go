@@ -26,7 +26,6 @@ import (
 // stated and disagree. Every `wantNil: true` row below resolves without the
 // gate, and every `wantNil: false` row is the capability the gate must keep.
 func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		tables    []goschema.Table
@@ -127,7 +126,6 @@ func namedTable(table *goschema.Table) string {
 // one name on each side -- a constraint's owning table against the table a
 // TableDiff names -- asks the identity question rather than a string question.
 func TestSame(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		reference string

@@ -21,7 +21,6 @@ import (
 const artifactDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestAppliedVersionDelta(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		before []int64
@@ -113,7 +112,6 @@ func TestNewSuccessfulReport_HappyPath(t *testing.T) {
 }
 
 func TestNewSuccessfulReport_FailurePath(t *testing.T) {
-
 	t.Run("missing before status", func(t *testing.T) {
 		c := qt.New(t)
 		opts := validSuccessfulOptions()
@@ -224,7 +222,6 @@ func TestNewFS_DoesNotLeakSecrets(t *testing.T) {
 }
 
 func TestNewFS_FailurePath(t *testing.T) {
-
 	t.Run("missing deployment ID", func(t *testing.T) {
 		c := qt.New(t)
 		report := validReport()

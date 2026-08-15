@@ -39,7 +39,6 @@ import (
 // coverage rule independently of extensions, whose installation schema makes
 // an IF NOT EXISTS no-op insufficient to converge an unknown current state.
 func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		desired     func() *goschema.Database
@@ -75,7 +74,6 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 }
 
 func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T) {
-
 	for _, ifNotExists := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(t *testing.T) {
 			c := qt.New(t)
@@ -128,7 +126,6 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 // migration -- but withholding it in silence is not, so the comparison reports
 // what it held back and the surface reads it out.
 func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
-
 	tests := []struct {
 		name         string
 		desired      func() *goschema.Database
@@ -195,7 +192,6 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 // it a comparator that planned nothing at all, or one that named every addition
 // as withheld, would pass the rows above.
 func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		desired     func() *goschema.Database

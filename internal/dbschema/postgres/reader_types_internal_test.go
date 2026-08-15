@@ -289,7 +289,6 @@ var (
 )
 
 func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
-
 	// The headline of stokaro/ptah#1294. CREATE EXTENSION creates these types,
 	// so a description that declares both the extension and the type cannot be
 	// replayed -- the second declaration collides with what the first already
@@ -325,7 +324,6 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 }
 
 func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
-
 	// The control in the other direction, and the reason the exclusion is a fix
 	// rather than a deletion. A server whose types are all the user's own must
 	// be described in full, whatever else is installed alongside -- including
@@ -370,7 +368,6 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 }
 
 func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
-
 	// The property of the three STATEMENTS, which is where the defect would
 	// live, stated separately from the property of the answers. A read that
 	// excluded by name -- `NOT LIKE 'lo\_%'`, an allow-list of contrib type

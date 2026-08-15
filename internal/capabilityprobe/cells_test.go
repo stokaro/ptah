@@ -68,7 +68,6 @@ func declaredLines(dialect string) []string {
 }
 
 func TestCells_AreWellFormed(t *testing.T) {
-
 	seen := map[string]bool{}
 	for _, cell := range capabilityprobe.Cells {
 		t.Run(cell.String(), func(t *testing.T) {
@@ -210,7 +209,6 @@ func TestCellFor(t *testing.T) {
 // matrix declares the containers, and this one checks that what those
 // containers report on the wire lands on a cell.
 func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
-
 	for _, tc := range []struct {
 		dialect string
 		version string

@@ -49,7 +49,6 @@ func TestPushDirectoryTo_HappyPath(t *testing.T) {
 }
 
 func TestPushDirectoryTo_FailurePath(t *testing.T) {
-
 	t.Run("missing reference", func(t2 *testing.T) {
 		c := qt.New(t2)
 		_, err := migrationartifact.PushDirectoryTo(

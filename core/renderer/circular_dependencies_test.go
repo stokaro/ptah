@@ -179,7 +179,6 @@ func TestValidateSchemaWithCapabilities_HappyPath(t *testing.T) {
 }
 
 func TestValidateSchema_FailurePath(t *testing.T) {
-
 	t.Run("nil database", func(t *testing.T) {
 		c := qt.New(t)
 		err := renderer.ValidateSchema(nil, "postgres")
@@ -301,7 +300,6 @@ func TestGetOrderedCreateStatements_NormalizesAtlasActionTokens(t *testing.T) {
 // accepts, which is why the assertion is on the emitted keywords and not merely
 // on a successful render.
 func TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect(t *testing.T) {
-
 	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

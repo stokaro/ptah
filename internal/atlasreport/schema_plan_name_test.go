@@ -72,7 +72,6 @@ func TestNewSchemaPlanName_HappyPath(t *testing.T) {
 }
 
 func TestNewSchemaPlanName_FailurePath(t *testing.T) {
-
 	t.Run("invalid from fingerprint", func(t *testing.T) {
 		c := qt.New(t)
 		got, err := atlasreport.NewSchemaPlanName("not-a-digest", "sha256:"+strings.Repeat("2", 64))
@@ -91,7 +90,6 @@ func TestNewSchemaPlanName_FailurePath(t *testing.T) {
 }
 
 func TestRenderSchemaPlanNameErrors(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string

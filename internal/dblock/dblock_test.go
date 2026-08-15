@@ -13,7 +13,6 @@ import (
 )
 
 func TestSupported(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -41,7 +40,6 @@ func TestSupported(t *testing.T) {
 }
 
 func TestAcquire_HappyPath(t *testing.T) {
-
 	t.Run("sqlite acquires a no-op lock", func(t *testing.T) {
 		c := qt.New(t)
 		conn := openSQLite(c.TB)
@@ -72,7 +70,6 @@ func TestAcquire_HappyPath(t *testing.T) {
 }
 
 func TestAcquire_FailurePath(t *testing.T) {
-
 	t.Run("empty name rejected", func(t *testing.T) {
 		c := qt.New(t)
 		conn := openSQLite(c.TB)

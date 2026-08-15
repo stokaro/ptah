@@ -16,7 +16,6 @@ import (
 )
 
 func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		columns  []string
@@ -68,7 +67,6 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 }
 
 func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
-
 	// Returning nil leaves DBIndex.Parts empty, which the rest of the pipeline
 	// reads as "this reader supplied only the legacy Columns form" rather than
 	// as "this index has no keys".
@@ -94,7 +92,6 @@ func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
 }
 
 func TestParsePostgresIndexParts_FailurePath(t *testing.T) {
-
 	t.Run("attnum text is not json", func(t *testing.T) {
 		c := qt.New(t)
 		parts, err := parsePostgresIndexParts([]string{"a"}, "{not json}")

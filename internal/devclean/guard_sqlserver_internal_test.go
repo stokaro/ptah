@@ -15,7 +15,6 @@ import (
 )
 
 func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		statement string
@@ -150,7 +149,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 }
 
 func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		statement     string

@@ -11,7 +11,6 @@ import (
 )
 
 func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		statement string
@@ -52,7 +51,6 @@ func TestMySQLStorageEngineSelection_Selected(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedStateChange_Present(t *testing.T) {
-
 	statements := []string{
 		"CREATE DATABASE archive",
 		"CREATE OR REPLACE SCHEMA archive",
@@ -79,7 +77,6 @@ func TestMySQLUnwitnessedStateChange_Present(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
-
 	statements := []string{
 		"SET SESSION sql_mode = 'ANSI_QUOTES'",
 		"SET @@SESSION.sql_mode = 'ANSI_QUOTES'",
@@ -103,7 +100,6 @@ func TestMySQLUnwitnessedStateChange_Absent(t *testing.T) {
 }
 
 func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
-
 	statements := []string{
 		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
 		"SET SESSION `sql_mode` = 'NO_BACKSLASH_ESCAPES'",
@@ -130,7 +126,6 @@ func TestMySQLUnsafeSQLModeChange_Present(t *testing.T) {
 }
 
 func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
-
 	statements := []string{
 		"SET SESSION note = 'NO_BACKSLASH_ESCAPES'",
 		"SET @sql_mode = 'NO_BACKSLASH_ESCAPES'",
@@ -148,7 +143,6 @@ func TestMySQLUnsafeSQLModeChange_Absent(t *testing.T) {
 }
 
 func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		sqlMode string
@@ -170,7 +164,6 @@ func TestMySQLParserChangingSQLMode_Present(t *testing.T) {
 }
 
 func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		sqlMode string
@@ -191,7 +184,6 @@ func TestMySQLParserChangingSQLMode_Absent(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
-
 	statements := []string{
 		"SELECT id INTO OUTFILE '/tmp/jobs.csv' FROM jobs",
 		"SELECT payload INTO DUMPFILE '/tmp/job.bin' FROM jobs LIMIT 1",
@@ -208,7 +200,6 @@ func TestMySQLUnwitnessedFilesystemWrite_Present(t *testing.T) {
 }
 
 func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
-
 	statements := []string{
 		"INSERT INTO outfile VALUES (1)",
 		"SELECT 'INTO OUTFILE /tmp/jobs.csv'",
@@ -225,7 +216,6 @@ func TestMySQLUnwitnessedFilesystemWrite_Absent(t *testing.T) {
 }
 
 func TestMySQLExecutableComment_Present(t *testing.T) {
-
 	statements := []string{
 		"/*! SET autocommit = 0 */",
 		"/*!50699 SET autocommit = 0 */",
@@ -243,7 +233,6 @@ func TestMySQLExecutableComment_Present(t *testing.T) {
 }
 
 func TestMySQLExecutableComment_Absent(t *testing.T) {
-
 	statements := []string{
 		"/* ordinary comment */ SELECT 1",
 		"SELECT '/*! SET autocommit = 0 */'",
@@ -260,7 +249,6 @@ func TestMySQLExecutableComment_Absent(t *testing.T) {
 }
 
 func TestMySQLOpaqueExecution_Present(t *testing.T) {
-
 	statements := []string{
 		"CALL apply_changes()",
 		"PREPARE stmt FROM @sql",
@@ -281,7 +269,6 @@ func TestMySQLOpaqueExecution_Present(t *testing.T) {
 }
 
 func TestMySQLOpaqueExecution_Absent(t *testing.T) {
-
 	statements := []string{
 		"INSERT INTO jobs (id) VALUES (1)",
 		"SET SESSION sql_mode = 'ANSI_QUOTES'",
@@ -298,7 +285,6 @@ func TestMySQLOpaqueExecution_Absent(t *testing.T) {
 }
 
 func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
-
 	statements := []string{
 		"CREATE VIEW active_jobs AS SELECT * FROM jobs",
 		"CREATE TRIGGER jobs_audit AFTER INSERT ON jobs FOR EACH ROW INSERT INTO audit VALUES (NEW.id)",
@@ -318,7 +304,6 @@ func TestMySQLDefinesIndirectWriter_Present(t *testing.T) {
 }
 
 func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
-
 	statements := []string{
 		"CREATE TABLE jobs (function_name VARCHAR(32)) ENGINE=InnoDB",
 		"ALTER TABLE jobs ADD COLUMN event_id BIGINT",
@@ -523,7 +508,6 @@ func TestMySQLReferencedExternalSchema(t *testing.T) {
 }
 
 func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		grants []string
@@ -571,7 +555,6 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
 }
 
 func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		grants []string
@@ -644,7 +627,6 @@ func TestMySQLGrantsProvideTriggerCatalogVisibility_FailurePath(t *testing.T) {
 // escaped literal name is decoded, but an unescaped wildcard is not inferred to
 // cover the selected database.
 func TestMySQLGrantsProvideTriggerCatalogVisibility_ExactSchema(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		schema string
@@ -751,7 +733,6 @@ func TestMySQLReferencedCatalogName_IgnoresNonRelationIdentifiers(t *testing.T) 
 }
 
 func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
-
 	statements := []string{
 		"CREATE TEMPORARY TABLE schema_migrations (version BIGINT)",
 		"CREATE TEMPORARY TABLE app.schema_migrations (version BIGINT)",
@@ -776,7 +757,6 @@ func TestMySQLReferencesNamedRelation_Present(t *testing.T) {
 }
 
 func TestMySQLReferencesNamedRelation_Absent(t *testing.T) {
-
 	statements := []string{
 		"CREATE TEMPORARY TABLE audit.schema_migrations (version BIGINT)",
 		"CREATE TEMPORARY TABLE app.other_table (version BIGINT)",
@@ -846,7 +826,6 @@ func TestMigrationHasStatementInterceptor(t *testing.T) {
 }
 
 func TestMySQLCreateTableLike_Present(t *testing.T) {
-
 	statements := []string{
 		"CREATE TABLE jobs_archive LIKE archive.jobs",
 		"CREATE TEMPORARY TABLE jobs_copy LIKE jobs",
@@ -863,7 +842,6 @@ func TestMySQLCreateTableLike_Present(t *testing.T) {
 }
 
 func TestMySQLCreateTableLike_Absent(t *testing.T) {
-
 	statements := []string{
 		"CREATE TABLE jobs (id BIGINT) ENGINE=InnoDB",
 		"CREATE TABLE jobs (note VARCHAR(32) CHECK (note LIKE 'ok%'))",
@@ -880,7 +858,6 @@ func TestMySQLCreateTableLike_Absent(t *testing.T) {
 }
 
 func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
-
 	statements := []string{
 		"CREATE TEMPORARY TABLE jobs (id BIGINT)",
 		"CREATE OR REPLACE TEMPORARY TABLE jobs (id BIGINT)",
@@ -896,7 +873,6 @@ func TestMySQLCreatesTemporaryTable_Present(t *testing.T) {
 }
 
 func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
-
 	statements := []string{
 		"CREATE TABLE jobs (id BIGINT)",
 		"CREATE TEMPORARY VIEW jobs AS SELECT 1",
@@ -913,7 +889,6 @@ func TestMySQLCreatesTemporaryTable_Absent(t *testing.T) {
 }
 
 func TestMySQLStorageEngineSelection_Absent(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		statement string
@@ -941,7 +916,6 @@ func TestMySQLStorageEngineSelection_Absent(t *testing.T) {
 // report zero without database evidence; the MySQL-family integration path
 // replaces that value with the committed revision-row witness.
 func TestRolledBackApplied(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		dialect  string

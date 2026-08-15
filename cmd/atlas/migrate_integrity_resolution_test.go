@@ -43,7 +43,6 @@ func writeIntegrityProject(tb testing.TB, format string) (configPath, migrations
 // migration.format reaching both verbs, which is the path a user hits with a
 // plain `ptah-compat migrate hash --env local` and no directory flags at all.
 func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -81,7 +80,6 @@ func TestCompatMigrateIntegrityProjectConfig_HappyPath(t *testing.T) {
 // the overriding value are always different formats so neither result can be
 // produced by the other rule.
 func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
-
 	t.Run("flag overrides project format", func(t *testing.T) {
 		c := qt.New(t)
 		configPath, migrationsDir := writeIntegrityProject(c.TB, "flyway")
@@ -140,7 +138,6 @@ func TestCompatMigrateIntegrityProjectConfigPrecedence_HappyPath(t *testing.T) {
 // arriving through the environment has no --dir token to rewrite, so the atlas
 // row here is what exercises the resolver's append branch.
 func TestCompatMigrateIntegrityEnvironment_HappyPath(t *testing.T) {
-
 	t.Run("PTAH_DIR_FORMAT selects the layout", func(t *testing.T) {
 		c := qt.New(t)
 		dir := writeIntegrityFixture(c.TB)
@@ -242,7 +239,6 @@ func TestCompatMigrateValidateConvertedDevURL_HappyPath(t *testing.T) {
 // that matter: integrity is checked before the directory is parsed or replayed,
 // and a clean directory whose SQL does not execute still fails.
 func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
-
 	t.Run("invalid sql on a clean directory", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()

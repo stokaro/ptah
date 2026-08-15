@@ -9,7 +9,6 @@ import (
 )
 
 func TestSQLForAssessment_ExpandsExecutableComments(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

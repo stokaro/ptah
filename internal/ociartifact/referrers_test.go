@@ -63,7 +63,6 @@ func TestAttachTo_CreatesSubjectManifest(t *testing.T) {
 }
 
 func TestAttachTo_FailurePath(t *testing.T) {
-
 	t.Run("missing subject", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := ociartifact.AttachTo(
@@ -123,7 +122,6 @@ func TestListReferrersFrom_CollectsPagesAndClonesAnnotations(t *testing.T) {
 }
 
 func TestListReferrersFrom_FailurePath(t *testing.T) {
-
 	t.Run("missing lister", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := ociartifact.ListReferrersFrom(

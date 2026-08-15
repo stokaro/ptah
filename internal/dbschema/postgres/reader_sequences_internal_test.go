@@ -133,7 +133,6 @@ func sequenceIsImplicit(catalog pgSequenceCatalog, query string) (bool, error) {
 // replay is exit 0 and the pinned binary v1.3.0 reports the replayed database
 // synced with the source.
 func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		catalog func() pgSequenceCatalog

@@ -12,7 +12,6 @@ import (
 )
 
 func TestParseAtlasExternalSchemaDataSource_HappyPath(t *testing.T) {
-
 	t.Run("program only defaults format to sql", func(t *testing.T) {
 		c := qt.New(t)
 		raw := []byte(`data "external_schema" "app" {
@@ -100,7 +99,6 @@ env "dev" {
 }
 
 func TestParseAtlasExternalSchemaDataSource_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -413,7 +411,6 @@ env "dev" {
 }
 
 func TestLoadExternalSchemaPrecedence_HappyPath(t *testing.T) {
-
 	t.Run("atlas.hcl data source replaces ptah.yaml external_schema wholesale", func(t2 *testing.T) {
 		c := qt.New(t2)
 		dir := t.TempDir()

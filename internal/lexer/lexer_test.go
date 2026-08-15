@@ -247,7 +247,6 @@ func TestLexer_NextToken_HappyPath(t *testing.T) {
 }
 
 func TestLexer_NextToken_EscapedQuotedIdentifiers(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		input     string
@@ -297,7 +296,6 @@ func TestLexer_NextToken_BracketsRemainOperators(t *testing.T) {
 }
 
 func TestLexer_NextToken_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		input string

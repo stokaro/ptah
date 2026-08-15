@@ -30,7 +30,6 @@ func mustParseFile(tb testing.TB, filename string) goschema.Database {
 }
 
 func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		comment  string
@@ -320,7 +319,6 @@ type User struct {
 }
 
 func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		annotation string
@@ -373,7 +371,6 @@ func TestTrigger_FunctionNameIsTableScoped(t *testing.T) {
 }
 
 func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
-
 	// Test that only known boolean attributes are treated as booleans
 	tests := []struct {
 		name     string
@@ -1088,7 +1085,6 @@ type SchemaObjects struct{}
 // `default_fn`-vs-`default_expr` at parse time instead of silently dropping
 // them and producing wrong SQL.
 func TestParseField_UnknownAttributePanics(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		annotation  string

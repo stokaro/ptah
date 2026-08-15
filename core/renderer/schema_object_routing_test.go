@@ -308,7 +308,6 @@ func TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone(t *testing.T) 
 // Reporting success after emitting only a comment loses declared state, so the
 // safe answer is an error before any statement is returned.
 func TestRender_MySQLFamilyRefusesRolesBeforeSQL(t *testing.T) {
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

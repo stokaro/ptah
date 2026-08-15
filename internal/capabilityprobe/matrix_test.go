@@ -40,7 +40,6 @@ func TestCIMatrix_AccountsForEveryDeclaredLine(t *testing.T) {
 // workflow cannot check for itself. A cell missing its URL or its container
 // arguments does not fail the YAML; it fails at 03:00 in one job of eighteen.
 func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
-
 	for _, cell := range capabilityprobe.CIMatrix().Cells {
 		t.Run(cell.ID, func(t *testing.T) {
 			c := qt.New(t)
@@ -63,7 +62,6 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 // permission-restriction scenario meaningful. The probe needs an administrator
 // for capability discovery, but the suite reserves it for cleanup.
 func TestCIMatrix_MySQLFamilyUsesRestrictedScenarioConnections(t *testing.T) {
-
 	for _, id := range []string{"mysql-8-4", "mariadb-10-11"} {
 		t.Run(id, func(t *testing.T) {
 			c := qt.New(t)
@@ -148,7 +146,6 @@ func TestCIMatrix_MeasuredBannerLineRemainsRunnable(t *testing.T) {
 // so its line tag is a selector the driver resolves before Docker runs. Both
 // satisfy the rule; a frozen v26.2.5 or 2026.1.0.0-b118 tag would not.
 func TestCICell_TagPinsLine(t *testing.T) {
-
 	for _, tc := range []struct {
 		cell string
 		want bool

@@ -11,7 +11,6 @@ import (
 )
 
 func TestInsertBuilder(t *testing.T) {
-
 	t.Run("single row", func(t *testing.T) {
 		c := qt.New(t)
 		stmt := query.InsertInto("users").
@@ -52,7 +51,6 @@ func TestInsertBuilder(t *testing.T) {
 }
 
 func TestUpdateBuilder(t *testing.T) {
-
 	t.Run("set values are numbered before the where value", func(t *testing.T) {
 		c := qt.New(t)
 		stmt := query.Update("users").
@@ -90,7 +88,6 @@ func TestUpdateBuilder(t *testing.T) {
 }
 
 func TestDeleteBuilder(t *testing.T) {
-
 	t.Run("delete with a where", func(t *testing.T) {
 		c := qt.New(t)
 		stmt := query.DeleteFrom("users").
@@ -126,7 +123,6 @@ func TestDeleteBuilder(t *testing.T) {
 // story: the expression constructors return plain nodes, so a filter composes
 // across statement kinds.
 func TestWriteBuilder_SharedWhereFragment(t *testing.T) {
-
 	filter := query.And(query.Eq("tenant_id", int64(42)), query.Eq("draft", true))
 
 	t.Run("update reuses the fragment", func(t *testing.T) {

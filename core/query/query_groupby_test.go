@@ -24,7 +24,6 @@ func renderProjection(tb testing.TB, expr ast.Expression) (string, []any) {
 }
 
 func TestAggregateConstructors(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		expr    ast.Expression
@@ -64,7 +63,6 @@ func TestCountStarArgumentIsCountStar(t *testing.T) {
 }
 
 func TestAggregateStarArgumentRejected(t *testing.T) {
-
 	// Only Count("*") maps to the star form. Every other "*" aggregate argument —
 	// a non-COUNT aggregate, COUNT(DISTINCT *), or a qualified star — has no valid
 	// SQL form, so it is rejected at render time rather than emitting a quoted "*".
@@ -94,7 +92,6 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 }
 
 func TestColumnAggregateMethods(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		expr    ast.Expression
@@ -119,7 +116,6 @@ func TestColumnAggregateMethods(t *testing.T) {
 }
 
 func TestExprComparison(t *testing.T) {
-
 	// Expr wraps an aggregate so it can be compared against a bound value, the
 	// shape of a HAVING predicate. The value is always bound, never inlined.
 	tests := []struct {
@@ -193,7 +189,6 @@ func TestSelectBuilder_ExprsAndExprAs(t *testing.T) {
 }
 
 func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
-
 	// A grouped aggregate query with a WHERE filter, a HAVING over COUNT(*), and a
 	// LIMIT, proving the fluent API composes and placeholders order across clauses.
 	stmt := query.Select("status").

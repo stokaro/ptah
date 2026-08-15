@@ -15,7 +15,6 @@ import (
 )
 
 func TestNextvalSequenceName(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		defaultExpr string
@@ -40,7 +39,6 @@ func TestNextvalSequenceName(t *testing.T) {
 }
 
 func TestNormalizeBaselineSerialColumns(t *testing.T) {
-
 	t.Run("implicit serial sequence becomes SERIAL", func(t *testing.T) {
 		c := qt.New(t)
 		baseline := &goschema.Database{Fields: []goschema.Field{

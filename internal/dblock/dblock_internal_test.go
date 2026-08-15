@@ -230,7 +230,6 @@ func TestLockRelease_DiscardsSessionAfterTimeout(t *testing.T) {
 }
 
 func TestMySQLLockTimeoutSeconds(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -313,7 +312,6 @@ var (
 )
 
 func TestSQLServerLockTimeoutMilliseconds(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		timeout time.Duration

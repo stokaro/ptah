@@ -419,7 +419,6 @@ func TestSchemaExportProtobufWarnsAboutIgnoredTitle(t *testing.T) {
 }
 
 func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
-
 	tests := []struct {
 		name string
 		// out is the output path relative to the fixture directory, kept as

@@ -16,7 +16,6 @@ import (
 )
 
 func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
-
 	t.Run("Go-based Goose migration", func(t *testing.T) {
 		c := qt.New(t)
 		source := fstest.MapFS{

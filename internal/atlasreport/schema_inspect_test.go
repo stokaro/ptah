@@ -14,7 +14,6 @@ import (
 )
 
 func TestNormalizeSchemaInspectFormat_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -350,7 +349,6 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 // "character varying(100)[]" there and trade one disagreement for another.
 // See stokaro/ptah#1242.
 func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column types.DBColumn

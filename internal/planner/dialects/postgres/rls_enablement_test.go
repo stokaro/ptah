@@ -19,7 +19,6 @@ import (
 // table whose row-level security was turned off in the database produced no
 // statement even though the comparator had recorded the difference.
 func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		diff      *types.SchemaDiff

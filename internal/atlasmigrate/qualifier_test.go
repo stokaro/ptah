@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseQualifier_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		raw  string
@@ -39,7 +38,6 @@ func TestParseQualifier_HappyPath(t *testing.T) {
 }
 
 func TestParseQualifier_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -78,7 +76,6 @@ func TestParseQualifier_FailurePath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -101,7 +98,6 @@ func TestQualifierValidateScope_HappyPath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_FailurePath(t *testing.T) {
-
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
@@ -141,7 +137,6 @@ func renderQualified(tb testing.TB, dialect string, nodes ...ast.Node) string {
 }
 
 func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
-
 	t.Run("postgres create table with foreign key", func(t *testing.T) {
 		c := qt.New(t)
 		table := ast.NewCreateTable("users").
@@ -247,7 +242,6 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 }
 
 func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
-
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
 		qualifier := mustParseQualifier(c.TB, "tenant")

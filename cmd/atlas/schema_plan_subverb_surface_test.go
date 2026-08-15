@@ -166,7 +166,6 @@ var atlasSchemaPlanValidateFlags = []string{
 // --save or --dry-run is the exact mistake the delegation to the parent's run
 // function makes easy.
 func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
-
 	tests := []struct {
 		name string
 		path []string
@@ -190,7 +189,6 @@ func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
 // capture shows on these sub-verbs. A long name can match while the shorthand
 // silently does not, and `-f` is the one an Atlas pipeline actually types.
 func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		path      []string
@@ -223,7 +221,6 @@ func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
 // well have been done by registering --save and defaulting it to true, which
 // would accept `--save=false` and quietly turn the verb into a no-op.
 func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
-
 	for _, flag := range []string{"--save", "--dry-run", "--push", "--pending", "--skip-lint", "--directive"} {
 		t.Run(flag, func(t *testing.T) {
 			c := qt.New(t)

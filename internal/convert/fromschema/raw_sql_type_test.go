@@ -21,7 +21,6 @@ import (
 //
 // Without the fix, wantRawSQL is false on every row.
 func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		field      goschema.Field

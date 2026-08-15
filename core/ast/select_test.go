@@ -9,7 +9,6 @@ import (
 )
 
 func TestComparisonOperatorString(t *testing.T) {
-
 	tests := []struct {
 		name string
 		op   ast.ComparisonOperator
@@ -33,7 +32,6 @@ func TestComparisonOperatorString(t *testing.T) {
 }
 
 func TestLogicalOperatorString(t *testing.T) {
-
 	tests := []struct {
 		name string
 		op   ast.LogicalOperator
@@ -53,7 +51,6 @@ func TestLogicalOperatorString(t *testing.T) {
 }
 
 func TestJoinTypeString(t *testing.T) {
-
 	tests := []struct {
 		name string
 		jt   ast.JoinType
@@ -75,7 +72,6 @@ func TestJoinTypeString(t *testing.T) {
 }
 
 func TestSortDirectionString(t *testing.T) {
-
 	tests := []struct {
 		name string
 		dir  ast.SortDirection

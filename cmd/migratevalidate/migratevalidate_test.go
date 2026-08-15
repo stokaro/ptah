@@ -128,7 +128,6 @@ func TestAtlasDirectoryError_MissingStatPreservesPathCause(t *testing.T) {
 }
 
 func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
-
 	tests := []struct {
 		name string
 		dir  string

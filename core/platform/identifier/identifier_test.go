@@ -59,7 +59,6 @@ func TestForDialect(t *testing.T) {
 }
 
 func TestForSQLServerCatalog(t *testing.T) {
-
 	t.Run("catalog comparison requires resolved keys", func(t *testing.T) {
 		c := qt.New(t)
 		got := identifier.ForSQLServerCatalog("Turkish_100_CI_AS")
@@ -96,7 +95,6 @@ func TestForSQLServerCatalog(t *testing.T) {
 }
 
 func TestSemanticsNormalize(t *testing.T) {
-
 	t.Run("partial public value falls back conservatively", func(t *testing.T) {
 		c := qt.New(t)
 		got := (identifier.Semantics{

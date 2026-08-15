@@ -299,7 +299,6 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 // one that coverageFor already reports as not probing, so the two must be
 // changed together.
 func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -327,7 +326,6 @@ func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
 // PostgreSQL is the live case — its reader hides schema_migrations but surfaces
 // atlas_schema_revisions, so the probe finds a table the plan already carries.
 func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		listed     []Object
@@ -395,7 +393,6 @@ func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
 // a survivor on a destruction plan. ClickHouse is the other control — its
 // reader hides nothing, so the plan already names both tables.
 func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

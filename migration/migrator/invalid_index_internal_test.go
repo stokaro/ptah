@@ -18,7 +18,6 @@ import (
 )
 
 func TestPostgresCreatedIndexNames(t *testing.T) {
-
 	tests := []struct {
 		name string
 		sql  string
@@ -175,7 +174,6 @@ func TestPostgresDroppedIndexNames(t *testing.T) {
 }
 
 func TestUnusableIndexRepairError(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		unusable []postgresUnusableIndex
@@ -233,7 +231,6 @@ func TestUnusableIndexRepairError(t *testing.T) {
 // the fix, because running it is the action an operator reaching for
 // --allow-dirty has already chosen.
 func TestUnusableIndexApplyError(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		unusable []postgresUnusableIndex

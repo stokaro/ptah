@@ -135,7 +135,6 @@ env:
 }
 
 func TestParsePtahOnlineDDLValidationFailures(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		raw      string

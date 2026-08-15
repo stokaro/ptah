@@ -30,7 +30,6 @@ func eventsTable(tableSchema string) *goschema.Database {
 // `WARNING: ClickHouse planner could not find struct for table …` -- but a
 // comment is not a column, and the plan applies cleanly having changed nothing.
 func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		tableSchema string
@@ -103,7 +102,6 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 // spells the database differently got NO CREATE TABLE -- no statement, no
 // comment -- and every later ALTER against it then fails at apply time.
 func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		tableSchema string

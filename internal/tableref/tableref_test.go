@@ -9,7 +9,6 @@ import (
 )
 
 func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		schema string
@@ -44,7 +43,6 @@ func TestCanonicalExact_PreservesQuotedIdentifierWhitespace(t *testing.T) {
 }
 
 func TestParse_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value string
@@ -89,7 +87,6 @@ func TestParse_HappyPath(t *testing.T) {
 }
 
 func TestParse_FailurePath(t *testing.T) {
-
 	tests := []string{"", `"unterminated`, "[unterminated", "a.b.c", "a..b", `"a"tail`}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {

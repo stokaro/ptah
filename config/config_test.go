@@ -184,7 +184,6 @@ func TestCompareOptions_FilterIgnoredExtensions(t *testing.T) {
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-
 	t.Run("default usage", func(t *testing.T) {
 		// User wants default behavior (ignore plpgsql)
 		c := qt.New(t)

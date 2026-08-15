@@ -90,7 +90,6 @@ func newDirFormatFixture(tb testing.TB) dirFormatFixture {
 // this sandbox. The two rows below drive the same command tree in process, and
 // the tagged integration contour independently drives the built process.
 func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
-
 	tests := []struct {
 		verb string
 		// spelling is the flag the semantic chain blames, which is `--dir`
@@ -289,7 +288,6 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 // only ran on one verb would pass while a per-verb adaptation grew too wide
 // somewhere else.
 func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
-
 	tests := []struct {
 		name string
 		want string

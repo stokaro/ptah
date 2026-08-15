@@ -36,7 +36,6 @@ func identityRebuildSchema(tableSchema string) *goschema.Database {
 // the unknown double-quoted identifier as a STRING LITERAL and writes the
 // column's own name into every row, exiting 0.
 func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name             string
 		tableSchema      string
@@ -111,7 +110,6 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 // answered "not being created" across a spelling difference and the plan both
 // created and rebuilt one table.
 func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
-
 	tests := []struct {
 		name            string
 		addedTableName  string

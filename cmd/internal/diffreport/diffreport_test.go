@@ -11,7 +11,6 @@ import (
 )
 
 func TestCategoriesNamesEveryChangedObject(t *testing.T) {
-
 	tests := []struct {
 		name string
 		diff *types.SchemaDiff
@@ -75,7 +74,6 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 // rule: a diff carries fields that describe how it was produced, and reporting
 // those as differences would make a synced schema look modified.
 func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
-
 	tests := []struct {
 		name string
 		diff *types.SchemaDiff

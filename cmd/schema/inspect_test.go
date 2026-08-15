@@ -114,7 +114,6 @@ func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		pattern string

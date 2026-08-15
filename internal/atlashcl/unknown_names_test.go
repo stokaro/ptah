@@ -23,7 +23,6 @@ import (
 // `schema inspect -u file://...`: exit 0, and DDL byte-identical to the same
 // schema with the construct deleted.
 func TestParseIgnoreUnknownNamesDropsTheName(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		hcl        string
@@ -458,7 +457,6 @@ table "t" {
 // They are here so that reintroducing any such wildcard fails a test rather
 // than shipping.
 func TestParseIgnoreUnknownNamesStillEvaluatesTheBody(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		hcl     string
@@ -745,7 +743,6 @@ annotation "gql" {
 // row is the one stokaro/ptah#1016 exists for -- an Atlas v1.3.0 annotation
 // declaration, whose body needs the `string` keyword to resolve.
 func TestParseIgnoreUnknownNamesAcceptsEvaluableBodies(t *testing.T) {
-
 	tests := []struct {
 		name string
 		hcl  string
@@ -869,7 +866,6 @@ annotation "gql" {
 // from a bug. If a later change makes any of these parse, this test is where
 // the decision gets revisited rather than quietly reversed.
 func TestParseIgnoreUnknownNamesIsStricterThanTheOracleOnReferences(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		hcl     string
@@ -943,7 +939,6 @@ annotation "gql" {
 // Both cases below hold a construct whose only nested block is dropped. The
 // name goes; the requirement the block was supposed to satisfy does not.
 func TestParseIgnoreUnknownNamesKeepsStructuralRefusals(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		hcl     string

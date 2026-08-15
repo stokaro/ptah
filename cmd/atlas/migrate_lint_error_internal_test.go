@@ -112,7 +112,6 @@ func TestAtlasMigrateLintDirCaptureError_PreservesNonmatchingErrors(t *testing.T
 }
 
 func TestAtlasMigrateLintPathErrorMatches_SymmetricRootedPaths(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		path        string

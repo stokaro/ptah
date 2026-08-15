@@ -228,7 +228,6 @@ func TestSplitSQLStatementsForDialect_StringEscaping(t *testing.T) {
 }
 
 func TestStripCommentsForDialect_MySQLPreservesSemanticSyntax(t *testing.T) {
-
 	t.Run("dash dash without whitespace is arithmetic", func(t *testing.T) {
 		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT -1--1", "mysql")

@@ -15,7 +15,6 @@ import (
 )
 
 func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		configured string
@@ -65,7 +64,6 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 }
 
 func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		configured string
@@ -183,7 +181,6 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 }
 
 func TestResolveApplyDir_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		configured string
@@ -249,7 +246,6 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 }
 
 func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
-
 	t.Run("flyway migrations sharing one Atlas version", func(t *testing.T) {
 		c := qt.New(t)
 		dir := c.TempDir()
@@ -336,7 +332,6 @@ func applyDirFormatCases() []struct {
 // makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
 // consume this one value.
 func TestResolveApplyDirFormat(t *testing.T) {
-
 	for _, tt := range applyDirFormatCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -373,7 +368,6 @@ func TestResolveApplyDirFormat(t *testing.T) {
 // is still a key that selected the layout — first-one-wins loses a VALUE, not
 // the key (stokaro/ptah#990).
 func TestIgnoredDirQueryKeys(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		query url.Values
@@ -432,7 +426,6 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 // the gate ever stops seeing the ?format= override (it would then verify
 // atlas.sum against a converted filesystem that has none and refuse).
 func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
-
 	for _, tt := range applyDirFormatCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)

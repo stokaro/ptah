@@ -152,7 +152,6 @@ func TestPlanFileWithStatementsFromSQLClassifiesPastLeadingComments(t *testing.T
 }
 
 func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

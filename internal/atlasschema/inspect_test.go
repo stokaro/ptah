@@ -58,7 +58,6 @@ func TestInspect_ExcludeFilter(t *testing.T) {
 }
 
 func TestInspect_IncludeSelection(t *testing.T) {
-
 	t.Run("selects the named table and its children", func(t *testing.T) {
 		c := qt.New(t)
 		conn := connectSQLite(c.TB, filepath.Join(c.TempDir(), "inspect-include.db"))
@@ -118,7 +117,6 @@ func TestInspect_IncludeSelection(t *testing.T) {
 }
 
 func TestInspect_FailurePath(t *testing.T) {
-
 	t.Run("invalid format before connection", func(t *testing.T) {
 		c := qt.New(t)
 		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{

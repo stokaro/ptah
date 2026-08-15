@@ -14,7 +14,6 @@ import (
 )
 
 func TestIsRetryable(t *testing.T) {
-
 	tests := []struct {
 		name string
 		err  error

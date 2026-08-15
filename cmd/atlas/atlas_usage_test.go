@@ -15,7 +15,6 @@ import (
 )
 
 func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		args      []string
@@ -93,7 +92,6 @@ func TestCompatCommand_ForwardedNativeFailureExits1(t *testing.T) {
 }
 
 func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
-
 	tests := []struct {
 		name string
 		cmd  *cobra.Command
@@ -168,7 +166,6 @@ func TestAtlasCompatibilityRoot_UnknownCommandSuggestsAtlasVerb(t *testing.T) {
 }
 
 func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -206,7 +203,6 @@ func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
 }
 
 func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		args      []string
@@ -248,7 +244,6 @@ func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
 }
 
 func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string
@@ -286,7 +281,6 @@ func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
 }
 
 func TestAtlasCompatibilityCompletion_ExtraTokenMatchesAtlasCE(t *testing.T) {
-
 	tests := []struct {
 		name string
 		cmd  *cobra.Command

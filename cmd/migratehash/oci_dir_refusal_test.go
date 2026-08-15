@@ -23,7 +23,6 @@ const refusalDigest = "sha256:" +
 // what the other verbs do. The refusal must say the artifact is immutable and
 // point at the workflow that does work.
 func TestHash_RefusesOCIDirectoryByName(t *testing.T) {
-
 	tests := []struct {
 		name string
 		dir  string
@@ -69,7 +68,6 @@ func TestHash_RefusesOCIDirectoryByName(t *testing.T) {
 // the test above pass, so the refusal has to be measured against a path that
 // must still be hashed -- including one whose name merely contains "oci".
 func TestHash_OCIRefusalLeavesLocalDirectoriesAlone(t *testing.T) {
-
 	tests := []struct {
 		name string
 		base string

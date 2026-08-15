@@ -19,7 +19,6 @@ import (
 // capability.DefaultDialects is the authority for "a dialect Ptah has a
 // default preset for": adding a dialect there without a class fails here.
 func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
-
 	for _, dialect := range capability.DefaultDialects() {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -34,7 +33,6 @@ func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
 // a catch-all arm that classifies everything, including targets Ptah has no
 // preset for.
 func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -55,7 +53,6 @@ func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 }
 
 func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -85,7 +82,6 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 }
 
 func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		class ddltx.Class
@@ -110,7 +106,6 @@ func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
 // for ClickHouse and they disagree about the MySQL family, which is the whole
 // reason there are two of them.
 func TestAllStatementsDurable(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		class ddltx.Class
@@ -134,7 +129,6 @@ func TestAllStatementsDurable(t *testing.T) {
 // drifting into a contradiction: a class where every statement is durable
 // cannot be one whose body does not survive.
 func TestAllStatementsDurableImpliesBodySurvives(t *testing.T) {
-
 	for _, dialect := range capability.DefaultDialects() {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -148,7 +142,6 @@ func TestAllStatementsDurableImpliesBodySurvives(t *testing.T) {
 }
 
 func TestHasCommitStep(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		class ddltx.Class

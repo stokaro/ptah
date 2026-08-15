@@ -16,7 +16,6 @@ import (
 // used resolved a name across two DIFFERENT schemas, so `attached.v`'s body was
 // rendered under the name the diff carried.
 func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
@@ -75,7 +74,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // `Active_Notes` and `active_notes` are one object and only a folding rule joins
 // them.
 func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		generated *goschema.Database

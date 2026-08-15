@@ -48,7 +48,6 @@ func beforeTrigger() *ast.CreateTriggerNode {
 // the body from ahead of the write to behind it. SQLite already refused the same
 // input, and that is the answer the other two now give (stokaro/ptah#931 item 4).
 func TestRenderTrigger_LevelAndTimingAreRefusedNotDowngraded(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -78,7 +77,6 @@ func TestRenderTrigger_LevelAndTimingAreRefusedNotDowngraded(t *testing.T) {
 // still render unchanged. Without this row, deleting trigger rendering entirely
 // would pass the test above.
 func TestRenderTrigger_PostgreSQLKeepsWhatTheAuthorDeclared(t *testing.T) {
-
 	tests := []struct {
 		name string
 		node *ast.CreateTriggerNode
@@ -106,7 +104,6 @@ func TestRenderTrigger_PostgreSQLKeepsWhatTheAuthorDeclared(t *testing.T) {
 // the natural spelling of a body produced `... VALUES (1);;`
 // (stokaro/ptah#931 item 6).
 func TestRenderTrigger_BodyEndingInSemicolonGetsExactlyOne(t *testing.T) {
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -123,7 +120,6 @@ func TestRenderTrigger_BodyEndingInSemicolonGetsExactlyOne(t *testing.T) {
 // terminator is added when the body lacks it, so the fix above is a conditional
 // and not a deletion.
 func TestRenderTrigger_BodyWithoutSemicolonStillGetsOne(t *testing.T) {
-
 	node := ast.NewCreateTrigger("row_trg", "t1").
 		SetTiming("AFTER").
 		SetEvent("INSERT").

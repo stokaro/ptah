@@ -34,7 +34,6 @@ import (
 // is in the table for that reason -- recording only what this render happened
 // to omit would leave a document that asserts authority it does not have.
 func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
-
 	tests := []struct {
 		name string
 		db   func() *goschema.Database
@@ -68,7 +67,6 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 // claims everything, and a removal a native document asks for is still a
 // removal.
 func TestNativeRenderDeclaresNoLimits(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		render func() (atlashclrender.Result, error)

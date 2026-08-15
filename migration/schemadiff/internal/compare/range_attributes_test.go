@@ -26,7 +26,6 @@ import (
 // some of them fails on the rows it does not cover rather than passing on the
 // strength of its neighbours.
 func TestRanges_AttributeChangesAreReported(t *testing.T) {
-
 	current := types.DBRange{
 		Name:           "audit_range",
 		Subtype:        "timestamp with time zone",

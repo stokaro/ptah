@@ -1268,7 +1268,6 @@ func TestLintFS_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
 }
 
 func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		pattern string

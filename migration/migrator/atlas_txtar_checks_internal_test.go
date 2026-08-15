@@ -228,7 +228,6 @@ func TestValidateCheckAssertion_Rejected(t *testing.T) {
 }
 
 func TestContainsIdentifierSequence_SQLServerNextValueFor(t *testing.T) {
-
 	statements := []string{
 		"SELECT NEXT VALUE FOR dbo.order_sequence",
 		"SELECT next /* sequence */ value\nfor dbo.order_sequence",
@@ -245,7 +244,6 @@ func TestContainsIdentifierSequence_SQLServerNextValueFor(t *testing.T) {
 }
 
 func TestContainsIdentifierSequence_IgnoresNonCodeAndBrokenSequences(t *testing.T) {
-
 	statements := []string{
 		"SELECT 'NEXT VALUE FOR dbo.order_sequence'",
 		"SELECT 1 -- NEXT VALUE FOR dbo.order_sequence",
@@ -263,7 +261,6 @@ func TestContainsIdentifierSequence_IgnoresNonCodeAndBrokenSequences(t *testing.
 }
 
 func TestAssertionPassed_NonZeroNumericTypes(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value any
@@ -291,7 +288,6 @@ func TestAssertionPassed_NonZeroNumericTypes(t *testing.T) {
 }
 
 func TestAssertionPassed_ZeroNumericTypes(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		value any

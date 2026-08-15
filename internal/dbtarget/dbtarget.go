@@ -17,6 +17,7 @@ package dbtarget
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -165,10 +166,8 @@ func checkScheme(src source, name, value string) error {
 		// accepts one rather than guessing at the value's dialect.
 		return nil
 	}
-	for _, want := range src.scheme {
-		if scheme == want {
-			return nil
-		}
+	if slices.Contains(src.scheme, scheme) {
+		return nil
 	}
 	return fmt.Errorf("%s carries scheme %q, which %s does not speak; it names %s",
 		name, scheme, src.canonical, strings.Join(src.scheme, " or "))

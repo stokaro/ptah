@@ -13,7 +13,6 @@ import (
 )
 
 func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		format    atlasmigrateimport.Format
@@ -172,7 +171,6 @@ CREATE TABLE first_table (id int);
 }
 
 func TestLoadDir_FailurePath(t *testing.T) {
-
 	t.Run("empty directory", func(t *testing.T) {
 		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(c.TempDir(), atlasmigrateimport.FormatGoose)
@@ -191,7 +189,6 @@ func TestLoadDir_FailurePath(t *testing.T) {
 }
 
 func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		files     map[string]string
@@ -311,7 +308,6 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 // Goose parsing — the directive-free path and the out-of-order refusals that
 // replaced this over-refusal — is pinned in goosedirectives_test.go.
 func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		format  atlasmigrateimport.Format

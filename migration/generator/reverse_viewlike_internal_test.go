@@ -343,7 +343,6 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 // not consume this map, but the diff is serialized into reports, so an
 // unreversed "old -> new" would describe the up migration on a down plan.
 func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
-
 	input := &types.SchemaDiff{
 		ViewsModified: []types.ViewDiff{
 			{ViewName: "v", Changes: map[string]string{"body": "OLD -> NEW"}},

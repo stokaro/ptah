@@ -47,7 +47,6 @@ func ordersTableOneColumn(tableSchema string) *goschema.Database {
 // `modifyExistingColumns` degrades to an `ERROR: Could not find field
 // definition` comment that applies cleanly and changes nothing.
 func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		dialect   string
@@ -168,7 +167,6 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 // fails with `ERROR 1068 (42000): Multiple primary key defined` and the
 // migration aborts partway through.
 func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name            string
 		tableSchema     string

@@ -100,7 +100,6 @@ func appliedPtahVersions(tb testing.TB, conn *dbschema.DatabaseConnection) []int
 }
 
 func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		sql  string
@@ -144,7 +143,6 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
-
 	tests := []struct {
 		name string
 		sql  string
@@ -183,7 +181,6 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		sql  string

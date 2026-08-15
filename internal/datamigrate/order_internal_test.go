@@ -19,7 +19,6 @@ import (
 // when the data annotation omits the schema, and the ambiguity guard that
 // refuses to guess when a bare name is shared across schemas.
 func TestOrderByDependency(t *testing.T) {
-
 	names := func(diffs []*datadiff.DataDiff) []string {
 		out := make([]string, len(diffs))
 		for i, d := range diffs {

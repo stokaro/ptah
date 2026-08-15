@@ -155,7 +155,6 @@ func sumBytes(tb testing.TB, dir string) string {
 // layout selects. The fixture is read differently by every rule, so a format
 // that was ignored would produce another format's names here.
 func TestCompatMigrateHashSourceFormat_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -195,7 +194,6 @@ func TestCompatMigrateHashSourceFormat_HappyPath(t *testing.T) {
 // for: the two spellings Atlas accepts are the same instruction, so they must
 // produce the same bytes, not merely both succeed.
 func TestCompatMigrateHashSpellingsAgree_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -229,7 +227,6 @@ func TestCompatMigrateHashSpellingsAgree_HappyPath(t *testing.T) {
 // always preferred the flag, and one that always preferred the query, agree on
 // every input where the two name the same format.
 func TestCompatMigrateSourceFormatPrecedence_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		query string
@@ -350,7 +347,6 @@ func TestCompatMigrateHashConvertedDirOutput_HappyPath(t *testing.T) {
 // LoadFS — and with it #980's "no importable migration files found" — is never
 // reached from the integrity path. Atlas CE writes the same empty-set sum.
 func TestCompatMigrateHashEmptySourceSet_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -396,7 +392,6 @@ func TestCompatMigrateHashEmptySourceSet_HappyPath(t *testing.T) {
 // editing it leaves the directory clean where editing the up file does not
 // (see the FailurePath twin).
 func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string
@@ -455,7 +450,6 @@ func TestCompatMigrateValidateSourceFormat_HappyPath(t *testing.T) {
 // use, so all three surfaces stay byte-identical, and the mismatch line names
 // the SOURCE file rather than a converted name.
 func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
-
 	t.Run("unhashed converted directory", func(t *testing.T) {
 		c := qt.New(t)
 		dir := writeIntegrityFixture(c.TB)
@@ -529,7 +523,6 @@ func TestCompatMigrateValidateSourceFormat_FailurePath(t *testing.T) {
 // refuses. CE matches format names case-sensitively and does not trim, so
 // "GOOSE" and " goose " are unknown formats rather than goose.
 func TestCompatMigrateSourceFormat_FailurePathUnknownFormat(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args func(dir string) []string
@@ -671,7 +664,6 @@ func TestCompatMigrateNewUnknownFormatKeepsTheSemanticDiagnosticReachable(t *tes
 // and fail rows 1, 3 and 4, and one that took the last repeated value rather
 // than the first would swap rows 3 and 4.
 func TestCompatMigrateSourceFormatQuery_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		query string
@@ -727,7 +719,6 @@ func TestCompatMigrateSourceFormatQuery_HappyPath(t *testing.T) {
 // parser, so an unknown layout is refused whether or not an ignored key rides
 // along with it.
 func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		query string
@@ -772,7 +763,6 @@ func TestCompatMigrateSourceFormat_FailurePathUnsupportedQuery(t *testing.T) {
 // parsed for a layout, so an earlier one keeps a query the forwarding mapper
 // refuses, where Atlas CE ignores the overridden value entirely.
 func TestCompatMigrateIntegrityRepeatedDir_HappyPath(t *testing.T) {
-
 	t.Run("the last --dir names the directory and the layout", func(t *testing.T) {
 		c := qt.New(t)
 		first := writeIntegrityFixture(c.TB)
@@ -821,7 +811,6 @@ func TestCompatMigrateIntegrityRepeatedDir_FailurePath(t *testing.T) {
 // has to resolve to the ATLAS layout specifically, and on integrityFixture that
 // set differs from every other format's.
 func TestCompatMigrateIntegrityEmptyDirFormat_HappyPath(t *testing.T) {
-
 	t.Run("hash writes the atlas covered set", func(t *testing.T) {
 		c := qt.New(t)
 		dir := writeIntegrityFixture(c.TB)
@@ -849,7 +838,6 @@ func TestCompatMigrateIntegrityEmptyDirFormat_HappyPath(t *testing.T) {
 // executes directly instead of handing the arguments to the native command, so
 // without this it would silently ignore what the other spelling refuses.
 func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
-
 	tests := []struct {
 		name string
 		verb string
@@ -915,7 +903,6 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 // So the assertion that matters here is not the exit code but that neither
 // directory was hashed.
 func TestCompatMigrateIntegrityArgumentTerminator_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		verb string
@@ -949,7 +936,6 @@ func TestCompatMigrateIntegrityArgumentTerminator_FailurePath(t *testing.T) {
 // still gets its help instead of a resolution error. Atlas CE exits 0 on all
 // four of these.
 func TestCompatMigrateIntegrityHelp_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		verb string
@@ -1004,7 +990,6 @@ func TestCompatMigrateIntegrityHelp_HappyPath(t *testing.T) {
 //
 // Refusing is the safe side, and shared with `migrate apply`. Tracked in #990.
 func TestCompatMigrateIntegritySemicolonQuery_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		verb  string

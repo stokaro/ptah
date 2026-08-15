@@ -43,7 +43,6 @@ func enumSchema(enumName string) *goschema.Database {
 // substituted out, which is stronger than asserting a fixed string: it cannot
 // pass by both sides being equally wrong in some new way.
 func TestRender_EnumIdentityIsTheDeclarationNotTheNamePrefix(t *testing.T) {
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -63,7 +62,6 @@ func TestRender_EnumIdentityIsTheDeclarationNotTheNamePrefix(t *testing.T) {
 // dialect that models enums as standalone types: it was already correct on the
 // CREATE path under both spellings and must stay so.
 func TestRender_PostgreSQLEmitsTheEnumTypeUnderEitherName(t *testing.T) {
-
 	tests := []struct {
 		name string
 		want string
@@ -104,7 +102,6 @@ func matviewSchema() *goschema.Database {
 // documented workflow, so the silent side was the one that had to move
 // (stokaro/ptah#931 item 3).
 func TestRender_MaterializedViewIsRefusedWhereApplyRefusesIt(t *testing.T) {
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -396,7 +393,6 @@ var sequenceStart = int64(1000)
 // rendering a declared sequence for that dialect produces an actual
 // CREATE SEQUENCE statement.
 func TestRender_SequencesCapabilityAgreesWithTheGenerator(t *testing.T) {
-
 	dialects := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
@@ -435,7 +431,6 @@ func emitsExecutableCreateSequence(statements []string) bool {
 // TestRender_MariaDBReportsTheSequenceItCannotGenerate is the other half of item
 // 8: the flag being false must not mean the declared object vanishes.
 func TestRender_MariaDBReportsTheSequenceItCannotGenerate(t *testing.T) {
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

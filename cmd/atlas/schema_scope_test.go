@@ -139,7 +139,6 @@ func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 // separator. A depth check that counted characters made this selector — and
 // therefore the qualified spelling of every dotted identifier — inexpressible.
 func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		pattern string
@@ -205,7 +204,6 @@ func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) 
 }
 
 func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
-
 	t.Run("main selects unqualified objects", func(t2 *testing.T) {
 		c := qt.New(t2)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)

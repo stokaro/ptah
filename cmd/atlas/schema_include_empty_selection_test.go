@@ -48,7 +48,6 @@ var emptySelectionSpellings = []struct {
 // selector green-light a CI check, so a selector that met neither side is an
 // error and produces no diff output.
 func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
-
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t2 *testing.T) {
 			c := qt.New(t2)
@@ -80,7 +79,6 @@ func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 // legitimate answer and its documented contract says so, so exit 0 and the
 // rendered bytes stay; only the notice is added.
 func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
-
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t2 *testing.T) {
 			c := qt.New(t2)
@@ -145,7 +143,6 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 // named "a.b.c" is selected by the bare selector `a.b.c`, which the old rule
 // refused before any database was contacted.
 func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
-
 	tests := []struct {
 		name string
 		// selector is a spelling of the same dotted table name. All three must

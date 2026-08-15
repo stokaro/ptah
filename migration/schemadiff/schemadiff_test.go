@@ -852,7 +852,6 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 }
 
 func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		generatedType string
@@ -894,7 +893,6 @@ func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 }
 
 func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		generatedType string
@@ -1172,7 +1170,6 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-
 	// Example data
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{

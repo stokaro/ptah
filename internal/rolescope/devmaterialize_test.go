@@ -37,7 +37,6 @@ func roleNames(roles []goschema.Role) []string {
 // cluster or an empty CI catalog is, and it never produced the error in the
 // first place.
 func TestRolesToCreateOnDevSkipsWhatTheServerAlreadyHas(t *testing.T) {
-
 	tests := []struct {
 		name             string
 		declared         []goschema.Role
@@ -130,7 +129,6 @@ func TestRolesToCreateOnDevKeepsTheDeclaredAttributes(t *testing.T) {
 // Naming them is not the disclosure [rolescope.ReportUndescribed] withholds.
 // Every name here came out of the caller's own document.
 func TestReportNotCreatedOnDevNamesEveryRoleItSkipped(t *testing.T) {
-
 	tests := []struct {
 		name            string
 		alreadyOnServer []goschema.Role
@@ -174,7 +172,6 @@ func TestReportNotCreatedOnDevNamesEveryRoleItSkipped(t *testing.T) {
 // inspect surfaces' spelling of "no diagnostics stream", and a note that
 // panicked there would fail a materialization that succeeded.
 func TestReportNotCreatedOnDevStaysSilentWhenItCreatedEverything(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		report func(*bytes.Buffer)

@@ -56,7 +56,6 @@ func representativeSelect() *ast.SelectStatement {
 }
 
 func TestRenderSelect_Representative(t *testing.T) {
-
 	wantArgs := []any{false, "in_use", "sold", int64(10), int64(24), int64(0)}
 
 	tests := []struct {
@@ -98,7 +97,6 @@ func TestRenderSelect_Representative(t *testing.T) {
 }
 
 func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
-
 	stmt := &ast.SelectStatement{
 		Columns: []ast.ResultColumn{{Star: true}},
 		From:    "users",
@@ -132,7 +130,6 @@ func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
 }
 
 func TestRenderSelect_ProjectionVariants(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		stmt    *ast.SelectStatement
@@ -186,7 +183,6 @@ func TestRenderSelect_LimitOffsetPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
-
 	// A bare OFFSET is valid on PostgreSQL, but MySQL/MariaDB/SQLite only accept
 	// OFFSET as a suffix of LIMIT, so a "no limit" sentinel is synthesized. The
 	// OFFSET stays bound; the sentinel is a literal and takes no placeholder.
@@ -215,7 +211,6 @@ func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
 }
 
 func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
-
 	// The projection, WHERE, and ORDER BY identifiers all route through the same
 	// dialect quoting, so a quote-bearing name is escaped in every clause.
 	tests := []struct {
@@ -260,7 +255,6 @@ func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
 }
 
 func TestRenderSelect_NullTests(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		negated bool
@@ -307,7 +301,6 @@ func TestRenderSelect_ValueNeverBecomesSQL(t *testing.T) {
 }
 
 func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
-
 	// An attacker-shaped identifier cannot terminate the quoted identifier: the
 	// dialect quote character is doubled per the SQL standard.
 	tests := []struct {
@@ -349,7 +342,6 @@ func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
 }
 
 func TestRenderSelect_Errors(t *testing.T) {
-
 	tests := []struct {
 		name        string
 		stmt        *ast.SelectStatement

@@ -21,7 +21,6 @@ import (
 // apply failed rather than merely reading oddly. Measured live on PostgreSQL
 // 17.10 through both `ptah-compat schema apply` and `ptah schema apply`.
 func TestPostgres_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column *ast.ColumnNode
@@ -61,7 +60,6 @@ func TestPostgres_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
 // renderer that emits SET NOT NULL for every column, which would silently
 // re-introduce a constraint the author removed.
 func TestPostgres_ModifyColumn_OrdinaryColumnStillDropsNotNull(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column *ast.ColumnNode

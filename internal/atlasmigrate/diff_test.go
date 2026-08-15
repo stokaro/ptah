@@ -550,7 +550,6 @@ func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing
 }
 
 func TestGenerateDiff_FailurePath(t *testing.T) {
-
 	t.Run("nil dev database connection", func(t *testing.T) {
 		c := qt.New(t)
 		result, err := atlasmigrate.GenerateDiff(context.Background(), nil, atlasmigrate.DiffOptions{

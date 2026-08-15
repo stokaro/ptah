@@ -164,7 +164,6 @@ func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 }
 
 func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string
@@ -298,7 +297,6 @@ func TestSchemaPlanNameFormatTrimsSurroundingWhitespace(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		suffix string
@@ -352,7 +350,6 @@ func TestSchemaPlanNameFormatIsMutuallyExclusiveWithName(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		template string
@@ -429,7 +426,6 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
-
 	// Each case names the layer that refuses it, so the test cannot pass
 	// because planning failed for some unrelated reason. Two are caught by the
 	// name rules before the writer ever sees them — a backslash is a path
@@ -715,7 +711,6 @@ func TestSchemaPlanEditPreservesCommentsOnEditedStatements(t *testing.T) {
 }
 
 func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string
@@ -817,7 +812,6 @@ func TestSchemaPlanEditKeepsTheSourceFingerprint(t *testing.T) {
 }
 
 func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
-
 	// installEditor is a closure per case rather than a body string plus a
 	// flag, so the "no editor at all" case needs no conditional in the test.
 	withBody := func(body string) func(*testing.T) {

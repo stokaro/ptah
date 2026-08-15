@@ -133,7 +133,6 @@ func TestNormalizeIsDeterministic(t *testing.T) {
 }
 
 func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -193,7 +192,6 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 // the other half of the contract: the encoding is line-based, so a name must
 // never be able to end its own comment.
 func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		given string
@@ -251,7 +249,6 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 // the conservative superset, written into the document where a reader can see
 // it.
 func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -288,7 +285,6 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 }
 
 func TestDecodeHeader_HappyPath(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		document string
@@ -350,7 +346,6 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 // exists to prevent: an unread record reads as no record, and the absence it was
 // protecting becomes a removal.
 func TestDecodeHeader_FailurePath(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		document string

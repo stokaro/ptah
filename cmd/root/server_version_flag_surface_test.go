@@ -165,7 +165,6 @@ func TestDialectVerbs_OfflineOnesTakeAServerVersion(t *testing.T) {
 // both mean something else. If serverversion.Lookup ever went back to matching
 // on the name, this test — not the one above — is what goes red.
 func TestDialectVerbs_ExemptOnesCarryNoServerVersionFlag(t *testing.T) {
-
 	commands := nativeLeafCommands(root.NewRootCommand())
 
 	for _, row := range exemptDialectVerbs() {

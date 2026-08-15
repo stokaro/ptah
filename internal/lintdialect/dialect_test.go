@@ -180,7 +180,6 @@ func TestCanonical_HappyPath_EmptyDialectResolvesToItself(t *testing.T) {
 }
 
 func TestValid_FailurePath(t *testing.T) {
-
 	for _, dialect := range []string{"oracle", "db2", "postgres!", "post gres", " ", "sqlserver2022"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

@@ -22,7 +22,6 @@ import (
 // other test in this package would notice.
 
 func TestScopeDatabaseKeepsCoverage(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		scope atlasfilter.Scope
@@ -52,7 +51,6 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 }
 
 func TestScopeGeneratedKeepsCoverage(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		scope atlasfilter.Scope

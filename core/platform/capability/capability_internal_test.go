@@ -41,7 +41,6 @@ const yugabyteBanner = "PostgreSQL 15.12-YB-2026.1.0.0-b0 on aarch64-unknown-lin
 // reads those banners correctly, so the defect is in what these two banners put
 // first, not in the parser being broken for everything.
 func TestParseVersion_ReadsTheWrongNumberOutOfTwoRealBanners(t *testing.T) {
-
 	for _, tc := range []struct {
 		name   string
 		banner string

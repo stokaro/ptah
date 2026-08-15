@@ -200,7 +200,6 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 }
 
 func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		generated *goschema.Database

@@ -235,7 +235,6 @@ func flywayCovered(tb testing.TB, fsys fs.FS) []string {
 // scripts/probe-atlas-apply-gate.sh section 9a reproduces the comparison
 // against the binary.
 func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -388,7 +387,6 @@ func TestLoadFSFlywayCoveredSetIsNotEmptyForTheseShapes(t *testing.T) {
 // verify clean under `migrate validate` on both tools, so a coverage assertion
 // alone would not have caught either.
 func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
-
 	t.Run("a superseded baseline does not execute", func(t *testing.T) {
 		c := qt.New(t)
 		source := flywaySource("B1__one.sql", "B2__two.sql", "V3__three.sql")
@@ -420,7 +418,6 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 // contract — they end up in the file names `migrate import` writes and in the
 // revisions `migrate apply` records.
 func TestLoadFSFlywayAtlasVersions(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -532,7 +529,6 @@ func TestLoadFSFlywayBaselineDoesNotShiftSurvivorVersions(t *testing.T) {
 // duplicate version rather than reporting anything, so refusing is a refusal
 // toward the oracle rather than past it.
 func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -573,7 +569,6 @@ func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
 // Closing these means giving the migrator a version that is not an int64, which
 // is a change to revision tracking rather than to this importer.
 func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T) {
-
 	tests := []struct {
 		name  string
 		files []string
@@ -623,7 +618,6 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 // version is positive and below the reserved repeatable slot is what makes the
 // row a bound rather than a spot check.
 func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
-
 	t.Run("the largest representable version converts", func(t *testing.T) {
 		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadFS(

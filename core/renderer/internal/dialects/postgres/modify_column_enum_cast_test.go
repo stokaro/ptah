@@ -26,7 +26,6 @@ import (
 // two rows below are that discriminating pair, with the name as the only
 // difference (stokaro/ptah#931 item 1).
 func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		column *ast.ColumnNode

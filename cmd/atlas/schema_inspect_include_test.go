@@ -72,7 +72,6 @@ func TestSchemaInspectIncludeSelectsTopLevelResources(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args []string
@@ -97,7 +96,6 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
-
 	// Both spellings name one top-level table. Atlas treats
 	// the wildcard form as a child-level pattern instead and renders the
 	// tables as empty shells; Ptah keeps the selected table whole.
@@ -125,7 +123,6 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
-
 	// The qualified candidate for a dotted identifier quotes the dotted part
 	// (`main."dotted.table"`), so the selector matching it holds two dot
 	// characters and one separator. Depth is measured on separators outside
@@ -175,7 +172,6 @@ func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
-
 	t.Run("selected schema keeps the selection", func(t2 *testing.T) {
 		c := qt.New(t2)
 		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
@@ -212,7 +208,6 @@ func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
-
 	allTables := []string{"inspect_users", "inspect_posts", "inspect_archive"}
 
 	tests := []struct {
@@ -288,7 +283,6 @@ func TestSchemaInspectIncludeCrossScopeDependencyFails(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeValidatesSelectorsBeforeConnecting(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		pattern string
@@ -351,7 +345,6 @@ func TestSchemaInspectIncludeValidationRunsBeforeDevDatabaseReset(t *testing.T) 
 }
 
 func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
-
 	t.Run("local schema file", func(t2 *testing.T) {
 		c := qt.New(t2)
 		dir := t.TempDir()
@@ -386,7 +379,6 @@ func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
-
 	tests := []struct {
 		name   string
 		format string

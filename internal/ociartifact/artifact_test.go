@@ -133,7 +133,6 @@ func TestArtifactWriteToDir_HappyPath(t *testing.T) {
 }
 
 func TestArtifactWriteToDir_FailurePath(t *testing.T) {
-
 	t.Run("missing filesystem", func(t2 *testing.T) {
 		c := qt.New(t2)
 		err := (ociartifact.Artifact{}).WriteToDir(filepath.Join(t.TempDir(), "output"))

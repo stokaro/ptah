@@ -23,7 +23,6 @@ func renderWhere(tb testing.TB, expr ast.Expression) (string, []any) {
 }
 
 func TestExpressionConstructors(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		expr     ast.Expression
@@ -127,7 +126,6 @@ func TestExpressionConstructors(t *testing.T) {
 }
 
 func TestSelectBuilder_Projection(t *testing.T) {
-
 	tests := []struct {
 		name string
 		stmt *ast.SelectStatement
@@ -254,7 +252,6 @@ func TestSelectBuilder_SharedWhereFragment(t *testing.T) {
 }
 
 func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
-
 	// Degenerate constructor inputs must surface a clean RenderSelect error, not
 	// a panic, when the statement is rendered.
 	tests := []struct {

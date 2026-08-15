@@ -256,7 +256,6 @@ func TestRescopeStatementsForDevDatabase(t *testing.T) {
 }
 
 func TestSchemaScopeNamesDatabase(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		dialect string

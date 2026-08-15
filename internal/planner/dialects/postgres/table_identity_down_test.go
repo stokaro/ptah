@@ -92,7 +92,6 @@ func containsStatement(statements []string, fragment string) bool {
 // field, and emitted no statement at all. The rollback said nothing was needed
 // and the column stayed dropped.
 func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
-
 	tests := []struct {
 		name         string
 		targetSchema string
@@ -157,7 +156,6 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 // relations, and putting a column on the wrong one is the mistake the resolver
 // exists to prevent.
 func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
-
 	t.Run("a named non-default schema selects its own table", func(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{

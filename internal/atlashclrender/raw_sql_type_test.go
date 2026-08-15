@@ -30,7 +30,6 @@ import (
 // call fails and the "still parses to the same type" assertion still passes,
 // which is why the loss was invisible to the existing round-trip tests.
 func TestRenderWritesSQLRawExpressionColumnTypeBackAsTheCall(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		source   string
