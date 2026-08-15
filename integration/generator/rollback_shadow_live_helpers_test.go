@@ -14,7 +14,7 @@ import (
 
 func requireRollbackPostgresURL(c *qt.C) string {
 	c.Helper()
-	return dbtarget.URL(c.TB, dbtarget.PostgreSQL)
+	return dbtarget.URL(c, dbtarget.PostgreSQL)
 }
 
 func rollbackPostgresDatabaseURL(c *qt.C, rawURL, database string) string {

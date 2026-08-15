@@ -48,7 +48,7 @@ func TestLoadProjectConfigHonorsPublicVarFlag(t *testing.T) {
 	c := qt.New(t)
 	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c.TB)
+	cmd := envVarCommand(c)
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.ProjectVarFlagName, "dburl=sqlite://file.db"), qt.IsNil)
 
@@ -65,7 +65,7 @@ func TestLoadProjectConfigWithoutVarAdvisesTheFlagItAccepts(t *testing.T) {
 	c := qt.New(t)
 	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c.TB)
+	cmd := envVarCommand(c)
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 
 	_, err := dbcli.LoadProjectConfig(cmd, "")
@@ -81,7 +81,7 @@ func TestLoadProjectConfigPublicVarWinsOverAdapterVar(t *testing.T) {
 	c := qt.New(t)
 	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c.TB)
+	cmd := envVarCommand(c)
 	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "dburl=sqlite://adapter.db"), qt.IsNil)
@@ -100,7 +100,7 @@ func TestLoadProjectConfigStillHonorsAdapterVar(t *testing.T) {
 	c := qt.New(t)
 	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c.TB)
+	cmd := envVarCommand(c)
 	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "dburl=sqlite://adapter.db"), qt.IsNil)
@@ -116,7 +116,7 @@ func TestLoadProjectConfigStillHonorsAdapterVar(t *testing.T) {
 func TestRegisterEnvFlagAnnotatesTheProjectEnvFlag(t *testing.T) {
 	c := qt.New(t)
 
-	bound := envVarCommand(c.TB)
+	bound := envVarCommand(c)
 	c.Assert(
 		bound.Flags().Lookup(dbcli.EnvFlagName).Annotations[dbcli.ProjectConfigEnvAnnotation],
 		qt.DeepEquals,
@@ -141,7 +141,7 @@ func TestExplicitConfigOverHCLNamesTheConfigFlag(t *testing.T) {
 	c := qt.New(t)
 	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c.TB)
+	cmd := envVarCommand(c)
 	_, err := dbcli.LoadProjectConfig(cmd, "atlas.hcl")
 
 	c.Assert(err, qt.IsNotNil)

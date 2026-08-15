@@ -341,7 +341,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	}
 
 	c.Run("control_no_dev_url_cannot_touch_the_target", func(c *qt.C) {
-		fixture := newSeededFixture(c.TB, "validate-readonly")
+		fixture := newSeededFixture(c, "validate-readonly")
 		before := readTargetSchema(c, fixture.dbURL)
 
 		stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "validate",
@@ -361,7 +361,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	// runAtlasSchemaPlanValidate hands it the target URL; drop that one field
 	// and the whole suite stays green while this input destroys the database.
 	c.Run("dev_url_pointing_at_the_target_is_refused", func(c *qt.C) {
-		fixture := newSeededFixture(c.TB, "validate-devurl-is-target")
+		fixture := newSeededFixture(c, "validate-devurl-is-target")
 		before := readTargetSchema(c, fixture.dbURL)
 
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
@@ -379,7 +379,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	})
 
 	c.Run("dev_url_path_alias_of_the_target_is_refused", func(c *qt.C) {
-		fixture := newSeededFixture(c.TB, "validate-devurl-path-alias")
+		fixture := newSeededFixture(c, "validate-devurl-path-alias")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasPath := filepath.Dir(fixture.dbPath) + string(os.PathSeparator) + "." +
 			string(os.PathSeparator) + filepath.Base(fixture.dbPath)
@@ -395,7 +395,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	})
 
 	c.Run("percent_encoded_dev_url_alias_of_the_target_is_refused", func(c *qt.C) {
-		fixture := newSeededFixture(c.TB, "validate-devurl-percent-encoded-alias")
+		fixture := newSeededFixture(c, "validate-devurl-percent-encoded-alias")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasURL := "sqlite:file:" + url.PathEscape(filepath.ToSlash(fixture.dbPath)) + "?mode=rwc"
 
@@ -409,7 +409,7 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	})
 
 	c.Run("dev_url_hard_link_of_the_target_is_refused", func(c *qt.C) {
-		fixture := newSeededFixture(c.TB, "validate-devurl-hard-link")
+		fixture := newSeededFixture(c, "validate-devurl-hard-link")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasPath := filepath.Join(filepath.Dir(fixture.dbPath), "target-hard-link.db")
 		c.Assert(os.Link(fixture.dbPath, aliasPath), qt.IsNil)
@@ -520,8 +520,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 	}
 
 	c.Run("control_untouched_target_validates", func(c *qt.C) {
-		fixture := newFixture(c.TB, "validate-stale-control")
-		idempotentPlan(c.TB, fixture)
+		fixture := newFixture(c, "validate-stale-control")
+		idempotentPlan(c, fixture)
 
 		stdout, stderr, err := runSchemaPlanSubverbStreams(atlas.NewCompatCommand("atlas"), "validate",
 			fixture.validateArgs()...)
@@ -531,8 +531,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 	})
 
 	c.Run("moved_on_target_is_refused_as_stale", func(c *qt.C) {
-		fixture := newFixture(c.TB, "validate-stale")
-		idempotentPlan(c.TB, fixture)
+		fixture := newFixture(c, "validate-stale")
+		idempotentPlan(c, fixture)
 		// The plan's own change, applied out of band. The target now equals the
 		// desired state, so replaying the idempotent plan on it converges;
 		// only the recorded from-fingerprint disagrees.

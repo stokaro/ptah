@@ -27,7 +27,7 @@ import (
 func runRevisionCompletionAfterDDL(t *testing.T, target revisionCompletionTarget) {
 	c := qt.New(t)
 	ctx := context.Background()
-	fixture := newRevisionCompletionFixture(t, c.TB, target, "ddl")
+	fixture := newRevisionCompletionFixture(t, c, target, "ddl")
 
 	up := fmt.Sprintf(
 		"CREATE TABLE %s (id INTEGER PRIMARY KEY) ENGINE=InnoDB; INSERT INTO %s (id) VALUES (1)",
@@ -59,7 +59,7 @@ func runRevisionCompletionAfterDDL(t *testing.T, target revisionCompletionTarget
 func runRevisionCompletionDMLOnly(t *testing.T, target revisionCompletionTarget) {
 	c := qt.New(t)
 	ctx := context.Background()
-	fixture := newRevisionCompletionFixture(t, c.TB, target, "dml")
+	fixture := newRevisionCompletionFixture(t, c, target, "dml")
 
 	// The table is created outside the migration, so the body contains no DDL
 	// and never triggers an implicit commit.

@@ -471,7 +471,7 @@ func TestReadRolesReportsOneRolePerReason(t *testing.T) {
 				test.used,
 				{name: "someone_elses", schema: "", reads: nil},
 			}
-			reader := newRolesServer(c.TB, cluster, test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, cluster, test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRoles()
 
@@ -512,7 +512,7 @@ func TestReadRolesLeavesClusterRolesTheScopeDoesNotUseOut(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, test.cluster, test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, test.cluster, test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRoles()
 
@@ -556,7 +556,7 @@ func TestReadRolesFollowsTheSchemasBeingRead(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRoles()
 
@@ -596,7 +596,7 @@ func TestReadRolesKeepsSystemRolesOut(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
+			reader := newRolesServer(c, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := reader.readRoles()
 
@@ -636,7 +636,7 @@ func TestReadRolesAsksForPolicyRolesOnlyWherePoliciesExist(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, cluster, []string{"public"}, test.caps)
+			reader := newRolesServer(c, cluster, []string{"public"}, test.caps)
 
 			roles, err := reader.readRoles()
 
@@ -691,7 +691,7 @@ func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
 				test.owner,
 				{name: "table_grantee", schema: "public", reads: byRelationGrant},
 			}
-			reader := newRolesServer(c.TB, cluster, []string{"public"}, capability.Postgres16())
+			reader := newRolesServer(c, cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := reader.readRoles()
 
@@ -741,7 +741,7 @@ func TestReadRolesOutOfScopeReportsWhatTheDescriptionLeavesOut(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 
 			roles, err := reader.readRolesOutOfScope()
 
@@ -782,7 +782,7 @@ func TestReadRolesOutOfScopeKeepsSystemRolesOut(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
+			reader := newRolesServer(c, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := reader.readRolesOutOfScope()
 
@@ -831,7 +831,7 @@ func TestReadRolesKeepsOrdinaryRolesTheReservedPrefixWouldSwallow(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, test.cluster, []string{"public"}, capability.Postgres16())
+			reader := newRolesServer(c, test.cluster, []string{"public"}, capability.Postgres16())
 
 			roles, err := test.read(reader)
 
@@ -875,7 +875,7 @@ func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 
 			described, err := reader.readRoles()
 			c.Assert(err, qt.IsNil)
@@ -906,7 +906,7 @@ func TestReadRolesComplementIsTheExactNegationOfTheScopedRead(t *testing.T) {
 	// scope -- the whole defect restored -- and with
 	// `TRUE OR NOT EXISTS (...)` the two reads overlap. Both walked past every
 	// other test in this file before the reads were compared as text.
-	reader, sent := newRecordingRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
+	reader, sent := newRecordingRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
 
 	_, err := reader.readRoles()
 	c.Assert(err, qt.IsNil)
@@ -937,7 +937,7 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	// out are carried separately for the comparator alone. This is the shape
 	// every surface produces unless an operator asks for the other one.
 	envbooltest.Unset(rolescope.DescribeAllEnvVar)(c)
-	reader := newRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
+	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
 	schema := &types.DBSchema{}
 
 	c.Assert(reader.readRolesInto(schema), qt.IsNil)
@@ -994,7 +994,7 @@ func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			test.env(c)
-			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}
 
 			err := reader.readRolesInto(schema)
@@ -1026,7 +1026,7 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 	// direction. An opt-in that emitted `CREATE ROLE "postgres"` would be a
 	// worse answer than the scoping it undoes.
 	c.Setenv(rolescope.DescribeAllEnvVar, "1")
-	reader := newRolesServer(c.TB, fullCluster(), []string{"public"}, capability.Postgres16())
+	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
 	schema := &types.DBSchema{}
 
 	c.Assert(reader.readRolesInto(schema), qt.IsNil)
@@ -1075,7 +1075,7 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			test.env(c)
-			reader := newRolesServer(c.TB, fullCluster(), test.schemas, capability.Postgres16())
+			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}
 
 			c.Assert(reader.readRolesInto(schema), qt.IsNil)

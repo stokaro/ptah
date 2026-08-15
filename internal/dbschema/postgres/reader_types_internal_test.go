@@ -313,7 +313,7 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newTypesServer(c.TB, mixedCatalog())
+			reader := newTypesServer(c, mixedCatalog())
 
 			names, err := test.read(reader)
 
@@ -357,7 +357,7 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			reader := newTypesServer(c.TB, userDeclared)
+			reader := newTypesServer(c, userDeclared)
 
 			names, err := test.read(reader)
 
@@ -389,7 +389,7 @@ func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var sent []string
-			db := dbtest.Open(c.TB, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+			db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 				sent = append(sent, query)
 				return answerTypes(query, args, mixedCatalog())
 			})
