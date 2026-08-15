@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -23,17 +24,7 @@ import (
 // variables as the other live PostgreSQL tests.
 func livePostgresURLForRLSEnable(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for RLS enablement live tests")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 // createRLSEnableDatabase provisions one empty database per row and registers

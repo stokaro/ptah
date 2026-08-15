@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -131,11 +132,7 @@ func sqlServerShadowTableExists(c *qt.C, conn *dbschema.DatabaseConnection, tabl
 
 func sqlServerAdminTestURL(t testing.TB) string {
 	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live generator tests")
-	}
-	return adminURL
+	return dbtarget.URL(t, dbtarget.SQLServer)
 }
 
 func connectShadowCollationDatabase(

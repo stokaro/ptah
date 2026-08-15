@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -183,11 +184,7 @@ func provisionSQLServerGeneratorDatabase(t testing.TB, role string) string {
 
 func sqlServerGeneratorAdminURL(t testing.TB) string {
 	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live generator tests")
-	}
-	return adminURL
+	return dbtarget.URL(t, dbtarget.SQLServer)
 }
 
 func connectSQLServerGeneratorDatabase(
