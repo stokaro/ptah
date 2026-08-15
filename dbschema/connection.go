@@ -36,19 +36,7 @@ import (
 // affect the lifetime of the returned *DatabaseConnection; callers are
 // responsible for closing it.
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
-	// Handle MySQL URLs specially since they have a different format
-	var parsedURL *url.URL
-	var err error
-
-	if (strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://")) && strings.Contains(dbURL, "@tcp(") {
-		// For MySQL/MariaDB URLs, create a fake parseable URL for scheme detection
-		fakeURL := strings.Replace(dbURL, "@tcp(", "@", 1)
-		fakeURL = strings.Replace(fakeURL, ")", "", 1)
-		parsedURL, err = url.Parse(fakeURL)
-	} else {
-		parsedURL, err = url.Parse(dbURL)
-	}
-
+	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)
 	}
@@ -164,6 +152,73 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		newWriter:      newWriter,
 		inMemorySQLite: inMemorySQLite,
 	}, nil
+}
+
+// parseDatabaseURL parses a database URL into the form the rest of the
+// connection path reads.
+//
+// Two shapes are not URLs and have to be rewritten before net/url sees them.
+//
+// The MySQL family carries a NETWORK where a URL carries a host:
+// user:pass@tcp(127.0.0.1:3306)/db and user:pass@unix(/tmp/mysql.sock)/db are
+// one grammar with two networks, and neither is an authority. The network and
+// its address are dropped so what remains parses, and the parts the caller
+// reads survive it. It is not only the scheme that is read from the result --
+// getDatabaseInfo takes the MySQL database name from the path -- so recognizing
+// only tcp( left a socket address parsed as a host called "unix(" with the
+// socket path folded into the database name.
+//
+// A Windows absolute path is not an authority either. sqlite://C:\dir\app.db
+// makes net/url read the drive letter's colon as a port separator and refuse
+// the whole URL, which is why every command that provisions a local database
+// failed on Windows: 1014 tests across more than thirty packages, 1382 of them
+// reporting "invalid database URL". The path is carried as opaque instead,
+// which is the shape convertSQLiteURL already reads first.
+func parseDatabaseURL(dbURL string) (*url.URL, error) {
+	if strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://") {
+		if rewritten, ok := withoutMySQLNetwork(dbURL); ok {
+			return url.Parse(rewritten)
+		}
+	}
+
+	parsed, err := url.Parse(dbURL)
+	if err == nil {
+		return parsed, nil
+	}
+	if scheme, rest, found := strings.Cut(dbURL, "://"); found && isWindowsPath(rest) {
+		return &url.URL{Scheme: scheme, Opaque: rest}, nil
+	}
+	return nil, err
+}
+
+// withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
+// reporting whether one was there to remove.
+func withoutMySQLNetwork(dbURL string) (string, bool) {
+	for _, network := range []string{"@tcp(", "@unix("} {
+		start := strings.Index(dbURL, network)
+		if start < 0 {
+			continue
+		}
+		end := strings.Index(dbURL[start:], ")")
+		if end < 0 {
+			continue
+		}
+		return dbURL[:start+1] + dbURL[start+end+1:], true
+	}
+	return dbURL, false
+}
+
+// isWindowsPath reports whether a URL's remainder is a Windows absolute path,
+// which is the one shape whose colon is not a port separator.
+func isWindowsPath(rest string) bool {
+	if len(rest) < 3 || rest[1] != ':' {
+		return false
+	}
+	drive := rest[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return rest[2] == '\\' || rest[2] == '/'
 }
 
 func getDatabaseInfoWithCapabilities(
@@ -1057,7 +1112,10 @@ func convertClickHouseURL(dbURL string) string {
 }
 
 func convertSQLiteURL(dbURL string) string {
-	parsed, err := url.Parse(dbURL)
+	// Through parseDatabaseURL rather than url.Parse: a Windows absolute path
+	// is refused by the latter, and returning the URL whole then handed the
+	// driver a string beginning with sqlite:// as though it were a filename.
+	parsed, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return dbURL
 	}

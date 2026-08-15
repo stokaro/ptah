@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"log/slog"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1156,4 +1157,96 @@ func TestConnectToDatabase_ReadsTheDialectOfASocketURL(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
+}
+
+// TestParseDatabaseURL_AcceptsAWindowsPath pins the shape that made ptah
+// unusable on Windows.
+//
+// A drive letter's colon is not a port separator, but net/url reads it as one
+// and refuses the whole URL, so every command that provisions a local database
+// failed: 1014 tests across more than thirty packages, 1382 of them reporting
+// "invalid database URL". The path is carried as opaque, which is the shape
+// convertSQLiteURL reads first, so what the driver receives is the path itself.
+//
+// The rows run on every operating system because this is string handling, not
+// a filesystem call -- which is the only reason the fix is testable from a
+// machine that is not the one it is for.
+func TestParseDatabaseURL_AcceptsAWindowsPath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "a backslash path",
+			url:  `sqlite://C:\Users\runner\AppData\Local\Temp\shadow.db`,
+			want: `C:\Users\runner\AppData\Local\Temp\shadow.db`,
+		},
+		{
+			name: "a forward-slash path with a drive",
+			url:  "sqlite://D:/data/app.db",
+			want: "D:/data/app.db",
+		},
+		{
+			name: "a lowercase drive letter",
+			url:  `sqlite://c:\tmp\app.db`,
+			want: `c:\tmp\app.db`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Scheme, qt.Equals, "sqlite")
+			// The DSN carries the pragma this package appends to every SQLite
+			// address, so the path is matched as a prefix rather than whole.
+			c.Assert(convertSQLiteURL(test.url), qt.Matches, regexp.QuoteMeta(test.want)+`(\?.*)?`)
+		})
+	}
+}
+
+// TestParseDatabaseURL_StillRefusesAnAddressThatIsNotOne is the control that
+// keeps the Windows accommodation from swallowing real errors. A colon that is
+// a malformed port stays a malformed port.
+func TestParseDatabaseURL_StillRefusesAnAddressThatIsNotOne(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parseDatabaseURL("postgres://host:notaport/db")
+
+	c.Assert(err, qt.IsNotNil)
+}
+
+// TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL checks what the parse is
+// used for rather than only that it succeeded.
+//
+// The parsed URL does not only carry the scheme: its path is where the MySQL
+// branch of getDatabaseInfo reads the database name, so recognizing only @tcp(
+// left a socket address parsed as a host called "unix(" with the socket path
+// folded into the name, and readers and writers targeted a database called
+// tmp/mysql.sock)/db.
+func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a socket target names its database", url: "mysql://user:pass@unix(/tmp/mysql.sock)/shop", want: "shop"},
+		{name: "a mariadb socket target too", url: "mariadb://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
+		{name: "the TCP spelling is unchanged", url: "mysql://user:pass@tcp(127.0.0.1:3306)/shop", want: "shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, test.want)
+		})
+	}
 }
