@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestClient_RegistryOperationTimeout(t *testing.T) {
@@ -39,6 +40,7 @@ func TestClient_RegistryOperationTimeout(t *testing.T) {
 }
 
 func TestClient_CredentialHelperTimeout(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("WWW-Authenticate", `Basic realm="ptah-test"`)

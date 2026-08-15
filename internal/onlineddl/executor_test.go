@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // fakeConn satisfies Conn without a database. QueryRowContext must never be
@@ -686,6 +687,7 @@ func TestExecuteStatement_EmptyPasswordOmitsPasswordArg(t *testing.T) {
 // TestExecuteStatement_RunsRealFakeBinary exercises the production LookPath
 // and CommandRunner against a fake gh-ost on PATH that records its argv.
 func TestExecuteStatement_RunsRealFakeBinary(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 
 	dir := t.TempDir()
@@ -723,6 +725,7 @@ func TestExecuteStatement_RunsRealFakeBinary(t *testing.T) {
 }
 
 func TestExecuteStatement_RunsRealFakePTOSCBinaryWithoutPasswordArgv(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 
 	dir := t.TempDir()

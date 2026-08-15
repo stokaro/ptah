@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -39,6 +40,7 @@ func checkpointFlagFixture(c *qt.C) (migrationsDir, devURL string) {
 // file it is handed and exits, which is the non-interactive editor the opt-out
 // environment variable exists for.
 func writeAppendingEditor(c *qt.C, marker string) string {
+	testutils.SkipWithoutPOSIXShell(c)
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"

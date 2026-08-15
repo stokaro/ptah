@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestParseAtlasExternalSchemaDataSource_HappyPath(t *testing.T) {
@@ -385,6 +386,7 @@ env "dev" {
 }
 
 func TestLoadAtlasExternalSchemaUnreferencedSourceIsNotExecuted(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	sentinel := filepath.Join(dir, "executed.sentinel")

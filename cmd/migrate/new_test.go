@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestMigrateNewCommandCreatesSkeletonFiles(t *testing.T) {
@@ -100,6 +101,7 @@ func TestMigrateCreateCommandUsesNativeName(t *testing.T) {
 // every file it receives, keeping the --edit path hermetic (no interactive
 // editor is ever spawned).
 func installCreateEditor(t *testing.T, marker string) {
+	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"

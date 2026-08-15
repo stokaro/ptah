@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/safety"
 )
 
@@ -29,6 +30,7 @@ import (
 // SQL. CI is Linux-only, so a /bin/sh script is safe here (same precedent as
 // installAppendEditor).
 func installScriptEditor(t *testing.T, body string) {
+	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "plan-editor.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil { //nolint:gosec // test editor script must be executable

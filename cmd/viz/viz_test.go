@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/viz"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 func TestCommandWritesMermaid(t *testing.T) {
@@ -155,6 +156,7 @@ func TestSVGReportsFriendlyGraphvizErrorWhenDotIsMissing(t *testing.T) {
 }
 
 func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	skipOnWindows(t)
 	c := qt.New(t)
 	dir := t.TempDir()

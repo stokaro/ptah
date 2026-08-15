@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // externalHelperModes maps a mode name to the behavior the re-executed test
@@ -181,6 +182,7 @@ func TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute(t *testing.T
 }
 
 func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar)(t)
 	dir := t.TempDir()
