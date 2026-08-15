@@ -24,12 +24,12 @@ tool (`ghost` or `pt-osc`); non-ALTER statements run normally on the
 migration connection. `online_ddl_tool=none` opts the migration out of
 automatic threshold routing (see below).
 
-The directive must appear **before the first executable statement**, which is
-the one position rule every `-- +ptah` and `-- atlas:` directive obeys. Blank
-lines and indentation are fine; a line below the statements is not, and Ptah
-reports such a line at `WARN` on stderr rather than dropping it in silence.
-`PTAH_DIRECTIVES_ANYWHERE=1` restores the earlier file-wide scope for `-- +ptah`
-directives if a directory depends on it.
+The online-DDL directive must appear **before the first executable statement**.
+Blank lines and indentation are fine; a line below the statements is not, and
+Ptah reports such a line at `WARN` on stderr rather than dropping it in silence.
+Other directive families retain their own documented rules: ordered
+`-- +ptah check` directives are position-independent, while Atlas directives
+such as `atlas:txmode` and `atlas:checkpoint` have stricter header positions.
 
 Directives work without any configuration file.
 
